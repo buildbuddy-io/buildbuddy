@@ -7,7 +7,7 @@ import alert_service from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/auth_service";
 import { FilledButton, OutlinedButton } from "../../../app/components/button/button";
 import Spinner from "../../../app/components/spinner/spinner";
-import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
+import rpcService from "../../../app/service/rpc_service";
 import { git } from "../../../proto/git_ts_proto";
 import { runner } from "../../../proto/runner_ts_proto";
 import CodeBuildButton from "./code_build_button";
@@ -33,8 +33,6 @@ import router from "../../../app/router/router";
 import { linkReadWriteGitHubAppURL } from "../../../app/util/github";
 import { parseLcov } from "../../../app/util/lcov";
 import { github } from "../../../proto/github_ts_proto";
-import * as kythe_common from "../../../proto/kythe_common_ts_proto";
-import { kythe } from "../../../proto/kythe_xref_ts_proto";
 import { build } from "../../../proto/remote_execution_ts_proto";
 import { search } from "../../../proto/search_ts_proto";
 import { workspace } from "../../../proto/workspace_ts_proto";
@@ -44,6 +42,7 @@ import BazelrcSidekick from "../sidekick/bazelrc/bazelrc";
 import BazelVersionSidekick from "../sidekick/bazelversion/bazelversion";
 import BuildFileSidekick from "../sidekick/buildfile/buildfile";
 import ModuleSidekick from "../sidekick/module/module";
+import { KythePanel, fetchDecorations } from "./kythe";
 
 interface Props {
   user: User;
@@ -95,10 +94,6 @@ interface State {
 
   commands: string[];
   defaultConfig: string;
-
-  xrefsLoading: boolean;
-  extendedXrefs?: search.ExtendedXrefsReply;
-  xrefsHeight: number;
 }
 
 // When upgrading monaco, make sure to run
@@ -130,7 +125,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     prLink: "",
     prBranch: "",
     prNumber: new Long(0),
-    xrefsLoading: false,
 
     loading: false,
 
@@ -144,7 +138,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
     commands: ["build //...", "test //..."],
     defaultConfig: "",
-    xrefsHeight: 300,
   };
 
   editor: monaco.editor.IStandaloneCodeEditor | undefined;
@@ -154,9 +147,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   searchDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
   lcovDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
 
-  findRefsKey?: monaco.editor.IContextKey<boolean>;
-  goToDefKey?: monaco.editor.IContextKey<boolean>;
-  pendingXrefsRequest?: CancelablePromise<search.KytheResponse>;
   mousedownTarget?: monaco.Position;
 
   codeViewer = React.createRef<HTMLDivElement>();
@@ -245,390 +235,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       }
       this.fetchIfNeededAndNavigate(path);
     });
-  }
-
-  getDisplayOptions(o: any, className: string = "code-hover"): monaco.editor.IModelDecorationOptions | null {
-    const allowedKinds = [
-      "/kythe/edge/ref/call",
-      "/kythe/edge/ref/imports",
-      "/kythe/edge/defines/binding",
-      "/kythe/edge/ref",
-      "/kythe/edge/ref/writes",
-    ];
-    if (!allowedKinds.includes(o.kind)) {
-      return null;
-    }
-    return { inlineClassName: className, hoverMessage: { value: o.target_ticket } };
-  }
-
-  ticketsForPosition(pos: monaco.Position): string[] {
-    const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
-    if (!refs.length) {
-      return [];
-    }
-    return refs.map((ref) => ref.targetTicket).filter((ticket) => ticket);
-  }
-
-  navigateToDefinitionOrPopulatePanel(pos: monaco.Position) {
-    const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
-    if (!refs.length) {
-      // clear all highlights when clicking on a non-reference
-      this.updateSymbolHighlights(this.editor?.getModel()!, []);
-      return;
-    }
-
-    const tickets = refs.map((ref) => ref.targetTicket).filter((ticket) => ticket);
-    const isDef = refs.reduce((acc, ref) => acc || ref.kind === "/kythe/edge/defines/binding", false);
-
-    if (isDef) {
-      this.populateXrefsPanel(tickets);
-    } else {
-      this.navigateToDefinition(tickets, true);
-    }
-  }
-
-  navigateToDefinition(tickets: string[], fallbackToPanel = false) {
-    if (!tickets?.length) {
-      return;
-    }
-    tickets = [...new Set(tickets)]; // Remove duplicates
-
-    const kytheReq = new search.KytheRequest({
-      crossReferencesRequest: new kythe.proto.CrossReferencesRequest({
-        snippets: kythe.proto.SnippetsKind.DEFAULT,
-        ticket: tickets,
-        declarationKind: kythe.proto.CrossReferencesRequest.DeclarationKind.NO_DECLARATIONS,
-        referenceKind: kythe.proto.CrossReferencesRequest.ReferenceKind.NO_REFERENCES,
-        definitionKind: kythe.proto.CrossReferencesRequest.DefinitionKind.BINDING_DEFINITIONS,
-      }),
-    });
-
-    this.fetchKytheData(kytheReq)
-      .then((kytheReply) => {
-        let xrefReply = kytheReply.crossReferencesReply;
-        if (!xrefReply) {
-          console.log("Warning: No xrefs found for tickets", tickets);
-          return;
-        }
-
-        const defs = Object.values(xrefReply.crossReferences).filter((item) => item.definition.length > 0);
-
-        let anchor: kythe.proto.Anchor | undefined = undefined;
-        if (defs.length > 0 && defs[0].definition && defs[0].definition.length > 0 && defs[0].definition[0].anchor) {
-          anchor = defs[0].definition[0].anchor;
-        }
-
-        if (!anchor) {
-          if (fallbackToPanel) {
-            this.populateXrefsPanel(tickets);
-          } else {
-            console.log("Warning: No definitions found for tickets", tickets);
-          }
-        } else {
-          this.navigateToAnchor(anchor);
-        }
-      })
-      .catch((e) => console.log("Error fetching kythe data", e));
-  }
-
-  populateXrefsPanel(tickets: string[]) {
-    if (!tickets || tickets.length === 0) {
-      return;
-    }
-
-    tickets = [...new Set(tickets)]; // Remove duplicates
-    const xrefsReq = new search.KytheRequest({
-      extendedXrefsRequest: new search.ExtendedXrefsRequest({
-        tickets: tickets,
-      }),
-    });
-
-    this.fetchKytheData(xrefsReq)
-      .then((kytheReply) => {
-        if (!kytheReply) {
-          return;
-        }
-
-        let xrefsReply = kytheReply.extendedXrefsReply;
-        if (!xrefsReply) {
-          console.log("Warning: No extendedXrefs found for tickets", tickets);
-          return;
-        }
-        this.setState({ extendedXrefs: xrefsReply });
-      })
-      .catch((e) => console.log("Error fetching kythe data", e));
-  }
-
-  clearHighlights(model: monaco.editor.ITextModel) {
-    let modDecs: monaco.editor.IModelDecoration[] = [];
-
-    model.getAllDecorations().forEach((decor: monaco.editor.IModelDecoration) => {
-      const ref = this.decorToReference(decor);
-      if (!ref) {
-        return;
-      }
-
-      if (decor.options.inlineClassName !== "code-hover") {
-        decor.options.inlineClassName = "code-hover";
-        modDecs.push(decor);
-      }
-    });
-    if (modDecs.length > 0) {
-      model.deltaDecorations(
-        modDecs.map((x) => x.id),
-        modDecs
-      );
-    }
-  }
-
-  updateSymbolHighlights(model: monaco.editor.ITextModel, tickets: string[]) {
-    let modDecs: monaco.editor.IModelDecoration[] = [];
-
-    // Go through each decoration. Find decorations with matching tickets. Update their class names
-    // to highlight them. At the same time, remove non-matching highlights.
-    model.getAllDecorations().forEach((decor: monaco.editor.IModelDecoration) => {
-      const ref = this.decorToReference(decor);
-      if (!ref) {
-        return;
-      }
-
-      let newClassName = "";
-      if (tickets.includes(ref.targetTicket)) {
-        // This decoration matches the hovered ticket - highlight it if the edge type warrants it.
-        if (ref.kind === "/kythe/edge/ref") {
-          newClassName = "code-highlight-reference";
-        } else if (ref.kind === "/kythe/edge/defines/binding" || ref.kind === "/kythe/edge/ref/writes") {
-          newClassName = "code-highlight-modification";
-        }
-      } else if (decor.options.inlineClassName !== "code-hover") {
-        // reset no-longer-matching nodes
-        newClassName = "code-hover";
-      }
-
-      if (newClassName) {
-        decor.options.inlineClassName = newClassName;
-        modDecs.push(decor);
-      }
-    });
-
-    if (modDecs.length > 0) {
-      model.deltaDecorations(
-        modDecs.map((x) => x.id),
-        modDecs
-      );
-    }
-  }
-
-  // Translates node facts /node/kind and /subkind into a human-readable description.
-  // See https://kythe.io/docs/schema/#_node_kinds
-  nodeInfoToMarkdownDescription(nodeInfo: kythe_common.kythe.proto.common.NodeInfo | null | undefined): string {
-    if (!nodeInfo?.facts || !("/kythe/node/kind" in nodeInfo.facts)) {
-      return "";
-    }
-
-    const kind = textDecoder.decode(nodeInfo.facts["/kythe/node/kind"]);
-    const subkind = textDecoder.decode(nodeInfo.facts["/kythe/subkind"]);
-    let description = "";
-
-    switch (kind) {
-      case "function":
-        switch (subkind) {
-          case "constructor":
-            description = "Constructor";
-            break;
-          case "destructor":
-            description = "Destructor";
-            break;
-          default:
-            description = "Function";
-            break;
-        }
-        break;
-      case "variable":
-        switch (subkind) {
-          case "local":
-          case "local/exception":
-          case "local/resource":
-            description = "Local Variable";
-            break;
-          case "local/parameter":
-            description = "Parameter";
-            break;
-          case "field":
-            description = "Field";
-            break;
-          case "import":
-            description = "Imported Variable";
-            break;
-          default:
-            description = "Variable";
-            break;
-        }
-        break;
-      case "record":
-        switch (subkind) {
-          case "class":
-            description = "Class";
-            break;
-          case "enum":
-          case "enumClass":
-            description = "Enum";
-            break;
-          case "struct":
-            description = "Struct";
-            break;
-          case "union":
-            description = "Union";
-            break;
-          case "type":
-            description = "Type";
-            break;
-          default:
-            description = "Record";
-            break;
-        }
-        break;
-      case "constant":
-        description = "Constant";
-        const val = textDecoder.decode(nodeInfo.facts["/kythe/text"]);
-        if (val) {
-          description += `: ${val}`;
-        }
-        break;
-      default:
-        description = kind.charAt(0).toUpperCase() + kind.slice(1);
-        break;
-    }
-    return description;
-  }
-
-  // Creates the contents for a pop-up shown when hovering over a symbol.
-  // The popup has 2 sections: definition information (including type, location, and snippet),
-  // and documentation string (if it exists).
-  // TODO(jdelfino): The styling of this is not the best, but it would need to use HTML instead of
-  // Markdown to make it any better.
-  async makeHoverContents(ticket: string): Promise<monaco.languages.Hover> {
-    return this.fetchDocumentation(ticket).then((rval: search.ExtendedDocumentationReply): monaco.languages.Hover => {
-      if (!rval || !rval.nodeInfo || !rval.definition) {
-        return { contents: [] };
-      }
-
-      let popupContents: monaco.IMarkdownString[] = [];
-
-      // A full description is of the form:
-      // <node description> defined at <file path>:<line number>
-      // <definition snippet>
-      // We make a best-effort to create a partial description if any of the metadata is missing.
-      let description = this.nodeInfoToMarkdownDescription(rval.nodeInfo);
-
-      const location =
-        this.filenameFromAnchor(rval.definition?.anchor) + ":" + this.lineNumberFromAnchor(rval.definition?.anchor);
-      if (location.length > 1) {
-        if (description.length > 0) {
-          description += " defined at " + location;
-        } else {
-          description = "Defined at " + location;
-        }
-      }
-
-      if (rval.definition?.anchor?.snippet) {
-        if (description.length > 0) {
-          description += "\n\n";
-        }
-        description += "`" + rval.definition.anchor.snippet + "`";
-      }
-
-      if (description.length > 0) {
-        description = "**Definition**\n\n" + description;
-        popupContents.push({
-          value: description,
-        });
-      }
-
-      if (rval.docstring) {
-        popupContents.push({ value: "**Documentation**\n\n" + rval.docstring });
-      }
-
-      return { contents: popupContents };
-    });
-  }
-
-  hoverHandler(
-    model: monaco.editor.ITextModel,
-    position: monaco.Position
-  ): Promise<monaco.languages.Hover> | undefined {
-    let ticks = this.ticketsForPosition(position);
-    if (!ticks?.length) {
-      return;
-    }
-
-    this.updateSymbolHighlights(model, ticks);
-    return this.makeHoverContents(ticks[0]);
-  }
-
-  async fetchDocumentation(tick: string): Promise<search.ExtendedDocumentationReply> {
-    const req = new search.KytheRequest({
-      docsRequest: new search.ExtendedDocumentationRequest({
-        ticket: tick,
-      }),
-    });
-    return rpcService.service
-      .kytheProxy(req)
-      .then((rsp) => {
-        if (!rsp.docsReply) {
-          return new search.ExtendedDocumentationReply();
-        }
-        return rsp.docsReply;
-      })
-      .catch((e) => {
-        console.error("Error fetching documentation for ticket", tick, e);
-        return new search.ExtendedDocumentationReply();
-      });
-  }
-
-  async fetchDecorations(filename: string) {
-    if (!filename) {
-      return;
-    }
-
-    let ticket = "kythe://buildbuddy?path=" + filename;
-    const req = new search.KytheRequest({
-      decorationsRequest: new kythe.proto.DecorationsRequest({
-        location: new kythe.proto.Location({
-          ticket: ticket,
-        }),
-        references: true,
-        targetDefinitions: true,
-        semanticScopes: true,
-        diagnostics: true,
-      }),
-    });
-    let rsp = await rpcService.service.kytheProxy(req);
-
-    const newDecor =
-      rsp.decorationsReply?.reference
-        .map((x) => {
-          const startLine = x.span?.start?.lineNumber || 0;
-          const startColumn = x.span?.start?.columnOffset || 0;
-          const endLine = x.span?.end?.lineNumber || 0;
-          const endColumn = x.span?.end?.columnOffset || 0;
-          const monacoRange = new monaco.Range(startLine, startColumn + 1, endLine, endColumn + 1);
-          const displayOptions = this.getDisplayOptions(x);
-          if (displayOptions === null) {
-            return null;
-          }
-          // slight hack: store the kythe reference in the "after" injected text property - it has
-          // a field that holds a generic object. This allows the kythe references to be easily
-          // retrieved later.
-          displayOptions.after = { attachedData: x, content: "" };
-
-          return {
-            range: monacoRange,
-            options: displayOptions,
-          };
-        })
-        .filter((x) => x !== null) || [];
-    return newDecor;
   }
 
   getChange(path: string) {
@@ -736,46 +342,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return this.props.search.get("pq");
   }
 
-  decorToReference(decor: monaco.editor.IModelDecoration): kythe.proto.DecorationsReply.Reference | undefined {
-    return decor?.options?.after?.attachedData as kythe.proto.DecorationsReply.Reference | undefined;
-  }
-
-  getKytheRefsForRange(range: monaco.Range): kythe.proto.DecorationsReply.Reference[] {
-    // This finds the smallest decorations in a given range.
-    // All decorations that share the same smallest span will be returned.
-    // This is necessary because, for example, some definitions will have multiple
-    // /kythe/edge/defines/binding edges, and we want to process them all so we don't
-    // miss references.
-    const decorInRange = this.editor?.getDecorationsInRange(range);
-    if (!decorInRange) {
-      return [];
-    }
-
-    let refsInRange = decorInRange.map((decor) => this.decorToReference(decor)).filter((ref) => !!ref);
-
-    let minMatches: kythe.proto.DecorationsReply.Reference[] = [];
-    let minMatchLength = Number.POSITIVE_INFINITY;
-    for (const ref of refsInRange) {
-      if (!(ref?.span?.start && ref?.span?.end)) {
-        continue;
-      }
-      const matchLength = ref.span.end.byteOffset - ref.span.start.byteOffset;
-      if (matchLength < minMatchLength) {
-        minMatchLength = matchLength;
-        minMatches = [ref];
-      } else if (
-        // If this span has the same offsets as the current minimum, return it also.
-        matchLength === minMatchLength &&
-        minMatches[0]?.span?.start?.byteOffset === ref.span.start.byteOffset &&
-        minMatches[0]?.span?.end?.byteOffset === ref.span.end.byteOffset
-      ) {
-        minMatches.push(ref);
-      }
-    }
-
-    return minMatches;
-  }
-
   fetchInitialContent() {
     if (this.fetchedInitialContent || !this.getDefaultBranch()) {
       return;
@@ -787,9 +353,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     }
     window.addEventListener("resize", () => this.handleWindowResize());
     window.addEventListener("hashchange", () => this.focusLineNumberAndHighlightQuery());
-    window.addEventListener("mouseup", () => {
-      window.removeEventListener("mousemove", this.resizeXrefsProp, false);
-    });
 
     this.editor = monaco.editor.create(this.codeViewer.current!, {
       value: "",
@@ -798,73 +361,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     });
     this.searchDecorations = this.editor.createDecorationsCollection();
     this.lcovDecorations = this.editor.createDecorationsCollection();
-
-    this.editor.onMouseDown((e) => {
-      this.mousedownTarget = e.target.position ?? undefined;
-    });
-
-    this.editor.onMouseUp((e) => {
-      if (this.mousedownTarget && e.target.position) {
-        if (
-          e.target.position.column === this.mousedownTarget.column &&
-          e.target.position.lineNumber === this.mousedownTarget.lineNumber
-        ) {
-          this.navigateToDefinitionOrPopulatePanel(e.target.position);
-        }
-      } else {
-        this.mousedownTarget = undefined;
-      }
-    });
-
-    this.goToDefKey = this.editor.createContextKey<boolean>("goToDefContextKey", false);
-    this.editor.addAction({
-      id: "code-search-definition-action",
-      label: "Go to definition",
-      precondition: "goToDefContextKey",
-      contextMenuGroupId: "navigation",
-      contextMenuOrder: 1,
-      // Method that will be executed when the action is triggered.
-      run: (ed) => {
-        const pos = ed.getPosition();
-        if (!pos) {
-          return;
-        }
-        this.navigateToDefinition(this.ticketsForPosition(pos));
-      },
-    });
-
-    this.findRefsKey = this.editor.createContextKey<boolean>("findRefsContextKey", false);
-    this.editor.addAction({
-      id: "code-search-reference-action",
-      label: "Find references",
-      precondition: "findRefsContextKey",
-      contextMenuGroupId: "navigation",
-      contextMenuOrder: 2,
-      // Method that will be executed when the action is triggered.
-      run: (ed) => {
-        const pos = ed.getPosition();
-        if (!pos) {
-          return;
-        }
-        this.populateXrefsPanel(this.ticketsForPosition(pos));
-      },
-    });
-
-    this.editor.onContextMenu((e) => {
-      if (e.target.range) {
-        let decors = this.editor?.getDecorationsInRange(e.target.range);
-        // TODO(jdelfino): Disable "Go to definition" when already on a definition
-        this.findRefsKey?.set(decors != null && decors.length > 0);
-        this.goToDefKey?.set(decors != null && decors.length > 0);
-      }
-    });
-
-    monaco.languages.registerHoverProvider(
-      { scheme: "file" },
-      {
-        provideHover: this.hoverHandler.bind(this),
-      }
-    );
 
     this.forceUpdate();
 
@@ -1371,7 +867,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       this.state.fullPathToModelMap.set(fullPath, model);
       this.state.fullPathToNodeMap.set(fullPath, node);
 
-      this.fetchDecorations(fullPath).then((newDecs) => {
+      fetchDecorations(fullPath).then((newDecs) => {
         if (!newDecs) {
           return;
         }
@@ -1410,17 +906,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
   navigateToPathWithLine(path: string, line: number) {
     window.history.pushState(undefined, "", `/code/${this.currentOwner()}/${this.currentRepo()}/${path}#L${line}`);
-  }
-
-  async fetchKytheData(req: search.KytheRequest): Promise<search.KytheResponse> {
-    this.pendingXrefsRequest?.cancel();
-    this.setState({ xrefsLoading: true });
-
-    let xrefReq = rpcService.service.kytheProxy(req);
-    this.pendingXrefsRequest = xrefReq;
-    return xrefReq.finally(() => {
-      this.setState({ xrefsLoading: false });
-    });
   }
 
   async handleBuildClicked(args: string) {
@@ -2024,147 +1509,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return Array.from(files.values());
   }
 
-  filenameFromAnchor(a: kythe.proto.Anchor | null | undefined): string {
-    return a?.parent.split("?path=")[1] || "";
-  }
-
-  lineNumberFromAnchor(a: kythe.proto.Anchor | null | undefined): number {
-    return a?.span?.start?.lineNumber || 0;
-  }
-
-  navigateToAnchor(a: kythe.proto.Anchor) {
-    this.fetchIfNeededAndNavigate(this.filenameFromAnchor(a), "", this.lineNumberFromAnchor(a));
-  }
-
-  renderAnchors(name: string, anchors: kythe.proto.CrossReferencesReply.RelatedAnchor[]) {
-    if (anchors.length === 0) {
-      return <></>;
-    }
-    // group up by parent...
-    const fileToRefsMap: Map<string, kythe.proto.CrossReferencesReply.RelatedAnchor[]> = new Map();
-
-    anchors.forEach((a) => {
-      if (!a.anchor) {
-        return;
-      }
-      const parentTicket = a.anchor.parent;
-      if (!fileToRefsMap.has(parentTicket)) {
-        fileToRefsMap.set(parentTicket, []);
-      }
-
-      fileToRefsMap.get(parentTicket)!.push(a);
-    });
-
-    // Unique all the anchors (duplicates are common).
-    // Also, sort them by position in the file.
-    for (const [key, refs] of fileToRefsMap.entries()) {
-      const uniques = new Map<number, kythe.proto.CrossReferencesReply.RelatedAnchor>();
-      const uniqueLineRefs = refs.filter((ra) => {
-        if (!ra.anchor || !ra.anchor.span || !ra.anchor.span.start) {
-          return false;
-        }
-        if (uniques.has(ra.anchor.span.start.lineNumber)) {
-          return false;
-        }
-        uniques.set(ra.anchor.span.start.lineNumber, ra);
-        return true;
-      });
-      uniqueLineRefs.sort((a, b) => {
-        return (
-          (a.anchor?.span?.start?.byteOffset || Number.POSITIVE_INFINITY) -
-          (b.anchor?.span?.start?.byteOffset || Number.POSITIVE_INFINITY)
-        );
-      });
-
-      fileToRefsMap.set(key, uniqueLineRefs);
-    }
-
-    // Now sort the files, putting non-tests before tests.
-    // TODO(jdelfino): Sort suspected genfiles last (e.g. files that match `.pb.*$`)
-    let sortedFiles = new Map(
-      [...fileToRefsMap.entries()].sort((a, b) => {
-        const aTest = a[0].toLowerCase().includes("test");
-        const bTest = b[0].toLowerCase().includes("test");
-        if (aTest && !bTest) {
-          return 1; // a is a test, b is not, so b should come first
-        } else if (!aTest && bTest) {
-          return -1; // b is a test, a is not, so a should come first
-        }
-        return a[0] < b[0] ? -1 : 1; // otherwise sort alphabetically
-      })
-    );
-
-    return (
-      <div>
-        <div className="xrefs-category">{name}</div>
-        {[...sortedFiles.entries()].map(([ticket, anchors]) => {
-          const path = new URL(ticket).searchParams.get("path") ?? "";
-          if (!path) {
-            return <></>;
-          }
-          return (
-            <div>
-              <div
-                className="xrefs-file"
-                onClick={() => {
-                  this.fetchIfNeededAndNavigate(path, "", 1);
-                }}>
-                {path} ({anchors.length} result{anchors.length > 1 ? "s" : ""})
-              </div>
-              <div className="xrefs-snippet">
-                {anchors.map((a) => {
-                  return (
-                    <div
-                      onClick={() => {
-                        this.navigateToAnchor(a.anchor!);
-                      }}>
-                      <span className="xrefs-snippet-line">{a.anchor?.span?.start?.lineNumber}: </span>
-                      <span>{a.anchor?.snippet}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  renderXrefPanel() {
-    if (!this.state.extendedXrefs) {
-      return <></>;
-    }
-
-    return (
-      <div>
-        <div className="xrefs-header">References</div>
-        <div className="xrefs-container">
-          {Boolean(this.state.extendedXrefs.generatedBy) &&
-            this.renderAnchors("Generated By", this.state.extendedXrefs.generatedBy)}
-          {Boolean(this.state.extendedXrefs.definitions) &&
-            this.renderAnchors("Definitions", this.state.extendedXrefs.definitions)}
-          {Boolean(this.state.extendedXrefs.overrides) &&
-            this.renderAnchors("Overrides", this.state.extendedXrefs.overrides)}
-          {Boolean(this.state.extendedXrefs.overriddenBy) &&
-            this.renderAnchors("Overridden By", this.state.extendedXrefs.overriddenBy)}
-          {Boolean(this.state.extendedXrefs.extends) && this.renderAnchors("Extends", this.state.extendedXrefs.extends)}
-          {Boolean(this.state.extendedXrefs.extendedBy) &&
-            this.renderAnchors("Extended By", this.state.extendedXrefs.extendedBy)}
-          {Boolean(this.state.extendedXrefs.references) &&
-            this.renderAnchors("References", this.state.extendedXrefs.references)}
-        </div>
-      </div>
-    );
-  }
-
-  resizeXrefs(e: MouseEvent) {
-    this.updateState({
-      xrefsHeight: Math.max(100, window.innerHeight - e.clientY - 6),
-    });
-  }
-  resizeXrefsProp = this.resizeXrefs.bind(this);
-
   render() {
     setTimeout(() => {
       this.editor?.layout();
@@ -2421,21 +1765,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 ref={this.diffViewer}
               />
             </div>
-            {Boolean(this.state.xrefsLoading || this.state.extendedXrefs) && (
-              <div>
-                <div
-                  className="code-search-xrefs-resize"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    window.addEventListener("mousemove", this.resizeXrefsProp, false);
-                  }}></div>
-                <div className="code-search-xrefs" style={{ height: this.state.xrefsHeight + "px" }}>
-                  {/* TODO(jdelfino): Add an error state if xrefs fail to load */}
-                  {this.state.xrefsLoading && <div className="loading"></div>}
-                  {!this.state.xrefsLoading && this.renderXrefPanel()}
-                </div>
-              </div>
-            )}
+            {this.editor && <KythePanel editor={this.editor} navigate={this.fetchIfNeededAndNavigate.bind(this)} />}
             {this.state.changes.size > 0 && !this.getQuery() && (
               <div className="code-diff-viewer">
                 <div className="code-diff-viewer-title">
