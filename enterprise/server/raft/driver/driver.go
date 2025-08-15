@@ -218,8 +218,8 @@ type TaskType int
 
 const (
 	_ TaskType = iota
-	RangeTask
-	PartitionTask
+	RangeTaskType
+	PartitionTaskType
 )
 
 type taskKey struct {
@@ -228,13 +228,21 @@ type taskKey struct {
 	partitionID string // used for partition tasks
 }
 
-type driverTask struct {
-	key  taskKey
-	repl IReplica // only used for range tasks
+type rangeTask struct {
+	repl IReplica
+}
 
-	// only used for partition tasks
-	partitionConfig disk.Partition
-	curPD           *rfpb.PartitionDescriptor
+type partitionTask struct {
+	config disk.Partition
+	pd     *rfpb.PartitionDescriptor
+}
+
+type driverTask struct {
+	key taskKey
+
+	// Task-type-specific data
+	rangeTask     *rangeTask
+	partitionTask *partitionTask
 
 	processing bool
 	requeue    bool
@@ -345,17 +353,17 @@ func (bq *baseQueue) postProcess(ctx context.Context, task *driverTask, requeueT
 	bq.mu.Unlock()
 
 	if ar.attempts >= maxRetry {
-		if task.key.taskType == RangeTask {
-			alert.UnexpectedEvent("driver_action_retries_exceeded", "c%dn%d action: %s retries exceeded", task.key.rangeID, task.repl.ReplicaID(), ar.action)
-		} else if task.key.taskType == PartitionTask {
+		if task.key.taskType == RangeTaskType {
+			alert.UnexpectedEvent("driver_action_retries_exceeded", "c%dn%d action: %s retries exceeded", task.key.rangeID, task.rangeTask.repl.ReplicaID(), ar.action)
+		} else if task.key.taskType == PartitionTaskType {
 			alert.UnexpectedEvent("driver_action_retries_exceeded", "partition %s action: %s retries exceeded", task.key.partitionID, ar.action)
 		}
 		// do not add it to the queue
 	} else if requeueType != RequeueNoop || task.requeue {
-		if task.key.taskType == RangeTask {
-			bq.maybeAddRangeTask(ctx, task.repl, ar)
-		} else if task.key.taskType == PartitionTask {
-			bq.maybeAddPartitionTask(ctx, task.partitionConfig, task.curPD, ar)
+		if task.key.taskType == RangeTaskType {
+			bq.maybeAddRangeTask(ctx, task.rangeTask, ar)
+		} else if task.key.taskType == PartitionTaskType {
+			bq.maybeAddPartitionTask(ctx, task.partitionTask, ar)
 		}
 	}
 }
@@ -368,16 +376,20 @@ func (bq *baseQueue) nextAttemptTime(attemptNumber int) time.Time {
 func (bq *baseQueue) process(ctx context.Context, task *driverTask) RequeueType {
 	action, _ := bq.impl.computeAction(ctx, task)
 
-	if task.key.taskType == RangeTask {
+	if task.key.taskType == RangeTaskType {
 		rangeID := task.key.rangeID
-		if task.repl == nil {
-			bq.log.Errorf("task.repl is nil for range %d", rangeID)
+		if task.rangeTask == nil {
+			bq.log.Errorf("task is nil for range %d", rangeID)
 			return RequeueNoop
 		}
-		replicaID := task.repl.ReplicaID()
+		replicaID := task.rangeTask.repl.ReplicaID()
 		bq.log.Debugf("start to process c%dn%d", rangeID, replicaID)
-	} else if task.key.taskType == PartitionTask {
+	} else if task.key.taskType == PartitionTaskType {
 		bq.log.Debugf("start to process partition %s", task.key.partitionID)
+		if task.partitionTask == nil {
+			bq.log.Errorf("task is nil for partition %s", task.key.partitionID)
+			return RequeueNoop
+		}
 	}
 
 	ar := task.attemptRecord
@@ -425,10 +437,10 @@ func (rq *Queue) getReplica(rangeID uint64) (IReplica, error) {
 }
 
 // computeActionForRangeTask computes the drive action needed for range task and its priority.
-func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *driverTask) (DriverAction, float64) {
+func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask) (DriverAction, float64) {
 	// Handle range tasks
-	rangeID := task.key.rangeID
 	repl := task.repl
+	rangeID := repl.RangeID()
 	rd := rq.store.GetRange(rangeID)
 	action := DriverNoop
 	if rd == nil || !rq.store.HaveLease(ctx, rd.GetRangeId()) {
@@ -578,10 +590,10 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *driverTask
 }
 
 // computeActionForPartitionTask computes the action needed for a partition task and its priority.
-func (rq *Queue) computeActionForPartitionTask(ctx context.Context, task *driverTask) (DriverAction, float64) {
-	if task.curPD == nil || task.curPD.GetState() == rfpb.PartitionDescriptor_INITIALIZING {
+func (rq *Queue) computeActionForPartitionTask(ctx context.Context, task *partitionTask) (DriverAction, float64) {
+	if task.pd == nil || task.pd.GetState() == rfpb.PartitionDescriptor_INITIALIZING {
 		a := DriverInitializePartition
-		rq.log.Infof("action: %s for partition: %q", a, task.key.partitionID)
+		rq.log.Infof("action: %s for partition: %q", a, task.config.ID)
 		return a, a.Priority()
 	}
 	return DriverNoop, DriverNoop.Priority()
@@ -590,10 +602,10 @@ func (rq *Queue) computeActionForPartitionTask(ctx context.Context, task *driver
 // computeAction computes the action needed and its priority.
 func (rq *Queue) computeAction(ctx context.Context, task *driverTask) (DriverAction, float64) {
 	switch task.key.taskType {
-	case RangeTask:
-		return rq.computeActionForRangeTask(ctx, task)
-	case PartitionTask:
-		return rq.computeActionForPartitionTask(ctx, task)
+	case RangeTaskType:
+		return rq.computeActionForRangeTask(ctx, task.rangeTask)
+	case PartitionTaskType:
+		return rq.computeActionForPartitionTask(ctx, task.partitionTask)
 
 	}
 	return DriverNoop, DriverNoop.Priority()
@@ -646,32 +658,34 @@ func (bq *baseQueue) maybeAddTask(ctx context.Context, newTask *driverTask, ar a
 	}
 }
 
-func (bq *baseQueue) maybeAddRangeTask(ctx context.Context, repl IReplica, ar attemptRecord) {
-	rangeID := repl.RangeID()
-	key := taskKey{taskType: RangeTask, rangeID: rangeID}
+func (bq *baseQueue) maybeAddRangeTask(ctx context.Context, rt *rangeTask, ar attemptRecord) {
+	if rt.repl == nil {
+		return
+	}
+	rangeID := rt.repl.RangeID()
+	key := taskKey{taskType: RangeTaskType, rangeID: rangeID}
 	newTask := &driverTask{
-		key:  key,
-		repl: repl,
+		key:       key,
+		rangeTask: rt,
 	}
 	bq.maybeAddTask(ctx, newTask, ar)
 }
 
-func (bq *baseQueue) maybeAddPartitionTask(ctx context.Context, p disk.Partition, pd *rfpb.PartitionDescriptor, ar attemptRecord) {
-	key := taskKey{taskType: PartitionTask, partitionID: p.ID}
+func (bq *baseQueue) maybeAddPartitionTask(ctx context.Context, pt *partitionTask, ar attemptRecord) {
+	key := taskKey{taskType: PartitionTaskType, partitionID: pt.config.ID}
 	newTask := &driverTask{
-		key:             key,
-		partitionConfig: p,
-		curPD:           pd,
+		key:           key,
+		partitionTask: pt,
 	}
 	bq.maybeAddTask(ctx, newTask, ar)
 }
 
 func (rq *Queue) MaybeAddPartitionTask(ctx context.Context, p disk.Partition, pd *rfpb.PartitionDescriptor) {
 	rq.log.Infof("maybe add partition task for %q", p.ID)
-	rq.maybeAddPartitionTask(ctx, p, pd, attemptRecord{})
+	rq.maybeAddPartitionTask(ctx, &partitionTask{config: p, pd: pd}, attemptRecord{})
 }
 func (rq *Queue) MaybeAddRangeTask(ctx context.Context, replica IReplica) {
-	rq.maybeAddRangeTask(ctx, replica, attemptRecord{})
+	rq.maybeAddRangeTask(ctx, &rangeTask{repl: replica}, attemptRecord{})
 }
 
 func (bq *baseQueue) Start() {
@@ -1410,9 +1424,8 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 
 func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
 	var change *change
-	// Handle range tasks
 	rangeID := task.key.rangeID
-	repl := task.repl
+	repl := task.rangeTask.repl
 	rd := rq.store.GetRange(rangeID)
 	if rd == nil {
 		// We might be calling GetRange in the small window between RemoveRange and AddRange
@@ -1480,7 +1493,7 @@ func (rq *Queue) processPartitionTask(ctx context.Context, task *driverTask, act
 	var err error
 	switch action {
 	case DriverInitializePartition:
-		err = rq.initializePartition(ctx, task.partitionConfig)
+		err = rq.initializePartition(ctx, task.partitionTask.config)
 	case DriverAddReplica, DriverFinishReplicaRemoval, DriverNoop, DriverRebalanceLease, DriverRebalanceReplica, DriverRemoveDeadReplica, DriverRemoveReplica, DriverReplaceDeadReplica, DriverSplitRange:
 		// This should not be called for range tasks
 		alert.UnexpectedEvent("unexpected-action-for-parition-task", "driver action %s for parition %q", task.key.partitionID)
@@ -1494,9 +1507,9 @@ func (rq *Queue) processPartitionTask(ctx context.Context, task *driverTask, act
 
 func (rq *Queue) processTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
 	switch task.key.taskType {
-	case RangeTask:
+	case RangeTaskType:
 		return rq.processRangeTask(ctx, task, action)
-	case PartitionTask:
+	case PartitionTaskType:
 		return rq.processPartitionTask(ctx, task, action)
 	}
 	return RequeueNoop
