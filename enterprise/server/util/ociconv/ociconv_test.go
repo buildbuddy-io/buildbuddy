@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -67,16 +68,16 @@ func TestOciconv_TestRegistry(t *testing.T) {
 	require.False(t, fi.IsDir())
 	require.Greater(t, fi.Size(), int64(0))
 
-	// Extract ext4 image and verify that all file paths from the image are present.
+	// Extract ext4 image.
 	outDir := testfs.MakeTempDir(t)
 	err = ext4.ImageToDirectory(ctx, path, outDir, []string{"/"})
 	require.NoError(t, err)
 
-
+	// Build path->size map from the container image (regular files only).
 	rc := mutate.Extract(img)
 	defer rc.Close()
-
 	tr := tar.NewReader(rc)
+	imageFiles := make(map[string]int64)
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -87,15 +88,39 @@ func TestOciconv_TestRegistry(t *testing.T) {
 			continue
 		}
 		switch hdr.Typeflag {
-		case tar.TypeReg, tar.TypeRegA, tar.TypeSymlink:
+		case tar.TypeReg, tar.TypeRegA:
 			name := strings.TrimPrefix(hdr.Name, "./")
 			name = strings.TrimPrefix(name, "/")
 			if name == "" {
 				continue
 			}
-			_, err := os.Lstat(filepath.Join(outDir, name))
-			require.NoErrorf(t, err, "expected path to exist in ext4 output: %q", name)
+			imageFiles[name] = hdr.Size
 		}
+	}
+
+	// Build path->size map from the extracted ext4 directory (regular files only).
+	extractedFiles := make(map[string]int64)
+	err = filepath.Walk(outDir, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode().IsRegular() {
+			rel, err := filepath.Rel(outDir, p)
+			if err != nil {
+				return err
+			}
+			if rel == "." {
+				return nil
+			}
+			extractedFiles[rel] = info.Size()
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	// Compare the maps.
+	if diff := cmp.Diff(imageFiles, extractedFiles); diff != "" {
+		t.Fatalf("ext4 contents did not match image contents (-image +ext4):\n%s", diff)
 	}
 }
 
