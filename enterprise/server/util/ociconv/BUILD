@@ -23,9 +23,6 @@ go_library(
 go_test(
     name = "ociconv_test",
     srcs = ["ociconv_test.go"],
-    exec_properties = {
-        "test.dockerNetwork": "bridge",
-    },
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":ociconv",

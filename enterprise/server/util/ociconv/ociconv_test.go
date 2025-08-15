@@ -24,28 +24,6 @@ import (
 )
 
 func TestOciconv(t *testing.T) {
-	ctx := context.Background()
-	root := testfs.MakeTempDir(t)
-	os.Setenv("REGISTRY_AUTH_FILE", "_null")
-
-	for _, img := range []string{
-		// TODO: use testregistry instead of these images,
-		// and remove network dependency.
-		"gcr.io/flame-public/test-alpine@sha256:6457d53fb065d6f250e1504b9bc42d5b6c65941d57532c072d929dd0628977d0",
-		"mirror.gcr.io/ubuntu:22.04",
-	} {
-		t.Run("image="+img, func(t *testing.T) {
-			te := testenv.GetTestEnv(t)
-			resolver, err := oci.NewResolver(te)
-			require.NoError(t, err)
-			require.NotNil(t, resolver)
-			_, err = ociconv.CreateDiskImage(ctx, resolver, root, img, oci.Credentials{})
-			require.NoError(t, err)
-		})
-	}
-}
-
-func TestOciconv_TestRegistry(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
