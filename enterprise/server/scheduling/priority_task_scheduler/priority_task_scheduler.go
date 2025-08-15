@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"maps"
 	"math"
 	"strings"
 	"sync"
@@ -649,40 +650,40 @@ func (q *PriorityTaskScheduler) stats() string {
 		len(q.activeTaskCancelFuncs), q.q.Len())
 }
 
-// canFitTask returns whether the task can fit on the executor, and whether the
-// task is eligible to be skipped due to only being blocked on custom resources.
-// Only tasks which _don't_ need custom resources may skip the task in this
-// case.
-func (q *PriorityTaskScheduler) canFitTask(res *queuedTask) (canFit bool, isSkippable bool) {
+// canFitTask returns whether the task can fit, given the resource capacity and
+// resource reservations. "Reserved" in this context means the resources that
+// are currently assigned to executing tasks, plus the resources needed by tasks
+// that are in front of this task in the queue.
+func (q *PriorityTaskScheduler) canFitTask(res *queuedTask, reservedResources *resourceCounts) bool {
 	// If we're running in exclusiveTaskScheduling mode, only ever allow one
 	// task to run at a time. Otherwise fall through to the logic below.
 	if q.exclusiveTaskScheduling && len(q.activeTaskCancelFuncs) >= 1 {
-		return false, false
+		return false
 	}
 
 	size := res.GetTaskSize()
 
-	availableRAM := q.resourceCapacity.RAMBytes - q.resourcesUsed.RAMBytes
+	availableRAM := q.resourceCapacity.RAMBytes - reservedResources.RAMBytes
 	if size.GetEstimatedMemoryBytes() > availableRAM {
-		return false, false
+		return false
 	}
 
-	availableCPU := q.resourceCapacity.CPUMillis - q.resourcesUsed.CPUMillis
+	availableCPU := q.resourceCapacity.CPUMillis - reservedResources.CPUMillis
 	if size.GetEstimatedMilliCpu() > availableCPU {
-		return false, false
+		return false
 	}
 
 	for _, r := range size.GetCustomResources() {
-		used, ok := q.resourcesUsed.Custom[r.GetName()]
+		reserved, ok := reservedResources.Custom[r.GetName()]
 		if !ok {
 			// The scheduler server should never send us tasks that require
 			// resources we haven't set up in the config.
 			alert.UnexpectedEvent("missing_custom_resource", "Task requested custom resource %q which is not configured for this executor", r.GetName())
 			continue
 		}
-		available := q.resourceCapacity.Custom[r.GetName()] - used
+		available := q.resourceCapacity.Custom[r.GetName()] - reserved
 		if customResource(r.GetValue()) > available {
-			return false, true
+			return false
 		}
 	}
 
@@ -695,7 +696,7 @@ func (q *PriorityTaskScheduler) canFitTask(res *queuedTask) (canFit bool, isSkip
 		alert.UnexpectedEvent("invalid_task_cpu", "Requested CPU %d is invalid", size.GetEstimatedMilliCpu())
 	}
 
-	return true, false
+	return true
 }
 
 func (q *PriorityTaskScheduler) nextTaskForPruning() *queuedTask {
@@ -771,36 +772,40 @@ type queuePosition struct {
 // getNextSchedulableTask returns the next task that can be scheduled, and a
 // pointer to the task in the queue.
 func (q *PriorityTaskScheduler) getNextSchedulableTask() (*queuedTask, *queuePosition) {
-	// Don't use the experimental custom resource scheduling logic if there are
-	// no custom resources configured.
+	// Use custom resource configuration as a flag guard for the backfilling
+	// logic, since backfilling only helps if custom resources are configured
+	// anyway.
+	// TODO: add more tests for the multi-tenant case and turn this on
+	// unconditionally to simplify logic.
 	if len(q.resourceCapacity.Custom) == 0 {
 		nextTask := q.q.Peek()
 		if nextTask == nil {
 			return nil, nil
 		}
-		if canFit, _ := q.canFitTask(nextTask); !canFit {
+		if canFit := q.canFitTask(nextTask, q.resourcesUsed); !canFit {
 			return nil, nil
 		}
 		return nextTask, q.q.headRef()
 	}
 
-	// If the tasks at the head of the queue are only waiting for custom
-	// resources to be freed up, then peek ahead in the queue to see if there
-	// are any tasks which don't need custom resources, and allow those to run.
-	//
-	// The idea behind this strategy is that custom resources are expected to
-	// only be needed for relatively heavyweight tasks like GPU tests or Apple
-	// simulator tests, and while those tasks are waiting for the custom
-	// resources to be freed up, we want to allow other "normal" actions (e.g.
-	// compilation actions) to run.
+	// Iterate through the queue looking for a task that can schedule, but add
+	// each skipped task's resources to the "reserved" resource counts, which is
+	// initialized to the resource allocation for the tasks currently executing.
+	// This ensures that when tasks skip ahead in the queue, they don't delay
+	// the start time of other tasks that have been waiting for longer.
+	reservedResources := q.resourcesUsed.Clone()
 	iterator := q.q.Iterator()
 	for task := iterator.Next(); task != nil; task = iterator.Next() {
-		canFit, isSkippable := q.canFitTask(task)
+		canFit := q.canFitTask(task, reservedResources)
 		if canFit {
 			return task, iterator.Current()
 		}
-		if !isSkippable {
-			return nil, nil
+		reservedResources.Add(q.taskResourceCounts(task.GetTaskSize()))
+
+		// If all resources are reserved, short circuit - none of the remaining
+		// tasks will be able to schedule.
+		if reservedResources.AllGTE(q.resourceCapacity) {
+			break
 		}
 	}
 	return nil, nil
@@ -976,4 +981,53 @@ type resourceCounts struct {
 	RAMBytes  int64
 	CPUMillis int64
 	Custom    map[string]customResourceCount
+}
+
+func (q *PriorityTaskScheduler) taskResourceCounts(res *scpb.TaskSize) *resourceCounts {
+	custom := make(map[string]customResourceCount, len(res.GetCustomResources()))
+	for _, r := range res.GetCustomResources() {
+		// Skip unknown resources for now.
+		if _, ok := q.resourceCapacity.Custom[r.GetName()]; !ok {
+			continue
+		}
+		custom[r.GetName()] = customResource(r.GetValue())
+	}
+	return &resourceCounts{
+		RAMBytes:  res.GetEstimatedMemoryBytes(),
+		CPUMillis: res.GetEstimatedMilliCpu(),
+		Custom:    custom,
+	}
+}
+
+// Clone returns a deep copy of the resourceCounts object.
+func (r *resourceCounts) Clone() *resourceCounts {
+	clone := *r
+	clone.Custom = maps.Clone(r.Custom)
+	return &clone
+}
+
+// Add mutates the resourceCounts object, adding the given counts to it.
+func (r *resourceCounts) Add(other *resourceCounts) {
+	r.RAMBytes += other.RAMBytes
+	r.CPUMillis += other.CPUMillis
+	for k, v := range other.Custom {
+		r.Custom[k] += v
+	}
+}
+
+// AllGTE returns true if all resource counts are greater than or equal to the
+// other resource counts.
+func (r *resourceCounts) AllGTE(other *resourceCounts) bool {
+	if r.RAMBytes < other.RAMBytes {
+		return false
+	}
+	if r.CPUMillis < other.CPUMillis {
+		return false
+	}
+	for k, v := range r.Custom {
+		if v < other.Custom[k] {
+			return false
+		}
+	}
+	return true
 }
