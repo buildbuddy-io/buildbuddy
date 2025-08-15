@@ -44,10 +44,8 @@ func TestOciconv_TestRegistry(t *testing.T) {
 
 	ctx := context.Background()
 	root := testfs.MakeTempDir(t)
-	os.Setenv("REGISTRY_AUTH_FILE", "_null")
 
 	reg := testregistry.Run(t, testregistry.Opts{})
-	t.Cleanup(func() { reg.Shutdown(ctx) })
 
 	ref, _ := reg.PushNamedImage(t, "ociconv-test-image:latest")
 
