@@ -39,6 +39,32 @@ func TestOciconv(t *testing.T) {
 	}
 }
 
+func TestOciconv_TestRegistry(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+
+	ctx := context.Background()
+	root := testfs.MakeTempDir(t)
+	os.Setenv("REGISTRY_AUTH_FILE", "_null")
+
+	reg := testregistry.Run(t, testregistry.Opts{})
+	t.Cleanup(func() { reg.Shutdown(ctx) })
+
+	ref := reg.Push(t, empty.Image, "ociconv-test-image")
+
+	resolver, err := oci.NewResolver(te)
+	require.NoError(t, err)
+	require.NotNil(t, resolver)
+
+	path, err := ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{})
+	require.NoError(t, err)
+
+	fi, err := os.Stat(path)
+	require.NoError(t, err)
+	require.False(t, fi.IsDir())
+	require.Greater(t, fi.Size(), int64(0))
+}
+
 func TestOciconv_ChecksCredentials(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
