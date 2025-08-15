@@ -7,6 +7,7 @@ go_library(
     srcs = ["clickhouse_cluster.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/clickhouse_cluster",
     deps = [
+        "//server/util/flag",
         "//server/util/log",
     ],
 )

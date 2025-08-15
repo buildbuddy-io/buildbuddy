@@ -20,6 +20,8 @@ var Internal = flagtags.InternalTag
 
 var NewFlagSet = flag.NewFlagSet
 var ContinueOnError = flag.ContinueOnError
+var ExitOnError = flag.ExitOnError
+var PanicOnError = flag.PanicOnError
 var ErrHelp = flag.ErrHelp
 var CommandLine = flag.CommandLine
 var Args = flag.Args
