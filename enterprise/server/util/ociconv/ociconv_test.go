@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,7 +49,7 @@ func TestOciconv_TestRegistry(t *testing.T) {
 	reg := testregistry.Run(t, testregistry.Opts{})
 	t.Cleanup(func() { reg.Shutdown(ctx) })
 
-	ref := reg.Push(t, empty.Image, "ociconv-test-image")
+	ref, _ := reg.PushNamedImage(t, "ociconv-test-image:latest")
 
 	resolver, err := oci.NewResolver(te)
 	require.NoError(t, err)
@@ -97,7 +96,7 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 
 	// Bypass auth while pushing the image.
 	authEnabled = false
-	ref := reg.Push(t, empty.Image, "test-empty-image")
+	ref, _ := reg.PushNamedImage(t, "test-empty-image:latest")
 	authEnabled = true
 
 	resolver, err := oci.NewResolver(te)
