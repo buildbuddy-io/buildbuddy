@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -362,4 +363,62 @@ func TestDockerRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
 	assert.Equal(t, "Hello world\nHello again\n", string(res.Stdout))
+}
+
+func TestDockerRun_StdoutLimit(t *testing.T) {
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 1)
+	env := testenv.GetTestEnv(t)
+	socket := "/var/run/docker.sock"
+	dc, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost(fmt.Sprintf("unix://%s", socket)),
+		dockerclient.WithAPIVersionNegotiation(),
+	)
+	require.NoError(t, err)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
+	ctx := context.Background()
+	cmd := &repb.Command{Arguments: []string{"echo", "AAAAAAAAAAAAAAAAAAAAA"}}
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
+	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
+
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+
+	assert.Error(t, res.Error)
+	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted, got: %q", res.Error)
+}
+
+func TestDockerExec_StdoutLimit(t *testing.T) {
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 1)
+	env := testenv.GetTestEnv(t)
+	socket := "/var/run/docker.sock"
+	dc, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost(fmt.Sprintf("unix://%s", socket)),
+		dockerclient.WithAPIVersionNegotiation(),
+	)
+	require.NoError(t, err)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
+	ctx := context.Background()
+	cmd := &repb.Command{Arguments: []string{"echo", "AAAAAAAAAAAAAAAAAAAAA"}}
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
+	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+	err = container.PullImageIfNecessary(
+		ctx, env, c, oci.Credentials{},
+		"mirror.gcr.io/library/busybox",
+	)
+	require.NoError(t, err)
+	err = c.Create(ctx, workDir)
+	require.NoError(t, err)
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+
+	assert.Error(t, res.Error)
+	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted, got: %q", res.Error)
 }

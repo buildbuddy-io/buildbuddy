@@ -57,6 +57,10 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 		stdoutw = io.MultiWriter(os.Stdout, stdoutw)
 		stderrw = io.MultiWriter(os.Stderr, stderrw)
 	}
+	if !stdio.DisableOutputLimits {
+		stdoutw = commandutil.LimitStdOutErrWriter(stdoutw)
+		stderrw = commandutil.LimitStdOutErrWriter(stderrw)
+	}
 	req := &vmxpb.ExecRequest{
 		WorkingDirectory: workDir,
 		User:             user,
@@ -122,9 +126,15 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 				return status.UnavailableErrorf("failed to receive from stream: %s", status.Message(err))
 			}
 			if _, err := stdoutw.Write(msg.Stdout); err != nil {
+				if status.IsResourceExhaustedError(err) {
+					return status.WrapError(err, "failed to write stdout")
+				}
 				return status.UnavailableErrorf("failed to write stdout: %s", status.Message(err))
 			}
 			if _, err := stderrw.Write(msg.Stderr); err != nil {
+				if status.IsResourceExhaustedError(err) {
+					return status.WrapError(err, "failed to write stderr")
+				}
 				return status.UnavailableErrorf("failed to write stderr: %s", status.Message(err))
 			}
 			if msg.Response != nil {
