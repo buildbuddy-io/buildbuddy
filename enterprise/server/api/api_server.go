@@ -2,8 +2,8 @@ package api
 
 import (
 	"context"
-	"flag"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"net/url"
@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -24,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -49,14 +51,18 @@ import (
 )
 
 var (
-	enableAPI            = flag.Bool("api.enable_api", true, "Whether or not to enable the BuildBuddy API.")
-	enableCache          = flag.Bool("api.enable_cache", false, "Whether or not to enable the API cache.")
-	enableCacheDeleteAPI = flag.Bool("enable_cache_delete_api", false, "If true, enable access to cache delete API.")
-	enableMetricsAPI     = flag.Bool("api.enable_metrics_api", false, "If true, enable access to metrics API.")
+	enableAPI             = flag.Bool("api.enable_api", true, "Whether or not to enable the BuildBuddy API.")
+	enableCache           = flag.Bool("api.enable_cache", false, "Whether or not to enable the API cache.")
+	enableCacheDeleteAPI  = flag.Bool("enable_cache_delete_api", false, "If true, enable access to cache delete API.")
+	enableMetricsAPI      = flag.Bool("api.enable_metrics_api", false, "If true, enable access to metrics API.")
+	metricsFederationURL  = flag.String("api.metrics_federation.url", "", "If set, enable metrics federation from a VictoriaMetrics cluster via BuildBuddy subdomain auth. Metrics are filtered by the 'group_name' label.")
+	metricsFederationJobs = flag.Slice("api.metrics_federation.jobs", []string{}, "If set, enable metrics federation from a VictoriaMetrics cluster via BuildBuddy subdomain auth. Metrics are filtered by the 'group_name' label.")
 )
 
 type APIServer struct {
-	env environment.Env
+	env                     environment.Env
+	metricsFederationURL    *url.URL
+	metricsFederationClient *http.Client
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -67,9 +73,21 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewAPIServer(env environment.Env) *APIServer {
-	return &APIServer{
+	s := &APIServer{
 		env: env,
 	}
+	if *metricsFederationURL != "" {
+		if len(*metricsFederationJobs) == 0 {
+			log.Warningf("api.metrics_federation_jobs is not configured - returned metrics will be empty.")
+		}
+		u, err := url.Parse(*metricsFederationURL)
+		if err != nil {
+			log.Fatalf("Failed to parse metrics federation URL: %s", err)
+		}
+		s.metricsFederationURL = u
+		s.metricsFederationClient = httpclient.New()
+	}
+	return s
 }
 
 func (s *APIServer) authorizeWrites(ctx context.Context) error {
@@ -515,6 +533,60 @@ func (s *APIServer) handleGetMetricsRequest(w http.ResponseWriter, r *http.Reque
 	}
 	handler := promhttp.HandlerFor(reg, opts)
 	handler.ServeHTTP(w, r)
+}
+
+func (s *APIServer) GetMetricsFederationHandler() http.Handler {
+	return http.HandlerFunc(s.handleGetMetricsFederationRequest)
+}
+
+func (s *APIServer) handleGetMetricsFederationRequest(w http.ResponseWriter, r *http.Request) {
+	if s.metricsFederationURL == nil {
+		http.Error(w, "Metrics federation API not enabled", http.StatusNotFound)
+		return
+	}
+	// Determine the group_name filter from org slug.
+	user, err := s.env.GetAuthenticator().AuthenticatedUser(r.Context())
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	group, err := s.env.GetUserDB().GetGroupByID(r.Context(), user.GetGroupID())
+	if err != nil {
+		log.CtxErrorf(r.Context(), "Failed to lookup group %q: %s", user.GetGroupID(), err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if group.URLIdentifier == "" {
+		http.Error(w, "You must configure a URL identifier for your group to use this API", http.StatusBadRequest)
+		return
+	}
+
+	// Make an HTTP request to the metrics federation API endpoint, setting the
+	// POST request query with match[] set to filter by the group_name and job
+	// labels.
+	jobsPattern := "(" + strings.Join(*metricsFederationJobs, "|") + ")"
+	match := fmt.Sprintf("{group_name=%q,job=~%q}", group.URLIdentifier, jobsPattern)
+	query := url.Values{"match[]": []string{match}}
+	reqURL := *s.metricsFederationURL // copy
+	reqURL.RawQuery = query.Encode()
+	resp, err := s.metricsFederationClient.Get(reqURL.String())
+	if err != nil {
+		log.CtxErrorf(r.Context(), "Failed to make request to metrics federation endpoint: %s", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.CtxErrorf(r.Context(), "Metrics federation endpoint returned status %d", resp.StatusCode)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain")
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		log.CtxErrorf(r.Context(), "Failed to copy response body: %s", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 }
 
 // Returns true if a selector doesn't specify a particular id or matches the target's ID
