@@ -17,8 +17,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -118,10 +118,7 @@ func TestOciconv_TestRegistry(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Compare the maps.
-	if diff := cmp.Diff(imageFiles, extractedFiles); diff != "" {
-		t.Fatalf("ext4 contents did not match image contents (-image +ext4):\n%s", diff)
-	}
+	require.Empty(t, cmp.Diff(imageFiles, extractedFiles))
 }
 
 func TestOciconv_ChecksCredentials(t *testing.T) {
