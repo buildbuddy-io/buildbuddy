@@ -240,7 +240,6 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 	byte_stream_client.RegisterPooledBytestreamClient(env)
 
-	// TODO(jdhollen): Share this pool with the cache above.  Not a huge deal for now.
 	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort()))
 	if err != nil {
 		return status.InternalErrorf("Error initializing ByteStreamClient: %s", err)
