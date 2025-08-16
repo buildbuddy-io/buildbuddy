@@ -18,5 +18,10 @@ datasources:
       port: ${CLICKHOUSE_PORT}
       host: host.docker.internal
       username: ${CLICKHOUSE_USERNAME}
+      traces:
+        defaultDatabase: otel_local
+        defaultTable: otel_traces
+        otelEnabled: true
+        otelVersion: latest # TODO: pin?
     secureJsonData:
       password: ${CLICKHOUSE_PASSWORD}
