@@ -228,8 +228,6 @@ func parseLogTimestamp(line string) (time.Time, bool) {
 func ConfigureSidecar(args []string) ([]string, *Instance) {
 	originalArgs := args
 
-	// Disable sidecar on CI for now since the async upload behavior can cause
-	// problems if the CI runner terminates before the uploads have completed.
 	if isCI(args) {
 		log.Debugf("CI build detected.")
 		syncFlag := arg.Get(args, "sync")
