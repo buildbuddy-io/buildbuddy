@@ -11,21 +11,7 @@ esbuild(
     # Causes splitting to be very slow and fail on unused references to "crypto" and "fs".
     # https://github.com/aspect-build/rules_esbuild/issues/190
     bazel_sandbox_plugin = False,
-    config = {
-        "resolveExtensions": [
-            ".mjs",
-            ".js",
-        ],
-        "alias": {
-            # libsodium imports the "path" module from nodejs stdlib - alias this
-            # module to "path-browserify" so it works in the browser.
-            "path": "path-browserify",
-        },
-        "loader": {
-            ".ttf": "binary",
-            ".css": "binary",
-        },
-    },
+    config = "esbuild.config.mjs",
     define = {"process.env.NODE_ENV": '"production"'},
     entry_points = [
         "app.tsx",
