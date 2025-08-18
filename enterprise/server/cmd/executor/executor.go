@@ -258,10 +258,6 @@ func main() {
 
 	setUmask()
 
-	if *maxThreads > 0 {
-		debug.SetMaxThreads(*maxThreads)
-	}
-
 	rootContext := context.Background()
 
 	// Flags must be parsed before config secrets integration is enabled since
@@ -275,6 +271,10 @@ func main() {
 	}
 
 	config.ReloadOnSIGHUP()
+
+	if *maxThreads > 0 {
+		debug.SetMaxThreads(*maxThreads)
+	}
 
 	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
