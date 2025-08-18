@@ -253,9 +253,6 @@ func main() {
 	if err := scheduler_server.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := remote_execution_redis_client.RegisterRemoteExecutionClient(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
 
 	if err := kms.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
