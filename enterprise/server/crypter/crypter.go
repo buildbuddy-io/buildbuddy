@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/cipher"
 	"crypto/rand"
+	"flag"
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -18,10 +20,14 @@ import (
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
+var keyTTL = flag.Duration("crypter.key_ttl", 10*time.Minute, "The maximum amount of time a key can be cached without being re-verified before it is considered invalid.")
+
 const (
 	// This must be exposed because it is used as an input to the
 	// key-derivation function in crypter_service.
 	EncryptedDataHeaderVersion = 1
+
+	PlainTextChunkSize = 1024 * 1024 // 1 MiB
 
 	encryptedDataHeaderSignature = "BB"
 	nonceSize                    = chacha20poly1305.NonceSizeX
@@ -33,6 +39,10 @@ const (
 type DerivedKey struct {
 	Key      []byte
 	Metadata *sgpb.EncryptionMetadata
+}
+
+func GetKeyTTL() time.Duration {
+	return *keyTTL
 }
 
 func getCipher(compositeKey []byte) (cipher.AEAD, error) {
