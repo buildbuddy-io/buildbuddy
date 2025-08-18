@@ -39,6 +39,7 @@ genrule(
         "//enterprise/app/iprules:iprules.css",
         "//enterprise/app/org:org.css",
         "//enterprise/app/org_picker:org_picker.css",
+        "//enterprise/app/product_spotlight:product_spotlight.css",
         "//enterprise/app/settings:settings.css",
         "//enterprise/app/quota:quota.css",
         "//enterprise/app/repo:repo.css",

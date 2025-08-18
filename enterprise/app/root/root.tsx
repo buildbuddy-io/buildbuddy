@@ -42,6 +42,8 @@ import { api_key } from "../../../proto/api_key_ts_proto";
 import CliLoginComponent from "../cli_login/cli_login";
 import CodeSearchComponent from "../codesearch/codesearch";
 import ExecutorsComponent from "../executors/executors";
+import ProductSpotlightComponent from "../product_spotlight/product_spotlight";
+import ProductSpotlightDetailComponent from "../product_spotlight/product_spotlight_detail";
 import OrgAccessDeniedComponent from "../org/org_access_denied";
 
 interface State {
@@ -68,6 +70,7 @@ capabilities.register("BuildBuddy Enterprise", true, [
   Path.tapPath,
   Path.codePath,
   Path.codesearchPath,
+  Path.productSpotlightPath,
 ]);
 
 interface ImpersonationProps {
@@ -227,6 +230,8 @@ export default class EnterpriseRootComponent extends React.Component {
     let repo = this.state.path.startsWith("/repo");
     let review = this.state.user && this.state.path.startsWith("/reviews");
     let codesearch = this.state.user && this.state.path.startsWith("/search");
+    let productSpotlight = this.state.user && this.state.path.startsWith("/product-spotlight");
+    let productSpotlightId = this.state.user && router.getProductSpotlightId(this.state.path);
     let fallback =
       !code &&
       !cliLogin &&
@@ -250,7 +255,8 @@ export default class EnterpriseRootComponent extends React.Component {
       !auditLogs &&
       !repo &&
       !codesearch &&
-      !review;
+      !review &&
+      !productSpotlight;
 
     let setup =
       (this.state.path.startsWith("/docs/setup") && (this.state.user || capabilities.anonymous)) ||
@@ -403,6 +409,16 @@ export default class EnterpriseRootComponent extends React.Component {
                   {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                   {repo && <RepoComponent path={this.state.path} search={this.state.search} user={this.state.user} />}
                   {codesearch && <CodeSearchComponent path={this.state.path} search={this.state.search} />}
+                  {productSpotlight && this.state.user && !productSpotlightId && (
+                    <ProductSpotlightComponent user={this.state.user} search={this.state.search} />
+                  )}
+                  {productSpotlight && this.state.user && productSpotlightId && (
+                    <ProductSpotlightDetailComponent
+                      user={this.state.user}
+                      spotlightId={productSpotlightId}
+                      search={this.state.search}
+                    />
+                  )}
                   {review && (
                     <Suspense fallback={<div className="loading" />}>
                       <CodeReviewComponent path={this.state.path} />

@@ -18,6 +18,7 @@ import {
   SearchCode,
   Sliders,
   Snowflake,
+  Sparkles,
   Terminal,
   Users,
   ZoomIn,
@@ -121,6 +122,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
 
   isAuditLogsSelected() {
     return this.props.path.startsWith("/audit-logs/");
+  }
+
+  isProductSpotlightSelected() {
+    return this.props.path.startsWith("/product-spotlight/");
   }
 
   refreshCurrentPage() {
@@ -232,6 +237,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
               <span className="sidebar-item-text">Search</span>
             </SidebarLink>
           )}
+          <SidebarLink selected={this.isProductSpotlightSelected()} href={Path.productSpotlightPath} title="Product Spotlight">
+            <Sparkles className="icon" />
+            <span className="sidebar-item-text">Product spotlight</span>
+          </SidebarLink>
           <SidebarLink selected={this.isSetupSelected()} href={Path.setupPath} title="Quickstart">
             <Terminal className="icon" />
             <span className="sidebar-item-text">Quickstart</span>

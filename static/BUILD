@@ -7,6 +7,7 @@ filegroup(
     srcs = glob([
         "favicon/**",
         "image/**",
+        "spotlights/**",
         "favicon.ico",
         "index.html",
     ]),
