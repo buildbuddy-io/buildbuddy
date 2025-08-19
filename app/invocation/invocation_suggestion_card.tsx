@@ -3,7 +3,6 @@ import React from "react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
-import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/user";
 import capabilities from "../capabilities/capabilities";
 import { TextLink } from "../components/link/link";
