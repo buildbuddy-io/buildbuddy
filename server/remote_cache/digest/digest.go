@@ -689,11 +689,11 @@ func Diff(s1 []*repb.Digest, s2 []*repb.Digest) (missingFromS1 []*repb.Digest, m
 }
 
 func (g *Generator) fill(p []byte) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
 	todo := len(p)
 	offset := 0
 	compressionPercent := int64(g.compressionRatio * 100)
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	for {
 		// Generate a new random int64 (8 bytes) with a percent chance given by
 		// the compression ratio. This is a *very* rough way to generate blobs
