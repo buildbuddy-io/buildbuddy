@@ -121,7 +121,12 @@ export interface Match {
  * results. It does *not* do a full ANSI parse, which is too expensive. Instead,
  * ANSI parsing is done lazily, when lines are rendered.
  */
-export function getContent(text: string, search: string, lineLengthLimit: number | null, caseSensitive: boolean = false): Content {
+export function getContent(
+  text: string,
+  search: string,
+  lineLengthLimit: number | null,
+  caseSensitive: boolean = false
+): Content {
   // If the line length limit is not yet known, then return empty contents,
   // since we don't yet know how to wrap the contents.
   if (lineLengthLimit === null) {
