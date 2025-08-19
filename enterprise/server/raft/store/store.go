@@ -49,6 +49,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/elastic/gosigar"
@@ -56,6 +57,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
+	"github.com/lni/dragonboat/v4/tools"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
@@ -700,6 +702,12 @@ func (s *Store) Start() error {
 		s.deleteSessionWorker.Start(s.egCtx)
 		return nil
 	})
+	if raftConfig.SnapshotExportEnabled() {
+		s.eg.Go(func() error {
+			s.periodicSnapshotExport(s.egCtx)
+			return nil
+		})
+	}
 	s.eg.Go(func() error {
 		s.setupPartitions(s.egCtx)
 		return nil
@@ -1162,6 +1170,119 @@ func (s *Store) SnapshotCluster(ctx context.Context, rangeID uint64) error {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
+}
+
+// ExportSnapshot exports a snapshot for the given range with Exported=true option
+func (s *Store) ExportSnapshot(ctx context.Context, rangeID uint64) error {
+	defer canary.Start("ExportSnapshot", 30*time.Second)()
+	if _, ok := ctx.Deadline(); !ok {
+		c, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		ctx = c
+	}
+	opts := dragonboat.SnapshotOption{
+		OverrideCompactionOverhead: true,
+		CompactionOverhead:         0,
+		Exported:                   true,
+	}
+
+	retrier := retry.DefaultWithContext(ctx)
+	var lastError error
+	for retrier.Next() {
+		_, err := s.nodeHost.SyncRequestSnapshot(ctx, rangeID, opts)
+		if err == nil {
+			log.Infof("Successfully exported snapshot for range %d", rangeID)
+			return nil
+		}
+		lastError = err
+		log.Warningf("Failed to export snapshot for range %d: %v, retrying...", rangeID, err)
+	}
+	return status.InternalErrorf("ExportSnapshot exceeded retry for range %d, lastError: %s", rangeID, lastError)
+}
+
+// ImportSnapshot imports a snapshot from an exported snapshot directory
+func (s *Store) ImportSnapshot(ctx context.Context, rangeID uint64, snapshotDir string) error {
+	defer canary.Start("ImportSnapshot", 60*time.Second)()
+	if _, ok := ctx.Deadline(); !ok {
+		c, cancel := context.WithTimeout(ctx, 60*time.Second)
+		defer cancel()
+		ctx = c
+	}
+
+	err := tools.ImportSnapshot(s.nodeHost, snapshotDir, rangeID)
+	if err != nil {
+		return status.InternalErrorf("Failed to import snapshot for range %d from %s: %v", rangeID, snapshotDir, err)
+	}
+
+	log.Infof("Successfully imported snapshot for range %d from %s", rangeID, snapshotDir)
+	return nil
+}
+
+// ExportAllSnapshots exports snapshots for all active ranges
+func (s *Store) ExportAllSnapshots(ctx context.Context) error {
+	nhInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
+		SkipLogInfo: true,
+	})
+
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.SetLimit(raftConfig.SnapshotExportNumWorkers())
+
+	for _, shardInfo := range nhInfo.ShardInfoList {
+		rangeID := shardInfo.ShardID
+		eg.Go(func() error {
+			return s.ExportSnapshot(ctx, rangeID)
+		})
+	}
+
+	return eg.Wait()
+}
+
+// periodicSnapshotExport runs periodic snapshot exports based on the configured interval
+func (s *Store) periodicSnapshotExport(ctx context.Context) {
+	if raftConfig.SnapshotExportDir() == "" {
+		log.Warning("Snapshot export enabled but no export directory configured")
+		return
+	}
+
+	ticker := time.NewTicker(raftConfig.SnapshotExportInterval())
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			log.Info("Starting periodic snapshot export")
+			if err := s.ExportAllSnapshots(ctx); err != nil {
+				log.Errorf("Failed to export snapshots: %v", err)
+			} else {
+				log.Info("Completed periodic snapshot export")
+			}
+		}
+	}
+}
+
+// RestoreFromSnapshot restores the nodehost from an exported snapshot directory
+// This should be called before starting the nodehost
+func (s *Store) RestoreFromSnapshot(ctx context.Context, snapshotDir string) error {
+	defer canary.Start("RestoreFromSnapshot", 5*time.Minute)()
+	
+	if s.nodeHost != nil {
+		return status.FailedPreconditionError("Cannot restore from snapshot while nodehost is running")
+	}
+
+	// Use dragonboat tools to restore from snapshot
+	// Note: This is a placeholder implementation. The actual restoration process
+	// would depend on the specific snapshot format and nodehost configuration
+	log.Infof("Restoring nodehost from snapshot directory: %s", snapshotDir)
+	
+	// The restoration would typically involve:
+	// 1. Stopping any existing nodehost
+	// 2. Clearing existing data directories
+	// 3. Importing snapshot data
+	// 4. Reinitializing the nodehost with restored data
+	
+	return status.UnimplementedError("RestoreFromSnapshot is not yet fully implemented")
 }
 
 // ListReplicasForTest lists replicas that are opened in the machine

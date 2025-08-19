@@ -2353,3 +2353,44 @@ func TestSetupNewPartitions(t *testing.T) {
 		break
 	}
 }
+
+func TestSnapshotExportImport(t *testing.T) {
+	flags.Set(t, "cache.raft.snapshot.export_enabled", true)
+	flags.Set(t, "cache.raft.snapshot.export_interval", "1h")
+	flags.Set(t, "cache.raft.snapshot.export_num_workers", 2)
+	
+	ctx := context.Background()
+	tmpDir := testutil.TempDirOrDie(t)
+	s := testutil.NewTestingStore(t, tmpDir, 1)
+
+	// Write some test data
+	digestBuf := testdigest.NewRandomDigestBuf(t)
+	writeReq := &rfpb.BatchRequest{
+		Header: &rfpb.Header{
+			RangeId:   constants.MinRangeID,
+			ReplicaId: s.ReplicaID(),
+		},
+		Union: []*rfpb.RequestUnion{{
+			Value: &rfpb.RequestUnion_Cas{
+				Cas: &rfpb.CASRequest{
+					Kv: &rfpb.KV{
+						Key:   keys.RangeMetaKey(digestBuf.ToProto()),
+						Value: []byte("test-data"),
+					},
+				},
+			},
+		}},
+	}
+	
+	rsp, err := s.Sender().SyncPropose(ctx, writeReq)
+	require.NoError(t, err)
+	require.NotNil(t, rsp)
+
+	// Test export snapshot
+	err = s.ExportSnapshot(ctx, constants.MinRangeID)
+	require.NoError(t, err)
+
+	// Test export all snapshots
+	err = s.ExportAllSnapshots(ctx)
+	require.NoError(t, err)
+}

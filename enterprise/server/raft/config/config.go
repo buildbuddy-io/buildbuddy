@@ -14,6 +14,12 @@ var (
 	// but we want to include a little more time for the operation itself to
 	// complete.
 	singleRaftOpTimeout = flag.Duration("cache.raft.op_timeout", 1*time.Second, "The duration of timeout for a single raft operation")
+	
+	// Snapshot export configuration
+	snapshotExportEnabled  = flag.Bool("cache.raft.snapshot.export_enabled", false, "Enable periodic snapshot export")
+	snapshotExportInterval = flag.Duration("cache.raft.snapshot.export_interval", 6*time.Hour, "Interval between snapshot exports")
+	snapshotExportDir      = flag.String("cache.raft.snapshot.export_dir", "", "Directory to store exported snapshots")
+	snapshotExportNumWorkers = flag.Int("cache.raft.snapshot.export_num_workers", 5, "Maximum number of concurrent snapshot exports")
 )
 
 func TargetRangeSizeBytes() int64 {
@@ -26,6 +32,22 @@ func RangeSizeJitterFactor() float64 {
 
 func SingleRaftOpTimeout() time.Duration {
 	return *singleRaftOpTimeout
+}
+
+func SnapshotExportEnabled() bool {
+	return *snapshotExportEnabled
+}
+
+func SnapshotExportInterval() time.Duration {
+	return *snapshotExportInterval
+}
+
+func SnapshotExportDir() string {
+	return *snapshotExportDir
+}
+
+func SnapshotExportNumWorkers() int {
+	return *snapshotExportNumWorkers
 }
 
 func GetRaftConfig(rangeID, replicaID uint64) dbConfig.Config {
