@@ -596,6 +596,7 @@ ts_library(
         "//app/invocation:invocation_model",
         "//proto:execution_stats_ts_proto",
         "//proto:group_ts_proto",
+        "//proto:invocation_ts_proto",
     ],
 )
 

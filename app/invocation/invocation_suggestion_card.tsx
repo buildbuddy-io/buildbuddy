@@ -96,9 +96,15 @@ export const getTimingDataSuggestion: SuggestionMatcher = ({ model }) => {
   };
 };
 
-export const getTestShardingSuggestion = ({ model, resultEvents }: { model: InvocationModel; resultEvents?: invocation.InvocationEvent[] }) => {
+export const getTestShardingSuggestion = ({
+  model,
+  resultEvents,
+}: {
+  model: InvocationModel;
+  resultEvents?: invocation.InvocationEvent[];
+}) => {
   console.log("Test sharding suggestion: starting check");
-  
+
   if (!capabilities.config.expandedSuggestionsEnabled) {
     console.log("Test sharding suggestion: expandedSuggestionsEnabled is false");
     return null;
@@ -126,12 +132,12 @@ export const getTestShardingSuggestion = ({ model, resultEvents }: { model: Invo
   // Check if any tests have multiple shards configured by looking at test results
   let hasMultipleShards = false;
   console.log("Test sharding suggestion: checking test results, events length:", resultEvents?.length || 0);
-  
+
   if (resultEvents && resultEvents.length > 0) {
     // Early exit optimization: stop as soon as we find two different shard numbers
     let firstShard: number | null = null;
     for (const event of resultEvents) {
-      const shard = event.buildEvent?.id?.testResult?.shard || event.id?.testResult?.shard || 0;
+      const shard = event.buildEvent?.id?.testResult?.shard || 0;
       console.log("Test sharding suggestion: event shard:", shard);
       if (firstShard === null) {
         firstShard = shard;
@@ -141,8 +147,13 @@ export const getTestShardingSuggestion = ({ model, resultEvents }: { model: Invo
         break;
       }
     }
-    
-    console.log("Test sharding suggestion: final shard check - firstShard:", firstShard, "hasMultipleShards:", hasMultipleShards);
+
+    console.log(
+      "Test sharding suggestion: final shard check - firstShard:",
+      firstShard,
+      "hasMultipleShards:",
+      hasMultipleShards
+    );
   }
 
   if (!hasMultipleShards) {
@@ -156,8 +167,7 @@ export const getTestShardingSuggestion = ({ model, resultEvents }: { model: Invo
     message: (
       <>
         When using <BazelFlag>--test_filter</BazelFlag>, consider adding{" "}
-        <BazelFlag>--test_sharding_strategy=disabled</BazelFlag> to find the test
-		logs faster.
+        <BazelFlag>--test_sharding_strategy=disabled</BazelFlag> to find the test logs faster.
       </>
     ),
     reason: (
