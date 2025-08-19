@@ -259,9 +259,12 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 
 	var rc io.ReadCloser = io.NopCloser(in)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		rbuf := make([]byte, 0, uploadBufSizeBytes)
-		cbuf := make([]byte, 0, uploadBufSizeBytes)
-		reader, err := compression.NewZstdCompressingReader(io.NopCloser(in), rbuf[:uploadBufSizeBytes], cbuf[:uploadBufSizeBytes])
+		rbuf, cbuf := uploadBufPool.Get(), uploadBufPool.Get()
+		defer func() {
+			uploadBufPool.Put(rbuf)
+			uploadBufPool.Put(cbuf)
+		}()
+		reader, err := compression.NewZstdCompressingReader(rc, rbuf, cbuf)
 		if err != nil {
 			return nil, 0, status.InternalErrorf("Failed to compress blob: %s", err)
 		}
@@ -269,9 +272,10 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	}
 	defer rc.Close()
 
-	buf := make([]byte, uploadBufSizeBytes)
+	buf := uploadBufPool.Get()
+	defer uploadBufPool.Put(buf)
 	bytesUploaded := int64(0)
-	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+	sender := rpcutil.NewSender(ctx, stream)
 	resourceName := r.NewUploadString()
 	for {
 		n, err := ioutil.ReadTryFillBuffer(rc, buf)
