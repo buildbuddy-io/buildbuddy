@@ -13,6 +13,10 @@
   flex-grow: 1;
 }
 
+.executors-page .executor-custom-resource div {
+  flex-grow: 0;
+}
+
 .executor-section div.executor-section-title {
   width: 200px;
   flex-grow: 0;
@@ -20,6 +24,23 @@
   text-align: left;
   margin-right: 16px;
   font-weight: 700;
+}
+
+.executor-custom-resource {
+  display: flex;
+  flex-direction: column;
+}
+
+.executor-custom-resource-wrapper {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.executor-custom-resource-key {
+  width: 280px;
+  margin-right: 16px;
+  font-weight: 600;
 }
 
 .executor-section .executor-history-button {

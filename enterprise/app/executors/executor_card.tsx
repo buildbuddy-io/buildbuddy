@@ -40,20 +40,27 @@ export default class ExecutorCardComponent extends React.Component<Props> {
               <div className="executor-section-title">Assignable Milli CPU:</div>
               <div>{this.props.node.assignableMilliCpu}</div>
             </div>
+            {this.props.node.assignableCustomResources && this.props.node.assignableCustomResources.length > 0 && (
+              <div className="executor-section">
+                <div className="executor-section-title">Assignable Resources:</div>
+                <div className="executor-custom-resource">
+                  {this.props.node.assignableCustomResources.map((r) => {
+                    return (
+                      <div className="executor-custom-resource-wrapper">
+                        <div className="executor-custom-resource-key">{r.name}: </div>
+                        <div>{r.value}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {this.props.node.supportedIsolationTypes && this.props.node.supportedIsolationTypes.length > 0 && (
               <div className="executor-section">
                 <div className="executor-section-title">Isolation Types:</div>
                 <div>{this.props.node.supportedIsolationTypes.join(", ")}</div>
               </div>
             )}
-            {this.props.node.assignableCustomResources.map((r) => {
-              return (
-                <div className="executor-section">
-                  <div className="executor-section-title">Assignable {r.name}:</div>
-                  <div>{r.value}</div>
-                </div>
-              );
-            })}
             <div className="executor-section">
               <div className="executor-section-title">Version:</div>
               <div>{this.props.node.version}</div>
