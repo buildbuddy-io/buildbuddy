@@ -37,6 +37,7 @@ import TargetArtifactsCardComponent from "./target_artifacts_card";
 import TargetTestCoverageCardComponent from "./target_test_coverage_card";
 import TargetTestDocumentCardComponent from "./target_test_document_card";
 import TargetTestLogCardComponent from "./target_test_log_card";
+import { getTestShardingSuggestion, SuggestionComponent } from "../invocation/invocation_suggestion_card";
 
 const Status = api_common.v1.Status;
 
@@ -261,6 +262,11 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     return `Run ${testResult.run} (Attempt ${testResult.attempt}, Shard ${testResult.shard})`;
   }
 
+  private renderTestShardingSuggestionCard(resultEvents: any[]) {
+    const suggestion = getTestShardingSuggestion({ model: this.props.model, resultEvents });
+    return suggestion ? <SuggestionComponent suggestion={suggestion} /> : null;
+  }
+
   getTab() {
     // If the user explicitly clicked on a tab, show that
     if (this.props.tab) {
@@ -409,6 +415,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
           </div>
         </div>
         <div className="container nopadding-dense">
+          {this.renderTestShardingSuggestionCard(resultEvents)}
           {resultEvents.length > 1 && (
             <div className={`runs ${resultEvents.length > 9 && "run-grid"}`}>
               {resultEvents.map((event, index) => (

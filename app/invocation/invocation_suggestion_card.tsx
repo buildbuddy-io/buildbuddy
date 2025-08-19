@@ -2,6 +2,7 @@ import { AlertCircle, AlertTriangle, HelpCircle } from "lucide-react";
 import React from "react";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
+import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/user";
 import capabilities from "../capabilities/capabilities";
 import { TextLink } from "../components/link/link";
@@ -92,6 +93,79 @@ export const getTimingDataSuggestion: SuggestionMatcher = ({ model }) => {
       </>
     ),
     reason: <>Shown because these flags are neither enabled nor explicitly disabled.</>,
+  };
+};
+
+export const getTestShardingSuggestion = ({ model, resultEvents }: { model: InvocationModel; resultEvents?: invocation.InvocationEvent[] }) => {
+  console.log("Test sharding suggestion: starting check");
+  
+  if (!capabilities.config.expandedSuggestionsEnabled) {
+    console.log("Test sharding suggestion: expandedSuggestionsEnabled is false");
+    return null;
+  }
+  if (!model.isBazelInvocation()) {
+    console.log("Test sharding suggestion: not a Bazel invocation");
+    return null;
+  }
+
+  // Only suggest for test commands
+  const command = model.getCommand();
+  console.log("Test sharding suggestion: command is", command);
+  if (command !== "test") return null;
+
+  // Check if --test_filter is specified
+  const testFilter = model.optionsMap.get("test_filter");
+  console.log("Test sharding suggestion: test_filter is", testFilter);
+  if (!testFilter) return null;
+
+  // Check if --test_sharding_strategy is already set to disabled
+  const testShardingStrategy = model.optionsMap.get("test_sharding_strategy");
+  console.log("Test sharding suggestion: test_sharding_strategy is", testShardingStrategy);
+  if (testShardingStrategy === "disabled") return null;
+
+  // Check if any tests have multiple shards configured by looking at test results
+  let hasMultipleShards = false;
+  console.log("Test sharding suggestion: checking test results, events length:", resultEvents?.length || 0);
+  
+  if (resultEvents && resultEvents.length > 0) {
+    // Early exit optimization: stop as soon as we find two different shard numbers
+    let firstShard: number | null = null;
+    for (const event of resultEvents) {
+      const shard = event.buildEvent?.id?.testResult?.shard || event.id?.testResult?.shard || 0;
+      console.log("Test sharding suggestion: event shard:", shard);
+      if (firstShard === null) {
+        firstShard = shard;
+      } else if (firstShard !== shard) {
+        hasMultipleShards = true;
+        console.log("Test sharding suggestion: found multiple different shards:", firstShard, "and", shard);
+        break;
+      }
+    }
+    
+    console.log("Test sharding suggestion: final shard check - firstShard:", firstShard, "hasMultipleShards:", hasMultipleShards);
+  }
+
+  if (!hasMultipleShards) {
+    console.log("Test sharding suggestion: no tests with multiple shards found");
+    return null;
+  }
+
+  console.log("Test sharding suggestion: returning suggestion");
+  return {
+    level: SuggestionLevel.INFO,
+    message: (
+      <>
+        When using <BazelFlag>--test_filter</BazelFlag>, consider adding{" "}
+        <BazelFlag>--test_sharding_strategy=disabled</BazelFlag> to find the test
+		logs faster.
+      </>
+    ),
+    reason: (
+      <>
+        Shown because this build uses <span className="inline-code">--test_filter</span> with sharded tests, which can
+        cause misleading "no tests to run" warnings when test shards don't contain matching tests.
+      </>
+    ),
   };
 };
 
