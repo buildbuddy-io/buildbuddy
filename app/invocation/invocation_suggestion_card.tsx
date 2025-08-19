@@ -1,5 +1,6 @@
 import { AlertCircle, AlertTriangle, HelpCircle } from "lucide-react";
 import React from "react";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
@@ -101,7 +102,7 @@ export const getTestShardingSuggestion = ({
   resultEvents,
 }: {
   model: InvocationModel;
-  resultEvents?: invocation.InvocationEvent[];
+  resultEvents?: build_event_stream.BuildEvent[];
 }) => {
   console.log("Test sharding suggestion: starting check");
 
@@ -137,7 +138,7 @@ export const getTestShardingSuggestion = ({
     // Early exit optimization: stop as soon as we find two different shard numbers
     let firstShard: number | null = null;
     for (const event of resultEvents) {
-      const shard = event.buildEvent?.id?.testResult?.shard || 0;
+      const shard = event.id?.testResult?.shard || 0;
       console.log("Test sharding suggestion: event shard:", shard);
       if (firstShard === null) {
         firstShard = shard;
