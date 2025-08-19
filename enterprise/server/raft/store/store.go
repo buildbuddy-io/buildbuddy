@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
-	"flag"
 	"fmt"
 	"math"
 	"net"
@@ -44,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -78,6 +78,13 @@ var (
 	enableDriver           = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
 	enableTxnCleanup       = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
 	enableRegistryPreload  = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
+
+	backupOptions = flag.Struct("cache.raft.backup", raftConfig.BackupOptions{
+		Enabled:    false,
+		Interval:   6 * time.Hour,
+		Dir:        "",
+		NumWorkers: 5,
+	}, "Backup configuration")
 )
 
 const (
@@ -702,9 +709,9 @@ func (s *Store) Start() error {
 		s.deleteSessionWorker.Start(s.egCtx)
 		return nil
 	})
-	if raftConfig.SnapshotExportEnabled() {
+	if opts := *backupOptions; opts.Enabled {
 		s.eg.Go(func() error {
-			s.periodicSnapshotExport(s.egCtx)
+			s.periodicSnapshotExport(s.egCtx, opts)
 			return nil
 		})
 	}
@@ -1219,13 +1226,13 @@ func (s *Store) ImportSnapshot(ctx context.Context, rangeID uint64, snapshotDir 
 }
 
 // ExportAllSnapshots exports snapshots for all active ranges
-func (s *Store) ExportAllSnapshots(ctx context.Context) error {
+func (s *Store) ExportAllSnapshots(ctx context.Context, numWorkers int) error {
 	nhInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
 		SkipLogInfo: true,
 	})
 
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(raftConfig.SnapshotExportNumWorkers())
+	eg.SetLimit(numWorkers)
 
 	for _, shardInfo := range nhInfo.ShardInfoList {
 		rangeID := shardInfo.ShardID
@@ -1237,14 +1244,14 @@ func (s *Store) ExportAllSnapshots(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// periodicSnapshotExport runs periodic snapshot exports based on the configured interval
-func (s *Store) periodicSnapshotExport(ctx context.Context) {
-	if raftConfig.SnapshotExportDir() == "" {
+// periodicSnapshotExport runs periodic snapshot exports based on the provided configuration
+func (s *Store) periodicSnapshotExport(ctx context.Context, opts BackupOptions) {
+	if opts.Dir == "" {
 		log.Warning("Snapshot export enabled but no export directory configured")
 		return
 	}
 
-	ticker := time.NewTicker(raftConfig.SnapshotExportInterval())
+	ticker := time.NewTicker(opts.Interval)
 	defer ticker.Stop()
 
 	for {
@@ -1253,7 +1260,7 @@ func (s *Store) periodicSnapshotExport(ctx context.Context) {
 			return
 		case <-ticker.C:
 			log.Info("Starting periodic snapshot export")
-			if err := s.ExportAllSnapshots(ctx); err != nil {
+			if err := s.ExportAllSnapshots(ctx, opts.NumWorkers); err != nil {
 				log.Errorf("Failed to export snapshots: %v", err)
 			} else {
 				log.Info("Completed periodic snapshot export")
@@ -1266,7 +1273,7 @@ func (s *Store) periodicSnapshotExport(ctx context.Context) {
 // This should be called before starting the nodehost
 func (s *Store) RestoreFromSnapshot(ctx context.Context, snapshotDir string) error {
 	defer canary.Start("RestoreFromSnapshot", 5*time.Minute)()
-	
+
 	if s.nodeHost != nil {
 		return status.FailedPreconditionError("Cannot restore from snapshot while nodehost is running")
 	}
@@ -1275,13 +1282,13 @@ func (s *Store) RestoreFromSnapshot(ctx context.Context, snapshotDir string) err
 	// Note: This is a placeholder implementation. The actual restoration process
 	// would depend on the specific snapshot format and nodehost configuration
 	log.Infof("Restoring nodehost from snapshot directory: %s", snapshotDir)
-	
+
 	// The restoration would typically involve:
 	// 1. Stopping any existing nodehost
 	// 2. Clearing existing data directories
 	// 3. Importing snapshot data
 	// 4. Reinitializing the nodehost with restored data
-	
+
 	return status.UnimplementedError("RestoreFromSnapshot is not yet fully implemented")
 }
 

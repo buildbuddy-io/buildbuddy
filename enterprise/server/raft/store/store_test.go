@@ -2355,12 +2355,13 @@ func TestSetupNewPartitions(t *testing.T) {
 }
 
 func TestSnapshotExportImport(t *testing.T) {
-	flags.Set(t, "cache.raft.snapshot.export_enabled", true)
-	flags.Set(t, "cache.raft.snapshot.export_interval", "1h")
-	flags.Set(t, "cache.raft.snapshot.export_num_workers", 2)
-	
 	ctx := context.Background()
 	tmpDir := testutil.TempDirOrDie(t)
+
+	flags.Set(t, "cache.raft.backup.enabled", true)
+	flags.Set(t, "cache.raft.backup.interval", "1h")
+	flags.Set(t, "cache.raft.backup.num_workers", 2)
+	flags.Set(t, "cache.raft.backup.dir", tmpDir)
 	s := testutil.NewTestingStore(t, tmpDir, 1)
 
 	// Write some test data
@@ -2381,7 +2382,7 @@ func TestSnapshotExportImport(t *testing.T) {
 			},
 		}},
 	}
-	
+
 	rsp, err := s.Sender().SyncPropose(ctx, writeReq)
 	require.NoError(t, err)
 	require.NotNil(t, rsp)
