@@ -688,29 +688,26 @@ func Diff(s1 []*repb.Digest, s2 []*repb.Digest) (missingFromS1 []*repb.Digest, m
 	return missingFromS1, missingFromS2
 }
 
-type randomDataMaker struct {
-	src              rand.Source
-	compressionRatio float64
-	val              int64
-}
-
-func (r *randomDataMaker) Read(p []byte) (n int, err error) {
+func (g *Generator) fill(p []byte) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	todo := len(p)
 	offset := 0
+	compressionPercent := int64(g.compressionRatio * 100)
 	for {
 		// Generate a new random int64 (8 bytes) if we haven't generated one
 		// yet, or with a percent chance given by the compression ratio. This is
 		// a *very* rough way to generate blobs with the average compression
 		// ratios that we see in practice.
-		if r.val == 0 || r.src.Int63()%100 >= int64(r.compressionRatio*100) {
-			r.val = int64(r.src.Int63())
+		var val int64
+		if g.src.Int63()%100 >= compressionPercent {
+			val = g.src.Int63()
 		}
-		val := r.val
-		for i := 0; i < 8; i++ {
-			p[offset] = byte(val & 0xff)
+		for range 8 {
+			p[offset] = byte(val)
 			todo--
 			if todo == 0 {
-				return len(p), nil
+				return
 			}
 			offset++
 			val >>= 8
@@ -719,8 +716,9 @@ func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 }
 
 type Generator struct {
-	randMaker *randomDataMaker
-	mu        sync.Mutex
+	src              rand.Source
+	compressionRatio float64
+	mu               sync.Mutex
 }
 
 // RandomGenerator returns a digest sample generator for use in testing tools.
@@ -728,10 +726,8 @@ type Generator struct {
 // practice.
 func RandomGenerator(seed int64) *Generator {
 	return &Generator{
-		randMaker: &randomDataMaker{
-			src:              rand.NewSource(seed),
-			compressionRatio: 0.7,
-		},
+		src:              rand.NewSource(seed),
+		compressionRatio: 0.7,
 	}
 }
 
@@ -740,9 +736,7 @@ func RandomGenerator(seed int64) *Generator {
 // useful in cases where unique digests are needed.
 func UniformRandomGenerator(seed int64) *Generator {
 	return &Generator{
-		randMaker: &randomDataMaker{
-			src: rand.NewSource(seed),
-		},
+		src: rand.NewSource(seed),
 	}
 }
 
@@ -755,21 +749,16 @@ func (g *Generator) RandomDigestReader(sizeBytes int64) (*repb.Digest, io.ReadSe
 }
 
 func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
 	// Read some random bytes.
-	buf := bytes.NewBuffer(make([]byte, 0, sizeBytes))
-	if _, err := io.CopyN(buf, g.randMaker, sizeBytes); err != nil {
-		return nil, nil, err
-	}
+	buf := make([]byte, sizeBytes)
+	g.fill(buf)
 
 	// Compute a digest for the random bytes.
-	d, err := Compute(bytes.NewReader(buf.Bytes()), repb.DigestFunction_SHA256)
+	d, err := Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, nil, err
 	}
-	return d, buf.Bytes(), nil
+	return d, buf, nil
 }
 
 // ParseFunction parses a digest function name to a proto.
