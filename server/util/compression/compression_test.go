@@ -196,7 +196,10 @@ func TestCompressingReader_HoldErrors(t *testing.T) {
 	readBufSize := 64
 	compressBufSize := 64
 
-	_, in := testdigest.RandomCASResourceBuf(t, int64(totalBytes))
+	in := make([]byte, totalBytes)
+	for i := range totalBytes {
+		in[i] = byte(i % 256)
+	}
 	er := &erroringReader{
 		inputReader:   bytes.NewReader(in),
 		bytesToAllow:  bytesToAllow,
@@ -216,7 +219,7 @@ func TestCompressingReader_HoldErrors(t *testing.T) {
 		require.Equal(t, len(p), n)
 	}
 
-	p = make([]byte, 32)
+	p = make([]byte, 64)
 	_, err = zrc.Read(p)
 	require.Error(t, err)
 	require.ErrorIs(t, err, errorToReturn)

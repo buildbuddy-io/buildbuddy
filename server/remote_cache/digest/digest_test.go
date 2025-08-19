@@ -555,7 +555,7 @@ func TestRandomGenerator(t *testing.T) {
 	const expectedCompression = 0.3
 	gen := digest.RandomGenerator(0)
 
-	for _, size := range []int64{1_000, 10_000, 100_000} {
+	for _, size := range []int64{0, 1_000, 10_000, 100_000} {
 		d, b, err := gen.RandomDigestBuf(size)
 		cb := compression.CompressZstd(nil, b)
 

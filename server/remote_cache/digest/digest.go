@@ -695,14 +695,13 @@ func (g *Generator) fill(p []byte) {
 	offset := 0
 	compressionPercent := int64(g.compressionRatio * 100)
 	for {
-		// Generate a new random int64 (8 bytes) if we haven't generated one
-		// yet, or with a percent chance given by the compression ratio. This is
-		// a *very* rough way to generate blobs with the average compression
-		// ratios that we see in practice.
-		var val int64
-		if g.src.Int63()%100 >= compressionPercent {
-			val = g.src.Int63()
+		// Generate a new random int64 (8 bytes) with a percent chance given by
+		// the compression ratio. This is a *very* rough way to generate blobs
+		// with the average compression ratios that we see in practice.
+		if g.val == 0 || g.src.Int63()%100 >= compressionPercent {
+			g.val = g.src.Int63()
 		}
+		val := g.val
 		for range 8 {
 			if todo == 0 {
 				return
@@ -716,9 +715,11 @@ func (g *Generator) fill(p []byte) {
 }
 
 type Generator struct {
-	src              rand.Source
 	compressionRatio float64
-	mu               sync.Mutex
+
+	mu  sync.Mutex // mu protects src and val.
+	src rand.Source
+	val int64
 }
 
 // RandomGenerator returns a digest sample generator for use in testing tools.
