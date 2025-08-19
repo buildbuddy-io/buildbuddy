@@ -8,7 +8,6 @@ import (
 	"io"
 	"math"
 	"math/rand"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -54,17 +53,6 @@ var (
 	setRequestMetadata = flag.Bool("set_request_metadata", false, "Whether to set a simulated bazel request metadata header.")
 )
 
-const (
-	byteStreamRead   = "google.bytestream.ByteStream/Read"
-	byteStreamWrite  = "google.bytestream.ByteStream/Write"
-	findMissingBlobs = "build.bazel.remote.execution.v2.ContentAddressableStorage/FindMissingBlobs"
-)
-
-var (
-	digestGenerator *digest.Generator
-	mu              sync.Mutex
-)
-
 var (
 	// Data computed by sampling stored cache blob sizes.
 	histBuckets     = []int{1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
@@ -79,6 +67,8 @@ var (
 	}, []string{
 		metrics.StatusHumanReadableLabel,
 	})
+
+	digestGenerator *digest.Generator
 )
 
 func init() {
@@ -188,8 +178,8 @@ func main() {
 	digestGenerator = digest.RandomGenerator(time.Now().Unix())
 	ctx := context.Background()
 
-	if *writeQPS == 0 {
-		log.Fatalf("Write QPS cannot be 0 -- data must be written before it can be read")
+	if *writeQPS <= 0 {
+		log.Fatalf("Write QPS (%v) must be > 0 -- data must be written before it can be read.", *writeQPS)
 	}
 	blobSizeDesc := fmt.Sprintf("size %d bytes", *blobSize)
 	if *blobSize < 0 {
@@ -204,6 +194,7 @@ func main() {
 		monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 	}
 
+	log.Printf("Connecting to target: %q", *cacheTarget)
 	conn, err := grpc_client.DialSimple(*cacheTarget, grpc.WithBlock(), grpc.WithTimeout(*timeout))
 	if err != nil {
 		log.Fatalf("Unable to connect to target '%s': %s", *cacheTarget, err)
@@ -254,6 +245,10 @@ func main() {
 	writeOnce := func() {
 		eg.Go(func() error {
 			ctx, cancel := context.WithTimeout(gctx, *timeout)
+			if rand.Int63n(int64(*writeQPS)) == 0 {
+				// trace 1 QPS
+				ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", "force")
+			}
 			d, err := writeBlob(ctx, bsClient)
 			cancel()
 			if err != nil {
@@ -301,6 +296,10 @@ func main() {
 			}
 
 			ctx, cancel := context.WithTimeout(gctx, *timeout)
+			if rand.Int63n(int64(*readQPS)) == 0 {
+				// trace 1 QPS
+				ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", "force")
+			}
 			err := readBlob(ctx, bsClient, casClient, d)
 			cancel()
 			if err != nil {
@@ -311,7 +310,7 @@ func main() {
 				return err
 			}
 			readQPSCounter.Inc()
-			if rand.Intn(10) < int(*recycleRate*10) {
+			if rand.Float64() < *recycleRate {
 				writtenDigests <- d
 			}
 			return nil
