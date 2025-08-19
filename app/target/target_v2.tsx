@@ -24,6 +24,7 @@ import { OutlinedLinkButton } from "../components/button/link_button";
 import format from "../format/format";
 import CacheRequestsCardComponent from "../invocation/cache_requests_card";
 import InvocationModel from "../invocation/invocation_model";
+import { getTestShardingSuggestion, SuggestionComponent } from "../invocation/invocation_suggestion_card";
 import LinkGithubRepoModal from "../invocation/link_github_repo_modal";
 import { renderTestSize } from "../invocation/target_util";
 import router from "../router/router";
@@ -37,7 +38,6 @@ import TargetArtifactsCardComponent from "./target_artifacts_card";
 import TargetTestCoverageCardComponent from "./target_test_coverage_card";
 import TargetTestDocumentCardComponent from "./target_test_document_card";
 import TargetTestLogCardComponent from "./target_test_log_card";
-import { getTestShardingSuggestion, SuggestionComponent } from "../invocation/invocation_suggestion_card";
 
 const Status = api_common.v1.Status;
 
