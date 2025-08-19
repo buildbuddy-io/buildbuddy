@@ -704,11 +704,11 @@ func (g *Generator) fill(p []byte) {
 			val = g.src.Int63()
 		}
 		for range 8 {
-			p[offset] = byte(val)
-			todo--
 			if todo == 0 {
 				return
 			}
+			p[offset] = byte(val)
+			todo--
 			offset++
 			val >>= 8
 		}
