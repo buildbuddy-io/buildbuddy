@@ -363,7 +363,9 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
 
     const version = getBazelVersion(model);
     // threshold flag is available from Bazel 7.1 forward
-    if (version === null || version.major < 7 || version.minor < 1) return null;
+    if (version === null || version.major < 7 || (version.major == 7 && version.minor < 1)) return null;
+    // experimental_remote_cache_compression_threshold defaults to 100 from Bazel 8.0 forward
+    if (version === null || version.major >= 8) return null;
 
     return {
       level: SuggestionLevel.INFO,
