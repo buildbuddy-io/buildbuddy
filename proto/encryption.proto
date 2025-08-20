@@ -67,7 +67,8 @@ message GetEncryptionKeyRequest {
 }
 
 message EncryptionKeyMetadata {
-  // A unique identifier for this encryption key. Supplied by the server.
+  // A unique identifier for this encryption key. Supplied by the server. This
+  // will be something like "EK123456789012345678".
   string id = 1;
 
   // Encryption keys are versioned to support key rotation. Cache contents are
