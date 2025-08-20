@@ -1,8 +1,8 @@
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
-import SpotlightCard from "./highlight_card";
+import SpotlightCard from "./spotlight_card";
 import router from "../../../app/router/router";
-import SpotlightsService from "./highlights_service";
+import SpotlightsService from "./spotlight_service";
 
 interface SpotlightMetadata {
   title: string;

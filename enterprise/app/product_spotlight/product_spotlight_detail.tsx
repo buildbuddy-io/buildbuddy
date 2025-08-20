@@ -2,7 +2,7 @@ import React from "react";
 import { ArrowLeft, Calendar, User, Tag, ExternalLink } from "lucide-react";
 import { User as AuthUser } from "../../../app/auth/auth_service";
 import router from "../../../app/router/router";
-import SpotlightsService from "./highlights_service";
+import SpotlightsService from "./spotlight_service";
 
 interface SpotlightMetadata {
   title: string;

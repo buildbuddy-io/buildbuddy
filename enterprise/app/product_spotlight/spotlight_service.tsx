@@ -1,3 +1,5 @@
+import {SPOTLIGHT_CONFIGS} from "./spotlight_configs";
+
 interface SpotlightMetadata {
   title: string;
   description: string;
@@ -31,30 +33,9 @@ class SpotlightsService {
       return this.spotlights;
     }
 
-    // In a production environment, this would make HTTP requests to load the markdown files
-    // For now, we'll simulate loading from the file system
-    const spotlightConfigs = [
-      {
-        id: "remote-execution-improvements",
-        filename: "remote-execution-improvements.md"
-      },
-      {
-        id: "buildbuddy-workflows-2.0", 
-        filename: "buildbuddy-workflows-2.0.md"
-      },
-      {
-        id: "code-search-beta",
-        filename: "code-search-beta.md"
-      },
-      {
-        id: "mastering-tests-dashboard",
-        filename: "mastering-tests-dashboard.md"
-      }
-    ];
-
     const loadedSpotlights: Spotlight[] = [];
 
-    for (const config of spotlightConfigs) {
+    for (const config of SPOTLIGHT_CONFIGS) {
       try {
         const spotlight = await this.loadSpotlightFile(config.id, config.filename);
         if (spotlight) {
