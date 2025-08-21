@@ -21,15 +21,6 @@ module.exports = {
     ],
     CLI: ["cli", "cli-plugins"],
     Troubleshooting: ["troubleshooting", "troubleshooting-rbe", "troubleshooting-slow-upload"],
-    Enterprise: [
-      "enterprise",
-      "enterprise-setup",
-      "enterprise-config",
-      "enterprise-helm",
-      "enterprise-rbe",
-      "enterprise-mac-rbe",
-      "enterprise-api",
-    ],
     Monitoring: ["prometheus-metrics-on-prem", "prometheus-metrics-for-cloud"],
     Architecture: [
       "architecture-overview",
