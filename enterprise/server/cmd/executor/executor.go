@@ -69,7 +69,7 @@ import (
 var (
 	appTarget                 = flag.String("executor.app_target", "grpcs://remote.buildbuddy.io", "The GRPC url of a buildbuddy app server.")
 	cacheTarget               = flag.String("executor.cache_target", "", "The GRPC url of the remote cache to use. If empty, the value from --executor.app_target is used.")
-	cacheTargetTrafficPercent = flag.Int("executor.cache_target_traffic_percent", 100, "The percent of cache traffic to send to --executor.cache_target. If not 100, the remainder will be sent to --executor.app_target.")
+	cacheTargetTrafficPercent = flag.Int("executor.cache_target_traffic_percent", -1, "The percent of cache traffic to send to --executor.cache_target. If not 100, the remainder will be sent to --executor.app_target. If -1 (the default), then 100% of cache traffic will be sent to executor.cache_target (which defaults to executor.app_target if not set).")
 	disableLocalCache         = flag.Bool("executor.disable_local_cache", false, "If true, a local file cache will not be used.")
 	deleteFileCacheOnStartup  = flag.Bool("executor.delete_filecache_on_startup", false, "If true, delete the file cache on startup")
 	deleteBuildRootOnStartup  = flag.Bool("executor.delete_build_root_on_startup", false, "If true, delete the build root on startup")
@@ -116,6 +116,17 @@ func dialCacheOrDie(target string, env environment.Env) *grpc_client.ClientConnP
 func initializeCacheClientsOrDie(appTarget, cacheTarget string, cacheTargetTrafficPercent int, realEnv *real_environment.RealEnv) {
 	if isOldEndpoint(appTarget) || isOldEndpoint(cacheTarget) {
 		log.Warning("You are using the old BuildBuddy endpoint, cloud.buildbuddy.io. Migrate `executor.app_target` and `executor.cache_target` (if applicable) to remote.buildbuddy.io for improved performance.")
+	}
+
+	// If the user isn't explicitly configuring cache_target_traffic_percent,
+	// then route 100% to cache_target if configured, otherwise 100% to
+	// app_target.
+	if cacheTargetTrafficPercent == -1 {
+		if cacheTarget == "" {
+			cacheTargetTrafficPercent = 0
+		} else {
+			cacheTargetTrafficPercent = 100
+		}
 	}
 
 	if appTarget == "" {
