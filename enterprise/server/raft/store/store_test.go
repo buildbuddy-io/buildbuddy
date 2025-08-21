@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -11,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
+	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
@@ -19,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -2354,44 +2358,58 @@ func TestSetupNewPartitions(t *testing.T) {
 	}
 }
 
-func TestSnapshotExportImport(t *testing.T) {
+func TestExportAllSnapshots(t *testing.T) {
 	ctx := context.Background()
-	tmpDir := testutil.TempDirOrDie(t)
+	dir := testfs.MakeTempDir(t)
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	stores := []*testutil.TestingStore{s1, s2, s3}
 
-	flags.Set(t, "cache.raft.backup.enabled", true)
-	flags.Set(t, "cache.raft.backup.interval", "1h")
-	flags.Set(t, "cache.raft.backup.num_workers", 2)
-	flags.Set(t, "cache.raft.backup.dir", tmpDir)
-	s := testutil.NewTestingStore(t, tmpDir, 1)
+	sf.StartShard(t, ctx, stores...)
 
-	// Write some test data
-	digestBuf := testdigest.NewRandomDigestBuf(t)
-	writeReq := &rfpb.BatchRequest{
-		Header: &rfpb.Header{
-			RangeId:   constants.MinRangeID,
-			ReplicaId: s.ReplicaID(),
-		},
-		Union: []*rfpb.RequestUnion{{
-			Value: &rfpb.RequestUnion_Cas{
-				Cas: &rfpb.CASRequest{
-					Kv: &rfpb.KV{
-						Key:   keys.RangeMetaKey(digestBuf.ToProto()),
-						Value: []byte("test-data"),
-					},
-				},
-			},
-		}},
-	}
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 
-	rsp, err := s.Sender().SyncPropose(ctx, writeReq)
-	require.NoError(t, err)
-	require.NotNil(t, rsp)
-
-	// Test export snapshot
-	err = s.ExportSnapshot(ctx, constants.MinRangeID)
-	require.NoError(t, err)
+	_ = writeNRecords(ctx, t, s, 50)
 
 	// Test export all snapshots
-	err = s.ExportAllSnapshots(ctx)
+	opts := raftConfig.BackupOptions{
+		Enabled:    true,
+		Dir:        dir,
+		NumWorkers: 2,
+	}
+	err := s.ExportAllSnapshots(ctx, opts)
 	require.NoError(t, err)
+
+	{
+		expectedRD := s.GetRange(1)
+		subdir := filepath.Join(dir, "shard-1")
+		files, err := os.ReadDir(subdir)
+		require.NoError(t, err)
+		require.Len(t, files, 2)
+		require.Contains(t, files[0].Name(), "rd.proto")
+		require.Contains(t, files[1].Name(), "snapshot")
+		data, err := disk.ReadFile(ctx, filepath.Join(subdir, "rd.proto"))
+		require.NoError(t, err)
+		rd := &rfpb.RangeDescriptor{}
+		err = proto.Unmarshal(data, rd)
+		require.NoError(t, err)
+		require.True(t, proto.Equal(expectedRD, rd), "expectedRD: %+v,\n actual: %+v", expectedRD, rd)
+	}
+	{
+		expectedRD := s.GetRange(2)
+		subdir := filepath.Join(dir, "shard-2")
+		files, err := os.ReadDir(filepath.Join(subdir))
+		require.NoError(t, err)
+		require.Len(t, files, 2)
+		require.Contains(t, files[0].Name(), "rd.proto")
+		require.Contains(t, files[1].Name(), "snapshot")
+		data, err := disk.ReadFile(ctx, filepath.Join(subdir, "rd.proto"))
+		require.NoError(t, err)
+		rd := &rfpb.RangeDescriptor{}
+		err = proto.Unmarshal(data, rd)
+		require.NoError(t, err)
+		require.True(t, proto.Equal(expectedRD, rd), "expectedRD: %+v,\n actual: %+v", expectedRD, rd)
+	}
 }

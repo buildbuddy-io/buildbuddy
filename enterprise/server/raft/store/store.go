@@ -57,7 +57,6 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
-	"github.com/lni/dragonboat/v4/tools"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
@@ -96,7 +95,8 @@ const (
 	metricsRefreshPeriod         = 30 * time.Second
 
 	// listenerID for replicaStatusWaiter
-	listenerID = "replicaStatusWaiter"
+	listenerID                     = "replicaStatusWaiter"
+	backupRangeDescriptorProtoFile = "rd.proto"
 )
 
 type LogDBConfigType int
@@ -208,7 +208,7 @@ func getLogDbConfig(t LogDBConfigType) dbConfig.LogDBConfig {
 	return dbConfig.GetDefaultLogDBConfig()
 }
 
-func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr string, partitions []disk.Partition, logDBConfigType LogDBConfigType) (*Store, error) {
+func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr string, partitions []disk.Partition, logDBConfigType LogDBConfigType, backupSnapshotSourceDir string) (*Store, error) {
 	rangeCache := rangecache.New()
 	raftListener := listener.NewRaftListener()
 	gossipManager := env.GetGossipService()
@@ -226,6 +226,9 @@ func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr str
 		SystemEventListener: raftListener,
 		EnableMetrics:       true,
 	}
+	//if backupSnapshotSourceDir != "" {
+	//	// import from snapshot
+	//}
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
 	if err != nil {
 		return nil, err
@@ -1180,25 +1183,36 @@ func (s *Store) SnapshotCluster(ctx context.Context, rangeID uint64) error {
 }
 
 // ExportSnapshot exports a snapshot for the given range with Exported=true option
-func (s *Store) ExportSnapshot(ctx context.Context, rangeID uint64) error {
+func (s *Store) ExportSnapshot(ctx context.Context, rangeID uint64, dir string) error {
 	defer canary.Start("ExportSnapshot", 30*time.Second)()
 	if _, ok := ctx.Deadline(); !ok {
 		c, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 		ctx = c
 	}
+
+	exportPath := filepath.Join(dir, fmt.Sprintf("shard-%d", rangeID))
+	disk.EnsureDirectoryExists(exportPath)
+
 	opts := dragonboat.SnapshotOption{
-		OverrideCompactionOverhead: true,
-		CompactionOverhead:         0,
-		Exported:                   true,
+		Exported:   true,
+		ExportPath: exportPath,
 	}
 
 	retrier := retry.DefaultWithContext(ctx)
 	var lastError error
 	for retrier.Next() {
-		_, err := s.nodeHost.SyncRequestSnapshot(ctx, rangeID, opts)
+		rd := s.GetRange(rangeID)
+		data, err := proto.Marshal(rd)
+		if err != nil {
+			log.Warningf("Failed to export snapshot for range %d: failed to marshal range descriptor: %s", rangeID, err)
+			continue
+		}
+		disk.WriteFile(ctx, filepath.Join(exportPath, backupRangeDescriptorProtoFile), data)
+
+		_, err = s.nodeHost.SyncRequestSnapshot(ctx, rangeID, opts)
 		if err == nil {
-			log.Infof("Successfully exported snapshot for range %d", rangeID)
+			log.Infof("Successfully exported snapshot for range %d to %s", rangeID, exportPath)
 			return nil
 		}
 		lastError = err
@@ -1209,35 +1223,29 @@ func (s *Store) ExportSnapshot(ctx context.Context, rangeID uint64) error {
 
 // ImportSnapshot imports a snapshot from an exported snapshot directory
 func (s *Store) ImportSnapshot(ctx context.Context, rangeID uint64, snapshotDir string) error {
-	defer canary.Start("ImportSnapshot", 60*time.Second)()
-	if _, ok := ctx.Deadline(); !ok {
-		c, cancel := context.WithTimeout(ctx, 60*time.Second)
-		defer cancel()
-		ctx = c
-	}
 
-	err := tools.ImportSnapshot(s.nodeHost, snapshotDir, rangeID)
-	if err != nil {
-		return status.InternalErrorf("Failed to import snapshot for range %d from %s: %v", rangeID, snapshotDir, err)
-	}
+	//err := tools.ImportSnapshot(s.nodeHost, snapshotDir, rangeID)
+	//if err != nil {
+	//	return status.InternalErrorf("Failed to import snapshot for range %d from %s: %v", rangeID, snapshotDir, err)
+	//}
 
-	log.Infof("Successfully imported snapshot for range %d from %s", rangeID, snapshotDir)
+	//log.Infof("Successfully imported snapshot for range %d from %s", rangeID, snapshotDir)
 	return nil
 }
 
 // ExportAllSnapshots exports snapshots for all active ranges
-func (s *Store) ExportAllSnapshots(ctx context.Context, numWorkers int) error {
+func (s *Store) ExportAllSnapshots(ctx context.Context, opts raftConfig.BackupOptions) error {
 	nhInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
 		SkipLogInfo: true,
 	})
 
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(numWorkers)
+	eg.SetLimit(opts.NumWorkers)
 
 	for _, shardInfo := range nhInfo.ShardInfoList {
 		rangeID := shardInfo.ShardID
 		eg.Go(func() error {
-			return s.ExportSnapshot(ctx, rangeID)
+			return s.ExportSnapshot(ctx, rangeID, opts.Dir)
 		})
 	}
 
@@ -1245,7 +1253,7 @@ func (s *Store) ExportAllSnapshots(ctx context.Context, numWorkers int) error {
 }
 
 // periodicSnapshotExport runs periodic snapshot exports based on the provided configuration
-func (s *Store) periodicSnapshotExport(ctx context.Context, opts BackupOptions) {
+func (s *Store) periodicSnapshotExport(ctx context.Context, opts raftConfig.BackupOptions) {
 	if opts.Dir == "" {
 		log.Warning("Snapshot export enabled but no export directory configured")
 		return
@@ -1260,7 +1268,7 @@ func (s *Store) periodicSnapshotExport(ctx context.Context, opts BackupOptions) 
 			return
 		case <-ticker.C:
 			log.Info("Starting periodic snapshot export")
-			if err := s.ExportAllSnapshots(ctx, opts.NumWorkers); err != nil {
+			if err := s.ExportAllSnapshots(ctx, opts); err != nil {
 				log.Errorf("Failed to export snapshots: %v", err)
 			} else {
 				log.Info("Completed periodic snapshot export")
@@ -1272,12 +1280,6 @@ func (s *Store) periodicSnapshotExport(ctx context.Context, opts BackupOptions) 
 // RestoreFromSnapshot restores the nodehost from an exported snapshot directory
 // This should be called before starting the nodehost
 func (s *Store) RestoreFromSnapshot(ctx context.Context, snapshotDir string) error {
-	defer canary.Start("RestoreFromSnapshot", 5*time.Minute)()
-
-	if s.nodeHost != nil {
-		return status.FailedPreconditionError("Cannot restore from snapshot while nodehost is running")
-	}
-
 	// Use dragonboat tools to restore from snapshot
 	// Note: This is a placeholder implementation. The actual restoration process
 	// would depend on the specific snapshot format and nodehost configuration
