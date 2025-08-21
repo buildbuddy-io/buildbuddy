@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
+	ottpb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/grpc"
 
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
@@ -98,6 +99,7 @@ type RealEnv struct {
 	casServer                        repb.ContentAddressableStorageServer
 	localByteStreamServer            interfaces.ByteStreamServer
 	byteStreamServer                 bspb.ByteStreamServer
+	traceServer                      ottpb.TraceServiceServer
 	localActionCacheServer           repb.ActionCacheServer
 	actionCacheServer                repb.ActionCacheServer
 	pushServer                       rapb.PushServer
@@ -559,6 +561,13 @@ func (r *RealEnv) GetByteStreamServer() bspb.ByteStreamServer {
 }
 func (r *RealEnv) SetByteStreamServer(byteStreamServer bspb.ByteStreamServer) {
 	r.byteStreamServer = byteStreamServer
+}
+
+func (r *RealEnv) GetTraceServer() ottpb.TraceServiceServer {
+	return r.traceServer
+}
+func (r *RealEnv) SetTraceServer(traceServer ottpb.TraceServiceServer) {
+	r.traceServer = traceServer
 }
 
 func (r *RealEnv) GetLocalActionCacheServer() repb.ActionCacheServer {

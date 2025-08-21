@@ -14,5 +14,7 @@ go_library(
         "//server/remote_cache/config",
         "//server/remote_cache/digest",
         "//server/util/bazel_request",
+        "//server/util/log",
+        "@org_golang_google_grpc//metadata",
     ],
 )

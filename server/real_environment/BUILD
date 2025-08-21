@@ -15,6 +15,7 @@ go_library(
         "//server/interfaces",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@io_opentelemetry_go_proto_otlp//collector/trace/v1:trace",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
     ],

@@ -7,6 +7,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"google.golang.org/grpc/metadata"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -53,6 +55,13 @@ func NewCapabilitiesServer(env environment.Env, supportCAS, supportRemoteExec, s
 }
 
 func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		log.Infof("VVVVV trace parent: %s", md["traceparent"])
+		//for k, v := range md {
+		//	log.Infof("HEADER %s: %s", k, strings.Join(v, " | "))
+		//}
+	}
+
 	c := repb.ServerCapabilities{
 		// Support bazel 2.0 -> 2.3
 		LowApiVersion:  &smpb.SemVer{Major: int32(2)},

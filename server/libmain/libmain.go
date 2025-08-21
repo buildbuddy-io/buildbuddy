@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
+	"github.com/buildbuddy-io/buildbuddy/server/traceservice"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -54,6 +55,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
+	ottpb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 
 	"google.golang.org/grpc"
 
@@ -323,6 +325,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	if ht := env.GetHitTrackerServiceServer(); ht != nil {
 		hitpb.RegisterHitTrackerServiceServer(grpcServer, ht)
 	}
+	if ts := env.GetTraceServer(); ts != nil {
+		ottpb.RegisterTraceServiceServer(grpcServer, ts)
+	}
 }
 
 func registerLocalGRPCClients(env *real_environment.RealEnv) error {
@@ -404,6 +409,9 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		log.Fatalf("%v", err)
 	}
 	if err := capabilities_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := traceservice.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 
