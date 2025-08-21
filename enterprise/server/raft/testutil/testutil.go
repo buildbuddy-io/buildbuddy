@@ -71,9 +71,15 @@ type nodeRegistryFactory func(nhid string, streamConnections uint64, v dbConfig.
 func (nrf nodeRegistryFactory) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
 	return nrf(nhid, streamConnections, v)
 }
-
 func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
-	require.Nil(t, disk.EnsureDirectoryExists(ts.RootDir))
+	sf.RecreateStoreFromBackup(t, ts, "")
+}
+
+func (sf *StoreFactory) RecreateStoreFromBackup(t *testing.T, ts *TestingStore, backupRootDir string) {
+	require.NoError(t, disk.EnsureDirectoryExists(ts.RootDir))
+	if backupRootDir != "" {
+		require.NoError(t, disk.EnsureDirectoryExists(backupRootDir))
+	}
 
 	nrf := nodeRegistryFactory(func(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
 		nhLog := log.NamedSubLogger(nhid)
@@ -85,6 +91,7 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 
 	raftListener := listener.NewRaftListener()
 	nhc := dbConfig.NodeHostConfig{
+		DeploymentID:   0,
 		WALDir:         filepath.Join(ts.RootDir, "wal"),
 		NodeHostDir:    filepath.Join(ts.RootDir, "nodehost"),
 		RTTMillisecond: 1,
@@ -99,8 +106,20 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 	}
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
 	require.NoError(t, err, "unexpected error creating NodeHost")
-
 	te := testenv.GetTestEnv(t)
+	if backupRootDir != "" {
+		nhid := nodeHost.ID()
+		// stops the nodehost
+		nodeHost.Close()
+		nhc.NodeHostID = nhid
+		ctx := te.GetServerContext()
+
+		err := store.RestoreFromBackup(ctx, nhc, backupRootDir)
+		require.NoError(t, err, "unexpected error restore from Backup")
+		nodeHost, err = dragonboat.NewNodeHost(nhc)
+		require.NoError(t, err, "unexpected error creating NodeHost after restoring from backup")
+	}
+
 	te.SetClock(sf.clock)
 	apiClient := client.NewAPIClient(te, nodeHost.ID(), ts.Registry)
 

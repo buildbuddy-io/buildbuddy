@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -57,6 +58,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
+	"github.com/lni/dragonboat/v4/tools"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
@@ -214,6 +216,7 @@ func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr str
 	gossipManager := env.GetGossipService()
 	regHolder := &registryHolder{raftAddr, grpcAddr, gossipManager, nil}
 	nhc := dbConfig.NodeHostConfig{
+		DeploymentID:   0,
 		WALDir:         filepath.Join(rootDir, "wal"),
 		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
 		RTTMillisecond: constants.RTTMillisecond,
@@ -226,12 +229,24 @@ func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr str
 		SystemEventListener: raftListener,
 		EnableMetrics:       true,
 	}
-	//if backupSnapshotSourceDir != "" {
-	//	// import from snapshot
-	//}
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
 	if err != nil {
 		return nil, err
+	}
+	if backupSnapshotSourceDir != "" {
+		nhid := nodeHost.ID()
+		// stops the nodehost
+		nodeHost.Close()
+		nhc.NodeHostID = nhid
+		ctx := env.GetServerContext()
+
+		if err := RestoreFromBackup(ctx, nhc, backupSnapshotSourceDir); err != nil {
+			return nil, err
+		}
+		nodeHost, err = dragonboat.NewNodeHost(nhc)
+		if err != nil {
+			return nil, err
+		}
 	}
 	registry := regHolder.r
 	apiClient := client.NewAPIClient(env, nodeHost.ID(), registry)
@@ -1221,15 +1236,78 @@ func (s *Store) ExportSnapshot(ctx context.Context, rangeID uint64, dir string) 
 	return status.InternalErrorf("ExportSnapshot exceeded retry for range %d, lastError: %s", rangeID, lastError)
 }
 
-// ImportSnapshot imports a snapshot from an exported snapshot directory
-func (s *Store) ImportSnapshot(ctx context.Context, rangeID uint64, snapshotDir string) error {
+func restoreShardFromBackup(ctx context.Context, nhConfig dbConfig.NodeHostConfig, shardBackupDir string) error {
+	// Read and parse the range descriptor from rd.proto file
+	rdProtoPath := filepath.Join(shardBackupDir, backupRangeDescriptorProtoFile)
+	rdData, err := disk.ReadFile(ctx, rdProtoPath)
+	if err != nil {
+		return status.WrapErrorf(err, "failed to read range descriptor file %s", rdProtoPath)
+	}
 
-	//err := tools.ImportSnapshot(s.nodeHost, snapshotDir, rangeID)
-	//if err != nil {
-	//	return status.InternalErrorf("Failed to import snapshot for range %d from %s: %v", rangeID, snapshotDir, err)
-	//}
+	var rd rfpb.RangeDescriptor
+	if err := proto.Unmarshal(rdData, &rd); err != nil {
+		return status.WrapErrorf(err, "failed to unmarshal range descriptor from %s", rdProtoPath)
+	}
 
-	//log.Infof("Successfully imported snapshot for range %d from %s", rangeID, snapshotDir)
+	// Construct memberNodes map from replica ID to NHID
+	memberNodes := make(map[uint64]string, len(rd.GetReplicas()))
+	replicaID := uint64(0)
+	for _, replica := range rd.GetReplicas() {
+		if replica.GetNhid() == "" {
+			log.Warningf("c%dn%d has empty NHID.", replica.GetRangeId(), replica.GetReplicaId())
+		}
+		if replica.GetNhid() == nhConfig.NodeHostID {
+			replicaID = replica.GetReplicaId()
+		}
+		memberNodes[replica.GetReplicaId()] = replica.GetNhid()
+	}
+
+	if replicaID == 0 {
+		log.Infof("c%dn%d is not on node %q, skip", rd.GetRangeId(), replicaID, nhConfig.NodeHostID)
+		return nil
+	}
+
+	snapshotDir := ""
+	entries, err := os.ReadDir(shardBackupDir)
+	if err != nil {
+		return status.WrapErrorf(err, "failed to read shardBackupDir (%q): %s", shardBackupDir, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), "snapshot") {
+			snapshotDir = filepath.Join(shardBackupDir, entry.Name())
+		}
+	}
+	if snapshotDir == "" {
+		return status.NotFoundErrorf("unable to find snapshot dir in %q", shardBackupDir)
+	}
+
+	err = tools.ImportSnapshot(nhConfig, snapshotDir, memberNodes, replicaID)
+	if err != nil {
+		return status.InternalErrorf("Failed to import snapshot for range %d from %s: %v", rd.RangeId, shardBackupDir, err)
+	}
+
+	log.Infof("Successfully imported snapshot for c%dn%d from %s", rd.GetRangeId(), replicaID, shardBackupDir)
+	return nil
+}
+
+// RestoreFromBackup restores the nodehost from a backup dir.
+func RestoreFromBackup(ctx context.Context, nhConfig dbConfig.NodeHostConfig, backupRootDir string) error {
+	// Read all directories from the backup root directory
+	entries, err := os.ReadDir(backupRootDir)
+	if err != nil {
+		return status.WrapErrorf(err, "failed to read backup directory %s", backupRootDir)
+	}
+
+	// Filter and process directories with "shard-" prefix
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), "shard-") {
+			shardBackupDir := filepath.Join(backupRootDir, entry.Name())
+			if err := restoreShardFromBackup(ctx, nhConfig, shardBackupDir); err != nil {
+				return status.WrapErrorf(err, "failed to restore shard from %s", shardBackupDir)
+			}
+		}
+	}
+
 	return nil
 }
 

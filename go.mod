@@ -6,7 +6,7 @@ replace (
 	github.com/awslabs/soci-snapshotter => github.com/buildbuddy-io/soci-snapshotter v0.9.0-buildbuddy // keep in sync with buildpatches/com_github_awslabs_soci_snapshotter.patch
 	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.16.8-18
 	github.com/jotfs/fastcdc-go v0.2.0 => github.com/buildbuddy-io/fastcdc-go v0.2.0-rc2
-	github.com/lni/dragonboat/v4 => github.com/buildbuddy-io/dragonboat/v4 v4.0.1
+	github.com/lni/dragonboat/v4 => github.com/buildbuddy-io/dragonboat/v4 v4.0.1-lulu-rc
 	github.com/lni/vfs => github.com/buildbuddy-io/vfs v0.2.3
 	github.com/throttled/throttled/v2 => github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2
 	kythe.io => github.com/buildbuddy-io/kythe v0.0.72

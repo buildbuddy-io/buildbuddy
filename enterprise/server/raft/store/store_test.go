@@ -1306,6 +1306,18 @@ func metadataKey(t *testing.T, fr *sgpb.FileRecord) []byte {
 	return keyBytes
 }
 
+func recordNotFound(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr *sgpb.FileRecord) {
+	fk := metadataKey(t, fr)
+	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.GetRequest{
+		Key: fk,
+	}).ToProto()
+	require.NoError(t, err)
+	rsp, err := ts.Sender().SyncRead(ctx, fk, readReq)
+	require.NoError(t, err)
+	batchRsp := rbuilder.NewBatchResponseFromProto(rsp)
+	require.True(t, status.IsNotFoundError(batchRsp.AnyError()))
+}
+
 func readRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr *sgpb.FileRecord) {
 	fs := filestore.New()
 	fk := metadataKey(t, fr)
@@ -2358,7 +2370,7 @@ func TestSetupNewPartitions(t *testing.T) {
 	}
 }
 
-func TestExportAllSnapshots(t *testing.T) {
+func TestBackupAndRestore(t *testing.T) {
 	ctx := context.Background()
 	dir := testfs.MakeTempDir(t)
 	sf := testutil.NewStoreFactory(t)
@@ -2371,7 +2383,7 @@ func TestExportAllSnapshots(t *testing.T) {
 
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 
-	_ = writeNRecords(ctx, t, s, 50)
+	writtenBefore := writeNRecords(ctx, t, s, 10)
 
 	// Test export all snapshots
 	opts := raftConfig.BackupOptions{
@@ -2405,6 +2417,7 @@ func TestExportAllSnapshots(t *testing.T) {
 		require.Len(t, files, 2)
 		require.Contains(t, files[0].Name(), "rd.proto")
 		require.Contains(t, files[1].Name(), "snapshot")
+		log.Infof("subdir: %q, name: %q", subdir, files[1].Name())
 		data, err := disk.ReadFile(ctx, filepath.Join(subdir, "rd.proto"))
 		require.NoError(t, err)
 		rd := &rfpb.RangeDescriptor{}
@@ -2412,4 +2425,23 @@ func TestExportAllSnapshots(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, proto.Equal(expectedRD, rd), "expectedRD: %+v,\n actual: %+v", expectedRD, rd)
 	}
+
+	writtenAfter := writeNRecords(ctx, t, s, 10)
+
+	// Don't stop the testStore, because it will stop gm
+	s1.Store.Stop(ctx)
+	s2.Store.Stop(ctx)
+	s3.Store.Stop(ctx)
+
+	sf.RecreateStoreFromBackup(t, s1, dir)
+	sf.RecreateStoreFromBackup(t, s2, dir)
+	sf.RecreateStoreFromBackup(t, s3, dir)
+
+	for _, fr := range writtenBefore {
+		readRecord(ctx, t, s, fr)
+	}
+	for _, fr := range writtenAfter {
+		recordNotFound(ctx, t, s, fr)
+	}
+
 }
