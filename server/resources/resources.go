@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
+	"github.com/wille/osutil"
 
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
@@ -217,8 +218,12 @@ func GetArch() string {
 	return runtime.GOARCH
 }
 
-func GetOS() string {
+func GetOSFamily() string {
 	return runtime.GOOS
+}
+
+func GetOSDisplayName() string {
+	return osutil.GetDisplay()
 }
 
 func GetMyHostname() (string, error) {
