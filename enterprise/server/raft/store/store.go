@@ -216,7 +216,6 @@ func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr str
 	gossipManager := env.GetGossipService()
 	regHolder := &registryHolder{raftAddr, grpcAddr, gossipManager, nil}
 	nhc := dbConfig.NodeHostConfig{
-		DeploymentID:   0,
 		WALDir:         filepath.Join(rootDir, "wal"),
 		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
 		RTTMillisecond: constants.RTTMillisecond,

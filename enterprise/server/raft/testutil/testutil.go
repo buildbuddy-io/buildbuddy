@@ -91,7 +91,6 @@ func (sf *StoreFactory) RecreateStoreFromBackup(t *testing.T, ts *TestingStore, 
 
 	raftListener := listener.NewRaftListener()
 	nhc := dbConfig.NodeHostConfig{
-		DeploymentID:   0,
 		WALDir:         filepath.Join(ts.RootDir, "wal"),
 		NodeHostDir:    filepath.Join(ts.RootDir, "nodehost"),
 		RTTMillisecond: 1,
