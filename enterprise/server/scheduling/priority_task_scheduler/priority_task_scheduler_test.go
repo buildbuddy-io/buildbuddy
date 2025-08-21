@@ -2,6 +2,7 @@ package priority_task_scheduler
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -170,7 +171,9 @@ func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t 
 	require.NoError(t, err)
 
 	execution1 := <-executor.StartedExecutions
+	defer execution1.Complete()
 	execution2 := <-executor.StartedExecutions
+	defer execution2.Complete()
 
 	require.Equal(t, scheduler.q.Len(), 1)
 
@@ -194,6 +197,7 @@ func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t 
 	gpuExecution.Complete()
 
 	execution3 := <-executor.StartedExecutions
+	defer execution3.Complete()
 	require.Equal(t, gpuTask2ID, execution3.ScheduledTask.GetExecutionTask().GetExecutionId())
 	require.Equal(t, scheduler.q.Len(), 0)
 }
@@ -294,6 +298,9 @@ func TestPriorityTaskScheduler_QueueSkipping_LargeCustomResourceTasksNotIndefini
 }
 
 func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
+	// Set a short reconnect timeout to speed up the test.
+	flags.Set(t, "executor.publish_operation_reconnect_timeout", 250*time.Millisecond)
+
 	for _, test := range []struct {
 		name string
 
@@ -405,17 +412,20 @@ type FakeExecution struct {
 	ScheduledTask *repb.ScheduledTask
 	retry         bool
 	err           error
+	completeOnce  sync.Once
 	completeCh    chan struct{}
 }
 
 func (e *FakeExecution) Complete() {
-	close(e.completeCh)
+	e.CompleteWith(false, nil)
 }
 
 func (e *FakeExecution) CompleteWith(retry bool, err error) {
-	e.retry = retry
-	e.err = err
-	close(e.completeCh)
+	e.completeOnce.Do(func() {
+		e.retry = retry
+		e.err = err
+		close(e.completeCh)
+	})
 }
 
 func (e *FakeExecutor) ID() string {
