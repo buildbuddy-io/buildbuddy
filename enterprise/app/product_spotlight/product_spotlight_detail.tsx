@@ -7,8 +7,6 @@ import SpotlightsService from "./spotlight_service";
 interface SpotlightMetadata {
   title: string;
   description: string;
-  category: string;
-  priority: "high" | "medium" | "low";
   date: string;
   image?: string;
   tags: string[];
@@ -153,8 +151,10 @@ export default class ProductSpotlightDetailComponent extends React.Component<Pro
     const { spotlight, allSpotlights } = this.state;
     if (!spotlight) return [];
 
+    // Randomly select a spotlight with at least one matching tag
     return allSpotlights
-      .filter((s) => s.id !== spotlight.id && s.metadata.category === spotlight.metadata.category)
+      .filter((s) => s.id !== spotlight.id && s.metadata.tags.some(tag => spotlight.metadata.tags.includes(tag)))
+      .sort(() => Math.random() - 0.5)
       .slice(0, 2);
   }
 
@@ -188,7 +188,7 @@ export default class ProductSpotlightDetailComponent extends React.Component<Pro
       );
     }
 
-    const { title, category, date, tags, author } = spotlight.metadata;
+    const { title, date, tags, author } = spotlight.metadata;
     const relatedSpotlights = this.getRelatedSpotlights();
 
     return (
@@ -201,10 +201,6 @@ export default class ProductSpotlightDetailComponent extends React.Component<Pro
             </button>
             
             <div className="spotlight-detail-meta">
-              <div className="category-and-status">
-                <span className="spotlight-category">{category}</span>
-              </div>
-              
               <h1 className="spotlight-detail-title">{title}</h1>
               
               <div className="spotlight-detail-info">
@@ -244,9 +240,6 @@ export default class ProductSpotlightDetailComponent extends React.Component<Pro
                     href={`/product-spotlight/${related.id}`}
                     className="related-spotlight-card"
                   >
-                    <div className="related-spotlight-meta">
-                      <span className="spotlight-category">{related.metadata.category}</span>
-                    </div>
                     <h4>{related.metadata.title}</h4>
                     <p>{related.metadata.description}</p>
                     <ExternalLink size={16} />

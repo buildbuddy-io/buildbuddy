@@ -4,16 +4,21 @@ import SpotlightCard from "./spotlight_card";
 import router from "../../../app/router/router";
 import SpotlightsService from "./spotlight_service";
 
+const CATEGORIES = [
+  "Platform",
+  "Performance",
+  "Testing",
+  "Remote Runners",
+  "Security",
+]
+
 interface SpotlightMetadata {
   title: string;
   description: string;
-  category: string;
-  priority: "high" | "medium" | "low";
   date: string;
   image?: string;
   tags: string[];
   author: string;
-  status: "live" | "beta" | "coming-soon";
 }
 
 interface Spotlight {
@@ -76,19 +81,12 @@ export default class ProductSpotlightComponent extends React.Component<Props, St
     if (filterCategory === "all") {
       return spotlights;
     }
-    return spotlights.filter((s) => s.metadata.category === filterCategory);
-  }
-
-  getCategories(): string[] {
-    const { spotlights } = this.state;
-    const categories = new Set(spotlights.map((s) => s.metadata.category));
-    return Array.from(categories).sort();
+    return spotlights.filter((s) => s.metadata.tags.includes(filterCategory));
   }
 
   render() {
     const { loading } = this.state;
     const filteredSpotlights = this.getFilteredSpotlights();
-    const categories = this.getCategories();
 
     if (loading) {
       return (
@@ -118,7 +116,7 @@ export default class ProductSpotlightComponent extends React.Component<Props, St
                   onClick={() => this.handleFilterChange("all")}>
                   All
                 </button>
-                {categories.map((category) => (
+                {CATEGORIES.map((category) => (
                   <button
                     key={category}
                     className={`filter-btn ${this.state.filterCategory === category ? "active" : ""}`}

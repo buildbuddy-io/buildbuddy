@@ -3,7 +3,6 @@ import React from "react";
 interface SpotlightMetadata {
   title: string;
   description: string;
-  category: string;
   date: string;
   tags: string[];
   author: string;
@@ -27,15 +26,12 @@ export default class SpotlightCard extends React.Component<Props> {
 
   render() {
     const { metadata, onClick } = this.props;
-    const { title, description, category, date, tags, author } = metadata;
+    const { title, description, date, tags, author } = metadata;
 
     return (
       <div className="spotlight-card" onClick={onClick}>
         <div className="spotlight-content">
           <div className="spotlight-header">
-            <div className="spotlight-meta">
-              <span className="spotlight-category">{category}</span>
-            </div>
             <h3 className="spotlight-title">{title}</h3>
             <p className="spotlight-description">{description}</p>
           </div>
