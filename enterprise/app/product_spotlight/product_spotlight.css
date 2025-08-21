@@ -116,10 +116,15 @@
 }
 
 .spotlight-description {
-  color: #657786;
+  color: #5a6772;
   font-size: 14px;
   line-height: 1.4;
   margin: 0;
+}
+
+.spotlight-date {
+  font-size: 10px;
+  color: #657786;
 }
 
 .spotlight-footer {
@@ -146,7 +151,7 @@
 
 .spotlight-details {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   font-size: 12px;
   color: #657786;
@@ -154,10 +159,6 @@
 
 .spotlight-author {
   font-weight: 500;
-}
-
-.spotlight-date {
-  font-weight: 400;
 }
 
 /* Status Badges */
