@@ -1,0 +1,3 @@
+I don't have the ability to access external URLs or browse the internet, including GitHub pull requests. I can only work with text that's directly provided to me in our conversation.
+
+If you'd like me to write a product highlight based on PR #10042, please copy and paste the relevant details from the pull request (such as the title, description, and key changes) directly into your message, and I'll be happy to create the markdown content you're looking for.
