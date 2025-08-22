@@ -26,7 +26,12 @@ import (
 )
 
 const (
-	// Standard path where cgroupfs is expected to be mounted.
+	// RootName is the name of the root cgroup. GetCurrent() will return this
+	// string if the current process is in the root cgroup within the current
+	// cgroup namespace.
+	RootName = ""
+
+	// RootPath is the standard path where cgroupfs is expected to be mounted.
 	RootPath = "/sys/fs/cgroup"
 
 	// Placeholder value representing the container ID in cgroup path templates.
@@ -40,8 +45,10 @@ var (
 
 // GetCurrent returns the cgroup of which the current process is a member.
 //
-// The returned path is relative to the cgroupfs root. For example, if the
-// current process is part of "/sys/fs/cgroup/foo", this returns "foo".
+// The returned path is relative to the cgroupfs root and does not include a
+// leading slash. For example, if the current process is part of
+// "/sys/fs/cgroup/foo", this returns "foo". If the current process is in the
+// root cgroup, this returns "" (RootName).
 func GetCurrent() (string, error) {
 	b, err := os.ReadFile("/proc/self/cgroup")
 	if err != nil {
@@ -88,6 +95,13 @@ func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice
 	for name, value := range m {
 		controller, _, _ := strings.Cut(name, ".")
 		if !enabledControllers[controller] {
+			// cgroup controllers cannot be enabled unless we're global root.
+			// TODO: user namespaces can make this check unreliable - find
+			// a better way.
+			if os.Getuid() != 0 {
+				// TODO: log once per controller?
+				continue
+			}
 			// Attempt to enable the controller if it's not already enabled.
 			if err := EnableController(path, controller); err != nil {
 				log.CtxWarningf(ctx, "Failed to enable cgroup controller %q for cgroup %q: %s", controller, path, err)
@@ -191,6 +205,82 @@ func DelegateControllers(path string) error {
 		return fmt.Errorf("write cgroup.subtree_control for %q: %w", path, err)
 	}
 	return nil
+}
+
+// ProcsCount returns the number of processes currently in the cgroup at the
+// given path.
+func ProcsCount(path string) (int64, error) {
+	// TODO: don't buffer in memory, and just count newlines from the file.
+	b, err := os.ReadFile(filepath.Join(path, "cgroup.procs"))
+	if err != nil {
+		return 0, err
+	}
+	return int64(len(bytes.Fields(b))), nil
+}
+
+// ReadProcs reads the list of pids in the cgroup at the given path.
+func ReadProcs(path string) ([]int, error) {
+	b, err := os.ReadFile(filepath.Join(path, "cgroup.procs"))
+	if err != nil {
+		return nil, err
+	}
+	fields := strings.Fields(string(b))
+	out := make([]int, 0, len(fields))
+	for _, f := range fields {
+		pid, err := strconv.Atoi(f)
+		if err != nil {
+			return nil, fmt.Errorf("parse pid %q: %w", f, err)
+		}
+		out = append(out, pid)
+	}
+	return out, nil
+}
+
+func SetupChildCgroups(executorCgroupName, taskCgroupName string) (string, error) {
+	startingCgroup, err := GetCurrent()
+	if err != nil {
+		return "", fmt.Errorf("get current cgroup: %w", err)
+	}
+
+	// If the starting cgroup contains other processes, and it's not the root
+	// cgroup, then we can't create nested child cgroups. Instead, the cgroups
+	// need to be created as siblings of the current cgroup. Log a message
+	// though, since in some cases this might not be desired.
+	if startingCgroup != RootName {
+		procs, err := ProcsCount(filepath.Join(RootPath, startingCgroup))
+		if err != nil {
+			return "", fmt.Errorf("read cgroup.procs from current cgroup %q: %w", startingCgroup, err)
+		} else if procs > 1 {
+			log.Infof("Executor starting cgroup %q contains %d other processes. Will instead attempt to create cgroups as siblings of the current cgroup.", startingCgroup, procs)
+			startingCgroup = filepath.Dir(startingCgroup)
+		}
+	}
+
+	// Create the executor cgroup and move the executor process to it.
+	executorCgroupPath := filepath.Join(RootPath, startingCgroup, executorCgroupName)
+	if err := os.MkdirAll(executorCgroupPath, 0755); err != nil {
+		return "", fmt.Errorf("create executor cgroup %s: %w", executorCgroupPath, err)
+	}
+	if err := os.WriteFile(filepath.Join(executorCgroupPath, "cgroup.procs"), []byte(strconv.Itoa(os.Getpid())), 0); err != nil {
+		return "", fmt.Errorf("add executor to cgroup %s: %w", executorCgroupPath, err)
+	}
+	log.Infof("Set up executor cgroup at %s", executorCgroupPath)
+
+	// Create the cgroup for action execution.
+	taskCgroupPath := filepath.Join(RootPath, startingCgroup, taskCgroupName)
+	if err := os.MkdirAll(taskCgroupPath, 0755); err != nil {
+		return "", fmt.Errorf("create task cgroup %s: %w", taskCgroupPath, err)
+	}
+	log.Infof("Set up task cgroup at %s", taskCgroupPath)
+
+	// Enable the same controllers for the child cgroups that were enabled
+	// for the starting cgroup.
+	if err := DelegateControllers(filepath.Join(RootPath, startingCgroup)); err != nil {
+		return "", fmt.Errorf("inherit subtree control: %w", err)
+	}
+
+	taskCgroupRelpath := filepath.Join(startingCgroup, taskCgroupName)
+	return taskCgroupRelpath, nil
 }
 
 func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[string]string, error) {

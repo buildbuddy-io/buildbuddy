@@ -2,6 +2,7 @@ package ociruntime
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -18,12 +19,15 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -35,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime/ociuser"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -50,7 +55,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"golang.org/x/sync/errgroup"
@@ -71,7 +75,7 @@ const (
 )
 
 var (
-	Runtime                 = flag.String("executor.oci.runtime", "", "OCI runtime")
+	Runtime                 = flag.String("executor.oci.runtime", "", "OCI runtime executable path or name to look up in PATH")
 	runtimeRoot             = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
 	dns                     = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
 	netPoolSize             = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
@@ -82,6 +86,7 @@ var (
 	enablePersistentVolumes = flag.Bool("executor.oci.enable_persistent_volumes", false, "Enables persistent volumes that can be shared between actions within a group. Only supported for OCI isolation type.")
 	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
 	cgroupMemoryCushion     = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
+	rootless                = flag.Bool("executor.oci.rootless", os.Getuid() != 0, "Whether to operate in rootless mode.")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
@@ -118,7 +123,9 @@ var (
 
 // Set via x_defs from the BUILD file
 var (
-	crunRlocationpath string
+	crunRlocationpath        string
+	rootlesskitRlocationpath string
+	launcherRlocationpath    string
 )
 
 //go:embed seccomp.json
@@ -178,6 +185,8 @@ var (
 		"/proc/slabinfo",
 		"/sys/devices/system/cpu",
 	}
+
+	cgroupDisabled atomic.Bool
 )
 
 type provider struct {
@@ -198,8 +207,7 @@ type provider struct {
 	//       - ...
 	imageCacheRoot string
 
-	imageStore  *ImageStore
-	cgroupPaths *cgroup.Paths
+	imageStore *ImageStore
 
 	// Configured runtime path.
 	runtime string
@@ -208,6 +216,14 @@ type provider struct {
 	// configured. Only set if executor.oci.tini_enabled == true.
 	tiniPath string
 
+	// Path to the rootlesskit binary or the one found in $PATH if none was
+	// configured. Only set if running in rootless mode.
+	rootlesskitPath string
+
+	// Path to the rootless launcher binary. Only set if running in rootless
+	// mode.
+	launcherPath string
+
 	networkPool *networking.ContainerNetworkPool
 
 	// Optional. "" if executor.oci.enable_lxcfs == false.
@@ -215,12 +231,19 @@ type provider struct {
 	// to provide "fake" cpu info that is appropriate to the container's
 	// configured memory and cpu.
 	lxcfsMount string
+
+	checkCgroupPermsOnce sync.Once
+	checkCgroupPermsErr  error
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, error) {
 	// Enable masquerading on the host if it isn't enabled already.
-	if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
-		return nil, status.WrapError(err, "enable masquerading")
+	// Only do this if we are root, since for rootless mode we're using
+	// a different networking stack (slirp).
+	if !*rootless {
+		if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
+			return nil, status.WrapError(err, "enable masquerading")
+		}
 	}
 
 	// Try to find a usable runtime if the runtime flag is not explicitly set.
@@ -249,6 +272,31 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		return nil, status.FailedPreconditionError("could not find a usable container runtime in PATH")
 	}
 	log.Infof("Located OCI runtime binary at %s", rt)
+
+	var rootlesskitPath, launcherPath string
+	if *rootless {
+		rootlesskitRlocation, err := runfiles.Rlocation(rootlesskitRlocationpath)
+		if err != nil {
+			log.Infof("rootlesskit rlocation lookup failed (falling back to PATH lookup): %s", err)
+		} else {
+			rootlesskitPath = rootlesskitRlocation
+		}
+		if rootlesskitPath == "" {
+			if abspath, err := exec.LookPath("rootlesskit"); err == nil {
+				rootlesskitPath = abspath
+			}
+		}
+		if rootlesskitPath == "" {
+			return nil, status.FailedPreconditionError("could not find rootlesskit in PATH or runfiles")
+		}
+		log.Infof("Located rootlesskit binary at %s", rootlesskitPath)
+
+		launcherRlocation, err := runfiles.Rlocation(launcherRlocationpath)
+		if err != nil {
+			return nil, status.FailedPreconditionError("could not find rootless launcher in runfiles")
+		}
+		launcherPath = launcherRlocation
+	}
 
 	// Configure the tini binary path.
 	binDir := filepath.Join(buildRoot, "executor", "bin")
@@ -331,7 +379,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if err != nil {
 		return nil, err
 	}
-	imageStore, err := NewImageStore(resolver, imageCacheRoot)
+	imageStore, err := NewImageStore(resolver, imageCacheRoot, rootlesskitPath)
 	if err != nil {
 		return nil, err
 	}
@@ -341,29 +389,31 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
 
 	return &provider{
-		env:            env,
-		runtime:        rt,
-		tiniPath:       tiniPath,
-		containersRoot: containersRoot,
-		cgroupPaths:    &cgroup.Paths{},
-		imageCacheRoot: imageCacheRoot,
-		imageStore:     imageStore,
-		networkPool:    networkPool,
-		lxcfsMount:     lxcfsMount,
+		env:             env,
+		runtime:         rt,
+		tiniPath:        tiniPath,
+		rootlesskitPath: rootlesskitPath,
+		launcherPath:    launcherPath,
+		containersRoot:  containersRoot,
+		imageCacheRoot:  imageCacheRoot,
+		imageStore:      imageStore,
+		networkPool:     networkPool,
+		lxcfsMount:      lxcfsMount,
 	}, nil
 }
 
 func (p *provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 	container := &ociContainer{
-		env:            p.env,
-		runtime:        p.runtime,
-		tiniPath:       p.tiniPath,
-		containersRoot: p.containersRoot,
-		cgroupPaths:    p.cgroupPaths,
-		imageCacheRoot: p.imageCacheRoot,
-		imageStore:     p.imageStore,
-		networkPool:    p.networkPool,
-		lxcfsMount:     p.lxcfsMount,
+		env:             p.env,
+		runtime:         p.runtime,
+		tiniPath:        p.tiniPath,
+		rootlesskitPath: p.rootlesskitPath,
+		launcherPath:    p.launcherPath,
+		containersRoot:  p.containersRoot,
+		imageCacheRoot:  p.imageCacheRoot,
+		imageStore:      p.imageStore,
+		networkPool:     p.networkPool,
+		lxcfsMount:      p.lxcfsMount,
 
 		blockDevice:       args.BlockDevice,
 		cgroupParent:      args.CgroupParent,
@@ -377,32 +427,83 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 
 		milliCPU:    args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
 		memoryBytes: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(),
+
+		cgroupPaths: &cgroup.Paths{
+			V2DirTemplate: filepath.Join(cgroup.RootPath, args.CgroupParent, "{{.ContainerID}}"),
+		},
 	}
 	if settings := args.Task.GetSchedulingMetadata().GetCgroupSettings(); settings != nil {
 		container.cgroupSettings = settings
 	}
 
+	// In rootless mode, check whether we have permissions to create
+	// a child cgroup and add processes to it. If this fails,
+	// just disable cgroups for now.
+	if *rootless {
+		p.checkCgroupPermsOnce.Do(func() {
+			if err := checkCgroupPerms(args.CgroupParent); err != nil {
+				if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+					log.CtxWarningf(ctx, "Could not create cgroup hierarchy within %s - cgroups will be disabled and cgroup-dependent functionality like stats and runner recycling will not work. Error: %s", filepath.Join(cgroup.RootPath, args.CgroupParent), err)
+					cgroupDisabled.Store(true)
+				} else {
+					p.checkCgroupPermsErr = err
+				}
+			}
+		})
+		if p.checkCgroupPermsErr != nil {
+			return nil, status.InternalErrorf("check cgroup permissions: %s", p.checkCgroupPermsErr)
+		}
+	}
+
 	return container, nil
+}
+
+func checkCgroupPerms(cgroupParent string) error {
+	testCgroupName := fmt.Sprint(mrand.Int64N(1e12))
+	defer os.RemoveAll(testCgroupName)
+	testCgroupPath := filepath.Join(cgroup.RootPath, cgroupParent, testCgroupName)
+	if err := os.MkdirAll(testCgroupPath, 0755); err != nil {
+		return err
+	}
+	cmd := exec.Command("cat")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("get stdin pipe: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start cat command: %w", err)
+	}
+	defer func() {
+		stdin.Close()
+		cmd.Wait()
+	}()
+	// Try moving the command to a child cgroup
+	pid := strconv.Itoa(cmd.Process.Pid)
+	if err := os.WriteFile(filepath.Join(testCgroupPath, "cgroup.procs"), []byte(pid), 0); err != nil {
+		return fmt.Errorf("write cgroup.procs: %w", err)
+	}
+	return nil
 }
 
 type ociContainer struct {
 	env environment.Env
 
-	runtime        string
-	tiniPath       string
-	tiniEnabled    bool
-	cgroupPaths    *cgroup.Paths
-	cgroupParent   string
-	cgroupSettings *scpb.CgroupSettings
-	blockDevice    *block_io.Device
-	containersRoot string
-	imageCacheRoot string
-	imageStore     *ImageStore
+	runtime         string
+	tiniPath        string
+	rootlesskitPath string
+	launcherPath    string
+	tiniEnabled     bool
+	cgroupPaths     *cgroup.Paths
+	cgroupParent    string
+	cgroupSettings  *scpb.CgroupSettings
+	blockDevice     *block_io.Device
+	containersRoot  string
+	imageCacheRoot  string
+	imageStore      *ImageStore
 
 	cid                    string
 	workDir                string
-	mergedMounts           []string
-	overlayfsMounted       bool
+	rootfs                 *rootfs
 	persistentVolumes      []platform.PersistentVolume
 	persistentVolumeMounts []specs.Mount
 	stats                  container.UsageStats
@@ -503,7 +604,7 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	// Note: we don't add 'host.containers.internal' here because we don't
 	// support networking across containers.
 	hostsFileLines := strings.Split(strings.TrimSpace(string(hostsFile)), "\n")
-	if c.network.HostNetwork() != nil {
+	if c.network != nil && c.network.HostNetwork() != nil {
 		hostsFileLines = append(hostsFileLines, fmt.Sprintf("%s %s", c.network.HostNetwork().NamespacedIP(), c.containerName()))
 	} else {
 		hostsFileLines = append(hostsFileLines, fmt.Sprintf("127.0.0.1 %s", c.containerName()))
@@ -525,8 +626,10 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	}
 
 	// Setup cgroup
-	if err := c.setupCgroup(ctx); err != nil {
-		return fmt.Errorf("setup cgroup: %w", err)
+	if !cgroupDisabled.Load() {
+		if err := c.setupCgroup(ctx); err != nil {
+			return fmt.Errorf("setup cgroup: %w", err)
+		}
 	}
 
 	// Create config.json from the image config and command
@@ -551,6 +654,18 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	}
 
 	return nil
+}
+
+func (c *ociContainer) readResolvedUser() (*specs.User, error) {
+	b, err := os.ReadFile(c.configPath())
+	if err != nil {
+		return nil, fmt.Errorf("read config.json: %w", err)
+	}
+	var spec specs.Spec
+	if err := json.Unmarshal(b, &spec); err != nil {
+		return nil, fmt.Errorf("unmarshal config.json: %w", err)
+	}
+	return &spec.Process.User, nil
 }
 
 func (c *ociContainer) IsolationType() string {
@@ -595,6 +710,21 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 	}
 	if err := c.createBundle(ctx, cmd); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("create OCI bundle: %s", err))
+	}
+
+	// In rootless mode, if the container created any files we can't access as
+	// the current user, we need to go back into the userns and fix ownership so
+	// that we can access them (and importantly, so that we can delete them).
+	if *rootless {
+		defer func() {
+			// Using a non-cancelable context here because it's pretty crucial
+			// for this to complete - the executor can't properly clean up files
+			// if this fails.
+			ctx := context.WithoutCancel(ctx)
+			if err := c.mapContainerWorkspaceOwnershipToHost(ctx); err != nil {
+				log.CtxErrorf(ctx, "Failed to map container workspace ownership to host: %s", err)
+			}
+		}()
 	}
 
 	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
@@ -673,6 +803,10 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 	}
 	args = append(args, c.cid)
 
+	// if err := c.mapHostWorkspaceOwnershipToContainer(ctx); err != nil {
+	// 	return commandutil.ErrorResult(status.UnavailableErrorf("map host workspace ownership to container: %s", err))
+	// }
+
 	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
 		return c.invokeRuntime(ctx, cmd, stdio, 1*time.Microsecond, args...)
 	})
@@ -714,34 +848,62 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 	var firstErr error
 
 	if err := c.invokeRuntimeSimple(ctx, "delete", "--force", c.cid); err != nil && firstErr == nil {
+		log.CtxWarningf(ctx, "Failed to delete container: %s", err)
 		firstErr = status.UnavailableErrorf("delete container: %s", err)
 	}
 
-	if len(c.mergedMounts) > 0 {
-		for _, merged := range c.mergedMounts {
-			if err := unix.Unmount(merged, unix.MNT_FORCE); err != nil && firstErr == nil {
-				firstErr = status.UnavailableErrorf("unmount overlayfs: %s", err)
+	if c.rootfs != nil {
+		for _, m := range c.rootfs.mounts {
+			if !m.Active {
+				// Not mounted in host - the kernel should unmount when the
+				// container's mount namespace is deleted in the "delete" call
+				// above.
+				continue
 			}
+			if err := unix.Unmount(m.Target, unix.MNT_FORCE); err != nil && firstErr == nil {
+				firstErr = status.UnavailableErrorf("unmount %s: %s", m.Target, err)
+			}
+			m.Active = false
 		}
-	}
-
-	if c.overlayfsMounted {
-		if err := unix.Unmount(c.rootfsPath(), unix.MNT_FORCE); err != nil && firstErr == nil {
-			firstErr = status.UnavailableErrorf("unmount overlayfs: %s", err)
-		}
+		c.rootfs = nil
 	}
 
 	if err := c.cleanupNetwork(ctx); err != nil && firstErr == nil {
 		firstErr = status.UnavailableErrorf("cleanup network: %s", err)
 	}
 
-	if err := os.RemoveAll(c.bundlePath()); err != nil && firstErr == nil {
-		firstErr = status.UnavailableErrorf("remove bundle: %s", err)
+	// In rootless mode, remove the bundle path using rootlesskit so that we
+	// have the proper permissions to remove files owned by subordinated users.
+	if *rootless {
+		var stderr bytes.Buffer
+		cmd := exec.Command("rootlesskit", "rm", "-rf", c.bundlePath())
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil && firstErr == nil {
+			firstErr = status.UnavailableErrorf("rootlesskit rm -rf %q: %s: %q", c.bundlePath(), err, stderr.String())
+		}
+	} else {
+		if err := os.RemoveAll(c.bundlePath()); err != nil && firstErr == nil {
+			firstErr = status.UnavailableErrorf("remove bundle: %s", err)
+		}
 	}
 
 	// Remove the cgroup in case the delete command didn't work as expected.
-	if err := os.Remove(c.cgroupPath()); err != nil && firstErr == nil && !os.IsNotExist(err) {
-		firstErr = status.UnavailableErrorf("remove container cgroup: %s", err)
+	if !cgroupDisabled.Load() {
+		if err := os.Remove(c.cgroupPath()); err != nil && firstErr == nil && !os.IsNotExist(err) {
+			if errors.Is(err, syscall.EBUSY) {
+				procs, _ := cgroup.ReadProcs(c.cgroupPath())
+				log.CtxWarningf(ctx, "cgroup %q still has %d processes", c.cgroupPath(), len(procs))
+				for _, pid := range procs {
+					// Read /proc/<pid>/stat
+					stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+					if err == nil {
+						log.CtxWarningf(ctx, "process %d: %s", pid, string(stat))
+					}
+				}
+			}
+
+			firstErr = status.UnavailableErrorf("remove container cgroup: %T: %s", err, err)
+		}
 	}
 
 	if c.releaseCPUs != nil {
@@ -752,6 +914,11 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 }
 
 func (c *ociContainer) createNetwork(ctx context.Context) error {
+	// In rootless mode, rootlesskit handles network setup.
+	if *rootless {
+		return nil
+	}
+
 	// TODO: should we pool loopback-only networks too?
 	if c.networkEnabled {
 		network := c.networkPool.Get(ctx)
@@ -799,6 +966,9 @@ func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 // in particular are translated to errors.
 func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
 	stop := c.stats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
+		if cgroupDisabled.Load() {
+			return &repb.UsageStats{}, nil
+		}
 		return c.cgroupPaths.Stats(ctx, c.cid, c.blockDevice)
 	})
 	res := invokeRuntimeFn(ctx)
@@ -818,18 +988,20 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 	}
 	res.UsageStats = combinedStats
 
-	// If there was an oom_kill event, return an error instead of a normal exit
-	// status.
-	if err := c.checkOOMKill(ctx, res); err != nil {
-		res.ExitCode = commandutil.KilledExitCode
-		res.Error = err
-		return res
-	}
+	if !cgroupDisabled.Load() {
+		// If there was an oom_kill event, return an error instead of a normal exit
+		// status.
+		if err := c.checkOOMKill(ctx, res); err != nil {
+			res.ExitCode = commandutil.KilledExitCode
+			res.Error = err
+			return res
+		}
 
-	// Check whether the pid limit was exceeded, and just log it for now so that
-	// it can be diagnosed.
-	if err := c.checkPIDLimitExceeded(ctx, res); err != nil {
-		log.CtxWarning(ctx, status.Message(err))
+		// Check whether the pid limit was exceeded, and just log it for now so that
+		// it can be diagnosed.
+		if err := c.checkPIDLimitExceeded(ctx, res); err != nil {
+			log.CtxWarning(ctx, status.Message(err))
+		}
 	}
 
 	if c.network != nil {
@@ -902,17 +1074,44 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	return nil
 }
 
+type mount struct {
+	Target string  // Mount target path
+	Source string  // Mount source
+	Fstype string  // Filesystem type
+	Flags  uintptr // Mount flags (e.g. MS_RDONLY)
+	Data   string  // FS-specific options
+
+	Active bool // True if mounted in the host and needs to be cleaned up.
+}
+
+type rootfs struct {
+	// Mounts required for the rootfs. In rootless mode, these are created in
+	// the container, in a mount namespace, and get cleaned automatically when
+	// the container is removed. Otherwise, these are created by the executor
+	// and get cleaned up in Remove().
+	mounts []*mount
+}
+
+func (r *rootfs) targets() []string {
+	targets := make([]string, len(r.mounts))
+	for i, m := range r.mounts {
+		targets[i] = m.Target
+	}
+	return targets
+}
+
 func (c *ociContainer) createRootfs(ctx context.Context) error {
+	if c.rootfs != nil {
+		return status.FailedPreconditionError("rootfs already created")
+	}
+
 	if err := os.MkdirAll(c.rootfsPath(), 0755); err != nil {
 		return fmt.Errorf("create rootfs dir: %w", err)
 	}
 
-	// For testing only, support a fake image ref that means "install busybox
-	// manually".
-	// TODO: improve testing setup and get rid of this
-	if c.imageRef == TestBusyboxImageRef {
-		return installBusybox(ctx, c.rootfsPath())
-	}
+	// Accumulate mounts - if anything goes wrong, we need to clean them up in
+	// Remove()
+	c.rootfs = &rootfs{}
 
 	if c.imageRef == "" {
 		// No image specified (sandbox-only).
@@ -953,11 +1152,12 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 			continue
 		}
 		newLowerDirs := append(lowerDirs, path)
-		mergedWorkdir := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d.work", len(c.mergedMounts)))
-		mergedUpperdir := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d.upper", len(c.mergedMounts)))
-		mntOptsLen := tplLen + len(strings.Join(append(c.mergedMounts, newLowerDirs...), ":")) + max(
-			// mergedWorkdir and mergedUpperdir are always longer than workDir and upperdir.
-			// So this `max` is	not strictly necessary, but it's here to fend	off future changes.
+		mergedWorkdir := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d.work", len(c.rootfs.mounts)))
+		mergedUpperdir := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d.upper", len(c.rootfs.mounts)))
+		mntOptsLen := tplLen + len(strings.Join(append(c.rootfs.targets(), newLowerDirs...), ":")) + max(
+			// mergedWorkdir and mergedUpperdir are always longer than workDir
+			// and upperdir. So this `max` is not strictly necessary, but it's
+			// here to guard against future changes.
 			len(mergedWorkdir)+len(mergedUpperdir),
 			len(workdir)+len(upperdir),
 		)
@@ -974,24 +1174,26 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 		if err := os.MkdirAll(mergedUpperdir, 0755); err != nil {
 			return fmt.Errorf("create overlay upperdir: %w", err)
 		}
-		merged := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d", len(c.mergedMounts)))
+		merged := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d", len(c.rootfs.mounts)))
 		if err := os.MkdirAll(merged, 0755); err != nil {
 			return fmt.Errorf("create overlay merged: %w", err)
 		}
 		slices.Reverse(lowerDirs)
 		mntOpts := fmt.Sprintf(optionsTpl, strings.Join(lowerDirs, ":"), mergedUpperdir, mergedWorkdir)
-		log.CtxDebugf(ctx, "Mounting merged overlayfs to %q, options=%q, len=%d", merged, mntOpts, len(mntOpts))
 		if len(mntOpts) > maxMntOptsLength {
 			return fmt.Errorf("mount options too long: %d / %d. Consider using container image with fewer layers.", len(mntOpts), maxMntOptsLength)
 		}
-		if err := unix.Mount("none", merged, "overlay", 0, mntOpts); err != nil {
-			return fmt.Errorf("mount overlayfs: %w", err)
-		}
-		c.mergedMounts = append(c.mergedMounts, merged)
+		c.rootfs.mounts = append(c.rootfs.mounts, &mount{
+			Target: merged,
+			Source: "none",
+			Fstype: "overlay",
+			Flags:  0,
+			Data:   mntOpts,
+		})
 		lowerDirs = []string{path}
 	}
-	if len(c.mergedMounts) != 0 {
-		lowerDirs = append(c.mergedMounts, lowerDirs...)
+	if len(c.rootfs.mounts) != 0 {
+		lowerDirs = append(c.rootfs.targets(), lowerDirs...)
 	}
 
 	// overlayfs "lowerdir" mount args are ordered from uppermost to lowermost,
@@ -1005,11 +1207,26 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	if len(options) > maxMntOptsLength {
 		return fmt.Errorf("mount options too long: %d / %d. Consider using container image with fewer layers.", len(options), maxMntOptsLength)
 	}
-	log.CtxDebugf(ctx, "Mounting overlayfs to %q, options=%q, length=%d", c.rootfsPath(), options, len(options))
-	if err := unix.Mount("none", c.rootfsPath(), "overlay", 0, options); err != nil {
-		return fmt.Errorf("mount overlayfs: %w", err)
+	c.rootfs.mounts = append(c.rootfs.mounts, &mount{
+		Target: c.rootfsPath(),
+		Source: "none",
+		Fstype: "overlay",
+		Flags:  0,
+		Data:   options,
+	})
+	// If rootless, we'll actually do the mounts later (in a mount namespace)
+	if *rootless {
+		return nil
 	}
-	c.overlayfsMounted = true
+	// Otherwise, do the mounts now.
+	for _, m := range c.rootfs.mounts {
+		log.CtxDebugf(ctx, "mount %q %q -t %q -o %q", m.Source, m.Target, m.Fstype, m.Data)
+		if err := unix.Mount(m.Source, m.Target, m.Fstype, m.Flags, m.Data); err != nil {
+			return fmt.Errorf("mount %s: %w", m.Target, err)
+		}
+		// Mark as mounted to ensure cleanup.
+		m.Active = true
+	}
 	return nil
 }
 
@@ -1050,11 +1267,35 @@ func installBusybox(ctx context.Context, path string) error {
 func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*specs.Spec, error) {
 	env := append(baseEnv, commandutil.EnvStringList(cmd)...)
 	image, _ := c.imageStore.CachedImage(c.imageRef)
-	user, err := getUser(ctx, image, c.rootfsPath(), c.user, c.forceRoot)
-	if err != nil {
-		return nil, fmt.Errorf("get container user: %w", err)
+	var user *specs.User
+	if *rootless {
+		// XXX: create the whole spec in the user namespace to reduce
+		// conditional logic here?
+		user = &specs.User{}
+	} else {
+		u, err := getUser(image, c.rootfsPath(), c.user, c.forceRoot)
+		if err != nil {
+			return nil, fmt.Errorf("get container user: %w", err)
+		}
+		user = u
 	}
 
+	var rlimit unix.Rlimit
+	rlimitNprocHard := uint64(4194304)
+	rlimitNprocSoft := uint64(4194304)
+	// In rootless mode, we cannot set rlimit to be greater than our current
+	// rlimit value. Read that value and cap rlimitNproc to that value.
+	if *rootless {
+		if err := unix.Getrlimit(unix.RLIMIT_NPROC, &rlimit); err != nil {
+			return nil, fmt.Errorf("get rlimit: %w", err)
+		}
+		rlimitNprocHard = rlimit.Max
+		rlimitNprocSoft = rlimit.Cur
+	}
+	var cgroupsPath string
+	if !cgroupDisabled.Load() {
+		cgroupsPath = c.cgroupRootRelativePath()
+	}
 	caps := append(capabilities, *capAdd...)
 	spec := specs.Spec{
 		Version: ociVersion,
@@ -1065,7 +1306,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			Cwd:      execrootPath,
 			Env:      env,
 			Rlimits: []specs.POSIXRlimit{
-				{Type: "RLIMIT_NPROC", Hard: 4194304, Soft: 4194304},
+				{Type: "RLIMIT_NPROC", Hard: rlimitNprocHard, Soft: rlimitNprocSoft},
 			},
 			Capabilities: &specs.LinuxCapabilities{
 				Bounding:  caps,
@@ -1160,23 +1401,17 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			"org.opencontainers.image.stopSignal": unix.SIGTERM.String(),
 		},
 		Linux: &specs.Linux{
-			CgroupsPath: c.cgroupRootRelativePath(),
+			CgroupsPath: cgroupsPath,
 			Namespaces: []specs.LinuxNamespace{
 				{Type: specs.PIDNamespace},
 				{Type: specs.IPCNamespace},
 				{Type: specs.UTSNamespace},
 				{Type: specs.MountNamespace},
 				{Type: specs.CgroupNamespace},
-				{
-					Type: specs.NetworkNamespace,
-					Path: c.network.NamespacePath(),
-				},
 			},
 			Seccomp: &seccomp,
 			Devices: []specs.LinuxDevice{},
-			Sysctl: map[string]string{
-				"net.ipv4.ping_group_range": fmt.Sprintf("%d %d", user.GID, user.GID),
-			},
+			Sysctl:  map[string]string{},
 			// TODO: grok MaskedPaths and ReadonlyPaths - just copied from podman.
 			MaskedPaths: []string{
 				"/proc/acpi",
@@ -1200,6 +1435,18 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 				"/proc/sysrq-trigger",
 			},
 		},
+	}
+	// Note: network will be nil in rootless mode, since rootlesskit creates and
+	// provisions the network. In rootful mode, we use our networking setup to
+	// provision the network namespace.
+	if c.network != nil {
+		spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{
+			Type: specs.NetworkNamespace,
+			Path: c.network.NamespacePath(),
+		})
+		spec.Linux.Sysctl = map[string]string{
+			"net.ipv4.ping_group_range": fmt.Sprintf("%d %d", user.GID, user.GID),
+		}
 	}
 	if *dns != "" {
 		spec.Mounts = append(spec.Mounts, specs.Mount{
@@ -1263,6 +1510,22 @@ func asError(res *interfaces.CommandResult) error {
 	return nil
 }
 
+func (c *ociContainer) getRuntimeRoot() string {
+	if *runtimeRoot != "" {
+		return *runtimeRoot
+	}
+	if c.runtime == "crun" {
+		if *rootless {
+			if os.Getenv("XDG_RUNTIME_DIR") != "" {
+				return filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "crun")
+			}
+			return filepath.Join("/run", "user", strconv.Itoa(os.Getuid()), "crun")
+		}
+		return "/run/crun"
+	}
+	return ""
+}
+
 func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio, waitDelay time.Duration, args ...string) *interfaces.CommandResult {
 	start := time.Now()
 	defer func() {
@@ -1279,8 +1542,8 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	if runtimeName == "crun" {
 		globalArgs = append(globalArgs, "--cgroup-manager=cgroupfs")
 	}
-	if *runtimeRoot != "" {
-		globalArgs = append(globalArgs, "--root="+*runtimeRoot)
+	if runtimeRoot := c.getRuntimeRoot(); runtimeRoot != "" {
+		globalArgs = append(globalArgs, "--root="+runtimeRoot)
 	}
 
 	runtimeArgs := append(globalArgs, args...)
@@ -1290,6 +1553,17 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	wd, err := os.Getwd()
 	if err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("getwd: %s", err))
+	}
+
+	// In rootless mode, wrap with rootlesskit to properly set up a user
+	// namespace with uid/gid mappings.
+	// TODO: probably need this for create() as well.
+	if *rootless && (args[0] == "run" || args[0] == "create") {
+		wrapped, err := c.wrapWithRootlesskitAndLauncher(runtimeArgs)
+		if err != nil {
+			return commandutil.ErrorResult(status.FailedPreconditionErrorf("wrap with rootlesskit and launcher: %s", err))
+		}
+		runtimeArgs = wrapped
 	}
 
 	log.CtxDebugf(ctx, "Running %v", runtimeArgs)
@@ -1327,12 +1601,43 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	// when it is killed, the container process gets killed automatically
 	// instead of getting reparented and continuing to execute.
 	// TODO: figure out why this is only needed for run and not exec.
-	if args[0] == "run" {
+	// TODO: figure out why we get EPERM in the rootless case when setting CLONE_NEWPID. For now,
+	// set --pidns on rootlesskit instead.
+	if args[0] == "run" && !*rootless {
 		cmd.SysProcAttr.Cloneflags = syscall.CLONE_NEWPID
 	}
 
 	cmd.WaitDelay = waitDelay
+
+	// When doing `crun run` in rootless mode, CommandContext does not work,
+	// since the implementation sends SIGKILL to the started process, and this
+	// may result in a permission denied error since the process may not be
+	// owned by our current user. Instead, we need to run `crun kill` to kill
+	// the container inside the user namespace.
+	commandTerminated := make(chan struct{})
+	if os.Getuid() != 0 && args[0] == "run" {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		var wg sync.WaitGroup
+		defer wg.Wait()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case <-commandTerminated:
+				// Container exited on its own - no need to kill it.
+				return
+			case <-ctx.Done():
+				log.CtxDebugf(ctx, "Terminating container")
+				if b, err := exec.Command(globalArgs[0], append(globalArgs[1:], "kill", c.cid, "KILL")...).CombinedOutput(); err != nil {
+					log.CtxWarningf(ctx, "Failed to kill container: %q", string(b))
+				}
+			}
+		}()
+	}
+
 	runError := cmd.Run()
+	close(commandTerminated)
 	if errors.Is(runError, exec.ErrWaitDelay) {
 		// The stdio streams were forcibly closed after a non-zero waitDelay. Any error from the
 		// process takes precedence over ErrWaitDelay, so we can ignore the error here without
@@ -1362,10 +1667,57 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	return result
 }
 
-func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserProp string, dockerForceRootProp bool) (*specs.User, error) {
-	// TODO: for rootless support we'll need to handle the case where the
-	// executor user doesn't have permissions to access files created as the
-	// requested user ID
+// wrapWithRootlesskitAndLauncher wraps the container runtime with rootlesskit
+// as well as a launcher script, which then calls the container runtime.
+//
+// The first layer of wrapping (rootlesskit) creates a private user namespace
+// and sets up uid/gid mappings. This allows us to appear as uid 0 within the
+// container, and also allows file uid/gid ownership to appear as the correct
+// values matching the original tarball. It also creates a private mount
+// namespace, which allows us to perform overlay mounts as non-root.
+//
+// The second layer of wrapping (launcher) is what actually sets up the overlay
+// mounts. Once this is done, we can properly interpret the "dockerUser" because
+// /etc/passwd will exist. Also, we can exec the container runtime, which
+// replaces the entrypoint process with the container runtime process.
+func (c *ociContainer) wrapWithRootlesskitAndLauncher(runtimeArgs []string) ([]string, error) {
+	image, ok := c.imageStore.CachedImage(c.imageRef)
+	if !ok {
+		return nil, status.InternalErrorf("bad state: invoked OCI runtime before pulling image")
+	}
+	mountsJSON, err := json.Marshal(c.rootfs.mounts)
+	if err != nil {
+		return nil, fmt.Errorf("marshal mounts: %w", err)
+	}
+	var net, ifname string
+	if c.networkEnabled {
+		// TODO: provision network namespaces ourselves so we can reuse
+		// networks.
+		net = "slirp4netns"
+		ifname = "eth0"
+	} else {
+		net = "none"
+	}
+	return append([]string{
+		c.rootlesskitPath,
+		"--net", net,
+		"--ifname", ifname,
+		"--disable-host-loopback",
+		// This just silences a warning from rootlesskit. We don't actually need
+		// to copy up /etc because we're configuring it ourselves.
+		"--copy-up=/etc",
+		c.launcherPath,
+		"--mounts", string(mountsJSON),
+		"--bundle", c.bundlePath(),
+		"--rootfs", c.rootfsPath(),
+		"--config", c.configPath(),
+		"--workdir", c.workDir,
+		"--user", getEffectiveUserSpec(image, c.user, c.forceRoot),
+		"--",
+	}, runtimeArgs...), nil
+}
+
+func getEffectiveUserSpec(image *Image, dockerUserProp string, dockerForceRootProp bool) string {
 	spec := ""
 	if image != nil {
 		spec = image.ConfigFile.Config.User
@@ -1377,79 +1729,14 @@ func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserPro
 		spec = "0"
 	}
 	if spec == "" {
-		// Inherit the current uid/gid.
-		spec = fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+		// Default to root within the container.
+		spec = "0"
 	}
+	return spec
+}
 
-	user, group, err := container.ParseUserGroup(spec)
-	if err != nil {
-		return nil, fmt.Errorf(`invalid "USER[:GROUP]" spec %q`, spec)
-	}
-
-	var uid, gid uint32
-	username := user.Name
-
-	// If the user is non-numeric then we need to look it up from /etc/passwd.
-	// If no gid is specified then we need to find the user entry in /etc/passwd
-	// to know what group they are in.
-	if user.Name != "" || group == nil {
-		userRecord, err := unixcred.LookupUser(filepath.Join(rootfsPath, "/etc/passwd"), user)
-		if (err == unixcred.ErrUserNotFound || os.IsNotExist(err)) && user.Name == "" {
-			// If no user was found in /etc/passwd and we specified only a
-			// numeric user ID then just set the group ID to 0 (root). This is
-			// what docker/podman do, presumably because it's usually safe to
-			// assume that gid 0 exists.
-			uid = user.ID
-			gid = 0
-		} else if err != nil {
-			return nil, fmt.Errorf("lookup user %q in /etc/passwd: %w", user, err)
-		} else {
-			uid = userRecord.UID
-			username = userRecord.Username
-			if group == nil {
-				gid = userRecord.GID
-			}
-		}
-	} else {
-		uid = user.ID
-	}
-
-	if group != nil {
-		// If a group was specified by name then look it up from /etc/group.
-		if group.Name != "" {
-			groupRecord, err := unixcred.LookupGroup(filepath.Join(rootfsPath, "/etc/group"), user)
-			if err != nil {
-				return nil, fmt.Errorf("lookup group %q in /etc/group: %w", group, err)
-			}
-			gid = groupRecord.GID
-		} else {
-			gid = group.ID
-		}
-	}
-
-	gids := []uint32{gid}
-
-	// If no group is explicitly specified and we have a username, then
-	// search /etc/group for additional groups that the user might be in
-	// (/etc/group lists members by username, not by uid).
-	if group == nil && username != "" {
-		groups, err := unixcred.GetGroupsWithUser(filepath.Join(rootfsPath, "/etc/group"), username)
-		if err != nil && !os.IsNotExist(err) {
-			return nil, fmt.Errorf("lookup groups with user %q in /etc/passwd: %w", username, err)
-		}
-		for _, g := range groups {
-			gids = append(gids, g.GID)
-		}
-	}
-	slices.Sort(gids)
-	gids = slices.Compact(gids)
-
-	return &specs.User{
-		UID:            uid,
-		GID:            gid,
-		AdditionalGids: gids,
-		Umask:          pointer(uint32(022)), // 0644 file perms by default
-	}, nil
+func getUser(image *Image, rootfsPath string, dockerUserProp string, dockerForceRootProp bool) (*specs.User, error) {
+	return ociuser.Resolve(getEffectiveUserSpec(image, dockerUserProp, dockerForceRootProp), rootfsPath)
 }
 
 func pointer[T any](val T) *T {
@@ -1480,10 +1767,12 @@ func layerPath(imageCacheRoot string, hash ctr.Hash) string {
 
 // ImageStore handles image layer storage for OCI containers.
 type ImageStore struct {
-	resolver       *oci.Resolver
-	layersDir      string
-	imagePullGroup singleflight.Group[string, *Image]
-	layerPullGroup singleflight.Group[string, any]
+	resolver        *oci.Resolver
+	layersDir       string
+	imagePullGroup  singleflight.Group[string, *Image]
+	layerPullGroup  singleflight.Group[string, any]
+	rootlesskitPath string
+	idMapper        *IDMapper
 
 	mu           sync.RWMutex
 	cachedImages map[string]*Image
@@ -1506,11 +1795,23 @@ type ImageLayer struct {
 	DiffID ctr.Hash
 }
 
-func NewImageStore(resolver *oci.Resolver, layersDir string) (*ImageStore, error) {
+func NewImageStore(resolver *oci.Resolver, layersDir, rootlesskitPath string) (*ImageStore, error) {
+	// Init uid idMapper (necessary for rootless support)
+	var idMapper *IDMapper
+	if *rootless {
+		var err error
+		idMapper, err = NewIDMapper()
+		if err != nil {
+			return nil, fmt.Errorf("init ID mapper: %w", err)
+		}
+	}
+
 	return &ImageStore{
-		resolver:     resolver,
-		layersDir:    layersDir,
-		cachedImages: map[string]*Image{},
+		resolver:        resolver,
+		layersDir:       layersDir,
+		idMapper:        idMapper,
+		rootlesskitPath: rootlesskitPath,
+		cachedImages:    map[string]*Image{},
 	}, nil
 }
 
@@ -1607,7 +1908,7 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 			// the credentials in the key here too.
 			key := hash.Strings(destDir, creds.Username, creds.Password)
 			_, _, err = s.layerPullGroup.Do(ctx, key, func(ctx context.Context) (any, error) {
-				return nil, downloadLayer(ctx, layer, destDir)
+				return nil, s.downloadLayer(ctx, layer, destDir)
 			})
 			return err
 		})
@@ -1633,7 +1934,7 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 // For reference implementations, see:
 //   - Podman: https://github.com/containers/storage/blob/664fe5d9b95004e1be3eee004d56a1715c8ca790/pkg/archive/archive.go#L707-L729
 //   - Moby (Docker): https://github.com/moby/moby/blob/9633556bef3eb20dfe888903660c3df89a73605b/pkg/archive/archive.go#L726-L735
-func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
+func (s *ImageStore) downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 	rc, err := layer.Uncompressed()
 	if err != nil {
 		return status.UnavailableErrorf("get layer reader: %s", err)
@@ -1645,6 +1946,13 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 		return status.UnavailableErrorf("create layer unpack dir: %s", err)
 	}
 	defer os.RemoveAll(tempUnpackDir)
+
+	type chownOp struct {
+		path string
+		uid  int
+		gid  int
+	}
+	var chownOps []chownOp
 
 	tr := tar.NewReader(rc)
 	for {
@@ -1683,7 +1991,11 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 		if strings.HasPrefix(base, whiteoutPrefix) {
 			// Directory whiteout
 			if base == whiteoutPrefix+whiteoutPrefix+".opq" {
-				if err := unix.Setxattr(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
+				attrNamespace := "trusted"
+				if *rootless {
+					attrNamespace = "user"
+				}
+				if err := unix.Setxattr(dir, attrNamespace+".overlay.opaque", []byte{'y'}, 0); err != nil {
 					return status.UnavailableErrorf("setxattr on deleted dir: %s", err)
 				}
 				continue
@@ -1703,9 +2015,11 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			if err := os.MkdirAll(file, os.FileMode(header.Mode)); err != nil {
 				return status.UnavailableErrorf("create directory: %s", err)
 			}
-			if err := os.Chown(file, header.Uid, header.Gid); err != nil {
-				return status.UnavailableErrorf("chown directory: %s", err)
-			}
+			chownOps = append(chownOps, chownOp{
+				path: file,
+				uid:  header.Uid,
+				gid:  header.Gid,
+			})
 		case tar.TypeReg:
 			f, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY, os.FileMode(header.Mode))
 			if err != nil {
@@ -1715,20 +2029,23 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 				f.Close()
 				return status.UnavailableErrorf("copy file content: %s", err)
 			}
-			if err := f.Chown(header.Uid, header.Gid); err != nil {
-				f.Close()
-				return status.UnavailableErrorf("chown file: %s", err)
-			}
 			f.Close()
+			chownOps = append(chownOps, chownOp{
+				path: file,
+				uid:  header.Uid,
+				gid:  header.Gid,
+			})
 		case tar.TypeSymlink:
 			// Symlink's target is only evaluated at runtime, inside the container context.
 			// So it's safe to have the symlink targeting paths outside unpackdir.
 			if err := os.Symlink(header.Linkname, file); err != nil {
 				return status.UnavailableErrorf("create symlink: %s", err)
 			}
-			if err := os.Lchown(file, header.Uid, header.Gid); err != nil {
-				return status.UnavailableErrorf("chown link: %s", err)
-			}
+			chownOps = append(chownOps, chownOp{
+				path: file,
+				uid:  header.Uid,
+				gid:  header.Gid,
+			})
 		case tar.TypeLink:
 			target := filepath.Join(tempUnpackDir, header.Linkname)
 			if !strings.HasPrefix(target, tempUnpackDir) {
@@ -1739,6 +2056,20 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			if err := os.Link(target, file); err != nil {
 				return status.UnavailableErrorf("create hard link: %s", err)
 			}
+		}
+	}
+
+	// chown children before their parents to avoid chowning a directory and
+	// then not being able to change child ownership. This matters only in
+	// rootless mode, since root users can chown files arbitrarily. An easy way
+	// to do this is to sort by path length in decreasing order, since children
+	// have longer paths than their parents.
+	slices.SortFunc(chownOps, func(a, b chownOp) int {
+		return len(b.path) - len(a.path)
+	})
+	for _, op := range chownOps {
+		if err := s.lchown(ctx, op.path, op.uid, op.gid); err != nil {
+			return status.UnavailableErrorf("lchown %d:%d %q: %s", op.uid, op.gid, op.path, err)
 		}
 	}
 
@@ -2027,4 +2358,218 @@ func addFileToTar(tw *tar.Writer, filename string, content []byte) error {
 		return fmt.Errorf("failed to write content for %s: %w", filename, err)
 	}
 	return nil
+}
+
+// lchown changes the owner of the file, directory, or symlink at the given
+// path to the given namespace uid:gid. It does nothing if the uid:gid already
+// matches the current user after applying any ID mapping.
+func (c *ImageStore) lchown(ctx context.Context, path string, uid, gid int) error {
+	if c.idMapper == nil {
+		// We're root: chown the file directly but skip the chown call if
+		// permissions are already correct.
+		if uid == os.Getuid() && gid == os.Getgid() {
+			return nil
+		}
+		return os.Lchown(path, uid, gid)
+	} else {
+		// Rootless mode: skip the chown call if the uid/gid is already mapped
+		// to the current user. This case should be very common - most files
+		// in container images are owned by root.
+		if c.idMapper.IsMappedToCurrentUser(uid, gid) {
+			return nil
+		}
+		// TODO: reduce rootlesskit overhead by passing all paths with the same
+		// uid:gid as a single call to chown. Overhead seems to be about 30ms
+		// per file, so if there are a lot of paths owned by IDs other than 0:0
+		// then this will likely make image pulls slower.
+		var stderr bytes.Buffer
+		cmd := exec.CommandContext(ctx, c.rootlesskitPath, "chown", "--no-dereference", fmt.Sprintf("%d:%d", uid, gid), path)
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("rootlesskit lchown %d:%d %q: %w: %q", uid, gid, path, err, stderr)
+		}
+		return nil
+	}
+}
+
+// XXX: run the whole executor as uid 0 in a user namespace so we can avoid this
+// nonsense
+
+func (c *ociContainer) mapHostWorkspaceOwnershipToContainer(ctx context.Context) error {
+	// This is not needed in rootful mode.
+	if !*rootless {
+		return nil
+	}
+	resolvedContainerUser, err := c.readResolvedUser()
+	if err != nil {
+		return fmt.Errorf("read resolved ID: %w", err)
+	}
+	// If the container is running as root, it should be able to access any
+	// files we created as the host user.
+	if resolvedContainerUser.UID == 0 {
+		return nil
+	}
+	// If the container is running as a non-root user, change ownership so that
+	// files can be accessed by the container user.
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, c.rootlesskitPath, "chown", "--recursive", "--no-dereference", fmt.Sprintf("%d:%d", resolvedContainerUser.UID, resolvedContainerUser.GID), c.workDir)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("rootlesskit chown -rh %d:%d %q: %w: %q", resolvedContainerUser.UID, resolvedContainerUser.GID, c.workDir, err, stderr)
+	}
+	return nil
+}
+
+func (c *ociContainer) mapContainerWorkspaceOwnershipToHost(ctx context.Context) error {
+	// If we're root on the host, we can access any files created by the
+	// container. Skip expensive chown call.
+	if os.Getuid() == 0 {
+		return nil
+	}
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, c.rootlesskitPath, "chown", "--recursive", "--no-dereference", "0:0", c.workDir)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("rootlesskit chown -rh root %q: %w: %q", c.workDir, err, stderr)
+	}
+	return nil
+}
+
+// SubIDRange represents a row parsed from either /etc/subuid or /etc/subgid.
+type SubIDRange struct {
+	Name    string
+	StartID int
+	Count   int
+}
+
+// parseSubIDFile reads a subordinate ID file (e.g., /etc/subuid) and finds the
+// range for the specified username.
+func parseSubIDFile(path, username string) (*SubIDRange, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open subuid/subgid file %s: %w", path, err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.Split(line, ":")
+		if len(parts) != 3 {
+			continue
+		}
+		if parts[0] == username {
+			startID, err := strconv.Atoi(parts[1])
+			if err != nil {
+				return nil, fmt.Errorf("invalid start ID in %s: %s", path, parts[1])
+			}
+			count, err := strconv.Atoi(parts[2])
+			if err != nil {
+				return nil, fmt.Errorf("invalid count in %s: %s", path, parts[2])
+			}
+			return &SubIDRange{Name: username, StartID: startID, Count: count}, nil
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return nil, fmt.Errorf("no subordinate ID range found for user %s in %q", username, path)
+}
+
+// IDMapper translates container UIDs/GIDs to host UIDs/GIDs.
+type IDMapper struct {
+	currentUser *user.User
+	subUIDRange *SubIDRange
+	subGIDRange *SubIDRange
+}
+
+// NewIDMapper creates a new mapper for the current user.
+func NewIDMapper() (*IDMapper, error) {
+	currentUser, err := user.Current()
+	if err != nil {
+		return nil, fmt.Errorf("could not get current user: %w", err)
+	}
+	subUIDRange, err := parseSubIDFile("/etc/subuid", currentUser.Username)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse subuid file: %w", err)
+	}
+	subGIDRange, err := parseSubIDFile("/etc/subgid", currentUser.Username)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse subgid file: %w", err)
+	}
+	return &IDMapper{
+		currentUser: currentUser,
+		subUIDRange: subUIDRange,
+		subGIDRange: subGIDRange,
+	}, nil
+}
+
+// MapToHostUID translates a container UID to the corresponding host UID.
+func (m *IDMapper) MapToHostUID(containerUID int) int {
+	// Special case: container root (UID 0) maps to the current host user's UID.
+	if containerUID == 0 {
+		hostUID, _ := strconv.Atoi(m.currentUser.Uid)
+		return hostUID
+	}
+
+	// Check if the container UID is within the mappable range.
+	if containerUID > 0 && containerUID < m.subUIDRange.Count {
+		// All other UIDs are offset by the start of the subordinate range.
+		return m.subUIDRange.StartID + containerUID - 1
+	}
+
+	// If the UID is outside the mappable range, map it to the "nobody" user.
+	// 65534 is the conventional UID for 'nobody'.
+	return 65534
+}
+
+// MapToHostGID translates a container GID to the corresponding host GID.
+// Logic is identical to UID mapping.
+func (m *IDMapper) MapToHostGID(containerGID int) int {
+	if containerGID == 0 {
+		hostGID, _ := strconv.Atoi(m.currentUser.Gid)
+		return hostGID
+	}
+	if containerGID > 0 && containerGID < m.subGIDRange.Count {
+		return m.subGIDRange.StartID + containerGID - 1
+	}
+	return 65534
+}
+
+func (m *IDMapper) IsMappedToCurrentUser(uid, gid int) bool {
+	return uid == 0 && gid == 0
+}
+
+// generateOCIMappings creates the mapping configuration for an OCI bundle.
+func generateOCIMappings(mapper *IDMapper) (uidMaps []specs.LinuxIDMapping, gidMaps []specs.LinuxIDMapping) {
+	uidMaps = make([]specs.LinuxIDMapping, 0, 2)
+	gidMaps = make([]specs.LinuxIDMapping, 0, 2)
+
+	// Map container root (0) to the current host user.
+	uidMaps = append(uidMaps, specs.LinuxIDMapping{
+		ContainerID: 0,
+		HostID:      uint32(os.Getuid()),
+		Size:        1,
+	})
+	gidMaps = append(gidMaps, specs.LinuxIDMapping{
+		ContainerID: 0,
+		HostID:      uint32(os.Getgid()),
+		Size:        1,
+	})
+	// Map the rest of the subordinate range. Container IDs from 1 to (Count-1)
+	// map to the host's subordinate range.
+	uidMaps = append(uidMaps, specs.LinuxIDMapping{
+		ContainerID: 1,
+		HostID:      uint32(mapper.subUIDRange.StartID),
+		Size:        uint32(mapper.subUIDRange.Count - 1),
+	})
+	gidMaps = append(gidMaps, specs.LinuxIDMapping{
+		ContainerID: 1,
+		HostID:      uint32(mapper.subGIDRange.StartID),
+		Size:        uint32(mapper.subGIDRange.Count - 1),
+	})
+
+	return uidMaps, gidMaps
 }
