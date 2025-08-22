@@ -42,9 +42,9 @@ import { api_key } from "../../../proto/api_key_ts_proto";
 import CliLoginComponent from "../cli_login/cli_login";
 import CodeSearchComponent from "../codesearch/codesearch";
 import ExecutorsComponent from "../executors/executors";
+import OrgAccessDeniedComponent from "../org/org_access_denied";
 import ProductSpotlightComponent from "../product_spotlight/product_spotlight";
 import ProductSpotlightDetailComponent from "../product_spotlight/product_spotlight_detail";
-import OrgAccessDeniedComponent from "../org/org_access_denied";
 
 interface State {
   user?: User;

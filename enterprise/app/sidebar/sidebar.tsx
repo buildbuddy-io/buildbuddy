@@ -237,7 +237,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
               <span className="sidebar-item-text">Search</span>
             </SidebarLink>
           )}
-          <SidebarLink selected={this.isProductSpotlightSelected()} href={Path.productSpotlightPath} title="Product Spotlight">
+          <SidebarLink
+            selected={this.isProductSpotlightSelected()}
+            href={Path.productSpotlightPath}
+            title="Product Spotlight">
             <Sparkles className="icon" />
             <span className="sidebar-item-text">Product spotlight</span>
           </SidebarLink>

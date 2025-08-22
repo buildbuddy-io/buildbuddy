@@ -1,5 +1,6 @@
+import { ArrowLeft, Calendar, ExternalLink, Tag, User } from "lucide-react";
 import React from "react";
-import { ArrowLeft, Calendar, User, Tag, ExternalLink } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { User as AuthUser } from "../../../app/auth/auth_service";
 import router from "../../../app/router/router";
 import SpotlightsService from "./spotlight_service";
@@ -55,13 +56,13 @@ export default class ProductSpotlightDetailComponent extends React.Component<Pro
 
     try {
       const spotlightsService = SpotlightsService.getInstance();
-      
+
       // Load the specific spotlight and all spotlights for related content
       const [spotlight, allSpotlights] = await Promise.all([
         spotlightsService.getSpotlight(this.props.spotlightId),
-        spotlightsService.getAllSpotlights()
+        spotlightsService.getAllSpotlights(),
       ]);
-      
+
       if (spotlight) {
         document.title = `${spotlight.metadata.title} | Product Spotlight | BuildBuddy`;
         this.setState({
@@ -92,68 +93,32 @@ export default class ProductSpotlightDetailComponent extends React.Component<Pro
     const date = new Date(dateString);
     return date.toLocaleDateString("en-US", {
       year: "numeric",
-      month: "long", 
+      month: "long",
       day: "numeric",
     });
   }
 
   renderMarkdownContent(content: string): JSX.Element {
-    // Simple markdown rendering - in a real implementation you'd use a proper markdown parser
-    const lines = content.split('\n');
-    const elements: JSX.Element[] = [];
-    
-    lines.forEach((line, index) => {
-      if (line.startsWith('# ')) {
-        elements.push(<h1 key={index}>{line.substring(2)}</h1>);
-      } else if (line.startsWith('## ')) {
-        elements.push(<h2 key={index}>{line.substring(3)}</h2>);
-      } else if (line.startsWith('### ')) {
-        elements.push(<h3 key={index}>{line.substring(4)}</h3>);
-      } else if (line.startsWith('- **') && line.includes('**')) {
-        // Handle bold list items
-        const boldMatch = line.match(/- \*\*(.*?)\*\*(.*)/);
-        if (boldMatch) {
-          elements.push(
-            <li key={index}>
-              <strong>{boldMatch[1]}</strong>{boldMatch[2]}
-            </li>
-          );
-        }
-      } else if (line.startsWith('- ')) {
-        elements.push(<li key={index}>{line.substring(2)}</li>);
-      } else if (line.startsWith('```')) {
-        // Handle code blocks
-        if (line.length > 3) {
-          elements.push(<div key={index} className="code-block-lang">{line.substring(3)}</div>);
-        }
-      } else if (line.trim() === '') {
-        elements.push(<br key={index} />);
-      } else if (line.trim()) {
-        // Handle inline formatting
-        let processedLine = line;
-        
-        // Bold text
-        processedLine = processedLine.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        
-        // Code spans
-        processedLine = processedLine.replace(/`([^`]+)`/g, '<code>$1</code>');
-        
-        elements.push(
-          <p key={index} dangerouslySetInnerHTML={{ __html: processedLine }} />
-        );
-      }
-    });
-
-    return <div className="markdown-content">{elements}</div>;
+    return (
+      <div className="markdown-content">
+        <ReactMarkdown>{content}</ReactMarkdown>
+      </div>
+    );
   }
 
   getRelatedSpotlights(): Spotlight[] {
     const { spotlight, allSpotlights } = this.state;
     if (!spotlight) return [];
+    if (!spotlight.metadata.tags || spotlight.metadata.tags.length == 0) return [];
 
     // Randomly select a spotlight with at least one matching tag
     return allSpotlights
-      .filter((s) => s.id !== spotlight.id && s.metadata.tags.some(tag => spotlight.metadata.tags.includes(tag)))
+      .filter(
+        (s) =>
+          s.metadata.tags &&
+          s.id !== spotlight.id &&
+          s.metadata.tags.some((tag) => spotlight.metadata.tags.includes(tag))
+      )
       .sort(() => Math.random() - 0.5)
       .slice(0, 2);
   }
@@ -199,10 +164,10 @@ export default class ProductSpotlightDetailComponent extends React.Component<Pro
               <ArrowLeft size={16} />
               Back to Product Spotlight
             </button>
-            
+
             <div className="spotlight-detail-meta">
               <h1 className="spotlight-detail-title">{title}</h1>
-              
+
               <div className="spotlight-detail-info">
                 <div className="info-item">
                   <User size={16} />
@@ -212,34 +177,30 @@ export default class ProductSpotlightDetailComponent extends React.Component<Pro
                   <Calendar size={16} />
                   <span>{this.formatDate(date)}</span>
                 </div>
-                <div className="info-item">
-                  <Tag size={16} />
-                  <div className="spotlight-tags">
-                    {tags.map((tag, index) => (
-                      <span key={index} className="spotlight-tag">
-                        {tag}
-                      </span>
-                    ))}
+                {tags && tags.length > 0 && (
+                  <div className="info-item">
+                    <Tag size={16} />
+                    <div className="spotlight-tags">
+                      {tags.map((tag, index) => (
+                        <span key={index} className="spotlight-tag">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
 
-          <div className="spotlight-detail-content">
-            {this.renderMarkdownContent(spotlight.content)}
-          </div>
+          <div className="spotlight-detail-content">{this.renderMarkdownContent(spotlight.content)}</div>
 
           {relatedSpotlights.length > 0 && (
             <div className="related-spotlights">
               <h3>Related Spotlights</h3>
               <div className="related-spotlights-grid">
                 {relatedSpotlights.map((related) => (
-                  <a
-                    key={related.id}
-                    href={`/product-spotlight/${related.id}`}
-                    className="related-spotlight-card"
-                  >
+                  <a key={related.id} href={`/product-spotlight/${related.id}`} className="related-spotlight-card">
                     <h4>{related.metadata.title}</h4>
                     <p>{related.metadata.description}</p>
                     <ExternalLink size={16} />

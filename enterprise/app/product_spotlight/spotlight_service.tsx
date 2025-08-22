@@ -1,4 +1,4 @@
-import {SPOTLIGHT_CONFIGS} from "./spotlight_configs";
+import { SPOTLIGHT_CONFIGS } from "./spotlight_configs";
 
 interface SpotlightMetadata {
   title: string;
@@ -53,7 +53,7 @@ class SpotlightsService {
 
   async getSpotlight(id: string): Promise<Spotlight | null> {
     const spotlights = await this.loadSpotlights();
-    return spotlights.find(s => s.id === id) || null;
+    return spotlights.find((s) => s.id === id) || null;
   }
 
   async getAllSpotlights(): Promise<Spotlight[]> {
@@ -66,29 +66,29 @@ class SpotlightsService {
       throw new Error(`Could not load spotlight file: ${filename}`);
     }
     const fileContent = await response.text();
-    
+
     if (!fileContent) {
       return null;
     }
 
     const { metadata, content } = this.parseMarkdownFile(fileContent);
-    
+
     return {
       id,
       metadata,
-      content
+      content,
     };
   }
 
   private parseMarkdownFile(fileContent: string): { metadata: SpotlightMetadata; content: string } {
     // Simple frontmatter parser
-    const lines = fileContent.split('\n');
+    const lines = fileContent.split("\n");
     let frontmatterEnd = -1;
     let frontmatterStart = -1;
 
     // Find frontmatter boundaries
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].trim() === '---') {
+      if (lines[i].trim() === "---") {
         if (frontmatterStart === -1) {
           frontmatterStart = i;
         } else {
@@ -99,30 +99,36 @@ class SpotlightsService {
     }
 
     if (frontmatterStart === -1 || frontmatterEnd === -1) {
-      throw new Error('Invalid markdown file: missing frontmatter');
+      throw new Error("Invalid markdown file: missing frontmatter");
     }
 
     // Parse frontmatter (simple YAML-like parsing)
     const frontmatterLines = lines.slice(frontmatterStart + 1, frontmatterEnd);
     const metadata: any = {};
-    
+
     for (const line of frontmatterLines) {
       const match = line.match(/^([^:]+):\s*(.+)$/);
       if (match) {
         const key = match[1].trim();
         let value: any = match[2].trim();
-        
+
         // Handle arrays (tags)
-        if (value.startsWith('[') && value.endsWith(']')) {
-          value = value.slice(1, -1).split(',').map(s => s.trim().replace(/['"]/g, ''));
+        if (value.startsWith("[") && value.endsWith("]")) {
+          value = value
+            .slice(1, -1)
+            .split(",")
+            .map((s) => s.trim().replace(/['"]/g, ""));
         }
-        
+
         metadata[key] = value;
       }
     }
 
     // Get content after frontmatter
-    const content = lines.slice(frontmatterEnd + 1).join('\n').trim();
+    const content = lines
+      .slice(frontmatterEnd + 1)
+      .join("\n")
+      .trim();
 
     return { metadata: metadata as SpotlightMetadata, content };
   }
