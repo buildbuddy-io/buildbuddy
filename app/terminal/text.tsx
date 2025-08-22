@@ -140,7 +140,7 @@ export function getContent(text: string, search: string, lineLengthLimit: number
     const [plaintext, tags] = parseAnsi(line, currentStyle);
     const matchRanges = getMatchedRanges(plaintext, search);
     let matchIndex = 0;
-    const numRowsForLine = lineLengthLimit ? Math.ceil(plaintext.length / lineLengthLimit) : 1;
+    const numRowsForLine = lineLengthLimit ? Math.max(1, Math.ceil(plaintext.length / lineLengthLimit)) : 1;
     for (let i = 0; i < numRowsForLine; i++) {
       const rowEndIndex = (i + 1) * lineLengthLimit;
       while (matchRanges[matchIndex] && matchRanges[matchIndex].start < rowEndIndex) {
