@@ -210,6 +210,10 @@ common:download-minimal --remote_download_minimal
 common:remote-shared --config=cache-shared
 common:remote-shared --jobs=100
 common:remote-shared --verbose_failures
+common:remote-shared --internal_spawn_scheduler
+common:remote-shared --strategy=GoLink=dynamic
+common:remote-shared --dynamic_local_strategy=GoLink=worker,sandboxed
+common:remote-shared --dynamic_remote_strategy=GoLink=remote
 
 # Flags shared for prod RBE and cache
 common:remote-prod-shared --config=remote-shared
