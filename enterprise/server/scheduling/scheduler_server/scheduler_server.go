@@ -292,7 +292,7 @@ func (h *executorHandle) setRegistration(r *scpb.ExecutionNode) {
 }
 
 func (h *executorHandle) nodePoolKey(node *scpb.ExecutionNode) nodePoolKey {
-	key := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
+	key := nodePoolKey{os: node.GetOsFamily(), arch: node.GetArch(), pool: node.GetPool()}
 	if h.scheduler.enableUserOwnedExecutors {
 		key.groupID = h.groupID
 	}
@@ -2412,8 +2412,8 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 	executors := make([]*scpb.GetExecutionNodesResponse_Executor, len(registeredNodes))
 	for i, regNode := range registeredNodes {
 		node := regNode.GetRegistration()
-		isDarwinExecutor := strings.EqualFold(node.Os, platform.DarwinOperatingSystemName)
-		isWindowsExecutor := strings.EqualFold(node.Os, platform.WindowsOperatingSystemName)
+		isDarwinExecutor := strings.EqualFold(node.OsFamily, platform.DarwinOperatingSystemName)
+		isWindowsExecutor := strings.EqualFold(node.OsFamily, platform.WindowsOperatingSystemName)
 		executors[i] = &scpb.GetExecutionNodesResponse_Executor{
 			Node: node,
 			IsDefault: !s.requireExecutorAuthorization ||

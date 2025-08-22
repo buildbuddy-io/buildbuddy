@@ -428,7 +428,7 @@ func newFakeExecutor(ctx context.Context, t *testing.T, schedulerClient scpb.Sch
 func newFakeExecutorWithId(ctx context.Context, t *testing.T, id string, schedulerClient scpb.SchedulerClient) *fakeExecutor {
 	node := &scpb.ExecutionNode{
 		ExecutorId:            id,
-		Os:                    defaultOS,
+		OsFamily:              defaultOS,
 		Arch:                  defaultArch,
 		Host:                  "foo",
 		AssignableMemoryBytes: 64_000_000_000,

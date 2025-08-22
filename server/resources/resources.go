@@ -3,6 +3,7 @@ package resources
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -217,8 +218,25 @@ func GetArch() string {
 	return runtime.GOARCH
 }
 
-func GetOS() string {
+func GetOSFamily() string {
 	return runtime.GOOS
+}
+
+func GetOSDisplayName() string {
+	var command []string
+	switch runtime.GOOS {
+	case "darwin":
+		command = []string{"sh", "-c", "echo \"$(sw_vers -productName) $(sw_vers -productVersion)\""}
+	case "linux":
+		command = []string{"sh", "-c", "grep '^PRETTY_NAME=' /etc/os-release | cut -d= -f2- | tr -d '\"'"}
+	case "windows":
+		command = []string{"ver"}
+	}
+	b, err := exec.Command(command[0], command[1:]...).Output()
+	if err != nil {
+		log.Warningf("Error getting operating system display name: %v", err)
+	}
+	return string(b)
 }
 
 func GetMyHostname() (string, error) {

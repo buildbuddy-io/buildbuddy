@@ -34,7 +34,7 @@ go_test(
     target_compatible_with = ["@platforms//os:macos"],
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [
-            "@com_github_stretchr_testify//assert",
+            "@com_github_stretchr_testify//require",
         ],
         "//conditions:default": [],
     }),

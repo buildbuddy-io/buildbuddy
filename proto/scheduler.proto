@@ -507,9 +507,12 @@ message ExecutionNode {
   // Assignable custom resources.
   repeated CustomResource assignable_custom_resources = 11;
 
-  // Remote execution node operating system.
-  // Ex. "linux".
-  string os = 5;
+  // Node's operating system family. One of: "darwin", "linux", or "windows".
+  string os_family = 5;
+
+  // Node's operating system with version info, suitable for display. This will
+  // be something like "macOS 10.17 Sierra".
+  string os_display_name = 15;
 
   // Architecture of the remote execution node.
   // Ex. "amd64"
@@ -543,6 +546,12 @@ message ExecutionNode {
 
   // The number of in-flight actions the executor is currently executing.
   int32 active_action_count = 14;
+
+  // The Xcode versions installed on this executor.
+  repeated string xcode_versions = 16;
+
+  // The Xcode SDKs installed on this executor.
+  repeated string xcode_sdks = 17;
 }
 
 message GetExecutionNodesRequest {
