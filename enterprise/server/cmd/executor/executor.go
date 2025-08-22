@@ -105,11 +105,11 @@ type cacheClient interface {
 }
 
 func dialCacheOrDie(target string, env environment.Env) *grpc_client.ClientConnPool {
+	log.Infof("Connecting to cache target %q", target)
 	conn, err := grpc_client.DialInternal(env, target)
 	if err != nil {
 		log.Fatalf("Unable to connect to cache '%s': %s", target, err)
 	}
-	log.Infof("Connecting to cache target: %s", target)
 	return conn
 }
 
