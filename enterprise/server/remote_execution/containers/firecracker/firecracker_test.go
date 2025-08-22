@@ -2079,6 +2079,50 @@ func TestFirecrackerNonRoot(t *testing.T) {
 	require.Regexp(t, regexp.MustCompile(`uid=[0-9]+\(nobody\) gid=[0-9]+\(nobody\)`), string(res.Stdout))
 }
 
+func TestFirecrackerRunAsNonExistentUser(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	ws, err := workspace.New(env, rootDir, &workspace.Opts{})
+	require.NoError(t, err)
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			# print out the uid/gid
+			id
+			# make sure the workspace root dir is writable
+			touch foo || exit 1
+			# make sure output directories are writable too
+			touch outputs/bar || exit 1
+			touch nested/outputs/baz || exit 1
+		`},
+		OutputDirectories: []string{"outputs", "nested/outputs"},
+	}
+	ws.SetTask(ctx, &repb.ExecutionTask{Command: cmd})
+	err = ws.CreateOutputDirs()
+	require.NoError(t, err)
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage: busyboxImage,
+		// Numeric uid that doesn't correspond to a real user in /etc/passwd
+		// in the busybox image - this is valid.
+		User:                   "1234",
+		ActionWorkingDirectory: ws.Path(),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         200,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+	require.Equal(t, "uid=1234 gid=0(root) groups=0(root)\n", string(res.Stdout))
+}
+
 func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
