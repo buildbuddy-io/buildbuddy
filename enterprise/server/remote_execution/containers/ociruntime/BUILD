@@ -1,12 +1,19 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+# gazelle:map_kind go_test ociruntime_tests //enterprise/server/remote_execution/containers/ociruntime:defs.bzl
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//dockerfiles/test_images:defs.bzl", "NET_TOOLS_IMAGE")
+load(":defs.bzl", "ociruntime_tests")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "ociruntime",
     srcs = ["ociruntime.go"],
-    data = [":crun"],
+    data = [
+        ":crun",
+        ":rootlesskit",
+        "//enterprise/server/remote_execution/containers/ociruntime/launcher",
+    ],
     embedsrcs = [
         "hosts",
         "seccomp.json",
@@ -17,12 +24,16 @@ go_library(
     visibility = ["//visibility:public"],
     x_defs = {
         "crunRlocationpath": "$(rlocationpath :crun)",
+        "rootlesskitRlocationpath": "$(rlocationpath :rootlesskit)",
+        # XXX: embed the launcher so that this works when running the standalone executor
+        "launcherRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/ociruntime/launcher)",
     },
     deps = [
         "//enterprise/server/remote_execution/block_io",
         "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/containers/ociruntime/ociuser",
         "//enterprise/server/remote_execution/executor_auth",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/util/oci",
@@ -40,7 +51,6 @@ go_library(
         "//server/util/proto",
         "//server/util/status",
         "//server/util/statusz",
-        "//server/util/unixcred",
         "//server/util/uuid",
         "//third_party/singleflight",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
@@ -58,15 +68,15 @@ genrule(
     cmd = "cp $(SRCS) $@",
 )
 
-go_test(
+ociruntime_tests(
     name = "ociruntime_test",
     srcs = ["ociruntime_test.go"],
     data = [
-        ":busybox",
-        ":crun",
+        ":rootlesskit",
         "//enterprise/server/cmd/executor:tini",
         "//enterprise/server/remote_execution/runner/testworker",
         "@busybox",
+        "@net_tools",
     ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
@@ -88,14 +98,14 @@ go_test(
         "@platforms//cpu:x86_64",
     ],
     x_defs = {
-        "crunRlocationpath": "$(rlocationpath :crun)",
-        "busyboxRlocationpath": "$(rlocationpath :busybox)",
-        "ociBusyboxRlocationpath": "$(rlocationpath @busybox)",
+        "busyboxImageRlocationpath": "$(rlocationpath @busybox)",
         "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
-        "netToolsImageRef": NET_TOOLS_IMAGE,
+        "netToolsImageRlocationpath": "$(rlocationpath @net_tools)",
+        "rootlesskitRlocationpath": "$(rlocationpath :rootlesskit)",
     },
     deps = [
         ":ociruntime",
+        "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/persistentworker",
         "//enterprise/server/remote_execution/platform",
@@ -115,6 +125,7 @@ go_test(
         "//server/testutil/testshell",
         "//server/testutil/testtar",
         "//server/util/disk",
+        "//server/util/log",
         "//server/util/networking",
         "//server/util/proto",
         "//server/util/status",
@@ -143,5 +154,13 @@ alias(
     actual = select({
         "@platforms//cpu:x86_64": "@net_busybox_busybox-linux-amd64//file:busybox",
         "@platforms//cpu:aarch64": "@net_busybox_busybox-linux-arm64//file:busybox",
+    }),
+)
+
+alias(
+    name = "rootlesskit",
+    actual = select({
+        "@platforms//cpu:x86_64": "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlesskit",
+        "@platforms//cpu:aarch64": "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlesskit",
     }),
 )

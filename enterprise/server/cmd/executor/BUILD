@@ -69,6 +69,7 @@ go_library(
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/cgroup",
             "//enterprise/server/remote_execution/vbd",
+            "//server/util/flagutil",
             "//server/util/networking",
         ],
         "//conditions:default": [],
