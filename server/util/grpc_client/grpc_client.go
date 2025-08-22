@@ -266,7 +266,11 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 			dialOptions = append(dialOptions, grpc.WithPerRPCCredentials(newRPCCredentials(u.User.String())))
 		}
 		if u.Scheme == "grpcs" {
+			// TODO: don't use google credentials by default - make it opt-in
+			// instead.
+			log.Debugf("Initializing google default credentials")
 			dialOptions = append(dialOptions, grpc.WithTransportCredentials(google.NewDefaultCredentials().TransportCredentials()))
+			log.Debugf("Initialized google default credentials")
 		} else {
 			dialOptions = append(dialOptions, grpc.WithInsecure())
 		}
