@@ -6,7 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 )
 
-var eventsAPIURL = flag.URL("app.events_api_url", "", "Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen.")
+var eventsAPIURL = flag.URL("app.events_api_url", "grpc://localhost:1985", "Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen.")
 
 func WithPath(path string) *url.URL {
 	return eventsAPIURL.ResolveReference(&url.URL{Path: path})

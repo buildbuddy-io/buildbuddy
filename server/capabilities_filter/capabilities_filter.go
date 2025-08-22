@@ -126,6 +126,7 @@ var (
 		"DeleteUserApiKey",
 		// Remote Bazel
 		"Run",
+		"Query",
 		// Codesearch and Kythe
 		"Search",
 		"KytheProxy",

@@ -7,6 +7,7 @@ import "proto/api/v1/api_key.proto";
 import "proto/api/v1/file.proto";
 import "proto/api/v1/invocation.proto";
 import "proto/api/v1/log.proto";
+import "proto/api/v1/query.proto";
 import "proto/api/v1/remote_runner.proto";
 import "proto/api/v1/target.proto";
 import "proto/api/v1/workflow.proto";
@@ -69,4 +70,8 @@ service ApiService {
   // "Org admin" capability.
   rpc CreateUserApiKey(CreateUserApiKeyRequest)
       returns (CreateUserApiKeyResponse);
+
+  // Executes a Bazel query on a remote runner and returns the query results
+  // as a proto.
+  rpc Query(QueryRequest) returns (QueryResponse);
 }

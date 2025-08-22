@@ -6,7 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 )
 
-var cacheAPIURL = flag.URL("app.cache_api_url", "", "Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen.")
+var cacheAPIURL = flag.URL("app.cache_api_url", "grpc://localhost:1985", "Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen.")
 
 func WithPath(path string) *url.URL {
 	return cacheAPIURL.ResolveReference(&url.URL{Path: path})
