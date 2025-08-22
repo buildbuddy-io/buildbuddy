@@ -1,5 +1,9 @@
 export const SPOTLIGHT_CONFIGS = [
   {
+    id: "enhanced-usage-analytics-category-breakdowns",
+    filename: "enhanced-usage-analytics-category-breakdowns.md"
+  },
+  {
     id: "usage-reporting-dashboard",
     filename: "usage-reporting-dashboard.md",
   },
