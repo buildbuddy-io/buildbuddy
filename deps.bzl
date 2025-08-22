@@ -6319,8 +6319,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
         importpath = "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc",
-        sum = "h1:x7wzEgXfnzJcHDwStJT+mxOz4etr2EcexjqhBvmoakw=",
-        version = "v0.60.0",
+        local_path = "/home/vadim/dev/opentelemetry-go-contrib/instrumentation/google.golang.org/grpc/otelgrpc",
     )
     go_repository(
         name = "io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp",
@@ -6530,6 +6529,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         build_file_proto_mode = "disable",
         importpath = "google.golang.org/grpc",
         patch_args = ["-p1"],
+        local_path = "/home/vadim/dev/grpc-go",
         patches = [
             # Remove panic() from serverHandlerTransport.Drain
             # gRPC GracefulStop stops accepting new requests and lets any existing
@@ -6540,8 +6540,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
             # ongoing requests to finish.
             "@{}//buildpatches:org_golang_google_grpc_remove_drain_panic.patch".format(workspace_name),
         ],
-        sum = "h1:WoosgB65DlWVC9FqI82dGsZhWFNBSLjQ84bjROOpMu4=",
-        version = "v1.74.2",
+        #sum = "h1:WoosgB65DlWVC9FqI82dGsZhWFNBSLjQ84bjROOpMu4=",
+        #version = "v1.74.2",
     )
     go_repository(
         name = "org_golang_google_grpc_cmd_protoc_gen_go_grpc",
