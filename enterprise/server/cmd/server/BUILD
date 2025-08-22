@@ -51,6 +51,7 @@ go_library(
         "//enterprise/server/invocation_stat_service",
         "//enterprise/server/iprules",
         "//enterprise/server/ociregistry",
+        "//enterprise/server/query_service",
         "//enterprise/server/quota",
         "//enterprise/server/registry",
         "//enterprise/server/remote_execution/execution_server",

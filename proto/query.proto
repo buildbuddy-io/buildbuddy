@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package query;
+
+import "proto/bazel_query.proto";
+
+option go_package = "query";
+
+message QueryRequest {
+  // URL of the repo the remote workspace should be initialized for
+  // Ex. "https://github.com/some-user/acme"
+  string repo = 1;
+
+  // Git refs to configure the remote git workspace (at least one of `branch` or
+  // `commit_sha` must be set). If only `branch` is set, will run from the tip
+  // of the branch. If only `commit_sha` is set, reporting will not contain the
+  // branch name.
+  string branch = 2;
+  string commit_sha = 3;
+
+  // The Bazel query expression to execute
+  // Ex. "deps(//...)" or "kind('.*_test', //...)"
+  string query = 4;
+
+  // Any local patches that should be applied to the repo before
+  // running the query.
+  // Patches will be applied using "git apply" in the root directory of the
+  // repository.
+  repeated bytes patches = 5;
+
+  // Environment variables to set in the runner env.
+  map<string, string> env = 6;
+
+  // Platform properties to apply to the runner.
+  // Ex. {"OSFamily":"linux", "Arch":"amd64"}
+  map<string, string> platform_properties = 7;
+
+  // Remote headers to be applied to the execution request for the remote
+  // runner.
+  //
+  // Can be used to set platform properties containing secrets.
+  // Ex. --remote_headers=x-buildbuddy-platform.SECRET_NAME=SECRET_VALUE
+  repeated string remote_headers = 8;
+
+  // Max time before query should be canceled.
+  // Ex. "15s", "2h"
+  string timeout = 9;
+
+  // Whether to use github credentials configured on the executor.
+  //
+  // By default, we require https for git operations and generate short-lived
+  // access tokens using our github app installation.
+  // If GitHub SSH access is already configured on the runners, set this
+  // to true to skip doing that and use the configured auth.
+  //
+  // This is only supported for bare runners.
+  bool use_system_git_credentials = 10;
+
+  // Whether to skip the automatic GitHub setup steps on the remote runner.
+  bool skip_auto_checkout = 11;
+  
+  // Additional Bazel flags to pass to the query command.
+  // These will be added after "bazel query" and before the query expression.
+  // Ex. ["--universe_scope=//...", "--implicit_deps=false", "--keep_going"]
+  repeated string bazel_flags = 12;
+}
+
+message QueryResponse {
+  // The invocation ID of the remote run.
+  string invocation_id = 1;
+  
+  // The query result containing all the targets returned by the bazel query.
+  bazel_query.QueryResult result = 2;
+}

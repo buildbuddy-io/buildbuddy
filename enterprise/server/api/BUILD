@@ -16,6 +16,7 @@ go_library(
         "//proto:git_go_proto",
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
+        "//proto:query_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:runner_go_proto",

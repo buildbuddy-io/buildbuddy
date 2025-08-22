@@ -52,6 +52,7 @@ import (
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
+	querypb "github.com/buildbuddy-io/buildbuddy/proto/query"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -1472,6 +1473,14 @@ func (s *BuildBuddyServer) GetWorkspaceDirectory(ctx context.Context, req *wspb.
 		return wss.GetWorkspaceDirectory(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) Query(ctx context.Context, req *querypb.QueryRequest) (*querypb.QueryResponse, error) {
+	qs := s.env.GetQueryService()
+	if qs == nil {
+		return nil, status.UnimplementedError("Query service not configured")
+	}
+	return qs.Query(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetWorkspaceFile(ctx context.Context, req *wspb.GetWorkspaceFileRequest) (*wspb.GetWorkspaceFileResponse, error) {

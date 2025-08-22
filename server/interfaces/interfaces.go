@@ -39,6 +39,7 @@ import (
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
+	querypb "github.com/buildbuddy-io/buildbuddy/proto/query"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -611,6 +612,10 @@ type ApiService interface {
 	GetFileHandler() http.Handler
 	GetMetricsHandler() http.Handler
 	CacheEnabled() bool
+}
+
+type QueryService interface {
+	Query(ctx context.Context, req *querypb.QueryRequest) (*querypb.QueryResponse, error)
 }
 
 type WorkflowService interface {

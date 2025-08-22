@@ -271,6 +271,14 @@ proto_library(
 )
 
 proto_library(
+    name = "query_proto",
+    srcs = ["query.proto"],
+    deps = [
+        ":bazel_query_proto",
+    ],
+)
+
+proto_library(
     name = "storage_proto",
     srcs = [
         "storage.proto",
@@ -1146,6 +1154,19 @@ go_proto_library(
     deps = [
         ":build_events_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
+    ],
+)
+
+go_proto_library(
+    name = "query_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/query",
+    proto = ":query_proto",
+    deps = [
+        ":bazel_query_go_proto",
     ],
 )
 

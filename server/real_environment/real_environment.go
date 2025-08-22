@@ -75,6 +75,7 @@ type RealEnv struct {
 	metricsCollector                 interfaces.MetricsCollector
 	keyValStore                      interfaces.KeyValStore
 	APIService                       interfaces.ApiService
+	queryService                     interfaces.QueryService
 	fileCache                        interfaces.FileCache
 	remoteExecutionService           interfaces.RemoteExecutionService
 	executionClients                 map[string]*executionClientConfig
@@ -338,6 +339,12 @@ func (r *RealEnv) SetAPIService(s interfaces.ApiService) {
 }
 func (r *RealEnv) GetAPIService() interfaces.ApiService {
 	return r.APIService
+}
+func (r *RealEnv) SetQueryService(s interfaces.QueryService) {
+	r.queryService = s
+}
+func (r *RealEnv) GetQueryService() interfaces.QueryService {
+	return r.queryService
 }
 func (r *RealEnv) SetFileCache(s interfaces.FileCache) {
 	r.fileCache = s

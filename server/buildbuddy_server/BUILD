@@ -21,6 +21,7 @@ go_library(
         "//proto:index_go_proto",
         "//proto:invocation_go_proto",
         "//proto:iprules_go_proto",
+        "//proto:query_go_proto",
         "//proto:quota_go_proto",
         "//proto:repo_go_proto",
         "//proto:runner_go_proto",
