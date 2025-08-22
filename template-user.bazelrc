@@ -43,3 +43,10 @@
 # Enable disk cache and garbage collection
 #common --disk_cache=~/.bazel/disk_cache/
 #common --experimental_disk_cache_gc_max_age=7d
+
+# Enable dynamic exeuction for GoLink actions. This significantly speeds up
+# incremental builds when using remote execution.
+#common:remote --internal_spawn_scheduler
+#common:remote --strategy=GoLink=dynamic
+#common:remote --dynamic_local_strategy=GoLink=worker,sandboxed
+#common:remote --dynamic_remote_strategy=GoLink=remote
