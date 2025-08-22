@@ -110,6 +110,7 @@ func dialCacheOrDie(target string, env environment.Env) *grpc_client.ClientConnP
 	if err != nil {
 		log.Fatalf("Unable to connect to cache '%s': %s", target, err)
 	}
+	log.Debugf("Connected to cache target: %s", target)
 	return conn
 }
 
@@ -250,11 +251,12 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 		}
 	}
 
+	log.Infof("Connecting to app target: %s", *appTarget)
 	conn, err := grpc_client.DialInternal(realEnv, *appTarget)
 	if err != nil {
 		log.Fatalf("Unable to connect to app '%s': %s", *appTarget, err)
 	}
-	log.Infof("Connecting to app target: %s", *appTarget)
+	log.Debugf("Connected to app target: %s", *appTarget)
 
 	realEnv.GetHealthChecker().AddHealthCheck("grpc_app_connection", conn)
 	realEnv.SetSchedulerClient(scpb.NewSchedulerClient(conn))
