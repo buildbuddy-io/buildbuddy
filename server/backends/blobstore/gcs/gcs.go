@@ -11,14 +11,18 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	gstatus "google.golang.org/grpc/status"
@@ -68,6 +72,13 @@ func NewGCSBlobStore(ctx context.Context, bucket, credsFile, creds, projectID st
 	var err error
 	if *useGRPC {
 		opts = append(opts, option.WithGRPCConnectionPool(*grpcPoolSize))
+		opts = append(opts, option.WithTelemetryDisabled())
+		opts = append(opts, option.WithGRPCDialOption(grpc.WithStatsHandler(otelgrpc.NewClientHandler(
+			otelgrpc.WithMeterProvider(rpcutil.MeterProvider()),
+			otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents),
+		))))
+		opts = append(opts, option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(interceptors.Metrics().UnaryClientInterceptor())))
+		opts = append(opts, option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(interceptors.Metrics().StreamClientInterceptor())))
 		gcsClient, err = storage.NewGRPCClient(ctx, opts...)
 	} else {
 		gcsClient, err = storage.NewClient(ctx, opts...)
