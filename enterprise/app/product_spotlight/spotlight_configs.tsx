@@ -1,5 +1,9 @@
 export const SPOTLIGHT_CONFIGS = [
   {
+    id: "memory-pool-optimization-remote-cache-uploads",
+    filename: "memory-pool-optimization-remote-cache-uploads.md"
+  },
+  {
     id: "usage-reporting-dashboard",
     filename: "usage-reporting-dashboard.md",
   },
