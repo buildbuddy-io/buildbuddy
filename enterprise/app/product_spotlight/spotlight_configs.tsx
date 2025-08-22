@@ -1,5 +1,9 @@
 export const SPOTLIGHT_CONFIGS = [
   {
+    id: "error_github_access_limitations",
+    filename: "error_github_access_limitations.md"
+  },
+  {
     id: "usage-reporting-dashboard",
     filename: "usage-reporting-dashboard.md",
   },
