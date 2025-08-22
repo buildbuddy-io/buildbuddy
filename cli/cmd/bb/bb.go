@@ -366,7 +366,7 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 	watcher.Pause()
 	defer watcher.Unpause()
 	for _, p := range plugins {
-		if err := p.PostBazel(outputPath); err != nil {
+		if err := p.PostBazel(outputPath, exitCode); err != nil {
 			return 1, err
 		}
 	}
