@@ -1,16 +1,10 @@
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
-import SpotlightCard from "./spotlight_card";
 import router from "../../../app/router/router";
+import SpotlightCard from "./spotlight_card";
 import SpotlightsService from "./spotlight_service";
 
-const CATEGORIES = [
-  "Platform",
-  "Performance",
-  "Testing",
-  "Remote Runners",
-  "Security",
-]
+const CATEGORIES = ["bazel", "platform", "performance", "testing", "remote runners", "security"];
 
 interface SpotlightMetadata {
   title: string;
@@ -54,7 +48,7 @@ export default class ProductSpotlightComponent extends React.Component<Props, St
     try {
       const spotlightsService = SpotlightsService.getInstance();
       const spotlights = await spotlightsService.getAllSpotlights();
-      
+
       this.setState({
         spotlights,
         loading: false,
@@ -81,7 +75,7 @@ export default class ProductSpotlightComponent extends React.Component<Props, St
     if (filterCategory === "all") {
       return spotlights;
     }
-    return spotlights.filter((s) => s.metadata.tags.includes(filterCategory));
+    return spotlights.filter((s) => s.metadata.tags && s.metadata.tags.includes(filterCategory));
   }
 
   render() {
@@ -108,8 +102,11 @@ export default class ProductSpotlightComponent extends React.Component<Props, St
         <div className="container">
           <div className="content">
             <div className="section">
-              <p>Welcome to Product Spotlight! Here you'll find highlighted features and the latest improvements to BuildBuddy.</p>
-              
+              <p>
+                Welcome to Product Spotlight! Here you'll find highlighted features and the latest improvements to
+                BuildBuddy.
+              </p>
+
               <div className="spotlight-filters">
                 <button
                   className={`filter-btn ${this.state.filterCategory === "all" ? "active" : ""}`}

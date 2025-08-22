@@ -395,31 +395,36 @@
   color: #14171a;
 }
 
+.markdown-content img {
+  width: 600px;
+  vertical-align: middle;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .spotlights-grid {
     grid-template-columns: 1fr;
     gap: 16px;
   }
-  
+
   .spotlight-filters {
     gap: 8px;
   }
-  
+
   .filter-btn {
     padding: 6px 12px;
     font-size: 13px;
   }
-  
+
   .spotlight-modal {
     margin: 10px;
     max-height: calc(100vh - 20px);
   }
-  
+
   .spotlight-modal-content {
     padding: 16px;
   }
-  
+
   .spotlight-modal-footer {
     padding: 16px;
     flex-direction: column;

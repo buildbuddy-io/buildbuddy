@@ -36,15 +36,17 @@ export default class SpotlightCard extends React.Component<Props> {
             <p className="spotlight-date">{this.formatDate(date)}</p>
             <p className="spotlight-description">{description}</p>
           </div>
-          
+
           <div className="spotlight-footer">
-            <div className="spotlight-tags">
-              {tags.map((tag, index) => (
-                <span key={index} className="spotlight-tag">
-                  {tag}
-                </span>
-              ))}
-            </div>
+            {tags && tags.length > 0 && (
+              <div className="spotlight-tags">
+                {tags.map((tag, index) => (
+                  <span key={index} className="spotlight-tag">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
