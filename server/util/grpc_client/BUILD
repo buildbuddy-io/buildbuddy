@@ -16,6 +16,7 @@ go_library(
         "@io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc//:otelgrpc",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//connectivity",
+        "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//credentials/google",
         "@org_golang_google_grpc//experimental",
         "@org_golang_google_grpc//keepalive",
