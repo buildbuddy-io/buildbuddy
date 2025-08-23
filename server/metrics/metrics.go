@@ -164,6 +164,9 @@ const (
 	// Origin of the cache request (for usage tracking): should be "internal" or "external"
 	CacheRequestOrigin = "origin"
 
+	// Whether or not billable usage was recorded for this request ("true", "false")
+	UsageTracked = "tracked"
+
 	// Describes the name of the server that handles a client request, such as "byte_stream_server" or "cas_server"
 	ServerName = "server_name"
 
@@ -525,6 +528,7 @@ var (
 		CacheTypeLabel,
 		CacheEventTypeLabel,
 		GroupID,
+		UsageTracked,
 	})
 
 	CacheNumHitsExported = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -546,6 +550,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		UsageTracked,
 	})
 
 	CacheDownloadSizeBytesExported = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -572,6 +577,7 @@ var (
 		Help:      "Download duration for each file downloaded from the remote cache, in **microseconds**.",
 	}, []string{
 		CacheTypeLabel,
+		UsageTracked,
 	})
 
 	CacheRequestedInlineSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -601,6 +607,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		UsageTracked,
 	})
 
 	CacheUploadSizeBytesExported = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -628,6 +635,7 @@ var (
 		Help:      "Upload duration for each file uploaded to the remote cache, in **microseconds**.",
 	}, []string{
 		CacheTypeLabel,
+		UsageTracked,
 	})
 
 	// #### Examples
@@ -2437,6 +2445,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		UsageTracked,
 	})
 
 	ServerUncompressedUploadBytesCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2448,6 +2457,7 @@ var (
 		CacheTypeLabel,
 		ServerName,
 		GroupID,
+		UsageTracked,
 	})
 
 	ServerDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -2460,6 +2470,7 @@ var (
 		CacheTypeLabel,
 		ServerName,
 		GroupID,
+		UsageTracked,
 	})
 
 	ServerUncompressedDownloadBytesCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2471,6 +2482,7 @@ var (
 		CacheTypeLabel,
 		ServerName,
 		GroupID,
+		UsageTracked,
 	})
 
 	DigestUploadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -2482,6 +2494,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		UsageTracked,
 	})
 
 	DigestDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -2493,6 +2506,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		UsageTracked,
 	})
 
 	Logs = promauto.NewCounterVec(prometheus.CounterOpts{
