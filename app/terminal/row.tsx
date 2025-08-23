@@ -18,6 +18,7 @@ export function Row({ data, index, style }: ListChildComponentProps<ListData>) {
     data.rowLength,
     data.search,
     rowData.matchStartIndex,
+    data.caseSensitive,
     rowData.tags
   );
   const row = rowsForLine[rowData.wrapOffset];
