@@ -109,7 +109,7 @@ func New(env environment.Env) (*Model, error) {
 	}
 
 	// Connect to TF serving.
-	conn, err := grpc_client.DialSimple(*servingAddress)
+	conn, err := grpc_client.DialSimpleWithPoolSize(*servingAddress, 2)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to dial TensorFlow serving at %s: %s", *servingAddress, err)
 	}

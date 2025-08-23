@@ -40,7 +40,7 @@ func Register(realEnv *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env) (*CodesearchService, error) {
-	conn, err := grpc_client.DialInternal(env, *codesearchBackend)
+	conn, err := grpc_client.DialInternalWithPoolSize(env, *codesearchBackend, 2)
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not dial codesearch backend %q: %s", *codesearchBackend, err)
 	}
