@@ -52,6 +52,7 @@
     "react-slider": "^2.0.6",
     "react-virtualized-auto-sizer": "^1.0.26",
     "react-window": "^1.8.11",
+    "react-markdown": "^8.0.0",
     "recharts": "^2.15.1",
     "rxjs": "^6.6.7",
     "tslib": "^2.8.1",
