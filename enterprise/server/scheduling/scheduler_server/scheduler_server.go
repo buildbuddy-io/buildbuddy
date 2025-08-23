@@ -940,7 +940,7 @@ type schedulerClientCache struct {
 	env environment.Env
 
 	mu      sync.Mutex
-	clients map[string]schedulerClient
+	clients map[string]*schedulerClient
 	// Address of this app instance. If the destination address matches the address of this instance, we call into
 	// the local scheduler server instance directly instead of using RPCs.
 	localServerHostPort string
@@ -950,7 +950,7 @@ type schedulerClientCache struct {
 func newSchedulerClientCache(env environment.Env, localServerHostPort string, localServer *SchedulerServer) *schedulerClientCache {
 	cache := &schedulerClientCache{
 		env:                 env,
-		clients:             make(map[string]schedulerClient),
+		clients:             make(map[string]*schedulerClient),
 		localServerHostPort: localServerHostPort,
 		localServer:         localServer,
 	}
@@ -965,6 +965,7 @@ func (c *schedulerClientCache) startExpirer() {
 			for addr, client := range c.clients {
 				if time.Since(client.lastAccess) > unusedSchedulerClientExpiration {
 					if client.rpcConn != nil {
+						log.Debugf("Expiring unused scheduler client for %q", addr)
 						_ = client.rpcConn.Close()
 					}
 					delete(c.clients, addr)
@@ -976,21 +977,21 @@ func (c *schedulerClientCache) startExpirer() {
 	}()
 }
 
-func (c *schedulerClientCache) get(hostPort string) (schedulerClient, error) {
+func (c *schedulerClientCache) get(hostPort string) (*schedulerClient, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	client, ok := c.clients[hostPort]
 	if !ok {
 		log.Infof("Creating new scheduler client for %q", hostPort)
 		if hostPort == c.localServerHostPort {
-			client = schedulerClient{localServer: c.localServer}
+			client = &schedulerClient{localServer: c.localServer}
 		} else {
 			// This is non-blocking so it's OK to hold the lock.
 			conn, err := grpc_client.DialInternal(c.env, "grpc://"+hostPort)
 			if err != nil {
-				return schedulerClient{}, status.UnavailableErrorf("could not dial scheduler: %s", err)
+				return nil, status.UnavailableErrorf("could not dial scheduler: %s", err)
 			}
-			client = schedulerClient{rpcClient: scpb.NewSchedulerClient(conn), rpcConn: conn}
+			client = &schedulerClient{rpcClient: scpb.NewSchedulerClient(conn), rpcConn: conn}
 		}
 		c.clients[hostPort] = client
 	}
