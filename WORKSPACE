@@ -2,7 +2,7 @@ workspace(
     name = "buildbuddy",
 )
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 # Load core rulesets before invoking any dependency macros to ensure that the
 # versions listed below are actually honored - the last repo from the first
@@ -592,6 +592,15 @@ oci_pull(
     name = "busybox",
     digest = "sha256:c230832bd3b0be59a6c47ed64294f9ce71e91b327957920b6929a0caa8353140",
     image = "mirror.gcr.io/library/busybox:1.36.1",
+    platforms = ["linux/amd64"],
+)
+
+load("//dockerfiles/test_images:defs.bzl", "NET_TOOLS_IMAGE_DIGEST", "NET_TOOLS_IMAGE_REPO")
+
+oci_pull(
+    name = "net_tools",
+    digest = NET_TOOLS_IMAGE_DIGEST,
+    image = NET_TOOLS_IMAGE_REPO,
     platforms = ["linux/amd64"],
 )
 
