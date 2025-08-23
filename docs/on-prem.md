@@ -8,8 +8,6 @@ BuildBuddy is designed to be easy to run on-premise for those use cases where da
 
 The software itself is open-source and easy to audit.
 
-For companies, we offer an [Enterprise](enterprise.md) version of BuildBuddy that contains advanced features like OIDC Auth, API access, and more.
-
 ## Getting started
 
 There are four ways to run BuildBuddy on-prem:
@@ -103,14 +101,6 @@ By default the `k8s_on_prem.sh` will restart your BuildBuddy deployment to pick 
 bash k8s_on_prem.sh -norestart
 ```
 
-### Enterprise deployment
-
-If you've obtained a BuildBuddy enterprise license, you deploy enterprise BuildBuddy by specifying the `-enterprise` flag.
-
-```bash
-bash k8s_on_prem.sh -enterprise
-```
-
 ## Helm
 
 If you run or have access to a Kubernetes cluster and are comfortable with [Helm](https://helm.sh/), we maintain official BuildBuddy Helm charts that are easy to configure and deploy.
@@ -134,7 +124,6 @@ helm install buildbuddy buildbuddy/buildbuddy \
 For more information on configuring your BuildBuddy Helm deploy, check out the charts themselves:
 
 - [BuildBuddy Open Source](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy)
-- [BuildBuddy Enterprise](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise)
 
 ## Configuring BuildBuddy
 
