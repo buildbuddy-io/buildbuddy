@@ -51,6 +51,7 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/disk",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_docker_docker//client",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
