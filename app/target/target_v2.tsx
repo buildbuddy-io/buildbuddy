@@ -24,6 +24,7 @@ import { OutlinedLinkButton } from "../components/button/link_button";
 import format from "../format/format";
 import CacheRequestsCardComponent from "../invocation/cache_requests_card";
 import InvocationModel from "../invocation/invocation_model";
+import { getTestShardingSuggestion, SuggestionComponent } from "../invocation/invocation_suggestion_card";
 import LinkGithubRepoModal from "../invocation/link_github_repo_modal";
 import { renderTestSize } from "../invocation/target_util";
 import router from "../router/router";
@@ -261,6 +262,11 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     return `Run ${testResult.run} (Attempt ${testResult.attempt}, Shard ${testResult.shard})`;
   }
 
+  private renderTestShardingSuggestionCard(resultEvents: any[]) {
+    const suggestion = getTestShardingSuggestion({ model: this.props.model, resultEvents });
+    return suggestion ? <SuggestionComponent suggestion={suggestion} /> : null;
+  }
+
   getTab() {
     // If the user explicitly clicked on a tab, show that
     if (this.props.tab) {
@@ -409,6 +415,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
           </div>
         </div>
         <div className="container nopadding-dense">
+          {this.renderTestShardingSuggestionCard(resultEvents)}
           {resultEvents.length > 1 && (
             <div className={`runs ${resultEvents.length > 9 && "run-grid"}`}>
               {resultEvents.map((event, index) => (
