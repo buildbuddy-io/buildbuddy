@@ -32,6 +32,12 @@ export default class ExecutorCardComponent extends React.Component<Props> {
               <div className="executor-section-title">Executor Host ID:</div>
               <div>{this.props.node.executorHostId}</div>
             </div>
+            {this.props.node.osDisplayName && (
+              <div className="executor-section">
+                <div className="executor-section-title">Operating System:</div>
+                <div>{this.props.node.osDisplayName}</div>
+              </div>
+            )}
             <div className="executor-section">
               <div className="executor-section-title">Assignable Memory:</div>
               <div>{format.bytes(+this.props.node.assignableMemoryBytes)}</div>
@@ -53,6 +59,23 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                     );
                   })}
                 </div>
+              </div>
+            )}
+            {this.props.node.xcodeVersions && this.props.node.xcodeVersions.length > 0 && (
+              <div className="executor-section">
+                {this.props.node.xcodeVersions.length == 1 && (
+                  <div className="executor-section-title">Xcode Version:</div>
+                )}
+                {this.props.node.xcodeVersions.length > 1 && (
+                  <div className="executor-section-title">Xcode Versions:</div>
+                )}
+                <div>{this.props.node.xcodeVersions.join(", ")}</div>
+              </div>
+            )}
+            {this.props.node.xcodeSdks && this.props.node.xcodeSdks.length > 0 && (
+              <div className="executor-section">
+                <div className="executor-section-title">Xcode SDKs:</div>
+                <div>{this.props.node.xcodeSdks.join(", ")}</div>
               </div>
             )}
             {this.props.node.supportedIsolationTypes && this.props.node.supportedIsolationTypes.length > 0 && (

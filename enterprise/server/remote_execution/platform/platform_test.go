@@ -757,3 +757,11 @@ func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (s
 	sdkRoot := fmt.Sprintf("%s/%s", developerDir, sdkPath)
 	return developerDir, sdkRoot, nil
 }
+
+func (x *xcodeLocator) Versions() []string {
+	return []string{}
+}
+
+func (x *xcodeLocator) SDKs() []string {
+	return []string{}
+}

@@ -12,6 +12,7 @@ go_library(
         "//enterprise/server/scheduling/priority_task_scheduler",
         "//proto:scheduler_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/resources",
         "//server/util/authutil",
         "//server/util/log",

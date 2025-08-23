@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -53,7 +54,7 @@ type Options struct {
 	APIKeyOverride string
 }
 
-func makeExecutionNode(pool, executorID, executorHostID string, options *Options) (*scpb.ExecutionNode, error) {
+func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator interfaces.XcodeLocator, options *Options) (*scpb.ExecutionNode, error) {
 	hostname := options.HostnameOverride
 	if hostname == "" {
 		resHostname, err := resources.GetMyHostname()
@@ -77,7 +78,8 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		AssignableMemoryBytes:     resources.GetAllocatedRAMBytes(),
 		AssignableMilliCpu:        resources.GetAllocatedCPUMillis(),
 		AssignableCustomResources: resources.GetAllocatedCustomResources(),
-		Os:                        resources.GetOS(),
+		OsFamily:                  resources.GetOSFamily(),
+		OsDisplayName:             resources.GetOSDisplayName(),
 		Arch:                      resources.GetArch(),
 		Pool:                      strings.ToLower(pool),
 		Version:                   version.Tag(),
@@ -85,6 +87,8 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		ExecutorHostId:            executorHostID,
 		SupportedIsolationTypes:   supportedTypes,
 		CurrentQueueLength:        0,
+		XcodeVersions:             xcodeLocator.Versions(),
+		XcodeSdks:                 xcodeLocator.SDKs(),
 	}, nil
 }
 
@@ -389,7 +393,7 @@ func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler
 	} else if resources.GetPoolName() != "" {
 		log.Fatal("Only one of the `MY_POOL` environment variable and `executor.pool` config option may be set")
 	}
-	node, err := makeExecutionNode(poolName, executorID, executorHostID, options)
+	node, err := makeExecutionNode(poolName, executorID, executorHostID, env.GetXcodeLocator(), options)
 	if err != nil {
 		return nil, status.InternalErrorf("Error determining node properties: %s", err)
 	}
