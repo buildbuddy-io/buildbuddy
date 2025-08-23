@@ -198,6 +198,101 @@ func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t 
 	require.Equal(t, scheduler.q.Len(), 0)
 }
 
+func TestPriorityTaskScheduler_QueueSkipping_LargeCustomResourceTasksNotIndefinitelyBlocked(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+
+	flags.Set(t, "executor.millicpu", 30_000)
+	flags.Set(t, "executor.memory_bytes", 64_000_000_000)
+	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+		{Name: "gpu", Value: 2.0},
+	})
+	err := resources.Configure(false /*=mmapLRUEnabled*/)
+	require.NoError(t, err)
+
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	scheduler.Start()
+	t.Cleanup(func() {
+		err := scheduler.Stop()
+		require.NoError(t, err)
+	})
+
+	ctx := context.Background()
+
+	gpuLargeSize := &scpb.TaskSize{
+		EstimatedMilliCpu:    1000,
+		EstimatedMemoryBytes: 1000,
+		CustomResources:      []*scpb.CustomResource{{Name: "gpu", Value: 2.0}},
+	}
+	gpuSmallSize := &scpb.TaskSize{
+		EstimatedMilliCpu:    1000,
+		EstimatedMemoryBytes: 1000,
+		CustomResources:      []*scpb.CustomResource{{Name: "gpu", Value: 1.0}},
+	}
+	gpuLargeTaskID := fakeTaskID("gpu-large")
+	gpuSmall1TaskID := fakeTaskID("gpu-small-1")
+	gpuSmall2TaskID := fakeTaskID("gpu-small-2")
+
+	// Schedule one task that requires 1 GPU, then one task that requires 2
+	// GPUs, then another task that requires 1 GPU. The first GPU task should be
+	// allowed to run, and the second GPU task should be blocked waiting for the
+	// first GPU task to complete. The third task should *not* skip ahead in the
+	// queue - if we keep allowing tasks to skip ahead, then the large GPU task
+	// will spend a long time queued.
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             gpuSmall1TaskID,
+		TaskSize:           gpuSmallSize,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: gpuSmallSize},
+	})
+	require.NoError(t, err)
+	execution1 := <-executor.StartedExecutions
+	// gpu-small-1 should have started.
+	require.Equal(t, gpuSmall1TaskID, execution1.ScheduledTask.GetExecutionTask().GetExecutionId())
+
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             gpuLargeTaskID,
+		TaskSize:           gpuLargeSize,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: gpuLargeSize},
+	})
+	require.NoError(t, err)
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             gpuSmall2TaskID,
+		TaskSize:           gpuSmallSize,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: gpuSmallSize},
+	})
+	require.NoError(t, err)
+
+	// Give enough time for the scheduler to attempt to schedule more tasks.
+	// It should not have scheduled any more tasks except the first one.
+	// TODO: use testing/synctest here once we're on Go 1.25
+	select {
+	case ex := <-executor.StartedExecutions:
+		require.FailNowf(t, "no tasks should be started until first task completes", "task %q started", ex.ScheduledTask.GetExecutionTask().GetExecutionId())
+	case <-time.After(100 * time.Millisecond):
+	}
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, scheduler.q.Len(), 2)
+	// Complete the first task. The second GPU task should start.
+	execution1.Complete()
+	execution2 := <-executor.StartedExecutions
+	require.Equal(t, scheduler.q.Len(), 1)
+	execution2.Complete()
+	// Drain the queue.
+	execution3 := <-executor.StartedExecutions
+	execution3.Complete()
+	require.Equal(t, scheduler.q.Len(), 0)
+
+	startedTaskIDs := []string{
+		execution1.ScheduledTask.GetExecutionTask().GetExecutionId(),
+		execution2.ScheduledTask.GetExecutionTask().GetExecutionId(),
+	}
+	require.ElementsMatch(t, []string{gpuSmall1TaskID, gpuLargeTaskID}, startedTaskIDs)
+}
+
 func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 	for _, test := range []struct {
 		name string
