@@ -738,7 +738,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
   ) {
     const snapshotKey = this.getSnapshotKeyForSnapshotID(vmMetadata);
     const snapshotKeyJSON = JSON.stringify(snapshotKey);
-    const cmd = `bb remote --run_from_snapshot='${snapshotKeyJSON}' --runner_exec_properties=debug-executor-id=${executionMetadata.executorId} --script='echo "My custom bash command!"'`;
+    const impersonationAPIKey = this.state.user?.isImpersonating
+      ? `--remote_run_header=x-buildbuddy-platform.env-overrides=BUILDBUDDY_BES_API_KEY=[SET BB ORG API KEY]>`
+      : "";
+    const cmd = `bb remote ${impersonationAPIKey} --run_from_snapshot='${snapshotKeyJSON}' --runner_exec_properties=debug-executor-id=${executionMetadata.executorId} --script='echo "My custom bash command!"'`;
     copyToClipboard(cmd);
     alert_service.success("Command copied to clipboard");
     this.setState({ showSnapshotMenu: false });

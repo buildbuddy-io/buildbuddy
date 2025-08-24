@@ -681,9 +681,13 @@ func run() error {
 		defer cancel()
 	}
 
+	besAPIKey := os.Getenv("BUILDBUDDY_BES_API_KEY")
+	if besAPIKey == "" {
+		besAPIKey = ws.buildbuddyAPIKey
+	}
 	// Use a context without a timeout for the build event reporter, so that even
 	// if the `timeout` is reached, any events will finish getting published
-	buildEventReporter, err := newBuildEventReporter(contextWithoutTimeout, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
+	buildEventReporter, err := newBuildEventReporter(contextWithoutTimeout, *besBackend, besAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
 	if err != nil {
 		return err
 	}
