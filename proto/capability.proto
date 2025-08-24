@@ -16,4 +16,7 @@ enum Capability {
   ORG_ADMIN = 8;  // 2^3
   // Allows read-only access to audit logs.
   AUDIT_LOG_READ = 16;  // 2^4
+  // This is an implicit capability granted through group membership, except
+  // for certain API keys with more limited access.
+  GROUP_ACCESS = 32; // 2^5
 }
