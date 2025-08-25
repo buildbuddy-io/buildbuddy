@@ -1180,7 +1180,6 @@ func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.Bui
 
 func (e *EventChannel) InitializeLogWriter(iid string) error {
 	var err error
-	log.Infof("Initializing log writer with %dw x %dh", e.requestedTerminalColumns, e.requestedTerminalLines)
 	e.logWriter, err = eventlog.NewEventLogWriter(
 		e.ctx,
 		e.env.GetBlobstore(),
