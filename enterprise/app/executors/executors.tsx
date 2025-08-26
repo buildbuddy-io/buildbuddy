@@ -149,7 +149,7 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
     >();
     for (const r of this.props.regions) {
       for (const e of r.response.executor) {
-        const key = r.name + "-" + (e.node?.os || "") + "-" + (e.node?.arch || "") + "-" + (e.node?.pool || "");
+        const key = r.name + "-" + (e.node?.osFamily || "") + "-" + (e.node?.arch || "") + "-" + (e.node?.pool || "");
         if (!executorsByPool.has(key)) {
           executorsByPool.set(key, []);
         }
@@ -180,7 +180,7 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
                       {executors.length} {executors.length === 1 ? "executor" : "executors"}
                     </ExecutorDetail>
                     <ExecutorDetail Icon={Laptop} label="OS">
-                      {executors[0].executor.node?.os || "unknown"}
+                      {executors[0].executor.node?.osFamily || "unknown"}
                     </ExecutorDetail>
                     <ExecutorDetail Icon={Cpu} label="Arch">
                       {executors[0].executor.node?.arch || "unknown"}
