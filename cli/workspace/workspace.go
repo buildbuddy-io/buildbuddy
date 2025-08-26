@@ -15,8 +15,7 @@ const (
 	WorkspaceFileName    = "WORKSPACE"
 	WorkspaceAltFileName = "WORKSPACE.bazel"
 
-	ModuleFileName          = "MODULE.bazel"
-	ModuleWorkspaceFileName = "WORKSPACE.bzlmod"
+	ModuleFileName = "MODULE.bazel"
 )
 
 var (
@@ -25,7 +24,7 @@ var (
 	pathErr  error
 	basename string
 
-	WorkspaceIndicatorFiles = []string{WorkspaceFileName, WorkspaceAltFileName, ModuleFileName}
+	WorkspaceIndicatorFiles = []string{ModuleFileName, WorkspaceFileName, WorkspaceAltFileName}
 )
 
 // Path returns the current Bazel workspace path by traversing upwards until
