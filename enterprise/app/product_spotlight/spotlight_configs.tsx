@@ -1,5 +1,9 @@
 export const SPOTLIGHT_CONFIGS = [
   {
+    id: "ansi-terminal-line-clearing-improvements",
+    filename: "ansi-terminal-line-clearing-improvements.md"
+  },
+  {
     id: "usage-reporting-dashboard",
     filename: "usage-reporting-dashboard.md",
   },
