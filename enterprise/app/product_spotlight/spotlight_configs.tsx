@@ -1,5 +1,9 @@
 export const SPOTLIGHT_CONFIGS = [
   {
+    id: "custom-resource-backfilling-scheduler-fix",
+    filename: "custom-resource-backfilling-scheduler-fix.md"
+  },
+  {
     id: "usage-reporting-dashboard",
     filename: "usage-reporting-dashboard.md",
   },
