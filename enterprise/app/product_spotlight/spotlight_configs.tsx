@@ -1,5 +1,9 @@
 export const SPOTLIGHT_CONFIGS = [
   {
+    id: "enhanced-raft-partition-support-improved-range-management",
+    filename: "enhanced-raft-partition-support-improved-range-management.md"
+  },
+  {
     id: "usage-reporting-dashboard",
     filename: "usage-reporting-dashboard.md",
   },
