@@ -92,10 +92,6 @@ const (
 	// Execution root directory path relative to the container rootfs directory.
 	execrootPath = "/buildbuddy-execroot"
 
-	// Fake image ref indicating that busybox should be manually provisioned.
-	// TODO: get rid of this
-	TestBusyboxImageRef = "test.buildbuddy.io/busybox"
-
 	// Image cache layout version.
 	//
 	// This should be incremented when making backwards-compatible changes to
@@ -563,9 +559,6 @@ func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
 }
 
 func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
-	if c.imageRef == TestBusyboxImageRef {
-		return nil
-	}
 	if _, err := c.imageStore.Pull(ctx, c.imageRef, creds); err != nil {
 		return status.WrapError(err, "pull OCI image")
 	}
@@ -907,13 +900,6 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 		return fmt.Errorf("create rootfs dir: %w", err)
 	}
 
-	// For testing only, support a fake image ref that means "install busybox
-	// manually".
-	// TODO: improve testing setup and get rid of this
-	if c.imageRef == TestBusyboxImageRef {
-		return installBusybox(ctx, c.rootfsPath())
-	}
-
 	if c.imageRef == "" {
 		// No image specified (sandbox-only).
 		return nil
@@ -1010,40 +996,6 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 		return fmt.Errorf("mount overlayfs: %w", err)
 	}
 	c.overlayfsMounted = true
-	return nil
-}
-
-func installBusybox(ctx context.Context, path string) error {
-	busyboxPath, err := exec.LookPath("busybox")
-	if err != nil {
-		return fmt.Errorf("find busybox in PATH: %w", err)
-	}
-	binDir := filepath.Join(path, "bin")
-	if err := os.MkdirAll(binDir, 0755); err != nil {
-		return fmt.Errorf("mkdir -p %s: %w", binDir, err)
-	}
-	if err := disk.CopyViaTmpSibling(busyboxPath, filepath.Join(binDir, "busybox")); err != nil {
-		return fmt.Errorf("copy busybox binary: %w", err)
-	}
-	b, err := exec.CommandContext(ctx, busyboxPath, "--list").Output()
-	if err != nil {
-		return fmt.Errorf("list: %w", err)
-	}
-	names := strings.Split(strings.TrimSpace(string(b)), "\n")
-	for _, name := range names {
-		if name == "busybox" {
-			continue
-		}
-		if err := os.Symlink("busybox", filepath.Join(binDir, name)); err != nil {
-			return err
-		}
-	}
-	if err := os.MkdirAll(filepath.Join(path, "usr"), 0755); err != nil {
-		return err
-	}
-	if err := os.Symlink("../bin", filepath.Join(path, "usr", "bin")); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -1543,12 +1495,6 @@ func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Crede
 func (s *ImageStore) CachedImage(imageName string) (image *Image, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	// TODO: make ImageStore a param of NewProvider and move this logic to a
-	// test image store
-	if imageName == TestBusyboxImageRef {
-		return &Image{}, true
-	}
 
 	image, ok = s.cachedImages[imageName]
 	return image, ok

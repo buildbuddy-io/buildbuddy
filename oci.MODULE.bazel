@@ -17,6 +17,12 @@ oci.pull(
     image = "mirror.gcr.io/library/busybox:1.36.1",
     platforms = ["linux/amd64"],
 )
+oci.pull(
+    name = "net_tools",
+    digest = "sha256:fdd8b0a391871eaf47664b2f6620b64d2bc4bdf8c86b57c1e0d013935cac1215",
+    image = "gcr.io/flame-public/net-tools",
+    platforms = ["linux/amd64"],
+)
 use_repo(
     oci,
     "bazel_oci_image_base",
@@ -25,4 +31,6 @@ use_repo(
     "buildbuddy_go_oci_image_base_linux_amd64",
     "busybox",
     "busybox_linux_amd64",
+    "net_tools",
+    "net_tools_linux_amd64",
 )
