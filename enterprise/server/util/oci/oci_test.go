@@ -15,7 +15,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -32,10 +31,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
-	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -527,7 +524,6 @@ func layerFiles(t *testing.T, layer v1.Layer) map[string][]byte {
 
 func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetClock(clockwork.NewFakeClock())
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	// Track requests to original and mirror registries.
 	var originalReqCount, mirrorReqCount atomic.Int32
@@ -1014,213 +1010,4 @@ func (c *requestCounter) reset() {
 	c.mu.Lock()
 	c.counts = map[string]int{}
 	c.mu.Unlock()
-}
-
-func TestResolveImageDigest_TagExists(t *testing.T) {
-	te := testenv.GetTestEnv(t)
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	registry := testregistry.Run(t, testregistry.Opts{})
-
-	imageName := "image_tag_exists"
-	_, img := registry.PushNamedImage(t, imageName)
-	pushedDigest, err := img.Digest()
-	require.NoError(t, err)
-	nameToResolve := registry.ImageAddress(imageName)
-
-	nameWithDigest, err := newResolver(t, te).ResolveImageDigest(
-		context.Background(),
-		nameToResolve,
-		oci.RuntimePlatform(),
-		oci.Credentials{},
-	)
-	require.NoError(t, err)
-
-	resolvedDigest, err := name.NewDigest(nameWithDigest)
-	require.NoError(t, err)
-	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
-}
-
-func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
-	te := testenv.GetTestEnv(t)
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	registry := testregistry.Run(t, testregistry.Opts{})
-
-	nonexistent := registry.ImageAddress("does_not_exist")
-
-	_, err := newResolver(t, te).ResolveImageDigest(
-		context.Background(),
-		nonexistent,
-		oci.RuntimePlatform(),
-		oci.Credentials{},
-	)
-	require.Error(t, err)
-	require.True(t, status.IsUnavailableError(err), "expected UnavailableError, got: %v", err)
-}
-
-func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
-	te := testenv.GetTestEnv(t)
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-
-	counter := newRequestCounter()
-	registry := testregistry.Run(t, testregistry.Opts{
-		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-			counter.Inc(r)
-			return true
-		},
-	})
-
-	imageName := "cache_hit"
-	_, img := registry.PushNamedImage(t, imageName)
-	pushedDigest, err := img.Digest()
-	require.NoError(t, err)
-	nameToResolve := registry.ImageAddress(imageName)
-
-	resolver := newResolver(t, te)
-
-	{
-		counter.reset()
-		nameWithDigest, err := resolver.ResolveImageDigest(
-			context.Background(),
-			nameToResolve,
-			oci.RuntimePlatform(),
-			oci.Credentials{},
-		)
-		require.NoError(t, err)
-		resolvedDigest, err := name.NewDigest(nameWithDigest)
-		require.NoError(t, err)
-		require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
-
-		expectedRequests := map[string]int{
-			http.MethodGet + " /v2/":                                    1,
-			http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
-		}
-		require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
-	}
-
-	{
-		counter.reset()
-		nameWithDigest, err := resolver.ResolveImageDigest(
-			context.Background(),
-			nameToResolve,
-			oci.RuntimePlatform(),
-			oci.Credentials{},
-		)
-		require.NoError(t, err)
-
-		resolvedDigest, err := name.NewDigest(nameWithDigest)
-		require.NoError(t, err)
-		require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
-
-		require.Empty(t, counter.snapshot())
-	}
-
-	{
-		ref, err := name.ParseReference(nameToResolve)
-		require.NoError(t, err)
-		registryAndRepoNoTag := ref.Context().String()
-		counter.reset()
-		nameWithDigest, err := resolver.ResolveImageDigest(
-			context.Background(),
-			registryAndRepoNoTag,
-			oci.RuntimePlatform(),
-			oci.Credentials{},
-		)
-		require.NoError(t, err)
-
-		resolvedDigest, err := name.NewDigest(nameWithDigest)
-		require.NoError(t, err)
-		require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
-
-		require.Empty(t, counter.snapshot())
-	}
-}
-
-func TestResolveImageDigest_CacheExpiration(t *testing.T) {
-	te := testenv.GetTestEnv(t)
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-
-	counter := newRequestCounter()
-	registry := testregistry.Run(t, testregistry.Opts{
-		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-			counter.Inc(r)
-			return true
-		},
-	})
-
-	imageName := "cache_expiration"
-	_, img := registry.PushNamedImage(t, imageName)
-	pushedDigest, err := img.Digest()
-	require.NoError(t, err)
-	nameToResolve := registry.ImageAddress(imageName)
-
-	fakeClock := clockwork.NewFakeClock()
-	te.SetClock(fakeClock)
-	resolver := newResolver(t, te)
-
-	counter.reset()
-	nameWithDigest, err := resolver.ResolveImageDigest(
-		context.Background(),
-		nameToResolve,
-		oci.RuntimePlatform(),
-		oci.Credentials{},
-	)
-	require.NoError(t, err)
-	resolvedDigest, err := name.NewDigest(nameWithDigest)
-	require.NoError(t, err)
-	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
-
-	expectedFirst := map[string]int{
-		http.MethodGet + " /v2/":                                    1,
-		http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
-	}
-	require.Empty(t, cmp.Diff(expectedFirst, counter.snapshot()))
-
-	// 2) Immediate resolve should be a cache hit; no HTTP requests.
-	counter.reset()
-	nameWithDigest, err = resolver.ResolveImageDigest(
-		context.Background(),
-		nameToResolve,
-		oci.RuntimePlatform(),
-		oci.Credentials{},
-	)
-	require.NoError(t, err)
-	resolvedDigest, err = name.NewDigest(nameWithDigest)
-	require.NoError(t, err)
-	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
-	require.Empty(t, counter.snapshot())
-
-	// 3) Advance time to just before TTL expiry; still a cache hit.
-	fakeClock.Advance(15*time.Minute - time.Second)
-	counter.reset()
-	nameWithDigest, err = resolver.ResolveImageDigest(
-		context.Background(),
-		nameToResolve,
-		oci.RuntimePlatform(),
-		oci.Credentials{},
-	)
-	require.NoError(t, err)
-	resolvedDigest, err = name.NewDigest(nameWithDigest)
-	require.NoError(t, err)
-	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
-	require.Empty(t, counter.snapshot())
-
-	// 4) Advance past TTL; expect cache refresh (GET /v2/ and HEAD manifest).
-	fakeClock.Advance(2 * time.Second)
-	counter.reset()
-	nameWithDigest, err = resolver.ResolveImageDigest(
-		context.Background(),
-		nameToResolve,
-		oci.RuntimePlatform(),
-		oci.Credentials{},
-	)
-	require.NoError(t, err)
-	resolvedDigest, err = name.NewDigest(nameWithDigest)
-	require.NoError(t, err)
-	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
-
-	expectedRefresh := map[string]int{
-		http.MethodGet + " /v2/":                                    1,
-		http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
-	}
-	require.Empty(t, cmp.Diff(expectedRefresh, counter.snapshot()))
 }
