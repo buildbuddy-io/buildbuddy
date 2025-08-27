@@ -10,7 +10,6 @@ import (
 	"log"
 	"math/rand/v2"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -55,11 +54,10 @@ import (
 
 // Set via x_defs in BUILD file.
 var (
-	crunRlocationpath       string
-	busyboxRlocationpath    string
-	ociBusyboxRlocationpath string
-	testworkerRlocationpath string
-	netToolsImageRef        string
+	crunRlocationpath          string
+	busyboxImageRlocationpath  string
+	netToolsImageRlocationpath string
+	testworkerRlocationpath    string
 )
 
 func init() {
@@ -78,37 +76,21 @@ func setupNetworking(t *testing.T) {
 	flags.Set(t, "executor.oci.network_pool_size", 0)
 }
 
-// Returns a special image ref indicating that a busybox-based rootfs should
-// be provisioned using the 'busybox' binary on the host machine.
-// Skips the test if busybox is not available.
-// TODO: use a static test binary + empty rootfs, instead of relying on busybox
-// for testing
-func manuallyProvisionedBusyboxImage(t *testing.T) string {
-	// Make sure our bazel-provisioned busybox binary is in PATH.
-	busyboxPath, err := runfiles.Rlocation(busyboxRlocationpath)
-	require.NoError(t, err)
-	if path, _ := exec.LookPath("busybox"); path != busyboxPath {
-		err := os.Setenv("PATH", filepath.Dir(busyboxPath)+":"+os.Getenv("PATH"))
-		require.NoError(t, err)
-	}
-	return ociruntime.TestBusyboxImageRef
+// Runs a test image registry and pushes an image from runfiles to it.
+// It returns a ref that can be used to pull the image.
+func serveImageFromRunfiles(t *testing.T, name, rlocationpath string) string {
+	registry := testregistry.Run(t, testregistry.Opts{})
+	image := testregistry.ImageFromRlocationpath(t, rlocationpath)
+	registry.Push(t, image, name)
+	return registry.ImageAddress(name)
 }
 
-// Returns an image ref pointing to a remotely hosted busybox image.
-// Skips the test if we don't have mount permissions.
-// TODO: support rootless overlayfs mounts and get rid of this
-func realBusyboxImage(t *testing.T) string {
-	if !hasMountPermissions(t) {
-		t.Skipf("using a real container image with overlayfs requires mount permissions")
-	}
-	return "mirror.gcr.io/library/busybox"
+func busyboxImage(t *testing.T) string {
+	return serveImageFromRunfiles(t, "busybox", busyboxImageRlocationpath)
 }
 
 func netToolsImage(t *testing.T) string {
-	if !hasMountPermissions(t) {
-		t.Skipf("using a real container image with overlayfs requires mount permissions")
-	}
-	return netToolsImageRef
+	return serveImageFromRunfiles(t, "net-tools", netToolsImageRlocationpath)
 }
 
 // Returns a remote reference to the image in //dockerfiles/test_images/ociruntime_test/image_config_test_image
@@ -134,7 +116,7 @@ func installLeaserInEnv(t testing.TB, env *real_environment.RealEnv) {
 func TestRun(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -183,7 +165,7 @@ func TestRun(t *testing.T) {
 func TestCgroupSettings(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -237,7 +219,7 @@ func TestCgroupSettings(t *testing.T) {
 func TestRunUsageStats(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -330,7 +312,7 @@ TEST_ENV_VAR=foo
 func TestRunOOM(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -420,7 +402,7 @@ cat /sys/fs/cgroup/memory.events
 func TestCreateExecRemove(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -441,7 +423,8 @@ func TestCreateExecRemove(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Create
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 	err = c.Create(ctx, wd)
 	require.NoError(t, err)
@@ -466,7 +449,7 @@ func TestCreateExecRemove(t *testing.T) {
 func TestTini_Run(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -501,7 +484,7 @@ func TestTini_Run(t *testing.T) {
 func TestTini_CreateExec(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -563,7 +546,7 @@ func TestTini_CreateExec(t *testing.T) {
 func TestExecUsageStats(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -610,7 +593,7 @@ func TestExecUsageStats(t *testing.T) {
 func TestStatsPostExec(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -749,7 +732,7 @@ TEST_ENV_VAR=foo
 func TestCreateExecPauseUnpause(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -770,7 +753,8 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Create
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 	err = c.Create(ctx, wd)
 	require.NoError(t, err)
@@ -855,7 +839,7 @@ func TestCreateFailureHasStderr(t *testing.T) {
 	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -890,7 +874,7 @@ func TestCreateFailureHasStderr(t *testing.T) {
 func TestDevices(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -946,7 +930,7 @@ func TestSignal(t *testing.T) {
 	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -1125,14 +1109,14 @@ func TestUser(t *testing.T) {
 		{
 			name: "Busybox/Default",
 			props: &platform.Properties{
-				ContainerImage: realBusyboxImage(t),
+				ContainerImage: busyboxImage(t),
 			},
 			expectedID: "uid=0(root) gid=0(root) groups=0(root)",
 		},
 		{
 			name: "Busybox/UnknownUID",
 			props: &platform.Properties{
-				ContainerImage: realBusyboxImage(t),
+				ContainerImage: busyboxImage(t),
 				DockerUser:     "2024",
 			},
 			expectedID: "uid=2024 gid=0(root) groups=0(root)",
@@ -1140,7 +1124,7 @@ func TestUser(t *testing.T) {
 		{
 			name: "Busybox/UnknownUIDAndGID",
 			props: &platform.Properties{
-				ContainerImage: realBusyboxImage(t),
+				ContainerImage: busyboxImage(t),
 				DockerUser:     "2024:2024",
 			},
 			expectedID: "uid=2024 gid=2024 groups=2024",
@@ -1253,7 +1237,7 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 
 func TestHighLayerCount(t *testing.T) {
 	// Load busybox oci image
-	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+	busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 
 	for _, tc := range []struct {
 		layerCount int
@@ -1319,7 +1303,7 @@ func TestHighLayerCount(t *testing.T) {
 func TestEntrypoint(t *testing.T) {
 	setupNetworking(t)
 	// Load busybox oci image
-	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+	busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 	// Mutate the image with an ENTRYPOINT directive which sets an env var
 	// that we expect to be visible in the command
 	cfg, err := busyboxImg.ConfigFile()
@@ -1362,7 +1346,7 @@ func TestEntrypoint(t *testing.T) {
 func TestFileOwnership(t *testing.T) {
 	setupNetworking(t)
 	// Load busybox oci image
-	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+	busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 	// Append a layer with a file, dir, and symlink that are owned by a
 	// non-root user
 	layer := testregistry.NewBytesLayer(t, testtar.EntriesBytes(
@@ -1482,7 +1466,7 @@ func TestPathSanitization(t *testing.T) {
 			imageStore, err := ociruntime.NewImageStore(resolver, cacheRoot)
 			require.NoError(t, err)
 			// Load busybox oci image
-			busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+			busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 			// Append an invalid layer
 			layer := testregistry.NewBytesLayer(t, test.Tar)
 			img, err := mutate.AppendLayers(busyboxImg, layer)
@@ -1504,7 +1488,7 @@ func TestPathSanitization(t *testing.T) {
 func TestPersistentWorker(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -1530,7 +1514,8 @@ func TestPersistentWorker(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Create container
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 	err = c.Create(ctx, ws.Path())
 	require.NoError(t, err)
@@ -1577,7 +1562,7 @@ func TestPersistentWorker(t *testing.T) {
 func TestCancelRun(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -1632,7 +1617,7 @@ func TestCancelRun(t *testing.T) {
 func TestCancelExec(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -1652,7 +1637,9 @@ func TestCancelExec(t *testing.T) {
 		ContainerImage: image,
 	}})
 	require.NoError(t, err)
-	// Create
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
 	err = c.Create(ctx, wd)
 	require.NoError(t, err)
 	removed := false
@@ -1772,7 +1759,7 @@ func TestPullImage(t *testing.T) {
 
 func TestMounts(t *testing.T) {
 	setupNetworking(t)
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
@@ -1820,7 +1807,7 @@ func TestMounts(t *testing.T) {
 
 func TestPersistentVolumes(t *testing.T) {
 	setupNetworking(t)
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)

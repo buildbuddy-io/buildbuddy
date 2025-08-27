@@ -62,11 +62,11 @@ go_test(
     name = "ociruntime_test",
     srcs = ["ociruntime_test.go"],
     data = [
-        ":busybox",
         ":crun",
         "//enterprise/server/cmd/executor:tini",
         "//enterprise/server/remote_execution/runner/testworker",
         "@busybox",
+        "@net_tools",
     ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
@@ -89,10 +89,9 @@ go_test(
     ],
     x_defs = {
         "crunRlocationpath": "$(rlocationpath :crun)",
-        "busyboxRlocationpath": "$(rlocationpath :busybox)",
-        "ociBusyboxRlocationpath": "$(rlocationpath @busybox)",
+        "busyboxImageRlocationpath": "$(rlocationpath @busybox)",
+        "netToolsImageRlocationpath": "$(rlocationpath @net_tools)",
         "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
-        "netToolsImageRef": NET_TOOLS_IMAGE,
     },
     deps = [
         ":ociruntime",
