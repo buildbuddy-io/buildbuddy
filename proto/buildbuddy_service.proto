@@ -58,6 +58,10 @@ service BuildBuddyService {
       returns (stats.GetStatHeatmapResponse);
   rpc GetStatDrilldown(stats.GetStatDrilldownRequest)
       returns (stats.GetStatDrilldownResponse);
+  // Fetches stats about targets that were run on RBE _only_ (i.e.,
+  // from the executions table).
+  rpc GetTargetTrends(stats.GetTargetTrendsRequest)
+      returns (stats.GetTargetTrendsResponse);
 
   // Zip manifest API
   rpc GetZipManifest(zip.GetZipManifestRequest)
