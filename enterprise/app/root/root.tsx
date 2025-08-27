@@ -100,9 +100,12 @@ class ImpersonationComponent extends React.Component<ImpersonationProps, Imperso
     });
     // Store the generated key for some time to avoid generating a new key if
     // the user needs the key again.
-    window.setTimeout(() => {
-      this.setState({ apiKey: undefined });
-    }, 45 * 60 * 1000);
+    window.setTimeout(
+      () => {
+        this.setState({ apiKey: undefined });
+      },
+      45 * 60 * 1000
+    );
     return response.apiKey!.value;
   }
 
@@ -136,8 +139,7 @@ class ImpersonationComponent extends React.Component<ImpersonationProps, Imperso
         <div className="spacer" />
         <OutlinedButton
           onClick={this.handleGenerateImpersonationAPIKeyClicked.bind(this)}
-          className="generate-api-key-button hide-on-mobile"
-        >
+          className="generate-api-key-button hide-on-mobile">
           <span>{this.state.apiKey ? "Copy" : "Get"} temporary API key</span>
           {this.state.isCopied ? (
             <Check style={{ stroke: "green" }} className="icon black" />
@@ -266,16 +268,14 @@ export default class EnterpriseRootComponent extends React.Component {
       <>
         {this.state.user?.isImpersonating && <ImpersonationComponent user={this.state.user} />}
         <div
-          className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${sidebar || code ? "left" : ""}`}
-        >
+          className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${sidebar || code ? "left" : ""}`}>
           <div className={`page ${menu ? "has-menu" : ""}`}>
             {menu && (
               <MenuComponent
                 light={login || cliLogin}
                 user={this.state.user}
                 showHamburger={!this.state.user && !!invocationId}
-                preferences={this.state.preferences}
-              >
+                preferences={this.state.preferences}>
                 <div onClick={this.handleOrganizationClicked.bind(this)}>{this.state.user?.selectedGroupName()}</div>
               </MenuComponent>
             )}
@@ -285,14 +285,12 @@ export default class EnterpriseRootComponent extends React.Component {
                 tab={this.state.tab}
                 user={this.state.user}
                 dense={this.state.preferences.denseModeEnabled}
-                search={this.state.search}
-              ></SidebarComponent>
+                search={this.state.search}></SidebarComponent>
             )}
             <div
               className={`root-main ${code ? "root-code" : ""} ${login ? "root-login" : ""} ${
                 tests ? "root-tests" : ""
-              }`}
-            >
+              }`}>
               {!this.state.loading && (
                 <div className={`content ${login || repo ? "content-flex" : ""}`}>
                   {invocationId && (

@@ -1271,7 +1271,6 @@ func (s *BuildBuddyServer) GetTargetTrends(ctx context.Context, req *stpb.GetTar
 	return nil, status.UnimplementedError("Not implemented")
 }
 
-
 func (s *BuildBuddyServer) GetInvocationOwner(ctx context.Context, req *inpb.GetInvocationOwnerRequest) (*inpb.GetInvocationOwnerResponse, error) {
 	gid, err := s.env.GetInvocationDB().LookupGroupIDFromInvocation(ctx, req.GetInvocationId())
 	if err != nil {

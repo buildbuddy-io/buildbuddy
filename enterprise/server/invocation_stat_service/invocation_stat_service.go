@@ -1367,7 +1367,7 @@ func (i *InvocationStatService) getTargetsByMetric(ctx context.Context, req *stp
 
 	q.SetGroupBy("target_label")
 	q.SetOrderBy("value", false) // Descending order
-	q.SetLimit(1000)              // Reasonable limit to avoid overwhelming the response
+	q.SetLimit(1000)             // Reasonable limit to avoid overwhelming the response
 
 	qStr, qArgs := q.Build()
 	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_target_trends").Raw(qStr, qArgs...)
