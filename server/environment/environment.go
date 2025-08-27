@@ -139,4 +139,5 @@ type Env interface {
 	GetHitTrackerFactory() interfaces.HitTrackerFactory
 	GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer
 	GetExperimentFlagProvider() interfaces.ExperimentFlagProvider
+	GetExecutorConfigurationService() interfaces.ExecutorConfigurationService
 }

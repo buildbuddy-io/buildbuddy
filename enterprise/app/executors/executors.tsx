@@ -1,4 +1,4 @@
-import { Cpu, Globe, Hash, Laptop, LucideIcon } from "lucide-react";
+import { Cpu, Globe, Hash, Laptop, LucideIcon, Wrench } from "lucide-react";
 import React from "react";
 import { Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
@@ -14,6 +14,7 @@ import { bazel_config } from "../../../proto/bazel_config_ts_proto";
 import { capability } from "../../../proto/capability_ts_proto";
 import { scheduler } from "../../../proto/scheduler_ts_proto";
 import ExecutorCardComponent from "./executor_card";
+import ExecutorConfigModal from "./executor_config";
 
 enum FetchType {
   Executors,
@@ -139,6 +140,7 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
 
 interface ExecutorsListProps {
   regions: { name: string; response: scheduler.GetExecutionNodesResponse }[];
+  onOpenConfigModal: (pool: string) => void;
 }
 
 class ExecutorsList extends React.Component<ExecutorsListProps> {
@@ -185,6 +187,14 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
                     <ExecutorDetail Icon={Cpu} label="Arch">
                       {executors[0].executor.node?.arch || "unknown"}
                     </ExecutorDetail>
+                    {executors.every((e) => e.executor.node?.configurable === true) && (
+                      <button
+                        className="base-button outlined-button executor-configure"
+                        onClick={() => this.props.onOpenConfigModal(executors[0].executor.node?.pool || "")}>
+                        <Wrench className="icon" />
+                        <span>Configure</span>
+                      </button>
+                    )}
                   </div>
                   {executors.length < 3 && (
                     <div>
@@ -238,6 +248,13 @@ interface State {
   loading: FetchType[];
   schedulerUri: string;
   error: BuildBuddyError | null;
+  configModalVisible: boolean;
+  selectedPool: string;
+  configFormData: {
+    operatingSystem: string;
+    xcodeVersions: string[];
+    xcodeSDKs: string[];
+  };
 }
 
 export default class ExecutorsComponent extends React.Component<Props, State> {
@@ -248,6 +265,13 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     loading: [],
     schedulerUri: "",
     error: null,
+    configModalVisible: false,
+    selectedPool: "",
+    configFormData: {
+      operatingSystem: "",
+      xcodeVersions: [],
+      xcodeSDKs: [],
+    },
   };
 
   subscription?: Subscription;
@@ -358,6 +382,29 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     router.navigateTo(`/executors/${tabId}`);
   }
 
+  onOpenConfigModal = (pool: string) => {
+    this.setState({ configModalVisible: true, selectedPool: pool });
+  };
+
+  onCloseConfigModal = () => {
+    this.setState({ configModalVisible: false });
+  };
+
+  onConfigFormChange = (field: keyof State["configFormData"], value: string | string[]) => {
+    this.setState({
+      configFormData: {
+        ...this.state.configFormData,
+        [field]: value,
+      },
+    });
+  };
+
+  onConfigApply = () => {
+    alert("apply!");
+    // console.log('Applied configuration:', this.state.configFormData);
+    this.setState({ configModalVisible: false });
+  };
+
   // "bring your own runners" is enabled for the installation (i.e. BuildBuddy Cloud deployment).
   renderWithGroupOwnedExecutorsEnabled() {
     const allNodes = this.state.regions.flatMap((r) => r.response.executor);
@@ -393,7 +440,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
                 </div>
               </Banner>
             )}
-            <ExecutorsList regions={this.state.regions} />
+            <ExecutorsList regions={this.state.regions} onOpenConfigModal={this.onOpenConfigModal} />
             {!allNodes.length && this.props.user.selectedGroup.useGroupOwnedExecutors && (
               <div className="empty-state">
                 <h1>No self-hosted executors are connected.</h1>
@@ -438,7 +485,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
         </div>
       );
     } else {
-      return <ExecutorsList regions={this.state.regions} />;
+      return <ExecutorsList regions={this.state.regions} onOpenConfigModal={this.onOpenConfigModal} />;
     }
   }
 
@@ -462,6 +509,14 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
             {!this.state.userOwnedExecutorsSupported && this.renderWithoutGroupOwnedExecutorsEnabled()}
           </div>
         )}
+        <ExecutorConfigModal
+          visible={this.state.configModalVisible}
+          pool={this.state.selectedPool}
+          configFormData={this.state.configFormData}
+          onClose={this.onCloseConfigModal}
+          onFormChange={this.onConfigFormChange}
+          onApply={this.onConfigApply}
+        />
       </div>
     );
   }

@@ -59,6 +59,7 @@ import (
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	expb "github.com/buildbuddy-io/buildbuddy/proto/executor"
 	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -2549,4 +2550,22 @@ func (s *BuildBuddyServer) GetGCPProject(ctx context.Context, request *gcpb.GetG
 	}
 
 	return gcpService.GetGCPProject(ctx, request)
+}
+
+func (s *BuildBuddyServer) GetExecutorConfigurations(ctx context.Context, request *expb.GetConfigurationsRequest) (*expb.GetConfigurationsResponse, error) {
+	executorConfigurer := s.env.GetExecutorConfigurationService()
+	if executorConfigurer == nil {
+		return nil, status.FailedPreconditionError("Executor configuration service not enabled")
+	}
+
+	return executorConfigurer.GetExecutorConfigurations(ctx, request)
+}
+
+func (s *BuildBuddyServer) ApplyExecutorConfiguration(ctx context.Context, request *expb.ApplyConfigurationRequest) (*expb.ApplyConfigurationResponse, error) {
+	executorConfigurer := s.env.GetExecutorConfigurationService()
+	if executorConfigurer == nil {
+		return nil, status.FailedPreconditionError("Executor configuration service not enabled")
+	}
+
+	return executorConfigurer.ApplyExecutorConfiguration(ctx, request)
 }

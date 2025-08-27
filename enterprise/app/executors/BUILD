@@ -22,6 +22,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:errors",
         "//enterprise/app/executors:executor_card",
+        "//enterprise/app/executors:executor_config",
         "//proto:api_key_ts_proto",
         "//proto:bazel_config_ts_proto",
         "//proto:capability_ts_proto",
@@ -42,5 +43,19 @@ ts_library(
         "//proto:scheduler_ts_proto",
         "//proto:stat_filter_ts_proto",
         "//proto:timestamp_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "executor_config",
+    srcs = ["executor_config.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/components/checkbox",
+        "//app/components/select",
+        "//app/service:rpc_service",
+        "//proto:executor_ts_proto",
     ],
 )

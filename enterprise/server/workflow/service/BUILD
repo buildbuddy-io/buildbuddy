@@ -17,6 +17,7 @@ go_library(
         "//proto:context_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:runner_go_proto",
         "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",
         "//server/backends/github",

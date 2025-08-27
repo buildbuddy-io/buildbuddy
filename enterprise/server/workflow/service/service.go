@@ -59,6 +59,7 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
@@ -506,6 +507,80 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	return &wfpb.ExecuteWorkflowResponse{
 		ActionStatuses: actionStatuses,
 	}, nil
+}
+
+func (ws *workflowService) ExecuteAdHocWorkflow(ctx context.Context, req *wfpb.ExecuteAdHocWorkflowRequest) (*wfpb.ExecuteAdHocWorkflowResponse, error) {
+	// Authenticate user
+	user, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a synthetic workflow for the ad-hoc execution
+	wf := &tables.Workflow{
+		WorkflowID:  "ad-hoc-" + user.GetGroupID(),
+		UserID:      user.GetUserID(),
+		GroupID:     user.GetGroupID(),
+		RepoURL:     "ad-hoc://workflow",
+		AccessToken: "", // No git access needed for ad-hoc workflows
+	}
+
+	// Create webhook data for the ad-hoc workflow
+	wd := &interfaces.WebhookData{
+		PushedRepoURL:     "ad-hoc://workflow",
+		PushedBranch:      "main",
+		TargetRepoURL:     "ad-hoc://workflow",
+		TargetBranch:      "main",
+		SHA:               "ad-hoc-commit",
+		PullRequestNumber: 0,
+		EventName:         webhook_data.EventName.ManualDispatch,
+	}
+
+	// Create the action with the command from the request
+	command := req.GetCommand()
+	if command == "" {
+		command = "echo 'Hello from ad-hoc workflow'"
+	}
+
+	action := &config.Action{
+		Name:  "Ad-Hoc Workflow",
+		OS:    "linux",
+		Steps: []*rnpb.Step{{Run: command}},
+	}
+
+	// Generate invocation ID
+	invocationUUID, err := guuid.NewRandom()
+	if err != nil {
+		return nil, status.InternalErrorf("failed to generate invocation ID: %s", err)
+	}
+	invocationID := invocationUUID.String()
+
+	// Get API key for execution
+	apiKey, err := ws.env.GetAuthDB().GetAPIKeyForInternalUseOnly(context.Background(), wf.GroupID)
+	if err != nil {
+		return nil, status.WrapErrorf(err, "failed to get API key for ad-hoc workflow")
+	}
+
+	// The workflow execution is trusted since we're authenticated
+	isTrusted := true
+	shouldRetry := false // Ad-hoc workflows typically shouldn't retry
+	extraCIRunnerArgs := []string{
+		"--visibility=PRIVATE", // Ad-hoc workflows should be private by default
+	}
+
+	coolCtx, cancel := background.ExtendContextForFinalization(log.EnrichContext(ctx, log.InvocationIDKey, invocationID), time.Hour)
+	defer cancel()
+
+	// Execute the workflow action asynchronously
+	go func() {
+		executionID, err := ws.executeWorkflowAction(coolCtx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs, nil /*env*/, shouldRetry)
+		if err != nil {
+			log.CtxWarningf(coolCtx, "Failed to execute ad-hoc workflow action: %s", err)
+		}
+		log.CtxInfof(coolCtx, "Dispatched ad-hoc workflow execution with ID %s", executionID)
+	}()
+
+	return &wfpb.ExecuteAdHocWorkflowResponse{}, nil
 }
 
 // getActions fetches the workflow config (buildbuddy.yaml) and returns the list of
@@ -1471,6 +1546,7 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 }
 
 func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, workflowAction *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, retry bool) (string, error) {
+	fmt.Println("attemptExecuteWorkflowAction")
 	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, ws.env.GetAuthenticator())
 	if err != nil {
@@ -1517,6 +1593,7 @@ func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key
 	if err != nil {
 		return "", err
 	}
+	fmt.Println(op)
 	log.CtxInfof(ctx, "Enqueued workflow execution (WFID: %q, Repo: %q, PushedBranch: %s, Action: %q, TaskID: %q)", wf.WorkflowID, wf.RepoURL, wd.PushedBranch, workflowAction.Name, op.GetName())
 	metrics.WebhookHandlerWorkflowsStarted.With(prometheus.Labels{
 		metrics.WebhookEventName: wd.EventName,

@@ -552,6 +552,9 @@ message ExecutionNode {
 
   // The Xcode SDKs installed on this executor.
   repeated string xcode_sdks = 17;
+
+  // True if this executor can be configured on the BuildBuddy Executors page.
+  bool configurable = 18;
 }
 
 message GetExecutionNodesRequest {

@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package executor;
+
+message OperatingSystemVersion {
+  string family = 1;
+  string version = 2;
+  string display_name = 3;
+}
+
+message XcodeVersion {
+  string version = 1;
+  string display_name = 2;
+}
+
+message XcodeSDK {
+  string family = 1;
+  string version = 2;
+  string display_name = 3;
+}
+
+message GetConfigurationsRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetConfigurationsResponse {
+  repeated OperatingSystemVersion operating_system = 1;
+  repeated XcodeVersion xcode = 2;
+  repeated XcodeSDK xcode_sdk = 3;
+}
+
+message ExecutorSelector {
+  oneof selector {
+    string host_id = 1;
+    string pool = 2;
+  }
+}
+
+message ApplyConfigurationRequest {
+  context.RequestContext request_context = 1;
+
+  string pool = 2;   // TODO(iain): replace with ExecutorSelector
+  optional OperatingSystemVersion operating_system = 3;
+  repeated XcodeVersion xcode = 4;
+  repeated XcodeSDK xcode_sdk = 5;
+}
+
+message ApplyConfigurationResponse {}

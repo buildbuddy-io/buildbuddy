@@ -7,6 +7,7 @@ import "proto/cache.proto";
 import "proto/search.proto";
 import "proto/eventlog.proto";
 import "proto/execution_stats.proto";
+import "proto/executor.proto";
 import "proto/encryption.proto";
 import "proto/grp.proto";
 import "proto/index.proto";
@@ -315,4 +316,10 @@ service BuildBuddyService {
   // GCP API
   rpc GetGCPProject(gcp.GetGCPProjectRequest)
       returns (gcp.GetGCPProjectResponse);
+
+  // Executor Configuration API
+  rpc GetExecutorConfigurations(executor.GetConfigurationsRequest)
+      returns (executor.GetConfigurationsResponse);
+  rpc ApplyExecutorConfiguration(executor.ApplyConfigurationRequest)
+      returns (executor.ApplyConfigurationResponse);
 }

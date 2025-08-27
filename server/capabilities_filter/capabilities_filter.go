@@ -85,6 +85,11 @@ var (
 
 		// Audit logs.
 		"GetAuditLogs",
+
+		// TODO(iain): require admin permissions for these
+		// Executor Configuration
+		"GetExecutorConfigurations",
+		"ApplyExecutorConfiguration",
 	}
 
 	// groupMemberRPCs can only be called when logged in as a member of

@@ -32,7 +32,8 @@ import (
 )
 
 var (
-	pool = flag.String("executor.pool", "", "Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified.")
+	pool         = flag.String("executor.pool", "", "Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified.")
+	configurable = flag.Bool("executor.configurable", false, "True if this executor can be configured from the BuildBuddy Executors page, false otherwise.")
 )
 
 const (
@@ -89,6 +90,7 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 		CurrentQueueLength:        0,
 		XcodeVersions:             xcodeLocator.Versions(),
 		XcodeSdks:                 xcodeLocator.SDKs(),
+		Configurable:              *configurable,
 	}, nil
 }
 

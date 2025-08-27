@@ -212,6 +212,12 @@ message ExecuteWorkflowResponse {
   repeated ActionStatus action_statuses = 3;
 }
 
+message ExecuteAdHocWorkflowRequest {
+  string command = 1;
+}
+
+message ExecuteAdHocWorkflowResponse {}
+
 enum GitProvider {
   UNKNOWN_GIT_PROVIDER = 0;
   GITHUB = 1;

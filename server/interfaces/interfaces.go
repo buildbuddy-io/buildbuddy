@@ -30,6 +30,7 @@ import (
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	expb "github.com/buildbuddy-io/buildbuddy/proto/executor"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
@@ -618,6 +619,7 @@ type WorkflowService interface {
 	GetLegacyWorkflows(ctx context.Context) (*wfpb.GetWorkflowsResponse, error)
 	GetWorkflowHistory(ctx context.Context) (*wfpb.GetWorkflowHistoryResponse, error)
 	ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error)
+	ExecuteAdHocWorkflow(ctx context.Context, req *wfpb.ExecuteAdHocWorkflowRequest) (*wfpb.ExecuteAdHocWorkflowResponse, error)
 	GetReposForLegacyGitHubApp(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 
@@ -1818,4 +1820,9 @@ type ExperimentFlagDetails interface {
 type ByteStreamServer interface {
 	bspb.ByteStreamServer
 	ReadCASResource(ctx context.Context, rn *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error
+}
+
+type ExecutorConfigurationService interface {
+	GetExecutorConfigurations(ctx context.Context, req *expb.GetConfigurationsRequest) (*expb.GetConfigurationsResponse, error)
+	ApplyExecutorConfiguration(ctx context.Context, req *expb.ApplyConfigurationRequest) (*expb.ApplyConfigurationResponse, error)
 }

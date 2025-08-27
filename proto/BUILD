@@ -601,6 +601,7 @@ proto_library(
         ":encryption_proto",
         ":eventlog_proto",
         ":execution_stats_proto",
+        ":executor_proto",
         ":gcp_proto",
         ":github_proto",
         ":group_proto",
@@ -816,6 +817,14 @@ proto_library(
     deps = [
         ":index_proto",
         ":search_proto",
+    ],
+)
+
+proto_library(
+    name = "executor_proto",
+    srcs = ["executor.proto"],
+    deps = [
+        ":context_proto",
     ],
 )
 
@@ -1601,6 +1610,7 @@ go_proto_library(
         ":encryption_go_proto",
         ":eventlog_go_proto",
         ":execution_stats_go_proto",
+        ":executor_go_proto",
         ":gcp_go_proto",
         ":github_go_proto",
         ":group_go_proto",
@@ -2056,6 +2066,19 @@ go_proto_library(
         ":cache_go_proto",
         ":remote_execution_go_proto",
         ":resource_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "executor_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/executor",
+    proto = ":executor_proto",
+    deps = [
+        ":context_go_proto",
     ],
 )
 
@@ -2570,6 +2593,7 @@ ts_proto_library(
         ":encryption_ts_proto",
         ":eventlog_ts_proto",
         ":execution_stats_ts_proto",
+        ":executor_ts_proto",
         ":gcp_ts_proto",
         ":github_ts_proto",
         ":group_ts_proto",
@@ -2647,5 +2671,13 @@ ts_proto_library(
     deps = [
         ":context_ts_proto",
         ":vtproto_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "executor_ts_proto",
+    proto = ":executor_proto",
+    deps = [
+        ":context_ts_proto",
     ],
 )

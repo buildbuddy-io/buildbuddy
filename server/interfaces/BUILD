@@ -13,6 +13,7 @@ go_library(
         "//proto:capability_go_proto",
         "//proto:encryption_go_proto",
         "//proto:execution_stats_go_proto",
+        "//proto:executor_go_proto",
         "//proto:firecracker_go_proto",
         "//proto:gcp_go_proto",
         "//proto:github_go_proto",
