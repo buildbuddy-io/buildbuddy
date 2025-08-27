@@ -1,7 +1,9 @@
 import React from "react";
-import { Bar, BarChart, CartesianGrid, Tooltip, TooltipProps, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, TooltipProps, XAxis, YAxis } from "recharts";
 import { CategoricalChartState } from "recharts/types/chart/types";
 import { User } from "../../../app/auth/user";
+import Button from "../../../app/components/button/button";
+import { FilterInput } from "../../../app/components/filter_input/filter_input";
 import Select, { Option } from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
 import * as format from "../../../app/format/format";
@@ -12,6 +14,7 @@ import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import FilterComponent from "../filter/filter";
 import { getProtoFilterParams } from "../filter/filter_util";
 import { encodeTargetLabelUrlParam } from "../trends/common";
+import { ChartColor } from "../trends/trends_chart";
 
 interface Props {
   user: User;
@@ -23,6 +26,8 @@ interface State {
   failed: boolean;
   data?: stats.GetTargetTrendsResponse;
   selectedMetric: "cpu" | "time";
+  displayCount: number;
+  filterText: string;
 }
 
 interface TargetChartData {
@@ -35,6 +40,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
     loading: false,
     failed: false,
     selectedMetric: "cpu",
+    displayCount: 50,
+    filterText: "",
   };
   componentDidMount(): void {
     this.fetchTargetTrends();
@@ -80,7 +87,15 @@ export default class TrendsComponent extends React.Component<Props, State> {
 
   handleMetricChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedMetric = e.target.value as "cpu" | "time";
-    this.setState({ selectedMetric });
+    this.setState({ selectedMetric, displayCount: 50 }); // Reset pagination when changing metrics
+  };
+
+  handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    this.setState({ filterText: e.target.value, displayCount: 50 }); // Reset pagination when filtering
+  };
+
+  handleShowMore = () => {
+    this.setState({ displayCount: this.state.displayCount + 50 });
   };
 
   formatValue = (value: number): string => {
@@ -96,24 +111,40 @@ export default class TrendsComponent extends React.Component<Props, State> {
   getChartData = (): TargetChartData[] => {
     if (!this.state.data) return [];
 
-    const targets = this.state.selectedMetric === "cpu" 
-      ? this.state.data.targetsByCpuNanos || []
-      : this.state.data.targetsByExecutionTime || [];
+    const targets =
+      this.state.selectedMetric === "cpu"
+        ? this.state.data.targetsByCpuNanos || []
+        : this.state.data.targetsByExecutionTime || [];
 
-    return targets.slice(0, 20).map(target => ({
+    return targets.slice(0, 20).map((target) => ({
       target: target.target || "Unknown",
-      value: +(target.value || 0)
+      value: +(target.value || 0),
     }));
   };
 
-  getTableData = (): stats.TargetStats[] => {
+  getFilteredData = (): stats.TargetStats[] => {
     if (!this.state.data) return [];
 
-    const targets = this.state.selectedMetric === "cpu" 
-      ? this.state.data.targetsByCpuNanos || []
-      : this.state.data.targetsByExecutionTime || [];
+    const targets =
+      this.state.selectedMetric === "cpu"
+        ? this.state.data.targetsByCpuNanos || []
+        : this.state.data.targetsByExecutionTime || [];
 
-    return targets.slice(0, 50);
+    // Take up to 1000 results for client-side filtering
+    const maxData = targets.slice(0, 1000);
+
+    if (!this.state.filterText) {
+      return maxData;
+    }
+
+    // Filter by target name
+    const filterLower = this.state.filterText.toLowerCase();
+    return maxData.filter((target) => (target.target || "").toLowerCase().includes(filterLower));
+  };
+
+  getTableData = (): stats.TargetStats[] => {
+    const filteredData = this.getFilteredData();
+    return filteredData.slice(0, this.state.displayCount);
   };
 
   handleBarClick = (data: TargetChartData) => {
@@ -127,16 +158,12 @@ export default class TrendsComponent extends React.Component<Props, State> {
   navigateToTargetDrilldown = (target: string) => {
     const currentParams = Object.fromEntries(this.props.search.entries());
     const dimensionParam = encodeTargetLabelUrlParam(target);
-    const existingDimensions = currentParams.d ? currentParams.d + "|" + dimensionParam : dimensionParam;
+    const dimensions = currentParams.d ? currentParams.d + "|" + dimensionParam : dimensionParam;
 
     // Set the metric to CPU nanos or execution time based on current selection
-    const metricParam = this.state.selectedMetric === "cpu" ? "e7" : "e5"; // e7 = CPU_NANOS, e5 = REAL_EXECUTION_TIME
+    const metricParam = this.state.selectedMetric === "cpu" ? "e10" : "e4"; // e10 = cpu nanos, e4 = wall time
 
-    router.navigateTo("/trends/drilldowns", {
-      ...currentParams,
-      d: existingDimensions,
-      ddMetric: metricParam
-    });
+    router.navigateTo(`/trends/?ddMetric=${metricParam}&d=${dimensions}#drilldown`, false);
   };
 
   renderCustomTooltip = (p: TooltipProps<any, any>) => {
@@ -144,7 +171,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
       const data = p.payload[0].payload as TargetChartData;
       return (
         <div className="trend-chart-hover">
-          <div><strong>{data.target}</strong></div>
+          <div>
+            <strong>{data.target}</strong>
+          </div>
           <div>
             {this.state.selectedMetric === "cpu" ? "Total CPU time" : "Total wall time"}: {this.formatValue(data.value)}
           </div>
@@ -167,14 +196,29 @@ export default class TrendsComponent extends React.Component<Props, State> {
           </div>
 
           <div className="targets-controls">
-            <Select
-              className="targets-metric-select"
-              value={this.state.selectedMetric === "cpu" ? "CPU time" : "Wall time"}
-              onChange={this.handleMetricChange}
-            >
-              <Option value="cpu">CPU time</Option>
-              <Option value="time">Wall time</Option>
-            </Select>
+            <div className="controls row">
+              <Select
+                className="targets-metric-select"
+                value={this.state.selectedMetric}
+                onChange={this.handleMetricChange}
+              >
+                <Option value="cpu">CPU time</Option>
+                <Option value="time">Wall time</Option>
+              </Select>
+              <FilterInput
+                placeholder="Filter targets..."
+                value={this.state.filterText}
+                onChange={this.handleFilterChange}
+                rightElement={
+                  this.getFilteredData().length !==
+                  (this.state.selectedMetric === "cpu"
+                    ? this.state.data?.targetsByCpuNanos?.length || 0
+                    : this.state.data?.targetsByExecutionTime?.length || 0)
+                    ? `${this.getFilteredData().length} matches`
+                    : null
+                }
+              />
+            </div>
           </div>
 
           {this.state.loading && (
@@ -195,80 +239,79 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 <>
                   <div className="targets-chart-section">
                     <div className="targets-section-title">
-                      Top 20 Targets by {this.state.selectedMetric === "cpu" ? "CPU Time" : "Wall Time"}
+                      Top targets by {this.state.selectedMetric === "cpu" ? "CPU Time" : "Wall Time"}
                     </div>
                     <div className="targets-chart-container">
-                      <BarChart
-                        width={1000}
-                        height={400}
-                        data={chartData}
-                        onClick={(e: any) => {
-                          if (e?.activeLabel) {
-                            const clickedData = chartData.find(d => d.target === e.activeLabel);
-                            if (clickedData) {
-                              this.handleBarClick(clickedData);
-                            }
-                          }
-                        }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis 
-                          dataKey="target" 
-                          angle={-45}
-                          textAnchor="end"
-                          height={120}
-                          interval={0}
-                        />
-                        <YAxis 
-                          tickFormatter={this.formatValue}
-                        />
-                        <Tooltip 
-                          content={this.renderCustomTooltip}
-                          allowEscapeViewBox={{ x: true, y: true }}
-                          wrapperStyle={{ zIndex: 1 }}
-                        />
-                        <Bar 
-                          dataKey="value" 
-                          fill="#4daf62"
-                          cursor="pointer"
-                        />
-                      </BarChart>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={chartData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis tick={false} tickFormatter={() => ""}></XAxis>
+                          <YAxis tickFormatter={this.formatValue} />
+                          <Tooltip content={this.renderCustomTooltip} wrapperStyle={{ zIndex: 1 }} />
+                          <Bar
+                            dataKey="value"
+                            fill={ChartColor.GREEN}
+                            cursor="pointer"
+                            onClick={(e: any) => {
+                              console.log("event");
+                              console.log(e);
+                              const clickedData = chartData.find((d) => {
+                                return d.target === e.target;
+                              });
+                              console.log("data");
+                              console.log(clickedData);
+                              if (clickedData) {
+                                this.handleBarClick(clickedData);
+                              }
+                            }}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
                     </div>
                   </div>
 
                   <div className="targets-table-section">
-                    <div className="targets-section-title">
-                      Top 50 Targets by {this.state.selectedMetric === "cpu" ? "CPU Time" : "Wall Time"}
-                    </div>
                     <div className="targets-table-container">
-                      <table className="targets-table">
-                        <thead>
-                          <tr>
-                            <th>Target</th>
-                            <th>Total {this.state.selectedMetric === "cpu" ? "CPU Time" : "Wall Time"}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
+                      <div className="results-table">
+                        <div className="row column-headers">
+                          <div className="name-column">Target</div>
+                          <div className="value-column">
+                            Total {this.state.selectedMetric === "cpu" ? "CPU Time" : "Wall Time"}
+                          </div>
+                        </div>
+                        <div className="results-list column">
                           {tableData.map((target, index) => (
-                            <tr 
-                              key={target.target || index} 
-                              className="targets-table-row clickable"
+                            <div
+                              key={target.target || index}
+                              className="row result-row clickable"
                               onClick={() => this.handleTableRowClick(target.target || "")}
                             >
-                              <td className="targets-table-target">{target.target}</td>
-                              <td className="targets-table-value">{this.formatValue(+(target.value || 0))}</td>
-                            </tr>
+                              <div className="name-column targets-table-target">{target.target}</div>
+                              <div className="value-column targets-table-value">
+                                {this.formatValue(+(target.value || 0))}
+                              </div>
+                            </div>
                           ))}
-                        </tbody>
-                      </table>
+                        </div>
+                      </div>
+                      {this.getFilteredData().length > this.state.displayCount && (
+                        <div className="table-footer-controls">
+                          <Button
+                            className="load-more-button"
+                            onClick={this.handleShowMore}
+                            disabled={this.state.loading}
+                          >
+                            <span>Show more</span>
+                            {this.state.loading && <Spinner className="white" />}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </>
               ) : (
                 <div className="targets-empty">
-                  <div className="empty-message">
-                    No target data available for the selected filters and time range.
-                  </div>
+                  <div className="empty-message">No target data available for the selected filters and time range.</div>
                 </div>
               )}
             </>
