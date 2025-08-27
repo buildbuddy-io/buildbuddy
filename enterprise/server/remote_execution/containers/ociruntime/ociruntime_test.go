@@ -7,10 +7,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/fs"
-	"log"
 	"math/rand/v2"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,6 +17,7 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
@@ -36,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testtar"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -55,22 +55,41 @@ import (
 
 // Set via x_defs in BUILD file.
 var (
-	crunRlocationpath       string
-	busyboxRlocationpath    string
-	ociBusyboxRlocationpath string
-	testworkerRlocationpath string
-	netToolsImageRef        string
+	rootlesskitRlocationpath   string
+	busyboxImageRlocationpath  string
+	netToolsImageRlocationpath string
+	testworkerRlocationpath    string
+)
+
+var (
+	// Whether this is the rootless test suite.
+	rootless = os.Getenv("ROOTLESS_TEST") == "1"
+
+	cgroupParent string
 )
 
 func init() {
-	runtimePath, err := runfiles.Rlocation(crunRlocationpath)
-	if err != nil {
-		log.Fatalf("Failed to locate crun in runfiles: %s", err)
+	// Make sure the test is not misconfigured.
+	if rootless && os.Getuid() == 0 {
+		panic("rootless tests must run as a non-root user")
+	} else if !rootless && os.Getuid() != 0 {
+		panic("tests must run as root")
 	}
-	*ociruntime.Runtime = runtimePath
+	// Set up child cgroups if we're in rootless mode.
+	// if rootless {
+	// 	taskCgroup, err := cgroup.SetupChildCgroups("ociruntime-test.executor", "ociruntime-test.tasks")
+	// 	if err != nil {
+	// 		panic(fmt.Sprintf("failed to set up child cgroups: %s", err))
+	// 	}
+	// 	cgroupParent = taskCgroup
+	// }
 }
 
 func setupNetworking(t *testing.T) {
+	if os.Getuid() != 0 {
+		// Network setup requires root
+		return
+	}
 	err := networking.Configure(context.Background())
 	require.NoError(t, err)
 	testnetworking.Setup(t)
@@ -78,44 +97,25 @@ func setupNetworking(t *testing.T) {
 	flags.Set(t, "executor.oci.network_pool_size", 0)
 }
 
-// Returns a special image ref indicating that a busybox-based rootfs should
-// be provisioned using the 'busybox' binary on the host machine.
-// Skips the test if busybox is not available.
-// TODO: use a static test binary + empty rootfs, instead of relying on busybox
-// for testing
-func manuallyProvisionedBusyboxImage(t *testing.T) string {
-	// Make sure our bazel-provisioned busybox binary is in PATH.
-	busyboxPath, err := runfiles.Rlocation(busyboxRlocationpath)
-	require.NoError(t, err)
-	if path, _ := exec.LookPath("busybox"); path != busyboxPath {
-		err := os.Setenv("PATH", filepath.Dir(busyboxPath)+":"+os.Getenv("PATH"))
-		require.NoError(t, err)
-	}
-	return ociruntime.TestBusyboxImageRef
+// Starts a test registry, pushes the given image to it, and returns the local
+// image ref that can be used to pull it.
+func getImageRef(t *testing.T, name, rlocationpath string) string {
+	registry := testregistry.Run(t, testregistry.Opts{})
+	image := testregistry.ImageFromRlocationpath(t, rlocationpath)
+	registry.Push(t, image, name)
+	return registry.ImageAddress(name)
 }
 
-// Returns an image ref pointing to a remotely hosted busybox image.
-// Skips the test if we don't have mount permissions.
-// TODO: support rootless overlayfs mounts and get rid of this
-func realBusyboxImage(t *testing.T) string {
-	if !hasMountPermissions(t) {
-		t.Skipf("using a real container image with overlayfs requires mount permissions")
-	}
-	return "mirror.gcr.io/library/busybox"
+func getBusyboxImage(t *testing.T) string {
+	return getImageRef(t, "busybox", busyboxImageRlocationpath)
 }
 
 func netToolsImage(t *testing.T) string {
-	if !hasMountPermissions(t) {
-		t.Skipf("using a real container image with overlayfs requires mount permissions")
-	}
-	return netToolsImageRef
+	return getImageRef(t, "net-tools", netToolsImageRlocationpath)
 }
 
 // Returns a remote reference to the image in //dockerfiles/test_images/ociruntime_test/image_config_test_image
 func imageConfigTestImage(t *testing.T) string {
-	if !hasMountPermissions(t) {
-		t.Skipf("using a real container image with overlayfs requires mount permissions")
-	}
 	return "gcr.io/flame-public/image-config-test@sha256:44dc4623f3709eef89b0a6d6c8e1c3a9d54db73f6beb8cf99f402052ba9abe56"
 }
 
@@ -131,20 +131,25 @@ func installLeaserInEnv(t testing.TB, env *real_environment.RealEnv) {
 	})
 }
 
-func TestRun(t *testing.T) {
+func rootlesskitPath(t *testing.T) string {
+	rlocation, err := runfiles.Rlocation(rootlesskitRlocationpath)
+	require.NoError(t, err)
+	return rlocation
+}
+
+func TestRunSimple(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
@@ -153,9 +158,13 @@ func TestRun(t *testing.T) {
 		"input.txt": "world",
 	})
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Remove(ctx)
@@ -166,6 +175,7 @@ func TestRun(t *testing.T) {
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `
 			echo "$GREETING $(cat input.txt)!"
+			echo "PID: $$"
 			touch output.txt
 		`},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
@@ -174,39 +184,55 @@ func TestRun(t *testing.T) {
 	}
 	res := c.Run(ctx, cmd, wd, oci.Credentials{})
 	require.NoError(t, res.Error)
-	assert.Equal(t, "Hello world!\n", string(res.Stdout))
+	assert.Equal(t, "Hello world!\nPID: 1\n", string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
 }
 
 func TestCgroupSettings(t *testing.T) {
+	if rootless {
+		t.Skip("cgroups may not work in rootless mode")
+	}
+
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
+	cgroupSettings := &scpb.CgroupSettings{
+		PidsMax: proto.Int64(777),
+	}
+	// When running locally on ubuntu 22.04, only the "memory" and "pids"
+	// controllers are enabled. If the pids controller is enabled then test it,
+	// otherwise just skip the test.
+	if rootless {
+		cg, err := cgroup.GetCurrent()
+		require.NoError(t, err)
+		enabledControllers, err := cgroup.EnabledControllers(filepath.Join(cgroup.RootPath, cg))
+		require.NoError(t, err)
+		if _, ok := enabledControllers["pids"]; !ok {
+			t.Skip("pids controller is not enabled")
+		}
+	}
+
 	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
 		Task: &repb.ScheduledTask{
 			SchedulingMetadata: &scpb.SchedulingMetadata{
-				CgroupSettings: &scpb.CgroupSettings{
-					CpuQuotaLimitUsec:  proto.Int64(300000),
-					CpuQuotaPeriodUsec: proto.Int64(100000),
-					PidsMax:            proto.Int64(256),
-				},
+				CgroupSettings: cgroupSettings,
 			},
 		},
 		Props: &platform.Properties{
@@ -222,40 +248,45 @@ func TestCgroupSettings(t *testing.T) {
 	// Run
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `
-			cat /sys/fs/cgroup/cpu.max
 			cat /sys/fs/cgroup/pids.max
 		`},
 	}
 
 	res := c.Run(ctx, cmd, wd, oci.Credentials{})
 	require.NoError(t, res.Error)
-	assert.Equal(t, "300000 100000\n256\n", string(res.Stdout))
+	assert.Equal(t, "777\n", string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
 }
 
 func TestRunUsageStats(t *testing.T) {
+	if rootless {
+		t.Skip("cgroup stats may not work in rootless mode")
+	}
+
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Remove(ctx)
@@ -283,19 +314,21 @@ func TestRunWithImage(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Remove(ctx)
@@ -314,6 +347,8 @@ func TestRunWithImage(t *testing.T) {
 	}
 	res := c.Run(ctx, cmd, wd, oci.Credentials{})
 	require.NoError(t, res.Error)
+	assert.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
 	assert.Equal(t, `Hello world!
 GREETING=Hello
 HOME=/home/buildbuddy
@@ -323,21 +358,22 @@ PWD=/buildbuddy-execroot
 SHLVL=1
 TEST_ENV_VAR=foo
 `, string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
-	assert.Equal(t, 0, res.ExitCode)
 }
 
 func TestRunOOM(t *testing.T) {
+	// We can't decrease OOM scores if rootless.
+	if rootless {
+		t.Skip()
+	}
+
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	// Enable CAP_SYS_RESOURCE just for this test so that we can write to
 	// oom_score_adj. Otherwise it's hard to guarantee that our top-level shell
 	// process doesn't get killed, because we're at the whim of the OOM killer.
@@ -345,12 +381,16 @@ func TestRunOOM(t *testing.T) {
 
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
 	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+
 		Task: &repb.ScheduledTask{
 			SchedulingMetadata: &scpb.SchedulingMetadata{
 				CgroupSettings: &scpb.CgroupSettings{
@@ -420,25 +460,31 @@ cat /sys/fs/cgroup/memory.events
 func TestCreateExecRemove(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
+	require.NoError(t, err)
+
+	// Pull
+	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 
 	// Create
@@ -466,21 +512,26 @@ func TestCreateExecRemove(t *testing.T) {
 func TestTini_Run(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-		DockerInit:     true, // enable tini
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+			DockerInit:     true, // enable tini
+		},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err = c.Remove(ctx)
@@ -494,29 +545,34 @@ func TestTini_Run(t *testing.T) {
 	res := c.Run(ctx, cmd, wd, oci.Credentials{})
 	require.NoError(t, res.Error)
 	assert.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
 	assert.True(t, strings.HasPrefix(string(res.Stdout), "1 (tini)"), "tini should be pid 1. /proc/1/stat contents: %q", string(res.Stdout))
-	assert.Equal(t, 0, res.ExitCode)
 }
 
 func TestTini_CreateExec(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-		DockerInit:     true, // enable tini
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+			DockerInit:     true, // enable tini
+		},
+	})
 	require.NoError(t, err)
 
 	// Pull
@@ -561,27 +617,33 @@ func TestTini_CreateExec(t *testing.T) {
 }
 
 func TestExecUsageStats(t *testing.T) {
+	if rootless {
+		t.Skip("cgroup stats may not work in rootless mode")
+	}
+
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
 	require.NoError(t, err)
 	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
@@ -610,25 +672,27 @@ func TestExecUsageStats(t *testing.T) {
 func TestStatsPostExec(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Remove(ctx)
@@ -674,17 +738,18 @@ func TestPullCreateExecRemove(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
 	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+
 		Props: &platform.Properties{
 			ContainerImage: image,
 		},
@@ -747,27 +812,37 @@ TEST_ENV_VAR=foo
 }
 
 func TestCreateExecPauseUnpause(t *testing.T) {
+	if rootless {
+		t.Skip("cgroups may not work in rootless mode - pause/unpause requires cgroup support")
+	}
+
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
+	require.NoError(t, err)
+
+	// Pull
+	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 
 	// Create
@@ -855,17 +930,16 @@ func TestCreateFailureHasStderr(t *testing.T) {
 	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
@@ -873,6 +947,8 @@ func TestCreateFailureHasStderr(t *testing.T) {
 
 	// Create
 	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+
 		Props: &platform.Properties{
 			ContainerImage: image,
 		},
@@ -890,17 +966,16 @@ func TestCreateFailureHasStderr(t *testing.T) {
 func TestDevices(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
@@ -908,6 +983,8 @@ func TestDevices(t *testing.T) {
 
 	// Create
 	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+
 		Props: &platform.Properties{
 			ContainerImage: image,
 		},
@@ -946,25 +1023,27 @@ func TestSignal(t *testing.T) {
 	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Remove(ctx)
@@ -1007,20 +1086,23 @@ func TestNetwork_Enabled(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	flags.Set(t, "executor.network_stats_enabled", true)
 
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Remove(ctx)
@@ -1040,8 +1122,11 @@ func TestNetwork_Enabled(t *testing.T) {
 	t.Logf("stdout: %s", string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
+	// XXX: support network stats in rootless mode
+	if !rootless {
+		assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+		assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
+	}
 }
 
 func TestNetwork_Disabled(t *testing.T) {
@@ -1059,21 +1144,24 @@ func TestNetwork_Disabled(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	flags.Set(t, "executor.network_stats_enabled", true)
 
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-		DockerNetwork:  "off",
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+			DockerNetwork:  "off",
+		},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Remove(ctx)
@@ -1108,11 +1196,10 @@ func TestUser(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
@@ -1125,14 +1212,14 @@ func TestUser(t *testing.T) {
 		{
 			name: "Busybox/Default",
 			props: &platform.Properties{
-				ContainerImage: realBusyboxImage(t),
+				ContainerImage: getBusyboxImage(t),
 			},
-			expectedID: "uid=0(root) gid=0(root) groups=0(root)",
+			expectedID: "uid=0(root) gid=0(root) groups=0(root),10(wheel)",
 		},
 		{
 			name: "Busybox/UnknownUID",
 			props: &platform.Properties{
-				ContainerImage: realBusyboxImage(t),
+				ContainerImage: getBusyboxImage(t),
 				DockerUser:     "2024",
 			},
 			expectedID: "uid=2024 gid=0(root) groups=0(root)",
@@ -1140,7 +1227,7 @@ func TestUser(t *testing.T) {
 		{
 			name: "Busybox/UnknownUIDAndGID",
 			props: &platform.Properties{
-				ContainerImage: realBusyboxImage(t),
+				ContainerImage: getBusyboxImage(t),
 				DockerUser:     "2024:2024",
 			},
 			expectedID: "uid=2024 gid=2024 groups=2024",
@@ -1192,18 +1279,39 @@ func TestUser(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			wd := testfs.MakeDirAll(t, buildRoot, uuid.New())
-			c, err := provider.New(ctx, &container.Init{Props: test.props})
+			c, err := provider.New(ctx, &container.Init{
+				CgroupParent: cgroupParent,
+				Props:        test.props})
 			require.NoError(t, err)
 			t.Cleanup(func() {
 				err := c.Remove(ctx)
 				require.NoError(t, err)
 			})
-			cmd := &repb.Command{Arguments: []string{"id"}}
+			cmd := &repb.Command{Arguments: []string{
+				"sh", "-ec", `
+					id
+					touch output.txt
+					mkdir output_dir
+					touch output_dir/child.txt
+				`}}
 			res := c.Run(ctx, cmd, wd, oci.Credentials{})
 			require.NoError(t, res.Error)
 			assert.Equal(t, test.expectedID, strings.TrimSpace(string(res.Stdout)))
 			assert.Empty(t, string(res.Stderr))
 			assert.Equal(t, 0, res.ExitCode)
+
+			// In rootless mode, files in the workspace should be owned by the
+			// host user now, regardless of the mapped container user.
+			// Otherwise, we will not be able to clean up the workspace.
+			if rootless {
+				// stat := syscall.Stat_t{}
+				// err := syscall.Stat(filepath.Join(wd, "output.txt"), &stat)
+				// require.NoError(t, err)
+				// assert.Equal(t, os.Getuid(), int(stat.Uid))
+				// assert.Equal(t, os.Getgid(), int(stat.Gid))
+				err := os.RemoveAll(wd)
+				require.NoError(t, err)
+			}
 		})
 	}
 
@@ -1218,19 +1326,21 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Remove(ctx)
@@ -1253,7 +1363,7 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 
 func TestHighLayerCount(t *testing.T) {
 	// Load busybox oci image
-	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+	busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 
 	for _, tc := range []struct {
 		layerCount int
@@ -1293,14 +1403,23 @@ func TestHighLayerCount(t *testing.T) {
 			ctx := context.Background()
 			env := testenv.GetTestEnv(t)
 			installLeaserInEnv(t, env)
-			buildRoot := testfs.MakeTempDir(t)
+			// Put the build root under /tmp for this test, since path length
+			// matters for the overlayfs implementation, and we don't want the
+			// test to fail depending on where the test is run.
+			buildRoot, err := os.MkdirTemp("", "overlayfs-test-*")
+			require.NoError(t, err)
 			cacheRoot := testfs.MakeTempDir(t)
+			runtimeRoot := testfs.MakeTempDir(t)
+			flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 			require.NoError(t, err)
 			wd := testfs.MakeDirAll(t, buildRoot, "work")
-			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-				ContainerImage: imageRef,
-			}})
+			c, err := provider.New(ctx, &container.Init{
+				CgroupParent: cgroupParent,
+				Props: &platform.Properties{
+					ContainerImage: imageRef,
+				},
+			})
 			require.NoError(t, err)
 			t.Cleanup(func() {
 				require.NoError(t, c.Remove(ctx))
@@ -1319,7 +1438,7 @@ func TestHighLayerCount(t *testing.T) {
 func TestEntrypoint(t *testing.T) {
 	setupNetworking(t)
 	// Load busybox oci image
-	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+	busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 	// Mutate the image with an ENTRYPOINT directive which sets an env var
 	// that we expect to be visible in the command
 	cfg, err := busyboxImg.ConfigFile()
@@ -1335,16 +1454,19 @@ func TestEntrypoint(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Remove(ctx)
@@ -1362,7 +1484,7 @@ func TestEntrypoint(t *testing.T) {
 func TestFileOwnership(t *testing.T) {
 	setupNetworking(t)
 	// Load busybox oci image
-	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+	busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 	// Append a layer with a file, dir, and symlink that are owned by a
 	// non-root user
 	layer := testregistry.NewBytesLayer(t, testtar.EntriesBytes(
@@ -1414,16 +1536,19 @@ func TestFileOwnership(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Remove(ctx)
@@ -1479,10 +1604,10 @@ func TestPathSanitization(t *testing.T) {
 			resolver, err := oci.NewResolver(te)
 			require.NoError(t, err)
 			require.NotNil(t, resolver)
-			imageStore, err := ociruntime.NewImageStore(resolver, cacheRoot)
+			imageStore, err := ociruntime.NewImageStore(resolver, cacheRoot, rootlesskitPath(t))
 			require.NoError(t, err)
 			// Load busybox oci image
-			busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+			busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 			// Append an invalid layer
 			layer := testregistry.NewBytesLayer(t, test.Tar)
 			img, err := mutate.AppendLayers(busyboxImg, layer)
@@ -1502,20 +1627,23 @@ func TestPathSanitization(t *testing.T) {
 }
 
 func TestPersistentWorker(t *testing.T) {
+	if rootless {
+		t.Skip("cgroups may not work in rootless mode - pause/unpause requires cgroup support")
+	}
+
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	// Create workspace with testworker binary
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	ws, err := workspace.New(env, buildRoot, &workspace.Opts{Preserve: true})
 	require.NoError(t, err)
 	testworkerPath, err := runfiles.Rlocation(testworkerRlocationpath)
@@ -1525,12 +1653,16 @@ func TestPersistentWorker(t *testing.T) {
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
 	require.NoError(t, err)
 
 	// Create container
+	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 	err = c.Create(ctx, ws.Path())
 	require.NoError(t, err)
@@ -1577,25 +1709,27 @@ func TestPersistentWorker(t *testing.T) {
 func TestCancelRun(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := getBusyboxImage(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Remove(context.Background())
@@ -1605,11 +1739,13 @@ func TestCancelRun(t *testing.T) {
 	// Run
 	childID := "child" + fmt.Sprint(rand.Uint64())
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `
+		Arguments: []string{"sh", "-ec", `
 			echo "Hello world!"
 			touch ./DONE
 			sh -c "sleep 1000000000 # ` + childID + `" &
-			sleep 1000000000
+			sleep 5
+			echo >&2 "Expected to be cancelled by now" # XXX
+			exit 1
 		`},
 	}
 	// Wait for the command to write the file "DONE" which means it is done
@@ -1617,8 +1753,9 @@ func TestCancelRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(ctx)
 	go func() {
 		defer cancel()
-		err := disk.WaitUntilExists(ctx, filepath.Join(wd, "DONE"), disk.WaitOpts{Timeout: -1})
+		err := disk.WaitUntilExists(ctx, filepath.Join(wd, "DONE"), disk.WaitOpts{Timeout: 30 * time.Second})
 		require.NoError(t, err)
+		log.Infof("DONE file exists - cancelling")
 	}()
 	res := c.Run(ctx, cmd, wd, oci.Credentials{})
 	assert.True(t, status.IsCanceledError(res.Error), "expected CanceledError, got %+#v", res.Error)
@@ -1632,27 +1769,31 @@ func TestCancelRun(t *testing.T) {
 func TestCancelExec(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := getBusyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
 	require.NoError(t, err)
 	// Create
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
 	err = c.Create(ctx, wd)
 	require.NoError(t, err)
 	removed := false
@@ -1719,7 +1860,7 @@ func hasMountPermissions(t *testing.T) bool {
 //	     --test_filter=TestPullImage \
 //	     --test_env=TEST_PULLIMAGE=1 \
 //	     enterprise/server/remote_execution/containers/ociruntime:ociruntime_test
-func TestPullImage(t *testing.T) {
+func TestPullPublicImages_ManualTest(t *testing.T) {
 	if os.Getenv("TEST_PULLIMAGE") == "" {
 		t.Skip("Skipping integration test..")
 	}
@@ -1759,7 +1900,7 @@ func TestPullImage(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, resolver)
 			layerDir := t.TempDir()
-			imgStore, err := ociruntime.NewImageStore(resolver, layerDir)
+			imgStore, err := ociruntime.NewImageStore(resolver, layerDir, rootlesskitPath(t))
 			require.NoError(t, err)
 
 			ctx := context.Background()
@@ -1772,14 +1913,14 @@ func TestPullImage(t *testing.T) {
 
 func TestMounts(t *testing.T) {
 	setupNetworking(t)
-	image := manuallyProvisionedBusyboxImage(t)
+	image := getBusyboxImage(t)
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
@@ -1798,9 +1939,12 @@ func TestMounts(t *testing.T) {
 		},
 	})
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
+	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Remove(ctx)
@@ -1820,21 +1964,23 @@ func TestMounts(t *testing.T) {
 
 func TestPersistentVolumes(t *testing.T) {
 	setupNetworking(t)
-	image := manuallyProvisionedBusyboxImage(t)
+	image := getBusyboxImage(t)
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	flags.Set(t, "executor.oci.enable_persistent_volumes", true)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	volumes, err := platform.ParsePersistentVolumes("tmp_cache:/tmp/.cache", "user_cache:/root/.cache")
 	require.NoError(t, err)
 	wd1 := testfs.MakeDirAll(t, buildRoot, "work1")
 	c1, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+
 		Props: &platform.Properties{
 			ContainerImage:    image,
 			PersistentVolumes: volumes,
@@ -1854,6 +2000,8 @@ func TestPersistentVolumes(t *testing.T) {
 
 	wd2 := testfs.MakeDirAll(t, buildRoot, "work2")
 	c2, err := provider.New(ctx, &container.Init{
+		CgroupParent: cgroupParent,
+
 		Props: &platform.Properties{
 			ContainerImage:    image,
 			PersistentVolumes: volumes,

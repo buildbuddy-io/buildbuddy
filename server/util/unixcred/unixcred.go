@@ -41,6 +41,40 @@ func (n *NameOrID) String() string {
 	return fmt.Sprintf("%d", n.ID)
 }
 
+// ParseUserGroup parses a "USER" or "USER:GROUP" string, which is a common
+// format used by commands like 'chown' or 'docker run --user'.
+// The returned group is nil if there is no group specified.
+func ParseUserGroup(input string) (user, group *NameOrID, err error) {
+	if input == "" {
+		return nil, nil, fmt.Errorf("input string is empty")
+	}
+	parts := strings.Split(input, ":")
+	if len(parts) > 2 {
+		return nil, nil, fmt.Errorf("invalid format, too many colons in input %q", input)
+	}
+	u := parts[0]
+	var g string
+	if len(parts) == 2 {
+		g = parts[1]
+	}
+	if u == "" {
+		return nil, nil, fmt.Errorf("user part is required in input %q", input)
+	}
+	if uid, err := strconv.ParseUint(u, 10, 32); err == nil {
+		user = &NameOrID{ID: uint32(uid)}
+	} else {
+		user = &NameOrID{Name: u}
+	}
+	if g != "" {
+		if gid, err := strconv.ParseUint(g, 10, 32); err == nil {
+			group = &NameOrID{ID: uint32(gid)}
+		} else {
+			group = &NameOrID{Name: g}
+		}
+	}
+	return user, group, nil
+}
+
 // UserRecord represents a line in the /etc/passwd file.
 type UserRecord struct {
 	Username string
