@@ -1,6 +1,5 @@
 import React from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, TooltipProps, XAxis, YAxis } from "recharts";
-import { CategoricalChartState } from "recharts/types/chart/types";
 import { User } from "../../../app/auth/user";
 import Button from "../../../app/components/button/button";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
@@ -10,7 +9,6 @@ import * as format from "../../../app/format/format";
 import router from "../../../app/router/router";
 import rpc_service from "../../../app/service/rpc_service";
 import { stats } from "../../../proto/stats_ts_proto";
-import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import FilterComponent from "../filter/filter";
 import { getProtoFilterParams } from "../filter/filter_util";
 import { encodeTargetLabelUrlParam } from "../trends/common";
@@ -109,14 +107,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
   };
 
   getChartData = (): TargetChartData[] => {
-    if (!this.state.data) return [];
-
-    const targets =
-      this.state.selectedMetric === "cpu"
-        ? this.state.data.targetsByCpuNanos || []
-        : this.state.data.targetsByExecutionTime || [];
-
-    return targets.slice(0, 20).map((target) => ({
+    const filteredData = this.getFilteredData();
+    return filteredData.slice(0, 20).map((target) => ({
       target: target.target || "Unknown",
       value: +(target.value || 0),
     }));
@@ -200,8 +192,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <Select
                 className="targets-metric-select"
                 value={this.state.selectedMetric}
-                onChange={this.handleMetricChange}
-              >
+                onChange={this.handleMetricChange}>
                 <Option value="cpu">CPU time</Option>
                 <Option value="time">Wall time</Option>
               </Select>
@@ -284,8 +275,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                             <div
                               key={target.target || index}
                               className="row result-row clickable"
-                              onClick={() => this.handleTableRowClick(target.target || "")}
-                            >
+                              onClick={() => this.handleTableRowClick(target.target || "")}>
                               <div className="name-column targets-table-target">{target.target}</div>
                               <div className="value-column targets-table-value">
                                 {this.formatValue(+(target.value || 0))}
@@ -299,8 +289,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                           <Button
                             className="load-more-button"
                             onClick={this.handleShowMore}
-                            disabled={this.state.loading}
-                          >
+                            disabled={this.state.loading}>
                             <span>Show more</span>
                             {this.state.loading && <Spinner className="white" />}
                           </Button>
