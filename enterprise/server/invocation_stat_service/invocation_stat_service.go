@@ -1324,9 +1324,12 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 }
 
 func (i *InvocationStatService) getTargetsByMetric(ctx context.Context, req *stpb.GetTargetTrendsRequest, metric string) ([]*stpb.TargetStats, error) {
+	// Get the dimension field to query
+	dimensionField := i.getDimensionField(req.GetDimension())
+
 	q := query_builder.NewQuery(fmt.Sprintf(`
-		SELECT target_label as target, SUM(%s) as value
-		FROM "Executions"`, metric))
+		SELECT %s as target, SUM(%s) as value
+		FROM "Executions"`, dimensionField, metric))
 
 	// Add where clauses from the trend query, including execution dimension filters
 	if err := i.addWhereClauses(q, req.GetQuery(), true, req.GetRequestContext()); err != nil {
@@ -1354,8 +1357,8 @@ func (i *InvocationStatService) getTargetsByMetric(ctx context.Context, req *stp
 		q.AddWhereClause(str, args...)
 	}
 
-	// Ensure we only include executions with target labels
-	q.AddWhereClause("target_label != ''")
+	// Ensure we only include non-empty dimension values
+	q.AddWhereClause(fmt.Sprintf("%s != ''", dimensionField))
 
 	// For CPU nanos, only include positive values
 	if metric == "cpu_nanos" {
@@ -1365,7 +1368,7 @@ func (i *InvocationStatService) getTargetsByMetric(ctx context.Context, req *stp
 		q.AddWhereClause("execution_completed_timestamp_usec > execution_start_timestamp_usec")
 	}
 
-	q.SetGroupBy("target_label")
+	q.SetGroupBy(dimensionField)
 	q.SetOrderBy("value", false) // Descending order
 	q.SetLimit(1000)             // Reasonable limit to avoid overwhelming the response
 
@@ -1378,6 +1381,24 @@ func (i *InvocationStatService) getTargetsByMetric(ctx context.Context, req *stp
 	}
 
 	return res, nil
+}
+
+func (i *InvocationStatService) getDimensionField(dimension stpb.DrilldownType) string {
+	switch dimension {
+	case stpb.DrilldownType_TARGET_LABEL_DRILLDOWN_TYPE:
+		return "target_label"
+	case stpb.DrilldownType_ACTION_MNEMONIC_DRILLDOWN_TYPE:
+		return "action_mnemonic"
+	case stpb.DrilldownType_USER_DRILLDOWN_TYPE:
+		return "user"
+	case stpb.DrilldownType_HOSTNAME_DRILLDOWN_TYPE:
+		return "host"
+	case stpb.DrilldownType_PATTERN_DRILLDOWN_TYPE:
+		return "pattern"
+	default:
+		// Default to target_label for backward compatibility
+		return "target_label"
+	}
 }
 
 func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error) {

@@ -11,7 +11,7 @@ import rpc_service from "../../../app/service/rpc_service";
 import { stats } from "../../../proto/stats_ts_proto";
 import FilterComponent from "../filter/filter";
 import { getProtoFilterParams } from "../filter/filter_util";
-import { encodeTargetLabelUrlParam } from "../trends/common";
+import { encodeActionMnemonicUrlParam, encodeTargetLabelUrlParam } from "../trends/common";
 import { ChartColor } from "../trends/trends_chart";
 
 interface Props {
@@ -24,6 +24,7 @@ interface State {
   failed: boolean;
   data?: stats.GetTargetTrendsResponse;
   selectedMetric: "cpu" | "time";
+  selectedDimension: stats.DrilldownType;
   displayCount: number;
   filterText: string;
 }
@@ -38,6 +39,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     loading: false,
     failed: false,
     selectedMetric: "cpu",
+    selectedDimension: stats.DrilldownType.TARGET_LABEL_DRILLDOWN_TYPE,
     displayCount: 50,
     filterText: "",
   };
@@ -46,7 +48,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props, prevState: State): void {
-    if (this.props.search !== prevProps.search || this.state.selectedMetric !== prevState.selectedMetric) {
+    if (
+      this.props.search !== prevProps.search ||
+      this.state.selectedMetric !== prevState.selectedMetric ||
+      this.state.selectedDimension !== prevState.selectedDimension
+    ) {
       this.fetchTargetTrends();
     }
   }
@@ -73,6 +79,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     });
     request.filter = filterParams.statFilters;
     request.dimensionFilter = filterParams.dimensionFilters;
+    request.dimension = this.state.selectedDimension;
 
     rpc_service.service
       .getTargetTrends(request)
@@ -82,6 +89,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
       .catch(() => this.setState({ failed: true, data: undefined }))
       .finally(() => this.setState({ loading: false }));
   }
+
+  handleDimensionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selectedDimension = parseInt(e.target.value) as stats.DrilldownType;
+    this.setState({ selectedDimension, displayCount: 50 }); // Reset pagination when changing dimensions
+  };
 
   handleMetricChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedMetric = e.target.value as "cpu" | "time";
@@ -94,6 +106,23 @@ export default class TrendsComponent extends React.Component<Props, State> {
 
   handleShowMore = () => {
     this.setState({ displayCount: this.state.displayCount + 50 });
+  };
+
+  getDimensionLabel = (): string => {
+    switch (this.state.selectedDimension) {
+      case stats.DrilldownType.TARGET_LABEL_DRILLDOWN_TYPE:
+        return "Target";
+      case stats.DrilldownType.ACTION_MNEMONIC_DRILLDOWN_TYPE:
+        return "Action Mnemonic";
+      case stats.DrilldownType.USER_DRILLDOWN_TYPE:
+        return "User";
+      case stats.DrilldownType.HOSTNAME_DRILLDOWN_TYPE:
+        return "Host";
+      case stats.DrilldownType.PATTERN_DRILLDOWN_TYPE:
+        return "Pattern";
+      default:
+        return "Target";
+    }
   };
 
   formatValue = (value: number): string => {
@@ -147,15 +176,39 @@ export default class TrendsComponent extends React.Component<Props, State> {
     this.navigateToTargetDrilldown(target);
   };
 
-  navigateToTargetDrilldown = (target: string) => {
+  navigateToTargetDrilldown = (dimensionValue: string) => {
     const currentParams = Object.fromEntries(this.props.search.entries());
-    const dimensionParam = encodeTargetLabelUrlParam(target);
-    const dimensions = currentParams.d ? currentParams.d + "|" + dimensionParam : dimensionParam;
 
     // Set the metric to CPU nanos or execution time based on current selection
     const metricParam = this.state.selectedMetric === "cpu" ? "e10" : "e4"; // e10 = cpu nanos, e4 = wall time
 
-    router.navigateTo(`/trends/?ddMetric=${metricParam}&d=${dimensions}#drilldown`, false);
+    let dimensions = currentParams.d ?? "";
+    let otherParams = "";
+
+    // Handle dimension-specific parameters
+    switch (this.state.selectedDimension) {
+      case stats.DrilldownType.TARGET_LABEL_DRILLDOWN_TYPE:
+        const targetDimensionParam = encodeTargetLabelUrlParam(dimensionValue);
+        dimensions = currentParams.d ? currentParams.d + "|" + targetDimensionParam : targetDimensionParam;
+        break;
+      case stats.DrilldownType.ACTION_MNEMONIC_DRILLDOWN_TYPE:
+        const actionDimensionParam = encodeActionMnemonicUrlParam(dimensionValue);
+        dimensions = currentParams.d ? currentParams.d + "|" + actionDimensionParam : actionDimensionParam;
+        break;
+      case stats.DrilldownType.USER_DRILLDOWN_TYPE:
+        otherParams = "&user=" + encodeURIComponent(dimensionValue);
+        break;
+      case stats.DrilldownType.HOSTNAME_DRILLDOWN_TYPE:
+        otherParams = "&host=" + encodeURIComponent(dimensionValue);
+        break;
+      case stats.DrilldownType.PATTERN_DRILLDOWN_TYPE:
+        otherParams = "&pattern=" + encodeURIComponent(dimensionValue);
+        break;
+      default:
+        const defaultDimensionParam = encodeTargetLabelUrlParam(dimensionValue);
+        dimensions = currentParams.d ? currentParams.d + "|" + defaultDimensionParam : defaultDimensionParam;
+    }
+    router.navigateTo(`/trends/?ddMetric=${metricParam}&d=${dimensions}${otherParams}#drilldown`, false);
   };
 
   renderCustomTooltip = (p: TooltipProps<any, any>) => {
@@ -183,12 +236,22 @@ export default class TrendsComponent extends React.Component<Props, State> {
       <div className="targets">
         <div className="container">
           <div className="targets-header">
-            <div className="targets-title">Target Performance</div>
+            <div className="targets-title">RBE usage by {this.getDimensionLabel()}</div>
             <FilterComponent search={this.props.search} />
           </div>
 
           <div className="targets-controls">
             <div className="controls row">
+              <Select
+                className="targets-dimension-select"
+                value={this.state.selectedDimension}
+                onChange={this.handleDimensionChange}>
+                <Option value={stats.DrilldownType.TARGET_LABEL_DRILLDOWN_TYPE}>Target</Option>
+                <Option value={stats.DrilldownType.ACTION_MNEMONIC_DRILLDOWN_TYPE}>Action Mnemonic</Option>
+                <Option value={stats.DrilldownType.USER_DRILLDOWN_TYPE}>User</Option>
+                <Option value={stats.DrilldownType.HOSTNAME_DRILLDOWN_TYPE}>Host</Option>
+                <Option value={stats.DrilldownType.PATTERN_DRILLDOWN_TYPE}>Pattern</Option>
+              </Select>
               <Select
                 className="targets-metric-select"
                 value={this.state.selectedMetric}
@@ -197,7 +260,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 <Option value="time">Wall time</Option>
               </Select>
               <FilterInput
-                placeholder="Filter targets..."
+                placeholder={`Filter ${this.getDimensionLabel().toLowerCase()}s...`}
                 value={this.state.filterText}
                 onChange={this.handleFilterChange}
                 rightElement={
@@ -230,7 +293,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 <>
                   <div className="targets-chart-section">
                     <div className="targets-section-title">
-                      Top targets by {this.state.selectedMetric === "cpu" ? "CPU Time" : "Wall Time"}
+                      Top {this.getDimensionLabel()}s by{" "}
+                      {this.state.selectedMetric === "cpu" ? "CPU Time" : "Wall Time"}
                     </div>
                     <div className="targets-chart-container">
                       <ResponsiveContainer width="100%" height={300}>
@@ -265,7 +329,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     <div className="targets-table-container">
                       <div className="results-table">
                         <div className="row column-headers">
-                          <div className="name-column">Target</div>
+                          <div className="name-column">{this.getDimensionLabel()}</div>
                           <div className="value-column">
                             Total {this.state.selectedMetric === "cpu" ? "CPU Time" : "Wall Time"}
                           </div>
