@@ -96,6 +96,7 @@ var (
 		"GetTrend",
 		"GetStatHeatmap",
 		"GetStatDrilldown",
+		"GetTargetTrends",
 		"GetSuggestion",
 		"SearchExecution",
 		"GetTargetStats",
