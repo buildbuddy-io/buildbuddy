@@ -12,6 +12,8 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/recharts",
         "//app/auth:user",
+        "//app/components/button:button",
+        "//app/components/filter_input:filter_input",
         "//app/components/select:select",
         "//app/components/spinner:spinner",
         "//app/format:format",
