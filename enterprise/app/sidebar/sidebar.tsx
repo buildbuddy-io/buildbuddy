@@ -171,7 +171,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
           )}
           <SidebarLink selected={this.isTargetsSelected()} href={Path.targetsPath} title="Targets">
             <Target className="icon" />
-            <span className="sidebar-item-text">Targets</span>
+            <span className="sidebar-item-text">RBE Junk</span>
           </SidebarLink>
           {capabilities.test && (
             <SidebarLink

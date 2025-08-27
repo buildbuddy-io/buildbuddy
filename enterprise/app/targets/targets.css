@@ -35,6 +35,10 @@
   min-width: 60px;
 }
 
+.targets-dimension-select {
+  min-width: 160px;
+}
+
 .targets-metric-select {
   min-width: 150px;
 }
