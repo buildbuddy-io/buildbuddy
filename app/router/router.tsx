@@ -45,6 +45,7 @@ class Router {
     shortcuts.registerSequence([KeyCombo.g, KeyCombo.r], () => {
       this.navigateToTrends();
     });
+    /** shortcut for targets... */
     shortcuts.registerSequence([KeyCombo.g, KeyCombo.t], () => {
       this.navigateToTap();
     });
@@ -621,6 +622,7 @@ export class Path {
   static codePath = "/code/";
   static reviewsPath = "/reviews/";
   static codesearchPath = "/search/";
+  static targetsPath = "/targets/";
 }
 
 export type TrendsChartId = "builds" | "duration" | "cache" | "cas" | "savings" | "build_time";
@@ -649,6 +651,7 @@ function getUnavailableMessage(matchedPath: string) {
     case Path.codePath:
     case Path.settingsPath:
     case Path.trendsPath:
+    case Path.targetsPath:
     case Path.executorsPath:
     case Path.tapPath:
     case Path.userHistoryPath:
