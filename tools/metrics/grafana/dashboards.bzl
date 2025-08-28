@@ -4,6 +4,7 @@ DASHBOARD_NAMES = [
     "cache-proxy",
     "cache",
     "clickhouse",
+    "execution-stats",
     "globalstatus",
     "jaeger",
     "mac",
