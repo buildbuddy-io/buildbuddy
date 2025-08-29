@@ -1522,7 +1522,14 @@ type SingleFlightDeduper interface {
 }
 
 type PromQuerier interface {
+	// FetchMetrics runs the configured metrics queries for the given group.
+	// TODO: use federation for this.
 	FetchMetrics(ctx context.Context, groupID string) ([]*dto.MetricFamily, error)
+
+	// FetchFederatedMetrics fetches metrics from the configured prometheus
+	// API and writes the metrics to the given writer.
+	// The given query params can be used to set match parameters.
+	FetchFederatedMetrics(ctx context.Context, w io.Writer, match string) error
 }
 
 // ConfigSecretProvider provides secrets interpolation into configs.
