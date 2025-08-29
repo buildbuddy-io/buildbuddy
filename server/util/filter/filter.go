@@ -14,7 +14,7 @@ import (
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
 
-func validatedDurationValue(start string, end string) string {
+func rectifiedDurationValue(start string, end string) string {
 	// start is before end, start is not zero.
 	return fmt.Sprintf("IF(%s < %s AND %s > 0, 0, (%s - %s))", end, start, start, end, start)
 }
@@ -24,13 +24,13 @@ func executionMetricToDbField(m stat_filter.ExecutionMetricType) (string, error)
 	case stat_filter.ExecutionMetricType_UPDATED_AT_USEC_EXECUTION_METRIC:
 		return "updated_at_usec", nil
 	case stat_filter.ExecutionMetricType_QUEUE_TIME_USEC_EXECUTION_METRIC:
-		return validatedDurationValue("queued_timestamp_usec", "worker_start_timestamp_usec"), nil
+		return rectifiedDurationValue("queued_timestamp_usec", "worker_start_timestamp_usec"), nil
 	case stat_filter.ExecutionMetricType_INPUT_DOWNLOAD_TIME_EXECUTION_METRIC:
-		return validatedDurationValue("input_fetch_start_timestamp_usec", "input_fetch_completed_timestamp_usec"), nil
+		return rectifiedDurationValue("input_fetch_start_timestamp_usec", "input_fetch_completed_timestamp_usec"), nil
 	case stat_filter.ExecutionMetricType_REAL_EXECUTION_TIME_EXECUTION_METRIC:
-		return validatedDurationValue("execution_start_timestamp_usec", "execution_completed_timestamp_usec"), nil
+		return rectifiedDurationValue("execution_start_timestamp_usec", "execution_completed_timestamp_usec"), nil
 	case stat_filter.ExecutionMetricType_OUTPUT_UPLOAD_TIME_EXECUTION_METRIC:
-		return validatedDurationValue("output_upload_start_timestamp_usec", "output_upload_completed_timestamp_usec"), nil
+		return rectifiedDurationValue("output_upload_start_timestamp_usec", "output_upload_completed_timestamp_usec"), nil
 	case stat_filter.ExecutionMetricType_PEAK_MEMORY_EXECUTION_METRIC:
 		return "peak_memory_bytes", nil
 	case stat_filter.ExecutionMetricType_INPUT_DOWNLOAD_SIZE_EXECUTION_METRIC:
@@ -38,7 +38,7 @@ func executionMetricToDbField(m stat_filter.ExecutionMetricType) (string, error)
 	case stat_filter.ExecutionMetricType_OUTPUT_UPLOAD_SIZE_EXECUTION_METRIC:
 		return "file_upload_size_bytes", nil
 	case stat_filter.ExecutionMetricType_EXECUTION_WALL_TIME_EXECUTION_METRIC:
-		return validatedDurationValue("queued_timestamp_usec", "worker_completed_timestamp_usec"), nil
+		return rectifiedDurationValue("queued_timestamp_usec", "worker_completed_timestamp_usec"), nil
 	case stat_filter.ExecutionMetricType_EXECUTION_CPU_NANOS_EXECUTION_METRIC:
 		return "cpu_nanos", nil
 	case stat_filter.ExecutionMetricType_EXECUTION_AVERAGE_MILLICORES_EXECUTION_METRIC:
