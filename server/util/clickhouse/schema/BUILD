@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/build_event_protocol/invocation_format",
         "//server/tables",
+        "//server/usage/sku",
         "//server/util/log",
         "//server/util/status",
         "@io_gorm_gorm//:gorm",

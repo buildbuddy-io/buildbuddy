@@ -1,3 +1,5 @@
+// TODO: rename to "usage" and rename enterprise/server/usage to
+// "usagetracker"
 package usageutil
 
 import (
