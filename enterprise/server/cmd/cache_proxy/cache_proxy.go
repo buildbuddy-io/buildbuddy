@@ -14,10 +14,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
@@ -52,14 +54,6 @@ var (
 	serverType = flag.String("server_type", "cache-proxy", "The server type to match on health checks")
 
 	remoteCache = flag.String("cache_proxy.remote_cache", "grpcs://remote.buildbuddy.dev", "The backing remote cache.")
-
-	headersToPropagate = []string{
-		authutil.APIKeyHeader,
-		authutil.ContextTokenStringKey,
-		usageutil.ClientHeaderName,
-		usageutil.OriginHeaderName,
-		authutil.ClientIdentityHeaderName,
-		bazel_request.RequestMetadataKey}
 )
 
 func main() {
@@ -94,6 +88,7 @@ func main() {
 	env.SetAuthenticator(authenticator)
 
 	hit_tracker_client.Register(env)
+	clientidentity.Register(env)
 
 	// Configure a local cache.
 	if err := pebble_cache.Register(env); err != nil {
@@ -168,10 +163,10 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 	// Add the API-Key, JWT, client-identity, etc... propagating interceptor.
 	grpcServerConfig := grpc_server.GRPCServerConfig{
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
-			interceptors.PropagateMetadataUnaryInterceptor(headersToPropagate...),
+			interceptors.PropagateMetadataUnaryInterceptor(headersToPropagate(env)...),
 		},
 		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
-			interceptors.PropagateMetadataStreamInterceptor(headersToPropagate...),
+			interceptors.PropagateMetadataStreamInterceptor(headersToPropagate(env)...),
 		},
 	}
 
@@ -272,4 +267,24 @@ func registerInternalServices(env *real_environment.RealEnv) error {
 	}
 	env.SetLocalActionCacheServer(localAC)
 	return nil
+}
+
+func headersToPropagate(env environment.Env) []string {
+	if env.GetClientIdentityService() == nil {
+		return []string{
+			authutil.APIKeyHeader,
+			authutil.ContextTokenStringKey,
+			usageutil.ClientHeaderName,
+			usageutil.OriginHeaderName,
+			authutil.ClientIdentityHeaderName,
+			bazel_request.RequestMetadataKey,
+		}
+	}
+	return []string{
+		authutil.APIKeyHeader,
+		authutil.ContextTokenStringKey,
+		usageutil.ClientHeaderName,
+		usageutil.OriginHeaderName,
+		bazel_request.RequestMetadataKey,
+	}
 }
