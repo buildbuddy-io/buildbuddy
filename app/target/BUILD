@@ -191,6 +191,7 @@ ts_library(
         "//app/format",
         "//app/invocation:cache_requests_card",
         "//app/invocation:invocation_model",
+        "//app/invocation:invocation_suggestion_card",
         "//app/invocation:link_github_repo_modal",
         "//app/invocation:target_util",
         "//app/router",

@@ -594,6 +594,7 @@ ts_library(
         "//app/components/link",
         "//app/format",
         "//app/invocation:invocation_model",
+        "//proto:build_event_stream_ts_proto",
         "//proto:execution_stats_ts_proto",
         "//proto:group_ts_proto",
     ],
