@@ -16,6 +16,13 @@ var (
 	singleRaftOpTimeout = flag.Duration("cache.raft.op_timeout", 1*time.Second, "The duration of timeout for a single raft operation")
 )
 
+type BackupOptions struct {
+	Enabled    bool          `yaml:"enabled" json:"enabled"`
+	Interval   time.Duration `yaml:"interval" json:"interval"`
+	Dir        string        `yaml:"dir" json:"dir"`
+	NumWorkers int           `yaml:"num_workers" json:"num_workers"`
+}
+
 func TargetRangeSizeBytes() int64 {
 	return *targetRangeSizeBytes
 }

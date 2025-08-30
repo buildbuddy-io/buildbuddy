@@ -53,6 +53,7 @@ var (
 	atimeUpdateThreshold    = flag.Duration("cache.raft.atime_update_threshold", 3*time.Hour, "Don't update atime if it was updated more recently than this")
 	atimeBufferSize         = flag.Int("cache.raft.atime_buffer_size", 100000, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	atimeWriteBatchSize     = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
+	backupSnapshotSourceDir = flag.String("cache.raft.backup_snapshot_source_dir", "", "the directory for backup source directory")
 
 	// TODO(tylerw): remove after dev.
 	// Store raft content in a subdirectory with the same name as the gossip
@@ -83,6 +84,8 @@ type Config struct {
 	PartitionMappings []disk.PartitionMapping
 
 	LogDBConfigType store.LogDBConfigType
+
+	BackupSnapshotSourceDir string
 }
 
 // data needed to update last access time.
@@ -188,14 +191,15 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 	}
 
 	rcConfig := &Config{
-		RootDir:           filepath.Join(*rootDirectory, *subdir),
-		Hostname:          *hostName,
-		ListenAddr:        *listen,
-		HTTPPort:          *httpPort,
-		GRPCPort:          *gRPCPort,
-		Partitions:        ps,
-		PartitionMappings: *partitionMappings,
-		LogDBConfigType:   store.LargeMemLogDBConfigType,
+		RootDir:                 filepath.Join(*rootDirectory, *subdir),
+		Hostname:                *hostName,
+		ListenAddr:              *listen,
+		HTTPPort:                *httpPort,
+		GRPCPort:                *gRPCPort,
+		Partitions:              ps,
+		PartitionMappings:       *partitionMappings,
+		LogDBConfigType:         store.LargeMemLogDBConfigType,
+		BackupSnapshotSourceDir: *backupSnapshotSourceDir,
 	}
 	return New(env, rcConfig)
 }
