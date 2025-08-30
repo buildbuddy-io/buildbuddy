@@ -162,6 +162,52 @@ func TestRun(t *testing.T) {
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
 }
 
+// TestLimitedStd tests that the executor enforces a limit on the size of
+// stdout/stderr output from a command, and returns an error if the limit is
+// exceeded.
+func TestLimitedStd(t *testing.T) {
+	// OCI Setup
+	setupNetworking(t)
+
+	image := manuallyProvisionedBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 10)
+
+	// Run
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `echo 'hello world'`},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.Error(t, res.Error)
+	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted error, got %s", res.Error)
+	assert.Contains(t, res.Error.Error(), "stdout/stderr output size limit exceeded")
+	assert.Contains(t, res.Error.Error(), "12 bytes requested")
+	assert.Contains(t, res.Error.Error(), "limit: 10 bytes")
+}
+
 func TestCgroupSettings(t *testing.T) {
 	setupNetworking(t)
 
@@ -1557,6 +1603,189 @@ func TestPersistentWorker(t *testing.T) {
 	require.NoError(t, err)
 	err = worker.Stop()
 	assert.NoError(t, err)
+}
+
+// TestPersistentWorkerOOMPrevention validates that persistent workers implement OOM prevention
+// mechanisms for stderr buffering and response size validation, as added in the recent commit.
+func TestPersistentWorkerOOMPrevention(t *testing.T) {
+	setupNetworking(t)
+
+	image := manuallyProvisionedBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	// Create workspace with testworker binary
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	ws, err := workspace.New(env, buildRoot, &workspace.Opts{Preserve: true})
+	require.NoError(t, err)
+	testworkerPath, err := runfiles.Rlocation(testworkerRlocationpath)
+	require.NoError(t, err)
+	testfs.CopyFile(t, testworkerPath, ws.Path(), "testworker")
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+
+	// Create container
+	err = c.Create(ctx, ws.Path())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("StderrSizeLimit", func(t *testing.T) {
+		// Set stderr limit for this subtest
+		flags.Set(t, "executor.stdouterr_max_size_bytes", 100)
+
+		rsp := &wkpb.WorkResponse{
+			Output:   "test-output",
+			ExitCode: 0,
+		}
+		b, err := proto.Marshal(rsp)
+		require.NoError(t, err)
+		size := make([]byte, binary.MaxVarintLen64)
+		n := binary.PutUvarint(size, uint64(len(b)))
+		responseBase64 := base64.StdEncoding.EncodeToString(append(size[:n], b...))
+
+		// Generate a large stderr message that exceeds the 100-byte limit
+		largeStderrMessage := strings.Repeat("X", 200) // 200 chars, well over 100 bytes
+
+		// Start worker that will write large stderr output but still send response
+		worker := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+			Arguments: []string{"./testworker", "--response_base64", responseBase64, "--write_stderr", largeStderrMessage},
+		})
+		t.Cleanup(func() {
+			err := worker.Stop()
+			assert.NoError(t, err)
+		})
+
+		// Send work request - this should write large stderr but return successfully
+		res := worker.Exec(ctx, &repb.Command{})
+
+		// Worker should succeed (unlike --fail_with_stderr, --write_stderr continues)
+		assert.Equal(t, 0, res.ExitCode)
+
+		// The stderr should be limited to our configured size (100 bytes)
+		// This validates the OOM prevention mechanism for stderr buffering
+		assert.LessOrEqual(t, len(res.Stderr), 100, "stderr should be limited to configured size to prevent OOM")
+		assert.Greater(t, len(res.Stderr), 0, "stderr should contain some data")
+	})
+
+	t.Run("StdoutSizeLimit", func(t *testing.T) {
+		// Set stderr limit for this subtest
+		flags.Set(t, "executor.stdouterr_max_size_bytes", 100)
+
+		rsp := &wkpb.WorkResponse{
+			Output:   strings.Repeat("X", 200),
+			ExitCode: 0,
+		}
+		b, err := proto.Marshal(rsp)
+		require.NoError(t, err)
+		size := make([]byte, binary.MaxVarintLen64)
+		n := binary.PutUvarint(size, uint64(len(b)))
+		responseBase64 := base64.StdEncoding.EncodeToString(append(size[:n], b...))
+
+		// Start worker that will write large stderr output but still send response
+		worker := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+			Arguments: []string{"./testworker", "--response_base64", responseBase64},
+		})
+		t.Cleanup(func() {
+			err := worker.Stop()
+			assert.NoError(t, err)
+		})
+
+		// Send work request - this should write large stderr but return successfully
+		res := worker.Exec(ctx, &repb.Command{})
+		assert.Error(t, res.Error)
+		assert.Equal(t, -2, res.ExitCode)
+		assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhaustedError, got %+#v", res.Error)
+	})
+
+	t.Run("PersistentWorkerReuseWithinLimits", func(t *testing.T) {
+		// Set a reasonable limit for this subtest - small enough to test buffering but large enough for multiple requests
+		flags.Set(t, "executor.stdouterr_max_size_bytes", 500)
+
+		// Create a response that's within limits for individual requests
+		rsp := &wkpb.WorkResponse{
+			Output:   "test-output-" + strings.Repeat("X", 50), // ~65 bytes per response
+			ExitCode: 0,
+		}
+		b, err := proto.Marshal(rsp)
+		require.NoError(t, err)
+		size := make([]byte, binary.MaxVarintLen64)
+		n := binary.PutUvarint(size, uint64(len(b)))
+		responseBase64 := base64.StdEncoding.EncodeToString(append(size[:n], b...))
+
+		// Generate a moderate stderr message per request (~80 bytes)
+		stderrMessage := "stderr-" + strings.Repeat("Y", 70)
+
+		// Start worker that will write stderr on each request
+		worker := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+			Arguments: []string{"./testworker", "--response_base64", responseBase64, "--write_stderr", stderrMessage},
+		})
+		t.Cleanup(func() {
+			err := worker.Stop()
+			assert.NoError(t, err)
+		})
+
+		// Send multiple work requests - this validates that stderr buffers don't accumulate
+		// across multiple exec calls, which would eventually cause OOM
+		for i := 0; i < 10; i++ {
+			res := worker.Exec(ctx, &repb.Command{})
+
+			// All requests should succeed - no accumulation should cause limit breach
+			assert.NoError(t, res.Error, "request %d should succeed", i+1)
+			assert.Equal(t, 0, res.ExitCode, "request %d should have exit code 0", i+1)
+
+			// Stderr should be present but limited per request
+			assert.Greater(t, len(res.Stderr), 0, "stderr should contain data for request %d", i+1)
+			assert.LessOrEqual(t, len(res.Stderr), 500, "stderr should not exceed limit for request %d", i+1)
+
+			// Validate the output is as expected
+			expectedOutput := "test-output-" + strings.Repeat("X", 50)
+			assert.Equal(t, expectedOutput, string(res.Stderr), "output should match expected for request %d", i+1)
+		}
+	})
+
+	t.Run("JSONProtocolResponseSizeLimit", func(t *testing.T) {
+		// Set a reasonable limit for JSON protocol testing
+		flags.Set(t, "executor.stdouterr_max_size_bytes", 100)
+
+		// Create a response that exceeds the 100 byte limit
+		// Generate a large JSON response by repeating X's
+		largeOutput := strings.Repeat("X", 200) // Much larger than our 100 byte limit
+		jsonResponse := fmt.Sprintf(`{"output":"%s","exitCode":0}`, largeOutput)
+		responseBase64 := base64.StdEncoding.EncodeToString([]byte(jsonResponse))
+
+		// Start worker using JSON protocol with a large response
+		worker := persistentworker.Start(ctx, ws, c, "json" /*=protocol*/, &repb.Command{
+			Arguments: []string{"./testworker", "--protocol", "json", "--response_base64", responseBase64},
+		})
+		t.Cleanup(func() {
+			err := worker.Stop()
+			assert.NoError(t, err)
+		})
+
+		// Send work request - this should fail due to response size limit
+		res := worker.Exec(ctx, &repb.Command{})
+
+		// Should get ResourceExhausted error due to size limit
+		assert.Error(t, res.Error)
+		assert.Equal(t, -2, res.ExitCode) // Error exit code
+		assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhaustedError for JSON protocol, got %+#v", res.Error)
+		assert.Contains(t, res.Error.Error(), "response size exceeds limit")
+	})
 }
 
 func TestCancelRun(t *testing.T) {
