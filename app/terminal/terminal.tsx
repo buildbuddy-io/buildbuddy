@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Download, Expand, Shrink, WrapText, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CaseSensitive, Download, Expand, Shrink, WrapText, X } from "lucide-react";
 import memoizeOne from "memoize-one";
 import React from "react";
 import AutoSizer from "react-virtualized-auto-sizer";
@@ -46,6 +46,7 @@ interface State {
 
   search: string;
   activeMatchIndex: number;
+  caseSensitive: boolean;
 
   isLoadingFullLog: boolean;
 }
@@ -67,6 +68,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
 
     search: "",
     activeMatchIndex: -1,
+    caseSensitive: false,
   };
 
   private terminalRef = React.createRef<HTMLDivElement>();
@@ -166,7 +168,13 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
         const nextContent = this.getContent(this.props.value, search);
         this.setState({
           search,
-          activeMatchIndex: updatedMatchIndexForSearch(nextContent, search, match, this.getRowRangeInView()),
+          activeMatchIndex: updatedMatchIndexForSearch(
+            nextContent,
+            search,
+            match,
+            this.getRowRangeInView(),
+            this.state.caseSensitive
+          ),
         });
       },
       // If logs are small, no need to debounce.
@@ -190,6 +198,22 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
       input.focus();
     }
   }
+  private onCaseSensitiveClick() {
+    const caseSensitive = !this.state.caseSensitive;
+    const content = this.getContent();
+    const match = this.state.activeMatchIndex === -1 ? null : content.matches[this.state.activeMatchIndex];
+    const nextContent = this.getContent(this.props.value, this.state.search, this.state.lineLengthLimit, caseSensitive);
+    this.setState({
+      caseSensitive,
+      activeMatchIndex: updatedMatchIndexForSearch(
+        nextContent,
+        this.state.search,
+        match,
+        this.getRowRangeInView(),
+        caseSensitive
+      ),
+    });
+  }
 
   /**
    * Wrapper around `this.memoizedGetContent` that provides useful default args.
@@ -197,9 +221,10 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
   private getContent(
     text = this.props.value || DEFAULT_VALUE,
     search = this.state.search,
-    lineLengthLimit = this.state.lineLengthLimit
+    lineLengthLimit = this.state.lineLengthLimit,
+    caseSensitive = this.state.caseSensitive
   ) {
-    return this.memoizedGetContent(text, search, lineLengthLimit);
+    return this.memoizedGetContent(text, search, lineLengthLimit, caseSensitive);
   }
   /**
    * memoizes getContent for a single output value per component instance. This
@@ -388,6 +413,12 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
                   <ArrowDown className={`icon ${iconClass}`} />
                 </button>
                 <button
+                  title="Case sensitive"
+                  className={`terminal-action ${this.state.caseSensitive ? "active" : ""}`}
+                  onClick={this.onCaseSensitiveClick.bind(this)}>
+                  <CaseSensitive className={`icon ${iconClass}`} />
+                </button>
+                <button
                   title="Clear search"
                   disabled={!this.state.search}
                   className={`terminal-action ${this.state.search ? "active" : ""}`}
@@ -464,6 +495,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
                           rowLength: this.state.lineLengthLimit,
                           search: this.state.search,
                           activeMatchIndex: this.state.activeMatchIndex,
+                          caseSensitive: this.state.caseSensitive,
                         }
                   }>
                   {Row}
