@@ -429,7 +429,7 @@ type InvocationDB interface {
 	LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error)
 	LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error)
 	LookupGroupIDFromInvocation(ctx context.Context, invocationID string) (string, error)
-	LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error)
+	LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit, offset int) ([]*tables.Invocation, error)
 	LookupChildInvocations(ctx context.Context, parentRunID string) ([]string, error)
 	DeleteInvocation(ctx context.Context, invocationID string) error
 	DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *UserInfo, invocationID string) error
