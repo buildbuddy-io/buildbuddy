@@ -1572,6 +1572,7 @@ const (
 	ClientIdentityExecutor       = "executor"
 	ClientIdentityApp            = "app"
 	ClientIdentityWorkflow       = "workflow"
+	ClientIdentityCacheProxy     = "cache-proxy"
 	ClientIdentityInternalOrigin = "internal"
 )
 
