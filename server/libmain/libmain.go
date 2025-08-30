@@ -106,6 +106,7 @@ var (
 		"/audit-logs/",
 		"/repo/",
 		"/reviews/",
+		"/product-spotlight/",
 	}
 )
 

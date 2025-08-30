@@ -393,6 +393,10 @@ class Router {
     return this.getLastPathComponent(path, Path.commitHistoryPath);
   }
 
+  getProductSpotlightId(path: string) {
+    return this.getLastPathComponent(path, Path.productSpotlightPath);
+  }
+
   isFiltering() {
     const url = new URL(window.location.href);
     for (const param of GLOBAL_FILTER_PARAM_NAMES) {
@@ -615,6 +619,7 @@ export class Path {
   static codePath = "/code/";
   static reviewsPath = "/reviews/";
   static codesearchPath = "/search/";
+  static productSpotlightPath = "/product-spotlight/";
 }
 
 export type TrendsChartId = "builds" | "duration" | "cache" | "cas" | "savings" | "build_time";
