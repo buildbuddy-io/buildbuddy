@@ -1276,6 +1276,131 @@ func sortDrilldownChartKeys(dm map[stpb.DrilldownType]float64) *[]stpb.Drilldown
 	return &result
 }
 
+func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.GetTargetTrendsRequest) (*stpb.GetTargetTrendsResponse, error) {
+	if !i.isOLAPDBEnabled() {
+		return nil, status.UnimplementedError("Target trends require using an OLAP DB, but none is configured.")
+	}
+	if err := authutil.AuthorizeGroupAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
+		return nil, err
+	}
+
+	// Normalize repo URL before we use it in any queries.
+	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
+		repoURL, err := git.NormalizeRepoURL(repoURL)
+		if err == nil {
+			req = req.CloneVT()
+			req.Query.RepoUrl = repoURL.String()
+		}
+	}
+
+	rsp := &stpb.GetTargetTrendsResponse{}
+
+	// Use errgroup to fetch both metrics in parallel
+	eg, ctx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
+		targets, err := i.getTargetsByMetric(ctx, req, "cpu_nanos")
+		if err != nil {
+			return err
+		}
+		rsp.TargetsByCpuNanos = targets
+		return nil
+	})
+
+	eg.Go(func() error {
+		targets, err := i.getTargetsByMetric(ctx, req, "(execution_completed_timestamp_usec - execution_start_timestamp_usec)")
+		if err != nil {
+			return err
+		}
+		rsp.TargetsByExecutionTime = targets
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	return rsp, nil
+}
+
+func (i *InvocationStatService) getTargetsByMetric(ctx context.Context, req *stpb.GetTargetTrendsRequest, metric string) ([]*stpb.TargetStats, error) {
+	// Get the dimension field to query
+	dimensionField := i.getDimensionField(req.GetDimension())
+
+	q := query_builder.NewQuery(fmt.Sprintf(`
+		SELECT %s as target, SUM(%s) as value
+		FROM "Executions"`, dimensionField, metric))
+
+	// Add where clauses from the trend query, including execution dimension filters
+	if err := i.addWhereClauses(q, req.GetQuery(), true, req.GetRequestContext()); err != nil {
+		return nil, err
+	}
+
+	// Add stat filters
+	for _, f := range req.GetFilter() {
+		str, args, err := filter.GenerateFilterStringAndArgs(f)
+		if err != nil {
+			return nil, err
+		}
+		q.AddWhereClause(str, args...)
+	}
+
+	// Add dimension filters
+	for _, f := range req.GetDimensionFilter() {
+		if f.GetDimension().Execution == nil {
+			continue
+		}
+		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f)
+		if err != nil {
+			return nil, err
+		}
+		q.AddWhereClause(str, args...)
+	}
+
+	// Ensure we only include non-empty dimension values
+	q.AddWhereClause(fmt.Sprintf("%s != ''", dimensionField))
+
+	// For CPU nanos, only include positive values
+	if metric == "cpu_nanos" {
+		q.AddWhereClause("cpu_nanos > 0")
+	} else {
+		// For execution time, ensure valid timestamps
+		q.AddWhereClause("execution_completed_timestamp_usec > execution_start_timestamp_usec")
+	}
+
+	q.SetGroupBy(dimensionField)
+	q.SetOrderBy("value", false) // Descending order
+	q.SetLimit(1000)             // Reasonable limit to avoid overwhelming the response
+
+	qStr, qArgs := q.Build()
+	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_target_trends").Raw(qStr, qArgs...)
+
+	res, err := db.ScanAll(rq, &stpb.TargetStats{})
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
+
+func (i *InvocationStatService) getDimensionField(dimension stpb.DrilldownType) string {
+	switch dimension {
+	case stpb.DrilldownType_TARGET_LABEL_DRILLDOWN_TYPE:
+		return "target_label"
+	case stpb.DrilldownType_ACTION_MNEMONIC_DRILLDOWN_TYPE:
+		return "action_mnemonic"
+	case stpb.DrilldownType_USER_DRILLDOWN_TYPE:
+		return "user"
+	case stpb.DrilldownType_HOSTNAME_DRILLDOWN_TYPE:
+		return "host"
+	case stpb.DrilldownType_PATTERN_DRILLDOWN_TYPE:
+		return "pattern"
+	default:
+		// Default to target_label for backward compatibility
+		return "target_label"
+	}
+}
+
 func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error) {
 	if !config.TrendsHeatmapEnabled() {
 		return nil, status.UnimplementedError("Stat heatmaps are not enabled.")
