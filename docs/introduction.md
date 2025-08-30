@@ -11,7 +11,7 @@ BuildBuddy is an open-core Bazel build event viewer, result store, remote cache,
 There are two main ways to get started with BuildBuddy:
 
 1. [BuildBuddy Cloud](cloud.md): a fully managed cloud version of BuildBuddy that is free to use for individuals and open source projects. You can get up and running quickly by just adding a few lines to your `.bazelrc` file.
-1. [BuildBuddy On-Prem](on-prem.md): Run your own instance of BuildBuddy on your own servers or in your own cloud environment. Features targeted at individual developers are free and open source. [BuildBuddy Enterprise](enterprise.md) is also available for companies that need advanced features like OIDC auth, API access, and more.
+1. [BuildBuddy On-Prem](on-prem.md): Run your own instance of BuildBuddy on your own servers or in your own cloud environment. Features targeted at individual developers are free and open source. 
 
 ## Go further
 
