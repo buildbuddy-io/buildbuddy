@@ -565,7 +565,7 @@ func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Conte
 }
 
 func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error) {
-	if err := authutil.AuthorizeGroupAccess(ctx, a.env, repo.GroupID); err != nil {
+	if err := authutil.AuthorizeTargetGroupAccess(ctx, a.env, repo.GroupID); err != nil {
 		return "", err
 	}
 	repoURL, err := gitutil.ParseGitHubRepoURL(repo.RepoURL)

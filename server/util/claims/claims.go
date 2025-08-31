@@ -157,16 +157,25 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 		keyRole = role.Admin
 	}
 	allowedGroups := []string{akg.GetGroupID()}
+	caps := capabilities.FromInt(akg.GetCapabilities())
+	// "audit log read" is a limited capability that does not grant any of
+	// the access granted implicitly through group membership.
+	for _, c := range caps {
+		if c != cappb.Capability_AUDIT_LOG_READ && c != cappb.Capability_UNKNOWN_CAPABILITY {
+			caps = append(caps, cappb.Capability_GROUP_ACCESS)
+			break
+		}
+	}
 	groupMemberships := []*interfaces.GroupMembership{{
 		GroupID:      akg.GetGroupID(),
-		Capabilities: capabilities.FromInt(akg.GetCapabilities()),
+		Capabilities: caps,
 		Role:         keyRole,
 	}}
 	for _, cg := range akg.GetChildGroupIDs() {
 		allowedGroups = append(allowedGroups, cg)
 		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
 			GroupID:      cg,
-			Capabilities: capabilities.FromInt(akg.GetCapabilities()),
+			Capabilities: caps,
 			Role:         keyRole,
 		})
 	}
@@ -188,7 +197,7 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 		APIKeyOwnerGroupID:     akg.GetGroupID(),
 		AllowedGroups:          allowedGroups,
 		GroupMemberships:       groupMemberships,
-		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
+		Capabilities:           caps,
 		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
 		CacheEncryptionEnabled: akg.GetCacheEncryptionEnabled(),
 		EnforceIPRules:         akg.GetEnforceIPRules(),
@@ -224,7 +233,7 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 		}
 	}
 
-	claims, err := userClaims(u, eg)
+	claims, err := UserClaims(u, eg)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +262,7 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 				Group: *ig,
 				Role:  uint32(role.Admin),
 			}}
-			claims, err := userClaims(u, requestContext.GetImpersonatingGroupId())
+			claims, err := UserClaims(u, requestContext.GetImpersonatingGroupId())
 			if err != nil {
 				return nil, err
 			}
@@ -266,15 +275,18 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 	return claims, nil
 }
 
-func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
+func UserClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	allowedGroups := make([]string, 0, len(u.Groups))
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
 	cacheEncryptionEnabled := false
 	enforceIPRules := false
-	var capabilities []cappb.Capability
+	// Users always have the implicit GROUP_ACCESS capability.
+	capabilities := []cappb.Capability{cappb.Capability_GROUP_ACCESS}
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
 		c, err := role.ToCapabilities(role.Role(g.Role))
+		// Users always have the implicit GROUP_ACCESS capability.
+		c = append(c, cappb.Capability_GROUP_ACCESS)
 		if err != nil {
 			return nil, err
 		}

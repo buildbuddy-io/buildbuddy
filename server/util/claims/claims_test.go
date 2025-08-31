@@ -2,9 +2,12 @@ package claims_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -13,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
@@ -116,7 +120,7 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	require.NoError(t, err)
 	expectedBaseMembership := &interfaces.GroupMembership{
 		GroupID:      baseGroupID,
-		Capabilities: caps,
+		Capabilities: append(caps, cappb.Capability_GROUP_ACCESS),
 		Role:         role.Default,
 	}
 	require.Equal(t, baseGroupID, c.GetGroupID())
@@ -152,7 +156,7 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	require.NoError(t, err)
 	expectedChildMembership := &interfaces.GroupMembership{
 		GroupID:      childGroupID,
-		Capabilities: caps,
+		Capabilities: append(caps, cappb.Capability_GROUP_ACCESS),
 		Role:         role.Default,
 	}
 	require.Equal(t, baseGroupID, c.GetGroupID())
@@ -174,4 +178,61 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	_, err = claims.APIKeyGroupClaims(rctx, akg)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+// This test checks whether a given capability implicitly grants the
+// GROUP_ACCESS capability, which grants access to a broad range of access
+// to various resources.
+//
+// When adding a new capability, decide whether that type of API key should
+// have broad access to retrieve invocation information, artifacts, group membership, etc.
+func TestAPIKeyImplicitGroupAccessCaps(t *testing.T) {
+	implicitGroupAccess := map[cappb.Capability]bool{
+		cappb.Capability_UNKNOWN_CAPABILITY: false,
+		cappb.Capability_CACHE_WRITE:        true,
+		cappb.Capability_REGISTER_EXECUTOR:  true,
+		cappb.Capability_CAS_WRITE:          true,
+		cappb.Capability_ORG_ADMIN:          true,
+		cappb.Capability_AUDIT_LOG_READ:     false,
+		cappb.Capability_GROUP_ACCESS:       true,
+	}
+	ctx := context.Background()
+	for name, val := range cappb.Capability_value {
+		baseGroupID := "GR9000"
+		caps := []cappb.Capability{cappb.Capability(val)}
+		akg := &fakeAPIKeyGroup{groupID: baseGroupID, capabilities: capabilities.ToInt(caps)}
+		c, err := claims.APIKeyGroupClaims(ctx, akg)
+		require.NoError(t, err)
+		expected, ok := implicitGroupAccess[cappb.Capability(val)]
+		require.True(t, ok, "expectation for %q needs to be specified", name)
+		actual := slices.Contains(c.Capabilities, cappb.Capability_GROUP_ACCESS)
+		if !expected && actual {
+			require.FailNow(t, "capability should not grant implicit group access", name)
+		} else if expected && !actual {
+			require.FailNow(t, "capability should grant implicit group access", name)
+		}
+	}
+}
+
+// Tests that users always have implicit GROUP_ACCESS capability.
+func TestUserImplicitGroupAccessCaps(t *testing.T) {
+	for name, val := range grpb.Group_Role_value {
+		if grpb.Group_Role(val) == grpb.Group_UNKNOWN_ROLE {
+			continue
+		}
+		groupID := "GR9000"
+		r, err := role.FromProto(grpb.Group_Role(val))
+		require.NoError(t, err, "could not convert proto role %s", name)
+		u := &tables.User{
+			Groups: []*tables.GroupRole{
+				{
+					Group: tables.Group{GroupID: groupID},
+					Role:  uint32(r),
+				},
+			},
+		}
+		c, err := claims.UserClaims(u, groupID)
+		require.NoError(t, err)
+		require.Contains(t, c.Capabilities, cappb.Capability_GROUP_ACCESS, "role %s should grant implicit group access", name)
+	}
 }

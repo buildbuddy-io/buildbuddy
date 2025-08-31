@@ -312,12 +312,13 @@ func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 			c, err := claims.APIKeyGroupClaims(ctx, akg)
 			require.NoError(t, err)
 			assert.Equal(t, randKey.GroupID, c.GetGroupID())
-			assert.Equal(t, capabilities.FromInt(randKey.Capabilities), c.GetCapabilities())
+			expectedCaps := append(capabilities.FromInt(randKey.Capabilities), cappb.Capability_GROUP_ACCESS)
+			assert.Equal(t, expectedCaps, c.GetCapabilities())
 			require.Len(t, c.GetGroupMemberships(), 1)
 			assert.Equal(t, []*interfaces.GroupMembership{
 				{
 					GroupID:      randKey.GroupID,
-					Capabilities: capabilities.FromInt(randKey.Capabilities),
+					Capabilities: expectedCaps,
 					// TODO(bduffany): API keys should not have roles - just
 					// capabilities.
 					Role: role.Developer,
