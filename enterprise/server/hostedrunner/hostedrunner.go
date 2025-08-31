@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
+	"github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
@@ -33,9 +34,11 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gstatus "google.golang.org/grpc/status"
@@ -431,6 +434,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		return nil, status.WrapError(err, "get credentials")
 	}
 
+	var hasBESOverride bool
 	for _, h := range req.GetRemoteHeaders() {
 		parts := strings.SplitN(h, "=", 2)
 		if len(parts) != 2 {
@@ -443,6 +447,10 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		// to credential-related env overrides that were set above.
 		if headerKey == platform.OverrideHeaderPrefix+platform.EnvOverridesPropertyName {
 			envOverrides = append(envOverrides, headerVal)
+
+			if strings.HasPrefix(headerVal, "BUILDBUDDY_BES_API_KEY=") {
+				hasBESOverride = true
+			}
 			continue
 		}
 
@@ -451,6 +459,16 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 
 	execCtx = platform.WithRemoteHeaderOverride(
 		execCtx, platform.EnvOverridesPropertyName, strings.Join(envOverrides, ","))
+
+	if hasBESOverride && r.env.GetAuditLogger() != nil {
+		snapshotKeyStr := getExecProperty(req.GetExecProperties(), "snapshot-key-override")
+		snapshotKey := &fcpb.SnapshotKey{}
+		if err := protojson.Unmarshal([]byte(snapshotKeyStr), snapshotKey); err != nil {
+			return nil, status.WrapError(err, "unmarshal SnapshotKey")
+		}
+		// TODO: Make sure this is logging for the correct group
+		r.env.GetAuditLogger().LogForGroup(ctx, req.GetRequestContext().GetGroupId(), auditlog.Action_IMPERSONATE_REMOTE_RUN, snapshotKey)
+	}
 
 	executionClient := r.env.GetRemoteExecutionClient()
 	if executionClient == nil {
