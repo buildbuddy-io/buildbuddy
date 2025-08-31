@@ -37,7 +37,7 @@ actions:
     # when running on push to master.
     git_fetch_depth: 0
     steps:
-      - run: "bazel run //tools/checkstyle --config=linux-workflows"
+      - run: "bazel run //tools/lint --config=linux-workflows"
   - name: Test (darwin_amd64)
     os: "darwin"
     triggers:
