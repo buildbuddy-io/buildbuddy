@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_content_addressable_storage_client"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
@@ -225,7 +226,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	env.SetActionCacheClient(repb.NewActionCacheClient(conn))
 	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
 	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
-	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	env.SetContentAddressableStorageClient(routing_content_addressable_storage_client.NewClient(env))
 
 	// The atime updater must be registered after the remote CAS client (which
 	// it depends on), but before the local CAS server (which depends on it).
