@@ -28,10 +28,18 @@ var (
 	legacyAllFlag = flag.Bool("a", false, "Has no effect (kept for backwards compatibility but will be removed soon)")
 )
 
+const (
+	// Version of the bb CLI to use for 'bb fix' commands.
+	bbCLIVersion = "5.0.266"
+)
+
 // Set via x_defs in BUILD file.
 var (
 	goimportsRlocationpath                     string
+	goRlocationpath                            string
+	gazelleRlocationpath                       string
 	clangFormatRlocationpath                   string
+	bbCLIRlocationpath                         string
 	prettierRlocationpath                      string
 	prettierPluginOrganizeImportsRlocationpath string
 )
@@ -80,91 +88,112 @@ type Tool struct {
 }
 
 func runBBFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	// TODO: use a static build of bb instead of having bazelisk download it.
-	cmd := exec.CommandContext(ctx, "bazelisk", "fix")
+	// TODO: use a static build of 'bb' here so that we can use this tool to fix
+	// problems with the CLI itself.
+	cmd, err := getRunfileToolCommand(ctx, bbCLIRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get bb command: %w", err)
+	}
+	cmd.Args = append(cmd.Args, "fix")
 	if !fix {
 		cmd.Args = append(cmd.Args, "--diff")
 	}
-	cmd.Env = append(os.Environ(), "USE_BAZEL_VERSION=buildbuddy-io/5.0.179")
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	return cmd.Run()
 }
 
 func runFixGoDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	// fix_go_deps.sh doesn't exist when run from the internal repo, which is
+	// fine since we only want to run it from the external repo anyway.
+	if _, err := os.Stat("tools/fix_go_deps.sh"); os.IsNotExist(err) {
+		return nil
+	}
 	cmd := exec.CommandContext(ctx, "tools/fix_go_deps.sh")
 	if !fix {
 		cmd.Args = append(cmd.Args, "--diff")
 	}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+
+	// Set GAZELLE_PATH and GO_PATH to runfile tool paths so that we don't
+	// have to run nested bazel invocations to build the tools. Also forward
+	// runfiles.Env() through env so that those tools can find their runfiles
+	// (technically not needed for go binaries but good practice).
+	runfilesEnv, err := runfiles.Env()
+	if err != nil {
+		return fmt.Errorf("get runfiles env: %w", err)
+	}
+	goRlocation, err := runfiles.Rlocation(goRlocationpath)
+	if err != nil {
+		return fmt.Errorf("find go in runfiles: %w", err)
+	}
+	gazelleRlocation, err := runfiles.Rlocation(gazelleRlocationpath)
+	if err != nil {
+		return fmt.Errorf("find gazelle in runfiles: %w", err)
+	}
+	cmd.Env = append(os.Environ(), runfilesEnv...)
+	cmd.Env = append(cmd.Env, "GO_PATH="+goRlocation)
+	cmd.Env = append(cmd.Env, "GAZELLE_PATH="+gazelleRlocation)
+
+	// Run the tool
 	if err := cmd.Run(); err != nil {
-		// fix_go_deps.sh doesn't exist when this tool is invoked from the
-		// internal repo.
-		if os.IsNotExist(err) {
-			return nil
-		}
 		return fmt.Errorf("run go deps: %w", err)
 	}
 	return nil
 }
 
 func runGoimports(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	goimports, err := runfiles.Rlocation(goimportsRlocationpath)
-	if err != nil {
-		return fmt.Errorf("find goimports in runfiles: %w", err)
-	}
 	files = filterToExtensions(files, []string{".go"})
 	if len(files) == 0 {
 		return nil
 	}
-	var args []string
-	if fix {
-		args = append(args, "-w")
-	} else {
-		args = append(args, "-d")
+	cmd, err := getRunfileToolCommand(ctx, goimportsRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get goimports command: %w", err)
 	}
-	args = append(args, files...)
-	cmd := exec.CommandContext(ctx, goimports, args...)
+	if fix {
+		cmd.Args = append(cmd.Args, "-w")
+	} else {
+		cmd.Args = append(cmd.Args, "-d")
+	}
+	cmd.Args = append(cmd.Args, files...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	// goimports requires 'go' to be in PATH.
+	goPath, err := runfiles.Rlocation(goRlocationpath)
+	if err != nil {
+		return fmt.Errorf("find go in runfiles: %w", err)
+	}
+	path := os.Getenv("PATH")
+	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(goPath)+":"+path)
 	return cmd.Run()
 }
 
 func runClangFormat(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	clangFormat, err := runfiles.Rlocation(clangFormatRlocationpath)
-	if err != nil {
-		return fmt.Errorf("find clang-format in runfiles: %w", err)
-	}
 	files = filterToExtensions(files, []string{".proto"})
 	if len(files) == 0 {
 		return nil
 	}
-	var args []string
-	if !fix {
-		args = append(args, "--dry-run")
+	cmd, err := getRunfileToolCommand(ctx, clangFormatRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get clang format command: %w", err)
 	}
-	args = append(args, "-i", "--style=Google")
-	args = append(args, files...)
-	cmd := exec.CommandContext(ctx, clangFormat, args...)
+	if !fix {
+		cmd.Args = append(cmd.Args, "--dry-run")
+	}
+	cmd.Args = append(cmd.Args, "-i", "--style=Google")
+	cmd.Args = append(cmd.Args, files...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	return cmd.Run()
 }
 
 func runPrettier(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	// Find tool paths.
-	prettier, err := runfiles.Rlocation(prettierRlocationpath)
-	if err != nil {
-		return fmt.Errorf("find prettier in runfiles: %w", err)
-	}
-	prettierPluginOrganizeImports, err := runfiles.Rlocation(prettierPluginOrganizeImportsRlocationpath)
-	if err != nil {
-		return fmt.Errorf("find prettier-plugin-organize-imports in runfiles: %w", err)
-	}
 	// If either yarn.lock or .prettierrc have changed, run on all files.
 	// Otherwise, run on changed files, filtering by extension.
 	if slices.Contains(files, "yarn.lock") || slices.Contains(files, ".prettierrc") {
+		var err error
 		files, err = gitListFilesWithExtensions(prettierExtensions)
 		if err != nil {
 			return fmt.Errorf("list files: %w", err)
@@ -176,26 +205,26 @@ func runPrettier(ctx context.Context, stdout, stderr io.Writer, fix bool, files 
 		return nil
 	}
 	// Run prettier.
-	var args []string
-	args = append(args, "--plugin", filepath.Join(prettierPluginOrganizeImports, "index.js"))
-	if fix {
-		args = append(args, "--write")
-	} else {
-		args = append(args, "--log-level=warn", "--check")
+	cmd, err := getRunfileToolCommand(ctx, prettierRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get prettier command: %w", err)
 	}
-	args = append(args, files...)
-	cmd := exec.CommandContext(ctx, prettier, args...)
+	prettierPluginOrganizeImports, err := runfiles.Rlocation(prettierPluginOrganizeImportsRlocationpath)
+	if err != nil {
+		return fmt.Errorf("find prettier-plugin-organize-imports in runfiles: %w", err)
+	}
+	cmd.Args = append(cmd.Args, "--plugin", filepath.Join(prettierPluginOrganizeImports, "index.js"))
+	if fix {
+		cmd.Args = append(cmd.Args, "--write")
+	} else {
+		cmd.Args = append(cmd.Args, "--log-level=warn", "--check")
+	}
+	cmd.Args = append(cmd.Args, files...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	// For why we set BAZEL_BINDIR to ".", see
 	// https://github.com/aspect-build/rules_js/tree/dbb5af0d2a9a2bb50e4cf4a96dbc582b27567155#running-nodejs-programs
-	cmd.Env = append(os.Environ(), "BAZEL_BINDIR=.")
-	// Set runfiles env vars so the prettier js_binary can find its runfiles.
-	runfilesEnv, err := runfiles.Env()
-	if err != nil {
-		return fmt.Errorf("get runfiles env: %w", err)
-	}
-	cmd.Env = append(cmd.Env, runfilesEnv...)
+	cmd.Env = append(cmd.Env, "BAZEL_BINDIR=.")
 	return cmd.Run()
 }
 
@@ -295,6 +324,23 @@ func run() error {
 		})
 	}
 	return eg.Wait()
+}
+
+// getRunfileToolCommand returns an [*exec.Cmd] for the given tool in runfiles.
+// The returned command's Env is configured to set runfiles env vars so that the
+// tool can find its runfiles.
+func getRunfileToolCommand(ctx context.Context, rlocationpath string) (*exec.Cmd, error) {
+	rlocation, err := runfiles.Rlocation(rlocationpath)
+	if err != nil {
+		return nil, fmt.Errorf("find tool in runfiles: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, rlocation)
+	runfilesEnv, err := runfiles.Env()
+	if err != nil {
+		return nil, fmt.Errorf("get runfiles env: %w", err)
+	}
+	cmd.Env = append(os.Environ(), runfilesEnv...)
+	return cmd, nil
 }
 
 func filterToExtensions(files, extensions []string) []string {
