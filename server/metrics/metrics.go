@@ -327,6 +327,8 @@ const (
 	OCIResourceTypeLabel = "oci_resource_type"
 
 	OpLabel = "op"
+
+	ClientNameLabel = "client_name"
 )
 
 // Label value constants
@@ -1989,6 +1991,7 @@ var (
 		Name:      "client_request_count",
 		Help:      "HTTP outgoing request count.",
 	}, []string{
+		ClientNameLabel,
 		HTTPHostLabel,
 		HTTPMethodLabel,
 	})
@@ -2000,6 +2003,7 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Response size of response for each HTTP client request in **bytes**.",
 	}, []string{
+		ClientNameLabel,
 		HTTPHostLabel,
 		HTTPMethodLabel,
 		HTTPResponseCodeLabel,

@@ -20,16 +20,8 @@ import (
 var allowLocalhost = flag.Bool("http.client.allow_localhost", false, "Allow HTTP requests to localhost")
 
 // New creates an HTTP client that blocks connections to private IPs and records
-// metrics on any requests made,.
-//
-// If you just want to make an HTTP request, this is the client to use.
-func New() *http.Client {
-	return NewWithAllowedPrivateIPs([]*net.IPNet{})
-}
-
-// NewWithAllowPrivateIPs creates an HTTP client blocks connections to all but
-// the specified private IPs and records metrics on any requests made.
-func NewWithAllowedPrivateIPs(allowedPrivateIPNets []*net.IPNet) *http.Client {
+// metrics on any requests made.
+func New(allowedPrivateIPNets []*net.IPNet, clientName string) *http.Client {
 	inner := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout: 30 * time.Second,
@@ -38,8 +30,7 @@ func NewWithAllowedPrivateIPs(allowedPrivateIPNets []*net.IPNet) *http.Client {
 		TLSHandshakeTimeout: 10 * time.Second,
 		Proxy:               http.ProxyFromEnvironment,
 	}
-	tp := newMetricsTransport(inner)
-
+	tp := newMetricsTransport(inner, clientName)
 	return &http.Client{
 		Transport: tp,
 	}
@@ -71,12 +62,14 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 var _ http.RoundTripper = (*metricsTransport)(nil)
 
 type metricsTransport struct {
-	inner http.RoundTripper
+	inner      http.RoundTripper
+	clientName string
 }
 
-func newMetricsTransport(inner http.RoundTripper) http.RoundTripper {
+func newMetricsTransport(inner http.RoundTripper, clientName string) http.RoundTripper {
 	return &metricsTransport{
-		inner: inner,
+		inner:      inner,
+		clientName: clientName,
 	}
 }
 
@@ -94,6 +87,7 @@ func (t *metricsTransport) RoundTrip(in *http.Request) (out *http.Response, err 
 	metrics.HTTPClientRequestCount.With(prometheus.Labels{
 		metrics.HTTPHostLabel:   hostLabel,
 		metrics.HTTPMethodLabel: in.Method,
+		metrics.ClientNameLabel: t.clientName,
 	}).Inc()
 	resp, err := t.inner.RoundTrip(in)
 	if resp == nil || resp.Body == nil {
@@ -104,6 +98,7 @@ func (t *metricsTransport) RoundTrip(in *http.Request) (out *http.Response, err 
 		host:       hostLabel,
 		method:     in.Method,
 		statusCode: resp.StatusCode,
+		clientName: t.clientName,
 	}
 	return resp, err
 }
@@ -115,6 +110,7 @@ type instrumentedReadCloser struct {
 	method     string
 	statusCode int
 	bytesRead  int
+	clientName string
 }
 
 func (rc *instrumentedReadCloser) Read(p []byte) (int, error) {
@@ -129,6 +125,7 @@ func (rc *instrumentedReadCloser) Close() error {
 		metrics.HTTPHostLabel:         rc.host,
 		metrics.HTTPMethodLabel:       rc.method,
 		metrics.HTTPResponseCodeLabel: strconv.Itoa(rc.statusCode),
+		metrics.ClientNameLabel:       rc.clientName,
 	}).Observe(float64(rc.bytesRead))
 	return err
 }
