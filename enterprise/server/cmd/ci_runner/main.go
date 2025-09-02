@@ -2546,6 +2546,14 @@ func runBazelWrapper() error {
 
 	originalArgs := os.Args[1:]
 
+	// If we can't find a valid bazel command then don't attempt to apply any of
+	// our bazel options. This can happen if the command is a `bb` CLI command
+	// and `bb` is being invoked via bazelisk (e.g. by setting
+	// USE_BAZEL_VERSION=buildbuddy-io/vX.Y.Z in env)
+	if _, cmdIdx := bazel.GetBazelCommandAndIndex(originalArgs); cmdIdx == -1 {
+		return nil
+	}
+
 	// Pass the original command as metadata, stripping the custom flags we've set,
 	// so that it can be displayed in the UI
 	filteredOriginalArgs := make([]string, 0, len(originalArgs))
