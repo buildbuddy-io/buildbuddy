@@ -1,9 +1,14 @@
 package prom
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -130,8 +135,10 @@ const (
 )
 
 type promQuerier struct {
-	api promapi.API
-	rdb redis.UniversalClient
+	api    promapi.API
+	client *http.Client
+	url    *url.URL
+	rdb    redis.UniversalClient
 }
 
 type MetricConfig struct {
@@ -176,6 +183,10 @@ func Register(env *real_environment.RealEnv) error {
 	if len(*address) == 0 {
 		return nil
 	}
+	u, err := url.Parse(*address)
+	if err != nil {
+		return status.InternalErrorf("failed to parse prometheus.address as URL (%q)", *address)
+	}
 	c, err := api.NewClient(api.Config{
 		Address: *address,
 	})
@@ -184,6 +195,7 @@ func Register(env *real_environment.RealEnv) error {
 	}
 	q := &promQuerier{
 		api: promapi.NewAPI(c),
+		url: u,
 		rdb: env.GetDefaultRedisClient(),
 	}
 	env.SetPromQuerier(q)
@@ -260,6 +272,37 @@ func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) ([]*dto.
 		log.Warningf("failed to set metrics to redis (groupID: %s): %s", groupID, err)
 	}
 	return metricFamilies.GetMetricFamilies(), nil
+}
+
+func (q *promQuerier) FetchFederatedMetrics(ctx context.Context, w io.Writer, match string) error {
+	u := *q.url // copy
+	u.Path = path.Join(u.Path, "/federate")
+	u.RawQuery = url.Values{
+		"match[]": []string{match},
+	}.Encode()
+	req, err := http.NewRequest("GET", u.String(), nil)
+	req.Header.Add("Content-Type", "text/plain")
+	if err != nil {
+		return fmt.Errorf("create HTTP request: %w", err)
+	}
+	rsp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("fetch federated metrics: %w", err)
+	}
+	defer func() {
+		io.Copy(io.Discard, rsp.Body)
+		rsp.Body.Close()
+	}()
+	if rsp.StatusCode >= 400 {
+		errMsg := &bytes.Buffer{}
+		io.Copy(errMsg, io.LimitReader(rsp.Body, 16*1024))
+		log.CtxErrorf(ctx, "Failed to fetch federated metrics: %s: %q", rsp.Status, errMsg)
+		return fmt.Errorf("fetch federation request: upstream error: %s", rsp.Status)
+	}
+	if _, err := io.Copy(w, rsp.Body); err != nil {
+		return fmt.Errorf("copy metrics: %w", err)
+	}
+	return nil
 }
 
 func (q *promQuerier) fetchMetrics(ctx context.Context, groupID string) (map[string]model.Vector, error) {
