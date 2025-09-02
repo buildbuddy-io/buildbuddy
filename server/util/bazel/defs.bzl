@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
-load("@bazel_tools//tools/build_defs/pkg:pkg.bzl", "pkg_tar")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 def _extract_bazel_installation_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.attr.out_dir)
