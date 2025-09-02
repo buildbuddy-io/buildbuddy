@@ -1078,7 +1078,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 				Destination: "/dev/shm",
 				Type:        "tmpfs",
 				Source:      "shm",
-				Options:     []string{"rw", "nosuid", "nodev", "noexec", "relatime", "size=64000k", "inode64"},
+				Options:     []string{"rw", "nosuid", "nodev", "noexec", "relatime", "size=64000k"},
 			},
 			// TODO: .containerenv
 			// {
