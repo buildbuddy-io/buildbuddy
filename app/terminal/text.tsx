@@ -125,11 +125,7 @@ export interface Match {
  * results. It does *not* do a full ANSI parse, which is too expensive. Instead,
  * ANSI parsing is done lazily, when lines are rendered.
  */
-export function getContent(
-  text: string,
-  searchQuery: SearchQuery,
-  lineLengthLimit: number | null
-): Content {
+export function getContent(text: string, searchQuery: SearchQuery, lineLengthLimit: number | null): Content {
   // If the line length limit is not yet known, then return empty contents,
   // since we don't yet know how to wrap the contents.
   if (lineLengthLimit === null) {
@@ -262,7 +258,9 @@ export function updatedMatchIndexForSearch(
     const plaintext = nextContent.rows[currentMatch.rowIndex]?.plaintext;
     if (plaintext) {
       const substring = plaintext.substring(currentMatch.matchIndex);
-      const searchTerm = nextSearchQuery.caseSensitive ? nextSearchQuery.match : nextSearchQuery.match.toLocaleLowerCase();
+      const searchTerm = nextSearchQuery.caseSensitive
+        ? nextSearchQuery.match
+        : nextSearchQuery.match.toLocaleLowerCase();
       const textToCompare = nextSearchQuery.caseSensitive ? substring : substring.toLocaleLowerCase();
       if (textToCompare.startsWith(searchTerm)) {
         for (let i = 0; i < nextContent.matches.length; i++) {

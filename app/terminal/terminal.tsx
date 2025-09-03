@@ -167,12 +167,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
         const nextContent = this.getContent(this.props.value, newSearchQuery);
         this.setState({
           searchQuery: newSearchQuery,
-          activeMatchIndex: updatedMatchIndexForSearch(
-            nextContent,
-            newSearchQuery,
-            match,
-            this.getRowRangeInView()
-          ),
+          activeMatchIndex: updatedMatchIndexForSearch(nextContent, newSearchQuery, match, this.getRowRangeInView()),
         });
       },
       // If logs are small, no need to debounce.
@@ -189,7 +184,10 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
     }
   }
   private onClearSearchClick() {
-    this.setState({ searchQuery: { match: "", caseSensitive: this.state.searchQuery.caseSensitive }, activeMatchIndex: -1 });
+    this.setState({
+      searchQuery: { match: "", caseSensitive: this.state.searchQuery.caseSensitive },
+      activeMatchIndex: -1,
+    });
     const input = this.searchInputRef.current;
     if (input) {
       input.value = "";
@@ -204,12 +202,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
     const nextContent = this.getContent(this.props.value, newSearchQuery);
     this.setState({
       searchQuery: newSearchQuery,
-      activeMatchIndex: updatedMatchIndexForSearch(
-        nextContent,
-        newSearchQuery,
-        match,
-        this.getRowRangeInView()
-      ),
+      activeMatchIndex: updatedMatchIndexForSearch(nextContent, newSearchQuery, match, this.getRowRangeInView()),
     });
   }
 

@@ -66,7 +66,10 @@ describe("getContent", () => {
   });
 
   it("should handle ANSI SGR state that persists across lines", () => {
-    expect(getContent("\x1b[32mMulti-line\nColor\x1b[m\nReset", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER).rows).toEqual([
+    expect(
+      getContent("\x1b[32mMulti-line\nColor\x1b[m\nReset", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER)
+        .rows
+    ).toEqual([
       {
         plaintext: "Multi-line",
         matchStartIndex: null,
@@ -102,7 +105,10 @@ describe("getContent", () => {
       },
     ]);
 
-    expect(getContent("\x1b[32mMulti-line\nColor\x1b[mReset", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER).rows).toEqual([
+    expect(
+      getContent("\x1b[32mMulti-line\nColor\x1b[mReset", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER)
+        .rows
+    ).toEqual([
       {
         plaintext: "Multi-line",
         matchStartIndex: null,
@@ -131,7 +137,13 @@ describe("getContent", () => {
       },
     ]);
 
-    expect(getContent("\x1b[32mMulti-line\n\x1b[32mColor\x1b[m\nReset", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER).rows).toEqual([
+    expect(
+      getContent(
+        "\x1b[32mMulti-line\n\x1b[32mColor\x1b[m\nReset",
+        { match: "", caseSensitive: false },
+        Number.MAX_SAFE_INTEGER
+      ).rows
+    ).toEqual([
       {
         plaintext: "Multi-line",
         matchStartIndex: null,
