@@ -25,8 +25,10 @@ if [[ "${1:-}" == "-d" ]] || [[ "${1:-}" == "--diff" ]]; then
   DIFF_MODE=1
 fi
 
+AFFECTED_FILES=(go.mod go.sum deps.bzl MODULE.bazel)
+
 if ((DIFF_MODE)); then
-  if ! git diff --quiet; then
+  if ! git diff --quiet -- "${AFFECTED_FILES[@]}"; then
     echo >&2 "Git working tree is dirty. To run in diff mode, 'check_go_deps.sh' must be run from a clean tree."
     git status --short --untracked=no 1>&2
     exit 1
@@ -36,7 +38,7 @@ fi
 tmp_log_file=$(mktemp)
 cleanup() {
   if ((DIFF_MODE)); then
-    git restore go.mod go.sum deps.bzl
+    git restore "${AFFECTED_FILES[@]}"
   fi
   rm -r "$tmp_log_file"
 }
