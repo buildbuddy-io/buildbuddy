@@ -28,34 +28,34 @@ const (
 
 // A pending batch of atime updates (basically a FindMissingBlobsRequest).
 // Stored as a struct so digest keys can be stored in a set for de-duping.
-type digestBatch struct {
+type DigestBatch struct {
 	mu             sync.Mutex
-	instanceName   string
-	digests        map[digest.Key]struct{} // stored as a set for de-duping.
-	digestFunction repb.DigestFunction_Value
+	InstanceName   string
+	Digests        map[digest.Key]struct{} // stored as a set for de-duping.
+	DigestFunction repb.DigestFunction_Value
 }
 
-func (u *digestBatch) set(key digest.Key) {
+func (u *DigestBatch) set(key digest.Key) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	u.digests[key] = struct{}{}
+	u.Digests[key] = struct{}{}
 }
 
-func (u *digestBatch) contains(key digest.Key) bool {
+func (u *DigestBatch) contains(key digest.Key) bool {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	_, ok := u.digests[key]
+	_, ok := u.Digests[key]
 	return ok
 }
 
-func (u *digestBatch) copy() *digestBatch {
-	db2 := digestBatch{
-		instanceName:   u.instanceName,
-		digestFunction: u.digestFunction,
-		digests:        make(map[digest.Key]struct{}, len(u.digests)),
+func (u *DigestBatch) copy() *DigestBatch {
+	db2 := DigestBatch{
+		InstanceName:   u.InstanceName,
+		DigestFunction: u.DigestFunction,
+		Digests:        make(map[digest.Key]struct{}, len(u.Digests)),
 	}
-	for d := range u.digests {
-		db2.digests[d] = struct{}{}
+	for d := range u.Digests {
+		db2.Digests[d] = struct{}{}
 	}
 	return &db2
 }
@@ -68,15 +68,15 @@ func (u *digestBatch) copy() *digestBatch {
 type atimeUpdates struct {
 	mu          sync.Mutex // protects jwt, updates, and atimeUpdate.digests.
 	authHeaders map[string][]string
-	updates     []*digestBatch
+	updates     []*DigestBatch
 	numDigests  int
 
 	maxUpdatesPerGroup int
 }
 
-func (u *atimeUpdates) findOrCreatePendingUpdate(instanceName string, digestFunction repb.DigestFunction_Value) *digestBatch {
+func (u *atimeUpdates) findOrCreatePendingUpdate(instanceName string, digestFunction repb.DigestFunction_Value) *DigestBatch {
 	for _, update := range u.updates {
-		if update.instanceName == instanceName && update.digestFunction == digestFunction {
+		if update.InstanceName == instanceName && update.DigestFunction == digestFunction {
 			return update
 		}
 	}
@@ -84,10 +84,10 @@ func (u *atimeUpdates) findOrCreatePendingUpdate(instanceName string, digestFunc
 	if len(u.updates) >= u.maxUpdatesPerGroup {
 		return nil
 	}
-	pendingUpdate := &digestBatch{
-		instanceName:   instanceName,
-		digests:        map[digest.Key]struct{}{},
-		digestFunction: digestFunction,
+	pendingUpdate := &DigestBatch{
+		InstanceName:   instanceName,
+		Digests:        map[digest.Key]struct{}{},
+		DigestFunction: digestFunction,
 	}
 	u.updates = append(u.updates, pendingUpdate)
 	return pendingUpdate
@@ -103,6 +103,20 @@ type enqueuedOps struct {
 }
 
 type BatchDigestOperator interface {
+	// Enqueues atime updates for the provided instanceName, digestFunction,
+	// and set of digests provided. Returns true if the updates were
+	// successfully enqueued, false if not.
+	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool
+
+	// Enqueues atime updates for the provided resource name. Returns true if
+	// the update was successfully enqueued, false if not.
+	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool
+
+	Start(hc interfaces.HealthChecker)
+
+	ForceBatchingForTesting()
+	ForceSendUpdatesForTesting(ctx context.Context)
+	ForceShutdownForTesting()
 }
 
 type BatchDigestOperatorConfig struct {
@@ -129,10 +143,30 @@ type batchOperator struct {
 
 	remote repb.ContentAddressableStorageClient
 
-	op func(ctx context.Context, u *digestBatch) error
+	op func(ctx context.Context, u *DigestBatch) error
 }
 
-func New(env environment.Env, f func(ctx context.Context, u *digestBatch) error, c BatchDigestOperatorConfig) (BatchDigestOperator, error) {
+func (u *batchOperator) ForceBatchingForTesting() {
+	update := <-u.enqueueChan
+	u.batch(update)
+}
+
+func (u *batchOperator) ForceSendUpdatesForTesting(ctx context.Context) {
+	u.sendUpdates(ctx)
+}
+
+func (u *batchOperator) ForceShutdownForTesting() {
+	u.quit <- struct{}{}
+}
+
+// Start implements BatchDigestOperator.
+func (u *batchOperator) Start(hc interfaces.HealthChecker) {
+	go u.batcher()
+	go u.sender()
+	hc.RegisterShutdownFunction(u.shutdown)
+}
+
+func New(env environment.Env, f func(ctx context.Context, u *DigestBatch) error, c BatchDigestOperatorConfig) (BatchDigestOperator, error) {
 	config := &BatchDigestOperatorConfig{
 		QueueSize:           defaultQueueSize,
 		BatchInterval:       defaultBatchInterval,
@@ -330,7 +364,7 @@ func (u *batchOperator) sender() {
 // instance-names.
 func (u *batchOperator) sendUpdates(ctx context.Context) int {
 	// Remove updates to send and release the mutex before sending RPCs.
-	updatesToSend := map[string]*digestBatch{}
+	updatesToSend := map[string]*DigestBatch{}
 	updatesSent := 0
 	authHeaders := map[string]map[string][]string{}
 	u.updates.Range(func(key, value interface{}) bool {
@@ -353,7 +387,7 @@ func (u *batchOperator) sendUpdates(ctx context.Context) int {
 		}
 		updatesToSend[groupID] = update
 		authHeaders[groupID] = updates.authHeaders
-		updates.numDigests -= len(update.digests)
+		updates.numDigests -= len(update.Digests)
 		updates.mu.Unlock()
 		return true
 	})
@@ -369,7 +403,7 @@ func (u *batchOperator) sendUpdates(ctx context.Context) int {
 // provided list of atimeUpdates, potentially splitting it if the first update
 // in the queue is too large. Also reorders the atimeUpdates for inter-group
 // fairness.
-func (u *batchOperator) getUpdate(updates *atimeUpdates) *digestBatch {
+func (u *batchOperator) getUpdate(updates *atimeUpdates) *DigestBatch {
 	if len(updates.updates) == 0 {
 		return nil
 	}
@@ -380,7 +414,7 @@ func (u *batchOperator) getUpdate(updates *atimeUpdates) *digestBatch {
 
 	// If this update is small enough to send in its entirety, remove it from
 	// the queue of updates.
-	if len(update.digests) <= u.maxDigestsPerUpdate {
+	if len(update.Digests) <= u.maxDigestsPerUpdate {
 		updates.updates = updates.updates[1:]
 		return update.copy()
 	}
@@ -390,27 +424,27 @@ func (u *batchOperator) getUpdate(updates *atimeUpdates) *digestBatch {
 	// with other updates in the group.
 	updates.updates = updates.updates[1:]
 	updates.updates = append(updates.updates, update)
-	req := digestBatch{
-		instanceName:   update.instanceName,
-		digestFunction: update.digestFunction,
-		digests:        make(map[digest.Key]struct{}, u.maxDigestsPerUpdate),
+	req := DigestBatch{
+		InstanceName:   update.InstanceName,
+		DigestFunction: update.DigestFunction,
+		Digests:        make(map[digest.Key]struct{}, u.maxDigestsPerUpdate),
 	}
 	i := 0
-	for digest := range update.digests {
+	for digest := range update.Digests {
 		if i >= u.maxDigestsPerUpdate {
 			break
 		}
-		req.digests[digest] = struct{}{}
-		delete(update.digests, digest)
+		req.Digests[digest] = struct{}{}
+		delete(update.Digests, digest)
 		i++
 	}
 	return &req
 }
 
-func (u *batchOperator) update(ctx context.Context, groupID string, authHeaders map[string][]string, b *digestBatch) {
+func (u *batchOperator) update(ctx context.Context, groupID string, authHeaders map[string][]string, b *DigestBatch) {
 
 	// Here we are ! Time to do some magic..
-	log.CtxDebugf(ctx, "Asynchronously processing %d atime updates for group %s", len(b.digests), groupID)
+	log.CtxDebugf(ctx, "Asynchronously processing %d atime updates for group %s", len(b.Digests), groupID)
 
 	ctx = authutil.AddAuthHeadersToContext(ctx, authHeaders, u.authenticator)
 	err := u.op(ctx, b)
