@@ -883,8 +883,11 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
         "//app/util:cache",
+        "//proto:build_event_stream_ts_proto",
+        "//proto:duration_ts_proto",
         "//proto:remote_execution_ts_proto",
         "//proto:spawn_ts_proto",
+        "//proto:timestamp_ts_proto",
     ],
 )
 

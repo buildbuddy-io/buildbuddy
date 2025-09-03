@@ -10,8 +10,11 @@ import {
 } from "lucide-react";
 import React from "react";
 import * as varint from "varint";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { google as google_duration } from "../../proto/duration_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { tools } from "../../proto/spawn_ts_proto";
+import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import DigestComponent from "../components/digest/digest";
 import Link, { TextLink } from "../components/link/link";
 import SearchBar from "../components/search_bar/search_bar";
@@ -226,7 +229,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           this.g6SelectionFocusTimeout = null;
         }
         this.g6Graph.destroy();
-      } catch {}
+      } catch { }
       this.g6Graph = null;
     }
     window.removeEventListener("resize", this.handleResize);
@@ -242,7 +245,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     if (!el) return false;
     const tag = el.tagName?.toLowerCase();
     if (["input", "textarea", "select", "button"].includes(tag)) return true;
-    if ((el as any).isContentEditable) return true;
+    if ((el as HTMLElement).isContentEditable) return true;
     return false;
   }
 
@@ -262,8 +265,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     const { indexedData } = this.state;
     const filtered = indexedData
       ? Array.from(indexedData.labelSet)
-          .filter((label) => !this.props.filter || label.includes(this.props.filter))
-          .sort((a, b) => this.compareLabels(a || "", b || ""))
+        .filter((label) => !this.props.filter || label.includes(this.props.filter))
+        .sort((a, b) => this.compareLabels(a || "", b || ""))
       : [];
     return filtered;
   }
@@ -307,16 +310,12 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         this.g6Graph.setSize(width, height);
         // Keep the view fitted after resize
         try {
-          const g: any = this.g6Graph as any;
-          g.fitView?.();
+          void this.g6Graph.fitView();
           // Nudge zoom in a bit for readability after resize
-          const z = g.getZoom?.();
-          if (typeof z === "number") {
-            const center = g.getCanvasCenter?.();
-            g.zoomTo?.(Math.min(z * 1.2, 2.0), false, center);
-          }
-        } catch {}
-      } catch {}
+          const z = this.g6Graph.getZoom();
+          void this.g6Graph.zoomTo(Math.min(z * 1.2, 2.0));
+        } catch { }
+      } catch { }
     }
   };
 
@@ -368,7 +367,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     const kind = m[1] as "spawn" | "symlink" | "artifact";
     const idStr = m[2];
     const idNum = parseInt(idStr);
-    const id: any = isNaN(idNum) ? idStr : idNum;
+    const id: string | number = isNaN(idNum) ? idStr : idNum;
     return { type: kind, id };
   }
 
@@ -393,7 +392,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     this.setState({ selectedLabel: label, selectedItem, interestingOnly });
   };
 
-  private updateSpacing = (key: keyof State["spacing"], value: any) => {
+  private updateSpacing = <K extends keyof State["spacing"]>(key: K, value: State["spacing"][K]) => {
     this.setState(
       (prevState) => ({
         spacing: {
@@ -463,8 +462,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     const { indexedData } = this.state;
     const filteredLabels = indexedData
       ? Array.from(indexedData.labelSet)
-          .filter((label) => !this.props.filter || label.includes(this.props.filter))
-          .sort((a, b) => this.compareLabels(a || "", b || ""))
+        .filter((label) => !this.props.filter || label.includes(this.props.filter))
+        .sort((a, b) => this.compareLabels(a || "", b || ""))
       : [];
 
     return (
@@ -772,8 +771,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Spawn Shape</label>
                   <select
-                    value={this.state.spacing.spawnShape as any}
-                    onChange={(e) => this.updateSpacing("spawnShape", e.target.value)}
+                    value={this.state.spacing.spawnShape}
+                    onChange={(e) => this.updateSpacing("spawnShape", e.target.value as State["spacing"]["spawnShape"])}
                     style={{ padding: "4px 6px", fontSize: 12 }}>
                     <option value="rect">Rectangle</option>
                     <option value="roundRect">Rounded Rectangle</option>
@@ -807,8 +806,10 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Symlink Shape</label>
                   <select
-                    value={this.state.spacing.symlinkShape as any}
-                    onChange={(e) => this.updateSpacing("symlinkShape", e.target.value)}
+                    value={this.state.spacing.symlinkShape}
+                    onChange={(e) =>
+                      this.updateSpacing("symlinkShape", e.target.value as State["spacing"]["symlinkShape"])
+                    }
                     style={{ padding: "4px 6px", fontSize: 12 }}>
                     <option value="rect">Rectangle</option>
                     <option value="roundRect">Rounded Rectangle</option>
@@ -948,9 +949,9 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         })()}
         {/* Action section removed; mnemonic now links to action when available */}
         {spawn.args &&
-          (spawn.args as any[]).length > 0 &&
+          spawn.args.length > 0 &&
           (() => {
-            const args: string[] = (spawn.args as any[]).map(String);
+            const args: string[] = (spawn.args || []).map(String);
             if (args.length === 0) return null;
 
             // Build one-arg-per-line, grouping flag + value pairs.
@@ -1033,11 +1034,11 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         })()}
         {(() => {
           // Group cache/remoting fields
-          const rc: any = (spawn as any).remoteCacheable;
           const rows: Array<[string, string]> = [];
           rows.push(["Cache hit", spawn.cacheHit ? "Yes" : "No"]);
           rows.push(["Cacheable", spawn.cacheable ? "Yes" : "No"]);
-          if (typeof rc === "boolean") rows.push(["Remote cacheable", rc ? "Yes" : "No"]);
+          if (typeof spawn.remoteCacheable === "boolean")
+            rows.push(["Remote cacheable", spawn.remoteCacheable ? "Yes" : "No"]);
           rows.push(["Remotable", spawn.remotable ? "Yes" : "No"]);
           return (
             <div className="invocation-section">
@@ -1054,22 +1055,13 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         })()}
         {(() => {
           // Group timing fields
-          const tm: any = (spawn as any).timeoutMillis;
-          const toStringSafe = (v: any) => {
-            try {
-              if (!v) return "0";
-              if (typeof v === "number") return String(v);
-              if (typeof v === "string") return v;
-              if (typeof v?.toString === "function") return v.toString();
-            } catch {}
-            return String(v || 0);
-          };
+          const timeoutMs = typeof spawn.timeoutMillis !== "undefined" ? Number(spawn.timeoutMillis) : 0;
           const parts: Array<[string, string]> = [];
           if (spawn.metrics?.startTime) parts.push(["Start time", this.formatTimestamp(spawn.metrics.startTime)]);
           if (spawn.metrics?.totalTime) parts.push(["Total time", this.formatDuration(spawn.metrics.totalTime)]);
           if (spawn.metrics?.executionWallTime)
             parts.push(["Execution time", this.formatDuration(spawn.metrics.executionWallTime)]);
-          if (tm && toStringSafe(tm) !== "0") parts.push(["Timeout", `${toStringSafe(tm)} ms`]);
+          if (timeoutMs) parts.push(["Timeout", `${timeoutMs} ms`]);
           if (parts.length === 0) return null;
           return (
             <div className="invocation-section">
@@ -1163,7 +1155,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
               const f = data.files.get(id)!;
               const path = f.path || "unknown";
               const basename = path.split("/").pop() || path;
-              return { id, label: basename, digest: f.digest as any };
+              return { id, label: basename, digest: f.digest || undefined };
             }
             if (data.directories.has(id)) return { id, label: this.getDirectoryLabel(data.directories.get(id)!) };
             if (data.symlinks.has(id)) return { id, label: this.getSymlinkLabel(data.symlinks.get(id)!) };
@@ -1188,7 +1180,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                 inputItems = inputItems.slice(0, inputLimit);
               }
             }
-          } catch {}
+          } catch { }
           // Tools sample list
           let toolItems: { id: number; label: string; digest?: build.bazel.remote.execution.v2.Digest }[] = [];
           let toolTotal = 0;
@@ -1207,12 +1199,11 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                 toolItems = toolItems.slice(0, toolLimit);
               }
             }
-          } catch {}
+          } catch { }
           // Outputs list (usually small)
           const outputIds: number[] = [];
           for (const o of spawn.outputs || []) {
-            let outputId =
-              (o as any).outputId || (o as any).fileId || (o as any).directoryId || (o as any).unresolvedSymlinkId;
+            const outputId = o.outputId || o.fileId || o.directoryId || o.unresolvedSymlinkId;
             if (outputId) outputIds.push(outputId);
           }
           let outputItems = outputIds.map(labelArtifact).filter(Boolean) as {
@@ -1353,8 +1344,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
       if (!p) return undefined;
       return data.pathToFileId.get(p) || data.pathToDirId.get(p) || data.pathToSymlinkId.get(p);
     };
-    const inputArtifactId = resolveArtifactId((action as any).inputPath);
-    const outputArtifactId = resolveArtifactId((action as any).outputPath);
+    const inputArtifactId = resolveArtifactId(action.inputPath);
+    const outputArtifactId = resolveArtifactId(action.outputPath);
     return (
       <div className="details">
         <div className="invocation-section">
@@ -1407,10 +1398,10 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                 e.preventDefault();
                 this.setState({ selectedItem: { type: "artifact", id: inputArtifactId } });
               }}>
-              {(action as any).inputPath || ""}
+              {action.inputPath || ""}
             </TextLink>
           ) : (
-            <div className="wrap">{(action as any).inputPath || ""}</div>
+            <div className="wrap">{action.inputPath || ""}</div>
           )}
         </div>
         <div className="invocation-section">
@@ -1423,10 +1414,10 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                 e.preventDefault();
                 this.setState({ selectedItem: { type: "artifact", id: outputArtifactId } });
               }}>
-              {(action as any).outputPath || ""}
+              {action.outputPath || ""}
             </TextLink>
           ) : (
-            <div className="wrap">{(action as any).outputPath || ""}</div>
+            <div className="wrap">{action.outputPath || ""}</div>
           )}
         </div>
       </div>
@@ -1437,7 +1428,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     if (!spawn.digest?.hash || !this.props.model) return null;
     const digest = new build.bazel.remote.execution.v2.Digest({
       hash: spawn.digest.hash,
-      sizeBytes: spawn.digest.sizeBytes as any,
+      sizeBytes: spawn.digest.sizeBytes,
     });
     const digestStr = digestToString(digest);
     return `/invocation/${this.props.model.getInvocationId()}?actionDigest=${digestStr}#action`;
@@ -1447,20 +1438,25 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     const { indexedData } = this.state;
     if (!indexedData) return <p>No data</p>;
 
-    let artifactInfo: any = null;
+    let artifactInfo:
+      | tools.protos.ExecLogEntry.File
+      | tools.protos.ExecLogEntry.Directory
+      | tools.protos.ExecLogEntry.UnresolvedSymlink
+      | tools.protos.ExecLogEntry.RunfilesTree
+      | null = null;
     let artifactType: ArtifactType = "file";
 
     if (indexedData.files.has(artifactId)) {
-      artifactInfo = indexedData.files.get(artifactId);
+      artifactInfo = indexedData.files.get(artifactId)!;
       artifactType = "file";
     } else if (indexedData.directories.has(artifactId)) {
-      artifactInfo = indexedData.directories.get(artifactId);
+      artifactInfo = indexedData.directories.get(artifactId)!;
       artifactType = "directory";
     } else if (indexedData.symlinks.has(artifactId)) {
-      artifactInfo = indexedData.symlinks.get(artifactId);
+      artifactInfo = indexedData.symlinks.get(artifactId)!;
       artifactType = "symlink";
     } else if (indexedData.runfiles.has(artifactId)) {
-      artifactInfo = indexedData.runfiles.get(artifactId);
+      artifactInfo = indexedData.runfiles.get(artifactId)!;
       artifactType = "runfiles";
     }
 
@@ -1473,12 +1469,12 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
 
     return (
       <div className="details">
-        {artifactType === "file" && artifactInfo.digest && (
+        {artifactType === "file" && (artifactInfo as tools.protos.ExecLogEntry.File).digest && (
           <div className="invocation-section">
             <div className="invocation-section-title">Digest</div>
             <div>
-              <Link href={this.getFileBytestreamHref(artifactInfo)} target="_blank">
-                <DigestComponent digest={artifactInfo.digest} expanded={true} />
+              <Link href={this.getFileBytestreamHref(artifactInfo as tools.protos.ExecLogEntry.File)} target="_blank">
+                <DigestComponent digest={(artifactInfo as tools.protos.ExecLogEntry.File).digest!} expanded={true} />
               </Link>
             </div>
           </div>
@@ -1486,20 +1482,24 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
 
         {artifactType === "directory" && (
           <div className="invocation-section">
-            <div className="invocation-section-title">Contents ({artifactInfo.files?.length || 0})</div>
+            <div className="invocation-section-title">
+              Contents ({(artifactInfo as tools.protos.ExecLogEntry.Directory).files?.length || 0})
+            </div>
             <div>
-              {(artifactInfo.files || []).map((f: tools.protos.ExecLogEntry.File, idx: number) => (
-                <div key={idx} className="artifact-line">
-                  <span className="artifact-name">{f.path || "file"}</span>
-                  {f.digest && (
-                    <span style={{ marginLeft: 8 }}>
-                      <Link href={this.getFileBytestreamHref(f)} target="_blank">
-                        <DigestComponent digest={f.digest} />
-                      </Link>
-                    </span>
-                  )}
-                </div>
-              ))}
+              {((artifactInfo as tools.protos.ExecLogEntry.Directory).files || []).map(
+                (f: tools.protos.ExecLogEntry.File, idx: number) => (
+                  <div key={idx} className="artifact-line">
+                    <span className="artifact-name">{f.path || "file"}</span>
+                    {f.digest && (
+                      <span style={{ marginLeft: 8 }}>
+                        <Link href={this.getFileBytestreamHref(f)} target="_blank">
+                          <DigestComponent digest={f.digest} />
+                        </Link>
+                      </span>
+                    )}
+                  </div>
+                )
+              )}
             </div>
           </div>
         )}
@@ -1507,31 +1507,44 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         {artifactType === "symlink" && (
           <div className="invocation-section">
             <div className="invocation-section-title">Target</div>
-            <div className="wrap">{artifactInfo.targetPath || "N/A"}</div>
+            <div className="wrap">
+              {(artifactInfo as tools.protos.ExecLogEntry.UnresolvedSymlink).targetPath || "N/A"}
+            </div>
           </div>
         )}
 
         {artifactType === "runfiles" && (
           <>
-            {artifactInfo.repoMappingManifest?.digest?.hash &&
-              artifactInfo.repoMappingManifest.digest.hash !== "" &&
-              artifactInfo.repoMappingManifest.digest.sizeBytes !== 0 && (
+            {(() => {
+              const rt = artifactInfo as tools.protos.ExecLogEntry.RunfilesTree;
+              return (
+                rt.repoMappingManifest?.digest?.hash &&
+                rt.repoMappingManifest.digest.hash !== "" &&
+                Number(rt.repoMappingManifest.digest.sizeBytes || 0) !== 0
+              );
+            })() && (
                 <div className="invocation-section">
                   <div className="invocation-section-title">Repo mapping</div>
                   <div>
                     {/* If sizeBytes is present we can link; otherwise just show digest */}
-                    {artifactInfo.repoMappingManifest.digest.sizeBytes !== undefined &&
-                    artifactInfo.repoMappingManifest.digest.sizeBytes !== null ? (
+                    {(artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).repoMappingManifest!.digest!.sizeBytes !==
+                      undefined &&
+                      (artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).repoMappingManifest!.digest!.sizeBytes !==
+                      null ? (
                       <Link
                         href={this.getFileBytestreamHref({
-                          path: `${artifactInfo.path || ""}/_repo_mapping`,
-                          digest: artifactInfo.repoMappingManifest.digest,
+                          path: `${(artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).path || ""}/_repo_mapping`,
+                          digest: (artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).repoMappingManifest!.digest!,
                         } as tools.protos.ExecLogEntry.File)}
                         target="_blank">
-                        <DigestComponent digest={artifactInfo.repoMappingManifest.digest} />
+                        <DigestComponent
+                          digest={(artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).repoMappingManifest!.digest!}
+                        />
                       </Link>
                     ) : (
-                      <DigestComponent digest={artifactInfo.repoMappingManifest.digest} />
+                      <DigestComponent
+                        digest={(artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).repoMappingManifest!.digest!}
+                      />
                     )}
                   </div>
                 </div>
@@ -1545,8 +1558,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                 { id: number; label: string; digest?: build.bazel.remote.execution.v2.Digest }
               >();
               try {
-                if ((rt as any).inputSetId) {
-                  const ids = Array.from(this.expandInputSet((rt as any).inputSetId, d));
+                if (rt.inputSetId) {
+                  const ids = Array.from(this.expandInputSet(rt.inputSetId, d));
                   for (const id of ids) {
                     if (d.files.has(id)) {
                       const f = d.files.get(id)!;
@@ -1567,11 +1580,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                 // fall through; Inputs section will still render anything we did collect
               }
 
-              const symlinks = this.expandSymlinkEntrySet((rt as any).symlinksId || (rt as any).symlinks_id, d);
-              const rootSymlinks = this.expandSymlinkEntrySet(
-                (rt as any).rootSymlinksId || (rt as any).root_symlinks_id,
-                d
-              );
+              const symlinks = this.expandSymlinkEntrySet(rt.symlinksId, d);
+              const rootSymlinks = this.expandSymlinkEntrySet(rt.rootSymlinksId, d);
               const addEntryId = (entryId?: number) => {
                 if (!entryId) return;
                 if (inputMap.has(entryId)) return;
@@ -1626,7 +1636,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
               );
 
               // Empty files
-              const emptyFiles: string[] = (rt as any).emptyFiles || (rt as any).empty_files || [];
+              const emptyFiles: string[] = rt.emptyFiles || [];
               if (emptyFiles.length > 0) {
                 sections.push(
                   <div className="invocation-section" key="rf-empty">
@@ -1662,7 +1672,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           const artifactPath = getArtifactPath(artifactId);
           if (artifactPath) {
             for (const [aid, act] of data.symlinkActions.entries()) {
-              const outPath: string | undefined = (act as any).outputPath || (act as any).output_path;
+              const outPath: string | undefined = act.outputPath;
               if (outPath && outPath === artifactPath) {
                 producerSymlinkActionId = aid;
                 break;
@@ -1671,7 +1681,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
             if (producerSymlinkActionId === null) {
               const apn = norm(artifactPath);
               for (const [aid, act] of data.symlinkActions.entries()) {
-                const outPath: string | undefined = (act as any).outputPath || (act as any).output_path;
+                const outPath: string | undefined = act.outputPath;
                 if (outPath && norm(outPath) === apn) {
                   producerSymlinkActionId = aid;
                   break;
@@ -1734,8 +1744,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
       let primaryOutputPath: string | undefined;
       let sawFile = false;
       for (const o of spawn.outputs || []) {
-        let outId =
-          (o as any).outputId || (o as any).fileId || (o as any).directoryId || (o as any).unresolvedSymlinkId;
+        let outId = o.outputId || o.fileId || o.directoryId || o.unresolvedSymlinkId;
         if (outId) {
           if (data.files.has(outId)) {
             if (!primaryOutputPath) primaryOutputPath = data.files.get(outId)!.path || "";
@@ -1765,7 +1774,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     }
     for (const s of symlinkConsumers) {
       const target = (s.action.targetLabel || "").trim();
-      const outPath = (s.action as any).outputPath as string | undefined;
+      const outPath = s.action.outputPath as string | undefined;
       const meta: ConsumerMeta = {
         kind: "symlink",
         id: s.actionId,
@@ -1927,8 +1936,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         let primaryOutputPath: string | undefined;
         let sawFile = false;
         for (const o of spawn.outputs || []) {
-          let outId =
-            (o as any).outputId || (o as any).fileId || (o as any).directoryId || (o as any).unresolvedSymlinkId;
+          let outId = o.outputId || o.fileId || o.directoryId || o.unresolvedSymlinkId;
           if (outId) {
             if (indexedData.files.has(outId)) {
               if (!primaryOutputPath) primaryOutputPath = indexedData.files.get(outId)!.path || "";
@@ -1960,7 +1968,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     const norm = (p?: string) => (p ? p.replace(/-opt-exec-ST-[^/]+\//, "-opt-exec/") : p);
     const artifactPath = getArtifactPath(artifactId);
     const addActionMeta = (aid: number, act: tools.protos.ExecLogEntry.SymlinkAction) => {
-      const outPath: string | undefined = (act as any).outputPath || (act as any).output_path;
+      const outPath: string | undefined = act.outputPath;
       producers.push({
         kind: "symlink",
         id: aid,
@@ -1972,13 +1980,13 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     };
     if (artifactPath) {
       for (const [aid, act] of indexedData.symlinkActions.entries()) {
-        const outPath: string | undefined = (act as any).outputPath || (act as any).output_path;
+        const outPath: string | undefined = act.outputPath;
         if (outPath && outPath === artifactPath) addActionMeta(aid, act);
       }
       if (!producers.some((p) => p.kind === "symlink")) {
         const apn = norm(artifactPath);
         for (const [aid, act] of indexedData.symlinkActions.entries()) {
-          const outPath: string | undefined = (act as any).outputPath || (act as any).output_path;
+          const outPath: string | undefined = act.outputPath;
           if (outPath && norm(outPath) === apn) addActionMeta(aid, act);
         }
       }
@@ -2119,7 +2127,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           const toolsSet = this.expandInputSet(spawn.toolSetId, data);
           if (toolsSet.has(artifactId)) isConsumer = true;
         }
-      } catch {}
+      } catch { }
       if (isConsumer) {
         out.push({ spawnId, spawn });
       }
@@ -2146,7 +2154,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
       return data.pathToFileId.get(p) || data.pathToDirId.get(p) || data.pathToSymlinkId.get(p);
     };
     for (const [actionId, action] of data.symlinkActions.entries()) {
-      const inId = resolveArtifactId((action as any).inputPath);
+      const inId = resolveArtifactId(action.inputPath);
       if (inId === artifactId) {
         out.push({ actionId, action });
       }
@@ -2166,7 +2174,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     if (!file?.digest?.hash) return "#";
     const digest = new build.bazel.remote.execution.v2.Digest({
       hash: file.digest.hash,
-      sizeBytes: file.digest.sizeBytes as any,
+      sizeBytes: file.digest.sizeBytes,
     });
     const bytestream = this.props.model.getBytestreamURL(digest);
     const filename = (file.path || "").split("/").pop() || "file";
@@ -2196,11 +2204,11 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     return `/invocation/${invId}?${search.toString()}`;
   }
 
-  private formatDuration(duration: any): string {
+  private formatDuration(duration: google_duration.protobuf.Duration): string {
     if (!duration) return "N/A";
-    const seconds = parseInt(duration.seconds || "0");
-    const nanos = parseInt(duration.nanos || "0");
-    const totalMs = seconds * 1000 + nanos / 1000000;
+    const seconds = Number(duration.seconds || 0);
+    const nanos = duration.nanos || 0;
+    const totalMs = seconds * 1000 + nanos / 1_000_000;
 
     if (totalMs < 1000) {
       return `${totalMs.toFixed(1)}ms`;
@@ -2213,22 +2221,17 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     }
   }
 
-  private formatTimestamp(ts: any): string {
+  private formatTimestamp(ts: google_timestamp.protobuf.Timestamp): string {
     try {
       if (!ts) return "N/A";
-      if (typeof ts === "string") {
-        const d = new Date(ts);
-        if (!isNaN(d.getTime())) return d.toLocaleString();
-        return ts;
-      }
-      const seconds = parseInt(ts.seconds || "0");
-      const nanos = parseInt(ts.nanos || "0");
+      const seconds = Number(ts.seconds || 0);
+      const nanos = ts.nanos || 0;
       const ms = seconds * 1000 + Math.floor(nanos / 1e6);
       const d = new Date(ms);
       if (!isNaN(d.getTime())) return d.toLocaleString();
-      return String(ts);
+      return `${seconds}s`;
     } catch {
-      return String(ts);
+      return "N/A";
     }
   }
 
@@ -2357,8 +2360,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     }
 
     const executionLogFile = this.props.model.buildToolLogs.log.find(
-      (l: any) =>
-        (l.name === "execution.log" || l.name === "execution_log.binpb.zst") && l.uri.startsWith("bytestream://")
+      (l: build_event_stream.File) =>
+        (l.name === "execution.log" || l.name === "execution_log.binpb.zst") && !!l.uri?.startsWith("bytestream://")
     );
 
     if (!executionLogFile) {
@@ -2408,7 +2411,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     let successCount = 0;
     let skipCount = 0;
 
-    for (let offset = 0; offset < body.byteLength; ) {
+    for (let offset = 0; offset < body.byteLength;) {
       try {
         const length = varint.decode(byteArray, offset);
         const bytes = varint.decode.bytes || 0;
@@ -2527,7 +2530,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
       return p.replace(/-opt-exec-ST-[^/]+\//, "-opt-exec/");
     };
     for (const [aid, action] of data.symlinkActions.entries()) {
-      const outPathRaw: string | undefined = (action as any).outputPath || (action as any).output_path;
+      const outPathRaw: string | undefined = action.outputPath;
       const tryMap = (p?: string) => {
         if (!p) return;
         const outId = data.pathToSymlinkId.get(p) || data.pathToFileId.get(p) || data.pathToDirId.get(p);
@@ -2565,7 +2568,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         return data.pathToFileId.get(p) || data.pathToDirId.get(p) || data.pathToSymlinkId.get(p);
       };
       for (const [_id, action] of data.symlinkActions.entries()) {
-        const inId = resolveArtifactId((action as any).inputPath);
+        const inId = resolveArtifactId(action.inputPath);
         if (inId !== undefined) {
           data.consumedArtifacts.add(inId);
         }
@@ -2704,17 +2707,6 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     return hasProducer && hasConsumer;
   }
 
-  private createOverflowNode(spawnId: number, hiddenCount: number): GraphNode {
-    return {
-      id: `overflow-${spawnId}`,
-      type: "artifact",
-      nodeId: -1, // Special ID for overflow nodes
-      artifactType: "file",
-      artifactCategory: "intermediate",
-      label: `...+${hiddenCount}`,
-    };
-  }
-
   private expandInputSet(id: number, data: IndexedData): Set<number> {
     // Use cache if available
     if (data.expandedInputSets.has(id)) {
@@ -2769,9 +2761,9 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
       // Transitive first (postorder)
       for (const tid of set.transitiveSetIds || []) dfs(tid);
       // Then direct entries; later entries win on collisions
-      const direct: any = (set as any).directEntries || (set as any).direct_entries;
+      const direct = set.directEntries;
       if (direct) {
-        for (const [relPath, entryId] of Object.entries(direct as Record<string, number>)) {
+        for (const [relPath, entryId] of Object.entries(direct)) {
           result.set(relPath, entryId as number);
         }
       }
@@ -2953,7 +2945,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     // Deduplicate unresolved input paths across symlink actions so we render a single input node per path
     const ghostInputNodeByPath = new Map<string, string>();
     for (const [sid, action] of limitedSymlinkActions) {
-      const outPath: string | undefined = (action as any).outputPath || (action as any).output_path;
+      const outPath: string | undefined = action.outputPath;
       const platform = extractPlatform(outPath);
       const filename = extractFilename(outPath);
       const symlinkKeyBase =
@@ -2978,8 +2970,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         outPath,
       });
 
-      if ((action as any).inputPath) {
-        const inputPath = (action as any).inputPath as string;
+      if (action.inputPath) {
+        const inputPath = action.inputPath as string;
         const fileId = data.pathToFileId.get(inputPath) || data.pathToDirId.get(inputPath);
         const symlinkTargetId = data.pathToSymlinkId.get(inputPath);
         const inId = fileId || symlinkTargetId;
@@ -3012,8 +3004,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           edges.push({ from: ghostId, to: symlinkNode.id, type: "input" });
         }
       }
-      if ((action as any).outputPath) {
-        const outputPath = (action as any).outputPath as string;
+      if (action.outputPath) {
+        const outputPath = action.outputPath as string;
         const outId =
           data.pathToSymlinkId.get(outputPath) || data.pathToFileId.get(outputPath) || data.pathToDirId.get(outputPath);
         if (outId && (!interestingOnly || this.isArtifactInteresting(outId, data))) {
@@ -3098,7 +3090,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           if (!rf.inputSetId) return false;
           const ids = this.expandInputSet(rf.inputSetId, data);
           for (const cid of ids) if (data.outputProducers.has(cid)) return true;
-        } catch {}
+        } catch { }
         return false;
       };
       const srcFiltered = Array.from(srcArtifacts).filter((id) => {
@@ -3208,9 +3200,9 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           // First, process transitive to preserve postorder semantics
           for (const tid of set.transitiveSetIds || []) dfs(tid);
           // Then, apply direct entries (later entries override earlier ones)
-          const direct: any = (set as any).directEntries || (set as any).direct_entries;
+          const direct = set.directEntries;
           if (direct) {
-            for (const [relPath, entryId] of Object.entries(direct as Record<string, number>)) {
+            for (const [relPath, entryId] of Object.entries(direct)) {
               result.set(relPath, entryId as number);
             }
           }
@@ -3263,8 +3255,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
 
         // 2) Symlink entries under workspace subdir and runfiles root
         if (!interestingOnly) {
-          const symlinks = expandSymlinkEntrySet((rf as any).symlinksId || (rf as any).symlinks_id);
-          const rootSymlinks = expandSymlinkEntrySet((rf as any).rootSymlinksId || (rf as any).root_symlinks_id);
+          const symlinks = expandSymlinkEntrySet(rf.symlinksId);
+          const rootSymlinks = expandSymlinkEntrySet(rf.rootSymlinksId);
           const addSymlinkPlaceholder = (relPath: string, entryId?: number) => {
             // Try to render the target's label when available
             let targetLabel = "";
@@ -3346,7 +3338,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
       const consumerLayers: number[] = [];
 
       // Producers: spawns that produce the symlink input artifact (if any)
-      const inId = resolveArtifactId((action as any).inputPath);
+      const inId = resolveArtifactId(action.inputPath);
       if (inId !== undefined) {
         const prodSpawnId = data.outputProducers.get(inId);
         if (prodSpawnId !== undefined && limitedSpawnIdSet.has(prodSpawnId)) {
@@ -3356,7 +3348,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
       }
 
       // Consumers: spawns that consume the symlink output artifact (if any)
-      const outId = resolveArtifactId((action as any).outputPath);
+      const outId = resolveArtifactId(action.outputPath);
       if (outId !== undefined) {
         for (const [spawnId, spawn] of limitedSpawns) {
           let consumes = false;
@@ -3572,12 +3564,12 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         if (symlinkActionId !== undefined) {
           const action = data.symlinkActions.get(symlinkActionId);
           if (action) {
-            const inPath: string | undefined = (action as any).inputPath || (action as any).input_path;
+            const inPath: string | undefined = action.inputPath;
             if (inPath) {
               const tryResolve = (p?: string) =>
                 (p && (data.pathToFileId.get(p) || data.pathToDirId.get(p) || data.pathToSymlinkId.get(p))) as
-                  | number
-                  | undefined;
+                | number
+                | undefined;
               let inArtId = tryResolve(inPath);
               if (inArtId === undefined) {
                 // Normalize optional ST segment in exec paths (e.g., -opt-exec-ST-<hash>/ -> -opt-exec/)
@@ -3609,8 +3601,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           const base = val.slice(0, -".runfiles".length);
           const tryResolve = (p?: string) =>
             (p && (data.pathToFileId.get(p) || data.pathToDirId.get(p) || data.pathToSymlinkId.get(p))) as
-              | number
-              | undefined;
+            | number
+            | undefined;
           let binId = tryResolve(base);
           if (binId === undefined) {
             const norm = base.replace(/-opt-exec-ST-[^/]+\//, "-opt-exec/");
@@ -3779,7 +3771,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         const symlinkIdToNodeId = new Map<number, string>();
         for (const n of graphData.nodes) {
           if (n.type === "spawn") {
-            if ((n as any).isSymlinkAction) symlinkIdToNodeId.set(n.nodeId, n.id);
+            if (n.isSymlinkAction) symlinkIdToNodeId.set(n.nodeId, n.id);
             else spawnIdToNodeId.set(n.nodeId, n.id);
           }
         }
@@ -3811,7 +3803,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
             let rowHeight = minRowHeight;
             for (const nodeId of nodeIds) {
               const isSpawnNode = !!graphData.nodes.find(
-                (n) => n.id === nodeId && n.type === "spawn" && !(n as any).isSymlinkAction
+                (n) => n.id === nodeId && n.type === "spawn" && !n.isSymlinkAction
               );
               if (isSpawnNode) {
                 const inCount = (inputsBySpawn.get(nodeId) || []).length;
@@ -3872,7 +3864,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
             ordered.forEach((nodeId) => {
               const inCount = (inputsBySpawn.get(nodeId) || []).length;
               const outCount = (outputsBySpawn.get(nodeId) || []).length;
-              const isSymlink = !!graphData.nodes.find((n) => n.id === nodeId && (n as any).isSymlinkAction);
+              const isSymlink = !!graphData.nodes.find((n) => n.id === nodeId && n.isSymlinkAction);
               const bandHeight = computeBandHeight(inCount, outCount, isSymlink ? symlinkCoreHeight : spawnCoreHeight);
               const centerY = yCursor + bandHeight / 2;
               const xBase = colIndex * xGap;
@@ -3990,7 +3982,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           const maxRows = isExpanded ? baseRows * 2 : baseRows;
           const maxCols = isExpanded ? baseCols * 2 : baseCols;
           const desired = outs.length;
-          const { rows, cols, capacity } = (function () {
+          const { rows, cols, capacity } = (function() {
             const n = Math.max(0, desired);
             if (n === 0) return { rows: 1, cols: 1, capacity: 1 };
             let rows = Math.max(1, Math.min(maxRows, Math.round(Math.sqrt(n + 1))));
@@ -4096,7 +4088,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         const base: G6NodeData = {
           id: n.id,
           type: nodeType,
-          data: n as any,
+          data: n as unknown as Record<string, unknown>,
           style: p ? { x: p.x, y: p.y } : undefined,
         };
         return base;
@@ -4125,28 +4117,25 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
       const edges: G6EdgeData[] = graphData.edges.map((e) => {
         const srcNode = nodeById.get(e.from);
         const dstNode = nodeById.get(e.to);
-        const edge: G6EdgeData = {
-          source: e.from,
-          target: e.to,
-          data: { type: e.type },
-          style: {} as any,
-        } as G6EdgeData;
-        // Route to ports
+        const style: Record<string, unknown> = {};
         if (e.type === "input" && dstNode && dstNode.type === "spawn") {
           // Artifact -> spawn input: send tools to tools port, others to srcs
-          const role = (e as any).inputRole;
-          if ((dstNode as any).isSymlinkAction) (edge.style as any).targetPort = "in";
-          else (edge.style as any).targetPort = role === "tool" ? "tools" : "srcs";
+          style["targetPort"] = dstNode.isSymlinkAction ? "in" : e.inputRole === "tool" ? "tools" : "srcs";
         }
         if (e.type === "output" && srcNode && srcNode.type === "spawn") {
           // spawn -> artifact output
-          (edge.style as any).sourcePort = "out";
+          style["sourcePort"] = "out";
         }
-        return edge;
+        return {
+          source: e.from,
+          target: e.to,
+          data: { type: e.type } as Record<string, unknown>,
+          style,
+        } as G6EdgeData;
       });
 
       // No combos in Option 1 (absolute positioning)
-      const combos: any[] = [];
+      const combos: [] = [];
 
       const graph = new G6Graph({
         container: this.chartRef.current,
@@ -4161,12 +4150,11 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
             key: "tbd-tooltip",
             trigger: "hover",
             position: "top-right",
-            enable: (e: IElementEvent, _items: ElementDatum[]) => ["node", "edge"].includes((e as any)?.targetType),
-            onOpenChange: () => {},
+            enable: (e: IElementEvent) => ["node", "edge"].includes(e.targetType),
+            onOpenChange: () => { },
             getContent: async (_evt: IElementEvent, items: ElementDatum[]) => {
               try {
-                const it = items && items[0];
-                const id: string | undefined = (it as any)?.id || (it as any)?.data?.id || (_evt as any)?.target?.id;
+                const id: string | undefined = (_evt?.target as any)?.id;
                 if (!id) return "";
                 const n = nodeById.get(id);
                 if (n) {
@@ -4192,11 +4180,14 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                   return `<b>${n.label}</b><br/>Type: ${n.artifactType}${category}`;
                 }
                 // Edge tooltip
-                if (items && items.length && (items[0] as any)?.data) {
-                  const e: any = items[0];
-                  const src = nodeById.get(e.source);
-                  const dst = nodeById.get(e.target);
-                  const edgeType = e?.data?.type;
+                if (items && items.length) {
+                  const e0 = items[0] as ElementDatum;
+                  const isEdge = (e0 as G6EdgeData).source !== undefined && (e0 as G6EdgeData).target !== undefined;
+                  if (!isEdge) return "";
+                  const e = e0 as G6EdgeData;
+                  const src = nodeById.get(String(e.source));
+                  const dst = nodeById.get(String(e.target));
+                  const edgeType = (e.data as Record<string, unknown>)?.["type"] as string | undefined;
                   if (edgeType === "input") {
                     const category = src?.artifactCategory ? ` (${src.artifactCategory})` : "";
                     return `<b>Input:</b> ${src?.label || e.source}${category}<br/><b>Used by:</b> ${dst?.label || e.target}`;
@@ -4206,7 +4197,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                     return `<b>Produced by:</b> ${src?.label || e.source}<br/><b>Output:</b> ${dst?.label || e.target}${category}`;
                   }
                 }
-              } catch {}
+              } catch { }
               return "";
             },
           },
@@ -4221,24 +4212,24 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                 idStr.startsWith("overflow-") || idStr.startsWith("of-in-") || idStr.startsWith("of-out-");
               return isOverflow
                 ? {
-                    size: 12,
-                    fill: "#bdc3c7",
-                    stroke: "#ffffff",
-                    label: true,
-                    labelText: "...",
-                    labelPlacement: "center",
-                    labelFontSize: 12,
-                  }
+                  size: 12,
+                  fill: "#bdc3c7",
+                  stroke: "#ffffff",
+                  label: true,
+                  labelText: "...",
+                  labelPlacement: "center",
+                  labelFontSize: 12,
+                }
                 : { size: 10, fill: "#bdc3c7", stroke: "#ffffff" };
             }
             const isSpawn = node.type === "spawn";
-            const isSymlink = !!(node as any).isSymlinkAction;
-            const hasProducer = (node as any).hasProducer === true;
-            const hasConsumer = (node as any).hasConsumer === true;
+            const isSymlink = !!node.isSymlinkAction;
+            const hasProducer = node.hasProducer === true;
+            const hasConsumer = node.hasConsumer === true;
             const isInteresting = node.type === "artifact" && hasProducer && hasConsumer;
             const fill = isSpawn ? (isSymlink ? "#8e44ad" : "#2c82c9") : isInteresting ? "#f39c12" : "#bdc3c7";
             const stroke = isSpawn ? (isSymlink ? "#8e44ad" : "#2c82c9") : "#ffffff";
-            const size = isSpawn ? ([rectW, rectH] as any) : 10;
+            const size = isSpawn ? ([rectW, rectH] as [number, number]) : 10;
             // Show overflow label and spawn label; hide most artifact labels
             const idStr = String(node.id);
             const labelText = isSpawn
@@ -4248,10 +4239,10 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                 : "";
             const radius = isSpawn ? 8 : 4;
             // Non-selectable synthetic nodes use dashed border
-            const borderType = (node as any).nonSelectable ? "dashed" : "solid";
+            const borderType = node.nonSelectable ? "dashed" : "solid";
             // Configure ports: spawns have left srcs/tools and right out; symlink actions have left in, right out
-            let port = false as any;
-            let ports: any[] | undefined;
+            let port = false as boolean;
+            let ports: Array<{ key: string; placement: any; fill: string }> | undefined;
             let portR: number | undefined;
             let portStroke: string | undefined;
             let portLineWidth: number | undefined;
@@ -4306,14 +4297,14 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         edge: {
           type: "cubic-vertical",
           style: (model: G6EdgeData) => {
-            const t = model?.data?.type;
-            const s: any = (model as any)?.style || {};
+            const t = (model?.data as Record<string, unknown>)?.["type"] as string | undefined;
+            const s = (model?.style as Record<string, unknown>) || {};
             return {
               stroke: t === "output" ? "#2ecc71" : "#c7cfd6",
               lineWidth: 1.2,
-              sourcePort: s.sourcePort,
-              targetPort: s.targetPort,
-            } as any;
+              sourcePort: (s["sourcePort"] as string | undefined) ?? undefined,
+              targetPort: (s["targetPort"] as string | undefined) ?? undefined,
+            } as Record<string, unknown>;
           },
           state: {
             // Same simplified model for edges
@@ -4335,7 +4326,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
             multiple: false,
             state: "active",
             unselectedState: "inactive",
-            enable: (e: IEvent) => (e as any)?.targetType === "node",
+            enable: (e: IEvent) => (e as IElementEvent).targetType === "node",
           },
         ],
         autoFit: "view",
@@ -4372,7 +4363,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         const nodeDef = graphData.nodes.find((n) => n.id === id);
         if (!nodeDef) return;
         const clickedType: "spawn" | "symlink" | "artifact" =
-          nodeDef.type === "spawn" ? ((nodeDef as any).isSymlinkAction ? "symlink" : "spawn") : "artifact";
+          nodeDef.type === "spawn" ? (nodeDef.isSymlinkAction ? "symlink" : "spawn") : "artifact";
         const clickedId = nodeDef.nodeId;
         const prev = this.state.selectedItem;
         const isSame = !!prev && prev.type === clickedType && prev.id === clickedId;
@@ -4394,7 +4385,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         // Clear visual states and selection
         const allNodes = graph.getNodeData();
         const allEdges = graph.getEdgeData();
-        const clearStates: Record<ID, string[]> = {} as any;
+        const clearStates: Record<ID, string[]> = {} as Record<ID, string[]>;
         allNodes.forEach((node) => (clearStates[node.id as ID] = []));
         allEdges.forEach((edge) => (clearStates[(edge.id || `${edge.source}->${edge.target}`) as ID] = []));
         graph.setElementState(clearStates, false);
@@ -4416,14 +4407,10 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
       graph.once(GraphEvent.AFTER_RENDER, () => {
         try {
           // Keep fit but zoom in for better readability
-          const g: any = graph as any;
-          g.fitView?.();
-          const z = g.getZoom?.();
-          if (typeof z === "number") {
-            const center = g.getCanvasCenter?.();
-            g.zoomTo?.(Math.min(z * 1.35, 2.0), false, center);
-          }
-        } catch {}
+          void graph.fitView();
+          const z = graph.getZoom();
+          void graph.zoomTo(Math.min(z * 1.35, 2.0));
+        } catch { }
         if (this.isComponentMounted) this.applySelectionFocus();
       });
       this.setState({ chartLoading: false });
@@ -4471,8 +4458,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     if (nodeData.length === 0) return;
 
     // Clear all states first
-    const clearNodeStates: Record<ID, string[]> = {} as any;
-    const clearEdgeStates: Record<ID, string[]> = {} as any;
+    const clearNodeStates: Record<ID, string[]> = {} as Record<ID, string[]>;
+    const clearEdgeStates: Record<ID, string[]> = {} as Record<ID, string[]>;
     for (const n of nodeData) clearNodeStates[n.id as ID] = [];
     for (const e of edgeData) clearEdgeStates[(e.id || `${e.source}->${e.target}`) as ID] = [];
     graph.setElementState(clearNodeStates, false);
@@ -4480,8 +4467,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
 
     // If nothing selected, set all active
     if (!sel) {
-      const activeNodeStates: Record<ID, string[]> = {} as any;
-      const activeEdgeStates: Record<ID, string[]> = {} as any;
+      const activeNodeStates: Record<ID, string[]> = {} as Record<ID, string[]>;
+      const activeEdgeStates: Record<ID, string[]> = {} as Record<ID, string[]>;
       for (const n of nodeData) activeNodeStates[n.id as ID] = ["active"];
       for (const e of edgeData) activeEdgeStates[(e.id || `${e.source}->${e.target}`) as ID] = ["active"];
       graph.setElementState(activeNodeStates, true);
@@ -4492,7 +4479,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     // Find selected element id
     let targetId: string | null = null;
     for (const n of nodeData) {
-      const d = (n?.data || {}) as any;
+      const d = (n?.data || {}) as Partial<GraphNode>;
       if (!d || typeof d.nodeId !== "number") continue;
       if (sel.type === "spawn" && d.type === "spawn" && d.nodeId === sel.id && !d.isSymlinkAction) {
         targetId = n.id as string;
@@ -4515,7 +4502,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
       if (e.source === targetId) neighbors.add(e.target as string);
       if (e.target === targetId) neighbors.add(e.source as string);
     }
-    const nodeStates: Record<ID, string[]> = {} as any;
+    const nodeStates: Record<ID, string[]> = {} as Record<ID, string[]>;
     nodeStates[targetId] = ["active"];
     for (const nid of neighbors) nodeStates[nid] = ["neighborActive"];
     for (const n of nodeData) if (!nodeStates[n.id as ID]) nodeStates[n.id as ID] = ["inactive"];
