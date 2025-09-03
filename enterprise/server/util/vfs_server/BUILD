@@ -16,6 +16,7 @@ go_library(
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [
             "//enterprise/server/remote_execution/container",
+            "//enterprise/server/util/vfscommon",
             "//proto:remote_execution_go_proto",
             "//proto:vfs_go_proto",
             "//server/cache/dirtools",
@@ -48,6 +49,7 @@ go_library(
         ],
         "@io_bazel_rules_go//go/platform:windows": [
             "//enterprise/server/remote_execution/container",
+            "//enterprise/server/util/vfscommon",
             "//proto:remote_execution_go_proto",
             "//proto:vfs_go_proto",
             "//server/cache/dirtools",
