@@ -9,6 +9,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/util/background",
         "//server/util/status",
         "@org_golang_google_grpc//:grpc",
     ],

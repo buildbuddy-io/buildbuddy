@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/routing",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/util/proxy_util",
         "//proto:remote_execution_go_proto",
         "//proto:routing_go_proto",
         "//server/interfaces",
@@ -14,7 +13,6 @@ go_library(
         "//server/util/flag",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_google_grpc//metadata",
     ],
 )
 

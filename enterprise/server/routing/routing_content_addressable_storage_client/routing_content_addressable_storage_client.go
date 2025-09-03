@@ -52,11 +52,11 @@ func (r *RoutingCASClient) FindMissingBlobs(ctx context.Context, in *repb.FindMi
 			if secondaryClient == nil {
 				return
 			}
-			
+
 			// Use extended context for the secondary cache call
 			extendedCtx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 			defer cancel()
-			
+
 			// Send all original digests to touch them in the secondary cache
 			secondaryClient.FindMissingBlobs(extendedCtx, in, opts...)
 		}()

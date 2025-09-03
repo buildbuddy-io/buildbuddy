@@ -3,7 +3,6 @@ package routing
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ropb "github.com/buildbuddy-io/buildbuddy/proto/routing"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -12,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-	"google.golang.org/grpc/metadata"
 )
 
 var (
