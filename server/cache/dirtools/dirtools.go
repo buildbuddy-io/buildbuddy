@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -41,7 +42,7 @@ import (
 var (
 	enableDownloadCompresssion = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
 	linkParallelism            = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
-	inputTreeSetupParallelism  = flag.Int("cache.client.input_tree_setup_parallelism", -1, "Number of goroutines to use across all tasks when setting up the input tree structure. -1 means no queueing. 0 means GOMAXPROCS.")
+	inputTreeSetupParallelism  = flag.Int("cache.client.input_tree_setup_parallelism", -1, "Maximum number of concurrent filesystem operations to perform across all tasks when setting up the input tree structure. -1 means no limit.")
 
 	initInputTreeWrangler     sync.Once
 	inputTreeWranglerInstance *inputTreeWrangler
@@ -1317,10 +1318,8 @@ func (tr *taskRequest) Do() {
 // performing too many operations on filesystems that don't do well beyond
 // a certain level of concurrency.
 type inputTreeWrangler struct {
-	env    environment.Env
-	direct bool
-	reqs   chan taskRequest
-	done   chan struct{}
+	env     environment.Env
+	limiter *semaphore.Weighted
 
 	mkdirAllLatencyUsec          prometheus.Observer
 	symlinkLatencyUsec           prometheus.Observer
@@ -1330,54 +1329,24 @@ type inputTreeWrangler struct {
 func newInputTreeWrangler(env environment.Env) *inputTreeWrangler {
 	w := &inputTreeWrangler{
 		env:                          env,
-		done:                         make(chan struct{}),
-		reqs:                         make(chan taskRequest, inputTreeOpsQueueSize),
 		mkdirAllLatencyUsec:          metrics.InputTreeSetupOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "mkdirall"}),
 		symlinkLatencyUsec:           metrics.InputTreeSetupOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "symlink"}),
 		linkFromFileCacheLatencyUsec: metrics.InputTreeSetupOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_from_file_cache"}),
 	}
-	if *inputTreeSetupParallelism == -1 {
-		w.direct = true
-	} else {
-		w.Start()
-		env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-			w.Stop()
-			return nil
-		})
+	if *inputTreeSetupParallelism > 0 {
+		w.limiter = semaphore.NewWeighted(int64(*inputTreeSetupParallelism))
 	}
 	return w
 }
 
-func (w *inputTreeWrangler) Start() {
-	n := *inputTreeSetupParallelism
-	if n == 0 {
-		n = runtime.GOMAXPROCS(0)
-	}
-	for i := 0; i < n; i++ {
-		go func() {
-			for {
-				select {
-				case req := <-w.reqs:
-					req.Do()
-				case <-w.done:
-					return
-				}
-			}
-		}()
-	}
-}
-
-func (w *inputTreeWrangler) Stop() {
-	close(w.done)
-}
-
 func (w *inputTreeWrangler) scheduleRequest(ctx context.Context, req inputTreeRequest) error {
-	if w.direct {
-		return req.Do()
+	if w.limiter != nil {
+		if err := w.limiter.Acquire(ctx, 1); err != nil {
+			return err
+		}
+		defer w.limiter.Release(1)
 	}
-	respCh := make(chan error, 1)
-	w.reqs <- taskRequest{ctx: ctx, req: req, respCh: respCh}
-	return <-respCh
+	return req.Do()
 }
 
 func (w *inputTreeWrangler) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
