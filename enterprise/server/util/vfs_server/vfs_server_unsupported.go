@@ -27,7 +27,7 @@ func New(env environment.Env, workspacePath string) (*Server, error) {
 }
 
 func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout, treeFetcher *dirtools.TreeFetcher) (*vfscommon.InodeInvalidations, error) {
-	return fmt.Errorf("Prepare not implemented")
+	return nil, fmt.Errorf("Prepare not implemented")
 }
 
 func (p *Server) Stop() {
