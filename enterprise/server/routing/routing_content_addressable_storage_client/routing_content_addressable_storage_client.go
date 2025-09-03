@@ -6,6 +6,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/batch_operator"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -14,17 +15,52 @@ import (
 )
 
 type RoutingCASClient struct {
-	casClients map[string]repb.ContentAddressableStorageClient
-	router     interfaces.CacheRoutingService
+	casClients               map[string]repb.ContentAddressableStorageClient
+	router                   interfaces.CacheRoutingService
+	findMissingBatchOperator batch_operator.BatchDigestOperator
+}
+
+func newFindMissingBatcher(env environment.Env) batch_operator.BatchDigestOperator {
+  f := func(ctx context.Context, u *batch_operator.DigestBatch) error {
+	client, err := env.GetCacheRoutingService().GetSecondaryCASClient(ctx)
+	if err != nil {
+		return err
+	}
+	if client == nil {
+		// XXX: Shouldn't happen. include groupid.
+		return status.InternalError("Failed to find secondary cache route for batch..")
+	}
+	req := &repb.FindMissingBlobsRequest{
+		InstanceName:   u.InstanceName,
+		BlobDigests:    make([]*repb.Digest, len(u.Digests)),
+		DigestFunction: u.DigestFunction,
+	}
+	i := 0
+	for d := range u.Digests {
+		req.BlobDigests[i] = d.ToDigest()
+		i++
+	}
+	_, err = client.FindMissingBlobs(ctx, req)
+	// XXX: schedule copy for missing stuff that's in original?
+	return err
+  }
+
+  operator, err := batch_operator.New(env, f, batch_operator.BatchDigestOperatorConfig{})
+  if err != nil {
+	panic(err)
+  }
+  operator.Start(env.GetHealthChecker())
+  return operator
 }
 
 func NewClient(env environment.Env) *RoutingCASClient {
 	return &RoutingCASClient{
 		router: env.GetCacheRoutingService(),
+		findMissingBatchOperator: newFindMissingBatcher(env),
 	}
 }
 
-func (r *RoutingCASClient) FindMissingBlobs(ctx context.Context, in *repb.FindMissingBlobsRequest, opts ...grpc.CallOption) (*repb.FindMissingBlobsResponse, error) {
+func (r *RoutingCASClient) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest, opts ...grpc.CallOption) (*repb.FindMissingBlobsResponse, error) {
 	if r.router == nil {
 		return nil, status.InternalError("No routing service configured")
 	}
@@ -36,32 +72,15 @@ func (r *RoutingCASClient) FindMissingBlobs(ctx context.Context, in *repb.FindMi
 	}
 
 	// Make synchronous call to primary cache
-	response, err := primaryClient.FindMissingBlobs(ctx, in, opts...)
+	response, err := primaryClient.FindMissingBlobs(ctx, req, opts...)
 	if err != nil {
 		return nil, err
 	}
-
-	// Schedule asynchronous call to secondary cache with all original digests if any were found
-	if len(response.GetMissingBlobDigests()) > 0 {
-		go func() {
-			secondaryClient, err := r.router.GetSecondaryCASClient(ctx)
-			if err != nil {
-				// Secondary cache is optional, so we just log the error
-				return
-			}
-			if secondaryClient == nil {
-				return
-			}
-
-			// Use extended context for the secondary cache call
-			extendedCtx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
-			defer cancel()
-
-			// Send all original digests to touch them in the secondary cache
-			secondaryClient.FindMissingBlobs(extendedCtx, in, opts...)
-		}()
+	secondaryClient, err := r.router.GetSecondaryCASClient(ctx)
+	if err == nil && secondaryClient != nil{
+		// XXX: Logging in error case?
+		r.findMissingBatchOperator.Enqueue(ctx, req.GetInstanceName(), req.GetBlobDigests(), req.GetDigestFunction())
 	}
-
 	return response, nil
 }
 
