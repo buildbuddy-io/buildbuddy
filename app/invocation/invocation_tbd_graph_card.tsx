@@ -229,7 +229,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           this.g6SelectionFocusTimeout = null;
         }
         this.g6Graph.destroy();
-      } catch { }
+      } catch {}
       this.g6Graph = null;
     }
     window.removeEventListener("resize", this.handleResize);
@@ -265,8 +265,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     const { indexedData } = this.state;
     const filtered = indexedData
       ? Array.from(indexedData.labelSet)
-        .filter((label) => !this.props.filter || label.includes(this.props.filter))
-        .sort((a, b) => this.compareLabels(a || "", b || ""))
+          .filter((label) => !this.props.filter || label.includes(this.props.filter))
+          .sort((a, b) => this.compareLabels(a || "", b || ""))
       : [];
     return filtered;
   }
@@ -314,8 +314,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           // Nudge zoom in a bit for readability after resize
           const z = this.g6Graph.getZoom();
           void this.g6Graph.zoomTo(Math.min(z * 1.2, 2.0));
-        } catch { }
-      } catch { }
+        } catch {}
+      } catch {}
     }
   };
 
@@ -462,8 +462,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     const { indexedData } = this.state;
     const filteredLabels = indexedData
       ? Array.from(indexedData.labelSet)
-        .filter((label) => !this.props.filter || label.includes(this.props.filter))
-        .sort((a, b) => this.compareLabels(a || "", b || ""))
+          .filter((label) => !this.props.filter || label.includes(this.props.filter))
+          .sort((a, b) => this.compareLabels(a || "", b || ""))
       : [];
 
     return (
@@ -1180,7 +1180,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                 inputItems = inputItems.slice(0, inputLimit);
               }
             }
-          } catch { }
+          } catch {}
           // Tools sample list
           let toolItems: { id: number; label: string; digest?: build.bazel.remote.execution.v2.Digest }[] = [];
           let toolTotal = 0;
@@ -1199,7 +1199,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                 toolItems = toolItems.slice(0, toolLimit);
               }
             }
-          } catch { }
+          } catch {}
           // Outputs list (usually small)
           const outputIds: number[] = [];
           for (const o of spawn.outputs || []) {
@@ -1523,32 +1523,32 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                 Number(rt.repoMappingManifest.digest.sizeBytes || 0) !== 0
               );
             })() && (
-                <div className="invocation-section">
-                  <div className="invocation-section-title">Repo mapping</div>
-                  <div>
-                    {/* If sizeBytes is present we can link; otherwise just show digest */}
-                    {(artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).repoMappingManifest!.digest!.sizeBytes !==
-                      undefined &&
-                      (artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).repoMappingManifest!.digest!.sizeBytes !==
-                      null ? (
-                      <Link
-                        href={this.getFileBytestreamHref({
-                          path: `${(artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).path || ""}/_repo_mapping`,
-                          digest: (artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).repoMappingManifest!.digest!,
-                        } as tools.protos.ExecLogEntry.File)}
-                        target="_blank">
-                        <DigestComponent
-                          digest={(artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).repoMappingManifest!.digest!}
-                        />
-                      </Link>
-                    ) : (
+              <div className="invocation-section">
+                <div className="invocation-section-title">Repo mapping</div>
+                <div>
+                  {/* If sizeBytes is present we can link; otherwise just show digest */}
+                  {(artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).repoMappingManifest!.digest!.sizeBytes !==
+                    undefined &&
+                  (artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).repoMappingManifest!.digest!.sizeBytes !==
+                    null ? (
+                    <Link
+                      href={this.getFileBytestreamHref({
+                        path: `${(artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).path || ""}/_repo_mapping`,
+                        digest: (artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).repoMappingManifest!.digest!,
+                      } as tools.protos.ExecLogEntry.File)}
+                      target="_blank">
                       <DigestComponent
                         digest={(artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).repoMappingManifest!.digest!}
                       />
-                    )}
-                  </div>
+                    </Link>
+                  ) : (
+                    <DigestComponent
+                      digest={(artifactInfo as tools.protos.ExecLogEntry.RunfilesTree).repoMappingManifest!.digest!}
+                    />
+                  )}
                 </div>
-              )}
+              </div>
+            )}
             {(() => {
               const d = this.state.indexedData!;
               const rt = artifactInfo as tools.protos.ExecLogEntry.RunfilesTree;
@@ -2127,7 +2127,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           const toolsSet = this.expandInputSet(spawn.toolSetId, data);
           if (toolsSet.has(artifactId)) isConsumer = true;
         }
-      } catch { }
+      } catch {}
       if (isConsumer) {
         out.push({ spawnId, spawn });
       }
@@ -2411,7 +2411,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     let successCount = 0;
     let skipCount = 0;
 
-    for (let offset = 0; offset < body.byteLength;) {
+    for (let offset = 0; offset < body.byteLength; ) {
       try {
         const length = varint.decode(byteArray, offset);
         const bytes = varint.decode.bytes || 0;
@@ -2827,6 +2827,36 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     };
 
     // Create spawn nodes
+    // Group TestRunner spawns by test label and shard index to detect multiple runs
+    const trGroupKey = (s: tools.protos.ExecLogEntry.Spawn) => {
+      const lbl = (s.targetLabel || "").trim();
+      const shardIdx = this.getTestShardIndex(s);
+      return `${lbl}|shard:${shardIdx ?? -1}`;
+    };
+    const testRunnerGroups = new Map<string, Array<{ id: number; spawn: tools.protos.ExecLogEntry.Spawn }>>();
+    for (const [sid, sp] of limitedSpawns) {
+      if ((sp.mnemonic || "") === "TestRunner") {
+        const k = trGroupKey(sp);
+        if (!testRunnerGroups.has(k)) testRunnerGroups.set(k, []);
+        testRunnerGroups.get(k)!.push({ id: sid, spawn: sp });
+      }
+    }
+    // Determine stable run ordering per group
+    const runIndexBySpawnId = new Map<number, number>();
+    const runTotalByGroupKey = new Map<string, number>();
+    for (const [k, arr] of testRunnerGroups.entries()) {
+      const sorted = [...arr].sort((a, b) => {
+        const ar = this.getTestRunNumber(a.spawn) ?? Number.MAX_SAFE_INTEGER;
+        const br = this.getTestRunNumber(b.spawn) ?? Number.MAX_SAFE_INTEGER;
+        if (ar !== br) return ar - br;
+        const as = this.getStartTimeNanos(a.spawn) ?? Number.MAX_SAFE_INTEGER;
+        const bs = this.getStartTimeNanos(b.spawn) ?? Number.MAX_SAFE_INTEGER;
+        if (as !== bs) return as - bs;
+        return a.id - b.id;
+      });
+      sorted.forEach((item, idx) => runIndexBySpawnId.set(item.id, idx + 1));
+      runTotalByGroupKey.set(k, sorted.length);
+    }
     const spawnNodes = new Map<number, GraphNode>();
     const spawnMeta = new Map<
       number,
@@ -2886,12 +2916,26 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
         }
       }
       const toolChain = this.extractToolChain(spawn, data);
+      // Label mnemonic with shard / run info for TestRunner
+      const rawMnemonic = spawn.mnemonic || "Unknown Action";
+      const parts: string[] = [];
+      if (rawMnemonic === "TestRunner") {
+        const shardInfo = this.getTestShardSuffix(spawn);
+        if (shardInfo) parts.push(shardInfo);
+        const gk = trGroupKey(spawn);
+        const total = runTotalByGroupKey.get(gk) || 0;
+        if (total > 1) {
+          const idx = runIndexBySpawnId.get(spawnId) || 1;
+          parts.push(`run ${idx}/${total}`);
+        }
+      }
+      const displayMnemonic = parts.length ? `${rawMnemonic} (${parts.join(", ")})` : rawMnemonic;
       const spawnStrId = computeSpawnStrId(spawn, { primaryPath: primaryOutputPath });
       const spawnNode: GraphNode = {
         id: spawnStrId,
         type: "spawn",
         nodeId: spawnId,
-        label: spawn.mnemonic || "Unknown Action",
+        label: displayMnemonic,
         spawnHasValidOutputs: hasValidOutput,
         spawnHasInvalidOutputPaths: hasInvalidOutputPath,
         primaryOutputLabel,
@@ -2902,7 +2946,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
       nodes.push(spawnNode);
       spawnNodes.set(spawnId, spawnNode);
       spawnMeta.set(spawnId, {
-        mnemonic: spawn.mnemonic || "",
+        mnemonic: displayMnemonic || "",
         primaryPath: primaryOutputPath,
         filename: extractFilename(primaryOutputPath),
         platform: extractPlatform(primaryOutputPath),
@@ -3090,7 +3134,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           if (!rf.inputSetId) return false;
           const ids = this.expandInputSet(rf.inputSetId, data);
           for (const cid of ids) if (data.outputProducers.has(cid)) return true;
-        } catch { }
+        } catch {}
         return false;
       };
       const srcFiltered = Array.from(srcArtifacts).filter((id) => {
@@ -3568,8 +3612,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
             if (inPath) {
               const tryResolve = (p?: string) =>
                 (p && (data.pathToFileId.get(p) || data.pathToDirId.get(p) || data.pathToSymlinkId.get(p))) as
-                | number
-                | undefined;
+                  | number
+                  | undefined;
               let inArtId = tryResolve(inPath);
               if (inArtId === undefined) {
                 // Normalize optional ST segment in exec paths (e.g., -opt-exec-ST-<hash>/ -> -opt-exec/)
@@ -3601,8 +3645,8 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           const base = val.slice(0, -".runfiles".length);
           const tryResolve = (p?: string) =>
             (p && (data.pathToFileId.get(p) || data.pathToDirId.get(p) || data.pathToSymlinkId.get(p))) as
-            | number
-            | undefined;
+              | number
+              | undefined;
           let binId = tryResolve(base);
           if (binId === undefined) {
             const norm = base.replace(/-opt-exec-ST-[^/]+\//, "-opt-exec/");
@@ -3982,7 +4026,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           const maxRows = isExpanded ? baseRows * 2 : baseRows;
           const maxCols = isExpanded ? baseCols * 2 : baseCols;
           const desired = outs.length;
-          const { rows, cols, capacity } = (function() {
+          const { rows, cols, capacity } = (function () {
             const n = Math.max(0, desired);
             if (n === 0) return { rows: 1, cols: 1, capacity: 1 };
             let rows = Math.max(1, Math.min(maxRows, Math.round(Math.sqrt(n + 1))));
@@ -4151,7 +4195,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
             trigger: "hover",
             position: "top-right",
             enable: (e: IElementEvent) => ["node", "edge"].includes(e.targetType),
-            onOpenChange: () => { },
+            onOpenChange: () => {},
             getContent: async (_evt: IElementEvent, items: ElementDatum[]) => {
               try {
                 const id: string | undefined = (_evt?.target as any)?.id;
@@ -4197,7 +4241,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                     return `<b>Produced by:</b> ${src?.label || e.source}<br/><b>Output:</b> ${dst?.label || e.target}${category}`;
                   }
                 }
-              } catch { }
+              } catch {}
               return "";
             },
           },
@@ -4212,14 +4256,14 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
                 idStr.startsWith("overflow-") || idStr.startsWith("of-in-") || idStr.startsWith("of-out-");
               return isOverflow
                 ? {
-                  size: 12,
-                  fill: "#bdc3c7",
-                  stroke: "#ffffff",
-                  label: true,
-                  labelText: "...",
-                  labelPlacement: "center",
-                  labelFontSize: 12,
-                }
+                    size: 12,
+                    fill: "#bdc3c7",
+                    stroke: "#ffffff",
+                    label: true,
+                    labelText: "...",
+                    labelPlacement: "center",
+                    labelFontSize: 12,
+                  }
                 : { size: 10, fill: "#bdc3c7", stroke: "#ffffff" };
             }
             const isSpawn = node.type === "spawn";
@@ -4410,7 +4454,7 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
           void graph.fitView();
           const z = graph.getZoom();
           void graph.zoomTo(Math.min(z * 1.35, 2.0));
-        } catch { }
+        } catch {}
         if (this.isComponentMounted) this.applySelectionFocus();
       });
       this.setState({ chartLoading: false });
@@ -4516,6 +4560,45 @@ export default class InvocationTbdGraphCardComponent extends React.Component<Pro
     const bb = bucket(b);
     if (ba !== bb) return ba - bb;
     return a.localeCompare(b);
+  }
+
+  // For TestRunner spawns, extract shard info from env vars.
+  private getTestShardSuffix(spawn: tools.protos.ExecLogEntry.Spawn): string | undefined {
+    const totalStr = this.getEnv(spawn, "TEST_TOTAL_SHARDS");
+    const indexStr = this.getEnv(spawn, "TEST_SHARD_INDEX");
+    if (!totalStr || !indexStr) return undefined;
+    const total = Number(totalStr);
+    const index = Number(indexStr);
+    if (!isFinite(total) || !isFinite(index) || total <= 0) return undefined;
+    const displayIndex = Math.max(0, Math.floor(index)) + 1; // convert 0-based to 1-based
+    const displayTotal = Math.max(1, Math.floor(total));
+    return `shard ${displayIndex}/${displayTotal}`;
+  }
+
+  private getEnv(spawn: tools.protos.ExecLogEntry.Spawn, name: string): string {
+    return (spawn.envVars || []).find((v) => (v.name || "") === name)?.value || "";
+  }
+
+  private getTestShardIndex(spawn: tools.protos.ExecLogEntry.Spawn): number | undefined {
+    const idx = this.getEnv(spawn, "TEST_SHARD_INDEX");
+    if (!idx) return undefined;
+    const n = Number(idx);
+    return isFinite(n) ? Math.floor(n) : undefined;
+  }
+
+  private getTestRunNumber(spawn: tools.protos.ExecLogEntry.Spawn): number | undefined {
+    const s = this.getEnv(spawn, "TEST_RUN_NUMBER");
+    if (!s) return undefined;
+    const n = Number(s);
+    return isFinite(n) ? Math.floor(n) : undefined;
+  }
+
+  private getStartTimeNanos(spawn: tools.protos.ExecLogEntry.Spawn): number | undefined {
+    const st = spawn.metrics?.startTime;
+    if (!st) return undefined;
+    const sec = Number(st.seconds || 0);
+    const ns = st.nanos || 0;
+    return sec * 1_000_000_000 + ns;
   }
 
   private getArtifactTypeIcon(type?: ArtifactType): JSX.Element {
