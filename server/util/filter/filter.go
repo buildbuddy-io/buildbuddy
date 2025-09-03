@@ -16,7 +16,7 @@ import (
 
 func rectifiedDurationValue(start string, end string) string {
 	// start is before end, start is not zero.
-	return fmt.Sprintf("IF(%s < %s AND %s > 0, 0, (%s - %s))", end, start, start, end, start)
+	return fmt.Sprintf("IF(%s < %s OR %s = 0, 0, (%s - %s))", end, start, start, end, start)
 }
 
 func executionMetricToDbField(m stat_filter.ExecutionMetricType) (string, error) {
