@@ -26,7 +26,7 @@ describe("normalizeSpace", () => {
 
 describe("getContent", () => {
   it("should preserve blank lines", () => {
-    expect(getContent("Hello\n\nWorld", "", Number.MAX_SAFE_INTEGER).rows).toEqual([
+    expect(getContent("Hello\n\nWorld", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER).rows).toEqual([
       {
         plaintext: "Hello",
         matchStartIndex: null,
@@ -49,7 +49,7 @@ describe("getContent", () => {
   });
 
   it("should preserve trailing blank lines", () => {
-    expect(getContent("Hello\n", "", 0).rows).toEqual([
+    expect(getContent("Hello\n", { match: "", caseSensitive: false }, 0).rows).toEqual([
       {
         plaintext: "Hello",
         matchStartIndex: null,
