@@ -2860,20 +2860,33 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 	}
 
 	state := addReplicaStateAbsent
-	// Determine the replica ID and the state.
-	// When there was previous attempts to add the range
-	// to the specified node, we should use the existing replicaID; otherwise, the
-	// request will be rejected by raft.
-	var newReplicaID uint64
-	if replicaMembership != nil {
-		// There are previous attempts to add a replica of this range to the node.
-		// Use the existing replica ID.
-		newReplicaID = replicaMembership.replicaID
 
-		if replicaMembership.isNonVoting {
-			state = addReplicaStateNonVoter
-		} else {
-			state = addReplicaStateVoter
+	// check if staging replica is present
+
+	// Determine the replica ID and the state.
+	// When there was previous attempts to add the range to the specified node,
+	// we should use the existing replicaID; otherwise, the request will be
+	// rejected by raft.
+	var newReplicaID uint64
+
+	var existingStaging *rfpb.ReplicaDescriptor
+	for _, repl := range rd.GetStaging() {
+		if repl.GetNhid() == node.GetNhid() {
+			existingStaging = repl
+		}
+	}
+
+	if existingStaging != nil {
+		newReplicaID = existingStaging.GetReplicaId()
+		if replicaMembership != nil {
+			if newReplicaID != replicaMembership.replicaID {
+				alert.UnexpectedEvent("staging-replica-id-not-match", "c%dn%d is on nhid %q in staging replicas, but raft membership finds replica id %d", rangeID, newReplicaID, node.GetNhid(), replicaMembership.replicaID)
+			}
+			if replicaMembership.isNonVoting {
+				state = addReplicaStateNonVoter
+			} else {
+				state = addReplicaStateVoter
+			}
 		}
 	} else {
 		// Reserve a new replica ID for the replica to be added on the node.
@@ -2882,7 +2895,6 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 			return nil, status.InternalErrorf("AddReplica failed to add range(%d) to node %q: failed to reserve replica IDs: %s", rangeID, node.GetNhid(), err)
 		}
 		newReplicaID = replicaIDs[0]
-		log.Infof("=====newReplicaID: %d", newReplicaID)
 		rd, err = s.addStagingReplicaToRangeDescriptor(ctx, rangeID, newReplicaID, node.GetNhid(), rd)
 		if err != nil {
 			return nil, status.WrapErrorf(err, "AddReplica failed to add staging replica c%dn%d on %q: %s", rangeID, newReplicaID, node.GetNhid(), err)
