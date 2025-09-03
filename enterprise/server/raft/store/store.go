@@ -2880,7 +2880,7 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 		newReplicaID = existingStaging.GetReplicaId()
 		if replicaMembership != nil {
 			if newReplicaID != replicaMembership.replicaID {
-				alert.UnexpectedEvent("staging-replica-id-not-match", "c%dn%d is on nhid %q in staging replicas, but raft membership finds replica id %d", rangeID, newReplicaID, node.GetNhid(), replicaMembership.replicaID)
+				alert.UnexpectedEvent("staging-replica-id-mismatch", "c%dn%d is on nhid %q in staging replicas, but raft membership holds replica id %d", rangeID, newReplicaID, node.GetNhid(), replicaMembership.replicaID)
 			}
 			if replicaMembership.isNonVoting {
 				state = addReplicaStateNonVoter
