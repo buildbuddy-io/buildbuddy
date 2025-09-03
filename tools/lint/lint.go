@@ -65,9 +65,11 @@ var (
 
 	// File extensions handled by prettier.
 	prettierExtensions = []string{
-		".html", ".css", ".js", ".jsx", ".ts", ".tsx", // TODO: add .mjs
-		".json", ".yaml", // TODO: add .yml
-		".md", // TODO: add .mdx
+		".html", ".css",
+		".js", ".jsx", ".mjs", ".cjs",
+		".ts", ".tsx", ".mts", ".cts",
+		".json", ".yaml", ".yml",
+		".md", ".mdx",
 	}
 )
 
