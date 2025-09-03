@@ -174,7 +174,7 @@ func readFromVFS(t *testing.T, server *vfs_server.Server, name string) string {
 func prepare(t *testing.T, env environment.Env, server *vfs_server.Server, tree *repb.Tree) {
 	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{})
 	require.NoError(t, err)
-	err = server.Prepare(t.Context(), &container.FileSystemLayout{Inputs: tree}, tf)
+	_, err = server.Prepare(t.Context(), &container.FileSystemLayout{Inputs: tree}, tf)
 	require.NoError(t, err)
 }
 
