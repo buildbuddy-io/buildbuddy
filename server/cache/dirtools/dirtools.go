@@ -1333,7 +1333,7 @@ func newInputTreeWrangler(env environment.Env) *inputTreeWrangler {
 		symlinkLatencyUsec:           metrics.InputTreeSetupOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "symlink"}),
 		linkFromFileCacheLatencyUsec: metrics.InputTreeSetupOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_from_file_cache"}),
 	}
-	if *inputTreeSetupParallelism != -1 {
+	if *inputTreeSetupParallelism > 0 {
 		w.limiter = semaphore.NewWeighted(int64(*inputTreeSetupParallelism))
 	}
 	return w
