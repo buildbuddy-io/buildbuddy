@@ -504,6 +504,7 @@ func TestAddReplica_ExistingStaging(t *testing.T) {
 	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
 	rd = s.GetRange(2)
 	require.Equal(t, 3, len(rd.GetReplicas()))
+	require.Empty(t, rd.GetStaging())
 	{
 		maxReplicaID := uint64(0)
 		for _, repl := range rd.GetReplicas() {
