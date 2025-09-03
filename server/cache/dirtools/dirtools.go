@@ -1320,7 +1320,6 @@ func (tr *taskRequest) Do() {
 type inputTreeWrangler struct {
 	env     environment.Env
 	limiter *semaphore.Weighted
-	reqs    chan taskRequest
 
 	mkdirAllLatencyUsec          prometheus.Observer
 	symlinkLatencyUsec           prometheus.Observer
