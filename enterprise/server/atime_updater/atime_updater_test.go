@@ -149,10 +149,6 @@ func runFakeCAS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*fakeC
 	return &cas, repb.NewContentAddressableStorageClient(conn)
 }
 
-func batchUpdate(updater batch_operator.BatchDigestOperator) {
-	updater.ForceBatchingForTesting()
-}
-
 func setup(t testing.TB) (interfaces.Authenticator, batch_operator.BatchDigestOperator, *fakeCAS, clockwork.FakeClock) {
 	env := testenv.GetTestEnv(t)
 	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
@@ -184,7 +180,7 @@ func TestAuth(t *testing.T) {
 	// Anon updates with client-identity header
 	ctx = authenticatedContext(t.Context(), "", authenticator)
 	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	updater.ForceSendUpdatesForTesting(t.Context())
 	require.ElementsMatch(t,
 		[]update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256)},
@@ -200,7 +196,7 @@ func TestAuth(t *testing.T) {
 	// Group updates with JWT and client-identity header
 	group1Ctx := authenticatedContext(t.Context(), user1, authenticator)
 	require.True(t, updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	updater.ForceSendUpdatesForTesting(t.Context())
 	require.ElementsMatch(t,
 		[]update{updateOf(group1, "instance-1", digest0, repb.DigestFunction_SHA256)},
@@ -217,9 +213,9 @@ func TestEnqueue_SimpleBatching(t *testing.T) {
 	ctx := authenticatedContext(t.Context(), "", authenticator)
 
 	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0, digest1}, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest2}, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	updater.ForceSendUpdatesForTesting(t.Context())
 	require.ElementsMatch(t,
 		[]update{
@@ -235,7 +231,7 @@ func TestEnqueue_Deduping(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
-		batchUpdate(updater)
+		updater.ForceBatchingForTesting()
 	}
 	updater.ForceSendUpdatesForTesting(t.Context())
 	require.ElementsMatch(t,
@@ -248,11 +244,11 @@ func TestEnqueue_InstanceNamesIsolated(t *testing.T) {
 	ctx := authenticatedContext(t.Context(), "", authenticator)
 
 	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	require.True(t, updater.Enqueue(ctx, "instance-2", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	require.True(t, updater.Enqueue(ctx, "instance-3", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	updater.ForceSendUpdatesForTesting(t.Context())
 	require.ElementsMatch(t,
 		[]update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256)},
@@ -274,9 +270,9 @@ func TestEnqueue_DigestFunctionsIsolated(t *testing.T) {
 	ctx := authenticatedContext(t.Context(), "", authenticator)
 
 	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_BLAKE3))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	updater.ForceSendUpdatesForTesting(t.Context())
 	require.ElementsMatch(t,
 		[]update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256)},
@@ -295,11 +291,11 @@ func TestEnqueue_GroupsIsolated(t *testing.T) {
 	group2Ctx := authenticatedContext(t.Context(), user2, authenticator)
 
 	require.True(t, updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	require.True(t, updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	require.True(t, updater.Enqueue(group2Ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	updater.ForceSendUpdatesForTesting(t.Context())
 	require.ElementsMatch(t,
 		[]update{
@@ -314,11 +310,11 @@ func TestEnqueue_DedupesToFrontOfLine(t *testing.T) {
 	ctx := authenticatedContext(t.Context(), "", authenticator)
 
 	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	require.True(t, updater.Enqueue(ctx, "instance-2", []*repb.Digest{digest1}, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest2}, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	updater.ForceSendUpdatesForTesting(t.Context())
 	require.ElementsMatch(t,
 		[]update{
@@ -343,8 +339,8 @@ func TestEnqueue_EnqueuesDropped(t *testing.T) {
 	require.True(t, updater.Enqueue(anonCtx, "instance-2", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
 	require.False(t, updater.Enqueue(anonCtx, "instance-3", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
 
-	batchUpdate(updater)
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
+	updater.ForceBatchingForTesting()
 
 	require.True(t, updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
 	require.True(t, updater.Enqueue(group1Ctx, "instance-2", []*repb.Digest{digest1}, repb.DigestFunction_SHA256))
@@ -361,7 +357,7 @@ func TestEnqueue_DigestsDropped(t *testing.T) {
 	// This threshold is set to 7 above, so expect that many to be sent, though
 	// order is not guaranteed so we don't know which 7 will be sent.
 	require.True(t, updater.Enqueue(ctx, "instance-1", digests, repb.DigestFunction_SHA256))
-	batchUpdate(updater)
+	updater.ForceBatchingForTesting()
 	updater.ForceSendUpdatesForTesting(t.Context())
 	require.Equal(t, 7, len(cas.getUpdates()))
 	cas.clearUpdates()
@@ -369,7 +365,7 @@ func TestEnqueue_DigestsDropped(t *testing.T) {
 	// Expect the same behavior if they're sent one-by-one.
 	for _, digest := range digests {
 		require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest}, repb.DigestFunction_SHA256))
-		batchUpdate(updater)
+		updater.ForceBatchingForTesting()
 	}
 	updater.ForceSendUpdatesForTesting(t.Context())
 	require.Equal(t, 7, len(cas.getUpdates()))
@@ -378,7 +374,7 @@ func TestEnqueue_DigestsDropped(t *testing.T) {
 	// It shouldn't matter what instance name / digest function they're using.
 	for i, digest := range digests {
 		require.True(t, updater.Enqueue(ctx, fmt.Sprintf("instance-%d", i%3), []*repb.Digest{digest}, repb.DigestFunction_SHA256))
-		batchUpdate(updater)
+		updater.ForceBatchingForTesting()
 	}
 	updater.ForceSendUpdatesForTesting(t.Context())
 	updater.ForceSendUpdatesForTesting(t.Context())
@@ -397,7 +393,7 @@ func TestEnqueue_UpdatesDropped(t *testing.T) {
 	// 3, so expect the first 3 to be sent and the others to be dropped.
 	for i := 1; i <= 10; i++ {
 		require.True(t, updater.Enqueue(ctx, fmt.Sprintf("instance-%d", i), []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
-		batchUpdate(updater)
+		updater.ForceBatchingForTesting()
 	}
 	for i := 1; i <= 10; i++ {
 		updater.ForceSendUpdatesForTesting(t.Context())
@@ -437,7 +433,7 @@ func TestEnqueue_Fairness(t *testing.T) {
 	require.True(t, updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest0, digest0, digest6, digest1, digest0, digest1, digest2, digest2}, repb.DigestFunction_SHA256))
 
 	for i := 0; i < 8; i++ {
-		batchUpdate(updater)
+		updater.ForceBatchingForTesting()
 	}
 
 	// Expect 5 updates from anon, 5 from group1, and 3 from group2.
@@ -564,7 +560,7 @@ func TestEnqueueByResourceName_CAS(t *testing.T) {
 	updater.EnqueueByResourceName(anonCtx, rn51)
 
 	for i := 0; i < 15; i++ {
-		batchUpdate(updater)
+		updater.ForceBatchingForTesting()
 	}
 
 	// First update should be 3 for Anon/2, 1 for Grp1/1, and 1 for Grp2/1
