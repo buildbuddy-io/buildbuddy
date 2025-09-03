@@ -17,6 +17,11 @@
 import memoizeOne from "memoize-one";
 import parseAnsi, { AnsiStyle, FormatTag, stripAnsiCodes } from "./ansi";
 
+export type SearchQuery = {
+  match: string;
+  caseSensitive: boolean;
+};
+
 /**
  * Rounding errors start messing with row positioning when there are this many
  * rows.
@@ -42,7 +47,7 @@ export interface ListData {
   /** Text length at which a row is wrapped onto a new line. */
   rowLength: number;
 
-  search: string;
+  searchQuery: SearchQuery;
   activeMatchIndex: number;
 }
 
@@ -120,7 +125,7 @@ export interface Match {
  * results. It does *not* do a full ANSI parse, which is too expensive. Instead,
  * ANSI parsing is done lazily, when lines are rendered.
  */
-export function getContent(text: string, search: string, lineLengthLimit: number | null): Content {
+export function getContent(text: string, searchQuery: SearchQuery, lineLengthLimit: number | null): Content {
   // If the line length limit is not yet known, then return empty contents,
   // since we don't yet know how to wrap the contents.
   if (lineLengthLimit === null) {
@@ -138,7 +143,7 @@ export function getContent(text: string, search: string, lineLengthLimit: number
     line = normalizeSpace(line);
 
     const [plaintext, tags] = parseAnsi(line, currentStyle);
-    const matchRanges = getMatchedRanges(plaintext, search);
+    const matchRanges = getMatchedRanges(plaintext, searchQuery);
     let matchIndex = 0;
     const numRowsForLine = lineLengthLimit ? Math.max(1, Math.ceil(plaintext.length / lineLengthLimit)) : 1;
     for (let i = 0; i < numRowsForLine; i++) {
@@ -213,21 +218,25 @@ export function toPlainText(text: string) {
   return normalizeSpace(stripAnsiCodes(text));
 }
 
-export function getMatchedRanges(line: string, search: string): Range[] {
+export function getMatchedRanges(line: string, searchQuery: SearchQuery): Range[] {
   // For now, don't support searches less than 3 chars long; they are not very
   // useful and cause jank since they often generate a huge number of matches.
-  if (search.length < 3) return [];
+  if (searchQuery.match.length < 3) return [];
 
   // Note: This logic probably doesn't work for some unicode chars
   // which have a different uppercase and lowercase length (e.g.: İ)
-  search = search.toLocaleLowerCase();
-  line = line.toLocaleLowerCase();
+  let searchTerm = searchQuery.match;
+  let searchLine = line;
+  if (!searchQuery.caseSensitive) {
+    searchTerm = searchQuery.match.toLocaleLowerCase();
+    searchLine = line.toLocaleLowerCase();
+  }
   const ranges: Range[] = [];
-  let index = line.indexOf(search);
+  let index = searchLine.indexOf(searchTerm);
   while (index !== -1) {
-    const end = index + search.length;
+    const end = index + searchTerm.length;
     ranges.push({ start: index, end });
-    index = line.indexOf(search, end);
+    index = searchLine.indexOf(searchTerm, end);
   }
   return ranges;
 }
@@ -237,7 +246,7 @@ export function getMatchedRanges(line: string, search: string): Range[] {
  */
 export function updatedMatchIndexForSearch(
   nextContent: Content,
-  nextSearch: string,
+  nextSearchQuery: SearchQuery,
   currentMatch: Match | null,
   rowRangeInView: Range | null
 ): number {
@@ -245,17 +254,21 @@ export function updatedMatchIndexForSearch(
 
   // If there is already an active match and it lines up with one of the new
   // matches, return the index of the match it lines up with.
-  if (
-    currentMatch &&
-    nextContent.rows[currentMatch.rowIndex]?.plaintext
-      .toLocaleLowerCase()
-      .substring(currentMatch.matchIndex)
-      .startsWith(nextSearch.toLocaleLowerCase())
-  ) {
-    for (let i = 0; i < nextContent.matches.length; i++) {
-      const newMatch = nextContent.matches[i];
-      if (newMatch.rowIndex === currentMatch.rowIndex && newMatch.matchIndex === currentMatch.matchIndex) {
-        return i;
+  if (currentMatch) {
+    const plaintext = nextContent.rows[currentMatch.rowIndex]?.plaintext;
+    if (plaintext) {
+      const substring = plaintext.substring(currentMatch.matchIndex);
+      const searchTerm = nextSearchQuery.caseSensitive
+        ? nextSearchQuery.match
+        : nextSearchQuery.match.toLocaleLowerCase();
+      const textToCompare = nextSearchQuery.caseSensitive ? substring : substring.toLocaleLowerCase();
+      if (textToCompare.startsWith(searchTerm)) {
+        for (let i = 0; i < nextContent.matches.length; i++) {
+          const newMatch = nextContent.matches[i];
+          if (newMatch.rowIndex === currentMatch.rowIndex && newMatch.matchIndex === currentMatch.matchIndex) {
+            return i;
+          }
+        }
       }
     }
   }
@@ -282,7 +295,7 @@ const BLANK_LINE_DATA: SpanData[][] = [[{ text: "", matchIndex: null }]];
 function computeRowsImpl(
   plaintext: string,
   lengthLimit: number,
-  search: string,
+  searchQuery: SearchQuery,
   matchStartIndex: number | null,
   tags: FormatTag[]
 ): SpanData[][] {
@@ -303,7 +316,7 @@ function computeRowsImpl(
     splitIndexSet.add(wrapOffset);
     wrapOffset += lengthLimit;
   }
-  const matches = getMatchedRanges(plaintext, search);
+  const matches = getMatchedRanges(plaintext, searchQuery);
   for (const match of matches) {
     splitIndexSet.add(match.start);
     splitIndexSet.add(match.end);
