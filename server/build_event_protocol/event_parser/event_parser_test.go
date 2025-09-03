@@ -268,7 +268,7 @@ func TestFillInvocation(t *testing.T) {
 
 func TestBuildMetadataWithTagPrefix(t *testing.T) {
 	flags.Set(t, "app.tags_enabled", true)
-	
+
 	tests := []struct {
 		name     string
 		metadata map[string]string
@@ -308,28 +308,28 @@ func TestBuildMetadataWithTagPrefix(t *testing.T) {
 			wantTags: []string{"STAGE=beta"},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			invocation := &inpb.Invocation{
 				InvocationId: "test-invocation",
 			}
 			parser := event_parser.NewStreamingEventParser(invocation)
-			
+
 			buildMetadata := &build_event_stream.BuildMetadata{
 				Metadata: tt.metadata,
 			}
 			event := &build_event_stream.BuildEvent{
 				Payload: &build_event_stream.BuildEvent_BuildMetadata{BuildMetadata: buildMetadata},
 			}
-			
+
 			parser.ParseEvent(event)
-			
+
 			outputTags := make([]string, 0)
 			for _, tag := range invocation.Tags {
 				outputTags = append(outputTags, tag.Name)
 			}
-			
+
 			assert.ElementsMatch(t, tt.wantTags, outputTags)
 		})
 	}

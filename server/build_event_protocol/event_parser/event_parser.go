@@ -434,12 +434,12 @@ func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[st
 	if runId, ok := metadata["RUN_ID"]; ok && runId != "" {
 		sep.setRunId(runId, priority)
 	}
-	
+
 	var tagValues []string
 	if existingTags, ok := metadata["TAGS"]; ok && existingTags != "" {
 		tagValues = append(tagValues, existingTags)
 	}
-	
+
 	// Support TAG_ prefixed metadata
 	for key, value := range metadata {
 		if strings.HasPrefix(key, "TAG_") {
@@ -451,13 +451,13 @@ func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[st
 			}
 		}
 	}
-	
+
 	if len(tagValues) > 0 {
 		if err := sep.setTags(strings.Join(tagValues, ","), priority); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 

@@ -236,7 +236,7 @@ Example:
 --build_metadata=TAGS="foo,bar,baz"
 ```
 
-### Using TAG_ prefix for automatic tag creation
+### Using TAG\_ prefix for automatic tag creation
 
 As an alternative to using the `TAGS` field with comma-separated values, you can use build metadata flags piecemeal with a `TAG_` prefix. These will automatically be converted to tags by removing the prefix.
 
@@ -256,7 +256,7 @@ Examples:
 --build_metadata=TAG_ENV=staging --build_metadata=TAG_REGION=us-west-1
 ```
 
-The TAG_ prefix method can be combined with the regular TAGS field - all tags will be merged together.
+The TAG\_ prefix method can be combined with the regular TAGS field - all tags will be merged together.
 
 You can filter by these tags on build history pages and the trends page. Note that when filtering by tags, you will not see in-progress and disconnected builds.
 
