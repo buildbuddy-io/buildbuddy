@@ -1,6 +1,7 @@
 load("@io_bazel_rules_go//proto:compiler.bzl", "go_proto_compiler")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@rules_proto//proto:defs.bzl", "proto_library")
+load("//rules/typescript:index.bzl", "ts_library")
 load(":defs.bzl", "ts_proto_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -2647,5 +2648,17 @@ ts_proto_library(
     deps = [
         ":context_ts_proto",
         ":vtproto_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "registry_ts_proto",
+    srcs = ["registry_ts_proto.d.ts"],
+    deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/long",
+        "//:node_modules/protobufjs",
+        "//:node_modules/tslib",
+        "//proto:remote_execution_ts_proto",
     ],
 )
