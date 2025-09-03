@@ -6,9 +6,11 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/batch_operator"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -37,7 +39,7 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func new(env *real_environment.RealEnv) (batch_operator.BatchDigestOperator, error) {
-	handleBatch := func(ctx context.Context, u *batch_operator.DigestBatch) error {
+	handleBatch := func(ctx context.Context, groupID string, u *batch_operator.DigestBatch) error {
 		req := &repb.FindMissingBlobsRequest{
 			InstanceName:   u.InstanceName,
 			BlobDigests:    make([]*repb.Digest, len(u.Digests)),
@@ -50,14 +52,18 @@ func new(env *real_environment.RealEnv) (batch_operator.BatchDigestOperator, err
 		}
 
 		_, err := env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, req)
+		metrics.RemoteAtimeUpdatesSent.WithLabelValues(
+			groupID,
+			gstatus.Code(err).String(),
+		).Inc()
 		return err
 	}
-	operator, err := batch_operator.New(env, handleBatch, batch_operator.BatchDigestOperatorConfig{
-		QueueSize:           *atimeUpdaterEnqueueChanSize,
-		BatchInterval:       *atimeUpdaterBatchUpdateInterval,
-		MaxDigestsPerGroup:  *atimeUpdaterMaxDigestsPerGroup,
-		MaxDigestsPerUpdate: *atimeUpdaterMaxDigestsPerUpdate,
-		MaxUpdatesPerGroup:  *atimeUpdaterMaxUpdatesPerGroup,
+	operator, err := batch_operator.New(env, "atime-updater", handleBatch, batch_operator.BatchDigestOperatorConfig{
+		QueueSize:          *atimeUpdaterEnqueueChanSize,
+		BatchInterval:      *atimeUpdaterBatchUpdateInterval,
+		MaxDigestsPerGroup: *atimeUpdaterMaxDigestsPerGroup,
+		MaxDigestsPerBatch: *atimeUpdaterMaxDigestsPerUpdate,
+		MaxBatchesPerGroup: *atimeUpdaterMaxUpdatesPerGroup,
 	})
 	if err != nil {
 		return nil, err

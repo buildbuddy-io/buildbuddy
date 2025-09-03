@@ -10,7 +10,9 @@ go_library(
     deps = [
         "//enterprise/server/batch_operator",
         "//proto:remote_execution_go_proto",
+        "//server/metrics",
         "//server/real_environment",
+        "@org_golang_google_grpc//status",
     ],
 )
 

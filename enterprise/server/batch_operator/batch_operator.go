@@ -15,18 +15,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	gstatus "google.golang.org/grpc/status"
 )
 
 const (
-	defaultQueueSize           = 1_000_000
-	defaultBatchInterval       = 10 * time.Second
-	defaultMaxDigestsPerUpdate = 10_000
-	defaultMaxUpdatesPerGroup  = 50
-	defaultMaxDigestsPerGroup  = 200_000
+	defaultQueueSize          = 1_000_000
+	defaultBatchInterval      = 10 * time.Second
+	defaultMaxDigestsPerBatch = 10_000
+	defaultMaxBatchesPerGroup = 50
+	defaultMaxDigestsPerGroup = 200_000
 )
 
-// A pending batch of atime updates (basically a FindMissingBlobsRequest).
+// A pending batch of digests to be operated on.
 // Stored as a struct so digest keys can be stored in a set for de-duping.
 type DigestBatch struct {
 	mu             sync.Mutex
@@ -65,23 +64,23 @@ func (u *DigestBatch) copy() *DigestBatch {
 // there is one per (groupID, instance-name, digest-function) tuple. However,
 // the update will only keep one such atimeUpdate{} and if it gets too big will
 // discard additional digests until it's flushed.
-type atimeUpdates struct {
+type groupDigestBatches struct {
 	mu          sync.Mutex // protects jwt, updates, and atimeUpdate.digests.
 	authHeaders map[string][]string
 	updates     []*DigestBatch
 	numDigests  int
 
-	maxUpdatesPerGroup int
+	MaxBatchesPerGroup int
 }
 
-func (u *atimeUpdates) findOrCreatePendingUpdate(instanceName string, digestFunction repb.DigestFunction_Value) *DigestBatch {
+func (u *groupDigestBatches) findOrCreatePendingUpdate(instanceName string, digestFunction repb.DigestFunction_Value) *DigestBatch {
 	for _, update := range u.updates {
 		if update.InstanceName == instanceName && update.DigestFunction == digestFunction {
 			return update
 		}
 	}
 
-	if len(u.updates) >= u.maxUpdatesPerGroup {
+	if len(u.updates) >= u.MaxBatchesPerGroup {
 		return nil
 	}
 	pendingUpdate := &DigestBatch{
@@ -115,16 +114,16 @@ type BatchDigestOperator interface {
 	Start(hc interfaces.HealthChecker)
 
 	ForceBatchingForTesting()
-	ForceSendUpdatesForTesting(ctx context.Context)
+	ForceFlushBatchesForTesting(ctx context.Context)
 	ForceShutdownForTesting()
 }
 
 type BatchDigestOperatorConfig struct {
-	QueueSize           int
-	BatchInterval       time.Duration
-	MaxDigestsPerGroup  int
-	MaxDigestsPerUpdate int
-	MaxUpdatesPerGroup  int
+	QueueSize          int
+	BatchInterval      time.Duration
+	MaxDigestsPerGroup int
+	MaxDigestsPerBatch int
+	MaxBatchesPerGroup int
 }
 
 type batchOperator struct {
@@ -137,13 +136,12 @@ type batchOperator struct {
 
 	updates sync.Map // pending updates keyed by groupID (string -> *atimeUpdates)
 
-	maxDigestsPerGroup  int
-	maxDigestsPerUpdate int
-	maxUpdatesPerGroup  int
+	name               string
+	maxDigestsPerGroup int
+	maxDigestsPerBatch int
+	maxBatchesPerGroup int
 
-	remote repb.ContentAddressableStorageClient
-
-	op func(ctx context.Context, u *DigestBatch) error
+	op func(ctx context.Context, groupID string, u *DigestBatch) error
 }
 
 func (u *batchOperator) ForceBatchingForTesting() {
@@ -151,7 +149,7 @@ func (u *batchOperator) ForceBatchingForTesting() {
 	u.batch(update)
 }
 
-func (u *batchOperator) ForceSendUpdatesForTesting(ctx context.Context) {
+func (u *batchOperator) ForceFlushBatchesForTesting(ctx context.Context) {
 	u.sendUpdates(ctx)
 }
 
@@ -166,13 +164,13 @@ func (u *batchOperator) Start(hc interfaces.HealthChecker) {
 	hc.RegisterShutdownFunction(u.shutdown)
 }
 
-func New(env environment.Env, f func(ctx context.Context, u *DigestBatch) error, c BatchDigestOperatorConfig) (BatchDigestOperator, error) {
+func New(env environment.Env, name string, f func(ctx context.Context, groupID string, u *DigestBatch) error, c BatchDigestOperatorConfig) (BatchDigestOperator, error) {
 	config := &BatchDigestOperatorConfig{
-		QueueSize:           defaultQueueSize,
-		BatchInterval:       defaultBatchInterval,
-		MaxDigestsPerGroup:  defaultMaxDigestsPerGroup,
-		MaxDigestsPerUpdate: defaultMaxDigestsPerUpdate,
-		MaxUpdatesPerGroup:  defaultMaxUpdatesPerGroup,
+		QueueSize:          defaultQueueSize,
+		BatchInterval:      defaultBatchInterval,
+		MaxDigestsPerGroup: defaultMaxDigestsPerGroup,
+		MaxDigestsPerBatch: defaultMaxDigestsPerBatch,
+		MaxBatchesPerGroup: defaultMaxBatchesPerGroup,
 	}
 	if c.QueueSize > 0 {
 		config.QueueSize = c.QueueSize
@@ -183,31 +181,27 @@ func New(env environment.Env, f func(ctx context.Context, u *DigestBatch) error,
 	if c.MaxDigestsPerGroup > 0 {
 		config.MaxDigestsPerGroup = c.MaxDigestsPerGroup
 	}
-	if c.MaxDigestsPerUpdate > 0 {
-		config.MaxDigestsPerUpdate = c.MaxDigestsPerUpdate
+	if c.MaxDigestsPerBatch > 0 {
+		config.MaxDigestsPerBatch = c.MaxDigestsPerBatch
 	}
-	if c.MaxUpdatesPerGroup > 0 {
-		config.MaxUpdatesPerGroup = c.MaxUpdatesPerGroup
+	if c.MaxBatchesPerGroup > 0 {
+		config.MaxBatchesPerGroup = c.MaxBatchesPerGroup
 	}
 
 	authenticator := env.GetAuthenticator()
 	if authenticator == nil {
-		return nil, fmt.Errorf("An Authenticator is required to enable the AtimeUpdater.")
-	}
-	remote := env.GetContentAddressableStorageClient()
-	if remote == nil {
-		return nil, fmt.Errorf("A remote CAS client is required to enable the AtimeUpdater.")
+		return nil, fmt.Errorf("An Authenticator is required to create a BatchDigestOperator.")
 	}
 	updater := batchOperator{
-		authenticator:       authenticator,
-		enqueueChan:         make(chan *enqueuedOps, c.QueueSize),
-		ticker:              env.GetClock().NewTicker(c.BatchInterval).Chan(),
-		quit:                make(chan struct{}, 1),
-		maxDigestsPerGroup:  c.MaxDigestsPerGroup,
-		maxDigestsPerUpdate: c.MaxDigestsPerUpdate,
-		maxUpdatesPerGroup:  c.MaxUpdatesPerGroup,
-		remote:              remote,
-		op:                  f,
+		name:               name,
+		authenticator:      authenticator,
+		enqueueChan:        make(chan *enqueuedOps, c.QueueSize),
+		ticker:             env.GetClock().NewTicker(c.BatchInterval).Chan(),
+		quit:               make(chan struct{}, 1),
+		maxDigestsPerGroup: c.MaxDigestsPerGroup,
+		maxDigestsPerBatch: c.MaxDigestsPerBatch,
+		maxBatchesPerGroup: c.MaxBatchesPerGroup,
+		op:                 f,
 	}
 	return &updater, nil
 }
@@ -228,7 +222,7 @@ func (u *batchOperator) Enqueue(ctx context.Context, instanceName string, digest
 	groupID := u.groupID(ctx)
 	authHeaders := authutil.GetAuthHeaders(ctx)
 	if len(authHeaders) == 0 {
-		log.Infof("Dropping batch op due to missing auth headers in context")
+		log.Infof("[%s] Dropping batch op due to missing auth headers in context", u.name)
 		return false
 	}
 	update := enqueuedOps{
@@ -273,10 +267,10 @@ func (u *batchOperator) batcher() {
 
 func (u *batchOperator) batch(update *enqueuedOps) {
 	groupID := update.groupID
-	rawUpdates, _ := u.updates.LoadOrStore(groupID, &atimeUpdates{maxUpdatesPerGroup: u.maxUpdatesPerGroup})
-	updates, ok := rawUpdates.(*atimeUpdates)
+	rawUpdates, _ := u.updates.LoadOrStore(groupID, &groupDigestBatches{MaxBatchesPerGroup: u.maxBatchesPerGroup})
+	updates, ok := rawUpdates.(*groupDigestBatches)
 	if !ok {
-		alert.UnexpectedEvent("atimeUpdater.updates contains value with invalid type", "actual type: %T", rawUpdates)
+		alert.UnexpectedEvent("batch-operator-unexpected-key-type", "[%s] updates contains value with invalid type %T", u.name, rawUpdates)
 		return
 	}
 
@@ -296,7 +290,7 @@ func (u *batchOperator) batch(update *enqueuedOps) {
 	pendingUpdate := updates.findOrCreatePendingUpdate(update.instanceName, update.digestFunction)
 	updates.mu.Unlock()
 	if pendingUpdate == nil {
-		log.Infof("Too many pending FindMissingBlobsRequests for updating remote atime for group %s, dropping %d pending atime updates", groupID, len(keys))
+		log.Infof("[%s] Too many pending batches for group %s, dropping %d pending digests", u.name, groupID, len(keys))
 		metrics.RemoteAtimeUpdates.WithLabelValues(
 			groupID,
 			"dropped_too_many_batches",
@@ -317,7 +311,7 @@ func (u *batchOperator) batch(update *enqueuedOps) {
 		if updates.numDigests+1 > u.maxDigestsPerGroup {
 			updates.mu.Unlock()
 			dropped = len(update.digests) - enqueued - duplicate
-			log.Warningf("maxDigestsPerGroup exceeded for group %s, dropping %d digests", groupID, dropped)
+			log.Warningf("[%s] maxDigestsPerGroup exceeded for group %s, dropping %d digests", u.name, groupID, dropped)
 			break
 		}
 		updates.numDigests++
@@ -328,9 +322,10 @@ func (u *batchOperator) batch(update *enqueuedOps) {
 	}
 
 	if enqueued+duplicate+dropped != len(update.digests) {
-		log.Debugf("atime-updater metrics don't add up. incoming digests: %d, added: %d, duplicates: %d, dropped: %d", len(update.digests), enqueued, duplicate, dropped)
+		log.Debugf("[%s] Metrics don't add up. incoming digests: %d, added: %d, duplicates: %d, dropped: %d", u.name, len(update.digests), enqueued, duplicate, dropped)
 	}
 
+	// XXX: rename / modify.
 	metrics.RemoteAtimeUpdates.WithLabelValues(
 		groupID,
 		"enqueued",
@@ -370,12 +365,12 @@ func (u *batchOperator) sendUpdates(ctx context.Context) int {
 	u.updates.Range(func(key, value interface{}) bool {
 		groupID, ok := key.(string)
 		if !ok {
-			alert.UnexpectedEvent("atimeUpdater.updates contains key with unexpected type", "actual type: %T", key)
+			alert.UnexpectedEvent("batch-operator-unexpected-key-type", "[%s] updates contains key with unexpected type. actual type: %T", u.name, key)
 			return true
 		}
-		updates, ok := value.(*atimeUpdates)
+		updates, ok := value.(*groupDigestBatches)
 		if !ok {
-			alert.UnexpectedEvent("atimeUpdater.updates contains value with unexpected type", "actual type: %T", value)
+			alert.UnexpectedEvent("batch-operator-unexpected-value-type", "[%s] updates contains value with unexpected type. actual type: %T", u.name, value)
 			return true
 		}
 		updates.mu.Lock()
@@ -403,7 +398,7 @@ func (u *batchOperator) sendUpdates(ctx context.Context) int {
 // provided list of atimeUpdates, potentially splitting it if the first update
 // in the queue is too large. Also reorders the atimeUpdates for inter-group
 // fairness.
-func (u *batchOperator) getUpdate(updates *atimeUpdates) *DigestBatch {
+func (u *batchOperator) getUpdate(updates *groupDigestBatches) *DigestBatch {
 	if len(updates.updates) == 0 {
 		return nil
 	}
@@ -414,12 +409,12 @@ func (u *batchOperator) getUpdate(updates *atimeUpdates) *DigestBatch {
 
 	// If this update is small enough to send in its entirety, remove it from
 	// the queue of updates.
-	if len(update.Digests) <= u.maxDigestsPerUpdate {
+	if len(update.Digests) <= u.maxDigestsPerBatch {
 		updates.updates = updates.updates[1:]
 		return update.copy()
 	}
 
-	// Otherwise, remove maxDigestsPerUpdate digests from the update, send
+	// Otherwise, remove MaxDigestsPerBatch digests from the update, send
 	// those, and move this update to the back of the queue for fairness
 	// with other updates in the group.
 	updates.updates = updates.updates[1:]
@@ -427,11 +422,11 @@ func (u *batchOperator) getUpdate(updates *atimeUpdates) *DigestBatch {
 	req := DigestBatch{
 		InstanceName:   update.InstanceName,
 		DigestFunction: update.DigestFunction,
-		Digests:        make(map[digest.Key]struct{}, u.maxDigestsPerUpdate),
+		Digests:        make(map[digest.Key]struct{}, u.maxDigestsPerBatch),
 	}
 	i := 0
 	for digest := range update.Digests {
-		if i >= u.maxDigestsPerUpdate {
+		if i >= u.maxDigestsPerBatch {
 			break
 		}
 		req.Digests[digest] = struct{}{}
@@ -442,26 +437,25 @@ func (u *batchOperator) getUpdate(updates *atimeUpdates) *DigestBatch {
 }
 
 func (u *batchOperator) update(ctx context.Context, groupID string, authHeaders map[string][]string, b *DigestBatch) {
-
-	// Here we are ! Time to do some magic..
-	log.CtxDebugf(ctx, "Asynchronously processing %d atime updates for group %s", len(b.Digests), groupID)
+	log.CtxDebugf(ctx, "Asynchronously processing %d batches for group %s", len(b.Digests), groupID)
 
 	ctx = authutil.AddAuthHeadersToContext(ctx, authHeaders, u.authenticator)
-	err := u.op(ctx, b)
+	err := u.op(ctx, groupID, b)
 
-	metrics.RemoteAtimeUpdatesSent.WithLabelValues(
-		groupID,
-		gstatus.Code(err).String(),
-	).Inc()
+	// XXX: Change metric (already copied over to atime updater).
+	// metrics.RemoteAtimeUpdatesSent.WithLabelValues(
+	//	groupID,
+	//	gstatus.Code(err).String(),
+	//).Inc()
 	if err != nil {
-		log.CtxWarningf(ctx, "Error sending FindMissingBlobs request to update remote atimes for group %s: %s", groupID, err)
+		log.CtxWarningf(ctx, "[%s] Error processing batch for group %s: %s", u.name, groupID, err)
 	}
 }
 
 func (u *batchOperator) shutdown(ctx context.Context) error {
 	close(u.quit)
 
-	// Make a best-effort attempt to flush pending updates.
+	// Make a best-effort attempt to flush pending batches.
 	// TODO(iain): we could do something fancier here if necessary, like
 	// fire-and-forget these RPCs with a rate-limiter. Let's try this for now.
 	for u.sendUpdates(ctx) > 0 {

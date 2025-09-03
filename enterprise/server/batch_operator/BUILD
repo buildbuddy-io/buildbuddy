@@ -15,6 +15,5 @@ go_library(
         "//server/util/alert",
         "//server/util/authutil",
         "//server/util/log",
-        "@org_golang_google_grpc//status",
     ],
 )
