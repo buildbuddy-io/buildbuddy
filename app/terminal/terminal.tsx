@@ -10,7 +10,7 @@ import router from "../router/router";
 import { mod } from "../util/math";
 import { Scroller } from "../util/scroller";
 import { Row, ROW_HEIGHT_PX } from "./row";
-import { getContent, ListData, Range, toPlainText, updatedMatchIndexForSearch } from "./text";
+import { getContent, ListData, Range, SearchQuery, toPlainText, updatedMatchIndexForSearch } from "./text";
 
 const WRAP_LOCAL_STORAGE_KEY = "terminal-wrap";
 const WRAP_LOCAL_STORAGE_VALUE = "wrap";
@@ -44,9 +44,8 @@ interface State {
    */
   lineLengthLimit: number | null;
 
-  search: string;
+  searchQuery: SearchQuery;
   activeMatchIndex: number;
-  caseSensitive: boolean;
 
   isLoadingFullLog: boolean;
 }
@@ -66,9 +65,8 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
     lineLengthLimit: null,
     isLoadingFullLog: false,
 
-    search: "",
+    searchQuery: { match: "", caseSensitive: false },
     activeMatchIndex: -1,
-    caseSensitive: false,
   };
 
   private terminalRef = React.createRef<HTMLDivElement>();
@@ -165,15 +163,15 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
       () => {
         const content = this.getContent();
         const match = this.state.activeMatchIndex === -1 ? null : content.matches[this.state.activeMatchIndex];
-        const nextContent = this.getContent(this.props.value, search);
+        const newSearchQuery = { match: search, caseSensitive: this.state.searchQuery.caseSensitive };
+        const nextContent = this.getContent(this.props.value, newSearchQuery);
         this.setState({
-          search,
+          searchQuery: newSearchQuery,
           activeMatchIndex: updatedMatchIndexForSearch(
             nextContent,
-            search,
+            newSearchQuery,
             match,
-            this.getRowRangeInView(),
-            this.state.caseSensitive
+            this.getRowRangeInView()
           ),
         });
       },
@@ -191,7 +189,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
     }
   }
   private onClearSearchClick() {
-    this.setState({ search: "", activeMatchIndex: -1 });
+    this.setState({ searchQuery: { match: "", caseSensitive: this.state.searchQuery.caseSensitive }, activeMatchIndex: -1 });
     const input = this.searchInputRef.current;
     if (input) {
       input.value = "";
@@ -199,18 +197,18 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
     }
   }
   private onCaseSensitiveClick() {
-    const caseSensitive = !this.state.caseSensitive;
+    const caseSensitive = !this.state.searchQuery.caseSensitive;
     const content = this.getContent();
     const match = this.state.activeMatchIndex === -1 ? null : content.matches[this.state.activeMatchIndex];
-    const nextContent = this.getContent(this.props.value, this.state.search, this.state.lineLengthLimit, caseSensitive);
+    const newSearchQuery = { match: this.state.searchQuery.match, caseSensitive };
+    const nextContent = this.getContent(this.props.value, newSearchQuery);
     this.setState({
-      caseSensitive,
+      searchQuery: newSearchQuery,
       activeMatchIndex: updatedMatchIndexForSearch(
         nextContent,
-        this.state.search,
+        newSearchQuery,
         match,
-        this.getRowRangeInView(),
-        caseSensitive
+        this.getRowRangeInView()
       ),
     });
   }
@@ -220,11 +218,10 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
    */
   private getContent(
     text = this.props.value || DEFAULT_VALUE,
-    search = this.state.search,
-    lineLengthLimit = this.state.lineLengthLimit,
-    caseSensitive = this.state.caseSensitive
+    searchQuery = this.state.searchQuery,
+    lineLengthLimit = this.state.lineLengthLimit
   ) {
-    return this.memoizedGetContent(text, search, lineLengthLimit, caseSensitive);
+    return this.memoizedGetContent(text, searchQuery, lineLengthLimit);
   }
   /**
    * memoizes getContent for a single output value per component instance. This
@@ -414,14 +411,14 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
                 </button>
                 <button
                   title="Case sensitive"
-                  className={`terminal-action ${this.state.caseSensitive ? "active" : ""}`}
+                  className={`terminal-action ${this.state.searchQuery.caseSensitive ? "active" : ""}`}
                   onClick={this.onCaseSensitiveClick.bind(this)}>
                   <CaseSensitive className={`icon ${iconClass}`} />
                 </button>
                 <button
                   title="Clear search"
-                  disabled={!this.state.search}
-                  className={`terminal-action ${this.state.search ? "active" : ""}`}
+                  disabled={!this.state.searchQuery.match}
+                  className={`terminal-action ${this.state.searchQuery.match ? "active" : ""}`}
                   onClick={this.onClearSearchClick.bind(this)}>
                   <X className={`icon ${iconClass}`} />
                 </button>
@@ -493,9 +490,8 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
                       : {
                           rows: content.rows,
                           rowLength: this.state.lineLengthLimit,
-                          search: this.state.search,
+                          searchQuery: this.state.searchQuery,
                           activeMatchIndex: this.state.activeMatchIndex,
-                          caseSensitive: this.state.caseSensitive,
                         }
                   }>
                   {Row}

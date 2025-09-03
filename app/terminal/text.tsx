@@ -17,6 +17,11 @@
 import memoizeOne from "memoize-one";
 import parseAnsi, { AnsiStyle, FormatTag, stripAnsiCodes } from "./ansi";
 
+export type SearchQuery = {
+  match: string;
+  caseSensitive: boolean;
+};
+
 /**
  * Rounding errors start messing with row positioning when there are this many
  * rows.
@@ -42,9 +47,8 @@ export interface ListData {
   /** Text length at which a row is wrapped onto a new line. */
   rowLength: number;
 
-  search: string;
+  searchQuery: SearchQuery;
   activeMatchIndex: number;
-  caseSensitive: boolean;
 }
 
 /**
@@ -123,9 +127,8 @@ export interface Match {
  */
 export function getContent(
   text: string,
-  search: string,
-  lineLengthLimit: number | null,
-  caseSensitive: boolean = false
+  searchQuery: SearchQuery,
+  lineLengthLimit: number | null
 ): Content {
   // If the line length limit is not yet known, then return empty contents,
   // since we don't yet know how to wrap the contents.
@@ -144,7 +147,7 @@ export function getContent(
     line = normalizeSpace(line);
 
     const [plaintext, tags] = parseAnsi(line, currentStyle);
-    const matchRanges = getMatchedRanges(plaintext, search, caseSensitive);
+    const matchRanges = getMatchedRanges(plaintext, searchQuery);
     let matchIndex = 0;
     const numRowsForLine = lineLengthLimit ? Math.max(1, Math.ceil(plaintext.length / lineLengthLimit)) : 1;
     for (let i = 0; i < numRowsForLine; i++) {
@@ -219,17 +222,17 @@ export function toPlainText(text: string) {
   return normalizeSpace(stripAnsiCodes(text));
 }
 
-export function getMatchedRanges(line: string, search: string, caseSensitive: boolean = false): Range[] {
+export function getMatchedRanges(line: string, searchQuery: SearchQuery): Range[] {
   // For now, don't support searches less than 3 chars long; they are not very
   // useful and cause jank since they often generate a huge number of matches.
-  if (search.length < 3) return [];
+  if (searchQuery.match.length < 3) return [];
 
   // Note: This logic probably doesn't work for some unicode chars
   // which have a different uppercase and lowercase length (e.g.: İ)
-  let searchTerm = search;
+  let searchTerm = searchQuery.match;
   let searchLine = line;
-  if (!caseSensitive) {
-    searchTerm = search.toLocaleLowerCase();
+  if (!searchQuery.caseSensitive) {
+    searchTerm = searchQuery.match.toLocaleLowerCase();
     searchLine = line.toLocaleLowerCase();
   }
   const ranges: Range[] = [];
@@ -247,10 +250,9 @@ export function getMatchedRanges(line: string, search: string, caseSensitive: bo
  */
 export function updatedMatchIndexForSearch(
   nextContent: Content,
-  nextSearch: string,
+  nextSearchQuery: SearchQuery,
   currentMatch: Match | null,
-  rowRangeInView: Range | null,
-  caseSensitive: boolean = false
+  rowRangeInView: Range | null
 ): number {
   if (!nextContent.matches.length) return -1;
 
@@ -260,8 +262,8 @@ export function updatedMatchIndexForSearch(
     const plaintext = nextContent.rows[currentMatch.rowIndex]?.plaintext;
     if (plaintext) {
       const substring = plaintext.substring(currentMatch.matchIndex);
-      const searchTerm = caseSensitive ? nextSearch : nextSearch.toLocaleLowerCase();
-      const textToCompare = caseSensitive ? substring : substring.toLocaleLowerCase();
+      const searchTerm = nextSearchQuery.caseSensitive ? nextSearchQuery.match : nextSearchQuery.match.toLocaleLowerCase();
+      const textToCompare = nextSearchQuery.caseSensitive ? substring : substring.toLocaleLowerCase();
       if (textToCompare.startsWith(searchTerm)) {
         for (let i = 0; i < nextContent.matches.length; i++) {
           const newMatch = nextContent.matches[i];
@@ -295,9 +297,8 @@ const BLANK_LINE_DATA: SpanData[][] = [[{ text: "", matchIndex: null }]];
 function computeRowsImpl(
   plaintext: string,
   lengthLimit: number,
-  search: string,
+  searchQuery: SearchQuery,
   matchStartIndex: number | null,
-  caseSensitive: boolean,
   tags: FormatTag[]
 ): SpanData[][] {
   if (!plaintext) return BLANK_LINE_DATA;
@@ -317,7 +318,7 @@ function computeRowsImpl(
     splitIndexSet.add(wrapOffset);
     wrapOffset += lengthLimit;
   }
-  const matches = getMatchedRanges(plaintext, search, caseSensitive);
+  const matches = getMatchedRanges(plaintext, searchQuery);
   for (const match of matches) {
     splitIndexSet.add(match.start);
     splitIndexSet.add(match.end);
