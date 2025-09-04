@@ -451,7 +451,6 @@ body {
   font-size: 14px;
   display: flex;
   align-items: flex-start;
-  overflow: hidden;
   background-color: #fff;
 }
 
