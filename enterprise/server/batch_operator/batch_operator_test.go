@@ -172,7 +172,7 @@ func new(env *testenv.TestEnv, cfg batch_operator.BatchDigestOperatorConfig) (ba
 		_, err := env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, req)
 		return err
 	}
-	operator, err := batch_operator.New(env, batch_operator.AtimeUpdaterOperatorName, handleBatch, cfg)
+	operator, err := batch_operator.New(env, "test-operator", handleBatch, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -401,9 +401,8 @@ func TestEnqueue_UpdatesDropped(t *testing.T) {
 	authenticator, updater, cas, _ := setup(t, batch_operator.BatchDigestOperatorConfig{MaxDigestsPerBatch: 5, MaxBatchesPerGroup: 3})
 	ctx := authenticatedContext(t.Context(), "", authenticator)
 
-	// If the updater accumulates too many updates, it should start to drop
-	// them. setupTest() sets the value of remote_atime_max_updates_per_group to
-	// 3, so expect the first 3 to be sent and the others to be dropped.
+	// We set MaxBatchesPerGroup to 3, so expect the first 3 batches
+	// to be sent and the others to be dropped.
 	for i := 1; i <= 10; i++ {
 		require.True(t, updater.Enqueue(ctx, fmt.Sprintf("instance-%d", i), []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
 		updater.ForceBatchingForTesting()
@@ -487,7 +486,7 @@ func TestEnqueue_Fairness(t *testing.T) {
 	require.Equal(t, map[string]int{anon: 2, group1: 0, group2: 0}, updateCount)
 }
 
-// The atimeUpdater code does a lot of stuff with mutexes... This test tries to
+// The batch operator code does a lot of stuff with mutexes... This test tries to
 // trip the race detector. Make sure you run with --config=race for debugging.
 func TestEnqueue_Raciness(t *testing.T) {
 	authenticator, updater, _, clock := setup(t, batch_operator.BatchDigestOperatorConfig{MaxDigestsPerBatch: 1_000, MaxBatchesPerGroup: 1_000, BatchInterval: time.Millisecond})
