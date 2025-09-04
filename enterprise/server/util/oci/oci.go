@@ -257,6 +257,31 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	return nil
 }
 
+// ResolveImageDigest takes an image name and returns an image name with a digest.
+// If the input image name includes a digest, a canonicalized version of the name is returned.
+// If the input image name refers to a tag (either explictly or implicity), ResolveImageDigest
+// will make a HEAD request to the remote registry.
+func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (string, error) {
+	if imageRefWithDigest, err := gcrname.NewDigest(imageName); err == nil {
+		return imageRefWithDigest.String(), nil
+	}
+	tagRef, err := gcrname.ParseReference(imageName)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("invalid image name %q", imageName)
+	}
+
+	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+	desc, err := remote.Head(tagRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return "", status.UnavailableErrorf("could not authorize to remote registry: %s", err)
+	}
+	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
+	return imageNameWithDigest, nil
+}
+
 func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
