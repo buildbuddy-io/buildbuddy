@@ -295,6 +295,7 @@ ts_library(
     srcs = ["action_compare_button.tsx"],
     deps = [
         "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/rxjs",
         "//:node_modules/tslib",
@@ -370,7 +371,9 @@ ts_library(
         "//app/components/digest",
         "//app/components/link",
         "//app/format",
+        "//app/invocation:action_compare_button",
         "//app/invocation:invocation_execution_util",
+        "//app/util:cache",
         "//app/util:react",
         "//proto:execution_stats_ts_proto",
     ],
