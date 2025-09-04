@@ -238,11 +238,6 @@ type resolveTestCase struct {
 	args       resolveArgs
 	checkError func(error) bool
 	opts       testregistry.Opts
-
-	readManifests  bool
-	writeManifests bool
-	readLayers     bool
-	writeLayers    bool
 }
 
 func TestResolve(t *testing.T) {
@@ -647,7 +642,7 @@ func TestAllowPrivateIPs(t *testing.T) {
 //
 // Currently caching is not implemented end-to-end, so each Resolve(...) call will make the same number of upstream requests.
 func TestResolve_WithCache(t *testing.T) {
-	baseCases := []resolveTestCase{
+	for _, tc := range []resolveTestCase{
 		{
 			name: "resolving an existing image without credentials succeeds",
 
@@ -690,42 +685,11 @@ func TestResolve_WithCache(t *testing.T) {
 				},
 			},
 		},
-	}
-
-	var testCasesWithFlags []resolveTestCase
-	for _, base := range baseCases {
-		for _, readManifests := range []bool{false, true} {
-			for _, writeManifests := range []bool{false, true} {
-				for _, writeLayers := range []bool{false, true} {
-					for _, readLayers := range []bool{false, true} {
-						tc := base
-						tc.readManifests = readManifests
-						tc.writeManifests = writeManifests
-						tc.writeLayers = writeLayers
-						tc.readLayers = readLayers
-						testCasesWithFlags = append(testCasesWithFlags, tc)
-					}
-				}
-			}
-		}
-	}
-
-	for _, tc := range testCasesWithFlags {
-		name := tc.name + fmt.Sprintf(
-			"/write_manifests_%t_read_manifests_%t_write_layers_%t_read_layers_%t",
-			tc.writeManifests,
-			tc.readManifests,
-			tc.writeLayers,
-			tc.readLayers,
-		)
-		t.Run(name, func(t *testing.T) {
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			te := setupTestEnvWithCache(t)
 			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 			flags.Set(t, "executor.container_registry.use_cache_percent", 100)
-			flags.Set(t, "executor.container_registry.write_manifests_to_cache", tc.writeManifests)
-			flags.Set(t, "executor.container_registry.read_manifests_from_cache", tc.readManifests)
-			flags.Set(t, "executor.container_registry.write_layers_to_cache", tc.writeLayers)
-			flags.Set(t, "executor.container_registry.read_layers_from_cache", tc.readLayers)
 			counter := newRequestCounter()
 			registry := testregistry.Run(t, testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -750,25 +714,18 @@ func TestResolve_WithCache(t *testing.T) {
 				require.Len(t, pushedLayers, 1)
 				layerDigest, err := pushedLayers[0].Digest()
 				require.NoError(t, err)
+
 				expected := map[string]int{
 					http.MethodGet + " /v2/": 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":             1,
 					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/latest":              1,
 					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(): 1,
 				}
-				if tc.readManifests {
-					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_image/manifests/latest"] = 1
-				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 
-				expected = map[string]int{http.MethodGet + " /v2/": 1}
-				if tc.readManifests {
-					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_image/manifests/latest"] = 1
-				}
-				if !(tc.writeManifests && tc.readManifests) {
-					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_image/manifests/latest"] = 1
-				}
-				if !(tc.writeLayers && tc.readLayers) {
-					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_image/blobs/"+layerDigest.String()] = 1
+				expected = map[string]int{
+					http.MethodGet + " /v2/": 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest": 1,
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 			}
@@ -782,31 +739,21 @@ func TestResolve_WithCache(t *testing.T) {
 				require.Len(t, pushedLayers, 1)
 				layerDigest, err := pushedLayers[0].Digest()
 				require.NoError(t, err)
+
 				expected := map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():     1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                   1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String():  1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():      1,
 				}
-				if tc.readManifests {
-					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/latest"] = 1
-					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/"+imageDigest.String()] = 1
-				}
-
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 
-				expected = map[string]int{http.MethodGet + " /v2/": 1}
-				if tc.readManifests {
-					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/latest"] = 1
-					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/"+imageDigest.String()] = 1
-				}
-				if !(tc.writeManifests && tc.readManifests) {
-					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_index/manifests/latest"] = 1
-					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_index/manifests/"+imageDigest.String()] = 1
-
-				}
-				if !(tc.writeLayers && tc.readLayers) {
-					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_index/blobs/"+layerDigest.String()] = 1
+				expected = map[string]int{
+					http.MethodGet + " /v2/": 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 			}
@@ -830,10 +777,6 @@ func TestResolve_Concurrency(t *testing.T) {
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
-	flags.Set(t, "executor.container_registry.write_manifests_to_cache", true)
-	flags.Set(t, "executor.container_registry.read_manifests_from_cache", true)
-	flags.Set(t, "executor.container_registry.write_layers_to_cache", true)
-	flags.Set(t, "executor.container_registry.read_layers_from_cache", true)
 	counter := newRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
