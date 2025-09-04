@@ -1,5 +1,6 @@
 import { AlertCircle, AlertTriangle, HelpCircle } from "lucide-react";
 import React from "react";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
 import { User } from "../auth/user";
@@ -92,6 +93,70 @@ export const getTimingDataSuggestion: SuggestionMatcher = ({ model }) => {
       </>
     ),
     reason: <>Shown because these flags are neither enabled nor explicitly disabled.</>,
+  };
+};
+
+export const getTestShardingSuggestion = ({
+  model,
+  resultEvents,
+}: {
+  model: InvocationModel;
+  resultEvents?: build_event_stream.BuildEvent[];
+}) => {
+  if (!capabilities.config.expandedSuggestionsEnabled) {
+    return null;
+  }
+  if (!model.isBazelInvocation()) {
+    return null;
+  }
+
+  // Only suggest for test commands
+  const command = model.getCommand();
+  if (command !== "test") return null;
+
+  // Check if --test_filter is specified
+  const testFilter = model.optionsMap.get("test_filter");
+  if (!testFilter) return null;
+
+  // Check if --test_sharding_strategy is already set to disabled
+  const testShardingStrategy = model.optionsMap.get("test_sharding_strategy");
+  if (testShardingStrategy === "disabled") return null;
+
+  // Check if any tests have multiple shards configured by looking at test results
+  let hasMultipleShards = false;
+
+  if (resultEvents && resultEvents.length > 0) {
+    // Early exit optimization: stop as soon as we find two different shard numbers
+    let firstShard: number | null = null;
+    for (const event of resultEvents) {
+      const shard = event.id?.testResult?.shard || 0;
+      if (firstShard === null) {
+        firstShard = shard;
+      } else if (firstShard !== shard) {
+        hasMultipleShards = true;
+        break;
+      }
+    }
+  }
+
+  if (!hasMultipleShards) {
+    return null;
+  }
+
+  return {
+    level: SuggestionLevel.INFO,
+    message: (
+      <>
+        When using <BazelFlag>--test_filter</BazelFlag>, consider adding{" "}
+        <BazelFlag>--test_sharding_strategy=disabled</BazelFlag> to find the test logs faster.
+      </>
+    ),
+    reason: (
+      <>
+        Shown because this build uses <span className="inline-code">--test_filter</span> with sharded tests, which can
+        cause misleading "no tests to run" warnings when test shards don't contain matching tests.
+      </>
+    ),
   };
 };
 
