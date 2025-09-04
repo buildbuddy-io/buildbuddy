@@ -36,13 +36,15 @@ message RunRequest {
   // Arch on which to run. Defaults to "amd64".
   string arch = 8;
 
-  // If true, start the runner but do not wait for the action to be scheduled.
-  bool async = 9;
-
   // Container image to run on. Defaults to the Ubuntu 20.04 Workflows image.
   // A `docker://` prefix is required.
   // Ex. `docker://gcr.io/flame-public/rbe-ubuntu20-04`
   string container_image = 10;
+
+  // Specifies what to wait for before returning a RunResponse.
+  // Default is value is WAIT_MODE_CREATED which waits for the invocation to
+  // be created but not necessarily completed.
+  WaitMode wait_mode = 20;
 
   // Environment variables to set in the runner env.
   map<string, string> env = 11;
@@ -80,12 +82,27 @@ message RunRequest {
   // For non-idempotent workloads, set to true to disable this behavior.
   bool disable_retry = 19;
 
+  // DEPRECATED: Use wait_mode instead.
+  // If true, start the runner but do not wait for the action to be scheduled.
+  bool async = 9 [deprecated = true];
+
   // DEPRECATED: Use `steps` instead.
   string bazel_command = 4 [deprecated = true];
 }
 
 message Step {
   string run = 1;
+}
+
+enum WaitMode {
+  // Wait until the invocation is created but not complete.
+  WAIT_MODE_CREATED = 0;
+
+  // Wait for the invocation to complete.
+  WAIT_MODE_COMPLETE = 1;
+  
+  // Return immediately without waiting.
+  WAIT_MODE_IMMEDIATE = 2;  
 }
 
 message RunResponse {

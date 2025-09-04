@@ -640,6 +640,7 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		},
 		Steps:          steps,
 		Async:          req.GetAsync(),
+		WaitMode:       fromApiWaitMode(req.GetWaitMode()),
 		Env:            req.GetEnv(),
 		Timeout:        req.GetTimeout(),
 		ExecProperties: execProps,
@@ -651,6 +652,19 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		return nil, err
 	}
 	return &apipb.RunResponse{InvocationId: rsp.InvocationId}, nil
+}
+
+// Converts from internal wait mode to api wait mode.
+func fromApiWaitMode(waitMode apipb.WaitMode) rnpb.WaitMode {
+	switch waitMode {
+	case apipb.WaitMode_WAIT_MODE_CREATED:
+		return rnpb.WaitMode_WAIT_MODE_CREATED
+	case apipb.WaitMode_WAIT_MODE_COMPLETE:
+		return rnpb.WaitMode_WAIT_MODE_COMPLETE
+	case apipb.WaitMode_WAIT_MODE_IMMEDIATE:
+		return rnpb.WaitMode_WAIT_MODE_IMMEDIATE
+	}
+	return rnpb.WaitMode_WAIT_MODE_CREATED
 }
 
 func (s *APIServer) CreateUserApiKey(ctx context.Context, req *apipb.CreateUserApiKeyRequest) (*apipb.CreateUserApiKeyResponse, error) {
