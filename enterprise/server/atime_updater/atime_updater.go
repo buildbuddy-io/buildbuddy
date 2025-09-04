@@ -53,7 +53,7 @@ func new(env *real_environment.RealEnv) (batch_operator.BatchDigestOperator, err
 		).Inc()
 		return err
 	}
-	operator, err := batch_operator.New(env, "atime-updater", handleBatch, batch_operator.BatchDigestOperatorConfig{
+	operator, err := batch_operator.New(env, batch_operator.AtimeUpdaterOperatorName, handleBatch, batch_operator.BatchDigestOperatorConfig{
 		QueueSize:          *atimeUpdaterEnqueueChanSize,
 		BatchInterval:      *atimeUpdaterBatchUpdateInterval,
 		MaxDigestsPerGroup: *atimeUpdaterMaxDigestsPerGroup,

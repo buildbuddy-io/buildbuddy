@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -23,6 +24,9 @@ const (
 	defaultMaxDigestsPerBatch = 10_000
 	defaultMaxBatchesPerGroup = 50
 	defaultMaxDigestsPerGroup = 200_000
+
+	// TODO(jdhollen): remove once metrics dashboards are migrated.
+	AtimeUpdaterOperatorName = "atime-updater"
 )
 
 type DigestBatch struct {
@@ -248,11 +252,19 @@ func (u *batchOperator) Enqueue(ctx context.Context, instanceName string, digest
 	case u.enqueueChan <- &toEnqueue:
 		return true
 	default:
-		// XXX
-		metrics.RemoteAtimeUpdates.WithLabelValues(
+		metrics.BatchOperatorEnqueuedDigests.WithLabelValues(
+			u.name,
 			groupID,
 			"dropped_channel_full",
 		).Add(float64(len(digests)))
+
+		// TODO(jdhollen): remove once metrics dashboards are migrated.
+		if u.name == AtimeUpdaterOperatorName {
+			metrics.RemoteAtimeUpdates.WithLabelValues(
+				groupID,
+				"dropped_channel_full",
+			).Add(float64(len(digests)))
+		}
 		return false
 	}
 }
@@ -300,10 +312,19 @@ func (u *batchOperator) batch(eqd *enqueuedDigests) {
 	batchesForGroup.mu.Unlock()
 	if pendingBatch == nil {
 		log.Infof("[%s] Too many pending batches for group %s, dropping %d pending digests", u.name, groupID, len(keys))
-		metrics.RemoteAtimeUpdates.WithLabelValues(
+		metrics.BatchOperatorEnqueuedDigests.WithLabelValues(
+			u.name,
 			groupID,
 			"dropped_too_many_batches",
 		).Add(float64(len(eqd.digests)))
+
+		// TODO(jdhollen): remove once metrics dashboards are migrated.
+		if u.name == AtimeUpdaterOperatorName {
+			metrics.RemoteAtimeUpdates.WithLabelValues(
+				groupID,
+				"dropped_too_many_batches",
+			).Add(float64(len(eqd.digests)))
+		}
 		return
 	}
 
@@ -334,19 +355,37 @@ func (u *batchOperator) batch(eqd *enqueuedDigests) {
 		log.Debugf("[%s] Metrics don't add up. incoming digests: %d, added: %d, duplicates: %d, dropped: %d", u.name, len(eqd.digests), enqueued, duplicate, dropped)
 	}
 
-	// XXX: rename / modify.
-	metrics.RemoteAtimeUpdates.WithLabelValues(
+	metrics.BatchOperatorEnqueuedDigests.WithLabelValues(
+		u.name,
 		groupID,
 		"enqueued",
 	).Add(float64(enqueued))
-	metrics.RemoteAtimeUpdates.WithLabelValues(
+	metrics.BatchOperatorEnqueuedDigests.WithLabelValues(
+		u.name,
 		groupID,
 		"duplicate",
 	).Add(float64(duplicate))
-	metrics.RemoteAtimeUpdates.WithLabelValues(
+	metrics.BatchOperatorEnqueuedDigests.WithLabelValues(
+		u.name,
 		groupID,
 		"dropped_too_many_updates",
 	).Add(float64(dropped))
+
+	// TODO(jdhollen): remove once metrics dashboards are migrated.
+	if u.name == AtimeUpdaterOperatorName {
+		metrics.RemoteAtimeUpdates.WithLabelValues(
+			groupID,
+			"enqueued",
+		).Add(float64(enqueued))
+		metrics.RemoteAtimeUpdates.WithLabelValues(
+			groupID,
+			"duplicate",
+		).Add(float64(duplicate))
+		metrics.RemoteAtimeUpdates.WithLabelValues(
+			groupID,
+			"dropped_too_many_updates",
+		).Add(float64(dropped))
+	}
 }
 
 // Starts the loop that flushes batches to the caaller-provided operation.
@@ -451,11 +490,11 @@ func (u *batchOperator) dispatch(ctx context.Context, groupID string, authHeader
 	ctx = authutil.AddAuthHeadersToContext(ctx, authHeaders, u.authenticator)
 	err := u.op(ctx, groupID, b)
 
-	// XXX: Change metric (already copied over to atime updater).
-	// metrics.RemoteAtimeUpdatesSent.WithLabelValues(
-	//	groupID,
-	//	gstatus.Code(err).String(),
-	//).Inc()
+	metrics.BatchOperatorFlushedDigests.WithLabelValues(
+		groupID,
+		gstatus.Code(err).String(),
+	).Add(float64(len(b.Digests)))
+
 	if err != nil {
 		log.CtxWarningf(ctx, "[%s] Error processing batch for group %s: %s", u.name, groupID, err)
 	}

@@ -329,6 +329,8 @@ const (
 	OpLabel = "op"
 
 	ClientNameLabel = "client_name"
+
+	BatchOperatorName = "operator_name"
 )
 
 // Label value constants
@@ -2280,6 +2282,28 @@ var (
 	}, []string{
 		CacheTierLabel,
 		CacheBackendLabel,
+	})
+
+	BatchOperatorEnqueuedDigests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "batch_operator_enqueued_digests",
+		Help:      "The number of digests enqueued in a batch operator, with the outcome of the enqueue operation.",
+	}, []string{
+		BatchOperatorName,
+		GroupID,
+		EnqueueUpdateOutcome,
+	})
+
+	BatchOperatorFlushedDigests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "batch_operator_flushed_digests",
+		Help:      "The number of digests flushed from a batch operator.",
+	}, []string{
+		BatchOperatorName,
+		GroupID,
+		StatusLabel,
 	})
 
 	// ### Misc metrics
