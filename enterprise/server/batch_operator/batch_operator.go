@@ -25,36 +25,44 @@ const (
 	defaultMaxDigestsPerGroup = 200_000
 )
 
-// A pending batch of digests to be operated on.
-// Stored as a struct so digest keys can be stored in a set for de-duping.
 type DigestBatch struct {
-	mu             sync.Mutex
 	InstanceName   string
-	Digests        map[digest.Key]struct{} // stored as a set for de-duping.
+	Digests        []*repb.Digest
 	DigestFunction repb.DigestFunction_Value
 }
 
-func (u *DigestBatch) set(key digest.Key) {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	u.Digests[key] = struct{}{}
+// A pending batch of digests to be operated on.
+// Stored as a struct so digest keys can be stored in a set for de-duping.
+type pendingDigestBatch struct {
+	mu             sync.Mutex
+	instanceName   string
+	digests        map[digest.Key]struct{} // stored as a set for de-duping.
+	digestFunction repb.DigestFunction_Value
 }
 
-func (u *DigestBatch) contains(key digest.Key) bool {
+func (u *pendingDigestBatch) set(key digest.Key) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	_, ok := u.Digests[key]
+	u.digests[key] = struct{}{}
+}
+
+func (u *pendingDigestBatch) contains(key digest.Key) bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	_, ok := u.digests[key]
 	return ok
 }
 
-func (u *DigestBatch) copy() *DigestBatch {
+func (u *pendingDigestBatch) finalize() *DigestBatch {
 	db2 := DigestBatch{
-		InstanceName:   u.InstanceName,
-		DigestFunction: u.DigestFunction,
-		Digests:        make(map[digest.Key]struct{}, len(u.Digests)),
+		InstanceName:   u.instanceName,
+		DigestFunction: u.digestFunction,
+		Digests:        make([]*repb.Digest, len(u.digests)),
 	}
-	for d := range u.Digests {
-		db2.Digests[d] = struct{}{}
+	i := 0
+	for d := range u.digests {
+		db2.Digests[i] = d.ToDigest()
+		i++
 	}
 	return &db2
 }
@@ -67,15 +75,15 @@ func (u *DigestBatch) copy() *DigestBatch {
 type groupDigestBatches struct {
 	mu          sync.Mutex // protects jwt, updates, and atimeUpdate.digests.
 	authHeaders map[string][]string
-	updates     []*DigestBatch
+	updates     []*pendingDigestBatch
 	numDigests  int
 
 	MaxBatchesPerGroup int
 }
 
-func (u *groupDigestBatches) findOrCreatePendingUpdate(instanceName string, digestFunction repb.DigestFunction_Value) *DigestBatch {
+func (u *groupDigestBatches) findOrCreatePendingUpdate(instanceName string, digestFunction repb.DigestFunction_Value) *pendingDigestBatch {
 	for _, update := range u.updates {
-		if update.InstanceName == instanceName && update.DigestFunction == digestFunction {
+		if update.instanceName == instanceName && update.digestFunction == digestFunction {
 			return update
 		}
 	}
@@ -83,10 +91,10 @@ func (u *groupDigestBatches) findOrCreatePendingUpdate(instanceName string, dige
 	if len(u.updates) >= u.MaxBatchesPerGroup {
 		return nil
 	}
-	pendingUpdate := &DigestBatch{
-		InstanceName:   instanceName,
-		Digests:        map[digest.Key]struct{}{},
-		DigestFunction: digestFunction,
+	pendingUpdate := &pendingDigestBatch{
+		instanceName:   instanceName,
+		digests:        map[digest.Key]struct{}{},
+		digestFunction: digestFunction,
 	}
 	u.updates = append(u.updates, pendingUpdate)
 	return pendingUpdate
@@ -409,9 +417,9 @@ func (u *batchOperator) getUpdate(updates *groupDigestBatches) *DigestBatch {
 
 	// If this update is small enough to send in its entirety, remove it from
 	// the queue of updates.
-	if len(update.Digests) <= u.maxDigestsPerBatch {
+	if len(update.digests) <= u.maxDigestsPerBatch {
 		updates.updates = updates.updates[1:]
-		return update.copy()
+		return update.finalize()
 	}
 
 	// Otherwise, remove MaxDigestsPerBatch digests from the update, send
@@ -420,17 +428,17 @@ func (u *batchOperator) getUpdate(updates *groupDigestBatches) *DigestBatch {
 	updates.updates = updates.updates[1:]
 	updates.updates = append(updates.updates, update)
 	req := DigestBatch{
-		InstanceName:   update.InstanceName,
-		DigestFunction: update.DigestFunction,
-		Digests:        make(map[digest.Key]struct{}, u.maxDigestsPerBatch),
+		InstanceName:   update.instanceName,
+		DigestFunction: update.digestFunction,
+		Digests:        make([]*repb.Digest, u.maxDigestsPerBatch),
 	}
 	i := 0
-	for digest := range update.Digests {
+	for digest := range update.digests {
 		if i >= u.maxDigestsPerBatch {
 			break
 		}
-		req.Digests[digest] = struct{}{}
-		delete(update.Digests, digest)
+		req.Digests[i] = digest.ToDigest()
+		delete(update.digests, digest)
 		i++
 	}
 	return &req

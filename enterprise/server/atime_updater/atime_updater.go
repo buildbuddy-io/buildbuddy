@@ -42,13 +42,8 @@ func new(env *real_environment.RealEnv) (batch_operator.BatchDigestOperator, err
 	handleBatch := func(ctx context.Context, groupID string, u *batch_operator.DigestBatch) error {
 		req := &repb.FindMissingBlobsRequest{
 			InstanceName:   u.InstanceName,
-			BlobDigests:    make([]*repb.Digest, len(u.Digests)),
+			BlobDigests:    u.Digests,
 			DigestFunction: u.DigestFunction,
-		}
-		i := 0
-		for d := range u.Digests {
-			req.BlobDigests[i] = d.ToDigest()
-			i++
 		}
 
 		_, err := env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, req)
