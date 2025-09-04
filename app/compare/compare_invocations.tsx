@@ -1,13 +1,17 @@
-import { XCircle } from "lucide-react";
+import { XCircle, GitCompare } from "lucide-react";
 import React from "react";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
+import Button from "../components/button/button";
 import CheckboxButton from "../components/button/checkbox_button";
 import InvocationModel from "../invocation/invocation_model";
 import rpcService from "../service/rpc_service";
 import { renderComparisonFacets } from "../util/diff";
 import { BuildBuddyError } from "../util/errors";
+import { triggerRemoteRun } from "../util/remote_runner";
 import CompareExecutionLogFilesComponent from "./compare_execution_log_files";
+import alert_service from "../alert/alert_service";
 
 export interface CompareInvocationsComponentProps {
   user?: User;
@@ -27,12 +31,14 @@ interface State {
   modelB?: InvocationModel;
 
   showChangesOnly: boolean;
+  isRunningExplain: boolean;
 }
 
 const INITIAL_STATE: State = {
   status: "INIT",
   error: null,
   showChangesOnly: false,
+  isRunningExplain: false,
 };
 
 const FACETS = [
@@ -174,6 +180,48 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     this.setState({ showChangesOnly: !this.state.showChangesOnly });
   }
 
+  private hasExecLog(invocation: InvocationModel): boolean {
+    return Boolean(
+      invocation.buildToolLogs?.log.some(
+        (log: build_event_stream.File) =>
+          log.name == "execution_log.binpb.zst" && log.uri && Boolean(log.uri.startsWith("bytestream://"))
+      )
+    );
+  }
+
+  private async onClickRunExplain() {
+    const { modelA, modelB } = this.state;
+    if (!modelA || !modelB) return;
+
+    this.setState({ isRunningExplain: true });
+
+    try {
+      // Check if either invocation has a repo URL
+      if (!this.hasExecLog(modelA) || !this.hasExecLog(modelB)) {
+        alert_service.error("Both invocations must have a compact execution log to run bb explain. Re-run the invocations with the `--execution_log_compact_file=` flag enabled.");
+        return;
+      }
+
+      const command = `
+curl -fsSL https://install.buildbuddy.io | bash
+output=$(bb explain --old ${modelB.getInvocationId()} --new ${modelA.getInvocationId()} --verbose)
+if [ -z "$output" ]; then
+    echo "There are no differences between the compact execution logs of the two invocations."
+else
+  printf "%s\\n" "$output"
+fi
+`;
+
+      let platformProps = new Map([["EstimatedComputeUnits", "3"]]);
+      triggerRemoteRun(modelA, command, false /*autoOpenChild*/, platformProps, ["--skip_auto_checkout=true"]);
+    } catch (error) {
+      console.error("Error running bb explain:", error);
+      alert_service.error("Failed to run bb explain: " + error);
+    } finally {
+      this.setState({ isRunningExplain: false });
+    }
+  }
+
   render() {
     const { status, error } = this.state;
 
@@ -197,14 +245,23 @@ export default class CompareInvocationsComponent extends React.Component<Compare
         <div className="shelf nopadding-dense">
           <header className="container header">
             <h2 className="title">Comparing invocations</h2>
-            {this.props.tab != "#file" && (
-              <CheckboxButton
-                className="show-changes-only-button"
-                onChange={this.onClickShowChangesOnly.bind(this)}
-                checked={this.state.showChangesOnly}>
-                Show changes only
-              </CheckboxButton>
-            )}
+            <div className="header-buttons">
+              <Button
+                className="bb-explain-button"
+                onClick={this.onClickRunExplain.bind(this)}
+                disabled={this.state.isRunningExplain}>
+                <GitCompare className="icon" />
+                {this.state.isRunningExplain ? "Running..." : "Run bb explain"}
+              </Button>
+              {this.props.tab != "#file" && (
+                <CheckboxButton
+                  className="show-changes-only-button"
+                  onChange={this.onClickShowChangesOnly.bind(this)}
+                  checked={this.state.showChangesOnly}>
+                  Show changes only
+                </CheckboxButton>
+              )}
+            </div>
           </header>
           <div className="container">
             <div className="tabs">
@@ -231,7 +288,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
             {(!this.state.modelA?.getIsExecutionLogEnabled() || !this.state.modelB?.getIsExecutionLogEnabled()) && (
               <div>
                 In order to compare files, both invocation must have the execution log enabled with the
-                `--experimental_execution_log_compact_file` flag.
+                `--execution_log_compact_file=` flag.
               </div>
             )}
             {this.state.modelA?.getIsExecutionLogEnabled() && this.state.modelB?.getIsExecutionLogEnabled() && (

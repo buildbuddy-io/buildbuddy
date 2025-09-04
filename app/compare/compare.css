@@ -8,8 +8,23 @@
   margin-right: 16px;
 }
 
-.compare-invocations .show-changes-only-button {
+.compare-invocations .header-buttons {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.compare-invocations .bb-explain-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compare-invocations .bb-explain-button .icon {
+  width: 16px;
+  height: 16px;
+  stroke: #fff;
 }
 
 @media (max-width: 1024px) {
@@ -21,6 +36,13 @@
   .compare-invocations .header > :not(:last-child) {
     margin-right: 0;
     margin-bottom: 8px;
+  }
+
+  .compare-invocations .header-buttons {
+    margin-left: 0;
+    flex-direction: column;
+    align-items: start;
+    width: 100%;
   }
 
   .compare-invocations .show-changes-only-button {
