@@ -332,25 +332,53 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", digestOrTagRef)
 	}
 	if canUseCache {
-		desc, err := puller.Head(ctx, digestOrTagRef)
-		if err != nil {
-			if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-				return nil, status.PermissionDeniedErrorf("cannot access image manifest: %s", err)
+		var hash gcr.Hash
+		var desc *gcr.Descriptor
+		// If the ref doesn't contain a digest, then we need to make a HEAD
+		// request in order to resolve it to a digest, since manifest AC entries
+		// are keyed by digest.
+		if digestRef, ok := digestOrTagRef.(gcrname.Digest); ok {
+			var err error
+			hash, err = gcr.NewHash(digestRef.DigestStr())
+			if err != nil {
+				return nil, status.InvalidArgumentErrorf("invalid digest %q", digestRef.DigestStr())
 			}
-			return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
+		} else {
+			var err error
+			desc, err = puller.Head(ctx, digestOrTagRef)
+			if err != nil {
+				if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+					return nil, status.PermissionDeniedErrorf("cannot access image manifest: %s", err)
+				}
+				return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
+			}
+			hash = desc.Digest
 		}
 
 		mc, err := ocicache.FetchManifestFromAC(
 			ctx,
 			acClient,
 			digestOrTagRef.Context(),
-			desc.Digest,
+			hash,
 			digestOrTagRef,
 		)
 		if err != nil && !status.IsNotFoundError(err) {
 			log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)
 		}
 		if mc != nil && err == nil {
+			// If we skipped fetching the manifest descriptor (because the
+			// reference already contained a resolved digest), then build a
+			// descriptor from the cached manifest entry. We aren't populating
+			// all of the descriptor fields here, but this should still
+			// represent a complete manifest descriptor (the implementation of
+			// [puller.Head] only sets these fields as well).
+			if desc == nil {
+				desc = &gcr.Descriptor{
+					Digest:    hash,
+					Size:      int64(len(mc.GetRaw())),
+					MediaType: types.MediaType(mc.GetContentType()),
+				}
+			}
 			return imageFromDescriptorAndManifest(
 				ctx,
 				digestOrTagRef.Context(),
@@ -773,11 +801,6 @@ func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
 }
 
 func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
-	remoteLayer, err := l.createRemoteLayer()
-	if err != nil {
-		return nil, err
-	}
-
 	canUseCache := !isAnonymousUser(l.image.ctx)
 	if !canUseCache {
 		log.CtxInfof(l.image.ctx, "Anonymous user request, skipping layer cache for %s:%s", l.image.repo, l.image.desc.Digest)
@@ -792,6 +815,10 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		}
 	}
 
+	remoteLayer, err := l.createRemoteLayer()
+	if err != nil {
+		return nil, err
+	}
 	upstream, err := remoteLayer.Compressed()
 	if err != nil {
 		return nil, err
