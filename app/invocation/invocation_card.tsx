@@ -219,7 +219,7 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
             <div className="title">{this.getTitle()}</div>
             {roleLabel && <div className={`role-badge ${this.props.invocation.role}`}>{roleLabel}</div>}
             <div className="subtitle">{format.formatTimestampUsec(this.props.invocation.createdAtUsec)}</div>
-            <InvocationCompareButton mini={true} invocationId={this.props.invocation.invocationId} />
+            {!this.props.hover && <InvocationCompareButton mini={true} invocationId={this.props.invocation.invocationId} />}
           </div>
           <div className="details">
             {!this.props.hover && (
