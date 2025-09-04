@@ -20,15 +20,22 @@ export function triggerRemoteRun(
 ) {
   command = command.replaceAll(/--[a-zA-Z_]+='\<REDACTED\>'/g, "");
   let execProps: build.bazel.remote.execution.v2.Platform.Property[] = [];
-  if (platformProps) {
-    for (let [key, value] of platformProps) {
-      execProps.push(
-        new build.bazel.remote.execution.v2.Platform.Property({
-          name: key,
-          value: value,
-        })
-      );
-    }
+
+  if (!platformProps) {
+    platformProps = new Map<string, string>();
+  }
+
+  if (!platformProps.has("container-image")) {
+    platformProps.set("container-image", "ubuntu-24.04");
+  }
+
+  for (let [key, value] of platformProps) {
+    execProps.push(
+      new build.bazel.remote.execution.v2.Platform.Property({
+        name: key,
+        value: value,
+      })
+    );
   }
 
   const request = new runner.RunRequest({
