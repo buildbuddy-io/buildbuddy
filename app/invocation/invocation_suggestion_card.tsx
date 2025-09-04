@@ -103,7 +103,6 @@ export const getTestShardingSuggestion = ({
   model: InvocationModel;
   resultEvents?: build_event_stream.BuildEvent[];
 }) => {
-
   if (!capabilities.config.expandedSuggestionsEnabled) {
     return null;
   }
@@ -138,7 +137,6 @@ export const getTestShardingSuggestion = ({
         break;
       }
     }
-
   }
 
   if (!hasMultipleShards) {
