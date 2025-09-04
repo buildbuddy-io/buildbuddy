@@ -5,3 +5,18 @@ executor:
   docker_inherit_user_ids: true
   app_target: "grpc://localhost:1985"
   local_cache_size_bytes: 10000000000 # 10GB
+
+  # Enable OCI image caching when developing locally.
+  container_registry:
+    use_cache_percent: 100
+
+  # Allow using a local registry (e.g. ./tools/registry)
+  container_registry_allowed_private_ips:
+    - "127.0.0.1/32"
+
+app:
+  # Configure client identity (required for OCI image caching)
+  client_identity:
+    key: "localhost" # arbitrary; just needs to match the app key
+    origin: "localhost"
+    client: "executor"
