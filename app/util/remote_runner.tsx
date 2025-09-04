@@ -15,7 +15,8 @@ export function triggerRemoteRun(
   invocationModel: InvocationModel,
   command: string,
   autoOpenChild: boolean,
-  platformProps: Map<string, string> | null
+  platformProps: Map<string, string> | null,
+  runnerFlags: string[] = []
 ) {
   command = command.replaceAll(/--[a-zA-Z_]+='\<REDACTED\>'/g, "");
   let execProps: build.bazel.remote.execution.v2.Platform.Property[] = [];
@@ -53,6 +54,7 @@ export function triggerRemoteRun(
       GIT_BASE_BRANCH: "main",
     },
     execProperties: execProps,
+    runnerFlags: runnerFlags,
   });
 
   rpcService.service
