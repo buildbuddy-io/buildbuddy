@@ -345,7 +345,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	vfsEnabled := boolProp(m, enableVFSPropertyName, false) && *enableVFS
 	// Runner recycling is not yet supported in combination with VFS workspaces.
 	// Firecracker VFS performance is not good enough yet to be enabled.
-	if recycleRunner || ContainerType(isolationType) == FirecrackerContainerType {
+	if ContainerType(isolationType) == FirecrackerContainerType {
 		vfsEnabled = false
 	}
 

@@ -76,12 +76,6 @@ type TransferInfo struct {
 	FileCount        int64
 	BytesTransferred int64
 	TransferDuration time.Duration
-	// Transfers tracks the files that were transferred, keyed by their
-	// workspace-relative paths.
-	Transfers map[string]*repb.FileNode
-	// Exists tracks the files that already existed, keyed by their
-	// workspace-relative paths.
-	Exists map[fspath.Key]*repb.FileNode
 
 	LinkCount    int64
 	LinkDuration time.Duration
@@ -1143,9 +1137,6 @@ func (ff *BatchFileFetcher) bytestreamReadToFilecache(ctx context.Context, bsCli
 // a signal that this input is immediately needed.
 func (ff *BatchFileFetcher) Fetch(ctx context.Context, node *repb.FileNode) error {
 	key := newFetchKey(node.GetDigest(), node.GetIsExecutable())
-	if _, ok := ff.filesToFetch[key]; !ok {
-		return status.InvalidArgumentErrorf("attempting to fetch digest not in tree")
-	}
 
 	ff.mu.Lock()
 	// Check if the fetch has already completed.
@@ -1409,10 +1400,19 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 	if err != nil {
 		return nil, err
 	}
-	if err := tf.Start(); err != nil {
+	if _, err := tf.Start(); err != nil {
 		return nil, err
 	}
 	return tf.Wait()
+}
+
+type InputsState struct {
+	// NeedFetching tracks the input files that need to be fetched, keyed by
+	// their workspace-relative paths.
+	NeedFetching map[string]*repb.FileNode
+	// Exist tracks the files that already exist, keyed by their
+	// workspace-relative paths.
+	Exist map[fspath.Key]*repb.FileNode
 }
 
 func NewTreeFetcher(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, tree *repb.Tree, opts *DownloadTreeOpts) (*TreeFetcher, error) {
@@ -1431,7 +1431,7 @@ func NewTreeFetcher(ctx context.Context, env environment.Env, instanceName strin
 }
 
 // Starts begins fetching the tree asynchronously.
-func (f *TreeFetcher) Start() error {
+func (f *TreeFetcher) Start() (*InputsState, error) {
 	ctx := f.ctx
 	treeWrangler := getInputTreeWrangler(f.env)
 
@@ -1439,19 +1439,21 @@ func (f *TreeFetcher) Start() error {
 
 	rootDirectoryDigest, dirMap, err := DirMapFromTree(f.tree, f.digestFunction)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	var needFetching map[string]*repb.FileNode
+	var exist map[fspath.Key]*repb.FileNode
 	trackTransfersFn := func(relPath string, node *repb.FileNode) {}
 	trackExistsFn := func(relPath string, node *repb.FileNode) {}
 	if f.opts.TrackTransfers {
-		f.txInfo.Transfers = map[string]*repb.FileNode{}
-		f.txInfo.Exists = map[fspath.Key]*repb.FileNode{}
+		needFetching = map[string]*repb.FileNode{}
+		exist = map[fspath.Key]*repb.FileNode{}
 		trackTransfersFn = func(relPath string, node *repb.FileNode) {
-			f.txInfo.Transfers[relPath] = node
+			needFetching[relPath] = node
 		}
 		trackExistsFn = func(relPath string, node *repb.FileNode) {
-			f.txInfo.Exists[fspath.NewKey(relPath, f.opts.CaseInsensitive)] = node
+			exist[fspath.NewKey(relPath, f.opts.CaseInsensitive)] = node
 		}
 	}
 
@@ -1516,12 +1518,12 @@ func (f *TreeFetcher) Start() error {
 	}
 	// Create the directory structure and track files to download.
 	if err := fetchDirFn(dirMap[digest.NewKey(rootDirectoryDigest)], f.opts.RootDir); err != nil {
-		return err
+		return nil, err
 	}
 
 	ff, err := newBatchFileFetcher(ctx, f.env, f.instanceName, f.digestFunction, f.filesToFetch, f.opts)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	f.ff = ff
 
@@ -1531,7 +1533,7 @@ func (f *TreeFetcher) Start() error {
 		close(f.done)
 	}()
 
-	return nil
+	return &InputsState{NeedFetching: needFetching, Exist: exist}, nil
 }
 
 // Wait blocks until all transfers are complete.

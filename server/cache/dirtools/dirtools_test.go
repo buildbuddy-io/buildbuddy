@@ -1204,7 +1204,7 @@ func TestDownloadTreeDirectlyToFileCache(t *testing.T) {
 	// Not specifying a download directory so the inputs should be downloaded directly into the file cache.
 	tf, err := dirtools.NewTreeFetcher(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{})
 	require.NoError(t, err)
-	err = tf.Start()
+	_, err = tf.Start()
 	require.NoError(t, err)
 
 	err = tf.Fetch(ctx, fileNode1)
