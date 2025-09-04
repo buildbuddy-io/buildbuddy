@@ -41,20 +41,20 @@ export default class InvocationCompareButtonComponent extends React.Component<
     this.setState({ invocationIdToCompare: data.id });
   }
 
-  private onClick(event: React.MouseEvent<HTMLButtonElement>) {
+  private onClick(event: React.MouseEvent<HTMLElement>) {
     this.setState({ isDropdownOpen: true });
     event.preventDefault();
     event.stopPropagation();
   }
 
-  private onClickSelectForComparison(event: React.MouseEvent<HTMLButtonElement>) {
+  private onClickSelectForComparison(event: React.MouseEvent<HTMLElement>) {
     service.setComparisonInvocation(this.props.invocationId);
     this.setState({ isDropdownOpen: false, invocationIdToCompare: this.props.invocationId });
     event.preventDefault();
     event.stopPropagation();
   }
 
-  private onClickCompareWithSelected(event: React.MouseEvent<HTMLButtonElement>) {
+  private onClickCompareWithSelected(event: React.MouseEvent<HTMLElement>) {
     const invocationIdToCompare = this.state.invocationIdToCompare;
     this.setState({ isDropdownOpen: false, invocationIdToCompare: "" });
     router.navigateTo(`/compare/${invocationIdToCompare}...${this.props.invocationId}`);
@@ -62,7 +62,7 @@ export default class InvocationCompareButtonComponent extends React.Component<
     event.stopPropagation();
   }
 
-  private onRequestCloseDropdown(event: React.MouseEvent<HTMLButtonElement>) {
+  private onRequestCloseDropdown(event: React.MouseEvent<HTMLElement>) {
     this.setState({ isDropdownOpen: false });
     event.preventDefault();
     event.stopPropagation();
