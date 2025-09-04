@@ -70,6 +70,7 @@ go_test(
         ":vfs_server",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
+        "//enterprise/server/util/vfscommon",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:vfs_go_proto",
