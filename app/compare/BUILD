@@ -12,6 +12,7 @@ ts_library(
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/compare:compare_execution_log_files",
         "//app/components/button",

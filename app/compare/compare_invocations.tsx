@@ -1,7 +1,8 @@
-import { XCircle, GitCompare } from "lucide-react";
+import { GitCompare, XCircle } from "lucide-react";
 import React from "react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
+import alert_service from "../alert/alert_service";
 import { User } from "../auth/auth_service";
 import Button from "../components/button/button";
 import CheckboxButton from "../components/button/checkbox_button";
@@ -11,7 +12,6 @@ import { renderComparisonFacets } from "../util/diff";
 import { BuildBuddyError } from "../util/errors";
 import { triggerRemoteRun } from "../util/remote_runner";
 import CompareExecutionLogFilesComponent from "./compare_execution_log_files";
-import alert_service from "../alert/alert_service";
 
 export interface CompareInvocationsComponentProps {
   user?: User;
@@ -198,7 +198,9 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     try {
       // Check if either invocation has a repo URL
       if (!this.hasExecLog(modelA) || !this.hasExecLog(modelB)) {
-        alert_service.error("Both invocations must have a compact execution log to run bb explain. Re-run the invocations with the `--execution_log_compact_file=` flag enabled.");
+        alert_service.error(
+          "Both invocations must have a compact execution log to run bb explain. Re-run the invocations with the `--execution_log_compact_file=` flag enabled."
+        );
         return;
       }
 
