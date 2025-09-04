@@ -291,7 +291,7 @@ func (t *metricsOnlyTransferTimer) emitMetrics(bytesTransferredCache, bytesTrans
 		metrics.UsageTracked:        "false",
 	}).Inc()
 
-	emitSizeMetrics(t.h.groupID, compressor, t.sizeCounter, ct, serverLabel, float64(t.d.GetSizeBytes()), float64(bytesTransferredCache), float64(bytesTransferredClient), "false")
+	emitSizeMetrics(t.h.groupID, compressor, t.sizeCounter, ct, serverLabel, float64(t.d.GetSizeBytes()), float64(bytesTransferredCache), float64(bytesTransferredClient), false)
 	durationMetric(t.timeCounter).With(prometheus.Labels{
 		metrics.CacheTypeLabel: ct,
 		metrics.UsageTracked:   "false",
@@ -487,7 +487,8 @@ func cacheEventTypeLabel(c counterType) string {
 	return uploadLabel
 }
 
-func emitSizeMetrics(groupID string, compressor repb.Compressor_Value, ct counterType, cacheTypeLabel, serverLabel string, digestSizeBytes, bytesTransferredCache, bytesTransferredClient float64, tracked string) {
+func emitSizeMetrics(groupID string, compressor repb.Compressor_Value, ct counterType, cacheTypeLabel, serverLabel string, digestSizeBytes, bytesTransferredCache, bytesTransferredClient float64, isTracked bool) {
+	tracked := fmt.Sprintf("%t", isTracked)
 	if ct == UploadSizeBytes {
 		metrics.CacheUploadSizeBytes.With(prometheus.Labels{
 			metrics.CacheTypeLabel: cacheTypeLabel,
@@ -577,7 +578,7 @@ func (t *transferTimer) emitMetrics(bytesTransferredCache, bytesTransferredClien
 		metrics.UsageTracked:        "true",
 	}).Inc()
 
-	emitSizeMetrics(t.h.groupID, compressor, t.sizeCounter, ct, serverLabel, float64(t.d.GetSizeBytes()), float64(bytesTransferredCache), float64(bytesTransferredClient), "true")
+	emitSizeMetrics(t.h.groupID, compressor, t.sizeCounter, ct, serverLabel, float64(t.d.GetSizeBytes()), float64(bytesTransferredCache), float64(bytesTransferredClient), true)
 	durationMetric(t.timeCounter).With(prometheus.Labels{
 		metrics.CacheTypeLabel: ct,
 		metrics.UsageTracked:   "true",
