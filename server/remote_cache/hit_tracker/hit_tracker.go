@@ -185,14 +185,14 @@ func (h *HitTrackerFactory) shouldSkipTracking(ctx context.Context) bool {
 	if id == nil {
 		return false
 	}
-	if id.Client != interfaces.ClientIdentityCacheProxy {
-		if isTryingToDisableTracking(ctx) {
-			alert.CtxUnexpectedEvent(ctx, "unexpected_skip_tracking_attempt", "Only cache proxy can disable usage tracking. identity: %+v", id)
-		}
-		return false
+	if id.Client == interfaces.ClientIdentityCacheProxy {
+		return isTryingToDisableTracking(ctx)
 	}
 
-	return isTryingToDisableTracking(ctx)
+	if isTryingToDisableTracking(ctx) {
+		alert.CtxUnexpectedEvent(ctx, "unexpected_skip_tracking_attempt", "Only cache proxy can disable usage tracking. identity: %+v", id)
+	}
+	return false
 }
 
 func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
