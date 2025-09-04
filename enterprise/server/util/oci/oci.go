@@ -42,11 +42,12 @@ var (
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 
-	useCachePercent        = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls to use the cache (individual cache flags must also be enabled).")
-	writeManifestsToCache  = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
-	readManifestsFromCache = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "Read manifests from the cache after a HEAD request to the upstream registry.")
-	writeLayersToCache     = flag.Bool("executor.container_registry.write_layers_to_cache", false, "Write layers to the cache.")
-	readLayersFromCache    = flag.Bool("executor.container_registry.read_layers_from_cache", false, "Read layers from cache.")
+	useCachePercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
+	// TODO: remove from configs and delete
+	_ = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "", flag.Internal)
+	_ = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "", flag.Internal)
+	_ = flag.Bool("executor.container_registry.write_layers_to_cache", false, "", flag.Internal)
+	_ = flag.Bool("executor.container_registry.read_layers_from_cache", false, "", flag.Internal)
 )
 
 type MirrorConfig struct {
@@ -330,7 +331,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 	if !canUseCache {
 		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", digestOrTagRef)
 	}
-	if *readManifestsFromCache && canUseCache {
+	if canUseCache {
 		desc, err := puller.Head(ctx, digestOrTagRef)
 		if err != nil {
 			if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
@@ -371,7 +372,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
-	if *writeManifestsToCache && canUseCache {
+	if canUseCache {
 		err := ocicache.WriteManifestToAC(
 			ctx,
 			remoteDesc.Manifest,
@@ -781,7 +782,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	if !canUseCache {
 		log.CtxInfof(l.image.ctx, "Anonymous user request, skipping layer cache for %s:%s", l.image.repo, l.image.desc.Digest)
 	}
-	if *readLayersFromCache && canUseCache {
+	if canUseCache {
 		rc, err := l.fetchLayerFromCache()
 		if err != nil && !status.IsNotFoundError(err) {
 			log.CtxWarningf(l.image.ctx, "Error fetching layer from cache: %s", err)
@@ -796,7 +797,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	if *writeLayersToCache && canUseCache {
+	if canUseCache {
 		mediaType, err := l.MediaType()
 		if err != nil {
 			log.CtxWarningf(l.image.ctx, "Could not get media type for layer: %s", err)
