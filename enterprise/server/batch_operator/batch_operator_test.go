@@ -1,4 +1,4 @@
-package atime_updater
+package batch_operator_test
 
 import (
 	"context"
@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
@@ -149,7 +148,7 @@ func runFakeCAS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*fakeC
 	return &cas, repb.NewContentAddressableStorageClient(conn)
 }
 
-func setup(t testing.TB) (interfaces.Authenticator, batch_operator.BatchDigestOperator, *fakeCAS, clockwork.FakeClock) {
+func setup(t testing.TB, cfg batch_operator.BatchDigestOperatorConfig) (interfaces.Authenticator, batch_operator.BatchDigestOperator, *fakeCAS, clockwork.FakeClock) {
 	env := testenv.GetTestEnv(t)
 	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
 	env.SetAuthenticator(authenticator)
@@ -157,9 +156,27 @@ func setup(t testing.TB) (interfaces.Authenticator, batch_operator.BatchDigestOp
 	env.SetContentAddressableStorageClient(casClient)
 	fakeClock := clockwork.NewFakeClock()
 	env.SetClock(fakeClock)
-	updater, err := new(env)
+	updater, err := new(env, cfg)
 	require.NoError(t, err)
 	return authenticator, updater, cas, fakeClock
+}
+
+func new(env *testenv.TestEnv, cfg batch_operator.BatchDigestOperatorConfig) (batch_operator.BatchDigestOperator, error) {
+	handleBatch := func(ctx context.Context, groupID string, u *batch_operator.DigestBatch) error {
+		req := &repb.FindMissingBlobsRequest{
+			InstanceName:   u.InstanceName,
+			BlobDigests:    u.Digests,
+			DigestFunction: u.DigestFunction,
+		}
+
+		_, err := env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, req)
+		return err
+	}
+	operator, err := batch_operator.New(env, "test-operator", handleBatch, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return operator, nil
 }
 
 func authenticatedContext(ctx context.Context, user string, authenticator interfaces.Authenticator) context.Context {
@@ -171,7 +188,7 @@ func authenticatedContext(ctx context.Context, user string, authenticator interf
 }
 
 func TestAuth(t *testing.T) {
-	authenticator, updater, cas, _ := setup(t)
+	authenticator, updater, cas, _ := setup(t, batch_operator.BatchDigestOperatorConfig{})
 
 	// No auth, no updates
 	ctx := t.Context()
@@ -209,7 +226,7 @@ func TestAuth(t *testing.T) {
 }
 
 func TestEnqueue_SimpleBatching(t *testing.T) {
-	authenticator, updater, cas, _ := setup(t)
+	authenticator, updater, cas, _ := setup(t, batch_operator.BatchDigestOperatorConfig{})
 	ctx := authenticatedContext(t.Context(), "", authenticator)
 
 	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0, digest1}, repb.DigestFunction_SHA256))
@@ -226,7 +243,7 @@ func TestEnqueue_SimpleBatching(t *testing.T) {
 }
 
 func TestEnqueue_Deduping(t *testing.T) {
-	authenticator, updater, cas, _ := setup(t)
+	authenticator, updater, cas, _ := setup(t, batch_operator.BatchDigestOperatorConfig{})
 	ctx := authenticatedContext(t.Context(), "", authenticator)
 
 	for i := 0; i < 10; i++ {
@@ -240,7 +257,7 @@ func TestEnqueue_Deduping(t *testing.T) {
 }
 
 func TestEnqueue_InstanceNamesIsolated(t *testing.T) {
-	authenticator, updater, cas, _ := setup(t)
+	authenticator, updater, cas, _ := setup(t, batch_operator.BatchDigestOperatorConfig{})
 	ctx := authenticatedContext(t.Context(), "", authenticator)
 
 	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
@@ -266,7 +283,7 @@ func TestEnqueue_InstanceNamesIsolated(t *testing.T) {
 }
 
 func TestEnqueue_DigestFunctionsIsolated(t *testing.T) {
-	authenticator, updater, cas, _ := setup(t)
+	authenticator, updater, cas, _ := setup(t, batch_operator.BatchDigestOperatorConfig{})
 	ctx := authenticatedContext(t.Context(), "", authenticator)
 
 	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
@@ -285,7 +302,7 @@ func TestEnqueue_DigestFunctionsIsolated(t *testing.T) {
 }
 
 func TestEnqueue_GroupsIsolated(t *testing.T) {
-	authenticator, updater, cas, _ := setup(t)
+	authenticator, updater, cas, _ := setup(t, batch_operator.BatchDigestOperatorConfig{})
 	anonCtx := authenticatedContext(t.Context(), "", authenticator)
 	group1Ctx := authenticatedContext(t.Context(), user1, authenticator)
 	group2Ctx := authenticatedContext(t.Context(), user2, authenticator)
@@ -306,7 +323,7 @@ func TestEnqueue_GroupsIsolated(t *testing.T) {
 }
 
 func TestEnqueue_DedupesToFrontOfLine(t *testing.T) {
-	authenticator, updater, cas, _ := setup(t)
+	authenticator, updater, cas, _ := setup(t, batch_operator.BatchDigestOperatorConfig{})
 	ctx := authenticatedContext(t.Context(), "", authenticator)
 
 	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
@@ -329,8 +346,7 @@ func TestEnqueue_DedupesToFrontOfLine(t *testing.T) {
 }
 
 func TestEnqueue_EnqueuesDropped(t *testing.T) {
-	flags.Set(t, "cache_proxy.remote_atime_queue_size", 2)
-	authenticator, updater, _, _ := setup(t)
+	authenticator, updater, _, _ := setup(t, batch_operator.BatchDigestOperatorConfig{QueueSize: 2})
 	anonCtx := authenticatedContext(t.Context(), "", authenticator)
 	group1Ctx := authenticatedContext(t.Context(), user1, authenticator)
 	group2Ctx := authenticatedContext(t.Context(), user2, authenticator)
@@ -348,8 +364,7 @@ func TestEnqueue_EnqueuesDropped(t *testing.T) {
 }
 
 func TestEnqueue_DigestsDropped(t *testing.T) {
-	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_group", 7)
-	authenticator, updater, cas, _ := setup(t)
+	authenticator, updater, cas, _ := setup(t, batch_operator.BatchDigestOperatorConfig{MaxDigestsPerGroup: 7})
 	ctx := authenticatedContext(t.Context(), "", authenticator)
 	digests := []*repb.Digest{digest0, digest1, digest2, digest3, digest4, digest5, digest6, digest7, digest8, digest9, digestA}
 
@@ -383,14 +398,11 @@ func TestEnqueue_DigestsDropped(t *testing.T) {
 }
 
 func TestEnqueue_UpdatesDropped(t *testing.T) {
-	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_update", 5)
-	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 3)
-	authenticator, updater, cas, _ := setup(t)
+	authenticator, updater, cas, _ := setup(t, batch_operator.BatchDigestOperatorConfig{MaxDigestsPerBatch: 5, MaxBatchesPerGroup: 3})
 	ctx := authenticatedContext(t.Context(), "", authenticator)
 
-	// If the updater accumulates too many updates, it should start to drop
-	// them. setupTest() sets the value of remote_atime_max_updates_per_group to
-	// 3, so expect the first 3 to be sent and the others to be dropped.
+	// We set MaxBatchesPerGroup to 3, so expect the first 3 batches
+	// to be sent and the others to be dropped.
 	for i := 1; i <= 10; i++ {
 		require.True(t, updater.Enqueue(ctx, fmt.Sprintf("instance-%d", i), []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
 		updater.ForceBatchingForTesting()
@@ -407,9 +419,7 @@ func TestEnqueue_UpdatesDropped(t *testing.T) {
 }
 
 func TestEnqueue_Fairness(t *testing.T) {
-	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_update", 5)
-	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 3)
-	authenticator, updater, cas, _ := setup(t)
+	authenticator, updater, cas, _ := setup(t, batch_operator.BatchDigestOperatorConfig{MaxDigestsPerBatch: 5, MaxBatchesPerGroup: 3})
 	anonCtx := authenticatedContext(t.Context(), "", authenticator)
 	group1Ctx := authenticatedContext(t.Context(), user1, authenticator)
 	group2Ctx := authenticatedContext(t.Context(), user2, authenticator)
@@ -476,13 +486,10 @@ func TestEnqueue_Fairness(t *testing.T) {
 	require.Equal(t, map[string]int{anon: 2, group1: 0, group2: 0}, updateCount)
 }
 
-// The atimeUpdater code does a lot of stuff with mutexes... This test tries to
+// The batch operator code does a lot of stuff with mutexes... This test tries to
 // trip the race detector. Make sure you run with --config=race for debugging.
 func TestEnqueue_Raciness(t *testing.T) {
-	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_update", 1_000)
-	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 1_000)
-	flags.Set(t, "cache_proxy.remote_atime_update_interval", time.Millisecond)
-	authenticator, updater, _, clock := setup(t)
+	authenticator, updater, _, clock := setup(t, batch_operator.BatchDigestOperatorConfig{MaxDigestsPerBatch: 1_000, MaxBatchesPerGroup: 1_000, BatchInterval: time.Millisecond})
 	updater.Start(&testhealthcheck.TestingHealthChecker{})
 	anonCtx := authenticatedContext(t.Context(), "", authenticator)
 	group1Ctx := authenticatedContext(t.Context(), user1, authenticator)
@@ -520,9 +527,7 @@ func casResourceName(t *testing.T, d *repb.Digest, instanceName string) *digest.
 }
 
 func TestEnqueueByResourceName_CAS(t *testing.T) {
-	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_update", 5)
-	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 3)
-	authenticator, updater, cas, _ := setup(t)
+	authenticator, updater, cas, _ := setup(t, batch_operator.BatchDigestOperatorConfig{MaxDigestsPerBatch: 5, MaxBatchesPerGroup: 3})
 	anonCtx := authenticatedContext(t.Context(), "", authenticator)
 	group1Ctx := authenticatedContext(t.Context(), user1, authenticator)
 	group2Ctx := authenticatedContext(t.Context(), user2, authenticator)
@@ -601,15 +606,12 @@ func BenchmarkEnqueue(b *testing.B) {
 	instances := []string{"instance-1", "instance-2", "instance-3"}
 	digests := []*repb.Digest{digest0, digest1, digest2, digest3, digest4, digest5, digest6, digest7, digest8, digest9}
 
-	flags.Set(b, "cache_proxy.remote_atime_max_digests_per_update", b.N*len(instances)*len(digests)*numToEnqueue)
-	flags.Set(b, "cache_proxy.remote_atime_max_updates_per_group", b.N*len(instances)*len(digests)*numToEnqueue)
-
 	b.ReportAllocs()
 	for b.Loop() {
 		// The updater discards updates and logs stuff if too many updates are
 		// enqueued. Recreate for each benchmark to prevent this.
 		b.StopTimer()
-		authenticator, updater, _, _ := setup(b)
+		authenticator, updater, _, _ := setup(b, batch_operator.BatchDigestOperatorConfig{MaxDigestsPerBatch: b.N * len(instances) * len(digests) * numToEnqueue, MaxBatchesPerGroup: b.N * len(instances) * len(digests) * numToEnqueue})
 		contexts := []context.Context{
 			authenticatedContext(b.Context(), "", authenticator),
 			authenticatedContext(b.Context(), user1, authenticator),
