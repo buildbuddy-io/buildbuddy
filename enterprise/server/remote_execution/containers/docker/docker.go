@@ -279,7 +279,11 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 	eg := &errgroup.Group{}
 	eg.Go(func() error {
 		var stdout, stderr bytes.Buffer
-		_, err := stdcopy.StdCopy(&stdout, &stderr, hijackedResp.Reader)
+		_, err := stdcopy.StdCopy(
+			commandutil.LimitStdOutErrWriter(&stdout),
+			commandutil.LimitStdOutErrWriter(&stderr),
+			hijackedResp.Reader,
+		)
 		result.Stdout = stdout.Bytes()
 		result.Stderr = stderr.Bytes()
 		mu.Lock()
@@ -445,6 +449,10 @@ func copyOutputs(reader io.Reader, result *interfaces.CommandResult, stdio *inte
 	if *commandutil.DebugStreamCommandOutputs {
 		stdout, stderr = io.MultiWriter(stdout, os.Stdout), io.MultiWriter(stderr, os.Stderr)
 	}
+	if !stdio.DisableOutputLimits {
+		stdout = commandutil.LimitStdOutErrWriter(stdout)
+		stderr = commandutil.LimitStdOutErrWriter(stderr)
+	}
 
 	_, err := stdcopy.StdCopy(stdout, stderr, reader)
 	result.Stdout = stdoutBuf.Bytes()
@@ -455,6 +463,9 @@ func copyOutputs(reader io.Reader, result *interfaces.CommandResult, stdio *inte
 func errCode(err error) codes.Code {
 	if err == context.DeadlineExceeded {
 		return codes.DeadlineExceeded
+	}
+	if status.IsResourceExhaustedError(err) {
+		return codes.ResourceExhausted
 	}
 	return codes.Unavailable
 }
