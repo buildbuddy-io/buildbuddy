@@ -155,6 +155,9 @@ func main() {
 		}()
 	}
 
+	// TODO(jdhollen): load experiments config
+	// TODO(jdhollen): support encryption
+
 	env.GetHealthChecker().WaitForGracefulShutdown()
 }
 
