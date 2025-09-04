@@ -169,7 +169,7 @@ func TestLimitedStd(t *testing.T) {
 	// OCI Setup
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -1610,7 +1610,7 @@ func TestPersistentWorker(t *testing.T) {
 func TestPersistentWorkerOOMPrevention(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
