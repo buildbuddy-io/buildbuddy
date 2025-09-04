@@ -215,7 +215,8 @@ func (c *Command) processUpdatesAsync(ctx context.Context, stream repb.Execution
 			if err != nil {
 				sendStatus(&CommandResult{
 					Stage: repb.ExecutionStage_COMPLETED,
-					Err:   status.AbortedErrorf("stream to server broken: %v", err)})
+					Err:   err,
+				})
 			}
 			continue // retry recv using new stream
 		}
@@ -223,7 +224,8 @@ func (c *Command) processUpdatesAsync(ctx context.Context, stream repb.Execution
 		if err != nil {
 			sendStatus(&CommandResult{
 				Stage: repb.ExecutionStage_COMPLETED,
-				Err:   status.AbortedErrorf("stream to server broken: %v", err)})
+				Err:   err,
+			})
 			return
 		}
 

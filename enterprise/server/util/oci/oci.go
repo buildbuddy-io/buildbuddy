@@ -101,6 +101,10 @@ type Registry struct {
 type Credentials struct {
 	Username string
 	Password string
+
+	// Set if registry auth should be bypassed (can only be set by server
+	// admins).
+	bypassRegistry bool
 }
 
 func CredentialsFromProto(creds *rgpb.Credentials) (Credentials, error) {
@@ -115,6 +119,20 @@ func CredentialsFromProperties(props *platform.Properties) (Credentials, error) 
 	imageRef := props.ContainerImage
 	if imageRef == "" {
 		return Credentials{}, nil
+	}
+
+	// Server admins can bypass registry auth (this platform property is guarded
+	// by an authorization check in the execution server).
+	if props.ContainerRegistryBypass {
+		return Credentials{
+			bypassRegistry: true,
+			// Still forward the username and password - there might be some
+			// cases where we actually do have credentials (e.g. our own private
+			// images) but still want to bypass the registry if the image is
+			// cached.
+			Username: props.ContainerRegistryUsername,
+			Password: props.ContainerRegistryPassword,
+		}, nil
 	}
 
 	creds, err := credentials(props.ContainerRegistryUsername, props.ContainerRegistryPassword)
@@ -241,6 +259,10 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 // Otherwise, the function returns nil and it is safe to assume the input credentials grant access
 // to the image.
 func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) error {
+	if credentials.bypassRegistry {
+		return nil
+	}
+
 	imageRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid image %q", imageName)
@@ -318,6 +340,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 			r.env.GetActionCacheClient(),
 			r.env.GetByteStreamClient(),
 			puller,
+			credentials.bypassRegistry,
 		)
 	}
 
@@ -351,7 +374,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 // then falls back to fetching from the upstream remote registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller) (gcr.Image, error) {
+func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool) (gcr.Image, error) {
 	canUseCache := !isAnonymousUser(ctx)
 	if !canUseCache {
 		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", digestOrTagRef)
@@ -363,6 +386,9 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		// request in order to resolve it to a digest, since manifest AC entries
 		// are keyed by digest.
 		if !hasDigest {
+			if bypassRegistry {
+				log.CtxWarningf(ctx, "Cannot bypass registry for tag reference %q (need registry to resolve tag to digest)", digestOrTagRef)
+			}
 			var err error
 			desc, err = puller.Head(ctx, digestOrTagRef)
 			if err != nil {
@@ -407,6 +433,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				acClient,
 				bsClient,
 				puller,
+				bypassRegistry,
 			)
 		}
 	}
@@ -442,13 +469,14 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		acClient,
 		bsClient,
 		puller,
+		bypassRegistry,
 	)
 }
 
 // imageFromDescriptorAndManifest returns an Image from the given manifest (if the manifest is an image manifest),
 // finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
 // and otherwise returns an error.
-func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller) (gcr.Image, error) {
+func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool) (gcr.Image, error) {
 	if desc.MediaType.IsSchema1() {
 		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
 	}
@@ -471,6 +499,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 			acClient,
 			bsClient,
 			puller,
+			bypassRegistry,
 		)
 	}
 

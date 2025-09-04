@@ -70,6 +70,33 @@ func AuthorizeOrgAdmin(u interfaces.UserInfo, groupID string) error {
 	return status.PermissionDeniedError("you are not a member of the requested organization")
 }
 
+// AuthorizeServerAdmin checks whether the authenticated user is a server admin
+// (a member of the server admin group, with ORG_ADMIN capability).
+func AuthorizeServerAdmin(ctx context.Context, env environment.Env) error {
+	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+
+	// If impersonation is in effect, it implies the user is an admin.
+	// Can't check group membership because impersonation modifies
+	// group information.
+	if u.IsImpersonating() {
+		return nil
+	}
+
+	serverAdminGID := env.GetAuthenticator().AdminGroupID()
+	if serverAdminGID == "" {
+		return status.PermissionDeniedError("permission denied")
+	}
+	for _, m := range u.GetGroupMemberships() {
+		if m.GroupID == serverAdminGID && slices.Contains(m.Capabilities, cappb.Capability_ORG_ADMIN) {
+			return nil
+		}
+	}
+	return status.PermissionDeniedError("permission denied")
+}
+
 // AuthorizeGroupAccess checks whether the user is a member of the given group.
 // Where applicable, make sure to check the user's capabilities within the group
 // as well.

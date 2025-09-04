@@ -689,6 +689,13 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return nil, err
 	}
 
+	// Check permissions for server admin-only properties.
+	if props.ContainerRegistryBypass {
+		if err := authutil.AuthorizeServerAdmin(ctx, s.env); err != nil {
+			return nil, status.WrapError(err, "authorize container-registry-bypass property")
+		}
+	}
+
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
 		expOverrides := fp.Object(
 			ctx, "remote_execution.task_size_overrides", nil,
