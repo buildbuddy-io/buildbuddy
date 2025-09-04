@@ -41,10 +41,10 @@ message RunRequest {
   // Ex. `docker://gcr.io/flame-public/rbe-ubuntu20-04`
   string container_image = 10;
 
-  // Specifies what to wait for before returning a RunResponse.
+  // Specifies what to wait until before returning a RunResponse.
   // Default is value is WAIT_MODE_CREATED which waits for the invocation to
   // be created but not necessarily completed.
-  WaitMode wait_mode = 20;
+  WaitCondition wait_until = 20;
 
   // Environment variables to set in the runner env.
   map<string, string> env = 11;
@@ -94,15 +94,18 @@ message Step {
   string run = 1;
 }
 
-enum WaitMode {
+enum WaitCondition {
+  // Unknown wait condition.
+  UNKNOWN_CONDITION = 0;
+
   // Wait until the invocation is created but not complete.
-  WAIT_MODE_CREATED = 0;
+  CREATED = 1;
 
   // Wait for the invocation to complete.
-  WAIT_MODE_COMPLETE = 1;
+  COMPLETE = 2;
   
   // Return immediately without waiting.
-  WAIT_MODE_IMMEDIATE = 2;  
+  IMMEDIATE = 3;  
 }
 
 message RunResponse {

@@ -45,10 +45,10 @@ message RunRequest {
   // Ex. "15s", "2h"
   string timeout = 7;
 
-  // Specifies what to wait for before returning a RunResponse.
-  // Default is value is WAIT_MODE_CREATED which waits for the invocation to
+  // Specifies what to wait until before returning a RunResponse.
+  // Default is value is CREATED which waits for the invocation to
   // be created but not necessarily completed.
-  WaitMode wait_mode = 13;
+  WaitCondition wait_until = 13;
 
   // Whether to use github credentials configured on the executor.
   //
@@ -73,15 +73,18 @@ message Step {
   string run = 1;
 }
 
-enum WaitMode {
+enum WaitCondition {
+  // Unknown wait condition.
+  UNKNOWN_CONDITION = 0;
+
   // Wait until the invocation is created but not complete.
-  WAIT_MODE_CREATED = 0;
+  CREATED = 1;
 
   // Wait for the invocation to complete.
-  WAIT_MODE_COMPLETE = 1;
+  COMPLETE = 2;
   
   // Return immediately without waiting.
-  WAIT_MODE_IMMEDIATE = 2;  
+  IMMEDIATE = 3;  
 }
 
 message RunResponse {
