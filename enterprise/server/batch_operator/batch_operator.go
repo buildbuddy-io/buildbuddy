@@ -132,12 +132,38 @@ type BatchDigestOperator interface {
 }
 
 type BatchDigestOperatorConfig struct {
-	QueueSize          int
-	BatchInterval      time.Duration
+	// The maximum number of pending digests passed into the BatchDigestOperator
+	// that haven't been processed.  Enqueueing digests is a non-blocking call--
+	// if we hit this limit during a flood of Enqueue calls, digests will be
+	// dropped (and Enqueue will return false) until we have burned the queue
+	// down a bit.
+	QueueSize int
+
+	// The amount of time to wait between flushing batches.  This exists as a
+	// kind of QPS limiter when combined with `MaxBatchesPerGroup`: the maximum
+	// number of batches that will be flushed will be
+	// MaxBatchesPerGroup*[# of groups generating batches] per BatchInterval.
+	BatchInterval time.Duration
+
+	// The maximum number of digests waiting to be flushed for a single GroupID,
+	// independent of how many different instance names are being updated.
 	MaxDigestsPerGroup int
+
+	// The maximum number of digests in a single batch.  Batches are keyed
+	// by GroupID and remote instance name.
 	MaxDigestsPerBatch int
+
+	// The maximum number of pending batches we will hold for a single GroupID.
+	// This is effectively the number of remote instance names that we're
+	// willing to track at the same time--in theory, a badly behaved customer
+	// could overwhelm this value, but in practice they generally don't.
 	MaxBatchesPerGroup int
 }
+
+// An OperatorFunc is called when a BatchDigestOperator flushes a batch of
+// digests. The provided context will have auth headers set to match the
+// specified group ID, so it can be used for any RPCs to read the digests.
+type OperatorFunc func(ctx context.Context, groupID string, u *DigestBatch) error
 
 type batchOperator struct {
 	authenticator interfaces.Authenticator
@@ -154,7 +180,7 @@ type batchOperator struct {
 	maxDigestsPerBatch int
 	maxBatchesPerGroup int
 
-	op func(ctx context.Context, groupID string, u *DigestBatch) error
+	op OperatorFunc
 }
 
 func (u *batchOperator) ForceBatchingForTesting() {
@@ -177,7 +203,8 @@ func (u *batchOperator) Start(hc interfaces.HealthChecker) {
 	hc.RegisterShutdownFunction(u.shutdown)
 }
 
-func New(env environment.Env, name string, f func(ctx context.Context, groupID string, u *DigestBatch) error, c BatchDigestOperatorConfig) (BatchDigestOperator, error) {
+// Creates a new digest operator with the specified name (for logging and metrics purposes), OperatorFunc, and config.
+func New(env environment.Env, name string, f OperatorFunc, c BatchDigestOperatorConfig) (BatchDigestOperator, error) {
 	config := &BatchDigestOperatorConfig{
 		QueueSize:          defaultQueueSize,
 		BatchInterval:      defaultBatchInterval,
