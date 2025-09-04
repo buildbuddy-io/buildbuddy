@@ -206,7 +206,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
 
       const command = `
 curl -fsSL https://install.buildbuddy.io | bash
-output=$(bb explain --old ${modelB.getInvocationId()} --new ${modelA.getInvocationId()} --verbose)
+output=$(bb explain --old ${modelB.getInvocationId()} --new ${modelA.getInvocationId()} --target ${modelA.getCacheAddress()} --verbose)
 if [ -z "$output" ]; then
     echo "There are no differences between the compact execution logs of the two invocations."
 else
