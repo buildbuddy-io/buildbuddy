@@ -1093,16 +1093,21 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 		return nil
 	})
 	eg.Go(func() error {
-		execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
-			InvocationId: iid,
-		}})
-		if err != nil {
-			return fmt.Errorf("could not retrieve ci_runner execution: %w", err)
+		var executionID string
+		for range 5 {
+			execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
+				InvocationId: iid,
+			}})
+			if err != nil {
+				log.Warnf("could not retrieve ci_runner execution: %w", err)
+				continue
+			}
+			if len(execution.GetExecution()) == 0 {
+				return fmt.Errorf("ci_runner execution not found")
+			}
+			executionID = execution.GetExecution()[0].GetExecutionId()
+			break
 		}
-		if len(execution.GetExecution()) == 0 {
-			return fmt.Errorf("ci_runner execution not found")
-		}
-		executionID := execution.GetExecution()[0].GetExecutionId()
 		waitExecutionStream, err := execClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
 			Name: executionID,
 		})
