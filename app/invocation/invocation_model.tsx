@@ -396,7 +396,7 @@ export default class InvocationModel {
    * Returns the hostname or hostname:port of the cache address used as the
    * remote cache target for this invocation.
    */
-  private getCacheAddress(): string | undefined {
+  getCacheAddress(): string | undefined {
     const prefix = this.parseBytestreamURIPrefix();
     if (prefix) {
       return prefix.host;
