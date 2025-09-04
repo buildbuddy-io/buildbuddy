@@ -277,6 +277,7 @@ ts_library(
     srcs = ["invocation_compare_button.tsx"],
     deps = [
         "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/rxjs",
         "//:node_modules/tslib",
@@ -783,6 +784,7 @@ ts_library(
         "//:node_modules/tslib",
         "//app/components/link",
         "//app/format",
+        "//app/invocation:invocation_compare_button",
         "//app/router",
         "//app/util:exit_codes",
         "//proto:invocation_status_ts_proto",
