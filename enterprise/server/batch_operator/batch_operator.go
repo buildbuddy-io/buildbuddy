@@ -75,33 +75,34 @@ func (u *pendingDigestBatch) finalize() *DigestBatch {
 type groupDigestBatches struct {
 	mu          sync.Mutex // protects jwt, updates, and atimeUpdate.digests.
 	authHeaders map[string][]string
-	updates     []*pendingDigestBatch
+	batches     []*pendingDigestBatch
 	numDigests  int
 
 	MaxBatchesPerGroup int
 }
 
-func (u *groupDigestBatches) findOrCreatePendingUpdate(instanceName string, digestFunction repb.DigestFunction_Value) *pendingDigestBatch {
-	for _, update := range u.updates {
-		if update.instanceName == instanceName && update.digestFunction == digestFunction {
-			return update
+func (u *groupDigestBatches) findOrCreatePendingBatch(instanceName string, digestFunction repb.DigestFunction_Value) *pendingDigestBatch {
+	for _, batch := range u.batches {
+		if batch.instanceName == instanceName && batch.digestFunction == digestFunction {
+			return batch
 		}
 	}
 
-	if len(u.updates) >= u.MaxBatchesPerGroup {
+	if len(u.batches) >= u.MaxBatchesPerGroup {
 		return nil
 	}
-	pendingUpdate := &pendingDigestBatch{
+	newPendingBatch := &pendingDigestBatch{
 		instanceName:   instanceName,
 		digests:        map[digest.Key]struct{}{},
 		digestFunction: digestFunction,
 	}
-	u.updates = append(u.updates, pendingUpdate)
-	return pendingUpdate
+	u.batches = append(u.batches, newPendingBatch)
+	return newPendingBatch
 }
 
-// An enqueued atime update
-type enqueuedOps struct {
+// An enqueued set of digest that haven't been
+// added to a pending batch yet.
+type enqueuedDigests struct {
 	groupID        string
 	authHeaders    map[string][]string
 	instanceName   string
@@ -137,12 +138,12 @@ type BatchDigestOperatorConfig struct {
 type batchOperator struct {
 	authenticator interfaces.Authenticator
 
-	enqueueChan chan *enqueuedOps
+	enqueueChan chan *enqueuedDigests
 
 	ticker <-chan time.Time
 	quit   chan struct{}
 
-	updates sync.Map // pending updates keyed by groupID (string -> *atimeUpdates)
+	batchesByGroupID sync.Map // (string -> *groupDigestBatches)
 
 	name               string
 	maxDigestsPerGroup int
@@ -153,12 +154,12 @@ type batchOperator struct {
 }
 
 func (u *batchOperator) ForceBatchingForTesting() {
-	update := <-u.enqueueChan
-	u.batch(update)
+	digests := <-u.enqueueChan
+	u.batch(digests)
 }
 
 func (u *batchOperator) ForceFlushBatchesForTesting(ctx context.Context) {
-	u.sendUpdates(ctx)
+	u.flushBatches(ctx)
 }
 
 func (u *batchOperator) ForceShutdownForTesting() {
@@ -203,7 +204,7 @@ func New(env environment.Env, name string, f func(ctx context.Context, groupID s
 	updater := batchOperator{
 		name:               name,
 		authenticator:      authenticator,
-		enqueueChan:        make(chan *enqueuedOps, c.QueueSize),
+		enqueueChan:        make(chan *enqueuedDigests, c.QueueSize),
 		ticker:             env.GetClock().NewTicker(c.BatchInterval).Chan(),
 		quit:               make(chan struct{}, 1),
 		maxDigestsPerGroup: c.MaxDigestsPerGroup,
@@ -233,7 +234,7 @@ func (u *batchOperator) Enqueue(ctx context.Context, instanceName string, digest
 		log.Infof("[%s] Dropping batch op due to missing auth headers in context", u.name)
 		return false
 	}
-	update := enqueuedOps{
+	update := enqueuedDigests{
 		groupID:        groupID,
 		authHeaders:    authHeaders,
 		instanceName:   instanceName,
@@ -273,9 +274,9 @@ func (u *batchOperator) batcher() {
 	}
 }
 
-func (u *batchOperator) batch(update *enqueuedOps) {
+func (u *batchOperator) batch(update *enqueuedDigests) {
 	groupID := update.groupID
-	rawUpdates, _ := u.updates.LoadOrStore(groupID, &groupDigestBatches{MaxBatchesPerGroup: u.maxBatchesPerGroup})
+	rawUpdates, _ := u.batchesByGroupID.LoadOrStore(groupID, &groupDigestBatches{MaxBatchesPerGroup: u.maxBatchesPerGroup})
 	updates, ok := rawUpdates.(*groupDigestBatches)
 	if !ok {
 		alert.UnexpectedEvent("batch-operator-unexpected-key-type", "[%s] updates contains value with invalid type %T", u.name, rawUpdates)
@@ -295,7 +296,7 @@ func (u *batchOperator) batch(update *enqueuedOps) {
 
 	// First, find the update that the new digests can be merged into, or create
 	// a new one if one doesn't exist.
-	pendingUpdate := updates.findOrCreatePendingUpdate(update.instanceName, update.digestFunction)
+	pendingUpdate := updates.findOrCreatePendingBatch(update.instanceName, update.digestFunction)
 	updates.mu.Unlock()
 	if pendingUpdate == nil {
 		log.Infof("[%s] Too many pending batches for group %s, dropping %d pending digests", u.name, groupID, len(keys))
@@ -355,7 +356,7 @@ func (u *batchOperator) sender() {
 		case <-u.quit:
 			return
 		case <-u.ticker:
-			u.sendUpdates(context.Background())
+			u.flushBatches(context.Background())
 		}
 	}
 }
@@ -365,12 +366,12 @@ func (u *batchOperator) sender() {
 // functions for each group. We could change that approach to send the biggest
 // update per group each time or something, but that could starve lesser used
 // instance-names.
-func (u *batchOperator) sendUpdates(ctx context.Context) int {
+func (u *batchOperator) flushBatches(ctx context.Context) int {
 	// Remove updates to send and release the mutex before sending RPCs.
-	updatesToSend := map[string]*DigestBatch{}
-	updatesSent := 0
+	batchesToFlush := map[string]*DigestBatch{}
+	batchesFlushed := 0
 	authHeaders := map[string]map[string][]string{}
-	u.updates.Range(func(key, value interface{}) bool {
+	u.batchesByGroupID.Range(func(key, value interface{}) bool {
 		groupID, ok := key.(string)
 		if !ok {
 			alert.UnexpectedEvent("batch-operator-unexpected-key-type", "[%s] updates contains key with unexpected type. actual type: %T", u.name, key)
@@ -383,68 +384,68 @@ func (u *batchOperator) sendUpdates(ctx context.Context) int {
 		}
 		updates.mu.Lock()
 
-		update := u.getUpdate(updates)
-		if update == nil {
+		batch := u.getBatch(updates)
+		if batch == nil {
 			updates.mu.Unlock()
 			return true
 		}
-		updatesToSend[groupID] = update
+		batchesToFlush[groupID] = batch
 		authHeaders[groupID] = updates.authHeaders
-		updates.numDigests -= len(update.Digests)
+		updates.numDigests -= len(batch.Digests)
 		updates.mu.Unlock()
 		return true
 	})
 
-	for groupID, update := range updatesToSend {
-		updatesSent++
-		u.update(ctx, groupID, authHeaders[groupID], update)
+	for groupID, batch := range batchesToFlush {
+		batchesFlushed++
+		u.dispatch(ctx, groupID, authHeaders[groupID], batch)
 	}
-	return updatesSent
+	return batchesFlushed
 }
 
-// Returns a FindMissingBlobsRequest representing the first atimeUpdate in the
-// provided list of atimeUpdates, potentially splitting it if the first update
-// in the queue is too large. Also reorders the atimeUpdates for inter-group
+// Returns a DigestBatch representing the first batch in the
+// provided list of pending batches, potentially splitting it if the first batch
+// in the queue is too large. Also reorders the pending batches for inter-group
 // fairness.
-func (u *batchOperator) getUpdate(updates *groupDigestBatches) *DigestBatch {
-	if len(updates.updates) == 0 {
+func (u *batchOperator) getBatch(groupBatches *groupDigestBatches) *DigestBatch {
+	if len(groupBatches.batches) == 0 {
 		return nil
 	}
 
-	update := updates.updates[0]
-	update.mu.Lock()
-	defer update.mu.Unlock()
+	pendingBatch := groupBatches.batches[0]
+	pendingBatch.mu.Lock()
+	defer pendingBatch.mu.Unlock()
 
-	// If this update is small enough to send in its entirety, remove it from
-	// the queue of updates.
-	if len(update.digests) <= u.maxDigestsPerBatch {
-		updates.updates = updates.updates[1:]
-		return update.finalize()
+	// If this batch is small enough to send in its entirety, remove it from
+	// the queue of batches.
+	if len(pendingBatch.digests) <= u.maxDigestsPerBatch {
+		groupBatches.batches = groupBatches.batches[1:]
+		return pendingBatch.finalize()
 	}
 
-	// Otherwise, remove MaxDigestsPerBatch digests from the update, send
-	// those, and move this update to the back of the queue for fairness
-	// with other updates in the group.
-	updates.updates = updates.updates[1:]
-	updates.updates = append(updates.updates, update)
-	req := DigestBatch{
-		InstanceName:   update.instanceName,
-		DigestFunction: update.digestFunction,
+	// Otherwise, remove MaxDigestsPerBatch digests from the batch, send
+	// those, and move this batch to the back of the queue for fairness
+	// with other batches in the group.
+	groupBatches.batches = groupBatches.batches[1:]
+	groupBatches.batches = append(groupBatches.batches, pendingBatch)
+	batch := DigestBatch{
+		InstanceName:   pendingBatch.instanceName,
+		DigestFunction: pendingBatch.digestFunction,
 		Digests:        make([]*repb.Digest, u.maxDigestsPerBatch),
 	}
 	i := 0
-	for digest := range update.digests {
+	for digest := range pendingBatch.digests {
 		if i >= u.maxDigestsPerBatch {
 			break
 		}
-		req.Digests[i] = digest.ToDigest()
-		delete(update.digests, digest)
+		batch.Digests[i] = digest.ToDigest()
+		delete(pendingBatch.digests, digest)
 		i++
 	}
-	return &req
+	return &batch
 }
 
-func (u *batchOperator) update(ctx context.Context, groupID string, authHeaders map[string][]string, b *DigestBatch) {
+func (u *batchOperator) dispatch(ctx context.Context, groupID string, authHeaders map[string][]string, b *DigestBatch) {
 	log.CtxDebugf(ctx, "Asynchronously processing %d batches for group %s", len(b.Digests), groupID)
 
 	ctx = authutil.AddAuthHeadersToContext(ctx, authHeaders, u.authenticator)
@@ -466,7 +467,7 @@ func (u *batchOperator) shutdown(ctx context.Context) error {
 	// Make a best-effort attempt to flush pending batches.
 	// TODO(iain): we could do something fancier here if necessary, like
 	// fire-and-forget these RPCs with a rate-limiter. Let's try this for now.
-	for u.sendUpdates(ctx) > 0 {
+	for u.flushBatches(ctx) > 0 {
 	}
 
 	return nil
