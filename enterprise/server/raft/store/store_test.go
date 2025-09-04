@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -11,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
+	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
@@ -19,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -1302,6 +1306,18 @@ func metadataKey(t *testing.T, fr *sgpb.FileRecord) []byte {
 	return keyBytes
 }
 
+func recordNotFound(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr *sgpb.FileRecord) {
+	fk := metadataKey(t, fr)
+	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.GetRequest{
+		Key: fk,
+	}).ToProto()
+	require.NoError(t, err)
+	rsp, err := ts.Sender().SyncRead(ctx, fk, readReq)
+	require.NoError(t, err)
+	batchRsp := rbuilder.NewBatchResponseFromProto(rsp)
+	require.True(t, status.IsNotFoundError(batchRsp.AnyError()))
+}
+
 func readRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr *sgpb.FileRecord) {
 	fs := filestore.New()
 	fk := metadataKey(t, fr)
@@ -2352,4 +2368,80 @@ func TestSetupNewPartitions(t *testing.T) {
 		}
 		break
 	}
+}
+
+func TestBackupAndRestore(t *testing.T) {
+	ctx := context.Background()
+	dir := testfs.MakeTempDir(t)
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	stores := []*testutil.TestingStore{s1, s2, s3}
+
+	sf.StartShard(t, ctx, stores...)
+
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+
+	writtenBefore := writeNRecords(ctx, t, s, 10)
+
+	// Test export all snapshots
+	opts := raftConfig.BackupOptions{
+		Enabled:    true,
+		Dir:        dir,
+		NumWorkers: 2,
+	}
+	err := s.ExportAllSnapshots(ctx, opts)
+	require.NoError(t, err)
+
+	{
+		expectedRD := s.GetRange(1)
+		subdir := filepath.Join(dir, "shard-1")
+		files, err := os.ReadDir(subdir)
+		require.NoError(t, err)
+		require.Len(t, files, 2)
+		require.Contains(t, files[0].Name(), "rd.proto")
+		require.Contains(t, files[1].Name(), "snapshot")
+		data, err := disk.ReadFile(ctx, filepath.Join(subdir, "rd.proto"))
+		require.NoError(t, err)
+		rd := &rfpb.RangeDescriptor{}
+		err = proto.Unmarshal(data, rd)
+		require.NoError(t, err)
+		require.True(t, proto.Equal(expectedRD, rd), "expectedRD: %+v,\n actual: %+v", expectedRD, rd)
+	}
+	{
+		expectedRD := s.GetRange(2)
+		subdir := filepath.Join(dir, "shard-2")
+		files, err := os.ReadDir(filepath.Join(subdir))
+		require.NoError(t, err)
+		require.Len(t, files, 2)
+		require.Contains(t, files[0].Name(), "rd.proto")
+		require.Contains(t, files[1].Name(), "snapshot")
+		log.Infof("subdir: %q, name: %q", subdir, files[1].Name())
+		data, err := disk.ReadFile(ctx, filepath.Join(subdir, "rd.proto"))
+		require.NoError(t, err)
+		rd := &rfpb.RangeDescriptor{}
+		err = proto.Unmarshal(data, rd)
+		require.NoError(t, err)
+		require.True(t, proto.Equal(expectedRD, rd), "expectedRD: %+v,\n actual: %+v", expectedRD, rd)
+	}
+
+	writtenAfter := writeNRecords(ctx, t, s, 10)
+
+	// Don't stop the testStore, because it will stop gm
+	s1.Store.Stop(ctx)
+	s2.Store.Stop(ctx)
+	s3.Store.Stop(ctx)
+
+	sf.RecreateStoreFromBackup(t, s1, dir)
+	sf.RecreateStoreFromBackup(t, s2, dir)
+	sf.RecreateStoreFromBackup(t, s3, dir)
+
+	for _, fr := range writtenBefore {
+		readRecord(ctx, t, s, fr)
+	}
+	for _, fr := range writtenAfter {
+		recordNotFound(ctx, t, s, fr)
+	}
+
 }

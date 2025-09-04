@@ -6,10 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
-	"flag"
 	"fmt"
 	"math"
 	"net"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -44,11 +44,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/elastic/gosigar"
@@ -56,6 +58,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
+	"github.com/lni/dragonboat/v4/tools"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
@@ -76,6 +79,13 @@ var (
 	enableDriver           = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
 	enableTxnCleanup       = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
 	enableRegistryPreload  = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
+
+	backupOptions = flag.Struct("cache.raft.backup", raftConfig.BackupOptions{
+		Enabled:    false,
+		Interval:   6 * time.Hour,
+		Dir:        "",
+		NumWorkers: 5,
+	}, "Backup configuration")
 )
 
 const (
@@ -87,7 +97,8 @@ const (
 	metricsRefreshPeriod         = 30 * time.Second
 
 	// listenerID for replicaStatusWaiter
-	listenerID = "replicaStatusWaiter"
+	listenerID                     = "replicaStatusWaiter"
+	backupRangeDescriptorProtoFile = "rd.proto"
 )
 
 type LogDBConfigType int
@@ -199,7 +210,7 @@ func getLogDbConfig(t LogDBConfigType) dbConfig.LogDBConfig {
 	return dbConfig.GetDefaultLogDBConfig()
 }
 
-func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr string, partitions []disk.Partition, logDBConfigType LogDBConfigType) (*Store, error) {
+func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr string, partitions []disk.Partition, logDBConfigType LogDBConfigType, backupSnapshotSourceDir string) (*Store, error) {
 	rangeCache := rangecache.New()
 	raftListener := listener.NewRaftListener()
 	gossipManager := env.GetGossipService()
@@ -220,6 +231,21 @@ func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr str
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
 	if err != nil {
 		return nil, err
+	}
+	if backupSnapshotSourceDir != "" {
+		nhid := nodeHost.ID()
+		// stops the nodehost
+		nodeHost.Close()
+		nhc.NodeHostID = nhid
+		ctx := env.GetServerContext()
+
+		if err := RestoreFromBackup(ctx, nhc, backupSnapshotSourceDir); err != nil {
+			return nil, err
+		}
+		nodeHost, err = dragonboat.NewNodeHost(nhc)
+		if err != nil {
+			return nil, err
+		}
 	}
 	registry := regHolder.r
 	apiClient := client.NewAPIClient(env, nodeHost.ID(), registry)
@@ -700,6 +726,12 @@ func (s *Store) Start() error {
 		s.deleteSessionWorker.Start(s.egCtx)
 		return nil
 	})
+	if opts := *backupOptions; opts.Enabled {
+		s.eg.Go(func() error {
+			s.periodicSnapshotExport(s.egCtx, opts)
+			return nil
+		})
+	}
 	s.eg.Go(func() error {
 		s.setupPartitions(s.egCtx)
 		return nil
@@ -1162,6 +1194,181 @@ func (s *Store) SnapshotCluster(ctx context.Context, rangeID uint64) error {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
+}
+
+// ExportSnapshot exports a snapshot for the given range with Exported=true option
+func (s *Store) ExportSnapshot(ctx context.Context, rangeID uint64, dir string) error {
+	defer canary.Start("ExportSnapshot", 30*time.Second)()
+	if _, ok := ctx.Deadline(); !ok {
+		c, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		ctx = c
+	}
+
+	exportPath := filepath.Join(dir, fmt.Sprintf("shard-%d", rangeID))
+	disk.EnsureDirectoryExists(exportPath)
+
+	opts := dragonboat.SnapshotOption{
+		Exported:   true,
+		ExportPath: exportPath,
+	}
+
+	retrier := retry.DefaultWithContext(ctx)
+	var lastError error
+	for retrier.Next() {
+		rd := s.GetRange(rangeID)
+		data, err := proto.Marshal(rd)
+		if err != nil {
+			log.Warningf("Failed to export snapshot for range %d: failed to marshal range descriptor: %s", rangeID, err)
+			continue
+		}
+		disk.WriteFile(ctx, filepath.Join(exportPath, backupRangeDescriptorProtoFile), data)
+
+		_, err = s.nodeHost.SyncRequestSnapshot(ctx, rangeID, opts)
+		if err == nil {
+			log.Infof("Successfully exported snapshot for range %d to %s", rangeID, exportPath)
+			return nil
+		}
+		lastError = err
+		log.Warningf("Failed to export snapshot for range %d: %v, retrying...", rangeID, err)
+	}
+	return status.InternalErrorf("ExportSnapshot exceeded retry for range %d, lastError: %s", rangeID, lastError)
+}
+
+func restoreShardFromBackup(ctx context.Context, nhConfig dbConfig.NodeHostConfig, shardBackupDir string) error {
+	// Read and parse the range descriptor from rd.proto file
+	rdProtoPath := filepath.Join(shardBackupDir, backupRangeDescriptorProtoFile)
+	rdData, err := disk.ReadFile(ctx, rdProtoPath)
+	if err != nil {
+		return status.WrapErrorf(err, "failed to read range descriptor file %s", rdProtoPath)
+	}
+
+	var rd rfpb.RangeDescriptor
+	if err := proto.Unmarshal(rdData, &rd); err != nil {
+		return status.WrapErrorf(err, "failed to unmarshal range descriptor from %s", rdProtoPath)
+	}
+
+	// Construct memberNodes map from replica ID to NHID
+	memberNodes := make(map[uint64]string, len(rd.GetReplicas()))
+	replicaID := uint64(0)
+	for _, replica := range rd.GetReplicas() {
+		if replica.GetNhid() == "" {
+			log.Warningf("c%dn%d has empty NHID.", replica.GetRangeId(), replica.GetReplicaId())
+		}
+		if replica.GetNhid() == nhConfig.NodeHostID {
+			replicaID = replica.GetReplicaId()
+		}
+		memberNodes[replica.GetReplicaId()] = replica.GetNhid()
+	}
+
+	if replicaID == 0 {
+		log.Infof("c%dn%d is not on node %q, skip", rd.GetRangeId(), replicaID, nhConfig.NodeHostID)
+		return nil
+	}
+
+	snapshotDir := ""
+	entries, err := os.ReadDir(shardBackupDir)
+	if err != nil {
+		return status.WrapErrorf(err, "failed to read shardBackupDir (%q): %s", shardBackupDir, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), "snapshot") {
+			snapshotDir = filepath.Join(shardBackupDir, entry.Name())
+		}
+	}
+	if snapshotDir == "" {
+		return status.NotFoundErrorf("unable to find snapshot dir in %q", shardBackupDir)
+	}
+
+	err = tools.ImportSnapshot(nhConfig, snapshotDir, memberNodes, replicaID)
+	if err != nil {
+		return status.InternalErrorf("Failed to import snapshot for range %d from %s: %v", rd.RangeId, shardBackupDir, err)
+	}
+
+	log.Infof("Successfully imported snapshot for c%dn%d from %s", rd.GetRangeId(), replicaID, shardBackupDir)
+	return nil
+}
+
+// RestoreFromBackup restores the nodehost from a backup dir.
+func RestoreFromBackup(ctx context.Context, nhConfig dbConfig.NodeHostConfig, backupRootDir string) error {
+	// Read all directories from the backup root directory
+	entries, err := os.ReadDir(backupRootDir)
+	if err != nil {
+		return status.WrapErrorf(err, "failed to read backup directory %s", backupRootDir)
+	}
+
+	// Filter and process directories with "shard-" prefix
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), "shard-") {
+			shardBackupDir := filepath.Join(backupRootDir, entry.Name())
+			if err := restoreShardFromBackup(ctx, nhConfig, shardBackupDir); err != nil {
+				return status.WrapErrorf(err, "failed to restore shard from %s", shardBackupDir)
+			}
+		}
+	}
+
+	return nil
+}
+
+// ExportAllSnapshots exports snapshots for all active ranges
+func (s *Store) ExportAllSnapshots(ctx context.Context, opts raftConfig.BackupOptions) error {
+	nhInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
+		SkipLogInfo: true,
+	})
+
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.SetLimit(opts.NumWorkers)
+
+	for _, shardInfo := range nhInfo.ShardInfoList {
+		rangeID := shardInfo.ShardID
+		eg.Go(func() error {
+			return s.ExportSnapshot(ctx, rangeID, opts.Dir)
+		})
+	}
+
+	return eg.Wait()
+}
+
+// periodicSnapshotExport runs periodic snapshot exports based on the provided configuration
+func (s *Store) periodicSnapshotExport(ctx context.Context, opts raftConfig.BackupOptions) {
+	if opts.Dir == "" {
+		log.Warning("Snapshot export enabled but no export directory configured")
+		return
+	}
+
+	ticker := time.NewTicker(opts.Interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			log.Info("Starting periodic snapshot export")
+			if err := s.ExportAllSnapshots(ctx, opts); err != nil {
+				log.Errorf("Failed to export snapshots: %v", err)
+			} else {
+				log.Info("Completed periodic snapshot export")
+			}
+		}
+	}
+}
+
+// RestoreFromSnapshot restores the nodehost from an exported snapshot directory
+// This should be called before starting the nodehost
+func (s *Store) RestoreFromSnapshot(ctx context.Context, snapshotDir string) error {
+	// Use dragonboat tools to restore from snapshot
+	// Note: This is a placeholder implementation. The actual restoration process
+	// would depend on the specific snapshot format and nodehost configuration
+	log.Infof("Restoring nodehost from snapshot directory: %s", snapshotDir)
+
+	// The restoration would typically involve:
+	// 1. Stopping any existing nodehost
+	// 2. Clearing existing data directories
+	// 3. Importing snapshot data
+	// 4. Reinitializing the nodehost with restored data
+
+	return status.UnimplementedError("RestoreFromSnapshot is not yet fully implemented")
 }
 
 // ListReplicasForTest lists replicas that are opened in the machine
