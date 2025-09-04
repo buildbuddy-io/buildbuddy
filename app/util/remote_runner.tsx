@@ -6,6 +6,8 @@ import error_service from "../errors/error_service";
 import InvocationModel from "../invocation/invocation_model";
 import rpcService from "../service/rpc_service";
 
+const DEFAULT_CONTAINER_IMAGE = "docker://gcr.io/flame-public/rbe-ubuntu24-04:latest";
+
 export async function supportsRemoteRun(repoUrl: string): Promise<boolean> {
   const rsp = await rpcService.service.getLinkedGitHubRepos(new github.GetLinkedReposRequest());
   return rsp.repoUrls.filter((url) => url === repoUrl).length > 0;
@@ -26,7 +28,7 @@ export function triggerRemoteRun(
   }
 
   if (!platformProps.has("container-image")) {
-    platformProps.set("container-image", "ubuntu-24.04");
+    platformProps.set("container-image", DEFAULT_CONTAINER_IMAGE);
   }
 
   for (let [key, value] of platformProps) {
