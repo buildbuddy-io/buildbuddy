@@ -67,13 +67,13 @@ func (u *pendingDigestBatch) finalize() *DigestBatch {
 	return &db2
 }
 
-// The set of pending access time updates to send per group. There should be at
-// most one of these per group, but each contains many atimeUpdate{}s, as
+// The set of pending digests batches for a single group. There should be at
+// most one of these per group, but each contains many pendingDigestBatches, as
 // there is one per (groupID, instance-name, digest-function) tuple. However,
-// the update will only keep one such atimeUpdate{} and if it gets too big will
-// discard additional digests until it's flushed.
+// each pendingDigestBatch will only hold MaxDigestsPerBatch: if it gets too big,
+// we will discard additional digests until it's flushed.
 type groupDigestBatches struct {
-	mu          sync.Mutex // protects jwt, updates, and atimeUpdate.digests.
+	mu          sync.Mutex // protects jwt, batches, and pendingDigestBatch.digests.
 	authHeaders map[string][]string
 	batches     []*pendingDigestBatch
 	numDigests  int
@@ -111,13 +111,13 @@ type enqueuedDigests struct {
 }
 
 type BatchDigestOperator interface {
-	// Enqueues atime updates for the provided instanceName, digestFunction,
-	// and set of digests provided. Returns true if the updates were
+	// Enqueues digests for the provided instanceName, digestFunction,
+	// and set of digests provided. Returns true if the digests were
 	// successfully enqueued, false if not.
 	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool
 
-	// Enqueues atime updates for the provided resource name. Returns true if
-	// the update was successfully enqueued, false if not.
+	// Enqueues the digest for the provided resource name. Returns true if
+	// the digest was successfully enqueued, false if not.
 	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool
 
 	Start(hc interfaces.HealthChecker)
@@ -201,7 +201,7 @@ func New(env environment.Env, name string, f func(ctx context.Context, groupID s
 	if authenticator == nil {
 		return nil, fmt.Errorf("An Authenticator is required to create a BatchDigestOperator.")
 	}
-	updater := batchOperator{
+	operator := batchOperator{
 		name:               name,
 		authenticator:      authenticator,
 		enqueueChan:        make(chan *enqueuedDigests, c.QueueSize),
@@ -212,7 +212,7 @@ func New(env environment.Env, name string, f func(ctx context.Context, groupID s
 		maxBatchesPerGroup: c.MaxBatchesPerGroup,
 		op:                 f,
 	}
-	return &updater, nil
+	return &operator, nil
 }
 
 func (u *batchOperator) groupID(ctx context.Context) string {
@@ -234,7 +234,7 @@ func (u *batchOperator) Enqueue(ctx context.Context, instanceName string, digest
 		log.Infof("[%s] Dropping batch op due to missing auth headers in context", u.name)
 		return false
 	}
-	update := enqueuedDigests{
+	toEnqueue := enqueuedDigests{
 		groupID:        groupID,
 		authHeaders:    authHeaders,
 		instanceName:   instanceName,
@@ -242,10 +242,10 @@ func (u *batchOperator) Enqueue(ctx context.Context, instanceName string, digest
 		digestFunction: digestFunction,
 	}
 
-	// Try to send the batch to the enqueueChan, where it will be processed by
+	// Try to send the digests to the enqueueChan, where it will be processed by
 	// the batcher, but only if this will not block.
 	select {
-	case u.enqueueChan <- &update:
+	case u.enqueueChan <- &toEnqueue:
 		return true
 	default:
 		// XXX
@@ -261,77 +261,77 @@ func (u *batchOperator) EnqueueByResourceName(ctx context.Context, rn *digest.CA
 	return u.Enqueue(ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
 }
 
-// Runs a loop that consumes updates from enqueueChan and adds them to the
-// batches of pending atime updates to be sent to the backend.
+// Runs a loop that consumes digests from enqueueChan and adds them to the
+// corresponding pending batches, creating new batches as necessary.
 func (u *batchOperator) batcher() {
 	for {
 		select {
 		case <-u.quit:
 			return
-		case update := <-u.enqueueChan:
-			u.batch(update)
+		case digests := <-u.enqueueChan:
+			u.batch(digests)
 		}
 	}
 }
 
-func (u *batchOperator) batch(update *enqueuedDigests) {
-	groupID := update.groupID
-	rawUpdates, _ := u.batchesByGroupID.LoadOrStore(groupID, &groupDigestBatches{MaxBatchesPerGroup: u.maxBatchesPerGroup})
-	updates, ok := rawUpdates.(*groupDigestBatches)
+func (u *batchOperator) batch(eqd *enqueuedDigests) {
+	groupID := eqd.groupID
+	rawBatchesForGroup, _ := u.batchesByGroupID.LoadOrStore(groupID, &groupDigestBatches{MaxBatchesPerGroup: u.maxBatchesPerGroup})
+	batchesForGroup, ok := rawBatchesForGroup.(*groupDigestBatches)
 	if !ok {
-		alert.UnexpectedEvent("batch-operator-unexpected-key-type", "[%s] updates contains value with invalid type %T", u.name, rawUpdates)
+		alert.UnexpectedEvent("batch-operator-unexpected-key-type", "[%s] groupDigestBatches contains value with invalid type %T", u.name, rawBatchesForGroup)
 		return
 	}
 
 	// Uniqueify the incoming digests. Note this wrecks the order of the
-	// requested updates. Too bad. Keep track of the counts for metrics below.
+	// input digests. Too bad. Keep track of the counts for metrics below.
 	keys := map[digest.Key]int{}
-	for _, digestProto := range update.digests {
+	for _, digestProto := range eqd.digests {
 		keys[digest.NewKey(digestProto)]++
 	}
 
-	// Always use the most recent auth headers for a group for remote atime updates.
-	updates.mu.Lock()
-	updates.authHeaders = update.authHeaders
+	// Always save the most recent auth headers for a group.
+	batchesForGroup.mu.Lock()
+	batchesForGroup.authHeaders = eqd.authHeaders
 
-	// First, find the update that the new digests can be merged into, or create
+	// First, find the batch that the new digests can be merged into, or create
 	// a new one if one doesn't exist.
-	pendingUpdate := updates.findOrCreatePendingBatch(update.instanceName, update.digestFunction)
-	updates.mu.Unlock()
-	if pendingUpdate == nil {
+	pendingBatch := batchesForGroup.findOrCreatePendingBatch(eqd.instanceName, eqd.digestFunction)
+	batchesForGroup.mu.Unlock()
+	if pendingBatch == nil {
 		log.Infof("[%s] Too many pending batches for group %s, dropping %d pending digests", u.name, groupID, len(keys))
 		metrics.RemoteAtimeUpdates.WithLabelValues(
 			groupID,
 			"dropped_too_many_batches",
-		).Add(float64(len(update.digests)))
+		).Add(float64(len(eqd.digests)))
 		return
 	}
 
-	// Now merge the new digests into the update.
+	// Now merge the new digests into the batch.
 	enqueued := 0
 	duplicate := 0
 	dropped := 0
 	for key, count := range keys {
-		if pendingUpdate.contains(key) {
+		if pendingBatch.contains(key) {
 			duplicate += count
 			continue
 		}
-		updates.mu.Lock()
-		if updates.numDigests+1 > u.maxDigestsPerGroup {
-			updates.mu.Unlock()
-			dropped = len(update.digests) - enqueued - duplicate
+		batchesForGroup.mu.Lock()
+		if batchesForGroup.numDigests+1 > u.maxDigestsPerGroup {
+			batchesForGroup.mu.Unlock()
+			dropped = len(eqd.digests) - enqueued - duplicate
 			log.Warningf("[%s] maxDigestsPerGroup exceeded for group %s, dropping %d digests", u.name, groupID, dropped)
 			break
 		}
-		updates.numDigests++
-		updates.mu.Unlock()
-		pendingUpdate.set(key)
+		batchesForGroup.numDigests++
+		batchesForGroup.mu.Unlock()
+		pendingBatch.set(key)
 		enqueued++
 		duplicate += count - 1
 	}
 
-	if enqueued+duplicate+dropped != len(update.digests) {
-		log.Debugf("[%s] Metrics don't add up. incoming digests: %d, added: %d, duplicates: %d, dropped: %d", u.name, len(update.digests), enqueued, duplicate, dropped)
+	if enqueued+duplicate+dropped != len(eqd.digests) {
+		log.Debugf("[%s] Metrics don't add up. incoming digests: %d, added: %d, duplicates: %d, dropped: %d", u.name, len(eqd.digests), enqueued, duplicate, dropped)
 	}
 
 	// XXX: rename / modify.
@@ -349,7 +349,7 @@ func (u *batchOperator) batch(update *enqueuedDigests) {
 	).Add(float64(dropped))
 }
 
-// Starts the loop that sends atime updates to the backend.
+// Starts the loop that flushes batches to the caaller-provided operation.
 func (u *batchOperator) sender() {
 	for {
 		select {
@@ -361,38 +361,38 @@ func (u *batchOperator) sender() {
 	}
 }
 
-// Sends one update per group. Because the updates are stored in a per-group
-// array, the updater will round-robin across instance-names and digest
+// Sends one batch per group. Because the batches are stored in a per-group
+// array, the batchOperator will round-robin across instance-names and digest
 // functions for each group. We could change that approach to send the biggest
-// update per group each time or something, but that could starve lesser used
+// batch per group each time or something, but that could starve lesser used
 // instance-names.
 func (u *batchOperator) flushBatches(ctx context.Context) int {
-	// Remove updates to send and release the mutex before sending RPCs.
+	// Remove batches to flush and release the mutex before sending RPCs.
 	batchesToFlush := map[string]*DigestBatch{}
 	batchesFlushed := 0
 	authHeaders := map[string]map[string][]string{}
 	u.batchesByGroupID.Range(func(key, value interface{}) bool {
 		groupID, ok := key.(string)
 		if !ok {
-			alert.UnexpectedEvent("batch-operator-unexpected-key-type", "[%s] updates contains key with unexpected type. actual type: %T", u.name, key)
+			alert.UnexpectedEvent("batch-operator-unexpected-key-type", "[%s] batchesByGroupID contains key with unexpected type. actual type: %T", u.name, key)
 			return true
 		}
-		updates, ok := value.(*groupDigestBatches)
+		batches, ok := value.(*groupDigestBatches)
 		if !ok {
-			alert.UnexpectedEvent("batch-operator-unexpected-value-type", "[%s] updates contains value with unexpected type. actual type: %T", u.name, value)
+			alert.UnexpectedEvent("batch-operator-unexpected-value-type", "[%s] batchesByGroupID contains value with unexpected type. actual type: %T", u.name, value)
 			return true
 		}
-		updates.mu.Lock()
+		batches.mu.Lock()
 
-		batch := u.getBatch(updates)
+		batch := u.getBatch(batches)
 		if batch == nil {
-			updates.mu.Unlock()
+			batches.mu.Unlock()
 			return true
 		}
 		batchesToFlush[groupID] = batch
-		authHeaders[groupID] = updates.authHeaders
-		updates.numDigests -= len(batch.Digests)
-		updates.mu.Unlock()
+		authHeaders[groupID] = batches.authHeaders
+		batches.numDigests -= len(batch.Digests)
+		batches.mu.Unlock()
 		return true
 	})
 
