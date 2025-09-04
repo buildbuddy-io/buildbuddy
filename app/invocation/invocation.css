@@ -1482,7 +1482,7 @@ svg.invocation-query-graph .nodes rect {
 
   .comparison-buffer-illustration {
     position: absolute;
-    top: 0;
+    bottom: 0;
     right: 0;
     padding: 16px;
     margin-right: 0;
@@ -1502,4 +1502,18 @@ svg.invocation-query-graph .nodes rect {
 .target-more-buttons svg {
   height: 16px;
   color: rgba(0, 0, 0, 0.5);
+}
+
+.invocation-compare-button-container-mini {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.invocation-compare-button-container-mini .invocation-menu-button {
+  width: 40px;
+  height: 40px;
+  border: none;
+  padding: 0;
+  justify-content: center;
 }

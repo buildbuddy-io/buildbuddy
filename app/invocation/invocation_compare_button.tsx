@@ -6,9 +6,12 @@ import Menu, { MenuItem } from "../components/menu/menu";
 import Popup from "../components/popup/popup";
 import router from "../router/router";
 import service, { IdAndModel } from "./invocation_comparison_service";
+import { OutlinedButtonGroup } from "../components/button/button_group";
+import { MoreVertical } from "lucide-react";
 
 export interface InvocationCompareButtonComponentProps {
   invocationId: string;
+  mini?: boolean;
 }
 
 interface State {
@@ -39,23 +42,31 @@ export default class InvocationCompareButtonComponent extends React.Component<
     this.setState({ invocationIdToCompare: data.id });
   }
 
-  private onClick() {
+  private onClick(event: React.MouseEvent<HTMLButtonElement>) {
     this.setState({ isDropdownOpen: true });
+    event.preventDefault();
+    event.stopPropagation();
   }
 
-  private onClickSelectForComparison() {
+  private onClickSelectForComparison(event: React.MouseEvent<HTMLButtonElement>) {
     service.setComparisonInvocation(this.props.invocationId);
     this.setState({ isDropdownOpen: false, invocationIdToCompare: this.props.invocationId });
+    event.preventDefault();
+    event.stopPropagation();
   }
 
-  private onClickCompareWithSelected() {
+  private onClickCompareWithSelected(event: React.MouseEvent<HTMLButtonElement>) {
     const invocationIdToCompare = this.state.invocationIdToCompare;
     this.setState({ isDropdownOpen: false, invocationIdToCompare: "" });
     router.navigateTo(`/compare/${invocationIdToCompare}...${this.props.invocationId}`);
+    event.preventDefault();
+    event.stopPropagation();
   }
 
-  private onRequestCloseDropdown() {
+  private onRequestCloseDropdown(event: React.MouseEvent<HTMLButtonElement>) {
     this.setState({ isDropdownOpen: false });
+    event.preventDefault();
+    event.stopPropagation();
   }
 
   render() {
@@ -64,11 +75,13 @@ export default class InvocationCompareButtonComponent extends React.Component<
     }
 
     return (
-      <div className="invocation-compare-button-container">
-        <OutlinedButton onClick={this.onClick.bind(this)}>
+      <div className={this.props.mini ? "invocation-compare-button-container-mini" : "invocation-compare-button-container"}>
+        {!this.props.mini && <><OutlinedButton onClick={this.onClick.bind(this)}>
           <ComparisonBufferIllustration isBuffered={Boolean(this.state.invocationIdToCompare)} />
           <div>Compare</div>
-        </OutlinedButton>
+        </OutlinedButton></>}
+        {this.props.mini && <OutlinedButton className="invocation-menu-button"
+ onClick={this.onClick.bind(this)}><MoreVertical /></OutlinedButton>}
         <Popup isOpen={this.state.isDropdownOpen} onRequestClose={this.onRequestCloseDropdown.bind(this)}>
           <Menu>
             <MenuItem onClick={this.onClickSelectForComparison.bind(this)}>Select for comparison</MenuItem>

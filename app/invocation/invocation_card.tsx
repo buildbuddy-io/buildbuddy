@@ -21,6 +21,7 @@ import Link from "../components/link/link";
 import format from "../format/format";
 import router from "../router/router";
 import { exitCode } from "../util/exit_codes";
+import InvocationCompareButton from "./invocation_compare_button";
 
 const durationRefreshIntervalMillis = 3000;
 
@@ -218,6 +219,7 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
             <div className="title">{this.getTitle()}</div>
             {roleLabel && <div className={`role-badge ${this.props.invocation.role}`}>{roleLabel}</div>}
             <div className="subtitle">{format.formatTimestampUsec(this.props.invocation.createdAtUsec)}</div>
+            <InvocationCompareButton mini={true} invocationId={this.props.invocation.invocationId} />
           </div>
           <div className="details">
             {!this.props.hover && (
