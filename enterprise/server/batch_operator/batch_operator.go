@@ -208,12 +208,12 @@ func New(env environment.Env, name string, f func(ctx context.Context, groupID s
 	operator := batchOperator{
 		name:               name,
 		authenticator:      authenticator,
-		enqueueChan:        make(chan *enqueuedDigests, c.QueueSize),
-		ticker:             env.GetClock().NewTicker(c.BatchInterval).Chan(),
+		enqueueChan:        make(chan *enqueuedDigests, config.QueueSize),
+		ticker:             env.GetClock().NewTicker(config.BatchInterval).Chan(),
 		quit:               make(chan struct{}, 1),
-		maxDigestsPerGroup: c.MaxDigestsPerGroup,
-		maxDigestsPerBatch: c.MaxDigestsPerBatch,
-		maxBatchesPerGroup: c.MaxBatchesPerGroup,
+		maxDigestsPerGroup: config.MaxDigestsPerGroup,
+		maxDigestsPerBatch: config.MaxDigestsPerBatch,
+		maxBatchesPerGroup: config.MaxBatchesPerGroup,
 		op:                 f,
 	}
 	return &operator, nil
@@ -491,6 +491,7 @@ func (u *batchOperator) dispatch(ctx context.Context, groupID string, authHeader
 	err := u.op(ctx, groupID, b)
 
 	metrics.BatchOperatorFlushedDigests.WithLabelValues(
+		u.name,
 		groupID,
 		gstatus.Code(err).String(),
 	).Add(float64(len(b.Digests)))
