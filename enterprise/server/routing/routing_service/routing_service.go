@@ -16,6 +16,11 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
+const (
+	routingServiceConfigFlag = "routing-service-config"
+	primaryCacheConfigField  = "primary-cache"
+)
+
 var (
 	availableRoutes = flag.Slice("remote_cache.routing.available_routes", []string{}, "The set of GRPCS cache endpoints to use for routing.  If any endpoints are defined, routing is enabled.")
 )
@@ -40,6 +45,7 @@ func RegisterRoutingService(env *real_environment.RealEnv) error {
 	if efp == nil {
 		panic("Routing requires experiments")
 	}
+	// XXX: Validate a default!
 
 	clientSets := map[string]*clientSet{}
 	for _, r := range *availableRoutes {
@@ -74,25 +80,37 @@ func IsCacheRoutingEnabled() bool {
 }
 
 func (r *routingService) GetCacheRoutingConfig(ctx context.Context) (*ropb.CacheRoutingConfig, error) {
-	return &ropb.CacheRoutingConfig{}, nil
+	c := r.efp.Object(ctx, routingServiceConfigFlag, nil)
+	if c == nil {
+		return nil, status.NotFoundError("Cache config not found (no default?)")
+	}
+	out := &ropb.CacheRoutingConfig{}
+	primary, ok := c[primaryCacheConfigField]
+	if !ok || primary == "" {
+		alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "Missing PrimaryCache in routing config.")
+		return nil, status.InternalErrorf("Cache config didn't have a primary cache defined.")
+	}
+	if primaryCacheStr, ok := primary.(string); ok {
+		out.PrimaryCache = primaryCacheStr
+	} else {
+		alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "PrimaryCache is not a string: %T(%v)", primary, primary)
+		return nil, status.InternalErrorf("Cache config didn't have a primary cache defined.")
+	}
+
+	return out, nil
 }
 
 func (r *routingService) getPrimaryClientSet(ctx context.Context) (*clientSet, error) {
 	conf, err := r.GetCacheRoutingConfig(ctx)
 	if err != nil {
-		alert.CtxUnexpectedEvent(ctx, "routing-failure", "A routingService request failed: %s", err)
-		return nil, err
+		alert.CtxUnexpectedEvent(ctx, "routing-failure", "A routingService request failed to fetch config: %s", err)
+		return nil, status.InternalErrorf("Invalid or missing cache specification.")
 	}
 	route := conf.GetPrimaryCache()
-	if route == "" {
-		alert.CtxUnexpectedEvent(ctx, "routing-empty-route", "A routingService route had no primary cache defined.")
-		return nil, status.InternalError("Missing primary cache config")
-	}
-
 	clientSet, ok := r.clientSets[route]
 	if !ok || clientSet == nil {
-		alert.CtxUnexpectedEvent(ctx, "routing-unknown-route", "routingService is not configured to support route %s", route)
-		return nil, status.InternalErrorf("Unsupported route %s", route)
+		alert.CtxUnexpectedEvent(ctx, "routing-unknown-route", "routingService is not configured to support route '%s'", route)
+		return nil, status.InternalErrorf("Invalid or missing cache specification.")
 	}
 	return clientSet, nil
 }
