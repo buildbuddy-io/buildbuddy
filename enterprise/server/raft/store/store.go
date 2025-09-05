@@ -3371,13 +3371,43 @@ func (s *Store) processPartitions(ctx context.Context) {
 			}
 		}
 
-		if pd != nil && pd.GetState() == rfpb.PartitionDescriptor_INITIALIZED {
-			continue
-		}
+		if p.SoftDeleted {
+			if pd == nil {
+				// The partition descriptor was not added to the meta range in
+				// the first place or has been cleaned up.
+				continue
+			}
+			if pd.GetState() == rfpb.PartitionDescriptor_SOFT_DELETED {
+				continue
+			}
 
-		// set up the partition
-		s.driverQueue.MaybeAddPartitionTask(ctx, p, pd)
-		partitionsNeedsSetup = true
+			partitionKey := keys.MakeKey(constants.PartitionPrefix, []byte(p.ID))
+			oldBuf, err := proto.Marshal(pd)
+			if err != nil {
+				alert.UnexpectedEvent("raft-partition-descriptor-marshal-failure", "failed to marshal partition descriptor %v: %s", pd, err)
+				continue
+			}
+
+			pd.State = rfpb.PartitionDescriptor_SOFT_DELETED
+			newBuf, err := proto.Marshal(pd)
+			if err != nil {
+				alert.UnexpectedEvent("raft-partition-descriptor-marshal-failure", "failed to marshal partition descriptor %v: %s", pd, err)
+				continue
+			}
+
+			if err := s.sender.UpdatePartitionDescriptor(ctx, partitionKey, newBuf, oldBuf); err != nil {
+				s.log.Errorf("failed to set soft deleted for partition %q: %s", p.ID, err)
+				partitionsNeedsSetup = true
+			}
+		} else {
+			if pd != nil && pd.GetState() == rfpb.PartitionDescriptor_INITIALIZED {
+				continue
+			}
+
+			// set up the partition
+			s.driverQueue.MaybeAddPartitionTask(ctx, p, pd)
+			partitionsNeedsSetup = true
+		}
 	}
 
 	// TODO: loop over partitionsFromMetaRange to see if there are ranges need

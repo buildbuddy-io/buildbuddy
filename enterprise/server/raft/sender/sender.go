@@ -663,3 +663,22 @@ func (s *Sender) FetchPartitionDescriptors(ctx context.Context) ([]*rfpb.Partiti
 	}
 	return res, nil
 }
+
+func (s *Sender) UpdatePartitionDescriptor(ctx context.Context, key []byte, curValue, expectedValue []byte) error {
+	batchProto, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
+		Kv: &rfpb.KV{
+			Key:   key,
+			Value: curValue,
+		},
+		ExpectedValue: expectedValue,
+	}).ToProto()
+	if err != nil {
+		return err
+	}
+	rsp, err := s.SyncPropose(ctx, key, batchProto)
+	if err != nil {
+		return err
+	}
+	batchResp := rbuilder.NewBatchResponseFromProto(rsp)
+	return batchResp.AnyError()
+}
