@@ -286,21 +286,29 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 		}
 		spawn := new.spawns[output]
 		foundTransitiveCause := false
-		// Get the deduplicated primary outputs for those spawns referenced via invalidatedBy.
-		invalidatedByPrimaryOutput := make(map[string]struct{})
-		for _, invalidatedBy := range result.invalidatedBy {
-			if s, ok := new.spawns[invalidatedBy]; ok {
-				invalidatedByPrimaryOutput[s.PrimaryOutputPath()] = struct{}{}
+		// Don't propagate invalidations through local changes:
+		// 1) The local change would cause the spawn to be re-run anyway, which in turn may be responsible for the
+		//    invalidation of dependents.
+		// 2) Avoids pathological memory usage during flattening below for a large number of local changes that each
+		//    invalidate a large number of other local changes - if all of them are flattened, the memory usage can grow
+		//    quadratically in the number of local changes.
+		if !result.localChange {
+			// Get the deduplicated primary outputs for those spawns referenced via invalidatedBy.
+			invalidatedByPrimaryOutput := make(map[string]struct{})
+			for _, invalidatedBy := range result.invalidatedBy {
+				if s, ok := new.spawns[invalidatedBy]; ok {
+					invalidatedByPrimaryOutput[s.PrimaryOutputPath()] = struct{}{}
+				}
 			}
-		}
-		for invalidatedBy, _ := range invalidatedByPrimaryOutput {
-			if invalidatingResultEntry, ok := diffResults.Load(invalidatedBy); ok {
-				invalidatingResult := invalidatingResultEntry.(*diffResult)
-				foundTransitiveCause = true
-				// Intentionally not flattening the slice here to avoid quadratic complexity when there are many
-				// transitively invalidated target, but few transitive causes. Quadratic complexity can't be avoided in
-				// the general case.
-				invalidatingResult.invalidates = append(invalidatingResult.invalidates, result.invalidates, spawn)
+			for invalidatedBy, _ := range invalidatedByPrimaryOutput {
+				if invalidatingResultEntry, ok := diffResults.Load(invalidatedBy); ok {
+					invalidatingResult := invalidatingResultEntry.(*diffResult)
+					foundTransitiveCause = true
+					// Intentionally not flattening the slice here to avoid quadratic complexity when there are many
+					// transitively invalidated target, but few transitive causes. Quadratic complexity can't be avoided
+					// in the general case.
+					invalidatingResult.invalidates = append(invalidatingResult.invalidates, result.invalidates, spawn)
+				}
 			}
 		}
 		if result.localChange || !foundTransitiveCause {

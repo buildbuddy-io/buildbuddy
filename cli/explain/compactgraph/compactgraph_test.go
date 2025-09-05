@@ -776,6 +776,64 @@ func TestEmptyVsNonempty(t *testing.T) {
 	}
 }
 
+func TestChainOfLocalChanges(t *testing.T) {
+	spawnDiffs := diffLogs(t, "chain_of_local_changes", "8.1.0")
+	require.Len(t, spawnDiffs, 3)
+
+	{
+		sd := spawnDiffs[0]
+		assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out3$", sd.PrimaryOutput)
+		assert.Equal(t, "//pkg:gen3", sd.TargetLabel)
+		assert.Equal(t, "Genrule", sd.Mnemonic)
+		assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+		require.Len(t, sd.GetModified().GetDiffs(), 2)
+		{
+			d := sd.GetModified().Diffs[0]
+			require.IsType(t, &spawn_diff.Diff_Env{}, d.Diff)
+			assert.Equal(t, d.GetEnv().GetOldChanged(), map[string]string{"FOO": "old"})
+			assert.Equal(t, d.GetEnv().GetNewChanged(), map[string]string{"FOO": "new"})
+		}
+		{
+			d := sd.GetModified().Diffs[1]
+			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
+			assert.Len(t, d.GetInputContents().GetFileDiffs(), 1)
+		}
+	}
+	{
+		sd := spawnDiffs[1]
+		assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out2$", sd.PrimaryOutput)
+		assert.Equal(t, "//pkg:gen2", sd.TargetLabel)
+		assert.Equal(t, "Genrule", sd.Mnemonic)
+		assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+		require.Len(t, sd.GetModified().GetDiffs(), 2)
+		{
+			d := sd.GetModified().Diffs[0]
+			require.IsType(t, &spawn_diff.Diff_Env{}, d.Diff)
+			assert.Equal(t, d.GetEnv().GetOldChanged(), map[string]string{"FOO": "old"})
+			assert.Equal(t, d.GetEnv().GetNewChanged(), map[string]string{"FOO": "new"})
+		}
+		{
+			d := sd.GetModified().Diffs[1]
+			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
+			assert.Len(t, d.GetInputContents().GetFileDiffs(), 1)
+		}
+	}
+	{
+		sd := spawnDiffs[2]
+		assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out1$", sd.PrimaryOutput)
+		assert.Equal(t, "//pkg:gen1", sd.TargetLabel)
+		assert.Equal(t, "Genrule", sd.Mnemonic)
+		assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+		require.Len(t, sd.GetModified().GetDiffs(), 1)
+		{
+			d := sd.GetModified().Diffs[0]
+			require.IsType(t, &spawn_diff.Diff_Env{}, d.Diff)
+			assert.Equal(t, d.GetEnv().GetOldChanged(), map[string]string{"FOO": "old"})
+			assert.Equal(t, d.GetEnv().GetNewChanged(), map[string]string{"FOO": "new"})
+		}
+	}
+}
+
 func diffLogsAllowingError(t *testing.T, name, bazelVersion string) ([]*spawn_diff.SpawnDiff, error) {
 	dir := "buildbuddy/cli/explain/compactgraph/testdata"
 	oldPath, err := runfiles.Rlocation(path.Join(dir, bazelVersion, name+"_old.pb.zstd"))
