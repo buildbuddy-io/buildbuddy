@@ -33,7 +33,6 @@ go_test(
         "//server/util/authutil",
         "//server/util/capabilities",
         "//server/util/request_context",
-        "//server/util/role",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
