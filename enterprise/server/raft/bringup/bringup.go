@@ -448,25 +448,6 @@ func InitializeShardsForMetaRange(ctx context.Context, session *client.Session, 
 	return nil
 }
 
-func writePartitionDescriptor(ctx context.Context, sender *sender.Sender, key []byte, curValue, expectedValue []byte) error {
-	batchProto, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
-		Kv: &rfpb.KV{
-			Key:   key,
-			Value: curValue,
-		},
-		ExpectedValue: expectedValue,
-	}).ToProto()
-	if err != nil {
-		return err
-	}
-	rsp, err := sender.SyncPropose(ctx, key, batchProto)
-	if err != nil {
-		return err
-	}
-	batchResp := rbuilder.NewBatchResponseFromProto(rsp)
-	return batchResp.AnyError()
-}
-
 // InitializeShardsForPartition starts the shards for a partition and also writes
 // the range descriptor into both local range and meta range.
 // Note: since we are writing the range descriptors in a transaction, it might
@@ -531,7 +512,7 @@ func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAdd
 	}
 
 	if shouldWritePD {
-		err = writePartitionDescriptor(ctx, store.Sender(), partitionKey, pdBuf, nil)
+		err = store.Sender().UpdatePartitionDescriptor(ctx, partitionKey, pdBuf, nil)
 		if err != nil {
 			return err
 		}

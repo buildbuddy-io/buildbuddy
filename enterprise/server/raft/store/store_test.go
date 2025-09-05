@@ -2354,3 +2354,65 @@ func TestSetupNewPartitions(t *testing.T) {
 		break
 	}
 }
+
+func TestSoftDeletePartitions(t *testing.T) {
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
+
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	partitions := []disk.Partition{
+		{
+			ID:           "default",
+			MaxSizeBytes: int64(1_000_000_000), // 1G
+			NumRanges:    1,
+		},
+		{
+			ID:           "foo",
+			MaxSizeBytes: int64(1_000_000_000), // 1G
+			NumRanges:    1,
+			SoftDeleted:  true,
+		},
+	}
+	sf.SetPartitions(partitions)
+
+	ctx := context.Background()
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	// Initialize partitions
+	log.Infof("==== start 3 shards====")
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
+	for _, p := range partitions {
+		if p.SoftDeleted {
+			p.SoftDeleted = false
+		}
+		sf.InitializeShardsForPartition(t, ctx, p, stores...)
+	}
+
+	for i := 1; i <= 3; i++ {
+		testutil.WaitForRangeLease(t, ctx, stores, uint64(i)) // metarange
+	}
+	// advance the clock to trigger the process to set up partitions
+	clock.Advance(30 * time.Second)
+	for {
+		clock.Advance(2 * time.Second)
+
+		// Verify partition descriptors
+		partitionDescriptors, err := s1.Sender().FetchPartitionDescriptors(ctx)
+		require.NoError(t, err)
+
+		require.Len(t, partitionDescriptors, 2)
+		require.Equal(t, "foo", partitionDescriptors[1].GetId())
+		if partitionDescriptors[1].GetState() != rfpb.PartitionDescriptor_SOFT_DELETED {
+			continue
+		}
+		break
+	}
+}
