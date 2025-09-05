@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:capability_go_proto",
         "//server/environment",
+        "//server/util/authutil",
         "//server/util/capabilities",
         "//server/util/status",
     ],

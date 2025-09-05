@@ -77,6 +77,7 @@ const (
 
 	containerRegistryUsernamePropertyName = "container-registry-username"
 	containerRegistryPasswordPropertyName = "container-registry-password"
+	containerRegistryBypassPropertyName   = "container-registry-bypass"
 
 	// container-image prop value which behaves the same way as if the prop were
 	// empty or unset.
@@ -276,6 +277,14 @@ type Properties struct {
 	// Persistent volumes shared across all actions within a group. Requires
 	// `executor.enable_persistent_volumes` to be enabled.
 	PersistentVolumes []PersistentVolume
+
+	// ContainerRegistryBypass skips pulling images from the container registry
+	// and pulls images only from the cache instead. Note that this does not
+	// skip cache authentication.
+	//
+	// This property can only be used by server admins, otherwise the execution
+	// request will be rejected.
+	ContainerRegistryBypass bool
 }
 
 type PersistentVolume struct {
@@ -467,6 +476,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		PersistentVolumes:         persistentVolumes,
 		SnapshotReadPolicy:        snapshotReadPolicy,
 		RemoteSnapshotSavePolicy:  snapshotSavePolicy,
+		ContainerRegistryBypass:   boolProp(m, containerRegistryBypassPropertyName, false),
 	}, nil
 }
 

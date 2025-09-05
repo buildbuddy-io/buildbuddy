@@ -2305,6 +2305,31 @@ func TestTerminationGracePeriod(t *testing.T) {
 	assert.Equal(t, "Got SIGTERM\n", res.Stdout)
 }
 
+func TestContainerRegistryBypass(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			// container-registry-bypass is only supported for server admin
+			// users in impersionation mode - this should fail with an auth
+			// error, even if we're setting it in a non-canonical way, using
+			// weird casing.
+			{Name: "container-ReGiStRy-bypass", Value: "true"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{"pwd"},
+		Platform:  platform,
+	}, &rbetest.ExecuteOpts{})
+
+	err := cmd.MustFailToSchedule()
+	require.True(t, status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err), "expected auth error, got %+#v (%q)", err, err)
+}
+
 type customResourcesTest struct {
 	Name             string
 	MeasuredTaskSize *scpb.TaskSize
