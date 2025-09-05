@@ -115,7 +115,7 @@ func TestImpersonationKeys(t *testing.T) {
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
-		if role.Role(u.Groups[0].Role) == role.Admin {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			break
 		}
@@ -179,7 +179,7 @@ func TestGroupKeyExpiration(t *testing.T) {
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
-		if role.Role(u.Groups[0].Role) == role.Admin {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			break
 		}
@@ -234,7 +234,7 @@ func TestUserKeyExpiration(t *testing.T) {
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
-		if role.Role(u.Groups[0].Role) == role.Admin {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			break
 		}
@@ -410,7 +410,7 @@ func TestGetAPIKeys(t *testing.T) {
 			// Get a random admin user.
 			var admin *tables.User
 			for _, u := range users {
-				if role.Role(u.Groups[0].Role) == role.Admin {
+				if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 					admin = u
 					break
 				}
@@ -447,7 +447,7 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
-		if role.Role(u.Groups[0].Role) == role.Admin {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			break
 		}
@@ -526,7 +526,10 @@ func TestLookupUserFromSubID(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		u.Groups[0].Role = uint32(grpb.GroupMembershipStatus_MEMBER)
+		// The new user is an admin in the new group but the user we added as a member should
+		// only be added as a developer.
+		u.Groups[0].Role = uint32(role.Developer)
+		u.Groups[0].Capabilities = role.DeveloperCapabilities
 		user.Groups = append(user.Groups, u.Groups[0])
 	}
 
@@ -755,7 +758,7 @@ func TestSubdomainRestrictions(t *testing.T) {
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
-		if role.Role(u.Groups[0].Role) == role.Admin {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			break
 		}
@@ -797,7 +800,7 @@ func TestImpersonationAPIKeys(t *testing.T) {
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
-		if role.Role(u.Groups[0].Role) == role.Admin {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			break
 		}
@@ -855,7 +858,7 @@ func TestImpersonationAPIKeys(t *testing.T) {
 		require.NotEqualValues(t, 0, key.ExpiryUsec)
 
 		// Verify "list" operation does not include the impersonation key.
-		if role.Role(u.Groups[0].Role) == role.Admin {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			keys, err := adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID)
 			require.NoError(t, err)
 			require.Equal(t, prevKeys, keys)
@@ -871,7 +874,7 @@ func createRandomAPIKeys(t *testing.T, ctx context.Context, env environment.Env)
 	for _, u := range users {
 		authCtx, err := auth.WithAuthenticatedUser(ctx, u.UserID)
 		require.NoError(t, err)
-		if role.Role(u.Groups[0].Role) != role.Admin {
+		if !u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			continue
 		}
 		keys, err := env.GetAuthDB().GetAPIKeys(authCtx, u.Groups[0].Group.GroupID)

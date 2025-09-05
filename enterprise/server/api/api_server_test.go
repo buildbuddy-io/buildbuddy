@@ -28,7 +28,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
@@ -553,7 +552,7 @@ func TestCreateUserApiKey(t *testing.T) {
 	var admin *tables.User
 	var adminGroup *tables.Group
 	for _, u := range users {
-		if u.Groups[0].Role == uint32(role.Admin) {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			adminGroup = &u.Groups[0].Group
 			break

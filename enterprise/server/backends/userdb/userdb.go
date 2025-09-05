@@ -865,7 +865,11 @@ func usersFromUserGroupJoin(ugj []*userGroupJoin) ([]*tables.User, error) {
 			// no group matched the user group (this shouldn't really happen)
 			return nil, status.InternalErrorf("No group entry matching groupID %s, which is present in UserGroups table.", v.UserGroup.GroupGroupID)
 		}
-		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: v.UserGroup.Role})
+		caps, err := role.ToCapabilities(role.Role(v.UserGroup.Role))
+		if err != nil {
+			return nil, status.WrapError(err, "could not convert role to capabilities")
+		}
+		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: v.UserGroup.Role, Capabilities: caps})
 	}
 	return users, nil
 }
@@ -938,6 +942,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 		return nil, err
 	}
 	// Grant admin role within the impersonated group.
+	gr.Capabilities = role.AdminCapabilities
 	gr.Role = uint32(role.Admin)
 	user.Groups = []*tables.GroupRole{gr}
 	return user, nil

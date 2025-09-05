@@ -243,8 +243,8 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 			}
 
 			u.Groups = []*tables.GroupRole{{
-				Group: *ig,
-				Role:  uint32(role.Admin),
+				Group:        *ig,
+				Capabilities: role.AdminCapabilities,
 			}}
 			claims, err := userClaims(u, requestContext.GetImpersonatingGroupId())
 			if err != nil {
@@ -267,19 +267,15 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	var capabilities []cappb.Capability
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
-		c, err := role.ToCapabilities(role.Role(g.Role))
-		if err != nil {
-			return nil, err
-		}
 		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
 			GroupID:      g.Group.GroupID,
-			Capabilities: c,
+			Capabilities: g.Capabilities,
 		})
 		if g.Group.GroupID == effectiveGroup {
 			// TODO: move these fields into u.GroupMemberships
 			cacheEncryptionEnabled = g.Group.CacheEncryptionEnabled
 			enforceIPRules = g.Group.EnforceIPRules
-			capabilities = c
+			capabilities = g.Capabilities
 		}
 	}
 	return &Claims{

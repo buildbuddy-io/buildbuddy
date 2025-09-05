@@ -62,7 +62,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -244,7 +243,7 @@ func NewRBETestEnv(t *testing.T) *Env {
 	// API key to allow registering executors.
 	var userID, groupID string
 	for _, u := range randUsers {
-		if len(u.Groups) != 1 || u.Groups[0].Role != uint32(role.Admin) {
+		if len(u.Groups) != 1 || !u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			continue
 		}
 		userID = u.UserID

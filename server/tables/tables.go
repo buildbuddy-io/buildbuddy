@@ -5,6 +5,7 @@ package tables
 import (
 	"flag"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"gorm.io/gorm"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -280,7 +282,13 @@ func (ug *UserGroup) TableName() string {
 
 type GroupRole struct {
 	Group
-	Role uint32
+	// Deprecated. Don't reference this in any new code!
+	Role         uint32
+	Capabilities []cappb.Capability
+}
+
+func (gr *GroupRole) HasCapability(cap cappb.Capability) bool {
+	return slices.Contains(gr.Capabilities, cap)
 }
 
 type User struct {

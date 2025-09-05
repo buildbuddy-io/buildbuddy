@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -528,7 +529,11 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 			log.CtxWarningf(ctx, "In LookupUserFromSubID, the UserGroup row User: %s Group %s did not match a group with that ID.", v.UserGroup.UserUserID, v.UserGroup.GroupGroupID)
 			continue
 		}
-		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: v.UserGroup.Role})
+		caps, err := role.ToCapabilities(role.Role(v.UserGroup.Role))
+		if err != nil {
+			return nil, status.WrapError(err, "could not convert role to capabilities")
+		}
+		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: v.UserGroup.Role, Capabilities: caps})
 	}
 	return user, nil
 }
