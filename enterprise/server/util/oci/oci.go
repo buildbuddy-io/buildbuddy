@@ -332,18 +332,12 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", digestOrTagRef)
 	}
 	if canUseCache {
-		var hash gcr.Hash
 		var desc *gcr.Descriptor
+		digest, hasDigest := getDigest(digestOrTagRef)
 		// If the ref doesn't contain a digest, then we need to make a HEAD
 		// request in order to resolve it to a digest, since manifest AC entries
 		// are keyed by digest.
-		if digestRef, ok := digestOrTagRef.(gcrname.Digest); ok {
-			var err error
-			hash, err = gcr.NewHash(digestRef.DigestStr())
-			if err != nil {
-				return nil, status.InvalidArgumentErrorf("invalid digest %q", digestRef.DigestStr())
-			}
-		} else {
+		if !hasDigest {
 			var err error
 			desc, err = puller.Head(ctx, digestOrTagRef)
 			if err != nil {
@@ -352,14 +346,14 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				}
 				return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
 			}
-			hash = desc.Digest
+			digest = desc.Digest
 		}
 
 		mc, err := ocicache.FetchManifestFromAC(
 			ctx,
 			acClient,
 			digestOrTagRef.Context(),
-			hash,
+			digest,
 			digestOrTagRef,
 		)
 		if err != nil && !status.IsNotFoundError(err) {
@@ -374,7 +368,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 			// [puller.Head] only sets these fields as well).
 			if desc == nil {
 				desc = &gcr.Descriptor{
-					Digest:    hash,
+					Digest:    digest,
 					Size:      int64(len(mc.GetRaw())),
 					MediaType: types.MediaType(mc.GetContentType()),
 				}
@@ -500,6 +494,20 @@ func RuntimePlatform() *rgpb.Platform {
 		Arch: runtime.GOARCH,
 		Os:   runtime.GOOS,
 	}
+}
+
+// getDigest returns the digest from the given reference, if it contains one.
+// Otherwise, it returns (nil, false).
+func getDigest(ref gcrname.Reference) (gcr.Hash, bool) {
+	d, ok := ref.(gcrname.Digest)
+	if !ok {
+		return gcr.Hash{}, false
+	}
+	hash, err := gcr.NewHash(d.DigestStr())
+	if err != nil {
+		return gcr.Hash{}, false
+	}
+	return hash, true
 }
 
 // verify that mirrorTransport implements the RoundTripper interface.
