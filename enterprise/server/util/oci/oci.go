@@ -357,25 +357,47 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", digestOrTagRef)
 	}
 	if canUseCache {
-		desc, err := puller.Head(ctx, digestOrTagRef)
-		if err != nil {
-			if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-				return nil, status.PermissionDeniedErrorf("cannot access image manifest: %s", err)
+		var desc *gcr.Descriptor
+		digest, hasDigest := getDigest(digestOrTagRef)
+		// If the ref doesn't contain a digest, then we need to make a HEAD
+		// request in order to resolve it to a digest, since manifest AC entries
+		// are keyed by digest.
+		if !hasDigest {
+			var err error
+			desc, err = puller.Head(ctx, digestOrTagRef)
+			if err != nil {
+				if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+					return nil, status.PermissionDeniedErrorf("cannot access image manifest: %s", err)
+				}
+				return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
 			}
-			return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
+			digest = desc.Digest
 		}
 
 		mc, err := ocicache.FetchManifestFromAC(
 			ctx,
 			acClient,
 			digestOrTagRef.Context(),
-			desc.Digest,
+			digest,
 			digestOrTagRef,
 		)
 		if err != nil && !status.IsNotFoundError(err) {
 			log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)
 		}
 		if mc != nil && err == nil {
+			// If we skipped fetching the manifest descriptor (because the
+			// reference already contained a resolved digest), then build a
+			// descriptor from the cached manifest entry. We aren't populating
+			// all of the descriptor fields here, but this should still
+			// represent a complete manifest descriptor (the implementation of
+			// [puller.Head] only sets these fields as well).
+			if desc == nil {
+				desc = &gcr.Descriptor{
+					Digest:    digest,
+					Size:      int64(len(mc.GetRaw())),
+					MediaType: types.MediaType(mc.GetContentType()),
+				}
+			}
 			return imageFromDescriptorAndManifest(
 				ctx,
 				digestOrTagRef.Context(),
@@ -497,6 +519,20 @@ func RuntimePlatform() *rgpb.Platform {
 		Arch: runtime.GOARCH,
 		Os:   runtime.GOOS,
 	}
+}
+
+// getDigest returns the digest from the given reference, if it contains one.
+// Otherwise, it returns (nil, false).
+func getDigest(ref gcrname.Reference) (gcr.Hash, bool) {
+	d, ok := ref.(gcrname.Digest)
+	if !ok {
+		return gcr.Hash{}, false
+	}
+	hash, err := gcr.NewHash(d.DigestStr())
+	if err != nil {
+		return gcr.Hash{}, false
+	}
+	return hash, true
 }
 
 // verify that mirrorTransport implements the RoundTripper interface.
@@ -798,11 +834,6 @@ func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
 }
 
 func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
-	remoteLayer, err := l.createRemoteLayer()
-	if err != nil {
-		return nil, err
-	}
-
 	canUseCache := !isAnonymousUser(l.image.ctx)
 	if !canUseCache {
 		log.CtxInfof(l.image.ctx, "Anonymous user request, skipping layer cache for %s:%s", l.image.repo, l.image.desc.Digest)
@@ -817,6 +848,10 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		}
 	}
 
+	remoteLayer, err := l.createRemoteLayer()
+	if err != nil {
+		return nil, err
+	}
 	upstream, err := remoteLayer.Compressed()
 	if err != nil {
 		return nil, err

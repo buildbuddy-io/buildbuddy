@@ -708,14 +708,20 @@ func TestResolve_WithCache(t *testing.T) {
 			})
 			registry.PushIndex(t, index, tc.imageName+"_index")
 
+			// Test with normal image manifest
 			{
 				imageAddress := registry.ImageAddress(tc.args.imageName + "_image")
+				imageDigest, err := pushedImage.Digest()
+				require.NoError(t, err)
 				pushedLayers, err := pushedImage.Layers()
 				require.NoError(t, err)
 				require.Len(t, pushedLayers, 1)
 				layerDigest, err := pushedLayers[0].Digest()
 				require.NoError(t, err)
 
+				// Initially, nothing is cached, and we expect to make requests
+				// to resolve the manifest, as well as to fetch the manifest and
+				// layer contents.
 				expected := map[string]int{
 					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":             1,
@@ -724,13 +730,25 @@ func TestResolve_WithCache(t *testing.T) {
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 
+				// Try resolving again - the image should now be cached and we
+				// should be able to avoid GET requests for manifests and blobs,
+				// but we still expect some requests to resolve the tag to a
+				// digest.
 				expected = map[string]int{
 					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest": 1,
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
+
+				// Try resolving again but fetch using a digest ref - should be
+				// able to avoid contacting the registry entirely, since we
+				// don't need to resolve the tag to a digest.
+				imageAddressWithDigest := imageAddress + "@" + imageDigest.String()
+				expected = map[string]int{}
+				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter)
 			}
 
+			// Test with index manifest
 			{
 				indexAddress := registry.ImageAddress(tc.args.imageName + "_index")
 				imageDigest, err := pushedImage.Digest()
@@ -741,22 +759,36 @@ func TestResolve_WithCache(t *testing.T) {
 				layerDigest, err := pushedLayers[0].Digest()
 				require.NoError(t, err)
 
+				// Initially, nothing is cached, and we expect to make requests
+				// to resolve the manifest, as well as to fetch the manifest and
+				// layer contents. Note that we have one more GET request here
+				// compared to the non-index manifest case, since the index
+				// manifest points to the platform-specific image manifest.
 				expected := map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                   1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String():  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():      1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():     1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 
+				// Try resolving again - the image should now be cached and we
+				// should be able to avoid GET requests for manifests and blobs,
+				// but we still expect some requests to resolve the tag to a
+				// digest.
 				expected = map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest": 1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
+
+				// Try resolving again but fetch using a digest ref - should be
+				// able to avoid contacting the registry entirely, since we
+				// don't need to resolve the tag to a digest.
+				imageAddressWithDigest := indexAddress + "@" + imageDigest.String()
+				expected = map[string]int{}
+				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter)
 			}
 		})
 	}
