@@ -715,7 +715,6 @@ func (bq *baseQueue) Stop() {
 }
 
 func (bq *baseQueue) processQueue() {
-	bq.log.Info("processQueue")
 	if bq.Len() == 0 {
 		return
 	}
