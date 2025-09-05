@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/util/ci_runner_util",
         "//enterprise/server/workflow/config",
+        "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
         "//server/endpoint_urls/build_buddy_url",

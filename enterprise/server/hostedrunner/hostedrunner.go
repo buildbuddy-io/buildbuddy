@@ -36,6 +36,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gstatus "google.golang.org/grpc/status"
@@ -474,12 +475,13 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	}
 
 	res := &rnpb.RunResponse{InvocationId: invocationID}
-	if req.GetAsync() {
+
+	if req.GetAsync() || req.GetWaitUntil() == rnpb.WaitCondition_QUEUED {
 		return res, nil
 	}
 
 	executionID := op.GetName()
-	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID); err != nil {
+	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID, req.GetWaitUntil()); err != nil {
 		return nil, err
 	}
 
@@ -488,7 +490,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 
 // waitUntilInvocationExists waits until the specified invocationID exists or
 // an error is encountered. Borrowed from workflow.go.
-func waitUntilInvocationExists(ctx context.Context, env environment.Env, executionID, invocationID string) error {
+func waitUntilInvocationExists(ctx context.Context, env environment.Env, executionID, invocationID string, waitUntil rnpb.WaitCondition) error {
 	executionClient := env.GetRemoteExecutionClient()
 	if executionClient == nil {
 		return status.UnimplementedError("Missing remote execution client.")
@@ -538,8 +540,13 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			return err
 		case <-time.After(1 * time.Second):
 			if executing {
-				_, err := invocationDB.LookupInvocation(ctx, invocationID)
-				if err == nil {
+				inv, err := invocationDB.LookupInvocation(ctx, invocationID)
+				if err == nil && (waitUntil == rnpb.WaitCondition_STARTED || waitUntil == rnpb.WaitCondition_UNKNOWN_CONDITION) {
+					return nil
+				}
+				if err == nil && waitUntil == rnpb.WaitCondition_COMPLETED &&
+					(inv.InvocationStatus == int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS) ||
+						inv.InvocationStatus == int64(inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)) {
 					return nil
 				}
 			}

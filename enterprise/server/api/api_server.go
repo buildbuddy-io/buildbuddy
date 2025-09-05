@@ -640,6 +640,7 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		},
 		Steps:          steps,
 		Async:          req.GetAsync(),
+		WaitUntil:      fromApiWaitCondition(req.GetWaitUntil()),
 		Env:            req.GetEnv(),
 		Timeout:        req.GetTimeout(),
 		ExecProperties: execProps,
@@ -651,6 +652,21 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		return nil, err
 	}
 	return &apipb.RunResponse{InvocationId: rsp.InvocationId}, nil
+}
+
+// Converts from internal wait mode to api wait mode.
+func fromApiWaitCondition(waitCondition apipb.WaitCondition) rnpb.WaitCondition {
+	switch waitCondition {
+	case apipb.WaitCondition_QUEUED:
+		return rnpb.WaitCondition_QUEUED
+	case apipb.WaitCondition_STARTED:
+		return rnpb.WaitCondition_STARTED
+	case apipb.WaitCondition_COMPLETED:
+		return rnpb.WaitCondition_COMPLETED
+	case apipb.WaitCondition_UNKNOWN_CONDITION:
+		return rnpb.WaitCondition_UNKNOWN_CONDITION
+	}
+	return rnpb.WaitCondition_UNKNOWN_CONDITION
 }
 
 func (s *APIServer) CreateUserApiKey(ctx context.Context, req *apipb.CreateUserApiKeyRequest) (*apipb.CreateUserApiKeyResponse, error) {

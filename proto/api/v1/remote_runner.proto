@@ -45,9 +45,10 @@ message RunRequest {
   // Ex. "15s", "2h"
   string timeout = 7;
 
-  // If true, start the runner but do not wait for the action to be scheduled
-  // before returning a response.
-  bool async = 8;
+  // Specifies what to wait until before returning a RunResponse.
+  // Default is value is STARTED which waits for the invocation to
+  // be started but not necessarily completed.
+  WaitCondition wait_until = 13;
 
   // Whether to use github credentials configured on the executor.
   //
@@ -61,10 +62,29 @@ message RunRequest {
 
   // Whether to skip the automatic GitHub setup steps on the remote runner.
   bool skip_auto_checkout = 12;
+
+  // DEPRECATED: Use wait_mode instead.
+  // If true, start the runner but do not wait for the action to be scheduled
+  // before returning a response.
+  bool async = 8 [deprecated = true];
 }
 
 message Step {
   string run = 1;
+}
+
+enum WaitCondition {
+  // Unknown wait condition.
+  UNKNOWN_CONDITION = 0;
+
+  // Wait for the run request to be queued.
+  QUEUED = 1;
+
+  // Wait until the invocation has started.
+  STARTED = 2;
+
+  // Wait for the invocation to complete.
+  COMPLETED = 3;
 }
 
 message RunResponse {
