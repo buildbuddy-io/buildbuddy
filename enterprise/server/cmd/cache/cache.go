@@ -9,7 +9,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -90,11 +93,20 @@ func main() {
 	hit_tracker_client.Register(env)
 
 	// Configure a local cache.
+	if err := gcs_cache.Register(env); err != nil {
+		log.Fatal(err.Error())
+	}
+	if err := s3_cache.Register(env); err != nil {
+		log.Fatal(err.Error())
+	}
 	if err := pebble_cache.Register(env); err != nil {
-		log.Fatalf("%v", err)
+		log.Fatal(err.Error())
+	}
+	if err := migration_cache.Register(env); err != nil {
+		log.Fatal(err.Error())
 	}
 	if c := env.GetCache(); c == nil {
-		log.Fatalf("No local cache configured")
+		log.Fatalf("No cache configured!")
 	}
 	if err := distributed.Register(env); err != nil {
 		log.Fatal(err.Error())
