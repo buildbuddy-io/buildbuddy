@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-github/v59/github"
 	"github.com/hashicorp/serf/serf"
@@ -88,8 +87,6 @@ type BasicAuthToken interface {
 type GroupMembership struct {
 	GroupID      string             `json:"group_id"`
 	Capabilities []cappb.Capability `json:"capabilities"`
-	// DEPRECATED. Check Capabilities instead.
-	Role role.Role `json:"role"`
 }
 
 type APIKeyInfo struct {

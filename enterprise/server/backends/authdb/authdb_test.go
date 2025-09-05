@@ -318,9 +318,6 @@ func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 				{
 					GroupID:      randKey.GroupID,
 					Capabilities: capabilities.FromInt(randKey.Capabilities),
-					// TODO(bduffany): API keys should not have roles - just
-					// capabilities.
-					Role: role.Developer,
 				},
 			}, c.GetGroupMemberships())
 
