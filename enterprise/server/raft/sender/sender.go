@@ -642,6 +642,33 @@ func (s *Sender) DirectRead(ctx context.Context, key []byte) ([]byte, error) {
 	return readResponse.GetKv().GetValue(), nil
 }
 
+func (s *Sender) LookupPartitionDescriptor(ctx context.Context, partitionID string) (*rfpb.PartitionDescriptor, error) {
+	partitionKey := keys.MakeKey(constants.PartitionPrefix, []byte(partitionID))
+
+	var res []*rfpb.PartitionDescriptor
+	fn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
+		req := &rfpb.ScanRequest{
+			Start:    partitionKey,
+			End:      keys.MakeKey(constants.PartitionPrefix, keys.MaxByte),
+			ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
+			Limit:    1,
+		}
+		partitions, err := scanPartitionDescriptors(ctx, c, h, req)
+		if err != nil {
+			return err
+		}
+		if len(partitions) == 0 {
+			return status.NotFoundErrorf("parition descriptor not found for id %q", partitionID)
+		}
+		res = partitions
+		return nil
+	}
+	if err := s.runOnMetaRange(ctx, fn); err != nil {
+		return nil, err
+	}
+	return res[0], nil
+}
+
 func (s *Sender) FetchPartitionDescriptors(ctx context.Context) ([]*rfpb.PartitionDescriptor, error) {
 	var res []*rfpb.PartitionDescriptor
 	start, end := keys.Range(constants.PartitionPrefix)

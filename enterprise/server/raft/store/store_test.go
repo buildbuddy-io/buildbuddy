@@ -2441,3 +2441,101 @@ func TestSoftDeletePartitions(t *testing.T) {
 	require.Len(t, s2.ListAllReplicasInHistoryForTest(), 4)
 	require.Len(t, s3.ListAllReplicasInHistoryForTest(), 4)
 }
+
+func TestDeletePartitions(t *testing.T) {
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
+
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	partitions := []disk.Partition{
+		{
+			ID:           "default",
+			MaxSizeBytes: int64(1_000_000_000), // 1G
+			NumRanges:    1,
+		},
+	}
+	sf.SetPartitions(partitions)
+
+	ctx := context.Background()
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	// Initialize partitions
+	log.Infof("==== start 3 shards====")
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
+
+	sf.InitializeShardsForPartition(t, ctx, partitions[0], stores...)
+	// Set up 2 ranges for partition "foo" instead of 1. We don't set SoftDeleted
+	// to true here, otherwise, the ranges will not be set up
+	sf.InitializeShardsForPartition(t, ctx, disk.Partition{
+		ID:           "foo",
+		MaxSizeBytes: int64(1_000_000_000), // 1G
+		NumRanges:    2,
+	}, stores...)
+
+	for i := 1; i <= 4; i++ {
+		testutil.WaitForRangeLease(t, ctx, stores, uint64(i)) // metarange
+		log.Infof("==== got range lease for range %d", i)
+	}
+
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	log.Infof("==== set foo partition descriptor to be soft deleted")
+	fooPD, err := s.Sender().LookupPartitionDescriptor(ctx, "foo")
+	require.NoError(t, err)
+
+	// Update the partition descriptor foo to SoftDeleted before processing
+	// partitions.
+	partitionKey := keys.MakeKey(constants.PartitionPrefix, []byte("foo"))
+	oldBuf, err := proto.Marshal(fooPD)
+	require.NoError(t, err)
+	fooPD.State = rfpb.PartitionDescriptor_SOFT_DELETED
+	newBuf, err := proto.Marshal(fooPD)
+	require.NoError(t, err)
+	err = s1.Sender().UpdatePartitionDescriptor(ctx, partitionKey, newBuf, oldBuf)
+	require.NoError(t, err)
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	for {
+		// advance the clock to trigger the process to set up partitions
+		clock.Advance(31 * time.Second)
+
+		_, err := s.Sender().LookupPartitionDescriptor(ctx, "foo")
+		if !status.IsNotFoundError(err) {
+			continue
+		}
+		break
+	}
+
+	log.Infof("====foo partition descriptor deleted")
+	log.Infof("====wait for zombie janitor cleaning up")
+	for {
+		clock.Advance(31 * time.Second)
+		l1 := s1.ListAllReplicasInHistoryForTest()
+		l2 := s2.ListAllReplicasInHistoryForTest()
+		l3 := s3.ListAllReplicasInHistoryForTest()
+		if len(l1) != 2 || len(l2) != 2 || len(l3) != 2 {
+			log.Infof("num of replicas on s1, s2 and s3 are: %d, %d, %d", len(l1), len(l2), len(l3))
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	log.Infof("====range descriptors are deleted")
+	for {
+		clock.Advance(31 * time.Second)
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+		rangeDescriptors, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "foo", 0 /** for all ranges */)
+		require.NoError(t, err)
+		if len(rangeDescriptors) > 0 {
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		break
+	}
+}

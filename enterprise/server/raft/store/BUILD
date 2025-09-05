@@ -42,6 +42,7 @@ go_library(
         "//server/util/log",
         "//server/util/proto",
         "//server/util/rangemap",
+        "//server/util/retry",
         "//server/util/status",
         "//server/util/statusz",
         "@com_github_elastic_gosigar//:gosigar",
