@@ -12,6 +12,7 @@ import error_service from "../errors/error_service";
 import format from "../format/format";
 import rpcService from "../service/rpc_service";
 import { digestToString } from "../util/cache";
+import ActionCompareButtonComponent from "./action_compare_button";
 import InvocationModel from "./invocation_model";
 
 interface Props {
@@ -303,6 +304,13 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                         <div>Exit code: {spawn.spawn?.exitCode || 0}</div>
                         {/* {spawn.spawn?.metrics.} // todo add metrics here and filters from remote exec log */}
                       </div>
+                      {spawn.spawn?.digest && (
+                        <ActionCompareButtonComponent
+                          invocationId={this.props.model.getInvocationId()}
+                          actionDigest={digestToString(spawn.spawn.digest)}
+                          mini={true}
+                        />
+                      )}
                     </div>
                   </Link>
                 ))}

@@ -930,6 +930,7 @@
   display: flex;
   border-top: 1px solid #eee;
   padding: 16px 0;
+  position: relative;
 }
 
 .invocation-execution-row.nested {
