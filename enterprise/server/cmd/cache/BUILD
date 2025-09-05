@@ -13,7 +13,10 @@ go_library(
     deps = [
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/backends/distributed",
+        "//enterprise/server/backends/gcs_cache",
+        "//enterprise/server/backends/migration_cache",
         "//enterprise/server/backends/pebble_cache",
+        "//enterprise/server/backends/s3_cache",
         "//enterprise/server/hit_tracker_client",
         "//enterprise/server/remoteauth",
         "//proto:remote_execution_go_proto",
