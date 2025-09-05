@@ -76,6 +76,8 @@ var (
 
 	writeExecutionProgressStateToRedis = flag.Bool("remote_execution.write_execution_progress_state_to_redis", false, "If enabled, write initial execution metadata and progress updates (stage changes) to redis. This state is cleared when the execution is complete.", flag.Internal)
 	writeExecutionsToPrimaryDB         = flag.Bool("remote_execution.write_executions_to_primary_db", true, "If enabled, write executions and invocation-execution links to the primary DB.", flag.Internal)
+
+	teeInstanceNamePrefix = flag.String("remote_execution.tee_instance_name_prefix", "", "Instance name prefix used to identify tee'ed actions", flag.Internal)
 )
 
 func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution *tables.Execution) {
@@ -547,6 +549,10 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 }
 
 func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID string, req *repb.ExecuteRequest, action *repb.Action) error {
+	if *teeInstanceNamePrefix == "" {
+		return nil
+	}
+
 	exp := s.env.GetExperimentFlagProvider()
 	if exp == nil {
 		return nil
@@ -597,7 +603,7 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 
 		log.CtxInfof(ctx, "Teeing execution corresponding to original execution %q", originalExecutionID)
 		teeReq := proto.Clone(req).(*repb.ExecuteRequest)
-		teeReq.InstanceName = teeInstanceName
+		teeReq.InstanceName = *teeInstanceNamePrefix + teeInstanceName
 
 		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {
@@ -1359,7 +1365,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 	}
 
 	// Skip sizer and usage updates for teed work.
-	if actionResourceName.GetInstanceName() == teeInstanceName {
+	if *teeInstanceNamePrefix != "" && strings.HasPrefix(actionResourceName.GetInstanceName(), *teeInstanceNamePrefix) {
 		return nil
 	}
 
