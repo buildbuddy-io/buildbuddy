@@ -151,23 +151,16 @@ func ParseClaims(token string) (*Claims, error) {
 }
 
 func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims, error) {
-	keyRole := role.Default
-	// User management through SCIM requires Admin access.
-	if akg.GetCapabilities()&int32(cappb.Capability_ORG_ADMIN) > 0 {
-		keyRole = role.Admin
-	}
 	allowedGroups := []string{akg.GetGroupID()}
 	groupMemberships := []*interfaces.GroupMembership{{
 		GroupID:      akg.GetGroupID(),
 		Capabilities: capabilities.FromInt(akg.GetCapabilities()),
-		Role:         keyRole,
 	}}
 	for _, cg := range akg.GetChildGroupIDs() {
 		allowedGroups = append(allowedGroups, cg)
 		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
 			GroupID:      cg,
 			Capabilities: capabilities.FromInt(akg.GetCapabilities()),
-			Role:         keyRole,
 		})
 	}
 
@@ -234,7 +227,7 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 	// *only* have access to the org being impersonated.
 	if requestContext.GetImpersonatingGroupId() != "" {
 		for _, membership := range claims.GetGroupMemberships() {
-			if membership.GroupID != env.GetAuthenticator().AdminGroupID() || membership.Role != role.Admin {
+			if membership.GroupID != env.GetAuthenticator().AdminGroupID() || !slices.Contains(membership.Capabilities, cappb.Capability_ORG_ADMIN) {
 				continue
 			}
 
@@ -281,7 +274,6 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
 			GroupID:      g.Group.GroupID,
 			Capabilities: c,
-			Role:         role.Role(g.Role),
 		})
 		if g.Group.GroupID == effectiveGroup {
 			// TODO: move these fields into u.GroupMemberships

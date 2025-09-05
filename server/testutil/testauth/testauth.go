@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 
@@ -41,7 +40,6 @@ func User(userID, groupID string) *TestUser {
 			{
 				GroupID:      groupID,
 				Capabilities: capabilities.DefaultAuthenticatedUserCapabilities,
-				Role:         role.Admin,
 			},
 		},
 		Capabilities: capabilities.DefaultAuthenticatedUserCapabilities,
