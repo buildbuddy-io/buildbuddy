@@ -1030,6 +1030,39 @@ genrule(
 `,
 			bazelVersions: []string{"7.3.1", "8.0.0", "8.1.0"},
 		},
+		{
+			name: "chain_of_local_changes",
+			baseline: `
+-- MODULE.bazel --
+-- pkg/BUILD --
+genrule(
+	name = "gen1",
+	outs = ["out1"],
+	cmd = "echo $$FOO > $@",
+)
+genrule(
+	name = "gen2",
+	outs = ["out2"],
+	srcs = [":gen1"],
+	cmd = """
+cat $< > $@
+echo $$FOO >> $@
+""",
+)
+genrule(
+	name = "gen3",
+	outs = ["out3"],
+	srcs = [":gen2"],
+	cmd = """
+cat $< > $@
+echo $$FOO >> $@
+""",
+)
+`,
+			baselineArgs:  []string{"--action_env=FOO=old"},
+			changedArgs:   []string{"--action_env=FOO=new"},
+			bazelVersions: []string{"8.1.0"},
+		},
 	} {
 		if toGenerate != nil && !toGenerate[tc.name] {
 			continue
