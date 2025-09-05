@@ -2360,7 +2360,6 @@ func TestSoftDeletePartitions(t *testing.T) {
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup.
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
-	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
 	flags.Set(t, "gossip.retransmit_mult", 10)
 
@@ -2389,21 +2388,28 @@ func TestSoftDeletePartitions(t *testing.T) {
 	// Initialize partitions
 	log.Infof("==== start 3 shards====")
 	sf.InitializeShardsForMetaRange(t, ctx, stores...)
-	for _, p := range partitions {
-		if p.SoftDeleted {
-			p.SoftDeleted = false
-		}
-		sf.InitializeShardsForPartition(t, ctx, p, stores...)
-	}
 
-	for i := 1; i <= 3; i++ {
+	sf.InitializeShardsForPartition(t, ctx, partitions[0], stores...)
+	// Set up 2 ranges for partition "foo" instead of 1 to test that both ranges
+	// will be stopped after soft-deletion.
+	sf.InitializeShardsForPartition(t, ctx, disk.Partition{
+		ID:           "foo",
+		MaxSizeBytes: int64(1_000_000_000), // 1G
+		NumRanges:    2,
+	}, stores...)
+
+	for i := 1; i <= 4; i++ {
 		testutil.WaitForRangeLease(t, ctx, stores, uint64(i)) // metarange
+		log.Infof("==== got range lease for range %d", i)
 	}
-	// advance the clock to trigger the process to set up partitions
-	clock.Advance(30 * time.Second)
-	for {
-		clock.Advance(2 * time.Second)
 
+	require.Len(t, s1.ListOpenReplicasForTest(), 4)
+	require.Len(t, s2.ListOpenReplicasForTest(), 4)
+	require.Len(t, s3.ListOpenReplicasForTest(), 4)
+	log.Infof("waiting for foo partition descriptor to be updated to soft deleted")
+	for {
+		// advance the clock to trigger the process to set up partitions
+		clock.Advance(31 * time.Second)
 		// Verify partition descriptors
 		partitionDescriptors, err := s1.Sender().FetchPartitionDescriptors(ctx)
 		require.NoError(t, err)
@@ -2411,8 +2417,27 @@ func TestSoftDeletePartitions(t *testing.T) {
 		require.Len(t, partitionDescriptors, 2)
 		require.Equal(t, "foo", partitionDescriptors[1].GetId())
 		if partitionDescriptors[1].GetState() != rfpb.PartitionDescriptor_SOFT_DELETED {
+			time.Sleep(50 * time.Millisecond)
 			continue
 		}
 		break
 	}
+	log.Infof("foo partition descriptor updated to soft deleted")
+
+	for {
+		clock.Advance(11 * time.Second)
+		l1 := s1.ListOpenReplicasForTest()
+		l2 := s2.ListOpenReplicasForTest()
+		l3 := s3.ListOpenReplicasForTest()
+		if len(l1) != 2 || len(l2) != 2 || len(l3) != 2 {
+			log.Infof("open replicas on s1, s2 and s3 are: %d, %d, %d", len(l1), len(l2), len(l3))
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	// Verify that the data is not roemoved
+	require.Len(t, s1.ListAllReplicasInHistoryForTest(), 4)
+	require.Len(t, s2.ListAllReplicasInHistoryForTest(), 4)
+	require.Len(t, s3.ListAllReplicasInHistoryForTest(), 4)
 }

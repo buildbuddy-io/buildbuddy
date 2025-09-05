@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
@@ -1630,6 +1631,7 @@ const (
 	zombieCleanupNoAction zombieCleanupAction = iota
 	zombieCleanupRemoveReplica
 	zombieCleanupRemoveData
+	zombieCleanupStopReplica
 	zombieCleanupWait
 )
 
@@ -1677,10 +1679,29 @@ func (rj *replicaJanitor) nextAttemptTime(attemptNumber int) time.Time {
 	return rj.clock.Now().Add(time.Duration(backoff))
 }
 
-func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescriptor) *zombieCleanupTask {
+func isSoftDeleted(softDeletedPartitions []*rfpb.PartitionDescriptor, rd *rfpb.RangeDescriptor) bool {
+	for _, p := range softDeletedPartitions {
+		partDir := filestore.PartitionDirectoryPrefix + p.GetId() + "/"
+		if bytes.HasPrefix(rd.GetStart(), []byte(partDir)) {
+			return true
+		}
+	}
+	return false
+}
+
+func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescriptor, softDeletedPartitions []*rfpb.PartitionDescriptor) *zombieCleanupTask {
 	rd, foundRange := rangeMap[ss.rangeID]
 	if foundRange {
 		ss.rd = rd
+		if isSoftDeleted(softDeletedPartitions, rd) {
+			if ss.opened {
+				ss.action = zombieCleanupStopReplica
+				return ss
+			} else {
+				ss.action = zombieCleanupNoAction
+				return ss
+			}
+		}
 
 		foundReplica := rangeDescriptorHasReplica(rd, ss.replicaID)
 		if foundReplica {
@@ -1816,11 +1837,14 @@ func (j *replicaJanitor) scanForZombies(ctx context.Context) {
 	}
 
 	// Skip range ids in a partition that's in the progress of initialization
+	softDeletedPartitions := []*rfpb.PartitionDescriptor{}
 	for _, p := range partitions {
 		if p.GetState() == rfpb.PartitionDescriptor_INITIALIZING {
 			for i := 0; i < int(p.GetInitialNumRanges()); i++ {
 				rangeIDsToSkip.Add(p.GetFirstRangeId() + uint64(i))
 			}
+		} else if p.GetState() == rfpb.PartitionDescriptor_SOFT_DELETED {
+			softDeletedPartitions = append(softDeletedPartitions, p)
 		}
 	}
 
@@ -1839,7 +1863,7 @@ func (j *replicaJanitor) scanForZombies(ctx context.Context) {
 		if rangeIDsToSkip.Contains(rangeID) {
 			continue
 		}
-		newSS := setZombieAction(&ss, rangeMap)
+		newSS := setZombieAction(&ss, rangeMap, softDeletedPartitions)
 		if newSS.action == zombieCleanupNoAction {
 			continue
 		}
@@ -1868,6 +1892,13 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 
 	if !task.nextAttemptTime.IsZero() && j.clock.Now().Before(task.nextAttemptTime) {
 		return zombieCleanupWait, nil
+	}
+
+	if task.action == zombieCleanupStopReplica {
+		if err := j.store.stopReplica(ctx, task.rangeID, task.replicaID); err != nil {
+			return zombieCleanupStopReplica, status.WrapErrorf(err, "failed to stop replica c%dn%d", task.rangeID, task.replicaID)
+		}
+		return zombieCleanupNoAction, nil
 	}
 
 	log.Debugf("removing zombie c%dn%d, action=%d", task.rangeID, task.replicaID, task.action)
