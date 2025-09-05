@@ -4,22 +4,29 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/jonboulle/clockwork"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -27,6 +34,9 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	gcrname "github.com/google/go-containerregistry/pkg/name"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
+	gcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
@@ -39,6 +49,19 @@ var (
 	sourceAPIKey             = flag.String("source_api_key", "", "The API key of the account that owns the action.")
 	targetAPIKey             = flag.String("target_api_key", "", "API key to use for the target executor.")
 	targetRemoteInstanceName = flag.String("target_remote_instance_name", "", "The remote instance name used in the source action")
+
+	// You will need to set these if replaying executions with private images.
+	// You will also likely need to set:
+	//
+	// --target_headers=x-buildbuddy-platform.container-registry-bypass=true
+	//
+	// So that the image is pulled only from the cache, skipping the registry.
+	// This requires using a server admin group API key (see
+	// 'auth.admin_group_id'), and the key must have both ORG_ADMIN and
+	// CACHE_WRITE capabilities. Note: these cannot be created from the UI
+	// currently - must add the capabilities manually in the DB.
+	sourceClientIdentityKey = flag.String("source_client_identity_key", "", "The client identity key to use for the source execution service.")
+	targetClientIdentityKey = flag.String("target_client_identity_key", "", "The client identity key to use for the target execution service.")
 
 	// Set one of execution_id or action_digest + source_remote_instance_name.
 	executionIDs = flag.Slice("execution_id", []string{}, "Execution IDs to replay. Can be specified more than once.")
@@ -107,8 +130,8 @@ func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, fr
 func (r *Replayer) copyTree(ctx context.Context, sourceRemoteInstanceName string, tree *repb.Tree, digestType repb.DigestFunction_Value) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(100)
-	srcCtx := contextWithSourceAPIKey(ctx)
-	targetCtx := contextWithTargetAPIKey(ctx)
+	srcCtx := contextWithSourceCredentials(ctx)
+	targetCtx := contextWithTargetCredentials(ctx)
 	copyDir := func(dir *repb.Directory) {
 		eg.Go(func() error {
 			_, err := cachetools.UploadProto(targetCtx, r.destBSClient, *targetRemoteInstanceName, digestType, dir)
@@ -157,12 +180,16 @@ func fetchStdoutOrStderr(ctx context.Context, from bspb.ByteStreamClient, d *rep
 	return nil
 }
 
-func getClients(target string) (bspb.ByteStreamClient, repb.ExecutionClient, repb.ContentAddressableStorageClient) {
+func getClients(target string) (bspb.ByteStreamClient, repb.ExecutionClient, repb.ContentAddressableStorageClient, repb.ActionCacheClient) {
 	conn, err := grpc_client.DialSimple(target)
 	if err != nil {
 		log.Fatalf("Error dialing executor: %s", err.Error())
 	}
-	return bspb.NewByteStreamClient(conn), repb.NewExecutionClient(conn), repb.NewContentAddressableStorageClient(conn)
+	bs := bspb.NewByteStreamClient(conn)
+	exec := repb.NewExecutionClient(conn)
+	cas := repb.NewContentAddressableStorageClient(conn)
+	ac := repb.NewActionCacheClient(conn)
+	return bs, exec, cas, ac
 }
 
 func inCopyMode(sourceRemoteInstanceName string) bool {
@@ -171,16 +198,42 @@ func inCopyMode(sourceRemoteInstanceName string) bool {
 		*targetAPIKey != *sourceAPIKey
 }
 
-func contextWithSourceAPIKey(ctx context.Context) context.Context {
+func contextWithSourceCredentials(ctx context.Context) context.Context {
 	if *sourceAPIKey != "" {
-		return metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *sourceAPIKey)
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *sourceAPIKey)
+	}
+	sourceClientIdentityKey := *sourceClientIdentityKey
+	if sourceClientIdentityKey == "" && *targetClientIdentityKey != "" && *sourceExecutor == *targetExecutor {
+		// If the source and target executors are the same, and the target
+		// client identity key is set, use it for the source as well.
+		sourceClientIdentityKey = *targetClientIdentityKey
+	}
+	if sourceClientIdentityKey != "" {
+		var err error
+		ctx, err = setClientIdentity(ctx, sourceClientIdentityKey)
+		if err != nil {
+			log.Fatalf("Failed to set source client identity: %s", err)
+		}
 	}
 	return ctx
 }
 
-func contextWithTargetAPIKey(ctx context.Context) context.Context {
+func contextWithTargetCredentials(ctx context.Context) context.Context {
 	if *targetAPIKey != "" {
-		return metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *targetAPIKey)
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *targetAPIKey)
+	}
+	targetClientIDKey := *targetClientIdentityKey
+	if targetClientIDKey == "" && *sourceClientIdentityKey != "" && *sourceExecutor == *targetExecutor {
+		// If the source and target executors are the same, and the source
+		// client identity key is set, use it for the target as well.
+		targetClientIDKey = *sourceClientIdentityKey
+	}
+	if targetClientIDKey != "" {
+		var err error
+		ctx, err = setClientIdentity(ctx, targetClientIDKey)
+		if err != nil {
+			log.Fatalf("Failed to set target client identity: %s", err)
+		}
 	}
 	return ctx
 }
@@ -206,8 +259,8 @@ func main() {
 		*outDir = tmp
 	}
 
-	srcCtx := contextWithSourceAPIKey(rootCtx)
-	targetCtx := contextWithTargetAPIKey(rootCtx)
+	srcCtx := contextWithSourceCredentials(rootCtx)
+	targetCtx := contextWithTargetCredentials(rootCtx)
 
 	headersToSet := make([]string, 0)
 	for _, targetHeader := range *targetHeaders {
@@ -223,15 +276,17 @@ func main() {
 	}
 
 	log.Infof("Connecting to source %q", *sourceExecutor)
-	sourceBSClient, _, sourceCASClient := getClients(*sourceExecutor)
+	sourceBSClient, _, sourceCASClient, sourceACClient := getClients(*sourceExecutor)
 	log.Infof("Connecting to target %q", *targetExecutor)
-	destBSClient, execClient, destCASClient := getClients(*targetExecutor)
+	destBSClient, execClient, destCASClient, destACClient := getClients(*targetExecutor)
 
 	replayer := &Replayer{
 		sourceBSClient:  sourceBSClient,
 		sourceCASClient: sourceCASClient,
+		sourceACClient:  sourceACClient,
 		destBSClient:    destBSClient,
 		destCASClient:   destCASClient,
+		destACClient:    destACClient,
 		execClient:      execClient,
 	}
 	replayer.uploadGroup.SetLimit(3)
@@ -300,6 +355,29 @@ func main() {
 	}
 }
 
+func setClientIdentity(ctx context.Context, key string) (context.Context, error) {
+	if err := flagutil.SetValueForFlagName("app.client_identity.key", key, nil, false); err != nil {
+		return ctx, fmt.Errorf("set app.client_identity.key: %s", err)
+	}
+	if err := flagutil.SetValueForFlagName("app.client_identity.origin", "localhost", nil, false); err != nil {
+		return ctx, fmt.Errorf("set app.client_identity.origin: %s", err)
+	}
+	// TODO: add replay_action as a trusted client and use that instead of
+	// "executor", or just trust any client with a signed key.
+	if err := flagutil.SetValueForFlagName("app.client_identity.client", "executor", nil, false); err != nil {
+		return ctx, fmt.Errorf("set app.client_identity.client: %s", err)
+	}
+	service, err := clientidentity.New(clockwork.NewRealClock())
+	if err != nil {
+		return ctx, fmt.Errorf("initialize client identity: %s", err)
+	}
+	ctx, err = service.AddIdentityToContext(ctx)
+	if err != nil {
+		return ctx, fmt.Errorf("add client identity to context: %s", err)
+	}
+	return ctx, nil
+}
+
 type Replayer struct {
 	fmb *FindMissingBatcher
 
@@ -309,6 +387,7 @@ type Replayer struct {
 
 	sourceBSClient, destBSClient   bspb.ByteStreamClient
 	sourceCASClient, destCASClient repb.ContentAddressableStorageClient
+	sourceACClient, destACClient   repb.ActionCacheClient
 	execClient                     repb.ExecutionClient
 
 	// Digests that have already started uploading and do not need to be
@@ -382,11 +461,152 @@ func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.A
 		}
 		return nil
 	})
+	eg.Go(func() error {
+		if err := r.copyCachedContainerImage(ctx, srcCtx, targetCtx, action); err != nil {
+			log.CtxWarningf(ctx, "Error copying image: %s", err)
+			return nil
+		}
+		return nil
+	})
 	if err := eg.Wait(); err != nil {
 		return err
 	}
 	log.Infof("Finished copying files for execution %s", s)
 	return nil
+}
+
+func (r *Replayer) copyCachedContainerImage(ctx, srcCtx, targetCtx context.Context, action *repb.Action) error {
+	imageProp := platform.FindValue(action.GetPlatform(), "container-image")
+	if imageProp == "" || imageProp == "none" {
+		return nil
+	}
+	// Parse image
+	imageRefStr := strings.TrimPrefix(imageProp, "docker://")
+	imageRef, err := gcrname.ParseReference(imageRefStr)
+	if err != nil {
+		return status.WrapError(err, "parse image")
+	}
+	digestRef, ok := imageRef.(gcrname.Digest)
+	if !ok {
+		log.CtxInfof(ctx, "Image %q does not include a digest - must be fetched from registry. This will fail if the image is private and credentials aren't set.", imageProp)
+		return nil
+	}
+	hash, err := gcr.NewHash(digestRef.DigestStr())
+	if err != nil {
+		return fmt.Errorf("invalid digest %q: %s", digestRef.DigestStr(), err)
+	}
+	// Fetch manifest (may be an index manifest or image manifest)
+	cachedManifest, err := ocicache.FetchManifestFromAC(srcCtx, r.sourceACClient, digestRef.Repository, hash, imageRef)
+	if err != nil {
+		log.CtxWarningf(ctx, "Error fetching manifest from AC: %s", err)
+		return nil
+	}
+	// Write manifest (async)
+	var eg errgroup.Group
+	eg.SetLimit(4)
+	eg.Go(func() error {
+		if err := ocicache.WriteManifestToAC(targetCtx, cachedManifest.GetRaw(), r.destACClient, digestRef.Repository, hash, cachedManifest.GetContentType(), imageRef); err != nil {
+			return status.WrapError(err, "write manifest to AC")
+		}
+		log.CtxInfof(ctx, "Copied image manifest to AC")
+		return nil
+	})
+
+	// If we have an index manifest, find the first image manifest matching the
+	// target platform, and copy that manifest to cache, since it's what the
+	// executor will use. Then proceed to use that manifest for copying layers.
+	var rawImageManifest []byte
+	mediaType := gcrtypes.MediaType(cachedManifest.GetContentType())
+	if mediaType.IsIndex() {
+		indexManifest, err := gcr.ParseIndexManifest(bytes.NewReader(cachedManifest.GetRaw()))
+		if err != nil {
+			return fmt.Errorf("parse index manifest: %s", err)
+		}
+		platform, err := getImagePlatform(action)
+		if err != nil {
+			return fmt.Errorf("get image platform: %s", err)
+		}
+		imageManifestDesc, err := ocimanifest.FindFirstImageManifest(*indexManifest, platform)
+		if err != nil {
+			return fmt.Errorf("find first image manifest: %s", err)
+		}
+		cachedImageManifest, err := ocicache.FetchManifestFromAC(srcCtx, r.sourceACClient, digestRef.Repository, imageManifestDesc.Digest, imageRef)
+		if err != nil {
+			return fmt.Errorf("fetch image manifest from AC: %s", err)
+		}
+		eg.Go(func() error {
+			if err := ocicache.WriteManifestToAC(targetCtx, cachedImageManifest.GetRaw(), r.destACClient, digestRef.Repository, imageManifestDesc.Digest, cachedImageManifest.GetContentType(), imageRef); err != nil {
+				return status.WrapError(err, "write manifest to AC")
+			}
+			log.CtxInfof(ctx, "Copied platform-specific image manifest to AC")
+			return nil
+		})
+		rawImageManifest = cachedImageManifest.GetRaw()
+	} else if mediaType.IsImage() {
+		rawImageManifest = cachedManifest.GetRaw()
+	} else {
+		return fmt.Errorf("unexpected manifest type: %s", mediaType)
+	}
+	imageManifest, err := gcr.ParseManifest(bytes.NewReader(rawImageManifest))
+	if err != nil {
+		return fmt.Errorf("parse image manifest: %s", err)
+	}
+
+	// Now that we've copied manifests, copy blobs.
+	copyBlob := func(hash gcr.Hash, contentLength int64, contentType string, label string) error {
+		pr, pw := io.Pipe()
+		defer pr.Close()
+		go func() {
+			defer pw.Close()
+			if err := ocicache.FetchBlobFromCache(srcCtx, pw, r.sourceBSClient, hash, contentLength); err != nil {
+				pw.CloseWithError(fmt.Errorf("read image %s blob %s from source cache: %s", label, hash, err))
+			}
+		}()
+		if err := ocicache.WriteBlobToCache(targetCtx, pr, r.destBSClient, r.destACClient, digestRef.Repository, hash, contentType, contentLength); err != nil {
+			return fmt.Errorf("write image %s blob %s to target cache: %s", label, hash, err)
+		}
+		log.CtxInfof(ctx, "Copied image %s blob %s", label, hash)
+		return nil
+	}
+
+	// Copy the config blob (if it's not inlined)
+	if len(imageManifest.Config.Data) == 0 && imageManifest.Config.Size > 0 {
+		configHash, err := gcr.NewHash(imageManifest.Config.Digest.String())
+		if err != nil {
+			return fmt.Errorf("parse config digest: %s", err)
+		}
+		eg.Go(func() error {
+			return copyBlob(configHash, imageManifest.Config.Size, string(imageManifest.Config.MediaType), "config")
+		})
+	}
+
+	// Copy all layer blobs
+	for _, layer := range imageManifest.Layers {
+		if layer.Size <= 0 {
+			continue
+		}
+		layerHash, err := gcr.NewHash(layer.Digest.String())
+		if err != nil {
+			return fmt.Errorf("parse layer digest %q: %s", layer.Digest.String(), err)
+		}
+		eg.Go(func() error {
+			return copyBlob(layerHash, layer.Size, string(layer.MediaType), "layer")
+		})
+	}
+
+	return eg.Wait()
+}
+
+func getImagePlatform(action *repb.Action) (gcr.Platform, error) {
+	partialTask := &repb.ExecutionTask{Action: action}
+	props, err := platform.ParseProperties(partialTask)
+	if err != nil {
+		return gcr.Platform{}, err
+	}
+	return gcr.Platform{
+		OS:           props.OS,
+		Architecture: props.Arch,
+	}, nil
 }
 
 func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.Action, sourceExecutionRN *digest.CASResourceName) error {
