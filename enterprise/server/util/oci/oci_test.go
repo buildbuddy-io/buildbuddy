@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
@@ -953,4 +954,80 @@ func (c *requestCounter) reset() {
 	c.mu.Lock()
 	c.counts = map[string]int{}
 	c.mu.Unlock()
+}
+
+func TestResolveImageDigest_TagExists(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	imageName := "image_tag_exists"
+	_, img := registry.PushNamedImage(t, imageName)
+	pushedDigest, err := img.Digest()
+	require.NoError(t, err)
+	nameToResolve := registry.ImageAddress(imageName)
+
+	nameWithDigest, err := newResolver(t, te).ResolveImageDigest(
+		context.Background(),
+		nameToResolve,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+	)
+	require.NoError(t, err)
+
+	resolvedDigest, err := name.NewDigest(nameWithDigest)
+	require.NoError(t, err)
+	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
+}
+
+func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	nonexistent := registry.ImageAddress("does_not_exist")
+
+	_, err := newResolver(t, te).ResolveImageDigest(
+		context.Background(),
+		nonexistent,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+	)
+	require.Error(t, err)
+	require.True(t, status.IsUnavailableError(err), "expected UnavailableError, got: %v", err)
+}
+
+func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+
+	counter := newRequestCounter()
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	})
+
+	imageName := "cache_hit"
+	_, img := registry.PushNamedImage(t, imageName)
+	pushedDigest, err := img.Digest()
+	require.NoError(t, err)
+	nameToResolve := registry.ImageAddress(imageName + "@" + pushedDigest.String())
+
+	resolver := newResolver(t, te)
+
+	counter.reset()
+	nameWithDigest, err := resolver.ResolveImageDigest(
+		context.Background(),
+		nameToResolve,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+	)
+	require.NoError(t, err)
+	resolvedDigest, err := name.NewDigest(nameWithDigest)
+	require.NoError(t, err)
+	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
+
+	require.Empty(t, counter.snapshot())
 }

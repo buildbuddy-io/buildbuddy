@@ -53,6 +53,7 @@ go_test(
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_google_go_containerregistry//pkg/v1/empty",
         "@com_github_google_go_containerregistry//pkg/v1/mutate",
