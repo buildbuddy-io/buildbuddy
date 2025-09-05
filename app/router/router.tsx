@@ -1,5 +1,5 @@
-import { grp } from "../../proto/group_ts_proto";
 import { capability } from "../../proto/capability_ts_proto";
+import { grp } from "../../proto/group_ts_proto";
 import { user as user_proto } from "../../proto/user_ts_proto";
 import { User } from "../auth/user";
 import capabilities from "../capabilities/capabilities";
