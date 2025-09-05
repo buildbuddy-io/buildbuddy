@@ -300,6 +300,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
       await this.fetchInvocation();
       this.timeoutRef = undefined;
+      if (this.state.model?.isInProgress() || this.isQueued()) {
+        this.scheduleRefetch();
+      }
     }, 3000);
   }
 
@@ -344,6 +347,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
       .then((response) => {
         const runnerExecution = response.execution?.[response.execution.length - 1] ?? undefined;
         this.setState({ runnerExecution });
+      })
+      .catch((e) => {
+        console.error("Failed to fetch runner execution", e);
+        this.setState({ runnerExecution: undefined });
       });
     return this.runnerExecutionRPC;
   }
