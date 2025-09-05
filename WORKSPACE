@@ -682,3 +682,9 @@ load_musl_toolchains(
 load("@musl_toolchains//:toolchains.bzl", "register_musl_toolchains")
 
 register_musl_toolchains()
+
+http_archive(
+    name = "rules_multirun",
+    sha256 = "a203b9f098297b8e5b38e8e746d3f9e55ce2687a76a18599ae0b3fbf8359a7eb",
+    url = "https://github.com/keith/rules_multirun/releases/download/0.13.0/rules_multirun.0.13.0.tar.gz",
+)
