@@ -887,6 +887,7 @@ ts_library(
         "//app/components/select",
         "//app/errors:error_service",
         "//app/format",
+        "//app/invocation:action_compare_button",
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
         "//app/util:cache",
