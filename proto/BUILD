@@ -179,6 +179,13 @@ proto_library(
 )
 
 proto_library(
+    name = "routing_proto",
+    srcs = [
+        "routing.proto",
+    ],
+)
+
+proto_library(
     name = "execution_stats_proto",
     srcs = [
         "execution_stats.proto",
@@ -1489,6 +1496,16 @@ go_proto_library(
     deps = [
         ":remote_execution_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "routing_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/routing",
+    proto = ":routing_proto",
 )
 
 go_proto_library(

@@ -17,6 +17,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_action_cache_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_byte_stream_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_capabilities_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_content_addressable_storage_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_service"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
@@ -222,10 +227,19 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	if err != nil {
 		log.Fatalf("Error dialing remote cache: %s", err.Error())
 	}
-	env.SetActionCacheClient(repb.NewActionCacheClient(conn))
-	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
-	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
-	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	if routing_service.IsCacheRoutingEnabled() {
+		routing_service.RegisterRoutingService(env)
+
+		env.SetActionCacheClient(routing_action_cache_client.NewClient(env))
+		env.SetCapabilitiesClient(routing_capabilities_client.NewClient(env))
+		env.SetByteStreamClient(routing_byte_stream_client.NewClient(env))
+		env.SetContentAddressableStorageClient(routing_content_addressable_storage_client.NewClient(env))
+	} else {
+		env.SetActionCacheClient(repb.NewActionCacheClient(conn))
+		env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
+		env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	}
 
 	// The atime updater must be registered after the remote CAS client (which
 	// it depends on), but before the local CAS server (which depends on it).

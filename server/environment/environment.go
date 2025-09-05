@@ -72,6 +72,7 @@ type Env interface {
 	GetFileCache() interfaces.FileCache
 	GetRemoteExecutionService() interfaces.RemoteExecutionService
 	GetSchedulerService() interfaces.SchedulerService
+	GetCacheRoutingService() interfaces.CacheRoutingService
 	GetTaskRouter() interfaces.TaskRouter
 	GetTaskSizer() interfaces.TaskSizer
 	GetDefaultRedisClient() redis.UniversalClient
