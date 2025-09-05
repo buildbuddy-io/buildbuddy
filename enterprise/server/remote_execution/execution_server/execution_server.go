@@ -585,7 +585,7 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 	limit := rate.Limit(teeRate)
 	limiter := s.teeLimiters[details.Variant()]
 	if limiter == nil {
-		limiter = rate.NewLimiter(limit, 1)
+		limiter = rate.NewLimiter(limit, 1 /*=burst*/)
 		s.teeLimiters[details.Variant()] = limiter
 	} else if limiter.Limit() != limit {
 		limiter.SetLimit(limit)
