@@ -105,6 +105,9 @@ message Group {
 
   // Whether to enable codesearch.
   bool code_search_enabled = 19;
+
+  // The authenticated user's capabilities within this group.
+  repeated capability.Capability capabilities = 20;
 }
 
 message JoinGroupRequest {

@@ -330,6 +330,7 @@ func makeGroups(groupRoles []*tables.GroupRole) ([]*grpb.Group, error) {
 			Id:                                g.GroupID,
 			Name:                              g.Name,
 			Role:                              r,
+			Capabilities:                      userGroupCapabilities,
 			OwnedDomain:                       g.OwnedDomain,
 			GithubLinked:                      githubToken != "",
 			UrlIdentifier:                     g.URLIdentifier,
