@@ -1808,7 +1808,23 @@ func (j *replicaJanitor) scanForZombies(ctx context.Context) {
 			rangeIDsToSkip.Add(stmt.GetRange().GetRangeId())
 		}
 	}
-	// Fetch the range descritpors from meta range
+
+	partitions, err := j.store.sender.FetchPartitionDescriptors(ctx)
+	if err != nil {
+		j.store.log.Warningf("failed to fetch partitions: %s", err)
+		return
+	}
+
+	// Skip range ids in a partition that's in the progress of initialization
+	for _, p := range partitions {
+		if p.GetState() == rfpb.PartitionDescriptor_INITIALIZING {
+			for i := 0; i < int(p.GetInitialNumRanges()); i++ {
+				rangeIDsToSkip.Add(p.GetFirstRangeId() + uint64(i))
+			}
+		}
+	}
+
+	// Fetch the range descriptors from meta range
 	ranges, err := j.store.sender.LookupRangeDescriptorsByIDs(ctx, rangeIDs)
 	if err != nil {
 		j.store.log.Warningf("failed to scan zombie nodes: %s", err)
