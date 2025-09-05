@@ -46,8 +46,8 @@ message RunRequest {
   string timeout = 7;
 
   // Specifies what to wait until before returning a RunResponse.
-  // Default is value is CREATED which waits for the invocation to
-  // be created but not necessarily completed.
+  // Default is value is STARTED which waits for the invocation to
+  // be started but not necessarily completed.
   WaitCondition wait_until = 13;
 
   // Whether to use github credentials configured on the executor.
@@ -77,14 +77,14 @@ enum WaitCondition {
   // Unknown wait condition.
   UNKNOWN_CONDITION = 0;
 
-  // Wait until the invocation is created but not complete.
-  CREATED = 1;
+  // Wait for the run request to be queued.
+  QUEUED = 1;
+
+  // Wait until the invocation has started.
+  STARTED = 2;
 
   // Wait for the invocation to complete.
-  COMPLETE = 2;
-  
-  // Return immediately without waiting.
-  IMMEDIATE = 3;  
+  COMPLETED = 3;
 }
 
 message RunResponse {

@@ -476,7 +476,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 
 	res := &rnpb.RunResponse{InvocationId: invocationID}
 
-	if req.GetAsync() || req.GetWaitUntil() == rnpb.WaitCondition_IMMEDIATE {
+	if req.GetAsync() || req.GetWaitUntil() == rnpb.WaitCondition_QUEUED {
 		return res, nil
 	}
 
@@ -541,10 +541,10 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 		case <-time.After(1 * time.Second):
 			if executing {
 				inv, err := invocationDB.LookupInvocation(ctx, invocationID)
-				if err == nil && (waitUntil == rnpb.WaitCondition_CREATED || waitUntil == rnpb.WaitCondition_UNKNOWN_CONDITION) {
+				if err == nil && (waitUntil == rnpb.WaitCondition_STARTED || waitUntil == rnpb.WaitCondition_UNKNOWN_CONDITION) {
 					return nil
 				}
-				if err == nil && waitUntil == rnpb.WaitCondition_COMPLETE &&
+				if err == nil && waitUntil == rnpb.WaitCondition_COMPLETED &&
 					(inv.InvocationStatus == int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS) ||
 						inv.InvocationStatus == int64(inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)) {
 					return nil

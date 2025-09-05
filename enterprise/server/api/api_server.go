@@ -657,12 +657,12 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 // Converts from internal wait mode to api wait mode.
 func fromApiWaitCondition(waitCondition apipb.WaitCondition) rnpb.WaitCondition {
 	switch waitCondition {
-	case apipb.WaitCondition_CREATED:
-		return rnpb.WaitCondition_CREATED
-	case apipb.WaitCondition_COMPLETE:
-		return rnpb.WaitCondition_COMPLETE
-	case apipb.WaitCondition_IMMEDIATE:
-		return rnpb.WaitCondition_IMMEDIATE
+	case apipb.WaitCondition_QUEUED:
+		return rnpb.WaitCondition_QUEUED
+	case apipb.WaitCondition_STARTED:
+		return rnpb.WaitCondition_STARTED
+	case apipb.WaitCondition_COMPLETED:
+		return rnpb.WaitCondition_COMPLETED
 	case apipb.WaitCondition_UNKNOWN_CONDITION:
 		return rnpb.WaitCondition_UNKNOWN_CONDITION
 	}
