@@ -304,11 +304,13 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                         <div>Exit code: {spawn.spawn?.exitCode || 0}</div>
                         {/* {spawn.spawn?.metrics.} // todo add metrics here and filters from remote exec log */}
                       </div>
-                      <ActionCompareButtonComponent
-                        invocationId={this.props.model.getInvocationId()}
-                        actionDigest={digestToString(spawn.spawn.digest)}
-                        mini={true}
-                      />
+                      {spawn.spawn?.digest && (
+                        <ActionCompareButtonComponent
+                          invocationId={this.props.model.getInvocationId()}
+                          actionDigest={digestToString(spawn.spawn.digest)}
+                          mini={true}
+                        />
+                      )}
                     </div>
                   </Link>
                 ))}
