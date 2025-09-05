@@ -350,6 +350,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       })
       .catch((e) => {
         console.error("Failed to fetch runner execution", e);
+        this.setState({ runnerExecution: undefined });
       });
     return this.runnerExecutionRPC;
   }
