@@ -82,7 +82,7 @@ func main() {
 
 	// For backwards compatibility, attempt to fixup old style digest
 	// strings that don't start with a '/blobs/' prefix.
-	if !strings.HasPrefix(resourceNameString, "/blobs") {
+	if !strings.Contains(resourceNameString, "/blobs/") {
 		resourceNameString = "/blobs/" + resourceNameString
 	}
 
