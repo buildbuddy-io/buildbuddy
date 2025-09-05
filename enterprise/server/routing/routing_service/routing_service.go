@@ -7,6 +7,7 @@ import (
 	ropb "github.com/buildbuddy-io/buildbuddy/proto/routing"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -47,7 +48,8 @@ func RegisterRoutingService(env *real_environment.RealEnv) error {
 		}
 		conn, err := grpc_client.DialInternal(env, r)
 		if err != nil {
-			// XXX: Should we come up when a backend cache is down? Probably.
+			// The default Dial() behavior doesn't wait for the connection, so
+			// this indicates some issue other than the server being down.
 			log.Fatalf("Error dialing remote cache: %s", err.Error())
 		}
 
@@ -78,17 +80,18 @@ func (r *routingService) GetCacheRoutingConfig(ctx context.Context) (*ropb.Cache
 func (r *routingService) getPrimaryClientSet(ctx context.Context) (*clientSet, error) {
 	conf, err := r.GetCacheRoutingConfig(ctx)
 	if err != nil {
+		alert.CtxUnexpectedEvent(ctx, "routing-failure", "A routingService request failed: %s", err)
 		return nil, err
 	}
 	route := conf.GetPrimaryCache()
 	if route == "" {
-		// XXX: improve error (include group ID? Debounce?)
+		alert.CtxUnexpectedEvent(ctx, "routing-empty-route", "A routingService route had no primary cache defined.")
 		return nil, status.InternalError("Missing primary cache config")
 	}
 
 	clientSet, ok := r.clientSets[route]
 	if !ok || clientSet == nil {
-		// XXX: improve error (include group ID? Debounce?)
+		alert.CtxUnexpectedEvent(ctx, "routing-unknown-route", "routingService is not configured to support route %s", route)
 		return nil, status.InternalErrorf("Unsupported route %s", route)
 	}
 	return clientSet, nil

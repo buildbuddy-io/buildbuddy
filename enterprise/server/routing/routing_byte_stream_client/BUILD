@@ -13,3 +13,5 @@ go_library(
         "@org_golang_google_grpc//:grpc",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])

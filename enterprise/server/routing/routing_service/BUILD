@@ -12,6 +12,7 @@ go_library(
         "//proto:routing_go_proto",
         "//server/interfaces",
         "//server/real_environment",
+        "//server/util/alert",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",
