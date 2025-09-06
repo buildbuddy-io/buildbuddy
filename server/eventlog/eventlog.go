@@ -355,7 +355,12 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 		WriteHook:            writeHook,
 	}
 	cw := chunkstore.New(b, chunkstoreOptions).Writer(ctx, eventLogPath, chunkstoreWriterOptions)
-	sw, err := terminal.NewScreenWriter(requestedTerminalColumns, requestedTerminalLines)
+	// If a UI action is split across more than 2 lines, it will mangle the log a
+	// little bit by leaving lines behind, and that's okay. That's exceptional,
+	// and logs where actions are spanning three or more lines are likely to not
+	// be very readable in the first place.
+	height := max(1, requestedTerminalLines*2)
+	sw, err := terminal.NewScreenWriter(requestedTerminalColumns, height)
 	if err != nil {
 		return nil, err
 	}
@@ -439,16 +444,6 @@ func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, erro
 	}
 	if _, err := w.terminal.Write(p); err != nil {
 		return 0, err
-	}
-	if !w.terminal.AccumulatingOutput() {
-		// We aren't accumulating scrolled-out output, which means this isn't using
-		// curses. Just render the terminal and write the rendered output.
-		n, err := w.WriteWithTailCloser.WriteWithTail(ctx, []byte(w.terminal.Render()), []byte{})
-		if err != nil {
-			return 0, err
-		}
-		w.terminal.Reset()
-		return n, err
 	}
 	if w.terminal.WriteErr != nil {
 		return 0, w.terminal.WriteErr

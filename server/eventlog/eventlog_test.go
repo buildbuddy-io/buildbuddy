@@ -158,7 +158,7 @@ func TestComplexScreenWriting(t *testing.T) {
 				if tc.ScreenRows > 0 {
 					screen.Screen.SetSize(tc.ScreenCols, tc.ScreenRows)
 				} else {
-					screen.Screen.SetSize(tc.ScreenCols, terminal.MaxLineCapacity)
+					screen.Screen.SetSize(tc.ScreenCols, 32)
 				}
 			}
 			w := eventlog.NewANSICursorBufferWriter(tl, screen)
