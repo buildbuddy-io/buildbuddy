@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -68,22 +69,15 @@ const (
 	// be discarded after this time. There may be multiple waiters for a single
 	// action so we cannot discard the channel immediately.
 	completedPubSubChanExpiration = 15 * time.Minute
-
-	// When teeing executor work to experiment executors, use this instance name
-	// to identify teed tasks and avoid populating ActionResults under the
-	// real instance name.
-	teeInstanceName = "tee20240805"
-	// When teeing executor work, the experiment executors are expected to be
-	// registered under this name.
-	teePoolName = "tee"
 )
 
 var (
 	enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
-	sharedExecutorPoolTeeRate         = flag.Float64("remote_execution.shared_executor_pool_tee_rate", 0, "If non-zero, work for the default shared executor pool will be teed to a separate experiment pool at this rate.", flag.Internal)
 
 	writeExecutionProgressStateToRedis = flag.Bool("remote_execution.write_execution_progress_state_to_redis", false, "If enabled, write initial execution metadata and progress updates (stage changes) to redis. This state is cleared when the execution is complete.", flag.Internal)
 	writeExecutionsToPrimaryDB         = flag.Bool("remote_execution.write_executions_to_primary_db", true, "If enabled, write executions and invocation-execution links to the primary DB.", flag.Internal)
+
+	teeInstanceNamePrefix = flag.String("remote_execution.tee_instance_name_prefix", "", "Instance name prefix used to identify tee'ed actions", flag.Internal)
 )
 
 func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution *tables.Execution) {
@@ -146,7 +140,9 @@ type ExecutionServer struct {
 	rdb                               redis.UniversalClient
 	streamPubSub                      *pubsub.StreamPubSub
 	enableRedisAvailabilityMonitoring bool
-	teeLimiter                        *rate.Limiter
+
+	mu          sync.Mutex
+	teeLimiters map[string]*rate.Limiter
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -171,17 +167,12 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 	if env.GetRemoteExecutionRedisClient() == nil || env.GetRemoteExecutionRedisPubSubClient() == nil {
 		return nil, status.FailedPreconditionErrorf("Redis is required for remote execution")
 	}
-	var teeLimiter *rate.Limiter
-	if *sharedExecutorPoolTeeRate > 0 {
-		teeLimiter = rate.NewLimiter(rate.Limit(*sharedExecutorPoolTeeRate), 1)
-	}
 	return &ExecutionServer{
 		env:                               env,
 		cache:                             cache,
 		rdb:                               env.GetRemoteExecutionRedisClient(),
 		streamPubSub:                      pubsub.NewStreamPubSub(env.GetRemoteExecutionRedisPubSubClient()),
 		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && *enableRedisAvailabilityMonitoring,
-		teeLimiter:                        teeLimiter,
 	}, nil
 }
 
@@ -558,11 +549,50 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 }
 
 func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID string, req *repb.ExecuteRequest, action *repb.Action) error {
-	if s.teeLimiter == nil {
+	if *teeInstanceNamePrefix == "" {
 		return nil
 	}
 
-	if !s.teeLimiter.Allow() {
+	exp := s.env.GetExperimentFlagProvider()
+	if exp == nil {
+		return nil
+	}
+
+	m, details := exp.ObjectDetails(ctx, "remote_execution.task_teeing", nil)
+	if m == nil {
+		return nil
+	}
+
+	teeRate, ok := m["rate"].(float64)
+	if !ok {
+		alert.CtxUnexpectedEvent(ctx, "tee_invalid_rate", "rate was not a float")
+		return nil
+	}
+
+	teePool, ok := m["pool"].(string)
+	if !ok {
+		alert.CtxUnexpectedEvent(ctx, "tee_invalid_pool", "pool was not a string")
+		return nil
+	}
+
+	teeInstanceName, ok := m["instance-name"].(string)
+	if !ok {
+		alert.CtxUnexpectedEvent(ctx, "tee_invalid_instance_name", "instance name was not a string")
+		return nil
+	}
+
+	s.mu.Lock()
+	limit := rate.Limit(teeRate)
+	limiter := s.teeLimiters[details.Variant()]
+	if limiter == nil {
+		limiter = rate.NewLimiter(limit, 1 /*=burst*/)
+		s.teeLimiters[details.Variant()] = limiter
+	} else if limiter.Limit() != limit {
+		limiter.SetLimit(limit)
+	}
+	s.mu.Unlock()
+
+	if !limiter.Allow() {
 		return nil
 	}
 
@@ -573,13 +603,13 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 
 		log.CtxInfof(ctx, "Teeing execution corresponding to original execution %q", originalExecutionID)
 		teeReq := proto.Clone(req).(*repb.ExecuteRequest)
-		teeReq.InstanceName = teeInstanceName
+		teeReq.InstanceName = *teeInstanceNamePrefix + teeInstanceName
 
 		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {
 			return
 		}
-		md["x-buildbuddy-platform.pool"] = []string{teePoolName}
+		md["x-buildbuddy-platform.pool"] = []string{teePool}
 		ctx = metadata.NewIncomingContext(ctx, md)
 
 		r := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
@@ -1342,7 +1372,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 	}
 
 	// Skip sizer and usage updates for teed work.
-	if actionResourceName.GetInstanceName() == teeInstanceName {
+	if *teeInstanceNamePrefix != "" && strings.HasPrefix(actionResourceName.GetInstanceName(), *teeInstanceNamePrefix) {
 		return nil
 	}
 
