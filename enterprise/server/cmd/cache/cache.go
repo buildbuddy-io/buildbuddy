@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/grpc"
 
+	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -250,6 +251,10 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	bspb.RegisterByteStreamServer(grpcServer, env.GetByteStreamServer())
 	repb.RegisterContentAddressableStorageServer(grpcServer, env.GetCASServer())
 	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
+	rapb.RegisterFetchServer(grpcServer, env.GetFetchServer())
+	// Not actually implemented right now, but if it ever works for the apps, it
+	// should work here, too.
+	rapb.RegisterPushServer(grpcServer, env.GetPushServer())
 }
 
 func registerLocalGRPCClients(env *real_environment.RealEnv) error {

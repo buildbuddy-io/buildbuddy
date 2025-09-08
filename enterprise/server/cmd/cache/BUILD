@@ -19,6 +19,7 @@ go_library(
         "//enterprise/server/backends/s3_cache",
         "//enterprise/server/hit_tracker_client",
         "//enterprise/server/remoteauth",
+        "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/config",
         "//server/http/interceptors",
