@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -672,10 +673,16 @@ func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) (
 	return id, nil
 }
 
-func filterToHostnamePrefix(nodes []*executionNode, prefix string) []*executionNode {
+func filterToHostnamePattern(ctx context.Context, nodes []*executionNode, pattern string) []*executionNode {
+	p, err := regexp.Compile(pattern)
+	if err != nil {
+		alert.CtxUnexpectedEvent(ctx, "invalid_hostname_pattern", "invalid hostname pattern %q in experiment config", pattern)
+		return nodes
+	}
+
 	var out []*executionNode
 	for _, n := range nodes {
-		if strings.HasPrefix(n.GetHost(), prefix) {
+		if p.MatchString(n.GetHost()) {
 			out = append(out, n)
 		}
 	}
@@ -1574,9 +1581,14 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 		if !nodeCanFitTask(node, task.metadata.GetTaskSize()) {
 			continue
 		}
-		// Filter to tasks with a compatible hostname prefix.
-		if prefix := task.metadata.GetHostnamePrefix(); prefix != "" && !strings.HasPrefix(node.GetHost(), prefix) {
-			continue
+		// Filter to tasks with a compatible hostname pattern.
+		if pattern := task.metadata.GetHostnamePattern(); pattern != "" {
+			p, err := regexp.Compile(pattern)
+			if err != nil {
+				alert.CtxUnexpectedEvent(ctx, "invalid_hostname_pattern", "invalid hostname pattern %q in experiment config", pattern)
+			} else if !p.MatchString(node.GetHost()) {
+				continue
+			}
 		}
 
 		// Don't try to re-assign tasks intended to run on a specific executor.
@@ -1993,7 +2005,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	os := enqueueRequest.GetSchedulingMetadata().GetOs()
 	arch := enqueueRequest.GetSchedulingMetadata().GetArch()
 	pool := enqueueRequest.GetSchedulingMetadata().GetPool()
-	hostnamePrefix := enqueueRequest.GetSchedulingMetadata().GetHostnamePrefix()
+	hostnamePattern := enqueueRequest.GetSchedulingMetadata().GetHostnamePattern()
 
 	key := nodePoolKey{os: os, arch: arch, pool: pool, groupID: groupID}
 
@@ -2071,10 +2083,10 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			if len(candidateNodes) == 0 {
 				return status.WrapError(error_util.RequestedExecutorNotFoundError(), fmt.Sprintf("enqueue on debug-executor-id %s", debugExecutorID))
 			}
-			candidateNodes = filterToHostnamePrefix(candidateNodes, hostnamePrefix)
+			candidateNodes = filterToHostnamePattern(ctx, candidateNodes, hostnamePattern)
 			if len(candidateNodes) == 0 {
-				log.CtxWarningf(ctx, "No executors found matching hostname prefix %q in pool %q with os %q with arch %q", hostnamePrefix, pool, os, arch)
-				return status.UnavailableErrorf("no executors found matching hostname prefix")
+				log.CtxWarningf(ctx, "No executors found matching hostname pattern %q in pool %q with os %q with arch %q", hostnamePattern, pool, os, arch)
+				return status.UnavailableErrorf("no executors found matching hostname pattern")
 			}
 			rankedNodes = s.taskRouter.RankNodes(ctx, task.GetAction(), cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
 		}
