@@ -447,13 +447,16 @@ func TestSizer_RespectsMinimumSize(t *testing.T) {
 }
 
 func TestCgroupSettings(t *testing.T) {
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+
 	// Basic settings should be applied
 	{
 		size := &scpb.TaskSize{
 			EstimatedMilliCpu:    1000,
 			EstimatedMemoryBytes: 800e6,
 		}
-		actual := tasksize.GetCgroupSettings(size)
+		actual := tasksize.GetCgroupSettings(ctx, env.GetExperimentFlagProvider(), size, &scpb.SchedulingMetadata{})
 		expected := &scpb.CgroupSettings{
 			CpuWeight:          proto.Int64(39),
 			CpuQuotaLimitUsec:  proto.Int64(30 * 100 * 1e3),
@@ -471,16 +474,19 @@ func TestCgroupSettings(t *testing.T) {
 		100_000: 3906,
 	} {
 		size := &scpb.TaskSize{EstimatedMilliCpu: mcpu}
-		settings := tasksize.GetCgroupSettings(size)
+		settings := tasksize.GetCgroupSettings(ctx, env.GetExperimentFlagProvider(), size, &scpb.SchedulingMetadata{})
 		assert.Equal(t, int64(weight), settings.GetCpuWeight())
 	}
 }
 
 func TestCgroupSettings_AdditionalPIDsLimit(t *testing.T) {
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+
 	flags.Set(t, "remote_execution.pids_limit", 10_000)
 	flags.Set(t, "remote_execution.additional_pids_limit_per_cpu", 200)
 	size := &scpb.TaskSize{EstimatedMilliCpu: 1500}
-	settings := tasksize.GetCgroupSettings(size)
+	settings := tasksize.GetCgroupSettings(ctx, env.GetExperimentFlagProvider(), size, &scpb.SchedulingMetadata{})
 	const wantPidsMax = 10_300 // 10K base limit + (1.5*200 = 300) CPU-based limit
 	assert.Equal(t, int64(10_300), settings.GetPidsMax())
 }

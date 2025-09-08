@@ -11,6 +11,7 @@ go_library(
     srcs = ["tasksize.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize",
     deps = [
+        "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/tasksize_model",
         "//proto:remote_execution_go_proto",
