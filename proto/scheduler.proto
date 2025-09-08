@@ -321,9 +321,13 @@ message SchedulingMetadata {
   string os = 2;
   string arch = 3;
   string pool = 4;
+
+  reserved 14;
+
   // If set, the task will be scheduled only on nodes matching this hostname
-  // prefix within the pool.
-  string hostname_prefix = 14;
+  // pattern within the pool.
+  string hostname_pattern = 15;
+
   // Group ID that owns the executors on which the task is to be executed.
   // May be different from the Group ID of the user that issued the Execute
   // request.
