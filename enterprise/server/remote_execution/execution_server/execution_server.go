@@ -729,6 +729,9 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
 		expOverrides := fp.Object(
 			ctx, "remote_execution.task_size_overrides", nil,
+			// Set OriginalPool to allow configuring task sizing based on pool
+			// names from another remote execution platform.
+			experiments.WithContext("OriginalPool", props.OriginalPool),
 			// Set user-requested task size in the experiment context.
 			experiments.WithContext("EstimatedComputeUnits", props.EstimatedComputeUnits),
 			experiments.WithContext("EstimatedMilliCPU", props.EstimatedMilliCPU),

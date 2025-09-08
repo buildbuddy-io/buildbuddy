@@ -67,6 +67,9 @@ const (
 	OverrideHeaderPrefix = "x-buildbuddy-platform."
 
 	poolPropertyName = "Pool"
+
+	originalPoolPropertyName = "OriginalPool"
+
 	// DefaultPoolValue is the value for the "Pool" platform property that selects
 	// the default executor pool for remote execution.
 	DefaultPoolValue = "default"
@@ -202,6 +205,12 @@ type Properties struct {
 	RunnerRecyclingMaxWait    time.Duration
 	EnableVFS                 bool
 	IncludeSecrets            bool
+
+	// OriginalPool can be set to inform BuildBuddy about the original pool name
+	// from another remote execution platform. This allows configuring task
+	// sizing/routing based on the original pool name without needing to create
+	// dedicated executor pools with each original pool name.
+	OriginalPool string
 
 	// DefaultTimeout specifies a remote action timeout to be used if
 	// `action.Timeout` is unset. This works around an issue that bazel does not
@@ -438,6 +447,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                      strings.ToLower(pool),
 		PoolType:                  poolType,
+		OriginalPool:              stringProp(m, originalPoolPropertyName, ""),
 		EstimatedComputeUnits:     float64Prop(m, EstimatedComputeUnitsPropertyName, 0),
 		EstimatedMemoryBytes:      iecBytesProp(m, EstimatedMemoryPropertyName, 0),
 		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, 0),
