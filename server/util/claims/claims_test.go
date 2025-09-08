@@ -8,7 +8,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -117,7 +116,6 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	expectedBaseMembership := &interfaces.GroupMembership{
 		GroupID:      baseGroupID,
 		Capabilities: caps,
-		Role:         role.Default,
 	}
 	require.Equal(t, baseGroupID, c.GetGroupID())
 	require.Equal(t, []string{baseGroupID}, c.GetAllowedGroups())
@@ -153,7 +151,6 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	expectedChildMembership := &interfaces.GroupMembership{
 		GroupID:      childGroupID,
 		Capabilities: caps,
-		Role:         role.Default,
 	}
 	require.Equal(t, baseGroupID, c.GetGroupID())
 	require.Equal(t, baseGroupID, c.GetAPIKeyInfo().OwnerGroupID)
