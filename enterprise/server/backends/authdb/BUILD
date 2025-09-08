@@ -23,6 +23,7 @@ go_library(
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/random",
+        "//server/util/role",
         "//server/util/status",
         "//server/util/subdomain",
         "//third_party/singleflight",

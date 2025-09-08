@@ -784,13 +784,13 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	adminOnlyKey, err := adb.CreateAPIKey(
 		ctx1, groupID1, "Admin-only key",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	developerKey, err := adb.CreateAPIKey(
 		ctx1, groupID1, "Developer key",
 		[]cappb.Capability{cappb.Capability_CAS_WRITE},
-		0, /*=expiresIn*/
+		0,   /*=expiresIn*/
 		true /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 
@@ -837,7 +837,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	_, err = adb.CreateAPIKey(
 		ctx2, groupID1, "test-label-2",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
@@ -847,7 +847,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	_, err = adb.CreateAPIKey(
 		ctx3, groupID1, "test-label-3",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
@@ -1503,7 +1503,7 @@ func TestRequestToJoinGroup_AlreadyInGroup_GetAlreadyExists(t *testing.T) {
 	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
 	require.Equal(t, status.Message(err), "You're already in this organization.")
 	require.Equal(t, grpb.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
-	require.Equal(t, role.Admin, role.Role(getGroupRole(t, ctx1, env, "GR1").Role))
+	require.Equal(t, role.AdminCapabilities, getGroupRole(t, ctx1, env, "GR1").Capabilities)
 }
 
 func TestRequestToJoinGroup_NoAutoJoinForSSOUser(t *testing.T) {
@@ -1560,7 +1560,7 @@ func TestRequestToJoinGroup_DomainMember_GetsDeveloperRole(t *testing.T) {
 	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
 	require.NoError(t, err)
 	require.Equal(t, grpb.GroupMembershipStatus_MEMBER, s)
-	require.Equal(t, role.Developer, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
+	require.Equal(t, role.DeveloperCapabilities, getGroupRole(t, ctx2, env, "GR1").Capabilities)
 
 	// Try to join again via domain association; should get AlreadyExists and
 	// group role should remain the same.
@@ -1568,7 +1568,7 @@ func TestRequestToJoinGroup_DomainMember_GetsDeveloperRole(t *testing.T) {
 	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
 	require.Equal(t, status.Message(err), "You're already in this organization.")
 	require.Equal(t, grpb.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
-	require.Equal(t, role.Developer, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
+	require.Equal(t, role.DeveloperCapabilities, getGroupRole(t, ctx2, env, "GR1").Capabilities)
 }
 
 func TestRequestToJoinGroup_DomainMember_EmptyGroup_GetsAdminRole(t *testing.T) {
@@ -1591,7 +1591,7 @@ func TestRequestToJoinGroup_DomainMember_EmptyGroup_GetsAdminRole(t *testing.T) 
 	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
 	require.NoError(t, err)
 	require.Equal(t, grpb.GroupMembershipStatus_MEMBER, s)
-	require.Equal(t, role.Admin, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
+	require.Equal(t, role.AdminCapabilities, getGroupRole(t, ctx2, env, "GR1").Capabilities)
 }
 
 func TestRequestToJoinGroup_DomainMember_AlreadyInGroup_GetAlreadyExistsError(t *testing.T) {
@@ -1609,7 +1609,7 @@ func TestRequestToJoinGroup_DomainMember_AlreadyInGroup_GetAlreadyExistsError(t 
 	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
 	require.Equal(t, status.Message(err), "You're already in this organization.")
 	require.Equal(t, grpb.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
-	require.Equal(t, role.Developer, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
+	require.Equal(t, role.DeveloperCapabilities, getGroupRole(t, ctx2, env, "GR1").Capabilities)
 }
 
 func TestRequestToJoinGroup_DomainMember_AlreadyRequested_GetDeveloperRole(t *testing.T) {
@@ -1632,7 +1632,7 @@ func TestRequestToJoinGroup_DomainMember_AlreadyRequested_GetDeveloperRole(t *te
 	s, err = udb.RequestToJoinGroup(ctx2, "GR1")
 	require.NoError(t, err)
 	require.Equal(t, grpb.GroupMembershipStatus_MEMBER, s)
-	require.Equal(t, role.Developer, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
+	require.Equal(t, role.DeveloperCapabilities, getGroupRole(t, ctx2, env, "GR1").Capabilities)
 }
 
 func TestRequestToJoinGroup_DomainMember_AlreadyRequested_EmptyGroup_GetAdminRole(t *testing.T) {
@@ -1660,7 +1660,7 @@ func TestRequestToJoinGroup_DomainMember_AlreadyRequested_EmptyGroup_GetAdminRol
 	s, err = udb.RequestToJoinGroup(ctx2, "GR1")
 	require.NoError(t, err)
 	require.Equal(t, grpb.GroupMembershipStatus_MEMBER, s)
-	require.Equal(t, role.Admin, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
+	require.Equal(t, role.AdminCapabilities, getGroupRole(t, ctx2, env, "GR1").Capabilities)
 }
 
 func TestGroupAuditLogs(t *testing.T) {
@@ -1892,7 +1892,7 @@ func TestChildGroupAuth(t *testing.T) {
 	key1, err := env.GetAuthDB().CreateAPIKey(
 		ctx1, us1Group.GroupID, "admin",
 		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	adminCtx1 := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key1.Value)
@@ -1903,7 +1903,7 @@ func TestChildGroupAuth(t *testing.T) {
 	key2, err := env.GetAuthDB().CreateAPIKey(
 		ctx2, us2Group.GroupID, "admin",
 		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 

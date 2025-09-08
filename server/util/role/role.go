@@ -43,6 +43,22 @@ const (
 	readerString    = "reader"
 )
 
+var (
+	AdminCapabilities = []cappb.Capability{
+		cappb.Capability_CAS_WRITE,
+		cappb.Capability_CACHE_WRITE,
+		cappb.Capability_ORG_ADMIN,
+	}
+	DeveloperCapabilities = []cappb.Capability{
+		cappb.Capability_CAS_WRITE,
+	}
+	WriterCapabilities = []cappb.Capability{
+		cappb.Capability_CAS_WRITE,
+		cappb.Capability_CACHE_WRITE,
+	}
+	ReaderCapabilities []cappb.Capability
+)
+
 // Role represents a user's role within a group.
 type Role uint32
 
@@ -117,22 +133,13 @@ func FromProto(role grpb.Group_Role) (Role, error) {
 func ToCapabilities(role Role) ([]cappb.Capability, error) {
 	switch role {
 	case Developer:
-		return []cappb.Capability{
-			cappb.Capability_CAS_WRITE,
-		}, nil
+		return DeveloperCapabilities, nil
 	case Admin:
-		return []cappb.Capability{
-			cappb.Capability_CAS_WRITE,
-			cappb.Capability_CACHE_WRITE,
-			cappb.Capability_ORG_ADMIN,
-		}, nil
+		return AdminCapabilities, nil
 	case Writer:
-		return []cappb.Capability{
-			cappb.Capability_CAS_WRITE,
-			cappb.Capability_CACHE_WRITE,
-		}, nil
+		return WriterCapabilities, nil
 	case Reader:
-		return nil, nil
+		return ReaderCapabilities, nil
 	default:
 		return nil, status.InternalErrorf("unexpected role %d", role)
 	}

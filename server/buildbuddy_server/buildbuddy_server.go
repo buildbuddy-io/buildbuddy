@@ -321,16 +321,12 @@ func makeGroups(groupRoles []*tables.GroupRole) ([]*grpb.Group, error) {
 		if err != nil {
 			return nil, err
 		}
-		userGroupCapabilities, err := role.ToCapabilities(role.Role(gr.Role))
-		if err != nil {
-			return nil, err
-		}
-		allowedUserAPIKeyCapabilities := capabilities.ApplyMask(userGroupCapabilities, capabilities.UserAPIKeyCapabilitiesMask)
+		allowedUserAPIKeyCapabilities := capabilities.ApplyMask(gr.Capabilities, capabilities.UserAPIKeyCapabilitiesMask)
 		groups = append(groups, &grpb.Group{
 			Id:                                g.GroupID,
 			Name:                              g.Name,
 			Role:                              r,
-			Capabilities:                      userGroupCapabilities,
+			Capabilities:                      gr.Capabilities,
 			OwnedDomain:                       g.OwnedDomain,
 			GithubLinked:                      githubToken != "",
 			UrlIdentifier:                     g.URLIdentifier,
@@ -406,7 +402,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 	subdomainGroupID := ""
 	if serverAdminGID := s.env.GetAuthenticator().AdminGroupID(); serverAdminGID != "" {
 		for _, gr := range tu.Groups {
-			if gr.Group.GroupID == serverAdminGID && gr.Role == uint32(role.Admin) {
+			if gr.Group.GroupID == serverAdminGID && gr.HasCapability(cappb.Capability_ORG_ADMIN) {
 				gid, err := s.getGroupIDForSubdomain(ctx)
 				if err != nil && !status.IsNotFoundError(err) {
 					return nil, err

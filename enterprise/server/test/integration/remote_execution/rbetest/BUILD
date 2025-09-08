@@ -63,7 +63,6 @@ go_library(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/retry",
-        "//server/util/role",
         "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/uuid",

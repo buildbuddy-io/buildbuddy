@@ -29,7 +29,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -698,12 +697,7 @@ func (s *APIServer) CreateUserApiKey(ctx context.Context, req *apipb.CreateUserA
 	if groupRole == nil {
 		return nil, status.PermissionDeniedError("permission denied")
 	}
-	roleBasedCapabilities, err := role.ToCapabilities(role.Role(groupRole.Role))
-	if err != nil {
-		return nil, err
-	}
-	// Apply the user API key capabilities mask.
-	roleBasedCapabilities = capabilities.ApplyMask(roleBasedCapabilities, capabilities.UserAPIKeyCapabilitiesMask)
+	roleBasedCapabilities := capabilities.ApplyMask(groupRole.Capabilities, capabilities.UserAPIKeyCapabilitiesMask)
 
 	// Note: authdb performs additional authentication checks, such as making
 	// sure the authenticated user has ORG_ADMIN capability if needed.
