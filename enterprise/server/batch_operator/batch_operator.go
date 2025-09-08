@@ -58,17 +58,17 @@ func (u *pendingDigestBatch) contains(key digest.Key) bool {
 }
 
 func (u *pendingDigestBatch) finalize() *DigestBatch {
-	db2 := DigestBatch{
+	out := DigestBatch{
 		InstanceName:   u.instanceName,
 		DigestFunction: u.digestFunction,
 		Digests:        make([]*repb.Digest, len(u.digests)),
 	}
 	i := 0
 	for d := range u.digests {
-		db2.Digests[i] = d.ToDigest()
+		out.Digests[i] = d.ToDigest()
 		i++
 	}
-	return &db2
+	return &out
 }
 
 // The set of pending digests batches for a single group. There should be at
