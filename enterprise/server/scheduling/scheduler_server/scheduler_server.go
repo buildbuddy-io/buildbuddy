@@ -463,7 +463,7 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 
 	// Apply cgroup settings based on the adjusted size.
 	if *cgroupSettingsEnabled && (req.GetSchedulingMetadata().GetOs() == "" || req.GetSchedulingMetadata().GetOs() == platform.LinuxOperatingSystemName) {
-		req.SchedulingMetadata.CgroupSettings = tasksize.GetCgroupSettings(req.GetTaskSize())
+		req.SchedulingMetadata.CgroupSettings = tasksize.GetCgroupSettings(ctx, h.env.GetExperimentFlagProvider(), req.GetTaskSize(), req.GetSchedulingMetadata())
 	}
 
 	reqProto := &scpb.RegisterAndStreamWorkResponse{
