@@ -159,8 +159,10 @@ type Execution struct {
 	ExecutorHostname   string
 
 	// Executor metadata
-	SelfHosted bool
-	Region     string `gorm:"type:LowCardinality(String)"`
+	SelfHosted   bool
+	Region       string `gorm:"type:LowCardinality(String)"`
+	OriginalPool string // non-BB pool (for routing/analysis purposes)
+	// TODO: Pool
 
 	Stage int64
 
@@ -325,6 +327,7 @@ func (e *Execution) AdditionalFields() []string {
 		"EffectiveTimeoutUsec",
 		"Region",
 		"SelfHosted",
+		"OriginalPool",
 		"ExecutorHostname",
 		"Experiments",
 	}

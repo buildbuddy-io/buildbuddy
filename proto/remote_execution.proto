@@ -2797,6 +2797,7 @@ message StoredExecution {
   // Executor metadata
   bool self_hosted = 58;
   string region = 59;
+  string original_pool = 73;
 
   // IO Stats
   int64 file_download_count = 9;

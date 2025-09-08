@@ -212,6 +212,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) *s
 		ExecutorHostname:                   in.GetExecutorHostname(),
 		SelfHosted:                         in.GetSelfHosted(),
 		Region:                             in.GetRegion(),
+		OriginalPool:                       in.GetOriginalPool(),
 		Stage:                              in.GetStage(),
 		FileDownloadCount:                  in.GetFileDownloadCount(),
 		FileDownloadSizeBytes:              in.GetFileDownloadSizeBytes(),

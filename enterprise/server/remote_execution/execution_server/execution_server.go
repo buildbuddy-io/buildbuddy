@@ -375,6 +375,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.RequestedMemoryBytes = properties.EstimatedMemoryBytes
 				executionProto.RequestedMilliCpu = properties.EstimatedMilliCPU
 				executionProto.RequestedFreeDiskBytes = properties.EstimatedFreeDiskBytes
+				executionProto.OriginalPool = properties.OriginalPool
 			}
 
 			schedulingMeta := auxMeta.GetSchedulingMetadata()
