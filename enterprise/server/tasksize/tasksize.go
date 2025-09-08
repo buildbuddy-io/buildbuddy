@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize_model"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -533,7 +534,7 @@ func ApplyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, tas
 
 // GetCgroupSettings returns cgroup settings for a task, based on server
 // and scheduled task size.
-func GetCgroupSettings(size *scpb.TaskSize) *scpb.CgroupSettings {
+func GetCgroupSettings(ctx context.Context, fp interfaces.ExperimentFlagProvider, size *scpb.TaskSize, metadata *scpb.SchedulingMetadata) *scpb.CgroupSettings {
 	settings := &scpb.CgroupSettings{
 		PidsMax: proto.Int64(*pidLimit + (*additionalPIDsLimitPerCPU*size.GetEstimatedMilliCpu())/1000),
 
@@ -553,6 +554,23 @@ func GetCgroupSettings(size *scpb.TaskSize) *scpb.CgroupSettings {
 	}
 	if *memoryOOMGroup {
 		settings.MemoryOomGroup = proto.Bool(*memoryOOMGroup)
+	}
+	// Allow experimenting with setting memory hard limits as a fraction of the
+	// task size plus an additional fixed value.
+	if fp != nil {
+		// Add user-requested memory bytes and measured memory bytes (if we have
+		// them) so that we can set different limits depending on how confident
+		// we are in the size.
+		options := []any{
+			experiments.WithContext("measured_memory_bytes", metadata.GetMeasuredTaskSize().GetEstimatedMemoryBytes()),
+			experiments.WithContext("requested_memory_bytes", metadata.GetRequestedTaskSize().GetEstimatedMemoryBytes()),
+		}
+		memoryHardLimitMultiplier := fp.Float64(ctx, "remote_execution.memory_hard_limit_size_multiplier", 0, options...)
+		if memoryHardLimitMultiplier > 0 {
+			memoryHardLimitAdditionalBytes := fp.Int64(ctx, "remote_execution.memory_hard_limit_additional_bytes", 0, options...)
+			limit := int64(float64(size.GetEstimatedMemoryBytes())*memoryHardLimitMultiplier) + memoryHardLimitAdditionalBytes
+			settings.MemoryLimitBytes = proto.Int64(limit)
+		}
 	}
 	return settings
 }
