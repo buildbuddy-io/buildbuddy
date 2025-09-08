@@ -88,6 +88,31 @@ func TestComplexScreenWriting(t *testing.T) {
 	}
 }
 
+func TestScreenWriterWithZeroHeight(t *testing.T) {
+	for _, tc := range testdata.ScreenWriterWithZeroRowsTestCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			log.SetOutput(&testLogOutput{t: t})
+			// Disable timestamps in logs
+			log.SetFlags(0)
+			screen, err := terminal.NewScreenWriter(tc.ScreenCols, tc.ScreenRows)
+			require.NoError(t, err)
+			for _, s := range tc.Write {
+				_, err = screen.Write([]byte(s))
+				require.NoError(t, err)
+				require.NoError(t, screen.WriteErr)
+			}
+			require.Equalf(
+				t,
+				ansiDebugString(tc.WantRender),
+				ansiDebugString(screen.Render()),
+				"scrollout was:\n--------\n%s\n--------\nrender was:\n--------\n%s\n--------\n",
+				screen.OutputAccumulator.String(),
+				screen.Render(),
+			)
+		})
+	}
+}
+
 // ansiDebugString replaces ANSI escape sequences with a string representation
 // that can be displayed as a diff without messing up the terminal.
 func ansiDebugString(s string) string {

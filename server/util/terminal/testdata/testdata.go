@@ -21,6 +21,7 @@ type TestCase struct {
 	ScreenColCapacity int
 	Write             []string
 	WantLog           string
+	WantRender        string
 }
 
 var (
@@ -173,6 +174,57 @@ var (
 				"1234567890\n",
 			ScreenRows: 2,
 			ScreenCols: math.MaxInt,
+		},
+	}
+	ScreenWriterWithZeroRowsTestCases = []TestCase{
+		{
+			Name: "Test 28 lines with zero (unlimited) height",
+			Write: []string{
+				"1\n2\n3\n4\n",
+				"5\n6\n7\n8\n",
+				"9\n10\n11\n12\n",
+				"13\n14\n15\n16\n",
+				"17\n18\n19\n20\n",
+				"21\n22\n23\n24\n",
+				"25\n26\n27\n28\n",
+				"29\n30\n31\n32\n" +
+				"33\n34\n35\n36",
+			},
+			WantRender: "1\n2\n3\n4\n" +
+				"5\n6\n7\n8\n" +
+				"9\n10\n11\n12\n" +
+				"13\n14\n15\n16\n" +
+				"17\n18\n19\n20\n" +
+				"21\n22\n23\n24\n" +
+				"25\n26\n27\n28\n" +
+				"29\n30\n31\n32\n" +
+				"33\n34\n35\n36",
+			ScreenRows: 0,
+			ScreenCols: 2,
+		},
+		{
+			Name: "Test MaxWindowSize (should only accomodate 32 lines of max column size)",
+			Write: []string{
+				"1\n2\n3\n4\n",
+				"5\n6\n7\n8\n",
+				"9\n10\n11\n12\n",
+				"13\n14\n15\n16\n",
+				"17\n18\n19\n20\n",
+				"21\n22\n23\n24\n",
+				"25\n26\n27\n28\n",
+				"29\n30\n31\n32\n",
+				"33\n34\n35\n36",
+			},
+			WantRender: "5\n6\n7\n8\n" +
+				"9\n10\n11\n12\n" +
+				"13\n14\n15\n16\n" +
+				"17\n18\n19\n20\n" +
+				"21\n22\n23\n24\n" +
+				"25\n26\n27\n28\n" +
+				"29\n30\n31\n32\n" +
+				"33\n34\n35\n36",
+			ScreenRows: 33,
+			ScreenCols: 2000,
 		},
 	}
 )
