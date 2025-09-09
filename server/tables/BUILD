@@ -9,6 +9,7 @@ go_library(
         "//proto:capability_go_proto",
         "//proto:group_go_proto",
         "//proto:user_id_go_proto",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/random",
         "//server/util/role",
