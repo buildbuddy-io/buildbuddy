@@ -68,7 +68,7 @@ func TestComplexScreenWriting(t *testing.T) {
 				if tc.ScreenRows > 0 {
 					screen.Screen.SetSize(tc.ScreenCols, tc.ScreenRows)
 				} else {
-					screen.Screen.SetSize(tc.ScreenCols, terminal.MaxLineCapacity)
+					screen.Screen.SetSize(tc.ScreenCols, 32)
 				}
 			}
 			for _, s := range tc.Write {
@@ -80,6 +80,31 @@ func TestComplexScreenWriting(t *testing.T) {
 				t,
 				ansiDebugString(tc.WantLog),
 				ansiDebugString(screen.OutputAccumulator.String()+screen.Render()),
+				"scrollout was:\n--------\n%s\n--------\nrender was:\n--------\n%s\n--------\n",
+				screen.OutputAccumulator.String(),
+				screen.Render(),
+			)
+		})
+	}
+}
+
+func TestScreenWriterWithZeroHeight(t *testing.T) {
+	for _, tc := range testdata.ScreenWriterWithZeroRowsTestCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			log.SetOutput(&testLogOutput{t: t})
+			// Disable timestamps in logs
+			log.SetFlags(0)
+			screen, err := terminal.NewScreenWriter(tc.ScreenCols, tc.ScreenRows)
+			require.NoError(t, err)
+			for _, s := range tc.Write {
+				_, err = screen.Write([]byte(s))
+				require.NoError(t, err)
+				require.NoError(t, screen.WriteErr)
+			}
+			require.Equalf(
+				t,
+				ansiDebugString(tc.WantRender),
+				ansiDebugString(screen.Render()),
 				"scrollout was:\n--------\n%s\n--------\nrender was:\n--------\n%s\n--------\n",
 				screen.OutputAccumulator.String(),
 				screen.Render(),

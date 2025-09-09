@@ -187,5 +187,5 @@ func (t *Terminal) Render() string {
 	require.NoError(t.t, err)
 	_, err = screen.Write([]byte(t.Raw()))
 	require.NoError(t.t, err)
-	return string(screen.Render())
+	return string(screen.OutputAccumulator.String() + screen.Render())
 }

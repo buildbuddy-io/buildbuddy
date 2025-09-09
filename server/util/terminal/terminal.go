@@ -17,7 +17,7 @@ const (
 	// different numbers, ideally as a PR.
 	MaxColumnCapacity     = 2000
 	DefaultColumnCapacity = 160
-	MaxLineCapacity       = 32
+	MaxWindowSize         = 64 * 1024
 )
 
 type ScreenWriter struct {
@@ -35,23 +35,24 @@ type ScreenWriter struct {
 // scroll off the top are written to the ScrollOut string builder, and any write
 // errors encountered during that process are recorded in ScrollOutWriteErr.
 // A windowWidth of less than 1 indicates a window of maximum width.
-// A requestedWindowHeight of less than 1 indicates a window of maximum height
-// with no scroll-out.
+// A requestedWindowHeight of less than 1 indicates a window of maximum height.
 func NewScreenWriter(requestedWindowWidth int, requestedWindowHeight int) (*ScreenWriter, error) {
+	width := MaxColumnCapacity
+	if requestedWindowWidth > 0 {
+		width = min(width, requestedWindowWidth)
+	}
+	height := MaxWindowSize / width
+	if requestedWindowHeight > 0 {
+		height = min(height, requestedWindowHeight)
+	}
 	w := &ScreenWriter{
-		windowWidth:  min(requestedWindowWidth, MaxColumnCapacity),
-		windowHeight: min(requestedWindowHeight, MaxLineCapacity),
+		windowWidth:  width,
+		windowHeight: height,
 		renderer:     &bkterminal.ANSIRenderer{},
 	}
-	if w.windowWidth == 0 {
-		w.windowWidth = MaxLineCapacity
-	}
-	if w.windowHeight == 0 {
-		w.windowHeight = MaxLineCapacity
-	}
 	s, err := bkterminal.NewScreen(
-		bkterminal.WithMaxSize(MaxColumnCapacity, w.windowHeight),
-		bkterminal.WithSize(MaxColumnCapacity, w.windowHeight),
+		bkterminal.WithMaxSize(w.windowWidth, w.windowHeight),
+		bkterminal.WithSize(w.windowWidth, w.windowHeight),
 		bkterminal.WithRenderer(w.renderer),
 		bkterminal.WithRealWindow(),
 		bkterminal.WithDefaultColumnCapacity(min(w.windowWidth, DefaultColumnCapacity)),
@@ -60,9 +61,7 @@ func NewScreenWriter(requestedWindowWidth int, requestedWindowHeight int) (*Scre
 		return nil, err
 	}
 	w.Screen = s
-	if requestedWindowHeight > 0 {
-		s.ScrollOutFunc = func(line string) { _, w.WriteErr = w.OutputAccumulator.WriteString(line) }
-	}
+	s.ScrollOutFunc = func(line string) { _, w.WriteErr = w.OutputAccumulator.WriteString(line) }
 	return w, nil
 }
 
@@ -76,16 +75,11 @@ func (w *ScreenWriter) Reset() error {
 	w.renderer = &bkterminal.ANSIRenderer{}
 	var err error
 	w.Screen, err = bkterminal.NewScreen(
-		bkterminal.WithMaxSize(MaxColumnCapacity, w.windowHeight),
-		bkterminal.WithSize(MaxColumnCapacity, w.windowHeight),
+		bkterminal.WithMaxSize(w.windowWidth, w.windowHeight),
+		bkterminal.WithSize(w.windowWidth, w.windowHeight),
 		bkterminal.WithRenderer(w.renderer),
 		bkterminal.WithRealWindow(),
 		bkterminal.WithDefaultColumnCapacity(min(w.windowWidth, DefaultColumnCapacity)),
 	)
 	return err
-}
-
-func (w *ScreenWriter) AccumulatingOutput() bool {
-	// If there's no ScrollOutFunc, then there's no window giving us scrollOut.
-	return w.ScrollOutFunc != nil
 }
