@@ -930,4 +930,16 @@ export default class InvocationModel {
   hasPatternFile() {
     return Boolean(this.optionsMap.get("target_pattern_file"));
   }
+
+  // getBazelVersion returns the major and minor version of Bazel from BES event.
+  //
+  // The version could contain rc version in the patch number, such as "7.2.1rc1".
+  getBazelVersion(): { major: number; minor: number } | null {
+    const version = this.started?.buildToolVersion;
+    if (!version) return null;
+    const segments = version.split(".").map(Number);
+    if (segments.length < 2) return null;
+    if (segments.slice(0, 2).some(isNaN)) return null;
+    return { major: segments[0], minor: segments[1] };
+  }
 }
