@@ -958,7 +958,7 @@ func (p *pool) resolveImageDigest(ctx context.Context, props *platform.Propertie
 	return nil
 }
 
-func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties, error) {
+func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) (*platform.Properties, error) {
 	props, err := platform.ParseProperties(task)
 	if err != nil {
 		return nil, err
@@ -966,6 +966,11 @@ func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties
 	// TODO: This mutates the task; find a cleaner way to do this.
 	if err := platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
 		return nil, err
+	}
+	if *resolveImageDigests {
+		if err := p.resolveImageDigest(ctx, props); err != nil {
+			return nil, err
+		}
 	}
 	return props, nil
 }
@@ -990,7 +995,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		groupID = user.GetGroupID()
 	}
 	task := st.ExecutionTask
-	props, err := p.effectivePlatform(task)
+	props, err := p.effectivePlatform(ctx, task)
 	if err != nil {
 		return nil, err
 	}
