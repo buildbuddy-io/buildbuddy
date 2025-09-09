@@ -451,6 +451,7 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 		resourceName = digest.NewResourceName(parsedCASRN.GetDigest(), parsedCASRN.GetInstanceName(), rspb.CacheType_CAS, parsedCASRN.GetDigestFunction()).ToProto()
 	}
 
+	// XXX
 	err = s.env.GetCache().Delete(ctx, resourceName)
 	if err != nil && !status.IsNotFoundError(err) {
 		return nil, err

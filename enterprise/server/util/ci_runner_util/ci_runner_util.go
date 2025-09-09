@@ -48,6 +48,7 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 		if bsClient == nil {
 			return nil, status.UnavailableError("no bytestream client configured")
 		}
+		// XXX
 		if cache == nil {
 			return nil, status.UnavailableError("no cache configured")
 		}
@@ -64,6 +65,7 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 				IsExecutable: true,
 			}},
 		}
+		// XXX
 		return cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_BLAKE3, dir)
 	}
 	return digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_BLAKE3)

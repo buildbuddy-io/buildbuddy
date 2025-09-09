@@ -1194,6 +1194,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 
 	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", replaceSubdomain(eventsAPIURL)))
 
+	// XXX
 	if s.env.GetCache() != nil {
 		cacheAPIURL := cache_api_url.String()
 		if cacheAPIURL == "" {
@@ -1789,6 +1790,7 @@ func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCa
 	}
 
 	resourceName := req.GetResourceName()
+	// XXX
 	metadata, err := s.env.GetCache().Metadata(ctx, resourceName)
 	if err != nil {
 		return nil, err
