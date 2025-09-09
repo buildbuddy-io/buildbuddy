@@ -5,9 +5,11 @@ package routing;
 message CacheRoutingConfig {
   // This cache will always receive all operations synchronously.  This should
   // be an absolute URL pointing at a grpcs endpoint.
+  // Example: "grpcs://remote.buildbuddy.io"
   string primary_cache = 1;
   // Optional cache that will receive read and write ops based on the flags
   // below. Should be an absolute URL pointing at a grpcs endpoint.
+  // Example: "grpcs://remote.buildbuddy.io"
   string secondary_cache = 2;
 
   // The fraction of operations to send to the secondary cache as background

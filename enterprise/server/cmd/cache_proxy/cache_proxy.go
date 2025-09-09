@@ -228,12 +228,33 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 		log.Fatalf("Error dialing remote cache: %s", err.Error())
 	}
 	if routing_service.IsCacheRoutingEnabled() {
-		routing_service.RegisterRoutingService(env)
+		if err := routing_service.RegisterRoutingService(env); err != nil {
+			log.Fatalf("Error initializing routing service: %s", err.Error())
+		}
 
-		env.SetActionCacheClient(routing_action_cache_client.NewClient(env))
-		env.SetCapabilitiesClient(routing_capabilities_client.NewClient(env))
-		env.SetByteStreamClient(routing_byte_stream_client.NewClient(env))
-		env.SetContentAddressableStorageClient(routing_content_addressable_storage_client.NewClient(env))
+		ac, err := routing_action_cache_client.New(env)
+		if err != nil {
+			log.Fatalf("Error initializing routing action cache client: %s", err.Error())
+		}
+		env.SetActionCacheClient(ac)
+
+		cap, err := routing_capabilities_client.New(env)
+		if err != nil {
+			log.Fatalf("Error initializing routing capabilities client: %s", err.Error())
+		}
+		env.SetCapabilitiesClient(cap)
+
+		bs, err := routing_byte_stream_client.New(env)
+		if err != nil {
+			log.Fatalf("Error initializing routing bytestream client: %s", err.Error())
+		}
+		env.SetByteStreamClient(bs)
+
+		cas, err := routing_content_addressable_storage_client.New(env)
+		if err != nil {
+			log.Fatalf("Error initializing routing CAS client: %s", err.Error())
+		}
+		env.SetContentAddressableStorageClient(cas)
 	} else {
 		env.SetActionCacheClient(repb.NewActionCacheClient(conn))
 		env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))

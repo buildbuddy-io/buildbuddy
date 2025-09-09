@@ -17,15 +17,15 @@ type RoutingCapabilitiesClient struct {
 	router   interfaces.CacheRoutingService
 }
 
-func NewClient(env environment.Env) repb.CapabilitiesClient {
+func New(env environment.Env) (repb.CapabilitiesClient, error) {
 	routingService := env.GetCacheRoutingService()
 	if routingService == nil {
-		panic("No routing service configured.")
+		return nil, status.FailedPreconditionError("No routing service configured.")
 	}
 
 	return &RoutingCapabilitiesClient{
 		router: routingService,
-	}
+	}, nil
 }
 
 // GetCapabilities implements remote_execution.CapabilitiesClient.

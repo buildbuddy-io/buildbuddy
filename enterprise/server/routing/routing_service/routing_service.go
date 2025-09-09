@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -39,13 +38,15 @@ type routingService struct {
 
 func RegisterRoutingService(env *real_environment.RealEnv) error {
 	if len(*availableRoutes) == 0 {
-		panic("Attempted to register routing service when no routes are available.")
+		return status.FailedPreconditionErrorf("Attempted to register routing service when no routes are available.")
 	}
 	efp := env.GetExperimentFlagProvider()
 	if efp == nil {
-		panic("Routing requires experiments")
+		return status.FailedPreconditionErrorf("Routing requires experiments")
 	}
-	// XXX: Validate a default!
+
+	// TODO(jdhollen): validate that a reasonable default is set and that we can
+	// connect to it.
 
 	clientSets := map[string]*clientSet{}
 	for _, r := range *availableRoutes {
@@ -56,7 +57,7 @@ func RegisterRoutingService(env *real_environment.RealEnv) error {
 		if err != nil {
 			// The default Dial() behavior doesn't wait for the connection, so
 			// this indicates some issue other than the server being down.
-			log.Fatalf("Error dialing remote cache: %s", err.Error())
+			return status.FailedPreconditionErrorf("Error dialing remote cache: %s", err.Error())
 		}
 
 		clientSets[r] = &clientSet{

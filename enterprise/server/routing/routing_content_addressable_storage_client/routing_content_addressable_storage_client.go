@@ -16,15 +16,15 @@ type RoutingCASClient struct {
 	router     interfaces.CacheRoutingService
 }
 
-func NewClient(env environment.Env) *RoutingCASClient {
+func New(env environment.Env) (*RoutingCASClient, error) {
 	routingService := env.GetCacheRoutingService()
 	if routingService == nil {
-		panic("No routing service configured.")
+		return nil, status.FailedPreconditionError("No routing service configured.")
 	}
 
 	return &RoutingCASClient{
 		router: routingService,
-	}
+	}, nil
 }
 
 func (r *RoutingCASClient) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest, opts ...grpc.CallOption) (*repb.FindMissingBlobsResponse, error) {

@@ -17,15 +17,15 @@ type RoutingByteStreamClient struct {
 	router   interfaces.CacheRoutingService
 }
 
-func NewClient(env environment.Env) bspb.ByteStreamClient {
+func New(env environment.Env) (bspb.ByteStreamClient, error) {
 	routingService := env.GetCacheRoutingService()
 	if routingService == nil {
-		panic("No routing service configured.")
+		return nil, status.FailedPreconditionError("No routing service configured.")
 	}
 
 	return &RoutingByteStreamClient{
 		router: routingService,
-	}
+	}, nil
 }
 
 func (r *RoutingByteStreamClient) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest, opts ...grpc.CallOption) (*bspb.QueryWriteStatusResponse, error) {

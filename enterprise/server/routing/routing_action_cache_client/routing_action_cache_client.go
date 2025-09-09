@@ -15,15 +15,15 @@ type RoutingACClient struct {
 	router interfaces.CacheRoutingService
 }
 
-func NewClient(env environment.Env) repb.ActionCacheClient {
+func New(env environment.Env) (repb.ActionCacheClient, error) {
 	routingService := env.GetCacheRoutingService()
 	if routingService == nil {
-		panic("No routing service configured.")
+		return nil, status.FailedPreconditionError("No routing service configured.")
 	}
 
 	return &RoutingACClient{
 		router: routingService,
-	}
+	}, nil
 }
 
 func (r *RoutingACClient) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
