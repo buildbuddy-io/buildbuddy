@@ -11,10 +11,10 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 # Bazel platforms
 http_archive(
     name = "platforms",
-    integrity = "sha256-KXQuhydYCbXlmNwvBNhpYMx6VbMGfZciHJq7yZJr/w8=",
+    integrity = "sha256-M4TrHDB2JwT7445EAgThFBVAhsj8iowuPihEECjAGag=",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/platforms/releases/download/0.0.11/platforms-0.0.11.tar.gz",
-        "https://github.com/bazelbuild/platforms/releases/download/0.0.11/platforms-0.0.11.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/platforms/releases/download/1.0.0/platforms-1.0.0.tar.gz",
+        "https://github.com/bazelbuild/platforms/releases/download/1.0.0/platforms-1.0.0.tar.gz",
     ],
 )
 
@@ -149,23 +149,23 @@ rules_proto_toolchains()
 # keep in sync with go.mod
 http_archive(
     name = "io_bazel_rules_go",
-    integrity = "sha256-nXL3uJBBKK+5jUa774KtciPsn/NxjUGa+zVf3dn5SEo=",
+    integrity = "sha256-pynI7SRHyQ/hQAd2iQecoKz7dYDsQWN/MS1lDOnZPZY=",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.55.1/rules_go-v0.55.1.zip",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.55.1/rules_go-v0.55.1.zip",
+        "https://mirror.bazel.build/github.com/bazel-contrib/rules_go/releases/download/v0.57.0/rules_go-v0.57.0.zip",
+        "https://github.com/bazel-contrib/rules_go/releases/download/v0.57.0/rules_go-v0.57.0.zip",
     ],
 )
 
 http_archive(
     name = "bazel_gazelle",
-    integrity = "sha256-SbFMaRzuyEH0RfhkLSgzbplFfR2xYgkv1QgjUeowLx0=",
+    integrity = "sha256-5Ge4AQRrZZjGVzCbRdJCbcA1E3d70Qkq8sYu6/mQrKU=",
     patch_args = ["-p1"],
     patches = [
         "//buildpatches:gazelle.patch",
     ],
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.44.0/bazel-gazelle-v0.44.0.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.44.0/bazel-gazelle-v0.44.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazel-contrib/bazel-gazelle/releases/download/v0.45.0/bazel-gazelle-v0.45.0.tar.gz",
+        "https://github.com/bazel-contrib/bazel-gazelle/releases/download/v0.45.0/bazel-gazelle-v0.45.0.tar.gz",
     ],
 )
 
