@@ -97,6 +97,7 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func newSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
+	// XXX
 	if env.GetCache() == nil {
 		return status.FailedPreconditionError("soci artifact server requires a cache"), nil
 	}
@@ -347,6 +348,7 @@ func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image, conf
 		SizeBytes: indexSizeBytes,
 	}
 	indexResourceName := digest.NewResourceName(&indexDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	// XXX
 	err = s.env.GetCache().Set(ctx, indexResourceName.ToProto(), indexBytes)
 	if err != nil {
 		return nil, nil, err
@@ -485,6 +487,7 @@ func (s *SociArtifactStore) indexLayer(ctx context.Context, layer v1.Layer) (*re
 		Hash:      ztocDesc.Digest.Encoded(),
 		SizeBytes: ztocDesc.Size,
 	}
+	// XXX
 	cacheWriter, err := s.env.GetCache().Writer(ctx,
 		digest.NewResourceName(&ztocDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto())
 	if err != nil {
