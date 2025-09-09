@@ -237,9 +237,9 @@ func runRestore(ctx context.Context, env environment.Env) error {
 }
 
 func backupExists(ctx context.Context, env environment.Env, backupName, databaseName string) (bool, error) {
-	blobName := backupName + "/metadata/" + databaseName + ".sql"
-	log.Infof("Checking if backup %q exists", blobName)
-	return env.GetBlobstore().BlobExists(ctx, blobName)
+	backupMarkerBlobName := backupName + "/.backup"
+	log.Infof("Checking if backup %q exists", backupMarkerBlobName)
+	return env.GetBlobstore().BlobExists(ctx, backupMarkerBlobName)
 }
 
 func backtickQuote(s string) string {
