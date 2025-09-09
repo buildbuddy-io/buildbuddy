@@ -70,6 +70,7 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
+	resolveImageDigests = flag.Bool("executor.resolve_image_digests", false, "Whether to resolve image names with tags to digests.")
 
 	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
 )
@@ -571,6 +572,8 @@ type pool struct {
 	isShuttingDown bool
 	// runners holds all runners managed by the pool.
 	runners []*taskRunner
+
+	resolver oci.Resolver
 }
 
 func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, error) {
@@ -582,6 +585,10 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("Failed to determine k8s pod ID: %s", err)
 	}
+	resolver, err := oci.NewResolver(env)
+	if err != nil {
+		return nil, status.InternalErrorf("Could not create OCI resolver: %s", err)
+	}
 	p := &pool{
 		env:          env,
 		podID:        podID,
@@ -589,6 +596,7 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 		cacheRoot:    cacheRoot,
 		cgroupParent: opts.CgroupParent,
 		runners:      []*taskRunner{},
+		resolver:     *resolver,
 	}
 	if err := os.MkdirAll(p.buildRoot, fs.FileMode(0755)); err != nil {
 		return nil, status.InternalErrorf("Failed to create build root directory %q: %s", p.buildRoot, err)
