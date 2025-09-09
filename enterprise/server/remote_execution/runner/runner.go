@@ -824,6 +824,11 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		return err
 	}
 	platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), platProps, task.GetCommand())
+	if *resolveImageDigests {
+		if err := p.resolveImageDigest(ctx, platProps); err != nil {
+			return err
+		}
+	}
 	st := &repb.ScheduledTask{
 		SchedulingMetadata: &scpb.SchedulingMetadata{
 			// Note: this will use the default task size estimates and not
