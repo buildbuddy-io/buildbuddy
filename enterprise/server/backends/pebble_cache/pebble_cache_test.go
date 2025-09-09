@@ -807,6 +807,19 @@ func TestReadWrite(t *testing.T) {
 				require.NoError(t, err, "Error getting %q reader", rn.GetDigest().GetHash())
 				d2 := testdigest.ReadDigestAndClose(t, reader)
 				require.Equal(t, rn.GetDigest().GetHash(), d2.GetHash())
+
+				contains, err := pc.Contains(ctx, rn)
+				require.NoError(t, err)
+				require.True(t, contains)
+
+				require.NoError(t, pc.Delete(ctx, rn))
+
+				_, err = pc.Reader(ctx, rn, 0, 0)
+				require.True(t, status.IsNotFoundError(err), "error should be NotFound but is %v", err)
+
+				contains, err = pc.Contains(ctx, rn)
+				require.NoError(t, err)
+				require.False(t, contains)
 			})
 		}
 	}

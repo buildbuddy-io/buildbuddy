@@ -1840,7 +1840,6 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 	if err != nil {
 		return err
 	}
-
 	// N.B. This deletes the file metadata. Because inlined files are stored
 	// with their metadata, this means we don't need to delete the metadata
 	// again below in the switch statement.
@@ -1920,13 +1919,12 @@ func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 
 	md := sgpb.FileMetadataFromVTPool()
 	defer md.ReturnToVTPool()
-	err = p.lookupFileMetadata(ctx, db, key, md)
+	version, err := p.lookupFileMetadataAndVersion(ctx, db, key, md)
 	if err != nil {
 		return err
 	}
 
-	// TODO(tylerw): Make version aware.
-	if err := p.deleteFileAndMetadata(ctx, key, filestore.UndefinedKeyVersion, md); err != nil {
+	if err := p.deleteFileAndMetadata(ctx, key, version, md); err != nil {
 		log.Errorf("[%s] Error deleting old record %q: %s", p.name, key.String(), err)
 		return err
 	}
