@@ -727,8 +727,9 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
-		expOverrides := fp.Object(
-			ctx, "remote_execution.task_size_overrides", nil,
+		const taskSizeOverridesExperiment = "remote_execution.task_size_overrides"
+		expOverrides, details := fp.ObjectDetails(
+			ctx, taskSizeOverridesExperiment, nil,
 			// Set OriginalPool to allow configuring task sizing based on pool
 			// names from another remote execution platform.
 			experiments.WithContext("OriginalPool", props.OriginalPool),
@@ -746,6 +747,9 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 			} else {
 				log.CtxWarningf(ctx, "Invalid platform property value %v (type %T) for property %q (expected string)", propertyValueAny, propertyValueAny, propertyName)
 			}
+		}
+		if details.Variant() != "" {
+			executionTask.Experiments = append(executionTask.Experiments, taskSizeOverridesExperiment+":"+details.Variant())
 		}
 	}
 
