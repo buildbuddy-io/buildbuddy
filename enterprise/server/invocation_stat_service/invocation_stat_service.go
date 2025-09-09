@@ -512,7 +512,7 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 func (i *InvocationStatService) getExecutionTrendQuery(timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []interface{}) {
 	if !i.finerTimeBucketsEnabled() {
 		return fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
-		quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
+		quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec AND queued_timestamp_usec > 0, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
 		SUM(GREATEST(COALESCE(worker_completed_timestamp_usec - worker_start_timestamp_usec, 0), 0)) as total_build_time_usec
 		FROM "Executions"`, make([]interface{}, 0)
 	}
@@ -520,7 +520,7 @@ func (i *InvocationStatService) getExecutionTrendQuery(timeSettings *trendTimeSe
 	bucketStr, bucketArgs := i.olapdbh.BucketFromUsecTimestamp("updated_at_usec", timeSettings.location, timeSettings.interval.ClickhouseInterval())
 
 	return fmt.Sprintf("SELECT %s as bucket_start_time_micros,", bucketStr) + `
-	quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
+	quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec AND queued_timestamp_usec > 0, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
 	SUM(GREATEST(COALESCE(worker_completed_timestamp_usec - worker_start_timestamp_usec, 0), 0)) as total_build_time_usec
 	FROM "Executions"
 	`, bucketArgs
