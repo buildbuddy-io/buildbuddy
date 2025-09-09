@@ -935,6 +935,24 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 	return out
 }
 
+// resolveImageDigest replaces the ContainerImage property with an image name that includes a digest.
+// This makes the ContainerImage property safe to use as a cache key.
+func (p *pool) resolveImageDigest(ctx context.Context, props *platform.Properties) error {
+	if props.ContainerImage == "" {
+		return nil
+	}
+	creds, err := oci.CredentialsFromProperties(props)
+	if err != nil {
+		return err
+	}
+	imageNameWithDigest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
+	if err != nil {
+		return err
+	}
+	props.ContainerImage = imageNameWithDigest
+	return nil
+}
+
 func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties, error) {
 	props, err := platform.ParseProperties(task)
 	if err != nil {
