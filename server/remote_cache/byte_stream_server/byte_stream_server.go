@@ -105,6 +105,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err != nil {
 		return err
 	}
+<<<<<<< HEAD
 
 	hdrs := metadata.ValueFromIncomingContext(stream.Context(), "x-buildbuddy-log-all-bss-requests")
 	debugLog := len(hdrs) > 0 && hdrs[0] == "true"
@@ -120,6 +121,9 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 
 	return err
+=======
+	return s.ReadCASResource(stream.Context(), rn, req.GetReadOffset(), req.GetReadLimit(), stream)
+>>>>>>> parent of c64d4deefb (Support debug logging in BSS:Read)
 }
 
 // This version of Read accepts the parameters of a ReadRequest directly so it
