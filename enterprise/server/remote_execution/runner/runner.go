@@ -949,20 +949,21 @@ func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties
 // The returned runner is considered "active" and will be killed if the
 // executor is shut down.
 func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runner, error) {
-	task := st.ExecutionTask
-	props, err := p.effectivePlatform(task)
-	if err != nil {
-		return nil, err
-	}
 	user, err := auth.UserFromTrustedJWT(ctx)
-	if err != nil && !authutil.IsAnonymousUserError(err) {
+	userIsAnon := authutil.IsAnonymousUserError(err)
+	if err != nil && !userIsAnon {
 		return nil, err
 	}
 	groupID := ""
 	if user != nil {
 		groupID = user.GetGroupID()
 	}
-	if !container.AnonymousRecyclingEnabled() && (props.RecycleRunner && err != nil) {
+	task := st.ExecutionTask
+	props, err := p.effectivePlatform(task)
+	if err != nil {
+		return nil, err
+	}
+	if !container.AnonymousRecyclingEnabled() && (props.RecycleRunner && userIsAnon) {
 		return nil, status.InvalidArgumentError(
 			"runner recycling is not supported for anonymous builds " +
 				`(recycling was requested via platform property "recycle-runner=true")`)
