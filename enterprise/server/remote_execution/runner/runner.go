@@ -573,7 +573,7 @@ type pool struct {
 	// runners holds all runners managed by the pool.
 	runners []*taskRunner
 
-	resolver oci.Resolver
+	resolver *oci.Resolver
 }
 
 func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, error) {
@@ -596,7 +596,7 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 		cacheRoot:    cacheRoot,
 		cgroupParent: opts.CgroupParent,
 		runners:      []*taskRunner{},
-		resolver:     *resolver,
+		resolver:     resolver,
 	}
 	if err := os.MkdirAll(p.buildRoot, fs.FileMode(0755)); err != nil {
 		return nil, status.InternalErrorf("Failed to create build root directory %q: %s", p.buildRoot, err)
