@@ -75,7 +75,8 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
   getProfileFile(): build_event_stream.File | undefined {
     // Bazel 8 semi-fixed the profile name with: https://github.com/bazelbuild/bazel/pull/22345
-    if (this.props.model.getBazelVersion()?.major >= 8) {
+    const version = this.props.model?.getBazelVersion();
+    if (version && version.major >= 8) {
       return this.props.model.buildToolLogs?.log.find(
         (log: build_event_stream.File) => log.name.startsWith("command.profile.") && log.uri
       );
