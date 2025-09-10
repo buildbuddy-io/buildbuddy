@@ -97,6 +97,7 @@ var (
 		"/org/",
 		"/settings/",
 		"/tests/",
+		"/targets/",
 		"/trends/",
 		"/usage/",
 		"/workflows/",

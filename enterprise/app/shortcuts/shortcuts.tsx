@@ -59,6 +59,7 @@ export default class ShortcutsComponent extends React.Component<Props, State> {
                 <td className="keyboard-shortcut-key">g-r</td>
                 <td>Go to Trends page</td>
               </tr>
+              {/* NAV TO TARGETS SHORTCUT */}
               <tr>
                 <td className="keyboard-shortcut-key">g-t</td>
                 <td>Go to Tests page</td>
