@@ -290,7 +290,13 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 </>
               ) : (
                 <div className="targets-empty">
-                  <div className="empty-message">No target data available for the selected filters and time range.</div>
+                  <div className="empty-message">
+                    No target data available for the selected filters and time range. This dashboard currently only
+                    shows target data for targets that run on BuildBuddy's{" "}
+                    <a href="https://www.buildbuddy.io/docs/remote-build-execution/">remote build execution service</a>.
+                    If you're interested in trying it out, you can follow our{" "}
+                    <a href="https://www.buildbuddy.io/docs/rbe-setup">setup instructions</a>.
+                  </div>
                 </div>
               )}
             </>
