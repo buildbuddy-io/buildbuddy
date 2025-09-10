@@ -574,6 +574,11 @@ type pool struct {
 }
 
 func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, error) {
+	// Validate configured isolation types.
+	if err := platform.ValidateIsolationTypes(); err != nil {
+		return nil, status.WrapError(err, "invalid configuration")
+	}
+
 	hc := env.GetHealthChecker()
 	if hc == nil {
 		return nil, status.FailedPreconditionError("Missing health checker")
