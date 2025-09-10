@@ -114,8 +114,7 @@ export default class ShortcutsComponent extends React.Component<Props, State> {
               className="keyboard-shortcut-close"
               onClick={() => {
                 this.setState({ showing: false });
-              }}
-            >
+              }}>
               Close
             </div>
           </DialogFooter>

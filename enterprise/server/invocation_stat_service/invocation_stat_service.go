@@ -1293,37 +1293,11 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 		}
 	}
 
-	rsp := &stpb.GetTargetTrendsResponse{}
-
-	// Use errgroup to fetch both metrics in parallel
-	eg, ctx := errgroup.WithContext(ctx)
-
-	eg.Go(func() error {
-		targets, err := i.getTargetsByMetric(ctx, req, "cpu_nanos")
-		if err != nil {
-			return err
-		}
-		rsp.TargetsByCpuNanos = targets
-		return nil
-	})
-
-	eg.Go(func() error {
-		targets, err := i.getTargetsByMetric(ctx, req, "(execution_completed_timestamp_usec - execution_start_timestamp_usec)")
-		if err != nil {
-			return err
-		}
-		rsp.TargetsByExecutionTime = targets
-		return nil
-	})
-
-	if err := eg.Wait(); err != nil {
+	metric, err := filter.ExecutionMetricToDbField(req.GetMetric())
+	if err != nil {
 		return nil, err
 	}
 
-	return rsp, nil
-}
-
-func (i *InvocationStatService) getTargetsByMetric(ctx context.Context, req *stpb.GetTargetTrendsRequest, metric string) ([]*stpb.TargetStats, error) {
 	q := query_builder.NewQuery(fmt.Sprintf(`
 		SELECT target_label as target, SUM(%s) as value
 		FROM "Executions"`, metric))
@@ -1333,17 +1307,7 @@ func (i *InvocationStatService) getTargetsByMetric(ctx context.Context, req *stp
 		return nil, err
 	}
 
-	// Ensure we only include executions with target labels
 	q.AddWhereClause("target_label != ''")
-
-	// For CPU nanos, only include positive values
-	if metric == "cpu_nanos" {
-		q.AddWhereClause("cpu_nanos > 0")
-	} else {
-		// For execution time, ensure valid timestamps
-		q.AddWhereClause("execution_completed_timestamp_usec > execution_start_timestamp_usec")
-	}
-
 	q.SetGroupBy("target_label")
 	q.SetOrderBy("value", false) // Descending order
 	q.SetLimit(1000)             // Reasonable limit to avoid overwhelming the response
@@ -1351,12 +1315,12 @@ func (i *InvocationStatService) getTargetsByMetric(ctx context.Context, req *stp
 	qStr, qArgs := q.Build()
 	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_target_trends").Raw(qStr, qArgs...)
 
-	res, err := db.ScanAll(rq, &stpb.TargetStats{})
+	targetStats, err := db.ScanAll(rq, &stpb.TargetStats{})
 	if err != nil {
 		return nil, err
 	}
 
-	return res, nil
+	return &stpb.GetTargetTrendsResponse{TargetStats: targetStats}, nil
 }
 
 func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error) {

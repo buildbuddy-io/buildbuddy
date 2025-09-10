@@ -305,6 +305,7 @@ message GetStatDrilldownResponse {
 message GetTargetTrendsRequest {
   context.RequestContext request_context = 1;
   TrendQuery query = 2;
+  stat_filter.ExecutionMetricType metric = 3;
 }
 
 message TargetStats {
@@ -320,14 +321,8 @@ message TargetStats {
 message GetTargetTrendsResponse {
   context.ResponseContext response_context = 1;
 
-  // An ordered list of the targets matching the specified filters,
-  // sorted in descending order by the total number of CPU nanos used
-  // in RBE for that target.
-  repeated TargetStats targets_by_cpu_nanos = 2;
-
-  // An ordered list of the targets matching the specified filters,
-  // sorted in descending order by the total wall time spent in RBE
-  // for that target.  This only includes execution time (not queue
-  // time, input download time, etc.)
-  repeated TargetStats targets_by_execution_time = 3;
+  // An ordered list of the targets matching the specified filters, sorted in
+  // descending order by the summed total of the requested execution metric
+  // in RBE for each target.
+  repeated TargetStats target_stats = 2;
 }
