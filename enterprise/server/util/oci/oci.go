@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/distribution/reference"
@@ -29,12 +31,19 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/jonboulle/clockwork"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+)
+
+const (
+	// resolveImageDigestLRUMaxEntries limits the number of entries in the image-tag-to-digest cache.
+	resolveImageDigestLRUMaxEntries = 1000
+	resolveImageDigestLRUDuration   = 15 * time.Minute
 )
 
 var (
@@ -237,10 +246,19 @@ func (c Credentials) Equals(o Credentials) bool {
 	return c.Username == o.Username && c.Password == o.Password
 }
 
+type tagToDigestEntry struct {
+	nameWithDigest string
+	expiration     time.Time
+}
+
 type Resolver struct {
 	env environment.Env
 
 	allowedPrivateIPs []*net.IPNet
+
+	mu                  sync.Mutex
+	imageTagToDigestLRU *lru.LRU[tagToDigestEntry]
+	clock               clockwork.Clock
 }
 
 func NewResolver(env environment.Env) (*Resolver, error) {
@@ -252,7 +270,19 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 		}
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
-	return &Resolver{env: env, allowedPrivateIPs: allowedPrivateIPNets}, nil
+	imageTagToDigestLRU, err := lru.NewLRU[tagToDigestEntry](&lru.Config[tagToDigestEntry]{
+		SizeFn:  func(_ tagToDigestEntry) int64 { return 1 },
+		MaxSize: int64(resolveImageDigestLRUMaxEntries),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &Resolver{
+		env:                 env,
+		imageTagToDigestLRU: imageTagToDigestLRU,
+		allowedPrivateIPs:   allowedPrivateIPNets,
+		clock:               env.GetClock(),
+	}, nil
 }
 
 // AuthenticateWithRegistry makes a HEAD request to a remote registry with the input credentials.
@@ -285,6 +315,8 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 // If the input image name includes a digest, a canonicalized version of the name is returned.
 // If the input image name refers to a tag (either explictly or implicity), ResolveImageDigest
 // will make a HEAD request to the remote registry.
+// ResolveImageDigest keeps an LRU cache that maps between canonical image names with tags
+// to image names with digests, to reduce the number of HEAD requests.
 func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (string, error) {
 	if imageRefWithDigest, err := gcrname.NewDigest(imageName); err == nil {
 		return imageRefWithDigest.String(), nil
@@ -292,6 +324,19 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 	tagRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
 		return "", status.InvalidArgumentErrorf("invalid image name %q", imageName)
+	}
+
+	r.mu.Lock()
+	entry, ok := r.imageTagToDigestLRU.Get(tagRef.String())
+	r.mu.Unlock()
+	if ok {
+		if entry.expiration.After(r.clock.Now()) {
+			return entry.nameWithDigest, nil
+		}
+		// Expired; evict and refresh via remote.Head below.
+		r.mu.Lock()
+		r.imageTagToDigestLRU.Remove(tagRef.String())
+		r.mu.Unlock()
 	}
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
@@ -303,6 +348,13 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		return "", status.UnavailableErrorf("could not authorize to remote registry: %s", err)
 	}
 	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
+	entryToAdd := tagToDigestEntry{
+		nameWithDigest: imageNameWithDigest,
+		expiration:     r.clock.Now().Add(resolveImageDigestLRUDuration),
+	}
+	r.mu.Lock()
+	r.imageTagToDigestLRU.Add(tagRef.String(), entryToAdd)
+	r.mu.Unlock()
 	return imageNameWithDigest, nil
 }
 
