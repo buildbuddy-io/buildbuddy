@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -22,9 +23,8 @@ import (
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const (
-	// Timeout for retrying a PublishOperation stream.
-	reconnectTimeout = 5 * time.Second
+var (
+	reconnectTimeout = flag.Duration("executor.publish_operation_reconnect_timeout", 5*time.Second, "Timeout for retrying a PublishOperation stream.", flag.Internal)
 )
 
 // Publisher is used to publish state changes for a task. Publisher is intended
@@ -150,7 +150,7 @@ func (c *retryingClient) Send(msg *longrunning.Operation) error {
 
 func (c *retryingClient) sendWithRetry(msg *longrunning.Operation) error {
 	var lastErr error
-	retryCtx, cancel := context.WithTimeout(c.ctx, reconnectTimeout)
+	retryCtx, cancel := context.WithTimeout(c.ctx, *reconnectTimeout)
 	defer cancel()
 	r := retry.DefaultWithContext(retryCtx)
 	for r.Next() {
@@ -209,7 +209,7 @@ func (s *retryingClient) reconnect(retryCtx context.Context) error {
 
 func (c *retryingClient) CloseAndRecv() (*repb.PublishOperationResponse, error) {
 	var lastErr error
-	retryCtx, cancel := context.WithTimeout(c.ctx, reconnectTimeout)
+	retryCtx, cancel := context.WithTimeout(c.ctx, *reconnectTimeout)
 	defer cancel()
 	r := retry.DefaultWithContext(retryCtx)
 	for r.Next() {

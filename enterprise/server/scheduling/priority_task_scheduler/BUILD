@@ -39,6 +39,7 @@ go_test(
     size = "small",
     srcs = ["priority_task_scheduler_test.go"],
     embed = [":priority_task_scheduler"],
+    shard_count = 2,
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
