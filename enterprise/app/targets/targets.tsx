@@ -115,13 +115,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
   getFilteredData = (): stats.TargetStats[] => {
     if (!this.state.data) return [];
 
-    const targets =
-      this.state.selectedMetric === "cpu"
-        ? this.state.data.targetsByCpuNanos || []
-        : this.state.data.targetsByExecutionTime || [];
-
     // Take up to 1000 results for client-side filtering
-    const maxData = targets.slice(0, 1000);
+    const maxData = this.state.data.targetStats.slice(0, 1000);
 
     if (!this.state.filterText) {
       return maxData;
@@ -190,7 +185,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <Select
                 className="targets-metric-select"
                 value={this.state.selectedMetric}
-                onChange={this.handleMetricChange}>
+                onChange={this.handleMetricChange}
+              >
                 <Option value="cpu">CPU time</Option>
                 <Option value="time">Wall time</Option>
               </Select>
@@ -199,10 +195,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 value={this.state.filterText}
                 onChange={this.handleFilterChange}
                 rightElement={
-                  this.getFilteredData().length !==
-                  (this.state.selectedMetric === "cpu"
-                    ? this.state.data?.targetsByCpuNanos?.length || 0
-                    : this.state.data?.targetsByExecutionTime?.length || 0)
+                  this.getFilteredData().length !== (this.state.data?.targetStats.length ?? 0)
                     ? `${this.getFilteredData().length} matches`
                     : null
                 }
@@ -273,7 +266,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                             <div
                               key={target.target || index}
                               className="row result-row clickable"
-                              onClick={() => this.handleTableRowClick(target.target || "")}>
+                              onClick={() => this.handleTableRowClick(target.target || "")}
+                            >
                               <div className="name-column targets-table-target">{target.target}</div>
                               <div className="value-column targets-table-value">
                                 {this.formatValue(+(target.value || 0))}
@@ -287,7 +281,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                           <Button
                             className="load-more-button"
                             onClick={this.handleShowMore}
-                            disabled={this.state.loading}>
+                            disabled={this.state.loading}
+                          >
                             <span>Show more</span>
                             {this.state.loading && <Spinner className="white" />}
                           </Button>
