@@ -1078,6 +1078,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		timeout = *workflowAction.Timeout
 	}
 
+	// XXX
 	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, ws.env.GetByteStreamClient(), ws.env.GetCache(), instanceName, os, workflowAction.Arch)
 	if err != nil {
 		return nil, err
