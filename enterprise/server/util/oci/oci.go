@@ -256,6 +256,7 @@ type Resolver struct {
 
 	allowedPrivateIPs []*net.IPNet
 
+	mu                  sync.Mutex
 	imageTagToDigestLRU *lru.LRU[tagToDigestEntry]
 	clock               clockwork.Clock
 }
@@ -325,12 +326,17 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		return "", status.InvalidArgumentErrorf("invalid image name %q", imageName)
 	}
 
-	if entry, ok := r.imageTagToDigestLRU.Get(tagRef.String()); ok {
+	r.mu.Lock()
+	entry, ok := r.imageTagToDigestLRU.Get(tagRef.String())
+	r.mu.Unlock()
+	if ok {
 		if entry.expiration.After(r.clock.Now()) {
 			return entry.nameWithDigest, nil
 		}
 		// Expired; evict and refresh via remote.Head below.
+		r.mu.Lock()
 		r.imageTagToDigestLRU.Remove(tagRef.String())
+		r.mu.Unlock()
 	}
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
@@ -342,11 +348,13 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		return "", status.UnavailableErrorf("could not authorize to remote registry: %s", err)
 	}
 	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
-	entry := tagToDigestEntry{
+	entryToAdd := tagToDigestEntry{
 		nameWithDigest: imageNameWithDigest,
 		expiration:     r.clock.Now().Add(resolveImageDigestLRUDuration),
 	}
-	r.imageTagToDigestLRU.Add(tagRef.String(), entry)
+	r.mu.Lock()
+	r.imageTagToDigestLRU.Add(tagRef.String(), entryToAdd)
+	r.mu.Unlock()
 	return imageNameWithDigest, nil
 }
 
