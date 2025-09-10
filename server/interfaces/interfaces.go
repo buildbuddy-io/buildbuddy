@@ -41,6 +41,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	ropb "github.com/buildbuddy-io/buildbuddy/proto/routing"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	cssrpb "github.com/buildbuddy-io/buildbuddy/proto/search"
@@ -1069,6 +1070,14 @@ type Runner interface {
 	// GetIsolationType returns the runner's effective isolation type as a
 	// string, such as "none" or "podman".
 	GetIsolationType() string
+}
+
+type CacheRoutingService interface {
+	GetCacheRoutingConfig(ctx context.Context) (*ropb.CacheRoutingConfig, error)
+	GetPrimaryCASClient(ctx context.Context) (repb.ContentAddressableStorageClient, error)
+	GetPrimaryACClient(ctx context.Context) (repb.ActionCacheClient, error)
+	GetPrimaryBSClient(ctx context.Context) (bspb.ByteStreamClient, error)
+	GetPrimaryCapabilitiesClient(ctx context.Context) (repb.CapabilitiesClient, error)
 }
 
 // Pool is responsible for assigning tasks to runners.

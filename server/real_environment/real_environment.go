@@ -72,6 +72,7 @@ type RealEnv struct {
 	capabilitiesClient               repb.CapabilitiesClient
 	remoteExecutionClient            repb.ExecutionClient
 	contentAddressableStorageClient  repb.ContentAddressableStorageClient
+	cacheRoutingService              interfaces.CacheRoutingService
 	metricsCollector                 interfaces.MetricsCollector
 	keyValStore                      interfaces.KeyValStore
 	APIService                       interfaces.ApiService
@@ -331,6 +332,13 @@ func (r *RealEnv) SetContentAddressableStorageClient(c repb.ContentAddressableSt
 }
 func (r *RealEnv) GetContentAddressableStorageClient() repb.ContentAddressableStorageClient {
 	return r.contentAddressableStorageClient
+}
+
+func (r *RealEnv) SetCacheRoutingService(s interfaces.CacheRoutingService) {
+	r.cacheRoutingService = s
+}
+func (r *RealEnv) GetCacheRoutingService() interfaces.CacheRoutingService {
+	return r.cacheRoutingService
 }
 
 func (r *RealEnv) SetAPIService(s interfaces.ApiService) {

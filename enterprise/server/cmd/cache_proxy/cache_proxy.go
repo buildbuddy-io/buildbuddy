@@ -17,6 +17,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_action_cache_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_byte_stream_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_capabilities_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_content_addressable_storage_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_service"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
@@ -222,10 +227,40 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	if err != nil {
 		log.Fatalf("Error dialing remote cache: %s", err.Error())
 	}
-	env.SetActionCacheClient(repb.NewActionCacheClient(conn))
-	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
-	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
-	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	if routing_service.IsCacheRoutingEnabled() {
+		if err := routing_service.RegisterRoutingService(env); err != nil {
+			log.Fatalf("Error initializing routing service: %s", err.Error())
+		}
+
+		ac, err := routing_action_cache_client.New(env)
+		if err != nil {
+			log.Fatalf("Error initializing routing action cache client: %s", err.Error())
+		}
+		env.SetActionCacheClient(ac)
+
+		cap, err := routing_capabilities_client.New(env)
+		if err != nil {
+			log.Fatalf("Error initializing routing capabilities client: %s", err.Error())
+		}
+		env.SetCapabilitiesClient(cap)
+
+		bs, err := routing_byte_stream_client.New(env)
+		if err != nil {
+			log.Fatalf("Error initializing routing bytestream client: %s", err.Error())
+		}
+		env.SetByteStreamClient(bs)
+
+		cas, err := routing_content_addressable_storage_client.New(env)
+		if err != nil {
+			log.Fatalf("Error initializing routing CAS client: %s", err.Error())
+		}
+		env.SetContentAddressableStorageClient(cas)
+	} else {
+		env.SetActionCacheClient(repb.NewActionCacheClient(conn))
+		env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
+		env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	}
 
 	// The atime updater must be registered after the remote CAS client (which
 	// it depends on), but before the local CAS server (which depends on it).
