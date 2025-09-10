@@ -11,7 +11,6 @@ import FilledButton from "../../../app/components/button/button";
 import Select, { Option } from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
-import format from "../../../app/format/format";
 import InvocationCardComponent from "../../../app/invocation/invocation_card";
 import InvocationExecutionTable from "../../../app/invocation/invocation_execution_table";
 import router from "../../../app/router/router";
@@ -24,10 +23,12 @@ import { stats } from "../../../proto/stats_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
 import { getProtoFilterParams, isExecutionMetric } from "../filter/filter_util";
 import {
+  decodeMetricUrlParam,
   encodeActionMnemonicUrlParam,
   encodeMetricUrlParam,
   encodeTargetLabelUrlParam,
   encodeWorkerUrlParam,
+  renderMetricValue,
 } from "./common";
 import HeatmapComponent, { HeatmapSelection } from "./heatmap";
 
@@ -35,18 +36,14 @@ const DD_SELECTED_METRIC_URL_PARAM: string = "ddMetric";
 const DD_SELECTED_AREA_URL_PARAM = "ddSelection";
 const DD_ZOOM_URL_PARAM: string = "ddZoom";
 
-function decodeMetricUrlParam(param: string): MetricOption | undefined {
-  if (param.length < 2) {
-    return undefined;
-  } else if (param[0] === "e") {
-    const metric = Number.parseInt(param.substring(1));
-    return METRIC_OPTIONS.find((v) => metric === v.metric.execution) || undefined;
-  } else if (param[0] === "i") {
-    const metric = Number.parseInt(param.substring(1));
-    return METRIC_OPTIONS.find((v) => metric === v.metric.invocation) || undefined;
-  } else {
-    return undefined;
+function convertMetricUrlParam(param: string): MetricOption | undefined {
+  const metric = decodeMetricUrlParam(param);
+  if (metric?.execution) {
+    return METRIC_OPTIONS.find((v) => metric.execution === v.metric.execution) || undefined;
+  } else if (metric?.invocation) {
+    return METRIC_OPTIONS.find((v) => metric.invocation === v.metric.invocation) || undefined;
   }
+  return undefined;
 }
 
 function encodeHeatmapSelection(selection?: HeatmapSelection): string {
@@ -255,45 +252,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     }
   }
 
-  renderYBucketValue(v: number): string {
-    if (isExecutionMetric(this.selectedMetric.metric)) {
-      switch (this.selectedMetric.metric.execution) {
-        case stat_filter.ExecutionMetricType.EXECUTION_WALL_TIME_EXECUTION_METRIC:
-        case stat_filter.ExecutionMetricType.QUEUE_TIME_USEC_EXECUTION_METRIC:
-        case stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_TIME_EXECUTION_METRIC:
-        case stat_filter.ExecutionMetricType.REAL_EXECUTION_TIME_EXECUTION_METRIC:
-        case stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_TIME_EXECUTION_METRIC:
-          return (v / 1000000).toFixed(2) + "s";
-        case stat_filter.ExecutionMetricType.EXECUTION_CPU_NANOS_EXECUTION_METRIC:
-          return (v / 1000000000).toFixed(2) + "s";
-        case stat_filter.ExecutionMetricType.PEAK_MEMORY_EXECUTION_METRIC:
-        case stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_SIZE_EXECUTION_METRIC:
-        case stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_SIZE_EXECUTION_METRIC:
-          return format.bytes(v);
-        case stat_filter.ExecutionMetricType.EXECUTION_AVERAGE_MILLICORES_EXECUTION_METRIC:
-          return (v / 1000).toFixed(2);
-        default:
-          return v.toString();
-      }
-    } else {
-      switch (this.selectedMetric.metric.invocation) {
-        case stat_filter.InvocationMetricType.DURATION_USEC_INVOCATION_METRIC:
-        case stat_filter.InvocationMetricType.TIME_SAVED_USEC_INVOCATION_METRIC:
-          return (v / 1000000).toFixed(2) + "s";
-        case stat_filter.InvocationMetricType.CAS_CACHE_DOWNLOAD_SPEED_INVOCATION_METRIC:
-        case stat_filter.InvocationMetricType.CAS_CACHE_UPLOAD_SPEED_INVOCATION_METRIC:
-          return format.bitsPerSecond(8 * v);
-        case stat_filter.InvocationMetricType.CAS_CACHE_DOWNLOAD_SIZE_INVOCATION_METRIC:
-        case stat_filter.InvocationMetricType.CAS_CACHE_UPLOAD_SIZE_INVOCATION_METRIC:
-          return format.bytes(v);
-        case stat_filter.InvocationMetricType.CAS_CACHE_MISSES_INVOCATION_METRIC:
-        case stat_filter.InvocationMetricType.ACTION_CACHE_MISSES_INVOCATION_METRIC:
-        default:
-          return v.toString();
-      }
-    }
-  }
-
   toStatFilterList(s: HeatmapSelection): stat_filter.StatFilter[] {
     const updatedAtUsecMetric = isExecutionMetric(this.selectedMetric.metric)
       ? stat_filter.Metric.create({ execution: stat_filter.ExecutionMetricType.UPDATED_AT_USEC_EXECUTION_METRIC })
@@ -497,7 +455,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
   componentDidMount() {
     this.selectedMetric =
-      decodeMetricUrlParam(this.props.search.get(DD_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
+      convertMetricUrlParam(this.props.search.get(DD_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
     this.currentHeatmapSelection = decodeHeatmapSelection(this.props.search.get(DD_SELECTED_AREA_URL_PARAM) || "");
     this.currentZoomFilters = decodeHeatmapSelection(this.props.search.get(DD_ZOOM_URL_PARAM) || "");
     this.fetch();
@@ -515,7 +473,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       newSearchWithoutSelection.delete(DD_SELECTED_AREA_URL_PARAM);
       newSearchWithoutSelection.sort();
       this.selectedMetric =
-        decodeMetricUrlParam(this.props.search.get(DD_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
+        convertMetricUrlParam(this.props.search.get(DD_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
       this.currentHeatmapSelection = decodeHeatmapSelection(this.props.search.get(DD_SELECTED_AREA_URL_PARAM) || "");
       this.currentZoomFilters = decodeHeatmapSelection(this.props.search.get(DD_ZOOM_URL_PARAM) || "");
       if (prevSearchWithoutSelection.toString() != newSearchWithoutSelection.toString()) {
@@ -775,8 +733,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
     const startDate = moment(this.currentZoomFilters.dateRangeMicros.startInclusive / 1000).format("MMM D HH:mm");
     const endDate = moment(this.currentZoomFilters.dateRangeMicros.endExclusive / 1000).format("MMM D HH:mm");
-    const startValue = this.renderYBucketValue(this.currentZoomFilters.bucketRange.startInclusive);
-    const endValue = this.renderYBucketValue(this.currentZoomFilters.bucketRange.endExclusive);
+    const startValue = renderMetricValue(
+      this.selectedMetric.metric,
+      this.currentZoomFilters.bucketRange.startInclusive
+    );
+    const endValue = renderMetricValue(this.selectedMetric.metric, this.currentZoomFilters.bucketRange.endExclusive);
 
     return (
       <div className="drilldown-page-zoom-summary zoomed">
@@ -816,8 +777,14 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
     const startDate = moment(this.currentHeatmapSelection.dateRangeMicros.startInclusive / 1000).format("lll");
     const endDate = moment(this.currentHeatmapSelection.dateRangeMicros.endExclusive / 1000).format("lll");
-    const startValue = this.renderYBucketValue(this.currentHeatmapSelection.bucketRange.startInclusive);
-    const endValue = this.renderYBucketValue(this.currentHeatmapSelection.bucketRange.endExclusive);
+    const startValue = renderMetricValue(
+      this.selectedMetric.metric,
+      this.currentHeatmapSelection.bucketRange.startInclusive
+    );
+    const endValue = renderMetricValue(
+      this.selectedMetric.metric,
+      this.currentHeatmapSelection.bucketRange.endExclusive
+    );
     return (
       <span className="selection-summary-text">
         <strong>Selection</strong> contains events between {startDate} and {endDate} with values {startValue} -{" "}
@@ -863,7 +830,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
               <>
                 <HeatmapComponent
                   heatmapData={this.state.heatmapData || stats.GetStatHeatmapResponse.create({})}
-                  metricBucketFormatter={(v) => this.renderYBucketValue(v)}
+                  metricBucketFormatter={(v) => renderMetricValue(this.selectedMetric.metric, v)}
                   metricBucketName={this.selectedMetric.name}
                   valueFormatter={(v) => this.renderBucketValue(v)}
                   selectionCallback={(s) => this.handleHeatmapSelection(s)}

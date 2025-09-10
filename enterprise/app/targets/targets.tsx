@@ -5,13 +5,18 @@ import Button from "../../../app/components/button/button";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
 import Select, { Option } from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
-import * as format from "../../../app/format/format";
 import router from "../../../app/router/router";
 import rpc_service from "../../../app/service/rpc_service";
+import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
 import FilterComponent from "../filter/filter";
 import { getProtoFilterParams } from "../filter/filter_util";
-import { encodeTargetLabelUrlParam } from "../trends/common";
+import {
+  decodeMetricUrlParam,
+  encodeMetricUrlParam,
+  encodeTargetLabelUrlParam,
+  renderMetricValue,
+} from "../trends/common";
 import { ChartColor } from "../trends/trends_chart";
 
 interface Props {
@@ -23,7 +28,6 @@ interface State {
   loading: boolean;
   failed: boolean;
   data?: stats.GetTargetTrendsResponse;
-  selectedMetric: "cpu" | "time";
   displayCount: number;
   filterText: string;
 }
@@ -33,20 +37,75 @@ interface TargetChartData {
   value: number;
 }
 
+interface MetricOption {
+  name: string;
+  metric: stat_filter.Metric;
+}
+
+const TARGET_SELECTED_METRIC_URL_PARAM: string = "targetsMetric";
+
+const METRIC_OPTIONS: MetricOption[] = [
+  {
+    name: "CPU time",
+    metric: new stat_filter.Metric({ execution: stat_filter.ExecutionMetricType.EXECUTION_CPU_NANOS_EXECUTION_METRIC }),
+  },
+  {
+    name: "Wall time",
+    metric: new stat_filter.Metric({ execution: stat_filter.ExecutionMetricType.EXECUTION_WALL_TIME_EXECUTION_METRIC }),
+  },
+  {
+    name: "Input download size",
+    metric: new stat_filter.Metric({ execution: stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_SIZE_EXECUTION_METRIC }),
+  },
+  {
+    name: "Output upload size",
+    metric: new stat_filter.Metric({ execution: stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_SIZE_EXECUTION_METRIC }),
+  },
+  {
+    name: "Queue time",
+    metric: new stat_filter.Metric({ execution: stat_filter.ExecutionMetricType.QUEUE_TIME_USEC_EXECUTION_METRIC }),
+  },
+  {
+    name: "Input download time",
+    metric: new stat_filter.Metric({ execution: stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_TIME_EXECUTION_METRIC }),
+  },
+  {
+    name: "Action execution time",
+    metric: new stat_filter.Metric({ execution: stat_filter.ExecutionMetricType.REAL_EXECUTION_TIME_EXECUTION_METRIC }),
+  },
+  {
+    name: "Output upload time",
+    metric: new stat_filter.Metric({ execution: stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_TIME_EXECUTION_METRIC }),
+  },
+];
+
+function convertMetricUrlParam(param: string): MetricOption | undefined {
+  const metric = decodeMetricUrlParam(param);
+  if (metric?.execution) {
+    return METRIC_OPTIONS.find((v) => metric.execution === v.metric.execution) || undefined;
+  }
+  return undefined;
+}
+
 export default class TrendsComponent extends React.Component<Props, State> {
+  selectedMetric: MetricOption = METRIC_OPTIONS[0];
+
   state: State = {
     loading: false,
     failed: false,
-    selectedMetric: "cpu",
     displayCount: 50,
     filterText: "",
   };
   componentDidMount(): void {
+    this.selectedMetric =
+      convertMetricUrlParam(this.props.search.get(TARGET_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
     this.fetchTargetTrends();
   }
 
   componentDidUpdate(prevProps: Props, prevState: State): void {
-    if (this.props.search !== prevProps.search || this.state.selectedMetric !== prevState.selectedMetric) {
+    if (this.props.search !== prevProps.search) {
+      this.selectedMetric =
+        convertMetricUrlParam(this.props.search.get(TARGET_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
       this.fetchTargetTrends();
     }
   }
@@ -54,7 +113,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   fetchTargetTrends() {
     this.setState({ loading: true, failed: false });
     const filterParams = getProtoFilterParams(this.props.search);
-    const request = stats.GetTargetTrendsRequest.create({});
+    const request = stats.GetTargetTrendsRequest.create({ metric: this.selectedMetric.metric.execution! });
     request.query = new stats.TrendQuery({
       host: filterParams.host,
       user: filterParams.user,
@@ -77,13 +136,25 @@ export default class TrendsComponent extends React.Component<Props, State> {
       .then((response) => {
         this.setState({ data: response });
       })
-      .catch(() => this.setState({ failed: true, data: undefined }))
+      .catch((e) => {
+        console.log(e);
+        this.setState({ failed: true, data: undefined });
+      })
       .finally(() => this.setState({ loading: false }));
   }
 
   handleMetricChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedMetric = e.target.value as "cpu" | "time";
-    this.setState({ selectedMetric, displayCount: 50 }); // Reset pagination when changing metrics
+    const newMetric = e.target.value;
+
+    if (!newMetric || this.selectedMetric.name === newMetric) {
+      return;
+    }
+    const option = METRIC_OPTIONS.find((v) => v.name === newMetric) || METRIC_OPTIONS[0];
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [TARGET_SELECTED_METRIC_URL_PARAM]: encodeMetricUrlParam(option.metric),
+    });
+    this.setState({ displayCount: 50 }); // Reset pagination when changing metrics
   };
 
   handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -92,16 +163,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
 
   handleShowMore = () => {
     this.setState({ displayCount: this.state.displayCount + 50 });
-  };
-
-  formatValue = (value: number): string => {
-    if (this.state.selectedMetric === "cpu") {
-      // CPU nanos -> seconds
-      return format.durationSec(value / 1e9);
-    } else {
-      // Execution time in microseconds -> seconds
-      return format.durationUsec(value);
-    }
   };
 
   getChartData = (): TargetChartData[] => {
@@ -146,7 +207,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     const dimensions = currentParams.d ? currentParams.d + "|" + dimensionParam : dimensionParam;
 
     // Set the metric to CPU nanos or execution time based on current selection
-    const metricParam = this.state.selectedMetric === "cpu" ? "e10" : "e4"; // e10 = cpu nanos, e4 = wall time
+    const metricParam = encodeMetricUrlParam(this.selectedMetric.metric);
 
     router.navigateTo(`/trends/?ddMetric=${metricParam}&d=${dimensions}#drilldown`, false);
   };
@@ -160,7 +221,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
             <strong>{data.target}</strong>
           </div>
           <div>
-            {this.state.selectedMetric === "cpu" ? "Total CPU time" : "Total wall time"}: {this.formatValue(data.value)}
+            {this.selectedMetric.name}: {renderMetricValue(this.selectedMetric.metric, data.value)}
           </div>
         </div>
       );
@@ -184,10 +245,16 @@ export default class TrendsComponent extends React.Component<Props, State> {
             <div className="controls row">
               <Select
                 className="targets-metric-select"
-                value={this.state.selectedMetric}
-                onChange={this.handleMetricChange}>
-                <Option value="cpu">CPU time</Option>
-                <Option value="time">Wall time</Option>
+                onChange={this.handleMetricChange.bind(this)}
+                value={this.selectedMetric.name}>
+                {METRIC_OPTIONS.map(
+                  (o) =>
+                    o.name && (
+                      <Option key={o.name} value={o.name}>
+                        {o.name}
+                      </Option>
+                    )
+                )}
               </Select>
               <FilterInput
                 placeholder="Filter targets..."
@@ -219,28 +286,22 @@ export default class TrendsComponent extends React.Component<Props, State> {
               {chartData.length > 0 ? (
                 <>
                   <div className="targets-chart-section">
-                    <div className="targets-section-title">
-                      Top targets by {this.state.selectedMetric === "cpu" ? "CPU Time" : "Wall Time"}
-                    </div>
+                    <div className="targets-section-title">Top targets by {this.selectedMetric.name}</div>
                     <div className="targets-chart-container">
                       <ResponsiveContainer width="100%" height={300}>
                         <BarChart data={chartData}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis tick={false} tickFormatter={() => ""}></XAxis>
-                          <YAxis tickFormatter={this.formatValue} />
+                          <YAxis width={120} tickFormatter={(v) => renderMetricValue(this.selectedMetric.metric, v)} />
                           <Tooltip content={this.renderCustomTooltip} wrapperStyle={{ zIndex: 1 }} />
                           <Bar
                             dataKey="value"
                             fill={ChartColor.GREEN}
                             cursor="pointer"
                             onClick={(e: any) => {
-                              console.log("event");
-                              console.log(e);
                               const clickedData = chartData.find((d) => {
                                 return d.target === e.target;
                               });
-                              console.log("data");
-                              console.log(clickedData);
                               if (clickedData) {
                                 this.handleBarClick(clickedData);
                               }
@@ -256,9 +317,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                       <div className="results-table">
                         <div className="row column-headers">
                           <div className="name-column">Target</div>
-                          <div className="value-column">
-                            Total {this.state.selectedMetric === "cpu" ? "CPU Time" : "Wall Time"}
-                          </div>
+                          <div className="value-column">Total {this.selectedMetric.name}</div>
                         </div>
                         <div className="results-list column">
                           {tableData.map((target, index) => (
@@ -268,7 +327,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                               onClick={() => this.handleTableRowClick(target.target || "")}>
                               <div className="name-column targets-table-target">{target.target}</div>
                               <div className="value-column targets-table-value">
-                                {this.formatValue(+(target.value || 0))}
+                                {renderMetricValue(this.selectedMetric.metric, +(target.value || 0))}
                               </div>
                             </div>
                           ))}
