@@ -43,7 +43,7 @@ import (
 const (
 	// resolveImageDigestLRUMaxEntries limits the number of entries in the image-tag-to-digest cache.
 	resolveImageDigestLRUMaxEntries = 1000
-	resolveImageDigestLRUDuration   = time.Minute * 15
+	resolveImageDigestLRUDuration   = 15 * time.Minute
 )
 
 var (
