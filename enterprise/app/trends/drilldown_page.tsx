@@ -348,7 +348,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       .finally(() => this.setState({ loadingDrilldowns: false }));
   }
 
-  fetchExecutionList(heatmapSelection: HeatmapSelection) {
+  fetchExecutionList(heatmapSelection?: HeatmapSelection) {
     if (!capabilities.config.executionSearchEnabled) {
       return;
     }
@@ -372,7 +372,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         updatedAfter: filterParams.updatedAfter,
         updatedBefore: filterParams.updatedBefore,
         invocationStatus: filterParams.status || [],
-        filter: this.toStatFilterList(heatmapSelection),
+        filter: heatmapSelection ? this.toStatFilterList(heatmapSelection) : [],
         dimensionFilter: filterParams.dimensionFilters,
         genericFilters: filterParams.genericFilters,
       }),
@@ -396,7 +396,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       .finally(() => this.setState({ loadingEvents: false }));
   }
 
-  fetchInvocationList(groupId: string, heatmapSelection: HeatmapSelection) {
+  fetchInvocationList(groupId: string, heatmapSelection?: HeatmapSelection) {
     this.setState({
       loadingEvents: true,
       eventsFailed: false,
@@ -420,7 +420,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         updatedAfter: filterParams.updatedAfter,
         updatedBefore: filterParams.updatedBefore,
         status: filterParams.status || [],
-        filter: this.toStatFilterList(heatmapSelection),
+        filter: heatmapSelection ? this.toStatFilterList(heatmapSelection) : [],
         dimensionFilter: filterParams.dimensionFilters,
         genericFilters: filterParams.genericFilters,
       }),
@@ -441,7 +441,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   fetchEventList() {
-    if (!this.props.user?.selectedGroup || !this.currentHeatmapSelection) {
+    if (!this.props.user?.selectedGroup) {
       return;
     }
     if (isExecutionMetric(this.selectedMetric.metric)) {
@@ -730,8 +730,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   getEventListTitleString(): string {
-    if (this.state.loadingEvents) {
-      return "";
+    if (this.state.loadingEvents || !this.currentHeatmapSelection) {
+      return "Examples (no selection)";
     } else if (this.state.eventData?.invocations) {
       const invocationCount = this.state.eventData.invocations.length;
       if (invocationCount < (this.currentHeatmapSelection?.eventsSelected || 0)) {
@@ -765,7 +765,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     } else if (this.state.drilldownsFailed) {
       return "Failed to load drilldown dimensions.";
     }
-    return "To see drilldown charts and individual events, click and drag to select a region in the chart above";
+    return "To see drilldown charts, click and drag to select a region in the chart above";
   }
 
   renderZoomChip(): React.ReactElement | null {
