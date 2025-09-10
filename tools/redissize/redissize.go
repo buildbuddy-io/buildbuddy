@@ -1,3 +1,10 @@
+// Tool to show statistics on the size of redis keys categorized by prefix.
+//
+// First, port-forward to the redis instance you want to analyze:
+// $ kubectl port-forward -n redis-prod redis-sharded-3 6380:6379
+//
+// Then run the tool:
+// $ bazel run tools/redissize
 package main
 
 import (
