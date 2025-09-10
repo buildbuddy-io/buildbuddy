@@ -2551,7 +2551,7 @@ func runBazelWrapper() error {
 	// and `bb` is being invoked via bazelisk (e.g. by setting
 	// USE_BAZEL_VERSION=buildbuddy-io/vX.Y.Z in env)
 	if _, cmdIdx := bazel.GetBazelCommandAndIndex(originalArgs); cmdIdx == -1 {
-		return nil
+		return syscall.Exec(bazelBin, append([]string{bazelBin}, originalArgs...), os.Environ())
 	}
 
 	// Pass the original command as metadata, stripping the custom flags we've set,
