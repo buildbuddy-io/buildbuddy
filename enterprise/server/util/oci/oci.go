@@ -383,13 +383,16 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 	if canUseCache {
 		var desc *gcr.Descriptor
 		digest, hasDigest := getDigest(digestOrTagRef)
-		// If the ref doesn't contain a digest, then we need to make a HEAD
-		// request in order to resolve it to a digest, since manifest AC entries
-		// are keyed by digest.
-		if !hasDigest {
-			if bypassRegistry {
-				log.CtxWarningf(ctx, "Cannot bypass registry for tag reference %q (need registry to resolve tag to digest)", digestOrTagRef)
-			}
+		// For now, we cannot bypass the registry for tag references,
+		// since cached manifest AC entries need the resolved digest as part of
+		// the key. Log a warning in this case.
+		if !hasDigest && bypassRegistry {
+			log.CtxWarningf(ctx, "Cannot bypass registry for tag reference %q (need to make a registry request to resolve tag to digest)", digestOrTagRef)
+		}
+		// Make a HEAD request for the manifest. This does two things:
+		// - Authenticates with the registry (if not bypassing)
+		// - Resolves the tag to a digest (if not already present)
+		if !hasDigest || !bypassRegistry {
 			var err error
 			desc, err = puller.Head(ctx, digestOrTagRef)
 			if err != nil {
