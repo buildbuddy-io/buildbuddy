@@ -37,6 +37,7 @@ var (
 	invocationSummaryAvailableUsec = flag.Int64("app.invocation_summary_available_usec", 0, "The timstamp when the invocation summary is available in the DB")
 	tagsInDrilldowns               = flag.Bool("app.fetch_tags_drilldown_data", true, "If enabled, DrilldownType_TAG_DRILLDOWN_TYPE can be returned in GetStatDrilldownRequests")
 	finerTimeBuckets               = flag.Bool("app.finer_time_buckets", false, "If enabled, split trends and drilldowns into smaller time buckets when the user has a smaller date range selected.")
+	targetTrendsEnabled            = flag.Bool("app.enable_target_trends", true, "Enables GetTargetTrends, which returns execution data aggregated by Bazel target.")
 )
 
 type InvocationStatService struct {
@@ -1277,6 +1278,9 @@ func sortDrilldownChartKeys(dm map[stpb.DrilldownType]float64) *[]stpb.Drilldown
 }
 
 func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.GetTargetTrendsRequest) (*stpb.GetTargetTrendsResponse, error) {
+	if !*targetTrendsEnabled {
+		return nil, status.UnimplementedError("GetTargetTrends RPC is disabled.")
+	}
 	if !i.isOLAPDBEnabled() {
 		return nil, status.UnimplementedError("Target trends require using an OLAP DB, but none is configured.")
 	}

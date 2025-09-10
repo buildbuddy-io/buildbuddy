@@ -169,10 +169,12 @@ export default class SidebarComponent extends React.Component<Props, State> {
               <span className="sidebar-item-text">Drilldown</span>
             </SidebarLink>
           )}
-          <SidebarLink selected={this.isTargetsSelected()} href={Path.targetsPath} title="Targets">
-            <Target className="icon" />
-            <span className="sidebar-item-text">Targets</span>
-          </SidebarLink>
+          {capabilities.config.targetsPageEnabled && (
+            <SidebarLink selected={this.isTargetsSelected()} href={Path.targetsPath} title="Targets">
+              <Target className="icon" />
+              <span className="sidebar-item-text">Targets</span>
+            </SidebarLink>
+          )}
           {capabilities.test && (
             <SidebarLink
               selected={this.isTapSelected() && this.props.tab != "#flakes"}
