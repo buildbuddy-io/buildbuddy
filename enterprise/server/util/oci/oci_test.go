@@ -1184,7 +1184,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	}
 	require.Empty(t, cmp.Diff(expectedFirst, counter.snapshot()))
 
-	// 2) Immediate resolve should be a cache hit; no HTTP requests.
+	// Immediate resolve should be a cache hit; no HTTP requests.
 	counter.reset()
 	nameWithDigest, err = resolver.ResolveImageDigest(
 		context.Background(),
@@ -1198,7 +1198,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 	require.Empty(t, counter.snapshot())
 
-	// 3) Advance time to just before TTL expiry; still a cache hit.
+	// Advance time to just before TTL expiry; still a cache hit.
 	fakeClock.Advance(15*time.Minute - time.Second)
 	counter.reset()
 	nameWithDigest, err = resolver.ResolveImageDigest(
@@ -1213,7 +1213,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 	require.Empty(t, counter.snapshot())
 
-	// 4) Advance past TTL; expect cache refresh (GET /v2/ and HEAD manifest).
+	// Advance past TTL; expect cache refresh (GET /v2/ and HEAD manifest).
 	fakeClock.Advance(2 * time.Second)
 	counter.reset()
 	nameWithDigest, err = resolver.ResolveImageDigest(
