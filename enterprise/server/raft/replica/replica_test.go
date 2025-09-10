@@ -92,23 +92,6 @@ func writeRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica, key 
 	require.Equal(t, 1, len(writeRsp))
 }
 
-func writePartitionDescriptor(t *testing.T, em *entryMaker, r *replica.Replica, pd *rfpb.PartitionDescriptor) {
-	pdBuf, err := proto.Marshal(pd)
-	require.NoError(t, err)
-	partitionKey := keys.MakeKey(constants.PartitionPrefix, []byte(pd.GetId()))
-
-	// Write partition descriptor
-	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   partitionKey,
-			Value: pdBuf,
-		},
-	}))
-	writeRsp, err := r.Update([]dbsm.Entry{entry})
-	require.NoError(t, err)
-	require.Equal(t, 1, len(writeRsp))
-}
-
 func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica, rd *rfpb.RangeDescriptor) {
 	writeRangeDescriptor(t, em, r, constants.LocalRangeKey, rd)
 }
@@ -1657,8 +1640,9 @@ func TestDeleteSessions(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 1, len(writeRsp))
 
-		batch := rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
-		_, err = batch.DeleteSessionsResponse(0)
+		// Make sure the response holds the new value.
+		incrBatch := rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
+		_, err = incrBatch.DeleteSessionsResponse(0)
 		require.NoError(t, err)
 	}
 	// Verify that session 1 is deleted and session 2 is not
