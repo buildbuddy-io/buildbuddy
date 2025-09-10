@@ -112,6 +112,10 @@ func lookupRangeDescriptor(ctx context.Context, c rfspb.ApiClient, h *rfpb.Heade
 	if len(res) == 0 {
 		return nil, status.NotFoundErrorf("range descriptor not found for key %q", key)
 	}
+	r := rangemap.Range{Start: res[0].GetStart(), End: res[0].GetEnd()}
+	if !r.Contains(key) {
+		return nil, status.NotFoundErrorf("range descriptor not found for key %q", key)
+	}
 	return res[0], nil
 }
 
@@ -201,10 +205,6 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 		}
 		s.rangeCache.UpdateRange(rd)
 		rangeDescriptor = rd
-	}
-	r := rangemap.Range{Start: rangeDescriptor.GetStart(), End: rangeDescriptor.GetEnd()}
-	if !r.Contains(key) {
-		log.CtxFatalf(ctx, "Found range %+v that doesn't contain key: %q", rangeDescriptor, string(key))
 	}
 	return rangeDescriptor, nil
 }
