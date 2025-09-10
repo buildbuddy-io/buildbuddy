@@ -1813,7 +1813,7 @@ func WaitForPendingExecution(rdb redis.UniversalClient, opID string) error {
 }
 
 func TestActionMerging_Success(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
+	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
 
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
@@ -1847,7 +1847,7 @@ func TestActionMerging_Success(t *testing.T) {
 }
 
 func TestActionMerging_ScheduledConcurrently(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
+	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
 
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
@@ -1895,7 +1895,7 @@ func TestActionMerging_ScheduledConcurrently(t *testing.T) {
 }
 
 func TestActionMerging_LongTask(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
+	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
 	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		SchedulerServerOptions: scheduler_server.Options{
 			ActionMergingLeaseTTLOverride: 250 * time.Millisecond,
@@ -1928,7 +1928,7 @@ func TestActionMerging_LongTask(t *testing.T) {
 }
 
 func TestActionMerging_ClaimingAppDies(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
+	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
 	app := rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		SchedulerServerOptions: scheduler_server.Options{
 			ActionMergingLeaseTTLOverride: time.Millisecond,
@@ -1968,7 +1968,7 @@ func TestActionMerging_ClaimingAppDies(t *testing.T) {
 
 func TestActionMerging_Hedging(t *testing.T) {
 	flags.Set(t, "remote_execution.action_merging_hedge_count", 2)
-	rbe := rbetest.NewRBETestEnv(t)
+	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
@@ -2044,7 +2044,7 @@ touch %s`, counter, fname)
 }
 
 func TestActionMerging_DisabledWithDoNotCache(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
+	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
 
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)

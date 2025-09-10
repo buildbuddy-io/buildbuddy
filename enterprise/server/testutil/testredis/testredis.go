@@ -3,6 +3,7 @@ package testredis
 import (
 	"context"
 	"fmt"
+	"net"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -21,6 +22,10 @@ import (
 )
 
 const (
+	// DefaultShardCount is the default number of shards to use when creating a
+	// sharded redis setup.
+	DefaultShardCount = 3
+
 	startupTimeout      = 10 * time.Second
 	startupPingInterval = 5 * time.Millisecond
 )
@@ -157,6 +162,44 @@ func StartTCP(t testing.TB) *Handle {
 	waitUntilHealthy(t, target)
 
 	return handle
+}
+
+type RingHandle struct {
+	Shards []*Handle
+}
+
+// StartSharded starts a ring of redis servers with the given number of shards.
+// Set the shard count to 0 to use a reasonable default.
+func StartSharded(t testing.TB, count int) *RingHandle {
+	if count <= 0 {
+		count = DefaultShardCount
+	}
+	ch := make(chan *Handle)
+	for range count {
+		go func() { ch <- Start(t) }()
+	}
+	shards := make([]*Handle, 0, count)
+	for range count {
+		shards = append(shards, <-ch)
+	}
+	return &RingHandle{Shards: shards}
+}
+
+func (h *RingHandle) Client() redis.UniversalClient {
+	addrs := make(map[string]string)
+	for i, shard := range h.Shards {
+		addrs[fmt.Sprintf("shard%d", i)] = shard.socketPath
+	}
+	ringOptions := &redis.RingOptions{
+		Addrs: addrs,
+		// The ring client only allows TCP addresses for some reason - use a
+		// custom dialer so we can still use unix sockets, which avoid the
+		// headache of port collisions.
+		Dialer: func(ctx context.Context, _, addr string) (net.Conn, error) {
+			return net.Dial("unix", addr)
+		},
+	}
+	return redis.NewRing(ringOptions)
 }
 
 func waitUntilHealthy(t testing.TB, target string) {

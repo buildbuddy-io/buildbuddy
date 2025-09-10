@@ -105,7 +105,7 @@ type Env struct {
 	t                             *testing.T
 	testEnv                       *testenv.TestEnv
 	rbeClient                     *rbeclient.Client
-	redisTarget                   string
+	redisClient                   redis.UniversalClient
 	rootDataDir                   string
 	buildBuddyServers             map[*BuildBuddyServer]struct{}
 	shutdownBuildBuddyServersOnce sync.Once
@@ -228,8 +228,22 @@ func (r *Env) setupRootDirectoryWithTestCommandBinary(ctx context.Context) *repb
 // The returned environment does not have any executors by default. Use the
 // Add*Executor functions to add executors.
 func NewRBETestEnv(t *testing.T) *Env {
-	redisTarget := testredis.Start(t).Target
-	envOpts := &enterprise_testenv.Options{RedisTarget: redisTarget}
+	return NewRBETestEnvWithOptions(t, &EnvOptions{})
+}
+
+type EnvOptions struct {
+	// ShardedRedis indicates whether to use a sharded redis setup.
+	ShardedRedis bool
+}
+
+func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
+	envOpts := &enterprise_testenv.Options{}
+	if opts.ShardedRedis {
+		ring := testredis.StartSharded(t, 0 /*use default shard count*/)
+		envOpts.RedisClient = ring.Client()
+	} else {
+		envOpts.RedisClient = testredis.Start(t).Client()
+	}
 
 	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
 	auth := enterprise_testauth.Configure(t, testEnv)
@@ -268,7 +282,7 @@ func NewRBETestEnv(t *testing.T) *Env {
 	rbe := &Env{
 		testEnv:           testEnv,
 		t:                 t,
-		redisTarget:       redisTarget,
+		redisClient:       envOpts.RedisClient,
 		buildBuddyServers: make(map[*BuildBuddyServer]struct{}),
 		executors:         make(map[string]*Executor),
 		envOpts:           envOpts,
@@ -689,7 +703,7 @@ func (r *Env) AddBuildBuddyServers(n int) {
 }
 
 func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *BuildBuddyServer {
-	envOpts := &enterprise_testenv.Options{RedisTarget: r.redisTarget}
+	envOpts := &enterprise_testenv.Options{RedisClient: r.redisClient}
 	env := &buildBuddyServerEnv{TestEnv: enterprise_testenv.GetCustomTestEnv(r.t, envOpts), rbeEnv: r}
 	// We're using an in-memory SQLite database so we need to make sure all servers share the same handle.
 	env.SetDBHandle(r.testEnv.GetDBHandle())
