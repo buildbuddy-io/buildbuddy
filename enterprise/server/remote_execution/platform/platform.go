@@ -583,6 +583,20 @@ func GetExecutorProperties() *ExecutorProperties {
 	return p
 }
 
+func ValidateIsolationTypes() error {
+	if *defaultIsolationType == "" {
+		return nil
+	}
+	if !slices.Contains(KnownContainerTypes, ContainerType(*defaultIsolationType)) {
+		return status.InvalidArgumentErrorf("the configured 'default_isolation_type' %q is invalid. Valid values: %v", *defaultIsolationType, KnownContainerTypes)
+	}
+	executorProps := GetExecutorProperties()
+	if !executorProps.SupportsIsolation(ContainerType(*defaultIsolationType)) {
+		return status.InvalidArgumentErrorf("the configured 'default_isolation_type' %q is not enabled for this executor. Enabled isolation types: %v", *defaultIsolationType, executorProps.SupportedIsolationTypes)
+	}
+	return nil
+}
+
 // ApplyOverrides modifies the platformProps and command as needed to match the
 // locally configured executor properties.
 func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, platformProps *Properties, command *repb.Command) error {
