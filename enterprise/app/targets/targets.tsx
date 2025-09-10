@@ -185,8 +185,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <Select
                 className="targets-metric-select"
                 value={this.state.selectedMetric}
-                onChange={this.handleMetricChange}
-              >
+                onChange={this.handleMetricChange}>
                 <Option value="cpu">CPU time</Option>
                 <Option value="time">Wall time</Option>
               </Select>
@@ -266,8 +265,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                             <div
                               key={target.target || index}
                               className="row result-row clickable"
-                              onClick={() => this.handleTableRowClick(target.target || "")}
-                            >
+                              onClick={() => this.handleTableRowClick(target.target || "")}>
                               <div className="name-column targets-table-target">{target.target}</div>
                               <div className="value-column targets-table-value">
                                 {this.formatValue(+(target.value || 0))}
@@ -281,8 +279,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                           <Button
                             className="load-more-button"
                             onClick={this.handleShowMore}
-                            disabled={this.state.loading}
-                          >
+                            disabled={this.state.loading}>
                             <span>Show more</span>
                             {this.state.loading && <Spinner className="white" />}
                           </Button>
