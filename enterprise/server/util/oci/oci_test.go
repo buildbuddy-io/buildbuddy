@@ -740,12 +740,28 @@ func TestResolve_WithCache(t *testing.T) {
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 
-				// Try resolving again but fetch using a digest ref - should be
-				// able to avoid contacting the registry entirely, since we
+				// Try resolving again but fetch using a digest ref - we should
+				// still do a HEAD request for auth purposes, even though we
 				// don't need to resolve the tag to a digest.
 				imageAddressWithDigest := imageAddress + "@" + imageDigest.String()
-				expected = map[string]int{}
+				expected = map[string]int{
+					http.MethodGet + " /v2/": 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/" + imageDigest.String(): 1,
+				}
 				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter)
+
+				// Try resolving again but enable registry bypass (server admins
+				// can use this to bypass the registry for images that are
+				// cached). Should be able to avoid contacting the registry
+				// entirely, since we don't need to resolve the tag to a digest.
+				tcWithCreds := tc // copy
+				tcWithCreds.args.credentials, err = oci.CredentialsFromProperties(&platform.Properties{
+					ContainerImage:          imageAddressWithDigest,
+					ContainerRegistryBypass: true,
+				})
+				require.NoError(t, err)
+				expected = map[string]int{}
+				resolveAndCheck(t, tcWithCreds, te, imageAddressWithDigest, expected, counter)
 			}
 
 			// Test with index manifest
@@ -766,10 +782,11 @@ func TestResolve_WithCache(t *testing.T) {
 				// manifest points to the platform-specific image manifest.
 				expected := map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                 1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():     1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                   1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String():  1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():      1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 
@@ -779,7 +796,8 @@ func TestResolve_WithCache(t *testing.T) {
 				// digest.
 				expected = map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest": 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 
@@ -787,7 +805,10 @@ func TestResolve_WithCache(t *testing.T) {
 				// able to avoid contacting the registry entirely, since we
 				// don't need to resolve the tag to a digest.
 				imageAddressWithDigest := indexAddress + "@" + imageDigest.String()
-				expected = map[string]int{}
+				expected = map[string]int{
+					http.MethodGet + " /v2/": 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+				}
 				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter)
 			}
 		})
