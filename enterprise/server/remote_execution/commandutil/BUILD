@@ -8,6 +8,7 @@ go_library(
         "commandutil.go",
         "commandutil_unix.go",
         "commandutil_windows.go",
+        "limited_buffer.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil",
     deps = [
@@ -50,22 +51,19 @@ go_test(
         ":commandutil",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ] + select({
         "@io_bazel_rules_go//go/platform:darwin": [
             "//server/testutil/testfs",
-            "//server/util/status",
-            "@com_github_stretchr_testify//assert",
-            "@com_github_stretchr_testify//require",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
             "//server/testutil/testfs",
-            "//server/util/status",
-            "@com_github_stretchr_testify//assert",
-            "@com_github_stretchr_testify//require",
         ],
         "@io_bazel_rules_go//go/platform:windows": [
             "//server/testutil/testfs",
-            "@com_github_stretchr_testify//assert",
         ],
         "//conditions:default": [],
     }),
