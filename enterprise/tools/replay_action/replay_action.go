@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -11,17 +12,27 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -43,10 +54,10 @@ import (
 )
 
 var (
-	// You probably will want to set these.
-	sourceExecutor           = flag.String("source_executor", "remote.buildbuddy.io", "The backend to replay an action against.")
-	targetExecutor           = flag.String("target_executor", "remote.buildbuddy.dev", "The backend to replay an action against.")
+	// You probably will want to set these (source and target).
+	sourceExecutor           = flag.String("source_executor", "", "The backend to replay an action against.")
 	sourceAPIKey             = flag.String("source_api_key", "", "The API key of the account that owns the action.")
+	targetExecutor           = flag.String("target_executor", "", "The backend to replay an action against.")
 	targetAPIKey             = flag.String("target_api_key", "", "API key to use for the target executor.")
 	targetRemoteInstanceName = flag.String("target_remote_instance_name", "", "The remote instance name used in the source action")
 
@@ -63,7 +74,14 @@ var (
 	sourceClientIdentityKey = flag.String("source_client_identity_key", "", "The client identity key to use for the source execution service.")
 	targetClientIdentityKey = flag.String("target_client_identity_key", "", "The client identity key to use for the target execution service.")
 
-	// Set one of execution_id or action_digest + source_remote_instance_name.
+	// Set target_bundle to export all action metadata and transitive
+	// dependencies to a local directory. Then, set source_bundle on a
+	// subsequent run to replay from a previously captured bundle.
+	sourceBundle = flag.String("source_bundle", "", "The directory containing replay data to replay from.")
+	targetBundle = flag.String("target_bundle", "", "The directory to write replay data to.")
+
+	// If not using source_bundle, set one of execution_id, invocation_id, or
+	// action_digest + source_remote_instance_name.
 	executionIDs = flag.Slice("execution_id", []string{}, "Execution IDs to replay. Can be specified more than once.")
 	invocationID = flag.String("invocation_id", "", "Invocation ID to replay all actions from.")
 
@@ -79,6 +97,11 @@ var (
 	n               = flag.Int("n", 1, "Number of times to replay each execution. By default they'll be replayed in serial. Set --jobs to 2 or higher to run concurrently.")
 	jobs            = flag.Int("jobs", 1, "Max number of concurrent jobs that can execute actions at once.")
 	outDir          = flag.String("out_dir", "", "Dir for writing results and artifacts for each action. If unset, a new temp directory is created and outputs are written there.")
+)
+
+const (
+	localCacheClientIdentityKey = "localhost"
+	bundleManifestFileName      = "bundle_manifest.json"
 )
 
 // Example usage:
@@ -123,7 +146,7 @@ func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, fr
 	if d2.GetHash() != sourceRN.GetDigest().GetHash() || d2.GetSizeBytes() != sourceRN.GetDigest().GetSizeBytes() {
 		return status.FailedPreconditionErrorf("copyFile mismatch: %s != %s", digest.String(d2), digest.String(sourceRN.GetDigest()))
 	}
-	log.Infof("Copied %s", digest.String(sourceRN.GetDigest()))
+	log.Infof("Copied input %s", digest.String(sourceRN.GetDigest()))
 	return nil
 }
 
@@ -180,7 +203,7 @@ func fetchStdoutOrStderr(ctx context.Context, from bspb.ByteStreamClient, d *rep
 	return nil
 }
 
-func getClients(target string) (bspb.ByteStreamClient, repb.ExecutionClient, repb.ContentAddressableStorageClient, repb.ActionCacheClient) {
+func getClients(target string) (io.Closer, bspb.ByteStreamClient, repb.ExecutionClient, repb.ContentAddressableStorageClient, repb.ActionCacheClient) {
 	conn, err := grpc_client.DialSimple(target)
 	if err != nil {
 		log.Fatalf("Error dialing executor: %s", err.Error())
@@ -189,7 +212,7 @@ func getClients(target string) (bspb.ByteStreamClient, repb.ExecutionClient, rep
 	exec := repb.NewExecutionClient(conn)
 	cas := repb.NewContentAddressableStorageClient(conn)
 	ac := repb.NewActionCacheClient(conn)
-	return bs, exec, cas, ac
+	return conn, bs, exec, cas, ac
 }
 
 func inCopyMode(sourceRemoteInstanceName string) bool {
@@ -207,6 +230,8 @@ func contextWithSourceCredentials(ctx context.Context) context.Context {
 		// If the source and target executors are the same, and the target
 		// client identity key is set, use it for the source as well.
 		sourceClientIdentityKey = *targetClientIdentityKey
+	} else if *sourceBundle != "" {
+		sourceClientIdentityKey = localCacheClientIdentityKey
 	}
 	if sourceClientIdentityKey != "" {
 		var err error
@@ -227,6 +252,8 @@ func contextWithTargetCredentials(ctx context.Context) context.Context {
 		// If the source and target executors are the same, and the source
 		// client identity key is set, use it for the target as well.
 		targetClientIDKey = *sourceClientIdentityKey
+	} else if *targetBundle != "" {
+		targetClientIDKey = localCacheClientIdentityKey
 	}
 	if targetClientIDKey != "" {
 		var err error
@@ -245,6 +272,22 @@ func main() {
 	}
 
 	rootCtx := context.Background()
+
+	if *targetBundle != "" && (*targetExecutor != "" || *targetAPIKey != "" || *targetClientIdentityKey != "") {
+		log.Fatalf("Cannot set both target_bundle and other target_* flags")
+	}
+	if *targetBundle == "" && *targetExecutor == "" {
+		log.Fatalf("Must set either target_bundle or target_executor")
+	}
+	if *sourceBundle != "" && (*sourceExecutor != "" || *sourceAPIKey != "" || *sourceClientIdentityKey != "") {
+		log.Fatalf("Cannot set both source_bundle and other source_* flags")
+	}
+	if *sourceBundle == "" && *sourceExecutor == "" {
+		log.Fatalf("Must set either source_bundle or source_executor")
+	}
+	if *sourceBundle != "" && *targetBundle != "" {
+		log.Fatalf("Cannot set both source_bundle and target_bundle (use 'cp -r' to copy bundles)")
+	}
 
 	if *sourceAPIKey != "" && *targetAPIKey == "" {
 		log.Warningf("--target_api_key is not set, but --source_api_key was set. Replaying as anonymous user.")
@@ -275,10 +318,29 @@ func main() {
 		targetCtx = metadata.AppendToOutgoingContext(targetCtx, headersToSet...)
 	}
 
+	if *sourceBundle != "" {
+		localCache, err := startCacheServerForBundle(*sourceBundle)
+		if err != nil {
+			log.Fatalf("Failed to start local cache: %s", err)
+		}
+		defer localCache.Shutdown()
+		*sourceExecutor = localCache.GRPCTarget()
+	}
 	log.Infof("Connecting to source %q", *sourceExecutor)
-	sourceBSClient, _, sourceCASClient, sourceACClient := getClients(*sourceExecutor)
+	sourceConn, sourceBSClient, _, sourceCASClient, sourceACClient := getClients(*sourceExecutor)
+	defer sourceConn.Close()
+
+	if *targetBundle != "" {
+		localCache, err := startCacheServerForBundle(*targetBundle)
+		if err != nil {
+			log.Fatalf("Failed to start local cache: %s", err)
+		}
+		defer localCache.Shutdown()
+		*targetExecutor = localCache.GRPCTarget()
+	}
 	log.Infof("Connecting to target %q", *targetExecutor)
-	destBSClient, execClient, destCASClient, destACClient := getClients(*targetExecutor)
+	destConn, destBSClient, execClient, destCASClient, destACClient := getClients(*targetExecutor)
+	defer destConn.Close()
 
 	replayer := &Replayer{
 		sourceBSClient:  sourceBSClient,
@@ -313,6 +375,25 @@ func main() {
 			log.Fatalf("Invalid execution ID %q: %s", executionID, err)
 		}
 		resourceNames = append(resourceNames, rn)
+	}
+	// If replaying from a bundle, load execution resource names from the
+	// manifest.
+	if *sourceBundle != "" {
+		bundleManifestBytes, err := os.ReadFile(filepath.Join(*sourceBundle, bundleManifestFileName))
+		if err != nil {
+			log.Fatalf("Failed to read bundle manifest: %s", err)
+		}
+		bundleManifest := &BundleManifest{}
+		if err := json.Unmarshal(bundleManifestBytes, bundleManifest); err != nil {
+			log.Fatalf("Failed to unmarshal bundle manifest: %s", err)
+		}
+		for _, execution := range bundleManifest.Executions {
+			rn, err := digest.ParseDownloadResourceName(execution.ActionResourceName)
+			if err != nil {
+				log.Fatalf("Invalid action resource name %q: %s", execution.ActionResourceName, err)
+			}
+			resourceNames = append(resourceNames, rn)
+		}
 	}
 
 	if *invocationID != "" {
@@ -351,6 +432,24 @@ func main() {
 		if err := replayer.Start(rootCtx, srcCtx, targetCtx, rn); err != nil {
 			log.Errorf("Failed to start replay: %s", err)
 			return
+		}
+	}
+	if *targetBundle != "" {
+		bundleManifest := &BundleManifest{
+			Executions: make([]Execution, 0, len(resourceNames)),
+		}
+		for _, rn := range resourceNames {
+			bundleManifest.Executions = append(bundleManifest.Executions, Execution{
+				ActionResourceName: rn.DownloadString(),
+			})
+		}
+		log.Infof("Writing bundle manifest %+v", bundleManifest)
+		bundleManifestBytes, err := json.MarshalIndent(bundleManifest, "", "  ")
+		if err != nil {
+			log.Fatalf("Failed to marshal bundle manifest: %s", err)
+		}
+		if err := os.WriteFile(filepath.Join(*targetBundle, bundleManifestFileName), bundleManifestBytes, 0644); err != nil {
+			log.Fatalf("Failed to write bundle manifest: %s", err)
 		}
 	}
 }
@@ -429,6 +528,12 @@ func (r *Replayer) replay(ctx, srcCtx, targetCtx context.Context, sourceExecutio
 		}
 	}
 
+	// If we're just dumping action data to a target_bundle, don't actually execute
+	// anything.
+	if *targetBundle != "" {
+		return nil
+	}
+
 	return r.execute(ctx, srcCtx, targetCtx, action, sourceExecutionRN)
 }
 
@@ -441,6 +546,7 @@ func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.A
 		if err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, actionRN); err != nil {
 			return status.WrapError(err, "copy action")
 		}
+		log.CtxInfof(ctx, "Copied action %s", actionRN.DownloadString())
 		return nil
 	})
 	eg.Go(func() error {
@@ -448,6 +554,7 @@ func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.A
 		if err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, commandRN); err != nil {
 			return status.WrapError(err, "copy command")
 		}
+		log.CtxInfof(ctx, "Copied command %s", commandRN.DownloadString())
 		return nil
 	})
 	eg.Go(func() error {
@@ -459,6 +566,7 @@ func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.A
 		if err := r.copyTree(ctx, sourceExecutionRN.GetInstanceName(), tree, sourceExecutionRN.GetDigestFunction()); err != nil {
 			return status.WrapError(err, "copy tree")
 		}
+		log.CtxInfof(ctx, "Copied input root %s", treeRN.DownloadString())
 		return nil
 	})
 	eg.Go(func() error {
@@ -471,7 +579,11 @@ func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.A
 	if err := eg.Wait(); err != nil {
 		return err
 	}
-	log.Infof("Finished copying files for execution %s", s)
+	destName := *targetExecutor
+	if *targetBundle != "" {
+		destName = fmt.Sprintf("bundle %s", *targetBundle)
+	}
+	log.Infof("Finished copying files to %s for execution %s", destName, s)
 	return nil
 }
 
@@ -488,7 +600,7 @@ func (r *Replayer) copyCachedContainerImage(ctx, srcCtx, targetCtx context.Conte
 	}
 	digestRef, ok := imageRef.(gcrname.Digest)
 	if !ok {
-		log.CtxInfof(ctx, "Image %q does not include a digest - must be fetched from registry. This will fail if the image is private and credentials aren't set.", imageProp)
+		log.CtxWarningf(ctx, "Image %q does not include a digest - must be resolved via the remote registry. This will fail if the image is private and credentials aren't set.", imageProp)
 		return nil
 	}
 	hash, err := gcr.NewHash(digestRef.DigestStr())
@@ -563,7 +675,7 @@ func (r *Replayer) copyCachedContainerImage(ctx, srcCtx, targetCtx context.Conte
 			}
 		}()
 		if err := ocicache.WriteBlobToCache(targetCtx, pr, r.destBSClient, r.destACClient, digestRef.Repository, hash, contentType, contentLength); err != nil {
-			return fmt.Errorf("write image %s blob %s to target cache: %s", label, hash, err)
+			return fmt.Errorf("copy image %s blob %s to target cache: %s", label, hash, err)
 		}
 		log.CtxInfof(ctx, "Copied image %s blob %s", label, hash)
 		return nil
@@ -881,4 +993,104 @@ func (f *FindMissingBatcher) flush(batch []findMissingRequest) error {
 		}
 	}
 	return nil
+}
+
+type localCache struct {
+	env      *real_environment.RealEnv
+	shutdown chan struct{}
+}
+
+// Runs a local cache, where all data is written to the "cache" subdirectory of
+// the given bundle directory.
+func startCacheServerForBundle(bundleDir string) (*localCache, error) {
+	if err := os.MkdirAll(bundleDir, 0755); err != nil {
+		return nil, fmt.Errorf("create target dir %q: %w", bundleDir, err)
+	}
+	cacheRoot := filepath.Join(bundleDir, "cache")
+	hc := healthcheck.NewHealthChecker("replay_action")
+	env := real_environment.NewRealEnv(hc)
+	for name, value := range map[string]any{
+		"app.client_identity.key":     localCacheClientIdentityKey,
+		"app.client_identity.client":  "replay_action",
+		"app.client_identity.origin":  "localhost",
+		"cache.max_size_bytes":        500e9,
+		"cache.pebble.name":           "replay_action_bundle",
+		"cache.pebble.root_directory": cacheRoot,
+	} {
+		if err := flagutil.SetValueForFlagName(name, value, nil, false); err != nil {
+			return nil, fmt.Errorf("set %s: %w", name, err)
+		}
+	}
+	if err := pebble_cache.Register(env); err != nil {
+		return nil, fmt.Errorf("register pebble cache: %w", err)
+	}
+	if err := clientidentity.Register(env); err != nil {
+		return nil, fmt.Errorf("register client identity: %w", err)
+	}
+	na := nullauth.NewNullAuthenticator(true /*=anonEnabled*/, "" /*=adminGroupID*/)
+	env.SetAuthenticator(na)
+	hit_tracker.Register(env)
+
+	// Start gRPC server
+	s, err := grpc_server.New(env, grpc_server.GRPCPort(), false /*=ssl*/, grpc_server.GRPCServerConfig{})
+	if err != nil {
+		return nil, fmt.Errorf("new grpc server: %w", err)
+	}
+	grpcServer := s.GetServer()
+	env.SetGRPCServer(grpcServer)
+	if err := byte_stream_server.Register(env); err != nil {
+		return nil, fmt.Errorf("register byte stream server: %w", err)
+	}
+	if err := content_addressable_storage_server.Register(env); err != nil {
+		return nil, fmt.Errorf("register content addressable storage server: %w", err)
+	}
+	if err := action_cache_server.Register(env); err != nil {
+		return nil, fmt.Errorf("register action cache server: %w", err)
+	}
+	if err := capabilities_server.Register(env); err != nil {
+		return nil, fmt.Errorf("register capabilities server: %w", err)
+	}
+	bspb.RegisterByteStreamServer(grpcServer, env.GetByteStreamServer())
+	repb.RegisterContentAddressableStorageServer(grpcServer, env.GetCASServer())
+	repb.RegisterActionCacheServer(grpcServer, env.GetActionCacheServer())
+	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
+	if err = s.Start(); err != nil {
+		return nil, fmt.Errorf("start grpc server: %w", err)
+	}
+
+	shutdown := make(chan struct{})
+	go func() {
+		defer close(shutdown)
+		env.GetHealthChecker().WaitForGracefulShutdown()
+	}()
+
+	return &localCache{
+		env:      env,
+		shutdown: shutdown,
+	}, nil
+}
+
+func (s *localCache) GRPCTarget() string {
+	return fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort())
+}
+
+func (s *localCache) Shutdown() error {
+	s.env.GetHealthChecker().Shutdown()
+	<-s.shutdown
+	return nil
+}
+
+// BundleManifest holds information about the actions that can be replayed using
+// the bundled data.
+type BundleManifest struct {
+	// Executions are the executions to be replayed.
+	Executions []Execution `json:"executions"`
+}
+
+type Execution struct {
+	ActionResourceName string `json:"action_resource_name"`
+
+	// TODO: add timing metadata so that we can approximately reconstruct the
+	// dependency ordering of executions (for more accurate invocation-level
+	// replays)
 }
