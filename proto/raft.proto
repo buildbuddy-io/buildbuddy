@@ -93,7 +93,6 @@ message DeleteSessionsRequest {
 
 message DeleteSessionsResponse {}
 
-
 message FetchRangesRequest {
   repeated uint64 range_ids = 1;
 }
