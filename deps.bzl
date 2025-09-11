@@ -6798,7 +6798,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "soci-store-race.bin", srcs = ["soci-store-race"])',
         ]),
         urls = ["https://github.com/buildbuddy-io/soci-snapshotter/releases/download/v0.11.1-buildbuddy/soci-snapshotter-0.11.1-buildbuddy-linux-amd64-static.tar.gz"],
-        sha256 = "1671452db5ade34dbeb5fe7eb6ce6a45ac17d32b42a0ad05299a97bbd96cda76",
+        sha256 = "45244800be5d9f8bd7e065cafcd870000352e016c619f3c2375a1dde384e0c07",
     )
 
     http_file(

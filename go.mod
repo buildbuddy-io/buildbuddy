@@ -3,7 +3,7 @@ module github.com/buildbuddy-io/buildbuddy
 go 1.25.0
 
 replace (
-	github.com/awslabs/soci-snapshotter => github.com/buildbuddy-io/soci-snapshotter v0.11.1-buildbuddy
+	github.com/awslabs/soci-snapshotter v0.11.1 => github.com/buildbuddy-io/soci-snapshotter v0.11.1-buildbuddy
 	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.16.8-18
 	github.com/jotfs/fastcdc-go v0.2.0 => github.com/buildbuddy-io/fastcdc-go v0.2.0-rc2
 	github.com/lni/dragonboat/v4 => github.com/buildbuddy-io/dragonboat/v4 v4.0.1
@@ -36,7 +36,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.78.2
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.19
 	github.com/aws/smithy-go v1.22.3
-	github.com/awslabs/soci-snapshotter v0.1.0
+	github.com/awslabs/soci-snapshotter v0.11.1
 	github.com/bazelbuild/bazel-gazelle v0.45.0
 	github.com/bazelbuild/bazelisk v1.25.1-0.20250219134847-cdb99bfb1b7d
 	github.com/bazelbuild/buildtools v0.0.0-20240918101019-be1c24cc9a44
