@@ -14,7 +14,6 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/tables",
-        "//server/util/alert",
         "//server/util/authutil",
         "//server/util/capabilities",
         "//server/util/db",
