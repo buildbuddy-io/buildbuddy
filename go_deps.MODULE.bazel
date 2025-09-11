@@ -37,13 +37,6 @@ go_deps.module_override(
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = [
-        "@buildbuddy//buildpatches:bzlmod_com_github_awslabs_soci_snapshotter.patch",
-    ],
-    path = "github.com/awslabs/soci-snapshotter",
-)
-go_deps.module_override(
-    patch_strip = 1,
     patches = ["@@//buildpatches:buildifier.patch"],
     path = "github.com/bazelbuild/buildtools",
 )
