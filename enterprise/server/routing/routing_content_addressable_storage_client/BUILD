@@ -6,9 +6,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_content_addressable_storage_client",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/batch_operator",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/util/log",
         "//server/util/status",
         "@org_golang_google_grpc//:grpc",
     ],
