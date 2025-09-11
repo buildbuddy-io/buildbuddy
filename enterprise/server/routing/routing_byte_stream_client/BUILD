@@ -6,8 +6,12 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_byte_stream_client",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/batch_operator",
+        "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/remote_cache/digest",
+        "//server/util/log",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
