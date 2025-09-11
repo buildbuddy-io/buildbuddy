@@ -39,10 +39,8 @@ go_test(
         "test.EstimatedComputeUnits": "4",
         "test.workload-isolation-type": "firecracker",
         "test.init-dockerd": "true",
-        # TODO: this is flaky when recycling is enabled, possibly due to port conflicts.
-        # Fix and re-enable recycling.
-        # "test.recycle-runner": "true",
-        # "test.runner-recycling-key": "clickhouse",
+        "test.recycle-runner": "true",
+        "test.runner-recycling-key": "clickhouse",
     },
     tags = ["docker"],
     x_defs = {
@@ -56,6 +54,7 @@ go_test(
         "//server/util/clickhouse/schema",
         "//server/util/testing/flags",
         "//server/util/uuid",
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles",
     ],
