@@ -105,6 +105,8 @@ const (
 	// finalized data to Clickhouse, expire it after this TTL so that even if Clickhouse
 	// has replication lag, clients will still be able to read the data from Redis.
 	expireRedisExecutionsTTL = 5 * time.Minute
+
+	defaultTerminalLineLength = 300
 )
 
 var (
@@ -197,6 +199,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 		hasReceivedEventWithOptions: false,
 		hasReceivedStartedEvent:     false,
 		bufferedEvents:              make([]*inpb.InvocationEvent, 0),
+		requestedTerminalColumns:    defaultTerminalLineLength,
 		logWriter:                   nil,
 		onClose:                     onClose,
 		attempt:                     1,
