@@ -171,6 +171,10 @@
   text-align: center;
 }
 
+.targets .empty-message a {
+  text-decoration: underline;
+}
+
 .targets .trend-chart-hover {
   background: white;
   border: 1px solid #ccc;
