@@ -1185,7 +1185,7 @@ func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilld
 
 func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{}, error) {
 	if len(filters) == 0 {
-		return "", nil, status.InvalidArgumentError("Empty filter for drilldown.")
+		return "FALSE", []interface{}{}, nil
 	}
 	var result []string
 	var resultArgs []interface{}

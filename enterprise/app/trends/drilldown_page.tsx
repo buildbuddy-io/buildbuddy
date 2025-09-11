@@ -822,7 +822,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
   summarizeSelection(): React.ReactElement | null {
     if (!this.currentHeatmapSelection) {
-      return null;
+      return (
+        <span className="selection-summary-text">
+          <strong>Selection</strong> will be computed when you select a region in the heatmap.
+        </span>
+      );
     }
 
     const startDate = moment(this.currentHeatmapSelection.dateRangeMicros.startInclusive / 1000).format("lll");
