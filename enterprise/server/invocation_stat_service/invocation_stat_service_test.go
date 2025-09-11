@@ -132,5 +132,4 @@ func TestGetStatDrilldown(t *testing.T) {
 		RequestContext: reqCtx,
 	})
 	require.True(t, status.IsInvalidArgumentError(err))
-	require.Error(t, err, "Empty filter for drilldown.")
 }

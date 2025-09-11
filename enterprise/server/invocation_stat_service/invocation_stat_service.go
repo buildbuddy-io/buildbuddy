@@ -903,6 +903,9 @@ type QueryAndBuckets = struct {
 // indicate a no-error state with no results--in this case we should return an
 // empty response.
 func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*QueryAndBuckets, error) {
+	if req.GetMetric() == nil {
+		return nil, status.InvalidArgumentError("Missing metric for heatmap request.")
+	}
 	table := getTableForMetric(req.GetMetric())
 	metric, err := filter.MetricToDbField(req.GetMetric())
 	if err != nil {
@@ -1185,7 +1188,7 @@ func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilld
 
 func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{}, error) {
 	if len(filters) == 0 {
-		return "", nil, status.InvalidArgumentError("Empty filter for drilldown.")
+		return "FALSE", []interface{}{}, nil
 	}
 	var result []string
 	var resultArgs []interface{}
@@ -1204,6 +1207,9 @@ func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{},
 // are able to upgrade to clickhouse 22.6 or later.  The release date for 22.8
 // from Altinity is supposed to be 2023-02-15.
 func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb.GetStatDrilldownRequest) (string, []interface{}, error) {
+	if req.GetDrilldownMetric() == nil {
+		return "", nil, status.InvalidArgumentError("Missing metric for drilldown request.")
+	}
 	drilldownFields := []string{"user", "host", "pattern", "repo_url", "branch_name", "commit_sha"}
 	if *tagsInDrilldowns {
 		drilldownFields = append(drilldownFields, "tag")

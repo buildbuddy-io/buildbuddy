@@ -15,7 +15,7 @@ import format from "../../../app/format/format";
 import InvocationCardComponent from "../../../app/invocation/invocation_card";
 import InvocationExecutionTable from "../../../app/invocation/invocation_execution_table";
 import router from "../../../app/router/router";
-import rpcService from "../../../app/service/rpc_service";
+import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { usecToTimestamp } from "../../../app/util/proto";
 import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import { invocation } from "../../../proto/invocation_ts_proto";
@@ -109,10 +109,10 @@ type EventData = {
 };
 
 interface State {
-  loading: boolean;
+  loadingHeatmap: boolean;
   loadingDrilldowns: boolean;
-  drilldownsFailed: boolean;
   loadingEvents: boolean;
+  drilldownsFailed: boolean;
   eventsFailed: boolean;
   heatmapData?: stats.GetStatHeatmapResponse;
   drilldownData?: stats.GetStatDrilldownResponse;
@@ -231,11 +231,15 @@ const METRIC_OPTIONS: MetricOption[] = [
 ];
 
 export default class DrilldownPageComponent extends React.Component<Props, State> {
+  pendingHeatmapRequest?: CancelablePromise<any>;
+  pendingDrilldownRequest?: CancelablePromise<any>;
+  pendingEventsRequest?: CancelablePromise<any>;
+
   state: State = {
-    loading: false,
+    loadingHeatmap: false,
     loadingDrilldowns: false,
-    drilldownsFailed: false,
     loadingEvents: false,
+    drilldownsFailed: false,
     eventsFailed: false,
     heatmapData: undefined,
     drilldownData: undefined,
@@ -313,11 +317,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   fetchDrilldowns() {
-    if (!this.currentHeatmapSelection) {
-      this.setState({ drilldownData: undefined });
-      return;
-    }
-    this.setState({ loadingDrilldowns: true, drilldownsFailed: false });
     const filterParams = getProtoFilterParams(this.props.search);
     const drilldownRequest = stats.GetStatDrilldownRequest.create({});
     drilldownRequest.query = new stats.TrendQuery({
@@ -337,26 +336,26 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       genericFilters: filterParams.genericFilters,
     });
     this.roundEndDateAndAddZoomFiltersToQuery(drilldownRequest.query);
-    drilldownRequest.filter = this.toStatFilterList(this.currentHeatmapSelection);
+    drilldownRequest.filter = this.currentHeatmapSelection ? this.toStatFilterList(this.currentHeatmapSelection) : [];
     drilldownRequest.drilldownMetric = this.selectedMetric.metric;
-    rpcService.service
-      .getStatDrilldown(drilldownRequest)
-      .then((response) => {
-        this.setState({ drilldownData: response });
-      })
+
+    this.pendingDrilldownRequest?.cancel();
+    const promise = rpcService.service.getStatDrilldown(drilldownRequest);
+    this.pendingDrilldownRequest = promise;
+
+    this.setState({ loadingDrilldowns: true, drilldownsFailed: false, drilldownData: undefined });
+
+    promise
+      .then((response) => this.setState({ drilldownData: response }))
       .catch(() => this.setState({ drilldownsFailed: true, drilldownData: undefined }))
       .finally(() => this.setState({ loadingDrilldowns: false }));
   }
 
-  fetchExecutionList(heatmapSelection: HeatmapSelection) {
+  fetchExecutionList(heatmapSelection?: HeatmapSelection) {
     if (!capabilities.config.executionSearchEnabled) {
       return;
     }
-    this.setState({
-      loadingEvents: true,
-      eventsFailed: false,
-      eventData: undefined,
-    });
+
     const filterParams = getProtoFilterParams(this.props.search);
     let request = new execution_stats.SearchExecutionRequest({
       query: new execution_stats.ExecutionQuery({
@@ -372,7 +371,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         updatedAfter: filterParams.updatedAfter,
         updatedBefore: filterParams.updatedBefore,
         invocationStatus: filterParams.status || [],
-        filter: this.toStatFilterList(heatmapSelection),
+        filter: heatmapSelection ? this.toStatFilterList(heatmapSelection) : [],
         dimensionFilter: filterParams.dimensionFilters,
         genericFilters: filterParams.genericFilters,
       }),
@@ -381,8 +380,17 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     });
     this.roundEndDateAndAddZoomFiltersToQuery(request.query!);
 
-    rpcService.service
-      .searchExecution(request)
+    this.pendingEventsRequest?.cancel();
+    const promise = rpcService.service.searchExecution(request);
+    this.pendingEventsRequest = promise;
+
+    this.setState({
+      loadingEvents: true,
+      eventsFailed: false,
+      eventData: undefined,
+    });
+
+    promise
       .then((response) => {
         console.log(response);
         this.setState({
@@ -396,12 +404,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       .finally(() => this.setState({ loadingEvents: false }));
   }
 
-  fetchInvocationList(groupId: string, heatmapSelection: HeatmapSelection) {
-    this.setState({
-      loadingEvents: true,
-      eventsFailed: false,
-      eventData: undefined,
-    });
+  fetchInvocationList(groupId: string, heatmapSelection?: HeatmapSelection) {
     const filterParams = getProtoFilterParams(this.props.search);
     let request = new invocation.SearchInvocationRequest({
       query: new invocation.InvocationQuery({
@@ -420,7 +423,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         updatedAfter: filterParams.updatedAfter,
         updatedBefore: filterParams.updatedBefore,
         status: filterParams.status || [],
-        filter: this.toStatFilterList(heatmapSelection),
+        filter: heatmapSelection ? this.toStatFilterList(heatmapSelection) : [],
         dimensionFilter: filterParams.dimensionFilters,
         genericFilters: filterParams.genericFilters,
       }),
@@ -429,19 +432,23 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     });
     this.roundEndDateAndAddZoomFiltersToQuery(request.query!);
 
-    rpcService.service
-      .searchInvocation(request)
-      .then((response) => {
-        this.setState({
-          eventData: { invocations: response.invocation },
-        });
-      })
+    this.pendingEventsRequest?.cancel();
+    const promise = rpcService.service.searchInvocation(request);
+    this.pendingEventsRequest = promise;
+
+    this.setState({
+      loadingEvents: true,
+      eventsFailed: false,
+      eventData: undefined,
+    });
+    promise
+      .then((response) => this.setState({ eventData: { invocations: response.invocation } }))
       .catch(() => this.setState({ eventsFailed: true, eventData: undefined }))
       .finally(() => this.setState({ loadingEvents: false }));
   }
 
   fetchEventList() {
-    if (!this.props.user?.selectedGroup || !this.currentHeatmapSelection) {
+    if (!this.props.user?.selectedGroup) {
       return;
     }
     if (isExecutionMetric(this.selectedMetric.metric)) {
@@ -453,12 +460,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
   fetch() {
     const filterParams = getProtoFilterParams(this.props.search);
-    this.setState({
-      loading: true,
-      heatmapData: undefined,
-      drilldownData: undefined,
-      eventData: undefined,
-    });
 
     // Build request...
     const heatmapRequest = stats.GetStatHeatmapRequest.create({});
@@ -485,14 +486,24 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     });
     this.roundEndDateAndAddZoomFiltersToQuery(heatmapRequest.query);
 
-    rpcService.service
-      .getStatHeatmap(heatmapRequest)
-      .then((response) => {
+    this.pendingHeatmapRequest?.cancel();
+    const promise = rpcService.service.getStatHeatmap(heatmapRequest);
+    this.pendingHeatmapRequest = promise;
+
+    this.setState({
+      loadingHeatmap: true,
+      heatmapData: undefined,
+      drilldownData: undefined,
+      eventData: undefined,
+    });
+
+    promise
+      .then((response) =>
         this.setState({
           heatmapData: response,
-        });
-      })
-      .finally(() => this.setState({ loading: false }));
+        })
+      )
+      .finally(() => this.setState({ loadingHeatmap: false }));
   }
 
   componentDidMount() {
@@ -533,7 +544,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       return;
     }
     const option = METRIC_OPTIONS.find((v) => v.name === newMetric) || METRIC_OPTIONS[0];
-    router.setQuery({
+    router.updateParams({
       ...Object.fromEntries(this.props.search.entries()),
       [DD_SELECTED_METRIC_URL_PARAM]: encodeMetricUrlParam(option.metric),
       [DD_SELECTED_AREA_URL_PARAM]: "",
@@ -542,14 +553,14 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   handleHeatmapSelection(s?: HeatmapSelection) {
-    router.setQuery({
+    router.updateParams({
       ...Object.fromEntries(this.props.search.entries()),
       [DD_SELECTED_AREA_URL_PARAM]: s ? encodeHeatmapSelection(s) : "",
     });
   }
 
   handleHeatmapZoom(s?: HeatmapSelection) {
-    router.setQuery({
+    router.updateParams({
       ...Object.fromEntries(this.props.search.entries()),
       [DD_SELECTED_AREA_URL_PARAM]: "",
       [DD_ZOOM_URL_PARAM]: s ? encodeHeatmapSelection(s) : "",
@@ -557,7 +568,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   handleClearZoom() {
-    router.setQuery({
+    router.updateParams({
       ...Object.fromEntries(this.props.search.entries()),
       [DD_SELECTED_AREA_URL_PARAM]: "",
       [DD_ZOOM_URL_PARAM]: "",
@@ -591,7 +602,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   navigateForBarClick(paramName: string, paramValue: string) {
-    router.setQuery({
+    router.updateParams({
       ...Object.fromEntries(this.props.search.entries()),
       [paramName]: paramValue,
       [DD_SELECTED_AREA_URL_PARAM]: "",
@@ -730,8 +741,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   getEventListTitleString(): string {
-    if (this.state.loadingEvents) {
-      return "";
+    if (this.state.loadingEvents || !this.currentHeatmapSelection) {
+      return "Examples (no selection)";
     } else if (this.state.eventData?.invocations) {
       const invocationCount = this.state.eventData.invocations.length;
       if (invocationCount < (this.currentHeatmapSelection?.eventsSelected || 0)) {
@@ -765,7 +776,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     } else if (this.state.drilldownsFailed) {
       return "Failed to load drilldown dimensions.";
     }
-    return "To see drilldown charts and individual events, click and drag to select a region in the chart above";
+    return "To see drilldown charts, click and drag to select a region in the chart above";
   }
 
   renderZoomChip(): React.ReactElement | null {
@@ -811,7 +822,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
   summarizeSelection(): React.ReactElement | null {
     if (!this.currentHeatmapSelection) {
-      return null;
+      return (
+        <span className="selection-summary-text">
+          <strong>Selection</strong> will be computed when you select a region in the heatmap.
+        </span>
+      );
     }
 
     const startDate = moment(this.currentHeatmapSelection.dateRangeMicros.startInclusive / 1000).format("lll");
@@ -856,8 +871,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
             {this.renderZoomChip()}
           </div>
         </div>
-        {this.state.loading && <div className="loading"></div>}
-        {!this.state.loading && (
+        {this.state.loadingHeatmap && <div className="loading"></div>}
+        {!this.state.loadingHeatmap && (
           <>
             {this.state.heatmapData && (
               <>
