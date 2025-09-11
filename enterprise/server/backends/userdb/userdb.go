@@ -1048,7 +1048,7 @@ func (d *UserDB) GetUserLists(ctx context.Context, groupID string) ([]*tables.Us
 	}
 
 	rq := d.h.NewQuery(ctx, "userdb_get_user_lists").Raw(
-		` SELECT * from "UserLists" WHERE group_id = ? ORDER BY name`, groupID)
+		`SELECT * from "UserLists" WHERE group_id = ? ORDER BY name`, groupID)
 	return db.ScanAll(rq, &tables.UserList{})
 }
 
