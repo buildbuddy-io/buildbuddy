@@ -5,7 +5,6 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"testing"
@@ -19,6 +18,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/stretchr/testify/require"
+
+	chgo "github.com/ClickHouse/clickhouse-go/v2"
 )
 
 // Set via x_defs in the BUILD file.
@@ -136,18 +137,23 @@ func startCluster(t *testing.T, args ...string) (dsn string) {
 		_ = cmd.Wait()
 	})
 	addr := "localhost:9201"
+	dsn = fmt.Sprintf("clickhouse://%s/default", addr)
+	options, err := chgo.ParseDSN(dsn)
+	require.NoError(t, err)
 	// Wait for the cluster to be ready.
 	require.Eventually(t, func() bool {
-		// Dial addr (TCP)
-		conn, err := net.Dial("tcp", addr)
+		conn, err := chgo.Open(options)
 		if err != nil {
 			return false
 		}
-		conn.Close()
+		defer conn.Close()
+		if err := conn.Ping(t.Context()); err != nil {
+			return false
+		}
 		return true
 	}, 2*time.Minute, 10*time.Millisecond)
 
-	return fmt.Sprintf("clickhouse://%s/default", addr)
+	return dsn
 }
 
 func ensureDockerComposeInstalled(t *testing.T) {
