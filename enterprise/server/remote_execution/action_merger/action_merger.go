@@ -6,14 +6,17 @@ import (
 	"flag"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -50,7 +53,7 @@ const (
 	// making backwards-incompatible changes to the storage representation.
 	// Increment this version to cycle to new keys (and discard all old
 	// action-merging data) during the next rollout.
-	keyVersion = 3
+	keyVersion = 4
 )
 
 var (
@@ -67,12 +70,42 @@ func redisKeyForPendingExecutionID(ctx context.Context, adResource *digest.CASRe
 	if err != nil {
 		return "", err
 	}
-	downloadString := adResource.DownloadString()
-	return fmt.Sprintf("pendingExecution/%d/%s%s", keyVersion, userPrefix, downloadString), nil
+	return fmt.Sprintf(
+		// The {}-wrapped part of the key determines which shard the key is
+		// stored on. Here, we shard by action digest hash.
+		"pendingExecution/%d/%s/%s/{%s}",
+		keyVersion,
+		userPrefix,
+		strings.ToLower(adResource.GetDigestFunction().String()),
+		adResource.GetDigest().GetHash(),
+	), nil
 }
 
 func redisKeyForPendingExecutionDigest(executionID string) string {
-	return fmt.Sprintf("pendingExecutionDigest/%d/%s", keyVersion, executionID)
+	// TODO: pass in action resource name separately to avoid a hard dependency
+	// on execution IDs containing action digests.
+	s, err := executionIDWithDigestSharding(executionID)
+	if err != nil {
+		alert.UnexpectedEvent("action_merger_unexpected_execution_id", "%s", err)
+		return fmt.Sprintf("pendingExecutionDigest/%d/%s", keyVersion, executionID)
+	}
+	return fmt.Sprintf("pendingExecutionDigest/%d/%s", keyVersion, s)
+}
+
+// Returns the execution ID with the hash part of the action digest wrapped with
+// {}, so that when the ID is included in a redis key, the sharding is based
+// only on the action digest hash.
+func executionIDWithDigestSharding(executionID string) (string, error) {
+	_, err := digest.ParseUploadResourceName(executionID)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("execution ID %q is not a valid upload resource name", executionID)
+	}
+	parts := strings.Split(executionID, "/")
+	if len(parts) < 2 {
+		return "", status.InvalidArgumentErrorf("execution ID %q is not a valid upload resource name", executionID)
+	}
+	parts[len(parts)-2] = "{" + parts[len(parts)-2] + "}"
+	return strings.Join(parts, "/"), nil
 }
 
 // This function records a claimed execution in Redis.
