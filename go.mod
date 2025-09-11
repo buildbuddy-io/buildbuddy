@@ -3,7 +3,7 @@ module github.com/buildbuddy-io/buildbuddy
 go 1.25.0
 
 replace (
-	github.com/awslabs/soci-snapshotter v0.11.1 => github.com/buildbuddy-io/soci-snapshotter v0.11.1-buildbuddy
+	github.com/awslabs/soci-snapshotter v0.11.1 => github.com/buildbuddy-io/soci-snapshotter v0.11.1-buildbuddy-1
 	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.16.8-18
 	github.com/jotfs/fastcdc-go v0.2.0 => github.com/buildbuddy-io/fastcdc-go v0.2.0-rc2
 	github.com/lni/dragonboat/v4 => github.com/buildbuddy-io/dragonboat/v4 v4.0.1

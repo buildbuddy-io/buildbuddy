@@ -333,7 +333,7 @@ func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image, conf
 		return nil, nil, err
 	}
 	annotations := map[string]string{sociBuildToolIdentifierKey: buildToolIdentifier}
-	index := soci.NewIndex(ztocDescriptors, imageDesc, annotations)
+	index := soci.NewIndex(soci.V1, ztocDescriptors, imageDesc, annotations)
 	indexBytes, err := soci.MarshalIndex(index)
 	if err != nil {
 		return nil, nil, err

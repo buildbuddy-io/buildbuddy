@@ -392,10 +392,13 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_awslabs_soci_snapshotter",
+        build_directives = [
+            "gazelle:go_grpc_compilers @io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2",
+        ],
         importpath = "github.com/awslabs/soci-snapshotter",
         replace = "github.com/buildbuddy-io/soci-snapshotter",
-        sum = "h1:v4vnxWv6u860m62bIqtQ+EdZZdg/GmuE4M4VrATUZhM=",
-        version = "v0.11.1-buildbuddy",
+        sum = "h1:z0OXq0HOj61znGWOwR6U4hAXeR2tjVZ0JM2vXQWkScQ=",
+        version = "v0.11.1-buildbuddy-1",
     )
     go_repository(
         name = "com_github_aymerick_douceur",
