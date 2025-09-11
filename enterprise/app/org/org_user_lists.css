@@ -1,0 +1,86 @@
+.org-user-lists > :not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.org-user-lists .org-user-lists-list-item {
+  display: flex;
+  align-items: baseline;
+  min-height: 40px;
+}
+
+.org-user-lists .org-user-lists-list-item button {
+  flex-shrink: 0;
+}
+
+.org-user-lists .org-user-lists-list {
+  padding: 8px 0;
+}
+
+.org-user-lists .org-user-lists-list-item > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.org-user-lists .org-user-list-name {
+  font-weight: 600;
+}
+
+.org-user-lists .org-user-list-members {
+  flex-grow: 1;
+  flex-shrink: 1;
+}
+
+.org-user-lists .org-user-lists-list > :not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.org-user-lists .org-user-lists-list-item {
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+  max-width: 816px;
+}
+
+.org-user-lists .org-user-list-name {
+  display: block;
+  margin-top: 14px;
+  width: 300px;
+  text-wrap: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.org-user-lists .org-user-list-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.org-user-lists .org-members .org-members-list-item {
+  border-top: none;
+  border-bottom: none;
+  font-weight: normal;
+  padding: 0;
+}
+
+.org-user-lists .org-members .org-member-name {
+  font-weight: normal;
+}
+
+.org-user-lists .org-user-list-empty {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  color: grey;
+}
+
+.org-user-lists-create-modal .note-input-label,
+.org-user-lists-rename-modal .note-input-label {
+  margin-right: 8px;
+}
+
+.org-user-list-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.org-user-lists .org-members {
+  margin-top: 0;
+}

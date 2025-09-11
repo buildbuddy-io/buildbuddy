@@ -318,6 +318,10 @@
   border: 1px solid transparent;
 }
 
+.org-members .org-member-more-rows-link {
+  cursor: pointer;
+}
+
 .org-members-edit-modal .select-role-row {
   display: flex;
   align-items: center;

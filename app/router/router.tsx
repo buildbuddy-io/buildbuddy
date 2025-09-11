@@ -254,6 +254,14 @@ class Router {
     this.navigateTo(Path.invocationPath + invocationId);
   }
 
+  navigateToUserList(userListID: string) {
+    this.navigateTo(Path.settingsOrgUserListsPath + "/" + userListID);
+  }
+
+  navigateToUserLists() {
+    this.navigateTo(Path.settingsOrgUserListsPath);
+  }
+
   getInvocationUrl(invocationId: string) {
     return Path.invocationPath + invocationId;
   }
@@ -608,6 +616,7 @@ export class Path {
   static settingsPath = "/settings/";
   static settingsOrgDetailsPath = "/settings/org/details";
   static settingsOrgMembersPath = "/settings/org/members";
+  static settingsOrgUserListsPath = "/settings/org/user-lists";
   static settingsOrgGitHubLinkPath = "/settings/org/github";
   static joinOrgPath = "/join";
   static createOrgPath = "/org/create";
