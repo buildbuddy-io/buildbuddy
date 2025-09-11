@@ -70,6 +70,7 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
+	resolveImageDigests       = flag.Bool("executor.resolve_image_digests", false, "Whether to resolve image names with tags to digests.")
 
 	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
 )
@@ -571,6 +572,8 @@ type pool struct {
 	isShuttingDown bool
 	// runners holds all runners managed by the pool.
 	runners []*taskRunner
+
+	resolver *oci.Resolver
 }
 
 func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, error) {
@@ -582,6 +585,10 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("Failed to determine k8s pod ID: %s", err)
 	}
+	resolver, err := oci.NewResolver(env)
+	if err != nil {
+		return nil, status.InternalErrorf("Could not create OCI resolver: %s", err)
+	}
 	p := &pool{
 		env:          env,
 		podID:        podID,
@@ -589,6 +596,7 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 		cacheRoot:    cacheRoot,
 		cgroupParent: opts.CgroupParent,
 		runners:      []*taskRunner{},
+		resolver:     resolver,
 	}
 	if err := os.MkdirAll(p.buildRoot, fs.FileMode(0755)); err != nil {
 		return nil, status.InternalErrorf("Failed to create build root directory %q: %s", p.buildRoot, err)
@@ -796,6 +804,24 @@ func (p *pool) hostBuildRoot() string {
 	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 }
 
+// resolveImageDigest replaces the ContainerImage property with an image name that includes a digest.
+// This makes the ContainerImage property safe to use as a cache key.
+func (p *pool) resolveImageDigest(ctx context.Context, props *platform.Properties) error {
+	if props.ContainerImage == "" {
+		return nil
+	}
+	creds, err := oci.CredentialsFromProperties(props)
+	if err != nil {
+		return err
+	}
+	imageNameWithDigest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
+	if err != nil {
+		return err
+	}
+	props.ContainerImage = imageNameWithDigest
+	return nil
+}
+
 func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	start := time.Now()
 	log.Infof("Warming up %s image %q", cfg.Isolation, cfg.Image)
@@ -816,6 +842,11 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		return err
 	}
 	platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), platProps, task.GetCommand())
+	if *resolveImageDigests {
+		if err := p.resolveImageDigest(ctx, platProps); err != nil {
+			return err
+		}
+	}
 	st := &repb.ScheduledTask{
 		SchedulingMetadata: &scpb.SchedulingMetadata{
 			// Note: this will use the default task size estimates and not
@@ -927,7 +958,7 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 	return out
 }
 
-func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties, error) {
+func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) (*platform.Properties, error) {
 	props, err := platform.ParseProperties(task)
 	if err != nil {
 		return nil, err
@@ -935,6 +966,11 @@ func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties
 	// TODO: This mutates the task; find a cleaner way to do this.
 	if err := platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
 		return nil, err
+	}
+	if *resolveImageDigests {
+		if err := p.resolveImageDigest(ctx, props); err != nil {
+			return nil, err
+		}
 	}
 	return props, nil
 }
@@ -950,7 +986,7 @@ func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties
 // executor is shut down.
 func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runner, error) {
 	task := st.ExecutionTask
-	props, err := p.effectivePlatform(task)
+	props, err := p.effectivePlatform(ctx, task)
 	if err != nil {
 		return nil, err
 	}
