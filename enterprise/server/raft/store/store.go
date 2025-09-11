@@ -3439,7 +3439,10 @@ func (s *Store) setupPartitions(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.Chan():
-			s.processPartitions(ctx)
+			// Only run Process partitions on the meta range leader.
+			if s.HasReplicaAndIsLeader(constants.MetaRangeID) {
+				s.ProcessPartitions(ctx)
+			}
 		}
 	}
 }
@@ -3540,11 +3543,7 @@ func (s *Store) deletePartitions(ctx context.Context, partitionID string) error 
 	return status.InternalErrorf("failed to delete partition descriptor and update range descriptors: number of attempts exceeded")
 }
 
-func (s *Store) processPartitions(ctx context.Context) {
-	// Check if this store is the leader of the meta range
-	if !s.HasReplicaAndIsLeader(constants.MetaRangeID) {
-		return
-	}
+func (s *Store) ProcessPartitions(ctx context.Context) {
 	partitionsFromMetaRange, err := s.sender.FetchPartitionDescriptors(ctx)
 	if err != nil {
 		s.log.Warningf("Failed to fetch partitions from meta range: %s", err)
@@ -3624,8 +3623,6 @@ func (s *Store) processPartitions(ctx context.Context) {
 		}
 	}
 
-	// TODO: loop over partitionsFromMetaRange to see if there are ranges need
-	// to be deleted.
 	if !partitionsNeedsSetup {
 		s.partitionsAllInitialized = true
 	}
