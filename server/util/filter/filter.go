@@ -19,7 +19,7 @@ func rectifiedDurationValue(start string, end string) string {
 	return fmt.Sprintf("IF(%s < %s OR %s = 0, 0, (%s - %s))", end, start, start, end, start)
 }
 
-func executionMetricToDbField(m stat_filter.ExecutionMetricType) (string, error) {
+func ExecutionMetricToDbField(m stat_filter.ExecutionMetricType) (string, error) {
 	switch m {
 	case stat_filter.ExecutionMetricType_UPDATED_AT_USEC_EXECUTION_METRIC:
 		return "updated_at_usec", nil
@@ -102,7 +102,7 @@ func MetricToDbField(m *stat_filter.Metric) (string, error) {
 	if m.Invocation != nil {
 		return invocationMetricToDbField(m.GetInvocation())
 	} else if m.Execution != nil {
-		return executionMetricToDbField(m.GetExecution())
+		return ExecutionMetricToDbField(m.GetExecution())
 	}
 	return "", status.InvalidArgumentErrorf("Invalid filter: %v", m)
 }

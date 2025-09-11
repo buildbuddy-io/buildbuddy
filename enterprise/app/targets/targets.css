@@ -1,0 +1,185 @@
+.targets {
+  margin-top: 32px;
+}
+
+.targets .targets-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.targets .targets-title {
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.targets .targets-controls {
+  margin-bottom: 24px;
+}
+
+.targets .targets-controls .controls.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.targets .targets-controls .controls.row:last-child {
+  margin-bottom: 0;
+}
+
+.targets .targets-controls .controls.row label {
+  font-weight: 600;
+  color: #333;
+  min-width: 60px;
+}
+
+.targets .targets-metric-select {
+  min-width: 150px;
+}
+
+.targets .loading-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+}
+
+.targets .error-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+}
+
+.targets .error-message {
+  color: #d32f2f;
+  font-size: 16px;
+}
+
+.targets .targets-section-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: #333;
+}
+
+.targets .targets-chart-section {
+  margin-bottom: 16px;
+}
+
+.targets .targets-chart-container {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+
+.targets .targets-table-section {
+  margin-bottom: 40px;
+}
+
+.targets .targets-table-container {
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.targets .targets-table-container .results-table {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.targets .targets-table-container .row {
+  display: flex;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.targets .targets-table-container .row:last-child {
+  border-bottom: none;
+}
+
+.targets .targets-table-container .column-headers {
+  font-weight: 600;
+  color: #333;
+}
+
+.targets .targets-table-container .result-row {
+  transition: background-color 0.2s ease;
+}
+
+.targets .targets-table-container .result-row:hover {
+  background-color: #f9f9f9;
+}
+
+.targets .targets-table-container .result-row.clickable {
+  cursor: pointer;
+}
+
+.targets .targets-table-container .result-row.clickable:hover {
+  background-color: #f0f0f0;
+}
+
+.targets .targets-table-container .name-column {
+  flex: 1;
+  padding: 16px 32px;
+  min-width: 0;
+}
+
+.targets .targets-table-container .value-column {
+  flex: 0 0 150px;
+  padding: 16px 32px;
+  text-align: right;
+}
+
+.targets .table-footer-controls {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.targets .load-more-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.targets .targets-table-target {
+  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.targets .targets-table-value {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.targets .targets-empty {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 80px 40px;
+}
+
+.targets .empty-message {
+  color: #666;
+  font-size: 16px;
+  text-align: center;
+}
+
+.targets .empty-message a {
+  text-decoration: underline;
+}
+
+.targets .trend-chart-hover {
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}

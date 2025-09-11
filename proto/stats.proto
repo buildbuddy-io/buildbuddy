@@ -301,3 +301,28 @@ message GetStatDrilldownResponse {
   int64 total_in_base = 3;
   int64 total_in_selection = 4;
 }
+
+message GetTargetTrendsRequest {
+  context.RequestContext request_context = 1;
+  TrendQuery query = 2;
+  stat_filter.ExecutionMetricType metric = 3;
+}
+
+message TargetStats {
+  // The target name associated with the relevant execution.
+  string target = 1;
+
+  // The total amount of the relevant metric used for this target.
+  // For example, if these are CPU nanos stats, this is the sum of
+  // cpu_nanos for the executions that match the specified target.
+  int64 value = 2;
+}
+
+message GetTargetTrendsResponse {
+  context.ResponseContext response_context = 1;
+
+  // An ordered list of the targets matching the specified filters, sorted in
+  // descending order by the summed total of the requested execution metric
+  // in RBE for each target.
+  repeated TargetStats target_stats = 2;
+}

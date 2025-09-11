@@ -57,6 +57,9 @@ class Router {
     shortcuts.registerSequence([KeyCombo.g, KeyCombo.g], () => {
       this.navigateToSettings();
     });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.s], () => {
+      this.navigateToTargets();
+    });
 
     this.redirectIfNecessary();
   }
@@ -226,6 +229,10 @@ class Router {
 
   navigateToSettings() {
     this.navigateTo(Path.settingsPath);
+  }
+
+  navigateToTargets() {
+    this.navigateTo(Path.targetsPath);
   }
 
   navigateToTrends() {
@@ -621,6 +628,7 @@ export class Path {
   static codePath = "/code/";
   static reviewsPath = "/reviews/";
   static codesearchPath = "/search/";
+  static targetsPath = "/targets/";
 }
 
 export type TrendsChartId = "builds" | "duration" | "cache" | "cas" | "savings" | "build_time";
@@ -649,6 +657,7 @@ function getUnavailableMessage(matchedPath: string) {
     case Path.codePath:
     case Path.settingsPath:
     case Path.trendsPath:
+    case Path.targetsPath:
     case Path.executorsPath:
     case Path.tapPath:
     case Path.userHistoryPath:
