@@ -1025,6 +1025,119 @@ func (d *UserDB) GetOrCreatePublicKey(ctx context.Context, groupID string) (stri
 	return pubKey, nil
 }
 
+func (d *UserDB) CreateUserList(ctx context.Context, userList *tables.UserList) error {
+	if err := d.authorizeGroupAdminRole(ctx, userList.GroupID); err != nil {
+		return err
+	}
+
+	id, err := tables.PrimaryKeyForTable("UserLists")
+	if err != nil {
+		return err
+	}
+	userList.UserListID = id
+
+	if err := d.h.NewQuery(ctx, "userdb_create_user_list").Create(&userList); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *UserDB) GetUserLists(ctx context.Context, groupID string) ([]*tables.UserList, error) {
+	if err := d.authorizeGroupAdminRole(ctx, groupID); err != nil {
+		return nil, err
+	}
+
+	rq := d.h.NewQuery(ctx, "userdb_get_user_lists").Raw(
+		`SELECT * from "UserLists" WHERE group_id = ? ORDER BY name`, groupID)
+	return db.ScanAll(rq, &tables.UserList{})
+}
+
+func (d *UserDB) GetUserList(ctx context.Context, userListID string) (*tables.UserList, error) {
+	rq := d.h.NewQuery(ctx, "userdb_get_user_list").Raw(
+		` SELECT * from "UserLists" WHERE user_list_id = ?`, userListID)
+	ul := &tables.UserList{}
+	if err := rq.Take(ul); err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundErrorf("user list %q not found", userListID)
+		}
+		return nil, err
+	}
+
+	if err := d.authorizeGroupAdminRole(ctx, ul.GroupID); err != nil {
+		return nil, err
+	}
+
+	return ul, nil
+}
+
+func (d *UserDB) DeleteUserList(ctx context.Context, userListID string) error {
+	// Permission check.
+	_, err := d.GetUserList(ctx, userListID)
+	if err != nil {
+		return err
+	}
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		rq := tx.NewQuery(ctx, "userdb_delete_user_list_members").Raw(`
+			DELETE FROM "UserUserLists" WHERE user_list_user_list_id = ?`, userListID)
+		if err := rq.Exec().Error; err != nil {
+			return err
+		}
+		rq = tx.NewQuery(ctx, "userdb_delete_user_list").Raw(`
+			DELETE FROM "UserLists" WHERE user_list_id = ?`, userListID)
+		if err := rq.Exec().Error; err != nil {
+			return status.NotFoundErrorf("user list %q not found", userListID)
+		}
+		return nil
+	})
+}
+
+func (d *UserDB) AddUserToUserList(ctx context.Context, userListID string, userID string) error {
+	// Permission check.
+	_, err := d.GetUserList(ctx, userListID)
+	if err != nil {
+		return err
+	}
+	rq := d.h.NewQuery(ctx, "userdb_add_user_to_user_list").Raw(`
+		INSERT INTO "UserUserLists" ("user_list_user_list_id", "user_user_id") VALUES (?, ?)
+	`, userListID, userID)
+	if err := rq.Exec().Error; err != nil {
+		if d.h.IsDuplicateKeyError(err) {
+			return status.AlreadyExistsErrorf("User %q is already part of user list %q", userID, userListID)
+		}
+		return err
+	}
+	return nil
+}
+
+func (d *UserDB) GetUserListMembers(ctx context.Context, userListID string) ([]*tables.UserUserList, error) {
+	// Permission check.
+	_, err := d.GetUserList(ctx, userListID)
+	if err != nil {
+		return nil, err
+	}
+	rq := d.h.NewQuery(ctx, "userdb_get_user_lists").Raw(` SELECT * from "UserUserLists" WHERE user_list_user_list_id = ?`, userListID)
+	return db.ScanAll(rq, &tables.UserUserList{})
+}
+
+func (d *UserDB) RemoveUserFromUserList(ctx context.Context, userListID string, userID string) error {
+	// Permission check.
+	_, err := d.GetUserList(ctx, userListID)
+	if err != nil {
+		return err
+	}
+	rq := d.h.NewQuery(ctx, "userdb_add_user_to_user_list").Raw(`
+		DELETE FROM "UserUserLists" 
+		WHERE user_list_user_list_id = ? AND user_user_id = ?`, userListID, userID)
+	rv := rq.Exec()
+	if rv.Error != nil {
+		return err
+	}
+	if rv.RowsAffected == 0 {
+		return status.NotFoundErrorf("User %q is not part of user list %q", userID, userListID)
+	}
+	return nil
+}
+
 func getEmailDomain(email string) string {
 	parts := strings.Split(email, "@")
 	if len(parts) != 2 {
