@@ -31,6 +31,7 @@ go_library(
         "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/shlex",
         "//server/util/status",
         "//server/util/uuid",
