@@ -447,6 +447,13 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		return action, action.Priority()
 	}
 
+	if rd.GetDeleted() {
+		// If the range descriptor is marked as deleted, we don't want to do
+		// any up/down-replicate and reblance actions, except for finish the
+		// cleanup.
+		return action, action.Priority()
+	}
+
 	needsRemoveData := false
 	if len(rd.GetRemoved()) > 0 {
 		// There is no point to call to finish replica removal if the node is
@@ -494,8 +501,11 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 	numDeadReplicas := len(replicasByStatus.DeadReplicas)
 
 	if numLiveReplicas < quorum {
-		// The cluster is unavailable since we don't have enough live nodes.
-		// There is no point of doing anything right now.
+		// We don't have enough live nodes to do any cluster membership change;
+		// However, RemoveData doesn't require cluster membership change
+		if needsRemoveData {
+			return DriverFinishReplicaRemoval, action.Priority()
+		}
 		log.Debugf("noop because num live replicas of range %d = %d less than quorum =%d", rd.GetRangeId(), numLiveReplicas, quorum)
 		action = DriverNoop
 		return action, action.Priority()
@@ -606,7 +616,6 @@ func (rq *Queue) computeAction(ctx context.Context, task *driverTask) (DriverAct
 		return rq.computeActionForRangeTask(ctx, task.rangeTask)
 	case PartitionTaskType:
 		return rq.computeActionForPartitionTask(ctx, task.partitionTask)
-
 	}
 	return DriverNoop, DriverNoop.Priority()
 

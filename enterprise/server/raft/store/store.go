@@ -50,6 +50,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/elastic/gosigar"
@@ -1112,7 +1113,10 @@ func (s *Store) isLeader(rangeID uint64, replicaID uint64) bool {
 func rangeDescriptorHasReplica(rd *rfpb.RangeDescriptor, replicaID uint64) bool {
 	replicas := append(rd.GetReplicas(), rd.GetStaging()...)
 	replicas = append(replicas, rd.GetRemoved()...)
-	// The range is found in meta range.
+	return hasReplica(replicas, replicaID)
+}
+
+func hasReplica(replicas []*rfpb.ReplicaDescriptor, replicaID uint64) bool {
 	for _, repl := range replicas {
 		if repl.GetReplicaId() == replicaID {
 			return true
@@ -1327,7 +1331,6 @@ func (s *Store) syncRemoveData(ctx context.Context, rangeID, replicaID uint64) e
 	if err != nil {
 		return status.InternalErrorf("failed to remove data of c%dn%d from raft: %s", rangeID, replicaID, err)
 	}
-	s.log.Infof("successfully removed data c%dn%d", rangeID, replicaID)
 	return nil
 }
 
@@ -1703,24 +1706,28 @@ func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescr
 			}
 		}
 
-		foundReplica := rangeDescriptorHasReplica(rd, ss.replicaID)
-		if foundReplica {
-			// We have the info for this replica in range descriptor. Don't
-			// touch it, leave it to the driver.
+		if hasReplica(rd.GetReplicas(), ss.replicaID) || hasReplica(rd.GetStaging(), ss.replicaID) {
 			ss.action = zombieCleanupNoAction
 			return ss
 		}
-	}
-	if !ss.opened {
-		// This shard is in LogInfo, but not started and it's not found in
-		// meta range; so we should remove the data of this shard so that
-		// it won't be re-created during start-up
-		ss.action = zombieCleanupRemoveData
+		if hasReplica(rd.GetRemoved(), ss.replicaID) {
+			if rd.GetDeleted() {
+				// This range descriptor is going to be deleted; remove the data directly.
+				ss.action = zombieCleanupRemoveData
+				return ss
+			} else {
+				ss.action = zombieCleanupNoAction
+				return ss
+			}
+		}
+		// The replica is a zombie, and it should be removed.
+		ss.action = zombieCleanupRemoveReplica
 		return ss
 	}
-
-	// The replica is a zombie, and it should be removed.
-	ss.action = zombieCleanupRemoveReplica
+	// This shard is in LogInfo, but not started and it's not found in
+	// meta range; so we should remove the data of this shard so that
+	// it won't be re-created during start-up
+	ss.action = zombieCleanupRemoveData
 	return ss
 }
 
@@ -2360,6 +2367,9 @@ func newDeleteSessionsWorker(clock clockwork.Clock, store *Store, clientSessionT
 }
 
 func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.Replica) error {
+	if repl.RangeID() == 0 {
+		return nil
+	}
 	rd := w.store.lookupRange(repl.RangeID())
 	lastExecutionTimeI, found := w.lastExecutionTime.Load(rd.GetRangeId())
 	if found {
@@ -3274,7 +3284,47 @@ func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, rangeID, r
 		}
 	}
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
-	if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
+
+	if !newDescriptor.GetDeleted() {
+		if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
+			return nil, err
+		}
+		return newDescriptor, nil
+	}
+
+	// This descriptor is marked for deletion; so we only want to update it in
+	// meta range and not in local range.
+	batch := rbuilder.NewBatchBuilder()
+	metaRangeDescriptorKey := keys.RangeMetaKey(newDescriptor.GetEnd())
+
+	if len(newDescriptor.GetReplicas()) == 0 && len(newDescriptor.GetStaging()) == 0 && len(newDescriptor.GetRemoved()) == 0 {
+		batch = batch.Add(&rfpb.DirectDeleteRequest{
+			Key: metaRangeDescriptorKey,
+		})
+
+	} else {
+		oldBuf, err := proto.Marshal(oldDescriptor)
+		if err != nil {
+			return nil, err
+		}
+		newBuf, err := proto.Marshal(newDescriptor)
+		if err != nil {
+			return nil, err
+		}
+
+		addMetaRangeEdits(metaRangeDescriptorKey, oldBuf, newBuf, batch)
+	}
+
+	batchProto, err := batch.ToProto()
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := s.sender.SyncPropose(ctx, constants.MetaRangePrefix, batchProto)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = rbuilder.NewBatchResponseFromProto(rsp).AnyError(); err != nil {
 		return nil, err
 	}
 	return newDescriptor, nil
@@ -3389,16 +3439,111 @@ func (s *Store) setupPartitions(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.Chan():
-			s.processPartitions(ctx)
+			// Only run Process partitions on the meta range leader.
+			if s.HasReplicaAndIsLeader(constants.MetaRangeID) {
+				s.ProcessPartitions(ctx)
+			}
 		}
 	}
 }
 
-func (s *Store) processPartitions(ctx context.Context) {
-	// Check if this store is the leader of the meta range
-	if !s.HasReplicaAndIsLeader(constants.MetaRangeID) {
-		return
+func (s *Store) deletePartitions(ctx context.Context, partitionID string) error {
+	// 1. Use directDelete to remove the partition descriptor
+	partitionKey := keys.MakeKey(constants.PartitionPrefix, []byte(partitionID))
+	batchBuilder := rbuilder.NewBatchBuilder().Add(&rfpb.DirectDeleteRequest{
+		Key: partitionKey,
+	})
+
+	// 2. Use sender.LookupRangeDescriptorsForPartition to get all range descriptors for this partition
+	rangeDescriptors, err := s.sender.LookupRangeDescriptorsForPartition(ctx, partitionID, 0 /* no limit */)
+	if err != nil {
+		return err
 	}
+
+	// 3. Add CAS requests to update each range descriptor
+	// Set all replicas from the old one to the new rd's removed field
+	for _, rd := range rangeDescriptors {
+		// Create new range descriptor with replicas moved to removed field
+		newRd := rd.CloneVT()
+
+		// Move all current replicas to the removed field
+		newRd.Removed = append(newRd.Removed, newRd.Replicas...)
+		newRd.Replicas = nil
+
+		// Move staging replicas to removed as well
+		newRd.Removed = append(newRd.Removed, newRd.Staging...)
+		newRd.Staging = nil
+
+		// Increment generation for the change
+		newRd.Generation++
+
+		newRd.Deleted = true
+
+		// Serialize the old and new range descriptors for CAS
+		oldValue, err := proto.Marshal(rd)
+		if err != nil {
+			return err
+		}
+		newValue, err := proto.Marshal(newRd)
+		if err != nil {
+			return err
+		}
+
+		// Add CAS request to update the range descriptor
+		rangeMetaKey := keys.RangeMetaKey(rd.GetEnd())
+		batchBuilder.Add(&rfpb.CASRequest{
+			Kv: &rfpb.KV{
+				Key:   rangeMetaKey,
+				Value: newValue,
+			},
+			ExpectedValue: oldValue,
+		})
+	}
+
+	// Execute all the requests in a single batch
+	batchProto, err := batchBuilder.ToProto()
+	if err != nil {
+		return err
+	}
+
+	retrier := retry.DefaultWithContext(ctx)
+	for retrier.Next() {
+		rsp, err := s.sender.SyncPropose(ctx, partitionKey, batchProto)
+		if err != nil {
+			return err
+		}
+		batchResp := rbuilder.NewBatchResponseFromProto(rsp)
+		shouldRetry := false
+
+		_, err = batchResp.DirectDeleteResponse(0)
+		if err != nil {
+			return err
+		}
+
+		for i := 1; i < batchResp.Len(); i++ {
+			casRsp, err := batchResp.CASResponse(i)
+			if err == nil {
+				continue
+			} else if status.IsFailedPreconditionError(err) && strings.Contains(err.Error(), constants.CASErrorMessage) {
+				val := casRsp.GetKv().GetValue()
+				cas := batchProto.GetUnion()[i].GetCas()
+				if cas != nil {
+					cas.ExpectedValue = val
+					shouldRetry = true
+				}
+			} else {
+				return err
+			}
+		}
+		if !shouldRetry {
+			return batchResp.AnyError()
+		}
+	}
+
+	return status.InternalErrorf("failed to delete partition descriptor and update range descriptors: number of attempts exceeded")
+}
+
+func (s *Store) ProcessPartitions(ctx context.Context) {
 	partitionsFromMetaRange, err := s.sender.FetchPartitionDescriptors(ctx)
 	if err != nil {
 		s.log.Warningf("Failed to fetch partitions from meta range: %s", err)
@@ -3457,8 +3602,27 @@ func (s *Store) processPartitions(ctx context.Context) {
 		}
 	}
 
-	// TODO: loop over partitionsFromMetaRange to see if there are ranges need
-	// to be deleted.
+	for _, pd := range partitionsFromMetaRange {
+		if pd.GetState() != rfpb.PartitionDescriptor_SOFT_DELETED {
+			continue
+		}
+		found := false
+		for _, p := range s.partitions {
+			if pd.GetId() == p.ID {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+
+		if err := s.deletePartitions(ctx, pd.GetId()); err != nil {
+			s.log.Errorf("failed to delete partition and range descriptors for partition id %q: %s", pd.GetId(), err)
+			partitionsNeedsSetup = true
+		}
+	}
+
 	if !partitionsNeedsSetup {
 		s.partitionsAllInitialized = true
 	}

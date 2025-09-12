@@ -501,6 +501,10 @@ message RangeDescriptor {
   // they are successfully added to raft, we will move the replica descriptor
   // from staging to the replicas field above.
   repeated ReplicaDescriptor staging = 9;
+
+  // If set, this range descriptor is deleted. Don't move, up-replicate, 
+  // down-replicate or rebalance.
+  bool deleted = 10;
 }
 
 // SyncPropose, in proto form.
