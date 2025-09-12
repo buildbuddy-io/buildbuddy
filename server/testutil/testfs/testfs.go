@@ -57,7 +57,21 @@ func MakeTempDir(t testing.TB) string {
 		assert.FailNow(t, "failed to create temp dir", err)
 	}
 	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil && !os.IsNotExist(err) {
+		// Use mktempdir to get a new tempdir name to move our dir to before we
+		// remove it. This prevents a race condition where something else could
+		// write a file to the directory as we're removing it, preventing the
+		// removal of the directory. If something tries and fails to write a file
+		// to a temp directory during test cleanup, we don't really care.
+		newDir, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "buildbuddy-test-*")
+		if err != nil {
+			assert.FailNow(t, "failed to clean up temp dir", err)
+		}
+		// Move the old directory into the new directory.
+		if err := os.Rename(tmpDir, path.Join(newDir, path.Base(tmpDir))); err != nil && !os.IsNotExist(err) {
+			assert.FailNow(t, "failed to clean up temp dir", err)
+		}
+		// Remove the new directory containing the old directory.
+		if err := os.RemoveAll(newDir); err != nil && !os.IsNotExist(err) {
 			assert.FailNow(t, "failed to clean up temp dir", err)
 		}
 	})
