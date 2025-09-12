@@ -43,7 +43,7 @@ const (
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
-		log.CtxWarningf(ctx, "Error creating key for manifest %s:%s (original ref %q): %s", repo, hash, originalRef, err)
+		log.CtxWarningf(ctx, "Error creating key for manifest %s@%s (original ref %q): %s", repo, hash, originalRef, err)
 		return err
 	}
 
@@ -53,7 +53,7 @@ func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 	}
 	any, err := anypb.New(m)
 	if err != nil {
-		log.CtxWarningf(ctx, "Error constructing manifest contents %s:%s (original ref %q): %s", repo, hash, originalRef, err)
+		log.CtxWarningf(ctx, "Error constructing manifest contents %s@%s (original ref %q): %s", repo, hash, originalRef, err)
 		return err
 	}
 	ar := &repb.ActionResult{
@@ -64,10 +64,10 @@ func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 		},
 	}
 	if err := cachetools.UploadActionResult(ctx, acClient, arRN, ar); err != nil {
-		log.CtxWarningf(ctx, "Error writing manifest %s:%s (original ref %q) to AC: %s", repo, hash, originalRef, err)
+		log.CtxWarningf(ctx, "Error writing manifest %s@%s (original ref %q) to AC: %s", repo, hash, originalRef, err)
 		return err
 	}
-	log.CtxInfof(ctx, "Successfully wrote manifest %s:%s (original ref %q)", repo, hash, originalRef)
+	log.CtxInfof(ctx, "Successfully wrote manifest %s@%s (original ref %q)", repo, hash, originalRef)
 	return nil
 }
 
@@ -79,12 +79,12 @@ func updateCacheEventMetric(ociResourceTypeLabel, cacheEventType string) {
 }
 
 func manifestMiss(ctx context.Context, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) {
-	log.CtxInfof(ctx, "OCI cache manifest miss %s:%s (original ref %q)", repo, hash, originalRef)
+	log.CtxInfof(ctx, "OCI cache manifest miss %s@%s (original ref %q)", repo, hash, originalRef)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.MissStatusLabel)
 }
 
 func manifestHit(ctx context.Context, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) {
-	log.CtxInfof(ctx, "OCI cache manifest hit %s:%s (original ref %q)", repo, hash, originalRef)
+	log.CtxInfof(ctx, "OCI cache manifest hit %s@%s (original ref %q)", repo, hash, originalRef)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.HitStatusLabel)
 }
 
@@ -94,36 +94,36 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
 		manifestMiss(ctx, repo, hash, originalRef)
-		log.CtxWarningf(ctx, "Error creating key for manifest in %q: %s", repo, err)
+		log.CtxWarningf(ctx, "Error creating key for manifest %s@%s: %s", repo, hash, err)
 		return nil, err
 	}
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
 		manifestMiss(ctx, repo, hash, originalRef)
 		if !status.IsNotFoundError(err) {
-			log.CtxWarningf(ctx, "Error getting action result for manifest in %q: %s", repo, err)
+			log.CtxWarningf(ctx, "Error getting action result for manifest %s@%s: %s", repo, hash, err)
 		}
 		return nil, err
 	}
 	meta := ar.GetExecutionMetadata()
 	if meta == nil {
 		manifestMiss(ctx, repo, hash, originalRef)
-		log.CtxWarningf(ctx, "Missing execution metadata for manifest in %q", repo)
+		log.CtxWarningf(ctx, "Missing execution metadata for manifest %s@%s", repo, hash)
 		return nil, status.InternalErrorf("missing execution metadata for manifest in %q", repo)
 	}
 	aux := meta.GetAuxiliaryMetadata()
 	if aux == nil || len(aux) != 1 {
 		manifestMiss(ctx, repo, hash, originalRef)
-		log.CtxWarningf(ctx, "Missing auxiliary metadata for manifest in %q", repo)
-		return nil, status.InternalErrorf("missing auxiliary metadata for manifest in %q", repo)
+		log.CtxWarningf(ctx, "Missing auxiliary metadata for manifest %s@%s", repo, hash)
+		return nil, status.InternalErrorf("missing auxiliary metadata for manifest %s@%s", repo, hash)
 	}
 	any := aux[0]
 	var mc ocipb.OCIManifestContent
 	err = any.UnmarshalTo(&mc)
 	if err != nil {
 		manifestMiss(ctx, repo, hash, originalRef)
-		log.CtxWarningf(ctx, "Error unmarshalling manifest content in %q: %s", repo, err)
-		return nil, status.InternalErrorf("could not unmarshal metadata for manifest in %q: %s", repo, err)
+		log.CtxWarningf(ctx, "Error unmarshalling manifest content %s@%s: %s", repo, hash, err)
+		return nil, status.InternalErrorf("could not unmarshal metadata for manifest %s@%s: %s", repo, hash, err)
 	}
 	manifestHit(ctx, repo, hash, originalRef)
 	return &mc, nil
