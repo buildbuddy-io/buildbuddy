@@ -81,19 +81,20 @@ func TestLookupRangeDescriptorsForPartition(t *testing.T) {
 
 	sender := s1.Sender()
 
-	res, err := sender.LookupRangeDescriptorsForPartition(ctx, "default", 2)
+	res, err := sender.LookupRangeDescriptorsForPartition(ctx, "default")
 	require.NoError(t, err)
-	require.Equal(t, 2, len(res))
+	require.Equal(t, 3, len(res))
 	requireProtoEqual(t, s1.GetRange(2), res[0])
 	requireProtoEqual(t, s1.GetRange(3), res[1])
+	requireProtoEqual(t, s1.GetRange(4), res[2])
 
-	res, err = sender.LookupRangeDescriptorsForPartition(ctx, "foo", 3)
+	res, err = sender.LookupRangeDescriptorsForPartition(ctx, "foo")
 	require.NoError(t, err)
 	require.Equal(t, 2, len(res))
 	requireProtoEqual(t, s1.GetRange(5), res[0])
 	requireProtoEqual(t, s1.GetRange(6), res[1])
 
-	res, err = sender.LookupRangeDescriptorsForPartition(ctx, "bar", 1)
+	res, err = sender.LookupRangeDescriptorsForPartition(ctx, "bar")
 	require.NoError(t, err)
 	require.Equal(t, 0, len(res))
 }
