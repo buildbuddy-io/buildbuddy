@@ -27,6 +27,7 @@ var (
 	signingKey = flag.String("app.client_identity.key", "", "The key used to sign and verify identity JWTs.", flag.Secret)
 	client     = flag.String("app.client_identity.client", "", "The client identifier to place in the identity header.")
 	origin     = flag.String("app.client_identity.origin", "", "The origin identifier to place in the identity header.")
+	expiration = flag.Duration("app.client_identity.expiration", DefaultExpiration, "The expiration time for the identity header.")
 	required   = flag.Bool("app.client_identity.required", false, "If set, a client identity is required.")
 )
 
@@ -82,7 +83,7 @@ func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, er
 	header, err := s.IdentityHeader(&interfaces.ClientIdentity{
 		Origin: *origin,
 		Client: *client,
-	}, DefaultExpiration)
+	}, *expiration)
 	if err != nil {
 		return ctx, err
 	}
