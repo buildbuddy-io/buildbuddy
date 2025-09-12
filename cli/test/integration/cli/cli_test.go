@@ -385,6 +385,57 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 	require.NotContains(t, string(b), "Running Bazel server needs to be killed")
 }
 
+func TestRemoteCommandRedactsSecrets(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	// Create a simple git repo with a valid remote to test redaction
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"BUILD": `sh_binary(name = "echo", srcs = ["echo.sh"])`,
+		"echo.sh": "echo hello",
+	})
+	testfs.MakeExecutable(t, ws, "echo.sh")
+
+	// Initialize git repo and add a remote with credentials
+	cmd := testcli.Command(t, ws, "git", "init")
+	cmd.Dir = ws
+	cmd.Run()
+
+	// Add a remote with credentials that should be redacted
+	cmd = testcli.Command(t, ws, "git", "remote", "add", "origin", "https://secretuser:secretpass@github.com/test-org/test-repo")
+	cmd.Dir = ws
+	cmd.Run()
+
+	// Create initial commit
+	cmd = testcli.Command(t, ws, "git", "add", ".")
+	cmd.Dir = ws
+	cmd.Run()
+
+	cmd = testcli.Command(t, ws, "git", "-c", "user.email=test@example.com", "-c", "user.name=Test User", "commit", "-m", "initial")
+	cmd.Dir = ws
+	cmd.Run()
+
+	// Test bb remote command with secrets in arguments
+	// This should fail but we can check that secrets are redacted in error output
+	args := []string{"remote", "--remote_header=x-buildbuddy-api-key=abcd1234567890123456", "--script=echo 'SECRET_API_KEY=abcd1234567890123456'"}
+
+	cmd = testcli.Command(t, ws, args...)
+	cmd.Env = append(os.Environ(), "BB_DISABLE_RETRY=true")
+
+	b, _ := testcli.CombinedOutput(cmd)
+	output := string(b)
+
+	// The command will fail due to authentication issues, but we can verify
+	// that secrets are redacted from the error output
+
+	// Check that API key is redacted from the command line in error messages
+	require.NotContains(t, output, "abcd1234567890123456", "API key should be redacted from logs")
+	
+	// Check that git credentials are redacted from repository URL
+	require.NotContains(t, output, "secretuser:secretpass", "Git credentials should be redacted from logs")
+
+	// Verify that the command was processed (even if it failed)
+	require.Contains(t, output, "remote", "Output should reference the remote command")
+}
+
 func retryUntilSuccess(t *testing.T, f func() error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

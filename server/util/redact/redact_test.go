@@ -3,6 +3,7 @@ package redact_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -719,6 +720,55 @@ func TestRedactAPIKeys(t *testing.T) {
 			err := redactor.RedactAPIKeysWithSlowRegexp(context.TODO(), event)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, event.GetProgress().GetStdout())
+		})
+	}
+}
+
+func TestRedactRemoteCommand(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "redact api key in command",
+			input:    "bazel build //... --remote_header=x-buildbuddy-api-key=abcd1234567890123456",
+			expected: "bazel build //... --remote_header=<REDACTED>",
+		},
+		{
+			name:     "redact url secrets",
+			input:    "git clone https://user:password@github.com/org/repo",
+			expected: "git clone https://user:<REDACTED>@github.com/org/repo",
+		},
+		{
+			name:     "redact environment variables",
+			input:    "bazel test //... --action_env=SECRET_KEY=mysecret",
+			expected: "bazel test //... --action_env=SECRET_KEY=<REDACTED>",
+		},
+		{
+			name:     "preserve non-secret content",
+			input:    "bazel build //... --config=remote",
+			expected: "bazel build //... --config=remote",
+		},
+		{
+			name:     "redact api key at pattern",
+			input:    "grpc://abcd1234567890123456@app.buildbuddy.io",
+			expected: "grpc://<REDACTED>@app.buildbuddy.io",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Test RedactCommand function for bazel commands
+			if strings.Contains(tc.input, "bazel") {
+				result, err := redact.RedactCommand(tc.input)
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, result)
+			}
+			
+			// Test RedactText function
+			result := redact.RedactText(tc.input)
+			require.Equal(t, tc.expected, result)
 		})
 	}
 }
