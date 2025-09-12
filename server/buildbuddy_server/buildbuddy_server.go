@@ -317,15 +317,10 @@ func makeGroups(groupRoles []*tables.GroupRole) ([]*grpb.Group, error) {
 		if g.GithubToken != nil {
 			githubToken = *g.GithubToken
 		}
-		r, err := role.ToProto(role.Role(gr.Role))
-		if err != nil {
-			return nil, err
-		}
 		allowedUserAPIKeyCapabilities := capabilities.ApplyMask(gr.Capabilities, capabilities.UserAPIKeyCapabilitiesMask)
 		groups = append(groups, &grpb.Group{
 			Id:                                g.GroupID,
 			Name:                              g.Name,
-			Role:                              r,
 			Capabilities:                      gr.Capabilities,
 			OwnedDomain:                       g.OwnedDomain,
 			GithubLinked:                      githubToken != "",

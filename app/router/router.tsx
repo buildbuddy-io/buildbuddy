@@ -446,11 +446,6 @@ class Router {
       return true;
     }
 
-    // TODO(vadim): remove check in a future release
-    if (user?.selectedGroup.role == grp.Group.Role.ADMIN_ROLE) {
-      return true;
-    }
-
     return user?.selectedGroup.developerOrgCreationEnabled;
   }
 
