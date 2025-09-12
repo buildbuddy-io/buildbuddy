@@ -9,6 +9,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -348,7 +349,8 @@ type PriorityTaskScheduler struct {
 
 	mu                      sync.Mutex
 	q                       *taskQueue
-	activeTaskCancelFuncs   map[*context.CancelFunc]struct{}
+	activeTaskCancelFuncs   sync.WaitGroup
+	activeCancelFuncsCount  atomic.Int64
 	resourceCapacity        *resourceCounts
 	resourcesUsed           *resourceCounts
 	exclusiveTaskScheduling bool
@@ -371,17 +373,16 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 	}
 	rootContext, rootCancel := context.WithCancel(context.Background())
 	qes := &PriorityTaskScheduler{
-		env:                   env,
-		q:                     newTaskQueue(env.GetClock()),
-		exec:                  exec,
-		taskLeaser:            taskLeaser,
-		clock:                 env.GetClock(),
-		runnerPool:            runnerPool,
-		checkQueueSignal:      make(chan struct{}, 64),
-		rootContext:           rootContext,
-		rootCancel:            rootCancel,
-		activeTaskCancelFuncs: make(map[*context.CancelFunc]struct{}, 0),
-		shuttingDown:          false,
+		env:              env,
+		q:                newTaskQueue(env.GetClock()),
+		exec:             exec,
+		taskLeaser:       taskLeaser,
+		clock:            env.GetClock(),
+		runnerPool:       runnerPool,
+		checkQueueSignal: make(chan struct{}, 64),
+		rootContext:      rootContext,
+		rootCancel:       rootCancel,
+		shuttingDown:     false,
 		resourceCapacity: &resourceCounts{
 			RAMBytes:  ramBytesCapacity,
 			CPUMillis: cpuMillisCapacity,
@@ -461,15 +462,8 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 	}()
 
 	// Wait for all active tasks to finish.
-	for {
-		q.mu.Lock()
-		activeTasks := len(q.activeTaskCancelFuncs)
-		q.mu.Unlock()
-		if activeTasks == 0 {
-			break
-		}
-		q.clock.Sleep(100 * time.Millisecond)
-	}
+	q.activeTaskCancelFuncs.Wait()
+
 	// Since all tasks have finished, no new runners can be created, and it is now
 	// safe to wait for all pending cleanup jobs to finish.
 	q.runnerPool.Wait()
@@ -600,7 +594,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 }
 
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
-	q.activeTaskCancelFuncs[cancel] = struct{}{}
+	q.activeCancelFuncsCount.Add(1)
 	if size := res.GetTaskSize(); size != nil {
 		q.resourcesUsed.RAMBytes += size.GetEstimatedMemoryBytes()
 		q.resourcesUsed.CPUMillis += size.GetEstimatedMilliCpu()
@@ -616,7 +610,7 @@ func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationReques
 }
 
 func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
-	delete(q.activeTaskCancelFuncs, cancel)
+	q.activeCancelFuncsCount.Add(-1)
 	if size := res.GetTaskSize(); size != nil {
 		q.resourcesUsed.RAMBytes -= size.GetEstimatedMemoryBytes()
 		q.resourcesUsed.CPUMillis -= size.GetEstimatedMilliCpu()
@@ -647,7 +641,7 @@ func (q *PriorityTaskScheduler) stats() string {
 		q.resourcesUsed.CPUMillis, q.resourceCapacity.CPUMillis, cpuMillisRemaining,
 		q.resourcesUsed.RAMBytes, q.resourceCapacity.RAMBytes, ramBytesRemaining,
 		customResourcesDesc,
-		len(q.activeTaskCancelFuncs), q.q.Len())
+		q.activeCancelFuncsCount.Load(), q.q.Len())
 }
 
 // canFitTask returns whether the task can fit, given the resource capacity and
@@ -657,7 +651,7 @@ func (q *PriorityTaskScheduler) stats() string {
 func (q *PriorityTaskScheduler) canFitTask(res *queuedTask, reservedResources *resourceCounts) bool {
 	// If we're running in exclusiveTaskScheduling mode, only ever allow one
 	// task to run at a time. Otherwise fall through to the logic below.
-	if q.exclusiveTaskScheduling && len(q.activeTaskCancelFuncs) >= 1 {
+	if q.exclusiveTaskScheduling && q.activeCancelFuncsCount.Load() >= 1 {
 		return false
 	}
 
@@ -844,7 +838,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 
 	q.trackTask(reservation.EnqueueTaskReservationRequest, &cancel)
 
-	go func() {
+	q.activeTaskCancelFuncs.Go(func() {
 		defer cancel()
 		defer func() {
 			q.mu.Lock()
@@ -880,7 +874,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 			log.CtxErrorf(ctx, "Error running task %q (re-enqueue for retry: %t): %s", reservation.GetTaskId(), retry, err)
 		}
 		lease.Close(ctx, err, retry)
-	}()
+	})
 }
 
 func (q *PriorityTaskScheduler) Start() error {
@@ -927,9 +921,7 @@ func (q *PriorityTaskScheduler) QueueLength() int {
 }
 
 func (q *PriorityTaskScheduler) ActiveTaskCount() int {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	return len(q.activeTaskCancelFuncs)
+	return int(q.activeCancelFuncsCount.Load())
 }
 
 // HasExcessCapacity returns a boolean indicating if this executor has excess
