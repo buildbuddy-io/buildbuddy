@@ -3455,7 +3455,7 @@ func (s *Store) deletePartitions(ctx context.Context, partitionID string) error 
 	})
 
 	// 2. Use sender.LookupRangeDescriptorsForPartition to get all range descriptors for this partition
-	rangeDescriptors, err := s.sender.LookupRangeDescriptorsForPartition(ctx, partitionID, 0 /* no limit */)
+	rangeDescriptors, err := s.sender.LookupRangeDescriptorsForPartition(ctx, partitionID)
 	if err != nil {
 		return err
 	}

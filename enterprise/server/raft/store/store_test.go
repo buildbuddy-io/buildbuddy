@@ -2318,7 +2318,7 @@ func TestSetupNewPartitions(t *testing.T) {
 
 		log.Info("===partitions are initialized")
 		{
-			ranges, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "default", 0 /* fetch all ranges*/)
+			ranges, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "default")
 			require.NoError(t, err)
 			require.Len(t, ranges, 1)
 			require.Equal(t, "PTdefault/", string(ranges[0].GetStart()))
@@ -2326,7 +2326,7 @@ func TestSetupNewPartitions(t *testing.T) {
 		}
 
 		{
-			ranges, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "foo", 0 /* fetch all ranges*/)
+			ranges, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "foo")
 			require.NoError(t, err)
 			require.Len(t, ranges, 2)
 			require.Equal(t, ranges[0].GetRangeId(), pd2.GetFirstRangeId())
@@ -2338,7 +2338,7 @@ func TestSetupNewPartitions(t *testing.T) {
 		}
 
 		{
-			ranges, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "zoo", 0 /* fetch all ranges*/)
+			ranges, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "zoo")
 			require.NoError(t, err)
 			require.Len(t, ranges, 3)
 			require.Equal(t, ranges[0].GetRangeId(), pd3.GetFirstRangeId())
@@ -2530,7 +2530,7 @@ func TestHardDeletePartitions(t *testing.T) {
 	for {
 		clock.Advance(31 * time.Second)
 		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
-		rangeDescriptors, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "foo", 0 /** for all ranges */)
+		rangeDescriptors, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "foo")
 		require.NoError(t, err)
 		if len(rangeDescriptors) > 0 {
 			time.Sleep(50 * time.Millisecond)
@@ -2592,7 +2592,7 @@ func TestNonSoftDeletedPartitionsNotDeleted(t *testing.T) {
 	fooPD, err := s.Sender().LookupPartitionDescriptor(ctx, "foo")
 	require.NoError(t, err)
 	require.Equal(t, rfpb.PartitionDescriptor_INITIALIZED, fooPD.GetState())
-	rangeDescriptors, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "foo", 0 /** for all ranges */)
+	rangeDescriptors, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "foo")
 	require.NoError(t, err)
 	for _, rd := range rangeDescriptors {
 		require.Len(t, rd.GetReplicas(), 3)
