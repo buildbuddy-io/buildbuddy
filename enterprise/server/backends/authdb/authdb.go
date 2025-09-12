@@ -500,10 +500,9 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 			LIMIT 1
 		) AS u
 			LEFT JOIN "UserGroups" AS ug
-				ON u.user_id = ug.user_user_id
+				ON u.user_id = ug.user_user_id AND ug.membership_status = ?
 			LEFT JOIN "Groups" AS g
 				ON ug.group_group_id = g.group_id
-		AND (ug.membership_status = ? OR ug.user_user_id IS NULL)
 		ORDER BY u.user_id, g.group_id ASC
 		`, subID, int32(grpb.GroupMembershipStatus_MEMBER),
 	)
