@@ -8,7 +8,7 @@ package grp;
 
 // Group represents a group that a user is a member of.
 message Group {
-  reserved 8;
+  reserved 8, 9;
 
   // The unique ID of this group.
   // Ex. "GR4576963743584254779"
@@ -40,10 +40,6 @@ message Group {
   // Whether builds for this group will use custom executors provided by the
   // group.
   bool use_group_owned_executors = 7;
-
-  // Role represent's the authenticated user's role within this group, which
-  // determines which actions the user is authorized to perform.
-  Role role = 9;
 
   enum Role {
     UNKNOWN_ROLE = 0;

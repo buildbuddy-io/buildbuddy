@@ -20,7 +20,6 @@ ts_library(
         "//app/service:rpc_service",
         "//app/shortcuts",
         "//proto:capability_ts_proto",
-        "//proto:group_ts_proto",
         "//proto:user_ts_proto",
     ],
 )
