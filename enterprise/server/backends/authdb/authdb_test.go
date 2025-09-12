@@ -528,7 +528,8 @@ func TestLookupUserFromSubID(t *testing.T) {
 
 		// The new user is an admin in the new group but the user we added as a member should
 		// only be added as a developer.
-		u.Groups[0].Role = uint32(role.Developer)
+		r := uint32(role.Developer)
+		u.Groups[0].Role = &r
 		u.Groups[0].Capabilities = role.DeveloperCapabilities
 		user.Groups = append(user.Groups, u.Groups[0])
 	}
