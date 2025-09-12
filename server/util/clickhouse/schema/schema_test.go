@@ -45,6 +45,12 @@ func TestSchemaInSync(t *testing.T) {
 			// Not in primary DB.
 			primaryDBTable: nil,
 		},
+		{
+			clickhouseTable: &RawUsage{},
+			// Not in primary DB. There is a Usage table but it has an
+			// incompatible schema.
+			primaryDBTable: nil,
+		},
 	}
 
 	assert.Equal(t, len(getAllTables()), len(tests), "All clickhouse tables should be present in the tests")
