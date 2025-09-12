@@ -501,7 +501,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 	numDeadReplicas := len(replicasByStatus.DeadReplicas)
 
 	if numLiveReplicas < quorum {
-		// We don't have enough live nodes; to do any cluster membership change;
+		// We don't have enough live nodes to do any cluster membership change;
 		// However, RemoveData doesn't require cluster membership change
 		if needsRemoveData {
 			return DriverFinishReplicaRemoval, action.Priority()
