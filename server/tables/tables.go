@@ -283,7 +283,7 @@ func (ug *UserGroup) TableName() string {
 type GroupRole struct {
 	Group
 	// Deprecated. Don't reference this in any new code!
-	Role         uint32
+	Role         *uint32
 	Capabilities []cappb.Capability
 }
 

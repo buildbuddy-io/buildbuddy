@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -80,7 +81,13 @@ func newUserResource(u *tables.User, authGroup *tables.Group) (*UserResource, er
 	userRole := ""
 	for _, g := range u.Groups {
 		if g.Group.GroupID == authGroup.GroupID {
-			userRole = role.Role(g.Role).String()
+			// Since we only deal with direct group membership, the role should
+			// always be populated.
+			if g.Role == nil {
+				alert.UnexpectedEvent("scim_nil_role", "Role is nil for user %q group %q", u.UserID, g.GroupID)
+				return nil, status.InternalErrorf("Role is nil for user %q group %q", u.UserID, g.GroupID)
+			}
+			userRole = role.Role(*g.Role).String()
 			if userRole == "" {
 				return nil, status.InternalErrorf("unhandled role: %d", g.Role)
 			}
@@ -340,13 +347,14 @@ func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Gr
 			return nil, err
 		}
 		for _, du := range displayUsers {
+			r := uint32(du.Role)
 			u := &tables.User{
 				UserID:    du.GetUser().GetUserId().GetId(),
 				FirstName: du.GetUser().GetName().GetFirst(),
 				LastName:  du.GetUser().GetName().GetLast(),
 				Email:     du.GetUser().GetEmail(),
 				Groups: []*tables.GroupRole{
-					{Group: *g, Role: uint32(du.Role)},
+					{Group: *g, Role: &r},
 				},
 			}
 			ur, err := newUserResource(u, g)
@@ -442,7 +450,8 @@ func fillUserFromResource(u *tables.User, ur UserResource, g *tables.Group) erro
 	u.FirstName = ur.Name.GivenName
 	u.LastName = ur.Name.FamilyName
 	u.Email = ur.UserName
-	u.Groups = []*tables.GroupRole{{Group: *g, Role: uint32(userRole)}}
+	r := uint32(userRole)
+	u.Groups = []*tables.GroupRole{{Group: *g, Role: &r}}
 	return nil
 }
 
