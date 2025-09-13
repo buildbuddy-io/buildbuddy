@@ -163,6 +163,7 @@ func (p *pooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, 
 	var allErrs error
 
 	// If we have a cache enabled, try connecting to that first
+	// XXX
 	if p.env.GetCache() != nil {
 		localURL, _ := url.Parse(url.String())
 		grpcPort := "1985"
@@ -179,6 +180,7 @@ func (p *pooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, 
 
 	// If the local cache did not work, maybe a remote cache is being used.
 	// Try to connect to that, first over grpcs.
+	// XXX
 	if allErrs != nil || p.env.GetCache() == nil {
 		err := p.streamFromUrl(ctx, url, true, offset, limit, writer)
 		if err == nil {

@@ -160,6 +160,7 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
+	// XXX
 	cache := env.GetCache()
 	if cache == nil {
 		return nil, fmt.Errorf("A cache is required to enable the RemoteExecutionServer")
@@ -502,6 +503,7 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 // action is valid and may be returned.
 func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, r *digest.CASResourceName) (*repb.ActionResult, error) {
 	cacheResource := digest.NewACResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
+	// XXX
 	data, err := s.cache.Get(ctx, cacheResource.ToProto())
 	if err != nil {
 		if status.IsNotFoundError(err) {
