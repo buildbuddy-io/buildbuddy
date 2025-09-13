@@ -15,12 +15,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         with:
           path: buildbuddy
 
       - name: Checkout internal
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         with:
           repository: "buildbuddy-io/buildbuddy-internal"
           ref: "master"
