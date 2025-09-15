@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -350,6 +351,18 @@ func TestAutomaticSplitting(t *testing.T) {
 	}
 }
 
+func retry(t *testing.T, fn func() error) {
+	for {
+		err := fn()
+		if err != nil && status.IsOutOfRangeError(err) && strings.HasPrefix(status.Message(err), constants.RangeLeaseInvalidMsg) {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		require.NoError(t, err)
+		return
+	}
+}
+
 func TestAddReplica(t *testing.T) {
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup.
@@ -369,24 +382,27 @@ func TestAddReplica(t *testing.T) {
 
 	storesBefore := []*testutil.TestingStore{s1, s2}
 	storesAfter := []*testutil.TestingStore{s1, s2, s3}
-	s := testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
 
-	rd := s.GetRange(2)
-	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: rd,
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        s3.NHID(),
-			RaftAddress: s3.RaftAddress,
-			GrpcAddress: s3.GRPCAddress,
-		},
+	retry(t, func() error {
+		s := testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
+		rd := s.GetRange(2)
+		_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
 	})
-	require.NoError(t, err)
 
+	s := testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
 	replicas := getMembership(t, s, ctx, 2)
 	require.Equal(t, 3, len(replicas))
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
-	rd = s.GetRange(2)
+	rd := s.GetRange(2)
 	require.Equal(t, 3, len(rd.GetReplicas()))
 	require.Empty(t, rd.GetStaging())
 	{
@@ -420,19 +436,21 @@ func TestAddReplica_MetaRange(t *testing.T) {
 	storesBefore := []*testutil.TestingStore{s1, s2}
 	storesAfter := []*testutil.TestingStore{s1, s2, s3}
 
-	s := testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 1)
-	mrd := s.GetRange(1)
-	log.Infof("====mrd: %+v", mrd)
-	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: mrd,
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        s3.NHID(),
-			RaftAddress: s3.RaftAddress,
-			GrpcAddress: s3.GRPCAddress,
-		},
+	retry(t, func() error {
+		s := testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 1)
+		mrd := s.GetRange(1)
+		_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: mrd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
 	})
-	require.NoError(t, err)
 
+	s := testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 1)
 	replicas := getMembership(t, s, ctx, 1)
 	require.Equal(t, 3, len(replicas))
 
@@ -473,7 +491,6 @@ func TestAddReplica_ExistingStaging(t *testing.T) {
 	storesBefore := []*testutil.TestingStore{s1, s2}
 	storesAfter := []*testutil.TestingStore{s1, s2, s3}
 	s := testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
-
 	rd := s.GetRange(2)
 
 	newRD := rd.CloneVT()
@@ -486,18 +503,21 @@ func TestAddReplica_ExistingStaging(t *testing.T) {
 	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
 	require.NoError(t, err)
 
-	s = testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
-	rd = s.GetRange(2)
-	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: rd,
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        s3.NHID(),
-			RaftAddress: s3.RaftAddress,
-			GrpcAddress: s3.GRPCAddress,
-		},
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
+		rd = s.GetRange(2)
+		_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
 	})
-	require.NoError(t, err)
 
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
 	replicas := getMembership(t, s, ctx, 2)
 	require.Equal(t, 3, len(replicas))
 
@@ -554,18 +574,21 @@ func TestAddReplica_NonVoterNotStarted(t *testing.T) {
 	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
 	require.NoError(t, err)
 
-	s = testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
-	rd = s.GetRange(2)
-	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: rd,
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        s3.NHID(),
-			RaftAddress: s3.RaftAddress,
-			GrpcAddress: s3.GRPCAddress,
-		},
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
+		rd = s.GetRange(2)
+		_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
 	})
-	require.NoError(t, err)
 
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
 	replicas := getMembership(t, s, ctx, 2)
 	require.Equal(t, 3, len(replicas))
 
@@ -630,18 +653,21 @@ func TestAddReplica_NonVoterStarted(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	s = testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
-	rd = s.GetRange(2)
-	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: rd,
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        s3.NHID(),
-			RaftAddress: s3.RaftAddress,
-			GrpcAddress: s3.GRPCAddress,
-		},
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
+		rd = s.GetRange(2)
+		_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
 	})
-	require.NoError(t, err)
 
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
 	replicas := getMembership(t, s, ctx, 2)
 	require.Equal(t, 3, len(replicas))
 
@@ -719,17 +745,21 @@ func TestAddReplica_Voter(t *testing.T) {
 
 	log.Infof("====test setup complete====")
 
-	rd = s.GetRange(2)
-	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: rd,
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        s3.NHID(),
-			RaftAddress: s3.RaftAddress,
-			GrpcAddress: s3.GRPCAddress,
-		},
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
+		rd = s.GetRange(2)
+		_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
 	})
-	require.NoError(t, err)
 
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
 	replicas := getMembership(t, s, ctx, 2)
 	require.Equal(t, 3, len(replicas))
 
@@ -789,11 +819,15 @@ func TestRemoveReplicaRemoveData(t *testing.T) {
 	require.NotNil(t, storeRemoveFrom)
 
 	log.Infof("remove replica c%dn%d", rd.GetRangeId(), replicaToRemove.GetReplicaId())
-	_, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
-		Range:     rd,
-		ReplicaId: replicaToRemove.GetReplicaId(),
+
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		_, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+			Range:     rd,
+			ReplicaId: replicaToRemove.GetReplicaId(),
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
 	replicas := getMembership(t, s, ctx, 2)
@@ -807,7 +841,7 @@ func TestRemoveReplicaRemoveData(t *testing.T) {
 	require.Equal(t, 2, len(list))
 
 	log.Infof("=== remove data ===")
-	_, err = storeRemoveFrom.RemoveData(ctx, &rfpb.RemoveDataRequest{
+	_, err := storeRemoveFrom.RemoveData(ctx, &rfpb.RemoveDataRequest{
 		ReplicaId: replicaToRemove.GetReplicaId(),
 		Range:     rd,
 	})
@@ -923,12 +957,17 @@ func TestRemoveReplicaRemoveData_StagingReplicaStarted(t *testing.T) {
 	log.Infof("=== test setup completed ===")
 	replicaID := newRD.GetStaging()[0].GetReplicaId()
 	nhid := newRD.GetStaging()[0].GetNhid()
+
 	log.Infof("call nhid %s to remove replica c%dn%d", s.NHID(), rd.GetRangeId(), replicaID)
-	removeRsp, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
-		Range:     newRD,
-		ReplicaId: replicaID,
+	var removeRsp *rfpb.RemoveReplicaResponse
+	retry(t, func() error {
+		var err error
+		removeRsp, err = s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+			Range:     newRD,
+			ReplicaId: replicaID,
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	remaining := make([]*testutil.TestingStore, 0, 2)
 	var storeRemoveFrom *testutil.TestingStore
@@ -985,21 +1024,23 @@ func testRemoveReplicaRemoveData_StagingReplicaNotStarted(t *testing.T, addFunc 
 
 	stores := []*testutil.TestingStore{s1, s2}
 
-	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
-	rd := s.GetRange(1)
-	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: rd,
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        s3.NHID(),
-			RaftAddress: s3.RaftAddress,
-			GrpcAddress: s3.GRPCAddress,
-		},
+	retry(t, func() error {
+		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+		rd := s.GetRange(1)
+		_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	// Add staging replica c2n3.
-	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
-	rd = s.GetRange(2)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	rd := s.GetRange(2)
 	newRD := rd.CloneVT()
 	newRD.Staging = append(newRD.Staging, &rfpb.ReplicaDescriptor{
 		RangeId:   2,
@@ -1007,19 +1048,23 @@ func testRemoveReplicaRemoveData_StagingReplicaNotStarted(t *testing.T, addFunc 
 		Nhid:      proto.String(s3.NHID()),
 	})
 	newRD.Generation++
-	err = s.UpdateRangeDescriptor(ctx, rd, newRD)
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
 	require.NoError(t, err)
 
 	// add c2n3 on s3.
 	addFunc(t, s, ctx, 2, 3, s3.NHID())
 
-	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
-	rd = s.GetRange(2)
-	removeRsp, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
-		Range:     rd,
-		ReplicaId: 3,
+	var removeRsp *rfpb.RemoveReplicaResponse
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		rd = s.GetRange(2)
+		var err error
+		removeRsp, err = s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+			Range:     rd,
+			ReplicaId: 3,
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	replicas := getMembership(t, s, ctx, 2)
@@ -1071,20 +1116,22 @@ func TestRemoveReplicaRemoveData_StagingReplicaNotAdded(t *testing.T) {
 	stores := []*testutil.TestingStore{s1, s2}
 	sf.StartShard(t, ctx, stores...)
 
-	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
-	rd := s.GetRange(1)
-	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: rd,
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        s3.NHID(),
-			RaftAddress: s3.RaftAddress,
-			GrpcAddress: s3.GRPCAddress,
-		},
+	retry(t, func() error {
+		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+		rd := s.GetRange(1)
+		_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
 	})
-	require.NoError(t, err)
 
-	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
-	rd = s.GetRange(2)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	rd := s.GetRange(2)
 	newRD := rd.CloneVT()
 	newRD.Staging = append(newRD.Staging, &rfpb.ReplicaDescriptor{
 		RangeId:   2,
@@ -1094,16 +1141,19 @@ func TestRemoveReplicaRemoveData_StagingReplicaNotAdded(t *testing.T) {
 	newRD.Generation++
 
 	log.Infof("new rd: %+v", newRD)
-	err = s.UpdateRangeDescriptor(ctx, rd, newRD)
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
 	require.NoError(t, err)
-	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
-
 	log.Infof("=== test setup completed ===")
-	removeRsp, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
-		Range:     newRD,
-		ReplicaId: 3,
+	var removeRsp *rfpb.RemoveReplicaResponse
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		var err error
+		removeRsp, err = s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+			Range:     newRD,
+			ReplicaId: 3,
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	replicas := getMembership(t, s, ctx, 2)
@@ -1169,6 +1219,7 @@ func TestAddRangeBack(t *testing.T) {
 
 	start := time.Now()
 	for {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 		rsp, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
 			Range:     rd,
 			ReplicaId: replicaToRemove.GetReplicaId(),
@@ -1199,19 +1250,22 @@ func TestAddRangeBack(t *testing.T) {
 		}
 		break
 	}
-	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
-	replicas := getMembership(t, s, ctx, 2)
-	require.Equal(t, 3, len(replicas))
 
-	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: s.GetRange(2),
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        testStore.NHID(),
-			GrpcAddress: testStore.GRPCAddress,
-			RaftAddress: testStore.RaftAddress,
-		},
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
+		replicas := getMembership(t, s, ctx, 2)
+		require.Equal(t, 3, len(replicas))
+
+		_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: s.GetRange(2),
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        testStore.NHID(),
+				GrpcAddress: testStore.GRPCAddress,
+				RaftAddress: testStore.RaftAddress,
+			},
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	r1, err := s.GetReplica(2)
 	require.NoError(t, err)
@@ -1430,13 +1484,16 @@ func TestSplitNonMetaRange(t *testing.T) {
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
 	written := writeNRecords(ctx, t, s, 50)
-	_, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
-		Header: hd,
-		Range:  rd,
-	})
-	require.NoError(t, err)
 
-	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 3)
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		_, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
+			Header: hd,
+			Range:  rd,
+		})
+		return err
+	})
+
 	rd = s.GetRange(3)
 	// Veirfy that nhid in the range descriptor matches the registry.
 	for _, repl := range rd.GetReplicas() {
@@ -1461,11 +1518,14 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 	// Write some more records to the new end range.
 	written = append(written, writeNRecords(ctx, t, s1, 50)...)
-	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
-		Header: hd,
-		Range:  rd,
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 3)
+		_, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
+			Header: hd,
+			Range:  rd,
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	testutil.WaitForRangeLease(t, ctx, stores, 4)
 
@@ -1499,11 +1559,16 @@ func TestPostFactoSplit(t *testing.T) {
 	// a small number of records before trying to Split.
 	written := writeNRecords(ctx, t, s1, 50)
 
-	splitResponse, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
-		Header: hd,
-		Range:  rd,
+	var splitResponse *rfpb.SplitRangeResponse
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		var err error
+		splitResponse, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
+			Header: hd,
+			Range:  rd,
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	// Expect that a new cluster was added with a replica.
 	replicas := getMembership(t, s1, ctx, 3)
@@ -1515,15 +1580,17 @@ func TestPostFactoSplit(t *testing.T) {
 	}
 
 	// Now bring up a new replica in the original cluster.
-	_, err = s1.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: s1.GetRange(2),
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        s2.NHID(),
-			RaftAddress: s2.RaftAddress,
-			GrpcAddress: s2.GRPCAddress,
-		},
+	retry(t, func() error {
+		_, err := s1.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: s1.GetRange(2),
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s2.NHID(),
+				RaftAddress: s2.RaftAddress,
+				GrpcAddress: s2.GRPCAddress,
+			},
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	r1, err := s1.GetReplica(2)
 	require.NoError(t, err)
@@ -1585,11 +1652,16 @@ func TestManySplits(t *testing.T) {
 			}
 			rd := s.GetRange(rangeID)
 			hd := header.MakeLinearizableWithRangeValidation(rd, rd.GetReplicas()[0])
-			rsp, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
-				Header: hd,
-				Range:  rd,
+			var rsp *rfpb.SplitRangeResponse
+			retry(t, func() error {
+				s = testutil.GetStoreWithRangeLease(t, ctx, stores, rangeID)
+				var err error
+				rsp, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
+					Header: hd,
+					Range:  rd,
+				})
+				return err
 			})
-			require.NoError(t, err)
 
 			testutil.WaitForRangeLease(t, ctx, stores, rsp.GetLeft().GetRangeId())
 			testutil.WaitForRangeLease(t, ctx, stores, rsp.GetRight().GetRangeId())
@@ -1722,11 +1794,14 @@ func TestSplitAcrossClusters(t *testing.T) {
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
 	written := writeNRecords(ctx, t, s1, 50)
-	_, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
-		Header: hd,
-		Range:  rd,
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		_, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
+			Header: hd,
+			Range:  rd,
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 3)
 
@@ -1851,15 +1926,18 @@ func TestDownReplicate(t *testing.T) {
 	// Added a replica for range 2, so the number of replicas for range 2 exceeds the cache.raft.min_replicas_per_range
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
-	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: rd,
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        s4.NHID(),
-			RaftAddress: s4.RaftAddress,
-			GrpcAddress: s4.GRPCAddress,
-		},
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s4.NHID(),
+				RaftAddress: s4.RaftAddress,
+				GrpcAddress: s4.GRPCAddress,
+			},
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	replicas := getMembership(t, s, ctx, 2)
 	require.Equal(t, 4, len(replicas))

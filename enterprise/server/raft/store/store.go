@@ -2542,6 +2542,9 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	if len(req.GetRange().GetReplicas()) == 0 {
 		return nil, status.FailedPreconditionErrorf("no replicas in range: %+v", req.GetRange())
 	}
+	if rangeID := req.GetRange().GetRangeId(); !s.HaveLease(ctx, rangeID) {
+		return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, rangeID)
+	}
 
 	// Validate the header to ensure we don't start new raft nodes if the
 	// split is gonna fail later when the transaction is run on an out-of
@@ -2740,13 +2743,18 @@ func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddRepl
 		return status.FailedPreconditionErrorf("Incomplete node descriptor: %+v", node)
 	}
 
+	rangeID := req.GetRange().GetRangeId()
 	// Check this is a range we have and the range descriptor provided is up to date
 	s.rangeMu.RLock()
-	_, rangeOK := s.openRanges[req.GetRange().GetRangeId()]
+	_, rangeOK := s.openRanges[rangeID]
 	s.rangeMu.RUnlock()
 
 	if !rangeOK {
-		return status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, req.GetRange().GetRangeId())
+		return status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, rangeID)
+	}
+
+	if !s.HaveLease(ctx, req.GetRange().GetRangeId()) {
+		return status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, rangeID)
 	}
 
 	remoteRD, err := s.validatedRangeAgainstMetaRange(ctx, req.GetRange())
@@ -3002,13 +3010,13 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		return nil, status.InvalidArgumentError("no range id is specified")
 	}
 
+	if !s.HaveLease(ctx, rangeID) {
+		return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, rangeID)
+	}
+
 	rsp := &rfpb.RemoveReplicaResponse{}
 
 	if req.GetRange() != nil {
-		if !s.HaveLease(ctx, rangeID) {
-			return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, rangeID)
-		}
-
 		// Check this is a range we have.
 		s.rangeMu.RLock()
 		rd, rangeOK := s.openRanges[rangeID]
