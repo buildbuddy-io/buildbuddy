@@ -829,7 +829,6 @@ func (p *pool) resolveImageDigest(ctx context.Context, props *platform.Propertie
 
 func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	start := time.Now()
-	log.Infof("Warming up %s image %q", cfg.Isolation, cfg.Image)
 	plat := &repb.Platform{
 		Properties: []*repb.Platform_Property{
 			{Name: "container-image", Value: platform.DockerPrefix + cfg.Image},
@@ -852,6 +851,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 			return err
 		}
 	}
+	log.Infof("Warming up %s image %q", cfg.Isolation, platProps.ContainerImage)
 	st := &repb.ScheduledTask{
 		SchedulingMetadata: &scpb.SchedulingMetadata{
 			// Note: this will use the default task size estimates and not
@@ -874,7 +874,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	}()
 	c, err := p.newContainer(ctx, platProps, st, ws.Path())
 	if err != nil {
-		log.Errorf("Error warming up %q image %q: %s", cfg.Isolation, cfg.Image, err)
+		log.Errorf("Error warming up %q image %q: %s", cfg.Isolation, platProps.ContainerImage, err)
 		return err
 	}
 
@@ -888,7 +888,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	if err := c.PullImage(ctx, creds); err != nil {
 		return err
 	}
-	log.Infof("Warmup: %s pulled image %q in %s", cfg.Isolation, cfg.Image, time.Since(start))
+	log.Infof("Warmup: %s pulled image %q in %s", cfg.Isolation, platProps.ContainerImage, time.Since(start))
 	return nil
 }
 
@@ -1132,6 +1132,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		return nil, status.UnimplementedErrorf("no container provider registered for %q isolation", isolationType)
 	}
 
+	log.CtxDebugf(ctx, "creating new container for %q image", props.ContainerImage)
 	c, err := containerProvider.New(ctx, args)
 	if err != nil {
 		return nil, err
