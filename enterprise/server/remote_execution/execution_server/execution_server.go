@@ -559,7 +559,7 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 	}
 
 	m, details := exp.ObjectDetails(ctx, "remote_execution.task_teeing", nil)
-	if m == nil {
+	if len(m) == 0 {
 		return nil
 	}
 
