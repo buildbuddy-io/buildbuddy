@@ -46,6 +46,7 @@ go_test(
     ],
 )
 
+# gazelle:ignore
 go_binary(
     name = "bb",
     srcs = ["main.go"],
