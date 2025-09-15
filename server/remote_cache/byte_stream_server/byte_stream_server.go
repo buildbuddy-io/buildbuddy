@@ -216,9 +216,9 @@ type writeHandler struct {
 	bytesUploadedFromClient int
 	transferTimer           interfaces.TransferTimer
 
-	decompressorCloser io.Closer
-	cacheCommitter     interfaces.Committer
-	cacheCloser        io.Closer
+	bufioCloser    io.Closer
+	cacheCommitter interfaces.Committer
+	cacheCloser    io.Closer
 
 	checksum           *Checksum
 	resourceName       *digest.CASResourceName
@@ -285,6 +285,11 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 	if s.cache.SupportsCompressor(r.GetCompressor()) {
 		casRN.SetCompressor(r.GetCompressor())
 	}
+	compressData := false
+	if casRN.GetCompressor() == repb.Compressor_IDENTITY && s.cache.SupportsCompressor(repb.Compressor_ZSTD) && r.GetDigest().GetSizeBytes() >= 100 {
+		casRN.SetCompressor(repb.Compressor_ZSTD)
+		compressData = true
+	}
 
 	if r.GetDigest().GetSizeBytes() >= *maxDirectWriteSizeBytes {
 		// The protocol says it is *optional* to allow overwriting, but does
@@ -333,7 +338,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 				return nil, err
 			}
 			ws.writer = io.MultiWriter(decompressingChecksum, committedWriteCloser)
-			ws.decompressorCloser = decompressingChecksum
+			ws.bufioCloser = decompressingChecksum
 		} else {
 			// If the cache doesn't support compression, wrap both the checksum and cache writer in a decompressor
 			decompressor, err := compression.NewZstdDecompressor(ws.writer)
@@ -341,8 +346,18 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 				return nil, err
 			}
 			ws.writer = decompressor
-			ws.decompressorCloser = decompressor
+			ws.bufioCloser = decompressor
 		}
+	} else if compressData {
+		// If the cache supports compression but the request isn't compressed,
+		// wrap the cache writer in a compressor. This is faster than sending
+		// uncompressed data to the cache and letting it compress it.
+		compressor, err := compression.NewZstdCompressingWriter(committedWriteCloser, r.GetDigest().GetSizeBytes())
+		if err != nil {
+			return nil, err
+		}
+		ws.writer = io.MultiWriter(ws.checksum, compressor)
+		ws.bufioCloser = compressor
 	}
 
 	return ws, nil
@@ -359,7 +374,6 @@ func (w *writeHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error
 	}
 	w.bytesUploadedFromClient += len(req.Data)
 	w.offset += int64(n)
-
 	if req.FinishWrite {
 		if err := w.commit(); err != nil {
 			return nil, err
@@ -370,15 +384,15 @@ func (w *writeHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error
 }
 
 func (w *writeHandler) commit() error {
-	if w.decompressorCloser != nil {
+	if w.bufioCloser != nil {
 		defer func() {
-			w.decompressorCloser = nil
+			w.bufioCloser = nil
 		}()
-		// Close the decompressor, flushing any currently buffered bytes to the
-		// checksum+cache multi-writer. If this fails, don't bother computing the
-		// checksum or commiting the file to cache, since the incoming data is
-		// likely corrupt anyway.
-		if err := w.decompressorCloser.Close(); err != nil {
+		// Close the decompressor or compressor, flushing any currently buffered
+		// bytes. If this fails, don't bother computing the checksum or
+		// commiting the file to cache, since the incoming data is likely
+		// corrupt anyway.
+		if err := w.bufioCloser.Close(); err != nil {
 			log.Warning(err.Error())
 			return err
 		}
@@ -398,8 +412,8 @@ func (w *writeHandler) Close() error {
 		log.Debugf("ByteStream Write: uploadTracker.CloseWithBytesTransferred error: %s", err)
 	}
 
-	if w.decompressorCloser != nil {
-		w.decompressorCloser.Close()
+	if w.bufioCloser != nil {
+		w.bufioCloser.Close()
 	}
 	return w.cacheCloser.Close()
 }

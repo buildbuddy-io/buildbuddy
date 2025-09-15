@@ -50,6 +50,21 @@ func TestLossless(t *testing.T) {
 			compress:   compressWithNewZstdCompressingReader,
 			decompress: decompressWithNewZstdDecompressingReader,
 		},
+		{
+			name:       "NewZstdCompressingWriter -> DecompressZstd",
+			compress:   compressWithNewZstdCompressingWriter,
+			decompress: decompressWithDecompressZstd,
+		},
+		{
+			name:       "NewZstdCompressingWriter -> NewZstdDecompressor",
+			compress:   compressWithNewZstdCompressingWriter,
+			decompress: decompressWithNewZstdDecompressor,
+		},
+		{
+			name:       "NewZstdCompressingWriter -> NewZstdDecompressingReader",
+			compress:   compressWithNewZstdCompressingWriter,
+			decompress: decompressWithNewZstdDecompressingReader,
+		},
 	} {
 		for i := 1; i <= 5; i++ {
 			srclen := int(math.Pow10(i))
@@ -86,6 +101,17 @@ func compressWithNewZstdCompressingReader(t *testing.T, src []byte) []byte {
 	err = c.Close()
 	require.NoError(t, err)
 	return compressed
+}
+
+func compressWithNewZstdCompressingWriter(t *testing.T, src []byte) []byte {
+	var out bytes.Buffer
+	w, err := compression.NewZstdCompressingWriter(&out, 10*int64(len(src)))
+	require.NoError(t, err)
+	n, err := w.Write(src)
+	require.NoError(t, err)
+	require.Equal(t, len(src), n)
+	require.NoError(t, w.Close())
+	return out.Bytes()
 }
 
 func decompressWithDecompressZstd(t *testing.T, srclen int, compressed []byte) []byte {
@@ -186,7 +212,7 @@ func (er *erroringReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-// TestCompressingReader_BufferSizes tests that a CompressingReader
+// TestCompressingReader_HoldErrors tests that a CompressingReader
 // will hold onto any error from its underlying reader until it has exhausted
 // all the successfully-read bytes.
 func TestCompressingReader_HoldErrors(t *testing.T) {
@@ -223,4 +249,73 @@ func TestCompressingReader_HoldErrors(t *testing.T) {
 	_, err = zrc.Read(p)
 	require.Error(t, err)
 	require.ErrorIs(t, err, errorToReturn)
+}
+
+func TestCompressingWriter_EmptyBuffer(t *testing.T) {
+	_, err := compression.NewZstdCompressingWriter(nil, 0)
+	require.Error(t, err)
+}
+
+func TestCompressingWriter_SmallBuffer(t *testing.T) {
+	src := []byte{1, 2, 3, 4, 5}
+	var out bytes.Buffer
+	w, err := compression.NewZstdCompressingWriter(&out, 1)
+	require.NoError(t, err)
+	n, err := w.Write(src)
+	require.NoError(t, err)
+	require.Equal(t, len(src), n)
+	// Check that we skipped the buffer and wrote directly.
+	require.Greater(t, w.CompressedBytesWritten, 0)
+	require.NoError(t, w.Close())
+
+	decompressed := decompressWithDecompressZstd(t, len(src), out.Bytes())
+	require.Equal(t, src, decompressed)
+}
+
+func TestCompressingWriter_Flush(t *testing.T) {
+	src := []byte{1, 2, 3, 4, 5}
+	var out bytes.Buffer
+	w, err := compression.NewZstdCompressingWriter(&out, 2*int64(len(src)))
+	require.NoError(t, err)
+	n, err := w.Write(src)
+	require.NoError(t, err)
+	require.Equal(t, len(src), n)
+	// Check that we didn't write anything yet.
+	require.Equal(t, 0, w.CompressedBytesWritten)
+
+	err = w.Flush()
+	require.NoError(t, err)
+	// Check that we wrote something on Flush.
+	require.Greater(t, w.CompressedBytesWritten, 0)
+
+	require.NoError(t, w.Close())
+
+	decompressed := decompressWithDecompressZstd(t, len(src), out.Bytes())
+	require.Equal(t, src, decompressed)
+}
+
+func TestCompressingWriter_ReadFrom(t *testing.T) {
+	src := []byte{1, 2, 3, 4, 5}
+	var out bytes.Buffer
+	w, err := compression.NewZstdCompressingWriter(&out, int64(len(src)))
+	require.NoError(t, err)
+
+	// Write 2 bytes with Write
+	n, err := w.Write(src[:2])
+	require.NoError(t, err)
+	require.Equal(t, 2, n)
+	// Check that we didn't write anything yet.
+	require.Equal(t, 0, w.CompressedBytesWritten)
+
+	// Write the rest with ReadFrom
+	n2, err := w.ReadFrom(bytes.NewReader(src[2:]))
+	require.NoError(t, err)
+	require.Equal(t, 3, int(n2))
+
+	// Check that ReadFrom flushed.
+	require.Greater(t, w.CompressedBytesWritten, 0)
+	require.NoError(t, w.Close())
+
+	decompressed := decompressWithDecompressZstd(t, len(src), out.Bytes())
+	require.Equal(t, src, decompressed)
 }
