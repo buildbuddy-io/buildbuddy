@@ -30,12 +30,6 @@ message RunRequest {
   // be routed to.
   string session_affinity_key = 6;
 
-  // OS on which to run. Defaults to "linux".
-  string os = 7;
-
-  // Arch on which to run. Defaults to "amd64".
-  string arch = 8;
-
   // Container image to run on. Defaults to the Ubuntu 20.04 Workflows image.
   // A `docker://` prefix is required.
   // Ex. `docker://gcr.io/flame-public/rbe-ubuntu20-04`
@@ -88,6 +82,13 @@ message RunRequest {
 
   // DEPRECATED: Use `steps` instead.
   string bazel_command = 4 [deprecated = true];
+
+  // DEPRECATED: Set OS and arch using the `exec_properties` named `os` and `arch`.
+  string os = 7 [deprecated = true];
+
+  // Arch on which to run. Defaults to "amd64".
+  string arch = 8 [deprecated = true];
+
 }
 
 message Step {
