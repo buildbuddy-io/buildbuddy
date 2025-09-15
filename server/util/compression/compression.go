@@ -58,6 +58,7 @@ type ZstdCompressingWriter struct {
 	buffered       int
 	compressBuffer []byte
 	returnBuffers  func()
+	err            error
 	closed         bool
 }
 
@@ -67,6 +68,9 @@ type ZstdCompressingWriter struct {
 func (c *ZstdCompressingWriter) Flush() error {
 	if c.closed {
 		return errors.New("ZstdCompressingWriter.Flush used after Close")
+	}
+	if c.err != nil {
+		return c.err
 	}
 	if c.buffered == 0 {
 		return nil
@@ -79,18 +83,20 @@ func (c *ZstdCompressingWriter) Flush() error {
 func (c *ZstdCompressingWriter) writeCompressed(p []byte) error {
 	c.compressBuffer = CompressZstd(c.compressBuffer, p)
 	n, err := c.writer.Write(c.compressBuffer)
-	if err == nil {
-		c.CompressedBytesWritten += n
-		if n < len(c.compressBuffer) {
-			return io.ErrShortWrite
-		}
+	c.CompressedBytesWritten += n
+	if err == nil && n < len(c.compressBuffer) {
+		c.err = io.ErrShortWrite
 	}
-	return err
+	c.err = err
+	return c.err
 }
 
 func (c *ZstdCompressingWriter) Write(p []byte) (int, error) {
 	if c.closed {
 		return 0, errors.New("ZstdCompressingWriter.Write used after Close")
+	}
+	if c.err != nil {
+		return 0, c.err
 	}
 	total := 0
 	for len(p) > 0 {
@@ -124,6 +130,9 @@ func (c *ZstdCompressingWriter) ReadFrom(r io.Reader) (int64, error) {
 	if c.closed {
 		return 0, errors.New("ZstdCompressingWriter.ReadFrom used after Close")
 	}
+	if c.err != nil {
+		return 0, c.err
+	}
 	var total int64
 	for {
 		n, err := r.Read(c.buffer[c.buffered:])
@@ -140,6 +149,7 @@ func (c *ZstdCompressingWriter) ReadFrom(r io.Reader) (int64, error) {
 			return total, c.Flush()
 		}
 		if err != nil {
+			c.err = err
 			return total, err
 		}
 	}
@@ -149,19 +159,19 @@ func (c *ZstdCompressingWriter) ReadFrom(r io.Reader) (int64, error) {
 // and resources are released. It can be called multiple times. No other methods
 // may be called after Close.
 func (c *ZstdCompressingWriter) Close() error {
-	if !c.closed {
-		err := c.Flush()
-		c.returnBuffers()
-		c.closed = true
-		return err
+	if c.closed {
+		return nil
 	}
-	return nil
+	err := c.Flush()
+	c.returnBuffers()
+	c.closed = true
+	return err
 }
 
 // NewZstdCompressingWriter returns a new ZstdCompressingWriter. bufSize must be
 // > 0 and determines how much data is buffered before being compressed and
 // written out. Larger buffer sizes generally result in better compression
-// ratios, but will be clamped to an implementation-defined maximum.
+// ratios, but will be capped to an implementation-defined maximum.
 func NewZstdCompressingWriter(writer io.Writer, bufSize int64) (*ZstdCompressingWriter, error) {
 	if bufSize <= 0 {
 		return nil, errors.New("bufSize must be > 0")

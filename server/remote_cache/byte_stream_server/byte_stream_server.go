@@ -330,9 +330,11 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 	ws.writer = io.MultiWriter(ws.checksum, committedWriteCloser)
 
 	if r.GetCompressor() == repb.Compressor_ZSTD {
+		// The incoming data is compressed.
 		if s.cache.SupportsCompressor(r.GetCompressor()) {
-			// If the cache supports compression, write compressed bytes to the cache with committedWriteCloser
-			// but wrap the checksum in a decompressor to validate the decompressed data
+			// If the cache supports compression, write the already compressed
+			// bytes to the cache with committedWriteCloser but wrap the
+			// checksum in a decompressor to validate the decompressed data.
 			decompressingChecksum, err := compression.NewZstdDecompressor(ws.checksum)
 			if err != nil {
 				return nil, err

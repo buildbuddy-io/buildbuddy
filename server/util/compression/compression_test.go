@@ -256,20 +256,30 @@ func TestCompressingWriter_EmptyBuffer(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestCompressingWriter_SmallBuffer(t *testing.T) {
+func TestCompressingWriter_BufferSizes(t *testing.T) {
 	src := []byte{1, 2, 3, 4, 5}
-	var out bytes.Buffer
-	w, err := compression.NewZstdCompressingWriter(&out, 1)
-	require.NoError(t, err)
-	n, err := w.Write(src)
-	require.NoError(t, err)
-	require.Equal(t, len(src), n)
-	// Check that we skipped the buffer and wrote directly.
-	require.Greater(t, w.CompressedBytesWritten, 0)
-	require.NoError(t, w.Close())
+	size := int64(len(src))
+	for _, bufSize := range []int64{1, size - 1, size, size + 1, 2 * size} {
+		var out bytes.Buffer
+		w, err := compression.NewZstdCompressingWriter(&out, bufSize)
+		require.NoError(t, err)
+		n, err := w.Write(src)
+		require.NoError(t, err)
+		require.Equal(t, len(src), n)
+		if bufSize > int64(len(src)) {
+			// If the buffer is bigger than the source, we should not have
+			// written anything yet.
+			require.Zero(t, w.CompressedBytesWritten)
+		} else {
+			// We should have skipped the buffer and wrote directly.
+			require.Greater(t, w.CompressedBytesWritten, 0)
+		}
+		require.NoError(t, w.Close())
+		require.Greater(t, w.CompressedBytesWritten, 0)
 
-	decompressed := decompressWithDecompressZstd(t, len(src), out.Bytes())
-	require.Equal(t, src, decompressed)
+		decompressed := decompressWithDecompressZstd(t, len(src), out.Bytes())
+		require.Equal(t, src, decompressed)
+	}
 }
 
 func TestCompressingWriter_Flush(t *testing.T) {
@@ -281,7 +291,7 @@ func TestCompressingWriter_Flush(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, len(src), n)
 	// Check that we didn't write anything yet.
-	require.Equal(t, 0, w.CompressedBytesWritten)
+	require.Zero(t, w.CompressedBytesWritten)
 
 	err = w.Flush()
 	require.NoError(t, err)
@@ -305,7 +315,7 @@ func TestCompressingWriter_ReadFrom(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, n)
 	// Check that we didn't write anything yet.
-	require.Equal(t, 0, w.CompressedBytesWritten)
+	require.Zero(t, w.CompressedBytesWritten)
 
 	// Write the rest with ReadFrom
 	n2, err := w.ReadFrom(bytes.NewReader(src[2:]))
@@ -318,4 +328,30 @@ func TestCompressingWriter_ReadFrom(t *testing.T) {
 
 	decompressed := decompressWithDecompressZstd(t, len(src), out.Bytes())
 	require.Equal(t, src, decompressed)
+}
+
+func TestCompressingWriter_HoldsErrors(t *testing.T) {
+	src := []byte{1, 2, 3, 4, 5}
+	out := &erroringWriter{}
+	w, err := compression.NewZstdCompressingWriter(out, int64(len(src)))
+	require.NoError(t, err)
+	_, err = w.Write(src)
+	require.Equal(t, "error #1", err.Error())
+	_, err = w.Write(src)
+	require.Equal(t, "error #1", err.Error())
+	err = w.Flush()
+	require.Equal(t, "error #1", err.Error())
+	err = w.Close()
+	require.Equal(t, "error #1", err.Error())
+	_, err = w.ReadFrom(nil)
+	require.Equal(t, "error #1", err.Error())
+}
+
+type erroringWriter struct {
+	errCount int
+}
+
+func (ew *erroringWriter) Write(p []byte) (int, error) {
+	ew.errCount++
+	return 0, fmt.Errorf("error #%d", ew.errCount)
 }
