@@ -582,6 +582,9 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 	}
 
 	s.mu.Lock()
+	if s.teeLimiters == nil {
+		s.teeLimiters = make(map[string]*rate.Limiter)
+	}
 	limit := rate.Limit(teeRate)
 	limiter := s.teeLimiters[details.Variant()]
 	if limiter == nil {
