@@ -242,6 +242,151 @@ func TestInterpretAsBBCliCommand(t *testing.T) {
 				TruncatedArgs: []string{"version"},
 			},
 		},
+		// bb commands from bb-help.txt
+		{
+			name: "bb command: add",
+			args: []string{"add"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "add",
+				TruncatedArgs: []string{"add"},
+			},
+		},
+		{
+			name: "bb command: analyze",
+			args: []string{"analyze"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "analyze",
+				TruncatedArgs: []string{"analyze"},
+			},
+		},
+		{
+			name: "bb command: ask",
+			args: []string{"ask"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "ask",
+				TruncatedArgs: []string{"ask"},
+			},
+		},
+		{
+			name: "bb command: download",
+			args: []string{"download"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "download",
+				TruncatedArgs: []string{"download"},
+			},
+		},
+		{
+			name: "bb command: execute",
+			args: []string{"execute"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "execute",
+				TruncatedArgs: []string{"execute"},
+			},
+		},
+		{
+			name: "bb command: fix",
+			args: []string{"fix"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "fix",
+				TruncatedArgs: []string{"fix"},
+			},
+		},
+		{
+			name: "bb command: install",
+			args: []string{"install"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "install",
+				TruncatedArgs: []string{"install"},
+			},
+		},
+		{
+			name: "bb command: logout",
+			args: []string{"logout"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "logout",
+				TruncatedArgs: []string{"logout"},
+			},
+		},
+		{
+			name: "bb command: print",
+			args: []string{"print"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "print",
+				TruncatedArgs: []string{"print"},
+			},
+		},
+		{
+			name: "bb command: remote",
+			args: []string{"remote"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "remote",
+				TruncatedArgs: []string{"remote"},
+			},
+		},
+		{
+			name: "bb command: remote-download",
+			args: []string{"remote-download"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "remote-download",
+				TruncatedArgs: []string{"remote-download"},
+			},
+		},
+		{
+			name: "bb command: search",
+			args: []string{"search"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "search",
+				TruncatedArgs: []string{"search"},
+			},
+		},
+		{
+			name: "bb command: index",
+			args: []string{"index"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "index",
+				TruncatedArgs: []string{"index"},
+			},
+		},
+		{
+			name: "bb command: update",
+			args: []string{"update"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "update",
+				TruncatedArgs: []string{"update"},
+			},
+		},
+		{
+			name: "bb command: upload",
+			args: []string{"upload"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "upload",
+				TruncatedArgs: []string{"upload"},
+			},
+		},
+		{
+			name: "bb command: explain",
+			args: []string{"explain"},
+			expected: TestResult{
+				OptionNames:   []string{},
+				CommandName:   "explain",
+				TruncatedArgs: []string{"explain"},
+			},
+		},
 		{
 			name: "unknown command",
 			args: []string{"unknown_command"},
