@@ -11,7 +11,7 @@ actions:
           - "*"
     steps:
       - run: "git config -l --show-origin | sort | uniq"
-      - run: "GIT_TRACE=1 git ls-remote https://github.com/buildbuddy-io/private-test-repo 1>/dev/null"
+      - run: "(cd /tmp && GIT_TRACE=1 git ls-remote https://github.com/buildbuddy-io/private-test-repo 1>/dev/null)"
       - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-bare"
   - name: Test with BzlMod
     container_image: ubuntu-22.04
