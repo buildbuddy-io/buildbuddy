@@ -38,27 +38,18 @@ go_library(
 go_test(
     name = "bb_test",
     srcs = ["bb_test.go"],
-    embed = [":bb_lib"],
     deps = [
+        ":bb_lib",
         "//cli/cli_command/register",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//assert",
-        "@com_github_stretchr_testify//require",
     ],
-)
-
-go_binary(
-    name = "bb",
-    srcs = ["main.go"],
-    deps = [":bb_lib"],
-    visibility = ["//visibility:public"],
 )
 
 go_binary(
     name = "bb-darwin-amd64",
-    out = "bb-darwin-amd64",
     srcs = ["main.go"],
-    deps = [":bb_lib"],
+    out = "bb-darwin-amd64",
     gc_linkopts = [
         "-s",
         "-w",
@@ -68,13 +59,13 @@ go_binary(
     pure = "on",
     tags = ["manual"],
     visibility = ["//visibility:public"],
+    deps = [":bb_lib"],
 )
 
 go_binary(
     name = "bb-darwin-arm64",
-    out = "bb-darwin-arm64",
     srcs = ["main.go"],
-    deps = [":bb_lib"],
+    out = "bb-darwin-arm64",
     gc_linkopts = [
         "-s",
         "-w",
@@ -84,13 +75,13 @@ go_binary(
     pure = "on",
     tags = ["manual"],
     visibility = ["//visibility:public"],
+    deps = [":bb_lib"],
 )
 
 go_binary(
     name = "bb-linux-amd64",
-    out = "bb-linux-amd64",
     srcs = ["main.go"],
-    deps = [":bb_lib"],
+    out = "bb-linux-amd64",
     gc_linkopts = [
         "-s",
         "-w",
@@ -100,13 +91,13 @@ go_binary(
     pure = "on",
     tags = ["manual"],
     visibility = ["//visibility:public"],
+    deps = [":bb_lib"],
 )
 
 go_binary(
     name = "bb-linux-arm64",
-    out = "bb-linux-arm64",
     srcs = ["main.go"],
-    deps = [":bb_lib"],
+    out = "bb-linux-arm64",
     gc_linkopts = [
         "-s",
         "-w",
@@ -116,18 +107,19 @@ go_binary(
     pure = "on",
     tags = ["manual"],
     visibility = ["//visibility:public"],
+    deps = [":bb_lib"],
 )
 
 go_binary(
     name = "bb-windows-amd64",
-    out = "bb-windows-amd64.exe",
     srcs = ["main.go"],
-    deps = [":bb_lib"],
+    out = "bb-windows-amd64.exe",
     goarch = "amd64",
     goos = "windows",
     pure = "on",
     tags = ["manual"],
     visibility = ["//visibility:public"],
+    deps = [":bb_lib"],
 )
 
 package(default_visibility = ["//cli:__subpackages__"])
