@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -65,6 +66,7 @@ var (
 	// You will also likely need to set:
 	//
 	// --target_headers=x-buildbuddy-platform.container-registry-bypass=true
+	// --oci.cache.secret=... # should match source/target cache secret
 	//
 	// So that the image is pulled only from the cache, skipping the registry.
 	// This requires using a server admin group API key (see
@@ -161,16 +163,12 @@ func (r *Replayer) copyTree(ctx context.Context, sourceRemoteInstanceName string
 			return err
 		})
 		for _, file := range dir.GetFiles() {
-			if _, alreadyStarted := r.uploadsStarted.LoadOrStore(file.GetDigest().GetHash(), struct{}{}); alreadyStarted {
-				continue
-			}
 			eg.Go(func() error {
 				rn := digest.NewCASResourceName(file.GetDigest(), sourceRemoteInstanceName, digestType)
-				err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, rn)
-				if err != nil {
-					return err
-				}
-				return nil
+				dedupeKey := "cas:" + rn.DownloadString()
+				return r.doOnce(ctx, dedupeKey, func(ctx context.Context) error {
+					return copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, rn)
+				})
 			})
 		}
 	}
@@ -376,9 +374,9 @@ func main() {
 		}
 		resourceNames = append(resourceNames, rn)
 	}
-	// If replaying from a bundle, load execution resource names from the
-	// manifest.
-	if *sourceBundle != "" {
+	// If replaying from a bundle, and not filtering to specific execution(s)
+	// from the bundle, load execution resource names from the manifest.
+	if *sourceBundle != "" && len(resourceNames) == 0 {
 		bundleManifestBytes, err := os.ReadFile(filepath.Join(*sourceBundle, bundleManifestFileName))
 		if err != nil {
 			log.Fatalf("Failed to read bundle manifest: %s", err)
@@ -387,6 +385,19 @@ func main() {
 		if err := json.Unmarshal(bundleManifestBytes, bundleManifest); err != nil {
 			log.Fatalf("Failed to unmarshal bundle manifest: %s", err)
 		}
+		executions := bundleManifest.Executions
+		// Sort executions by queued timestamp so that they are replayed
+		// *roughly* in their original order.
+		sort.Slice(executions, func(i, j int) bool {
+			// If the timestamp is missing, assume it's because the invocation
+			// was cancelled, and sort the execution last.
+			zi := executions[i].QueuedTimestamp.IsZero()
+			zj := executions[j].QueuedTimestamp.IsZero()
+			if zi != zj {
+				return !zi
+			}
+			return executions[i].QueuedTimestamp.Before(executions[j].QueuedTimestamp)
+		})
 		for _, execution := range bundleManifest.Executions {
 			rn, err := digest.ParseDownloadResourceName(execution.ActionResourceName)
 			if err != nil {
@@ -395,6 +406,10 @@ func main() {
 			resourceNames = append(resourceNames, rn)
 		}
 	}
+
+	// Execution metadata (for bundle manifest) by resource name.
+	// Only populated if replaying from an invocation.
+	executionMetadata := map[*digest.CASResourceName]Execution{}
 
 	if *invocationID != "" {
 		conn, err := grpc_client.DialSimple(*sourceExecutor)
@@ -416,6 +431,11 @@ func main() {
 				log.Fatalf("Invalid execution ID %q: %s", e.ExecutionId, err)
 			}
 			resourceNames = append(resourceNames, rn)
+			executionMetadata[rn] = Execution{
+				ActionResourceName:       rn.DownloadString(),
+				QueuedTimestamp:          e.ExecutedActionMetadata.QueuedTimestamp.AsTime(),
+				WorkerCompletedTimestamp: e.ExecutedActionMetadata.WorkerCompletedTimestamp.AsTime(),
+			}
 		}
 	}
 
@@ -439,11 +459,14 @@ func main() {
 			Executions: make([]Execution, 0, len(resourceNames)),
 		}
 		for _, rn := range resourceNames {
-			bundleManifest.Executions = append(bundleManifest.Executions, Execution{
-				ActionResourceName: rn.DownloadString(),
-			})
+			if md, ok := executionMetadata[rn]; ok {
+				bundleManifest.Executions = append(bundleManifest.Executions, md)
+			} else {
+				bundleManifest.Executions = append(bundleManifest.Executions, Execution{
+					ActionResourceName: rn.DownloadString(),
+				})
+			}
 		}
-		log.Infof("Writing bundle manifest %+v", bundleManifest)
 		bundleManifestBytes, err := json.MarshalIndent(bundleManifest, "", "  ")
 		if err != nil {
 			log.Fatalf("Failed to marshal bundle manifest: %s", err)
@@ -455,16 +478,18 @@ func main() {
 }
 
 func setClientIdentity(ctx context.Context, key string) (context.Context, error) {
-	if err := flagutil.SetValueForFlagName("app.client_identity.key", key, nil, false); err != nil {
-		return ctx, fmt.Errorf("set app.client_identity.key: %s", err)
-	}
-	if err := flagutil.SetValueForFlagName("app.client_identity.origin", "localhost", nil, false); err != nil {
-		return ctx, fmt.Errorf("set app.client_identity.origin: %s", err)
-	}
-	// TODO: add replay_action as a trusted client and use that instead of
-	// "executor", or just trust any client with a signed key.
-	if err := flagutil.SetValueForFlagName("app.client_identity.client", "executor", nil, false); err != nil {
-		return ctx, fmt.Errorf("set app.client_identity.client: %s", err)
+	for k, v := range map[string]any{
+		"app.client_identity.key":    key,
+		"app.client_identity.origin": "localhost",
+		// TODO: add replay_action as a trusted client and use that instead of
+		// "executor", or just trust any client with a signed key.
+		"app.client_identity.client": "executor",
+		// Set a long expiration in case the script takes a long time to run.
+		"app.client_identity.expiration": 6 * time.Hour,
+	} {
+		if err := flagutil.SetValueForFlagName(k, v, nil, false); err != nil {
+			return ctx, fmt.Errorf("set flag %s: %s", k, err)
+		}
 	}
 	service, err := clientidentity.New(clockwork.NewRealClock())
 	if err != nil {
@@ -489,9 +514,9 @@ type Replayer struct {
 	sourceACClient, destACClient   repb.ActionCacheClient
 	execClient                     repb.ExecutionClient
 
-	// Digests that have already started uploading and do not need to be
-	// re-uploaded. Keys are digest hashes; values are arbitrary.
-	uploadsStarted sync.Map
+	// Map of upload keys to [func() error] objects which will upload the
+	// digest once.
+	uploads sync.Map
 }
 
 func (r *Replayer) Start(ctx, srcCtx, targetCtx context.Context, sourceExecutionRN *digest.CASResourceName) error {
@@ -537,16 +562,24 @@ func (r *Replayer) replay(ctx, srcCtx, targetCtx context.Context, sourceExecutio
 	return r.execute(ctx, srcCtx, targetCtx, action, sourceExecutionRN)
 }
 
+func (r *Replayer) doOnce(ctx context.Context, key string, upload func(ctx context.Context) error) error {
+	onceFn := sync.OnceValue(func() error {
+		return upload(ctx)
+	})
+	dedupedOnceFn, _ := r.uploads.LoadOrStore(key, onceFn)
+	return dedupedOnceFn.(func() error)()
+}
+
 func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.Action, sourceExecutionRN *digest.CASResourceName) error {
 	s := sourceExecutionRN.DownloadString()
-	log.Infof("Uploading Action, Command, and inputs for execution %q", s)
+	log.Infof("Copying data for execution %q", s)
 	eg, targetCtx := errgroup.WithContext(targetCtx)
 	eg.Go(func() error {
 		actionRN := sourceExecutionRN
 		if err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, actionRN); err != nil {
 			return status.WrapError(err, "copy action")
 		}
-		log.CtxInfof(ctx, "Copied action %s", actionRN.DownloadString())
+		log.CtxDebugf(ctx, "Copied action %s", actionRN.DownloadString())
 		return nil
 	})
 	eg.Go(func() error {
@@ -554,7 +587,7 @@ func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.A
 		if err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, commandRN); err != nil {
 			return status.WrapError(err, "copy command")
 		}
-		log.CtxInfof(ctx, "Copied command %s", commandRN.DownloadString())
+		log.CtxDebugf(ctx, "Copied command %s", commandRN.DownloadString())
 		return nil
 	})
 	eg.Go(func() error {
@@ -566,15 +599,21 @@ func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.A
 		if err := r.copyTree(ctx, sourceExecutionRN.GetInstanceName(), tree, sourceExecutionRN.GetDigestFunction()); err != nil {
 			return status.WrapError(err, "copy tree")
 		}
-		log.CtxInfof(ctx, "Copied input root %s", treeRN.DownloadString())
+		log.CtxDebugf(ctx, "Copied input root %s", treeRN.DownloadString())
 		return nil
 	})
 	eg.Go(func() error {
-		if err := r.copyCachedContainerImage(ctx, srcCtx, targetCtx, action); err != nil {
-			log.CtxWarningf(ctx, "Error copying image: %s", err)
+		imageProp := platform.FindValue(action.GetPlatform(), "container-image")
+		osProp := platform.FindValue(action.GetPlatform(), "OSFamily")
+		archProp := platform.FindValue(action.GetPlatform(), "Arch")
+		dedupeKey := fmt.Sprintf("image:%s/%s:%s", osProp, archProp, imageProp)
+		return r.doOnce(ctx, dedupeKey, func(ctx context.Context) error {
+			if err := r.copyCachedContainerImage(ctx, srcCtx, targetCtx, action); err != nil {
+				log.CtxWarningf(ctx, "Error copying image: %s", err)
+				return nil
+			}
 			return nil
-		}
-		return nil
+		})
 	})
 	if err := eg.Wait(); err != nil {
 		return err
@@ -1090,7 +1129,6 @@ type BundleManifest struct {
 type Execution struct {
 	ActionResourceName string `json:"action_resource_name"`
 
-	// TODO: add timing metadata so that we can approximately reconstruct the
-	// dependency ordering of executions (for more accurate invocation-level
-	// replays)
+	QueuedTimestamp          time.Time `json:"queued_timestamp"`
+	WorkerCompletedTimestamp time.Time `json:"worker_completed_timestamp"`
 }
