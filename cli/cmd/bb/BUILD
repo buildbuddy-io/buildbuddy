@@ -47,6 +47,12 @@ go_test(
 )
 
 go_binary(
+    name = "bb",
+    embed = [":bb_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_binary(
     name = "bb-darwin-amd64",
     srcs = ["main.go"],
     out = "bb-darwin-amd64",
