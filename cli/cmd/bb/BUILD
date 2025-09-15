@@ -48,7 +48,8 @@ go_test(
 
 go_binary(
     name = "bb",
-    embed = [":bb_lib"],
+    srcs = ["main.go"],
+    deps = [":bb_lib"],
     visibility = ["//visibility:public"],
 )
 
