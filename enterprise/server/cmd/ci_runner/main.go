@@ -1986,6 +1986,7 @@ func (ws *workspace) config(ctx context.Context) error {
 		{"user.email", "ci-runner@buildbuddy.io"},
 		{"user.name", "BuildBuddy"},
 		{"advice.detachedHead", "false"},
+		[]string{"credential.interactive", "false"},
 		// With the version of git that we have installed in the CI runner
 		// image, --filter=blob:none requires the partialClone extension to be
 		// enabled.
