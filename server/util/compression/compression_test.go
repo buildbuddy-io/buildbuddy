@@ -341,9 +341,9 @@ func TestCompressingWriter_HoldsErrors(t *testing.T) {
 	require.Equal(t, "error #1", err.Error())
 	err = w.Flush()
 	require.Equal(t, "error #1", err.Error())
-	err = w.Close()
-	require.Equal(t, "error #1", err.Error())
 	_, err = w.ReadFrom(nil)
+	require.Equal(t, "error #1", err.Error())
+	err = w.Close()
 	require.Equal(t, "error #1", err.Error())
 }
 
