@@ -10,7 +10,7 @@ actions:
         branches:
           - "*"
     steps:
-      - run: "git config -l | sort | uniq"
+      - run: "git config -l --show-origin | sort | uniq"
       - run: "GIT_TRACE=1 git ls-remote https://github.com/buildbuddy-io/private-test-repo 1>/dev/null"
       - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-bare"
   - name: Test with BzlMod
