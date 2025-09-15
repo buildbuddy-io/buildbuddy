@@ -784,13 +784,13 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	adminOnlyKey, err := adb.CreateAPIKey(
 		ctx1, groupID1, "Admin-only key",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
-		0,    /*=expiresIn*/
+		0, /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	developerKey, err := adb.CreateAPIKey(
 		ctx1, groupID1, "Developer key",
 		[]cappb.Capability{cappb.Capability_CAS_WRITE},
-		0,   /*=expiresIn*/
+		0, /*=expiresIn*/
 		true /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 
@@ -837,7 +837,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	_, err = adb.CreateAPIKey(
 		ctx2, groupID1, "test-label-2",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
-		0,    /*=expiresIn*/
+		0, /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
@@ -847,7 +847,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	_, err = adb.CreateAPIKey(
 		ctx3, groupID1, "test-label-3",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
-		0,    /*=expiresIn*/
+		0, /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
@@ -1892,7 +1892,7 @@ func TestChildGroupAuth(t *testing.T) {
 	key1, err := env.GetAuthDB().CreateAPIKey(
 		ctx1, us1Group.GroupID, "admin",
 		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
-		0,    /*=expiresIn*/
+		0, /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	adminCtx1 := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key1.Value)
@@ -1903,7 +1903,7 @@ func TestChildGroupAuth(t *testing.T) {
 	key2, err := env.GetAuthDB().CreateAPIKey(
 		ctx2, us2Group.GroupID, "admin",
 		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
-		0,    /*=expiresIn*/
+		0, /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 
@@ -1983,4 +1983,103 @@ func TestChildGroupAuth(t *testing.T) {
 	cl, err := claims.ClaimsFromContext(gr2Ctx)
 	require.NoError(t, err)
 	require.Equal(t, us2Group.GroupID, cl.GetGroupID())
+}
+
+func TestUserListOps(t *testing.T) {
+	flags.Set(t, "database.create_user_list_tables", true)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	createUser(t, ctx, env, "US1", "org1.io")
+	group1AdminCtx := authUserCtx(ctx, env, t, "US1")
+	group1ID := getGroup(t, group1AdminCtx, env).GroupID
+
+	createUser(t, ctx, env, "US2", "org2.io")
+	group2AdminCtx := authUserCtx(ctx, env, t, "US2")
+	group2ID := getGroup(t, group2AdminCtx, env).GroupID
+
+	// Create list.
+
+	group1List1 := &tables.UserList{GroupID: group1ID, Name: "foo"}
+	err := udb.CreateUserList(group1AdminCtx, group1List1)
+	require.NoError(t, err)
+	group1List2 := &tables.UserList{GroupID: group1ID, Name: "bar"}
+	err = udb.CreateUserList(group1AdminCtx, group1List2)
+	require.NoError(t, err)
+	err = udb.CreateUserList(group1AdminCtx, &tables.UserList{GroupID: group2ID, Name: "bar"})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+	group2List := &tables.UserList{GroupID: group2ID, Name: "baz"}
+	err = udb.CreateUserList(group2AdminCtx, group2List)
+	require.NoError(t, err)
+
+	// Get all lists.
+
+	uls, err := udb.GetUserLists(group1AdminCtx, group1ID)
+	require.NoError(t, err)
+	require.Equal(t, []*tables.UserList{group1List2, group1List1}, uls)
+	_, err = udb.GetUserLists(group1AdminCtx, group2ID)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	// Delete list.
+
+	err = udb.DeleteUserList(group1AdminCtx, group1List1.UserListID)
+	require.NoError(t, err)
+	err = udb.DeleteUserList(group1AdminCtx, group1List1.UserListID)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), err.Error())
+	err = udb.DeleteUserList(group1AdminCtx, group2List.UserListID)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	// Add list members.
+
+	err = udb.AddUserToUserList(group1AdminCtx, group1List2.UserListID, "US1")
+	require.NoError(t, err)
+	err = udb.AddUserToUserList(group1AdminCtx, group1List2.UserListID, "US1")
+	require.Error(t, err)
+	require.True(t, status.IsAlreadyExistsError(err))
+	err = udb.AddUserToUserList(group1AdminCtx, group2List.UserListID, "US1")
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+	err = udb.AddUserToUserList(group1AdminCtx, group1List2.UserListID, "US2")
+	require.NoError(t, err)
+	err = udb.AddUserToUserList(group2AdminCtx, group2List.UserListID, "US2")
+	require.NoError(t, err)
+
+	// Get members.
+
+	ms, err := udb.GetUserListMembers(group1AdminCtx, group1List2.UserListID)
+	require.NoError(t, err)
+	require.Equal(t, []*tables.UserUserList{
+		{UserUserID: "US1", UserListUserListID: group1List2.UserListID},
+		{UserUserID: "US2", UserListUserListID: group1List2.UserListID},
+	}, ms)
+	require.NotEmpty(t, ms)
+	_, err = udb.GetUserListMembers(group1AdminCtx, group2List.UserListID)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+	ms, err = udb.GetUserListMembers(group2AdminCtx, group2List.UserListID)
+	require.NoError(t, err)
+	require.Equal(t, []*tables.UserUserList{
+		{UserUserID: "US2", UserListUserListID: group2List.UserListID},
+	}, ms)
+
+	// Delete members.
+
+	err = udb.RemoveUserFromUserList(group1AdminCtx, group1List2.UserListID, "US1")
+	require.NoError(t, err)
+	err = udb.RemoveUserFromUserList(group1AdminCtx, group1List2.UserListID, "US1")
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
+	ms, err = udb.GetUserListMembers(group1AdminCtx, group1List2.UserListID)
+	require.NoError(t, err)
+	require.Equal(t, []*tables.UserUserList{
+		{UserUserID: "US2", UserListUserListID: group1List2.UserListID},
+	}, ms)
+	err = udb.RemoveUserFromUserList(group1AdminCtx, group2List.UserListID, "US2")
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
 }

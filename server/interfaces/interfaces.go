@@ -567,6 +567,16 @@ type UserDB interface {
 	// DeleteUserGitHubToken deletes the authenticated user's GitHub token.
 	DeleteUserGitHubToken(ctx context.Context) error
 
+	// User List API
+
+	CreateUserList(ctx context.Context, userList *tables.UserList) error
+	GetUserLists(ctx context.Context, groupID string) ([]*tables.UserList, error)
+	GetUserList(ctx context.Context, userListID string) (*tables.UserList, error)
+	DeleteUserList(ctx context.Context, userListID string) error
+	AddUserToUserList(ctx context.Context, userListID string, userID string) error
+	GetUserListMembers(ctx context.Context, userListID string) ([]*tables.UserUserList, error)
+	RemoveUserFromUserList(ctx context.Context, userListID string, userID string) error
+
 	// Secrets API
 
 	GetOrCreatePublicKey(ctx context.Context, groupID string) (string, error)
