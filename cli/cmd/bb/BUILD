@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "bb_lib",
@@ -35,16 +35,29 @@ go_library(
     ],
 )
 
+go_test(
+    name = "bb_test",
+    srcs = ["bb_test.go"],
+    embed = [":bb_lib"],
+    deps = [
+        "//cli/cli_command/register",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
 go_binary(
     name = "bb",
-    embed = [":bb_lib"],
+    srcs = ["main.go"],
+    deps = [":bb_lib"],
     visibility = ["//visibility:public"],
 )
 
 go_binary(
     name = "bb-darwin-amd64",
     out = "bb-darwin-amd64",
-    embed = [":bb_lib"],
+    srcs = ["main.go"],
+    deps = [":bb_lib"],
     gc_linkopts = [
         "-s",
         "-w",
@@ -59,7 +72,8 @@ go_binary(
 go_binary(
     name = "bb-darwin-arm64",
     out = "bb-darwin-arm64",
-    embed = [":bb_lib"],
+    srcs = ["main.go"],
+    deps = [":bb_lib"],
     gc_linkopts = [
         "-s",
         "-w",
@@ -74,7 +88,8 @@ go_binary(
 go_binary(
     name = "bb-linux-amd64",
     out = "bb-linux-amd64",
-    embed = [":bb_lib"],
+    srcs = ["main.go"],
+    deps = [":bb_lib"],
     gc_linkopts = [
         "-s",
         "-w",
@@ -89,7 +104,8 @@ go_binary(
 go_binary(
     name = "bb-linux-arm64",
     out = "bb-linux-arm64",
-    embed = [":bb_lib"],
+    srcs = ["main.go"],
+    deps = [":bb_lib"],
     gc_linkopts = [
         "-s",
         "-w",
@@ -104,7 +120,8 @@ go_binary(
 go_binary(
     name = "bb-windows-amd64",
     out = "bb-windows-amd64.exe",
-    embed = [":bb_lib"],
+    srcs = ["main.go"],
+    deps = [":bb_lib"],
     goarch = "amd64",
     goos = "windows",
     pure = "on",

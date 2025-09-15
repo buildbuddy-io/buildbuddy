@@ -1,4 +1,4 @@
-package main
+package bb
 
 import (
 	"maps"
@@ -39,7 +39,7 @@ const (
 	bazelExitCodeInterrupted          = 8
 )
 
-func main() {
+func Main() {
 	// If we're the sidecar (CLI server) process, run the sidecar instead of the
 	// CLI.
 	sidecarmain.Handle()
@@ -132,7 +132,7 @@ func run() (exitCode int, err error) {
 	// the command.
 	// This is to shortcut the startup-time of the bazel client / server if they
 	// do not need to be run.
-	if opts, command, args := interpretAsBBCliCommand(os.Args[1:]); command != nil && command.Name != "help" {
+	if opts, command, args := InterpretAsBBCliCommand(os.Args[1:]); command != nil && command.Name != "help" {
 		// Let the help parser handle a help command; otherwise, let's handle the
 		// CLI command.
 		Configure(opts)
@@ -145,7 +145,7 @@ func run() (exitCode int, err error) {
 	// Since we do overly-permissive parsing for help commands to try to reduce
 	// frustration when learning how to use the CLI, we should attempt to parse
 	// this as a help command.
-	if helpArgs, err := interpretAsHelpCommand(os.Args[1:]); err != nil {
+	if helpArgs, err := InterpretAsHelpCommand(os.Args[1:]); err != nil {
 		return -1, err
 	} else if helpArgs.GetCommand() == "help" {
 		// Handle help command if applicable.
@@ -177,13 +177,13 @@ func run() (exitCode int, err error) {
 	return handleBazelCommand(start, canonicalizedArgs.Format(), originalArgs)
 }
 
-// interpretAsBBCliCommand strips the bb options from the beginning of a bb
+// InterpretAsBBCliCommand strips the bb options from the beginning of a bb
 // command and returns the options, the command, and the truncated args. If any
 // unrecognized option is encountered before the first positional argument or if
 // the first positional argument is not a bb command (like it might be if it
 // were a bazel command, for example), the args are returned untouched, the
 // options will be nil, and the command will be nil.
-func interpretAsBBCliCommand(args []string) ([]options.Option, *cli_command.Command, []string) {
+func InterpretAsBBCliCommand(args []string) ([]options.Option, *cli_command.Command, []string) {
 	p := parser.GetNativeParser().StartupOptionParser
 	p.Permissive = true
 	opts, argIndex, err := p.ParseOptions(args, "startup")
@@ -205,7 +205,7 @@ func interpretAsBBCliCommand(args []string) ([]options.Option, *cli_command.Comm
 	return nil, nil, args
 }
 
-func interpretAsHelpCommand(args []string) (*parsed.OrderedArgs, error) {
+func InterpretAsHelpCommand(args []string) (*parsed.OrderedArgs, error) {
 	helpParser, err := parser.GetHelpParser()
 	if err != nil {
 		return nil, err
