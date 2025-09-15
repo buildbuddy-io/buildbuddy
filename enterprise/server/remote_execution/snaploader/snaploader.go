@@ -314,6 +314,8 @@ func (s *Snapshot) GetChunkedFiles() []*fcpb.ChunkedFile {
 type GetSnapshotOptions struct {
 	RemoteReadEnabled bool
 	ReadPolicy        string
+	// TODO: Add documentation
+	MaxLocalFallbackSnapshotAge *time.Duration
 }
 
 // CacheSnapshotOptions contains any assets or configuration to be associated
@@ -409,8 +411,9 @@ func New(env environment.Env) (*FileCacheLoader, error) {
 func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKeySet, opts *GetSnapshotOptions) (*Snapshot, error) {
 	var lastErr error
 	allKeys := append([]*fcpb.SnapshotKey{keys.GetBranchKey()}, keys.FallbackKeys...)
-	for _, key := range allKeys {
-		manifest, err := l.getSnapshot(ctx, key, opts)
+	for i, key := range allKeys {
+		isFallbackSnapshot := i > 0
+		manifest, err := l.getSnapshot(ctx, key, opts, isFallbackSnapshot)
 		if err != nil {
 			lastErr = err
 			continue
@@ -424,7 +427,7 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKe
 	return nil, lastErr
 }
 
-func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *GetSnapshotOptions) (*fcpb.SnapshotManifest, error) {
+func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *GetSnapshotOptions, isFallback bool) (*fcpb.SnapshotManifest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -436,12 +439,17 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	if *snaputil.EnableLocalSnapshotSharing {
 		supportsRemoteFallback := opts.RemoteReadEnabled && *snaputil.EnableRemoteSnapshotSharing
 		manifest, err := l.getLocalManifest(ctx, key, supportsRemoteFallback)
-		if err == nil || !opts.RemoteReadEnabled || !*snaputil.EnableRemoteSnapshotSharing {
-			if err == nil {
+		foundLocalSnapshot := err == nil
+		if !foundLocalSnapshot && (!opts.RemoteReadEnabled || !*snaputil.EnableRemoteSnapshotSharing) {
+			return nil, err
+		} else if foundLocalSnapshot {
+			if validateLocalSnapshot(ctx, manifest, opts, isFallback) {
 				log.CtxInfof(ctx, "Using local manifest")
+				return manifest, err
 			}
-			return manifest, err
 		}
+		// If local snapshot is not valid or couldn't be found, fallback to
+		// fetching a remote snapshot.
 	} else if !opts.RemoteReadEnabled {
 		return nil, status.InternalErrorf("invalid state: EnableLocalSnapshotSharing=false and remoteEnabled=false")
 	}
@@ -468,6 +476,25 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	}
 
 	return manifest, nil
+}
+
+func validateLocalSnapshot(ctx context.Context, manifest *fcpb.SnapshotManifest, opts *GetSnapshotOptions, isFallback bool) bool {
+	if !isFallback {
+		return true
+	}
+	if opts.MaxLocalFallbackSnapshotAge == nil {
+		return true
+	}
+	snapshotCreationTime := manifest.GetVmMetadata().GetCreatedTimestamp()
+	if snapshotCreationTime == nil {
+		log.CtxErrorf(ctx, "snapshot creation timestamp for %+v is unexpectedly nil", manifest.GetVmMetadata().GetSnapshotKey())
+		return false
+	}
+	if time.Since(snapshotCreationTime.AsTime()) > *opts.MaxLocalFallbackSnapshotAge {
+		log.CtxInfof(ctx, "local fallback snapshot was created %s ago, which is longer than the max age %s - not using", time.Since(snapshotCreationTime.AsTime()), *opts.MaxLocalFallbackSnapshotAge)
+		return false
+	}
+	return true
 }
 
 // fetchRemoteManifest fetches the most recent snapshot manifest from the remote

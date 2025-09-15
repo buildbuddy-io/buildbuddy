@@ -629,6 +629,87 @@ func TestGetSnapshot_MixOfLocalAndRemoteChunks(t *testing.T) {
 	}
 }
 
+func TestGetSnapshot_ReadPolicy(t *testing.T) {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	flags.Set(t, "executor.snaploader_max_eager_fetches_per_sec", 0)
+
+	env := setupEnv(t)
+	ctx := context.Background()
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+
+	for _, tc := range []struct{
+
+	} {
+		workDir := testfs.MakeTempDir(t)
+
+		// Save a snapshot remotely.
+		workDirA := testfs.MakeDirAll(t, workDir, "VM-A")
+		const chunkSize = 1
+		const fileSize = chunkSize * 10
+		originalImagePath := makeRandomFile(t, workDirA, "test-file", fileSize)
+		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, instanceName, true /*remoteEnabled*/)
+		require.NoError(t, err)
+		originalWriteBuf := []byte("0123456789")
+		_, err = cowA.WriteAt(originalWriteBuf, 0)
+		require.NoError(t, err)
+		optsA := makeFakeSnapshot(t, workDirA, true /*remoteEnabled*/, map[string]*copy_on_write.COWStore{
+			"scratchfs": cowA,
+		}, "")
+		keyset := keysWithInstanceName(t, ctx, loader, instanceName)
+		// Write the snapshot remotely only.
+		flags.Set(t, "executor.enable_local_snapshot_sharing", false)
+		err = loader.CacheSnapshot(ctx, keyset.GetBranchKey(), optsA)
+		flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+		require.NoError(t, err)
+
+		// Read chunks 1-3 from the remote snapshot. Modify one chunk and save the
+		// snapshot locally only.
+		workDirB := testfs.MakeDirAll(t, workDir, "VM-B")
+		snap, err := loader.GetSnapshot(ctx, keyset, &snaploader.GetSnapshotOptions{
+			RemoteReadEnabled: true,
+		})
+		require.NoError(t, err)
+		unpacked, err := loader.UnpackSnapshot(ctx, snap, workDirB)
+		require.NoError(t, err)
+		readBuf := make([]byte, 3)
+		disk := unpacked.ChunkedFiles["scratchfs"]
+		_, err = disk.ReadAt(readBuf, 1)
+		require.NoError(t, err)
+		require.ElementsMatch(t, originalWriteBuf[1:4], readBuf)
+		// Update one chunk of the snapshot.
+		readBuf[2] = '6'
+		_, err = disk.WriteAt(readBuf, 1)
+		require.NoError(t, err)
+		// Write snapshot locally only.
+		optsB := makeFakeSnapshot(t, workDirB, false /*remoteEnabled*/, map[string]*copy_on_write.COWStore{
+			"scratchfs": disk,
+		}, "")
+		err = loader.CacheSnapshot(ctx, keyset.GetBranchKey(), optsB)
+		require.NoError(t, err)
+
+		// Read chunks 2-5. Should read the modified chunk 3
+		// that was written locally only by VM-B. Should be able to fetch chunks 4-5 from the
+		// remote snapshot, even though they were not cached locally by VM-B.
+		workDirC := testfs.MakeDirAll(t, workDir, "VM-C")
+		// GetSnapshot should use the local snapshot manifest, but fallback to the
+		// remote cache for any missing chunks.
+		snap, err = loader.GetSnapshot(ctx, keyset, &snaploader.GetSnapshotOptions{
+			RemoteReadEnabled: true,
+		})
+		require.NoError(t, err)
+		unpackedC, err := loader.UnpackSnapshot(ctx, snap, workDirC)
+		require.NoError(t, err)
+		readBufC := make([]byte, 4)
+		diskC := unpackedC.ChunkedFiles["scratchfs"]
+		_, err = diskC.ReadAt(readBufC, 2)
+		require.NoError(t, err)
+		expectedBuf := []byte("2645")
+		require.ElementsMatch(t, expectedBuf, readBufC)
+	}
+}
+
 func TestMergeQueueBranch(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 

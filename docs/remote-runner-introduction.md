@@ -173,6 +173,47 @@ the default snapshot stays up to date.
 For more technical details on our VM implementation, see our BazelCon
 talk [Reusing Bazel's Analysis Cache by Cloning Micro-VMs](https://www.youtube.com/watch?v=YycEXBlv7ZA).
 
+#### Recommended configuration
+
+Snapshot matching is complex and different strategies come with performance
+or cost trade-offs. More details can be found below at [Remote snapshot save policy](#remote-snapshot-save-policy)
+and [Snapshot read policy](#snapshot-read-policy).
+
+Here are the recommended platform properties for most CI use cases. They balance
+cost considerations and maintain good performance:
+- `remote-snapshot-save-policy=none-available`
+- `snapshot-read-policy=local-first`
+- `max-local-fallback-snapshot-age=1d`
+
+For performance-sensitive or interactive workloads (like if you're using the Remote
+Bazel CLI to build interactively), we recommend the following platform properties.
+They will result in higher cache upload and download:
+- `remote-snapshot-save-policy=always`
+- `snapshot-read-policy=newest`
+
+For Workflows, you can set platform properties using the `platform_properties` field.
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Test all targets"
+    platform_properties:
+      remote-snapshot-save-policy: none-available
+    env:
+      GIT_REPO_DEFAULT_BRANCH: main
+    # ...
+```
+
+For Remote Bazel, you can set platform properties this using the
+`--runner_exec_properties=remote-snapshot-save-policy=` flag.
+
+```bash Sample Command
+bb remote --runner_exec_properties=remote-snapshot-save-policy=none-available test //...
+```
+
+NOTE: Setting platform properties will change the snapshot key. Immediately after
+you update a platform property, you will see snapshot misses until a new default
+snapshot with the new properties is saved.
+
 #### Remote snapshot save policy
 
 By default, after every remote run, a snapshot is cached locally on the machine
@@ -225,14 +266,17 @@ platform property. Valid values are:
   - If there is no default snapshot available, then a remote snapshot will be saved
     for the `my-feature` branch on its first run.
 
-For Workflows, you can configure this using the `platform_properties` field.
+See [Recommended configuration](#recommended-configuration) for details on how to
+apply these properties.
 
-NOTE: If your workflow is triggered by a GitHub webhook event, the `GIT_REPO_DEFAULT_BRANCH`
-environment variable will be set automatically. We use this to determine whether
-the Workflow is running on a default ref. If you plan to manually dispatch
-a Workflow with the ExecuteWorkflow API or our UI, you must manually set this
-environment variable in your Workflow config (as shown below) for this to work as
-expected.
+NOTE: This property relies on the `GIT_REPO_DEFAULT_BRANCH` environment variable
+to be set (it should be set to something like `main` or `master` depending on your
+repo's default branch).
+
+If your workflow was triggered by a GitHub webhook event or the Remote Bazel CLI,
+this environment variable will be set automatically. If you plan to manually
+dispatch a Workflow with the ExecuteWorkflow API or our UI, or a Remote Bazel
+command with the Run API, you must manually set this environment variable.
 
 ```yaml title="buildbuddy.yaml"
 actions:
@@ -244,22 +288,9 @@ actions:
     # ...
 ```
 
-For Remote Bazel, you can configure this using the
-`--runner_exec_properties=remote-snapshot-save-policy=` flag.
-
-NOTE: If your run is triggered by the BB CLI, the `GIT_REPO_DEFAULT_BRANCH`
-environment variable will be set automatically. We use this to determine whether
-the Workflow is running on a default ref. If you plan to use the `Run` API directly,
-you must manually set this environment variable in the API request for this to work as
-expected.
-
-```bash Sample Command
-bb remote --runner_exec_properties=remote-snapshot-save-policy=none-available test //...
-```
-
-If you want to override the remote snapshot save policy for a specific run, you
+If you want to override the remote snapshot save policy for only one specific run, you
 should use a remote header. By default, platform properties are hashed in the
-snapshot key, so changing the snapshot save policy would invalidate your snapshot.
+snapshot key, so changing the snapshot save policy would prevent snapshot matching.
 However platform properties set in remote headers are not included in the snapshot
 key.
 
@@ -281,6 +312,63 @@ to this command to force save a remote snapshot.
 ```bash Sample Command
 bb remote --remote_run_header=x-buildbuddy-platform.remote-snapshot-save-policy=always --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}' --script='echo "Just running this to force save a remote snapshot."'
 ```
+
+#### Snapshot read policy
+
+When looking for a snapshot, we look in the following order:
+
+1. Search for a local snapshot on the same branch of the current Workflow / Remote
+Bazel run.
+2. Search for a remote snapshot on the same branch.
+3. Search for a local snapshot on a fallback branch (typically the default branch, like
+`main` or `master`).
+4. Search for a remote snapshot on a fallback branch.
+
+Due to their size, reading remote snapshots can result in high cache download.
+
+We support configuring the snapshot read policy with the `snapshot-read-policy`
+platform property. Valid values are:
+
+- `newest`: Always read the newest snapshot available.
+  - For performance-sensitve or interactive workloads, this will ensure the
+    most recently updated snapshot is used.
+  - This could be a local or remote snapshot,
+- `local-first`: Always use a local snapshot if available.
+  - This is more economical, because remote cache reads are billed at a higher rate.
+  - This may mean that even if a newer remote snapshot exists, the staler local
+    snapshot will be used.
+  - This can be used in conjunction with the platform property `max-local-fallback-snapshot-age`,
+    which is described in more detail below.
+- `local-only`: Only use local snapshots.
+  - This may result in a lot of snapshot misses, and runs will start from clean runners.
+  - Local snapshots may become unusable if the executor that has it cached locally
+    is fully occupied with other workloads or is restarting during a release.
+    Whereas remote snapshots are usable no matter the underlying executor.
+
+Snapshot reads are also configurable with the `max-local-fallback-snapshot-age`
+platform property. Valid values are durations like `12h` or `1d`.
+
+This platform sets a limit on the max age of a fallback snapshot. It can be used
+if you'd like to limit remote snapshot reads by setting `snapshot-read-policy=local-first`,
+but also want to make sure you're not using a very stale snapshot that may cause
+performance degradation.
+
+For example, let's say you set `snapshot-read-policy=local-first` and
+`max-local-fallback-snapshot-age=1d`.
+- The first run on your feature branch `my-feature` runs on Machine A and resumes from a fallback
+  snapshot on the default branch `main`. There is no local snapshot for `main`
+  available, so it will fetch a remote snapshot. It will cache this `main` snapshot
+  locally (`Main A`).
+- A `main` workflow runs on another machine, and saves a newly updated `main`
+  snapshot to the remote cache (`Main B`).
+- 20 minutes later, the first run of another feature branch `feature-2` runs on Machine A and
+  resumes from a fallback snapshot on `main`. It will resume from the local snapshot
+  `Main A` due to the snapshot read policy `local-first`, even though a more recent
+  snapshot on `main` exists in the remote cache (`Main B`).
+- 1 day 20 minutes later, the first run of another feature branch `feature-3`
+  runs on Machine A and resumes from a fallback snapshot on `main`. This time,
+  the local snapshot `Main A` is too stale, because the max fallback age was set to `1d`.
+  It will fetch and resume from the remote snapshot `Main B`.
 
 ### Runner recycling (macOS only)
 
