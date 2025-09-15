@@ -820,15 +820,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 	execClient := repb.NewExecutionClient(conn)
 
-	reqOS := runtime.GOOS
-	if *execOs != "" {
-		reqOS = *execOs
-	}
-	reqArch := runtime.GOARCH
-	if *execArch != "" {
-		reqArch = *execArch
-	}
-
 	envVars := make(map[string]string, 0)
 	for _, envVar := range *envInput {
 		// If a value was explicitly passed in, use that
@@ -876,6 +867,23 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		return 1, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
 	}
 
+	reqOS := runtime.GOOS
+	if *execOs != "" {
+		reqOS = *execOs
+	}
+	reqArch := runtime.GOARCH
+	if *execArch != "" {
+		reqArch = *execArch
+	}
+	platform.Properties = append(platform.Properties, &repb.Platform_Property{
+		Name:  "OSFamily",
+		Value: reqOS,
+	})
+	platform.Properties = append(platform.Properties, &repb.Platform_Property{
+		Name:  "Arch",
+		Value: reqArch,
+	})
+
 	if *runFromSnapshot != "" {
 		platform.Properties = append(platform.Properties, &repb.Platform_Property{
 			Name:  "snapshot-key-override",
@@ -893,8 +901,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			CommitSha: repoConfig.CommitSHA,
 			Branch:    repoConfig.Ref,
 		},
-		Os:             reqOS,
-		Arch:           reqArch,
 		ContainerImage: *containerImage,
 		Env:            envVars,
 		ExecProperties: platform.Properties,

@@ -91,8 +91,28 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, status.UnavailableError("No cache configured.")
 	}
 
+	// The top level OS and arch fields are deprecated, so prefer the platform property values.
+	os := req.GetOs()
+	arch := req.GetArch()
+	if osProp := getExecProperty(req.GetExecProperties(), platform.OperatingSystemPropertyName); osProp != "" {
+		os = osProp
+	} else if os != "" {
+		req.ExecProperties = append(req.GetExecProperties(), &repb.Platform_Property{
+			Name:  platform.OperatingSystemPropertyName,
+			Value: req.GetOs(),
+		})
+	}
+	if archProp := getExecProperty(req.GetExecProperties(), platform.CPUArchitecturePropertyName); archProp != "" {
+		arch = archProp
+	} else if arch != "" {
+		req.ExecProperties = append(req.GetExecProperties(), &repb.Platform_Property{
+			Name:  platform.CPUArchitecturePropertyName,
+			Value: req.GetArch(),
+		})
+	}
+
 	in := instanceName(req)
-	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), in, req.GetOs(), req.GetArch())
+	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), in, os, arch)
 	if err != nil {
 		return nil, status.WrapError(err, "upload input root")
 	}
@@ -199,7 +219,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	// Containers/VMs aren't supported on darwin - default to bare execution
 	// and use the action workspace as the working directory.
-	if req.GetOs() == "darwin" || isolationType == "none" {
+	if os == "darwin" || isolationType == "none" {
 		wd = ""
 		image = ""
 		isolationType = "none"
@@ -243,19 +263,6 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: platform.RetryPropertyName, Value: fmt.Sprintf("%v", retry)},
 			},
 		},
-	}
-
-	if req.GetOs() != "" {
-		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
-			Name:  platform.OperatingSystemPropertyName,
-			Value: req.GetOs(),
-		})
-	}
-	if req.GetArch() != "" {
-		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
-			Name:  platform.CPUArchitecturePropertyName,
-			Value: req.GetArch(),
-		})
 	}
 
 	for k, v := range req.GetEnv() {
