@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -30,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -206,6 +208,8 @@ func getEnv(t *testing.T) (*testenv.TestEnv, *fakeKMS) {
 	generateKMSKey(t, kms, "master")
 
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{})
+	flags.Set(t, "app.client_identity.key", "jwtkey")
+	clientidentity.Register(env)
 	env.SetKMS(kms)
 	return env, kms
 }
@@ -843,4 +847,163 @@ func TestKeyReencryption(t *testing.T) {
 	// Verify that existing content can continue to be decrypted.
 	testDecryption(user1Ctx, t, crypter, user1EncData, user1EncMD, user1Data)
 	testDecryption(user2Ctx, t, crypter, user2EncData, user2EncMD, user2Data)
+}
+
+func contextWithClientIdentity(t *testing.T, ctx context.Context, service interfaces.ClientIdentityService) context.Context {
+	ctx, err := service.AddIdentityToContext(ctx)
+	require.NoError(t, err)
+	outgoingMD, ok := metadata.FromOutgoingContext(ctx)
+	require.True(t, ok)
+	ctx = metadata.NewIncomingContext(ctx, outgoingMD)
+	ctx, err = service.ValidateIncomingIdentity(ctx)
+	require.NoError(t, err)
+	return ctx
+}
+
+func TestGetEncryptionKey(t *testing.T) {
+	flags.Set(t, "crypter.permitted_clients", []string{"cache-proxy"})
+	flags.Set(t, "app.client_identity.client", "cache-proxy")
+	env, kms := getEnv(t)
+	userID := "US123"
+	groupID := "GR123"
+	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	env.SetAuthenticator(auther)
+
+	customerKeyURI := generateKMSKey(t, kms, "customerKey")
+	clock := clockwork.NewRealClock()
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
+	crypter, err := New(env, clock)
+	require.NoError(t, err)
+	defer crypter.Stop()
+	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
+	require.NoError(t, err)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+	resp, err := crypter.GetEncryptionKey(ctx, &enpb.GetEncryptionKeyRequest{})
+	require.NoError(t, err)
+	require.Equal(t, "EK123", resp.GetKey().GetMetadata().GetId())
+	require.Equal(t, int64(1), resp.GetKey().GetMetadata().GetVersion())
+	require.Equal(t, 32, len(resp.GetKey().GetKey()))
+}
+
+func TestGetEncryptionKey_NoGroup(t *testing.T) {
+	flags.Set(t, "crypter.permitted_clients", []string{"cache-proxy"})
+	flags.Set(t, "app.client_identity.client", "cache-proxy")
+	env, kms := getEnv(t)
+	userID := "US123"
+	groupID := "GR123"
+	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	env.SetAuthenticator(auther)
+
+	customerKeyURI := generateKMSKey(t, kms, "customerKey")
+	clock := clockwork.NewRealClock()
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
+	crypter, err := New(env, clock)
+	require.NoError(t, err)
+	defer crypter.Stop()
+	// ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
+	// require.NoError(t, err)
+	ctx := contextWithClientIdentity(t, t.Context(), env.GetClientIdentityService())
+	_, err = crypter.GetEncryptionKey(ctx, &enpb.GetEncryptionKeyRequest{})
+	require.True(t, status.IsUnauthenticatedError(err))
+}
+
+func TestGetEncryptionKey_NoClientIdentity(t *testing.T) {
+	// Don't set --app.client_identity.client so there is no client identity
+	env, kms := getEnv(t)
+	userID := "US123"
+	groupID := "GR123"
+	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	env.SetAuthenticator(auther)
+
+	customerKeyURI := generateKMSKey(t, kms, "customerKey")
+	clock := clockwork.NewRealClock()
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
+	crypter, err := New(env, clock)
+	require.NoError(t, err)
+	defer crypter.Stop()
+	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
+	require.NoError(t, err)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+	_, err = crypter.GetEncryptionKey(ctx, &enpb.GetEncryptionKeyRequest{})
+	require.True(t, status.IsInvalidArgumentError(err))
+}
+
+func TestGetEncryptionKey_BadClientIdentity(t *testing.T) {
+	flags.Set(t, "crypter.permitted_clients", []string{"cache-proxy"})
+	flags.Set(t, "app.client_identity.client", "executor")
+	env, kms := getEnv(t)
+	userID := "US123"
+	groupID := "GR123"
+	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	env.SetAuthenticator(auther)
+
+	customerKeyURI := generateKMSKey(t, kms, "customerKey")
+	clock := clockwork.NewRealClock()
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
+	crypter, err := New(env, clock)
+	require.NoError(t, err)
+	defer crypter.Stop()
+	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
+	require.NoError(t, err)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+	_, err = crypter.GetEncryptionKey(ctx, &enpb.GetEncryptionKeyRequest{})
+	require.True(t, status.IsInvalidArgumentError(err))
+}
+
+func TestGetEncryptionKey_WrongId(t *testing.T) {
+	flags.Set(t, "crypter.permitted_clients", []string{"cache-proxy"})
+	flags.Set(t, "app.client_identity.client", "cache-proxy")
+	env, kms := getEnv(t)
+	userID := "US123"
+	groupID := "GR123"
+	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	env.SetAuthenticator(auther)
+
+	customerKeyURI := generateKMSKey(t, kms, "customerKey")
+	clock := clockwork.NewRealClock()
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
+	crypter, err := New(env, clock)
+	require.NoError(t, err)
+	defer crypter.Stop()
+	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
+	require.NoError(t, err)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+
+	_, err = crypter.GetEncryptionKey(ctx,
+		&enpb.GetEncryptionKeyRequest{
+			Metadata: &enpb.EncryptionKeyMetadata{
+				Id:      "EK456",
+				Version: 1,
+			},
+		})
+	require.True(t, status.IsNotFoundError(err))
+}
+
+func TestGetEncryptionKey_WrongVersion(t *testing.T) {
+	flags.Set(t, "crypter.permitted_clients", []string{"cache-proxy"})
+	flags.Set(t, "app.client_identity.client", "cache-proxy")
+	env, kms := getEnv(t)
+	userID := "US123"
+	groupID := "GR123"
+	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	env.SetAuthenticator(auther)
+
+	customerKeyURI := generateKMSKey(t, kms, "customerKey")
+	clock := clockwork.NewRealClock()
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
+	crypter, err := New(env, clock)
+	require.NoError(t, err)
+	defer crypter.Stop()
+	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
+	require.NoError(t, err)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+
+	_, err = crypter.GetEncryptionKey(ctx,
+		&enpb.GetEncryptionKeyRequest{
+			Metadata: &enpb.EncryptionKeyMetadata{
+				Id:      "EK123",
+				Version: 2,
+			},
+		})
+	require.True(t, status.IsNotFoundError(err))
 }
