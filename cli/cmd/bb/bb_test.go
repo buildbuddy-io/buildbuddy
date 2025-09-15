@@ -126,11 +126,11 @@ func TestInterpretAsBBCliCommand(t *testing.T) {
 			},
 		},
 		{
-			name: "bazel command: help (recognized as bb help)",
+			name: "bazel command: help",
 			args: []string{"help"},
 			expected: TestResult{
 				OptionNames:   []string{},
-				CommandName:   "help",
+				CommandName:   "",
 				TruncatedArgs: []string{"help"},
 			},
 		},
