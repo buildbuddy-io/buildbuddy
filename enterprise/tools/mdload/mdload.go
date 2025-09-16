@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -16,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
@@ -39,8 +39,8 @@ import (
 
 var (
 	target       = flag.String("target", "grpc://localhost:1970", "Cache target to connect to.")
-	writeQPS     = flag.Uint("write_qps", 1000, "How many queries per second to attempt to write.")
-	readQPS      = flag.Uint("read_qps", 1000, "How many queries per second to attempt to read.")
+	writeQPS     = flag.UInt("write_qps", 1000, "How many queries per second to attempt to write.")
+	readQPS      = flag.UInt("read_qps", 1000, "How many queries per second to attempt to read.")
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
 	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
 	qpsAvgWindow = flag.Duration("qps_avg_window", 5*time.Second, "QPS averaging window")
@@ -50,12 +50,15 @@ var (
 	timeout        = flag.Duration("timeout", 60*time.Second, "Use this timeout as the context timeout for rpc calls")
 	keepGoing      = flag.Bool("keep_going", false, "If true, warn on errors but continue running")
 	monitoringAddr = flag.String("listen", "", "The interface to listen on, like 0.0.0.0:9090 (default: disabled)")
+	partitions     = flag.Slice("partitions", []Partition{}, "")
 )
 
 var (
 	digestGenerator *digest.Generator
 	mu              sync.Mutex
 	filestorer      = filestore.New()
+	partitionIDs    []string
+	cumulatives     []int
 )
 
 var (
@@ -69,12 +72,31 @@ var (
 	})
 )
 
+type Partition struct {
+	ID      string `yaml:"id" json:"id" usage:"The ID of the partition."`
+	Percent int    `yaml:"percent" json:"percent" usage:"The percentage of requests to route to this partition (0-100)"`
+}
+
 func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
 	d, buf, err := digestGenerator.RandomDigestBuf(sizeBytes)
 	if err != nil {
 		log.Fatalf("Error generating digest: %s", err)
 	}
 	return d, buf
+}
+
+func selectPartitionID() string {
+	if len(partitionIDs) == 0 {
+		return "default"
+	}
+
+	randNum := rand.Intn(100)
+	for i, cumulative := range cumulatives {
+		if randNum < cumulative {
+			return partitionIDs[i]
+		}
+	}
+	return partitionIDs[len(partitionIDs)-1]
 }
 
 func randomFileMetadata(sizeBytes int64) *sgpb.FileMetadata {
@@ -93,7 +115,7 @@ func randomFileMetadata(sizeBytes int64) *sgpb.FileMetadata {
 			Isolation: &sgpb.Isolation{
 				CacheType:          rn.GetCacheType(),
 				RemoteInstanceName: rn.GetInstanceName(),
-				PartitionId:        "default",
+				PartitionId:        selectPartitionID(),
 				GroupId:            interfaces.AuthAnonymousUser,
 			},
 			Digest:         rn.GetDigest(),
@@ -160,6 +182,27 @@ func main() {
 	flag.Parse()
 	if err := log.Configure(); err != nil {
 		log.Fatalf("Failed to configure logging: %s", err)
+	}
+
+	// Validate that partition percentages sum to 100 and build cumulative distribution
+	if len(*partitions) > 0 {
+		var totalPercent int
+		for _, partition := range *partitions {
+			totalPercent += partition.Percent
+		}
+		if totalPercent != 100 {
+			log.Fatalf("Partition percentages must sum to 100, got %d", totalPercent)
+		}
+
+		// Pre-compute cumulative distribution for efficient partition selection
+		partitionIDs = make([]string, len(*partitions))
+		cumulatives = make([]int, len(*partitions))
+		cumulative := 0
+		for i, partition := range *partitions {
+			partitionIDs[i] = partition.ID
+			cumulative += partition.Percent
+			cumulatives[i] = cumulative
+		}
 	}
 
 	digestGenerator = digest.RandomGenerator(time.Now().Unix())
