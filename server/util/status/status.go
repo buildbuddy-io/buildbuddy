@@ -4,7 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 	"runtime"
+	"runtime/debug"
+	"strings"
 
 	"github.com/pkg/errors"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -67,6 +70,9 @@ func makeStatusError(code codes.Code, msg string, details ...protoadapt.MessageV
 
 	if !*LogErrorStackTraces {
 		return statusError
+	}
+	if strings.HasPrefix(msg, "key") {
+		fmt.Fprintf(os.Stderr, ">>> makeStatusError: %s", debug.Stack())
 	}
 	return &wrappedError{
 		statusError,

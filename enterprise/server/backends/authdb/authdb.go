@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -696,11 +697,7 @@ func (d *AuthDB) CreateImpersonationAPIKey(ctx context.Context, groupID string) 
 	// Can't check group membership because impersonation modifies
 	// group information.
 	if !u.IsImpersonating() {
-		adminGroupID := d.env.GetAuthenticator().AdminGroupID()
-		if adminGroupID == "" {
-			return nil, status.PermissionDeniedError("You do not have access to the requested organization")
-		}
-		if err := authutil.AuthorizeOrgAdmin(u, adminGroupID); err != nil {
+		if err := claims.AuthorizeServerAdmin(ctx); err != nil {
 			return nil, err
 		}
 	}

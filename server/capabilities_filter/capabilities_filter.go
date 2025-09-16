@@ -7,8 +7,8 @@ import (
 	"slices"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -215,7 +215,7 @@ func AllowedRPCs(ctx context.Context, env environment.Env, groupID string) []str
 	var out []string
 	out = append(out, getUnfilteredRPCs()...)
 
-	if err := authutil.AuthorizeServerAdmin(ctx, env); err == nil {
+	if err := claims.AuthorizeServerAdmin(ctx); err == nil {
 		out = append(out, serverAdminOnlyRPCs...)
 	}
 

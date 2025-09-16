@@ -16,6 +16,7 @@ go_library(
         "//server/tables",
         "//server/util/authutil",
         "//server/util/capabilities",
+        "//server/util/claims",
         "//server/util/db",
         "//server/util/flag",
         "//server/util/log",

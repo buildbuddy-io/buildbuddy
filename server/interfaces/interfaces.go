@@ -106,6 +106,10 @@ type UserInfo interface {
 	// key.
 	GetUserID() string
 	GetGroupID() string
+	// GetExperimentTargetingGroupID returns the group_id to use for experiment
+	// targeting. This typically returns the same value as GetGroupID but can be
+	// overridden by server admins for debugging purposes.
+	GetExperimentTargetingGroupID() string
 	// IsImpersonating returns whether the group ID is being impersonated by the
 	// user. This means that the user is not actually a member of the group, but
 	// is temporarily acting as a group member. Only server admins have this
@@ -136,8 +140,6 @@ const (
 )
 
 type InstallationAuthenticator interface {
-	// The ID of the admin group
-	AdminGroupID() string
 	// Whether or not anonymous usage is enabled
 	AnonymousUsageEnabled(ctx context.Context) bool
 	// Return a slice containing the providers

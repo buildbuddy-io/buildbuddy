@@ -1517,6 +1517,8 @@ func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebbl
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 
+	log.Errorf("lookupFileMetadataAndVersion: %+#v", key)
+
 	var lastErr error
 	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
 		keyBytes, err := key.Bytes(version)

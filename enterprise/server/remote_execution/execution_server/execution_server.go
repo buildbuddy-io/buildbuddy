@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -507,7 +508,7 @@ func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, r *dig
 		if status.IsNotFoundError(err) {
 			return nil, digest.MissingDigestError(r.GetDigest())
 		}
-		return nil, err
+		return nil, status.WrapError(err, "get action result from cache")
 	}
 	actionResult := &repb.ActionResult{}
 	if err := proto.Unmarshal(data, actionResult); err != nil {
@@ -519,7 +520,7 @@ func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, r *dig
 func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *digest.CASResourceName) (*repb.ActionResult, error) {
 	actionResult, err := s.getUnvalidatedActionResult(ctx, d)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "get cached action result")
 	}
 	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), actionResult); err != nil {
 		return nil, err
@@ -671,7 +672,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	adInstanceDigest := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
 	command, err := s.fetchCommand(ctx, adInstanceDigest, action)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "get command")
 	}
 	if action.GetPlatform() == nil && command.GetPlatform() != nil {
 		log.CtxInfof(ctx, "Execution %q has a platform in the command, but not the action. Request metadata: %v", executionID, rmd)
@@ -724,7 +725,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	// Check permissions for server admin-only properties.
 	if props.ContainerRegistryBypass {
-		if err := authutil.AuthorizeServerAdmin(ctx, s.env); err != nil {
+		if err := claims.AuthorizeServerAdmin(ctx); err != nil {
 			return nil, status.WrapError(err, "authorize container-registry-bypass property")
 		}
 	}

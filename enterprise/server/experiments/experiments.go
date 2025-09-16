@@ -121,8 +121,9 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 	}
 
 	if claims, err := claims.ClaimsFromContext(ctx); err == nil {
-		options.targetingKey = claims.GetGroupID()
-		options.attributes["group_id"] = claims.GetGroupID()
+		options.targetingKey = claims.GetExperimentTargetingGroupID()
+		options.attributes["group_id"] = claims.GetExperimentTargetingGroupID()
+		log.Warningf("group_id = %s", claims.GetExperimentTargetingGroupID())
 		options.attributes["user_id"] = claims.GetUserID()
 	}
 	rmd := bazel_request.GetRequestMetadata(ctx)
@@ -262,6 +263,7 @@ func (fp *FlagProvider) ObjectDetails(ctx context.Context, flagName string, defa
 	}
 	v := d.Value
 	if m, ok := d.Value.(map[string]any); ok {
+		log.Warningf("> %s => %v", flagName, m)
 		return m, &details{d.Variant}
 	} else {
 		log.CtxWarningf(ctx, "Experiment flag %q expected value of type map[string]any, but the value is %T (%v)", flagName, v, v)
