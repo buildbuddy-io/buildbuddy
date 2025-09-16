@@ -491,6 +491,9 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 	}
 
 	for _, p := range partitions {
+		if p.SoftDeleted {
+			continue
+		}
 		u := &partitionUsage{
 			part:                     p,
 			sender:                   sender,
