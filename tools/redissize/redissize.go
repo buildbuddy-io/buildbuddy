@@ -70,7 +70,7 @@ func main() {
 				log.Warningf("memusage err: %s", err)
 			}
 			if *printThresholdBytes > 0 && v > int64(*printThresholdBytes) {
-				fmt.Println("Large entry:", k)
+				fmt.Println("Large entry:", k, "; size="+units.BytesSize(float64(v)))
 			}
 			if _, err := uuid.Parse(p); err == nil {
 				p = "invocation_logs"
