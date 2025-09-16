@@ -106,6 +106,11 @@ type UserInfo interface {
 	// key.
 	GetUserID() string
 	GetGroupID() string
+	// GetExperimentTargetingGroupID returns the group ID used for experiment
+	// targeting purposes. This should return the same value as GetGroupID()
+	// except when a server admin is setting a special header to target a
+	// different group for debugging purposes.
+	GetExperimentTargetingGroupID() string
 	// IsImpersonating returns whether the group ID is being impersonated by the
 	// user. This means that the user is not actually a member of the group, but
 	// is temporarily acting as a group member. Only server admins have this

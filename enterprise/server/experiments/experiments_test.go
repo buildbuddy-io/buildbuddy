@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -312,4 +313,53 @@ func TestMultiVariant(t *testing.T) {
 	for color, count := range counts {
 		require.GreaterOrEqual(t, count, 200, color)
 	}
+}
+
+func TestTargetingGroupID(t *testing.T) {
+	ctx := context.Background()
+
+	const testFlags = `{
+	  "$schema": "https://flagd.dev/schema/v0/flags.json",
+	  "flags": {
+	    "test_flag": {
+	      "state": "ENABLED",
+	      "variants": {
+	        "override": "override",
+	        "default": "default"
+	      },
+	      "defaultVariant": "default",
+	      "targeting": {
+	        "if": [
+	          { "==": [{ "var": "group_id" }, "GR2"] },
+	          "override",
+	          "default"
+	        ]
+	      }
+	    }
+	  }
+	}
+	`
+
+	offlineFlagPath := writeFlagConfig(t, testFlags)
+	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	openfeature.SetProviderAndWait(provider)
+
+	fp, err := experiments.NewFlagProvider("test-name")
+	require.NoError(t, err)
+
+	t.Run("should use ExperimentTargetingGroupID as group_id var if set", func(t *testing.T) {
+		ctx := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+			GroupID:                    "GR1",
+			ExperimentTargetingGroupID: "GR2",
+		})
+		s := fp.String(ctx, "test_flag", "")
+		require.Equal(t, "override", s)
+	})
+	t.Run("should use GroupID as group_id var if no targeting group ID is set", func(t *testing.T) {
+		ctx := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+			GroupID: "GR1",
+		})
+		s := fp.String(ctx, "test_flag", "")
+		require.Equal(t, "default", s)
+	})
 }
