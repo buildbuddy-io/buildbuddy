@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -257,6 +259,9 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	var mu sync.Mutex
 	state := ctrRunning
+	var limitHit atomic.Bool
+	waitCtx, waitCancel := context.WithCancel(ctx)
+	defer waitCancel()
 	defer func() {
 		// Clean up the container in the background.
 		// TODO: Add this removal as a job to a centralized queue.
@@ -288,9 +293,25 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		_, err := stdcopy.StdCopy(stdout, stderr, hijackedResp.Reader)
 		result.Stdout = stdoutBuf.Bytes()
 		result.Stderr = stderrBuf.Bytes()
+		limitExceeded := status.IsResourceExhaustedError(err)
+		if limitExceeded {
+			limitHit.Store(true)
+			waitCancel()
+			// Forcefully terminate the container so ContainerWait unblocks.
+			if killErr := r.client.ContainerKill(context.Background(), cid, "SIGKILL"); killErr != nil {
+				if strings.Contains(killErr.Error(), "is not running") {
+					// Container already exited; nothing to do.
+				} else {
+					log.Errorf("Failed to kill docker container after hitting stdout/stderr limit: %s", killErr)
+				}
+			}
+		}
 		mu.Lock()
 		defer mu.Unlock()
-		if state == ctrDidNotExitCleanly {
+		if limitExceeded && state == ctrRunning {
+			state = ctrDidNotExitCleanly
+		}
+		if state == ctrDidNotExitCleanly && !limitExceeded {
 			// If the container did not exit cleanly, the goroutine below will
 			// return an error, so we should not to avoid clobbering the error.
 			return nil
@@ -298,12 +319,15 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return wrapDockerErr(err, "failed to copy docker container output")
 	})
 	eg.Go(func() error {
-		statusCh, errCh := r.client.ContainerWait(ctx, cid, dockercontainer.WaitConditionNotRunning)
+		statusCh, errCh := r.client.ContainerWait(waitCtx, cid, dockercontainer.WaitConditionNotRunning)
 		select {
 		case err := <-errCh:
 			mu.Lock()
 			state = ctrDidNotExitCleanly
 			mu.Unlock()
+			if limitHit.Load() && (errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "context canceled")) {
+				return nil
+			}
 			// Close the output reader so that the above goroutine can also
 			// exit.
 			hijackedResp.Close()

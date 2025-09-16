@@ -106,7 +106,7 @@ func (lr *limitReader) Read(p []byte) (int, error) {
 	if err != nil {
 		return n, err
 	}
-	if lr.n >= lr.max {
+	if lr.n > lr.max {
 		// Signal limit reached so caller can surface a clear error.
 		return n, status.ResourceExhaustedErrorf("output size limit exceeded: %d bytes", lr.max)
 	}

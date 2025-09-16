@@ -389,6 +389,32 @@ func TestDockerRun_StdoutLimit(t *testing.T) {
 	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted, got: %q", res.Error)
 }
 
+func TestDockerRun_StdoutLimit_LongRunningCommand(t *testing.T) {
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 1)
+	env := testenv.GetTestEnv(t)
+	socket := "/var/run/docker.sock"
+	dc, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost(fmt.Sprintf("unix://%s", socket)),
+		dockerclient.WithAPIVersionNegotiation(),
+	)
+	require.NoError(t, err)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
+	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
+
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", "printf buildbuddy && sleep 600"}}
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+
+	require.Error(t, res.Error)
+	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted, got: %q", res.Error)
+	assert.Nil(t, ctx.Err(), "expected run to finish before context deadline, got: %v", ctx.Err())
+	cancel()
+}
+
 func TestDockerExec_StdoutLimit(t *testing.T) {
 	flags.Set(t, "executor.stdouterr_max_size_bytes", 1)
 	env := testenv.GetTestEnv(t)
@@ -421,4 +447,50 @@ func TestDockerExec_StdoutLimit(t *testing.T) {
 
 	assert.Error(t, res.Error)
 	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted, got: %q", res.Error)
+}
+
+func TestDockerExec_DisableOutputLimits_AllowsLargeOutput(t *testing.T) {
+	// When DisableOutputLimits is true, oversized output should not produce
+	// a ResourceExhausted error.
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 1)
+
+	env := testenv.GetTestEnv(t)
+	socket := "/var/run/docker.sock"
+	dc, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost(fmt.Sprintf("unix://%s", socket)),
+		dockerclient.WithAPIVersionNegotiation(),
+	)
+	require.NoError(t, err)
+
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
+	ctx := context.Background()
+
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
+	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
+
+	t.Cleanup(func() {
+		_ = c.Remove(ctx)
+	})
+
+	// Ensure image exists and container is created for exec.
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, "mirror.gcr.io/library/busybox")
+	require.NoError(t, err)
+	err = c.Create(ctx, workDir)
+	require.NoError(t, err)
+
+	// Produce output larger than the configured limit.
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", "printf %0200d 1"}}
+
+	// Disable output limits via stdio; should succeed despite large output.
+	stdio := &interfaces.Stdio{DisableOutputLimits: true}
+	res := c.Exec(ctx, cmd, stdio)
+
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	// Sanity: should have captured some output in CommandResult buffers when
+	// no explicit writers are provided.
+	assert.Greater(t, len(res.Stdout)+len(res.Stderr), 0)
 }

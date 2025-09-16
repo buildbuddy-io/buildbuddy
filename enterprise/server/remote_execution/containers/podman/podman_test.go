@@ -150,6 +150,36 @@ func TestPodmanExec_OutputLimit(t *testing.T) {
 	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted, got: %v", res.Error)
 }
 
+func TestPodmanExec_DisableOutputLimits(t *testing.T) {
+	// Enforce a small limit globally, but disable at stdio.
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 10)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	env.SetCommandRunner(&OutputCommandRunner{})
+
+	buildRoot := testfs.MakeTempDir(t)
+	provider, err := podman.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	props := &platform.Properties{ContainerImage: "docker.io/library/busybox", DockerNetwork: "off"}
+	c, err := provider.New(ctx, &container.Init{Props: props})
+	require.NoError(t, err)
+
+	require.NoError(t, c.Create(ctx, wd))
+
+	// Exec a trivial command; the fake runner will emit oversized output, but
+	// DisableOutputLimits should prevent a ResourceExhausted error.
+	var out bytes.Buffer
+	res := c.Exec(ctx, &repb.Command{Arguments: []string{"echo", "hi"}}, &interfaces.Stdio{Stdout: &out, DisableOutputLimits: true})
+
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	// OutputCommandRunner writes 200 X's; ensure we received data.
+	assert.GreaterOrEqual(t, out.Len(), 200)
+}
+
 func TestImageExists(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
