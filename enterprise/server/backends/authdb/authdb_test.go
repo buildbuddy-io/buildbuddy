@@ -139,7 +139,7 @@ func TestImpersonationKeys(t *testing.T) {
 	// Now treat the random group we picked as the server admin group.
 	// Same user should now be able to create an impersonation key for any
 	// group.
-	auth.ServerAdminGroupID = admin.Groups[0].Group.GroupID
+	flags.Set(t, "auth.admin_group_id", admin.Groups[0].Group.GroupID)
 	u := users[0]
 	targetGroupID := u.Groups[0].Group.GroupID
 	targetGroupAdminCtx, err := auth.WithAuthenticatedUser(ctx, u.UserID)
@@ -824,7 +824,7 @@ func TestImpersonationAPIKeys(t *testing.T) {
 	// Now treat the random group we picked as the server admin group.
 	// Same user should now be able to create an impersonation key for any
 	// group.
-	auth.ServerAdminGroupID = admin.Groups[0].Group.GroupID
+	flags.Set(t, "auth.admin_group_id", admin.Groups[0].Group.GroupID)
 	for _, u := range users {
 		al.Reset()
 		targetGroupID := u.Groups[0].Group.GroupID

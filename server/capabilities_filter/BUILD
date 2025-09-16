@@ -8,8 +8,8 @@ go_library(
     deps = [
         "//proto:capability_go_proto",
         "//server/environment",
-        "//server/util/authutil",
         "//server/util/capabilities",
+        "//server/util/claims",
         "//server/util/status",
     ],
 )
@@ -26,6 +26,7 @@ go_test(
         "//proto/api/v1:api_v1_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

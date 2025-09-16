@@ -1066,7 +1066,7 @@ func startCacheServerForBundle(bundleDir string) (*localCache, error) {
 	if err := clientidentity.Register(env); err != nil {
 		return nil, fmt.Errorf("register client identity: %w", err)
 	}
-	na := nullauth.NewNullAuthenticator(true /*=anonEnabled*/, "" /*=adminGroupID*/)
+	na := nullauth.NewNullAuthenticator(true /*=anonEnabled*/)
 	env.SetAuthenticator(na)
 	hit_tracker.Register(env)
 

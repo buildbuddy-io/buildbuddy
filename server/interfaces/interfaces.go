@@ -136,8 +136,6 @@ const (
 )
 
 type InstallationAuthenticator interface {
-	// The ID of the admin group
-	AdminGroupID() string
 	// Whether or not anonymous usage is enabled
 	AnonymousUsageEnabled(ctx context.Context) bool
 	// Return a slice containing the providers
