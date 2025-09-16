@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/operators"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_action_cache_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_capabilities_client"
@@ -244,6 +245,21 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 			log.Fatalf("Error initializing routing service: %s", err.Error())
 		}
 
+		casCopyOperator, err := operators.NewCopyOperator(env)
+		if err != nil {
+			log.Fatalf("Error initializing CAS migration logic: %s", err.Error())
+		}
+
+		findMissingOperator, err := operators.NewFindMissingOperator(env)
+		if err != nil {
+			log.Fatalf("Error initializing CAS migration logic: %s", err.Error())
+		}
+
+		readOperator, err := operators.NewReadOperator(env)
+		if err != nil {
+			log.Fatalf("Error initializing CAS migration validation logic: %s", err.Error())
+		}
+
 		ac, err := routing_action_cache_client.New(env)
 		if err != nil {
 			log.Fatalf("Error initializing routing action cache client: %s", err.Error())
@@ -256,13 +272,13 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 		}
 		env.SetCapabilitiesClient(cap)
 
-		bs, err := routing_byte_stream_client.New(env)
+		bs, err := routing_byte_stream_client.New(env, casCopyOperator, readOperator)
 		if err != nil {
 			log.Fatalf("Error initializing routing bytestream client: %s", err.Error())
 		}
 		env.SetByteStreamClient(bs)
 
-		cas, err := routing_content_addressable_storage_client.New(env)
+		cas, err := routing_content_addressable_storage_client.New(env, casCopyOperator, readOperator, findMissingOperator)
 		if err != nil {
 			log.Fatalf("Error initializing routing CAS client: %s", err.Error())
 		}

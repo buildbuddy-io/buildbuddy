@@ -22,10 +22,9 @@ type RoutingByteStreamClient struct {
 	router   interfaces.CacheRoutingService
 	copyOp   batch_operator.BatchDigestOperator
 	readOp   batch_operator.BatchDigestOperator
-	verifyOp batch_operator.BatchDigestOperator
 }
 
-func New(env environment.Env) (bspb.ByteStreamClient, error) {
+func New(env environment.Env, copyOp batch_operator.BatchDigestOperator, readOp batch_operator.BatchDigestOperator) (bspb.ByteStreamClient, error) {
 	routingService := env.GetCacheRoutingService()
 	if routingService == nil {
 		return nil, status.FailedPreconditionError("No routing service configured.")
@@ -33,11 +32,13 @@ func New(env environment.Env) (bspb.ByteStreamClient, error) {
 
 	return &RoutingByteStreamClient{
 		router: routingService,
+		copyOp: copyOp,
+		readOp: readOp,
 	}, nil
 }
 
 func (r *RoutingByteStreamClient) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest, opts ...grpc.CallOption) (*bspb.QueryWriteStatusResponse, error) {
-	primaryClient, err := r.router.GetPrimaryBSClient(ctx)
+	primaryClient, _, err := r.router.GetBSClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary AC client: %s", err)
 	}
@@ -45,7 +46,7 @@ func (r *RoutingByteStreamClient) QueryWriteStatus(ctx context.Context, req *bsp
 }
 
 func (r *RoutingByteStreamClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
-	primaryClient, err := r.router.GetPrimaryBSClient(ctx)
+	primaryClient, _, err := r.router.GetBSClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary AC client: %s", err)
 	}
@@ -60,11 +61,7 @@ func (r *RoutingByteStreamClient) Read(ctx context.Context, req *bspb.ReadReques
 		return rsp, nil
 	}
 	singleRandValue := rand.Float32()
-	if singleRandValue < c.GetBackgroundReadVerifyFraction() {
-		if rn, err := digest.ParseDownloadResourceName(req.GetResourceName()); err == nil {
-			r.verifyOp.Enqueue(ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
-		}
-	} else if singleRandValue < c.GetBackgroundReadFraction() {
+	if singleRandValue < c.GetBackgroundReadFraction() {
 		if rn, err := digest.ParseDownloadResourceName(req.GetResourceName()); err == nil {
 			r.readOp.Enqueue(ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
 		}
@@ -77,22 +74,28 @@ func (r *RoutingByteStreamClient) Read(ctx context.Context, req *bspb.ReadReques
 }
 
 type wrappedWriteStream struct {
-	ctx    context.Context
-	copyOp batch_operator.BatchDigestOperator
+	ctx context.Context
+	op  batch_operator.BatchDigestOperator
+	rn  *digest.CASResourceName
 	bspb.ByteStream_WriteClient
 }
 
 func (w *wrappedWriteStream) Send(req *bspb.WriteRequest) error {
 	if req.GetResourceName() != "" {
 		if rn, err := digest.ParseDownloadResourceName(req.GetResourceName()); err == nil {
-			w.copyOp.Enqueue(w.ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
+			w.rn = rn
 		}
 	}
-	return w.ByteStream_WriteClient.Send(req)
+
+	err := w.ByteStream_WriteClient.Send(req)
+	if err == nil && req.GetFinishWrite() && w.rn != nil {
+		w.op.EnqueueByResourceName(w.ctx, w.rn)
+	}
+	return err
 }
 
 func (r *RoutingByteStreamClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
-	primaryClient, err := r.router.GetPrimaryBSClient(ctx)
+	primaryClient, _, err := r.router.GetBSClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary AC client: %s", err)
 	}
@@ -110,7 +113,7 @@ func (r *RoutingByteStreamClient) Write(ctx context.Context, opts ...grpc.CallOp
 	if (singleRandValue) < c.GetBackgroundCopyFraction() {
 		return &wrappedWriteStream{
 			ctx:                    ctx,
-			copyOp:                 r.copyOp,
+			op:                     r.copyOp,
 			ByteStream_WriteClient: rsp,
 		}, nil
 	}
