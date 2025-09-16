@@ -532,16 +532,28 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 			Handler:   server.Handler,
 			TLSConfig: tlsConfig,
 		}
+		sslListener, err := net.Listen("tcp", sslServer.Addr)
+		if err != nil {
+			log.Fatalf("Failed to listen on SSL port %d: %s", *sslPort, err)
+		}
 		go func() {
-			sslServer.ListenAndServeTLS("", "")
+			_ = sslServer.ServeTLS(sslListener, "", "")
 		}()
+		httpListener, err := net.Listen("tcp", server.Addr)
+		if err != nil {
+			log.Fatalf("Failed to listen on port %d: %s", *port, err)
+		}
 		go func() {
-			http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
+			_ = http.Serve(httpListener, interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
 		}()
 	} else {
 		// If no SSL is enabled, we'll just serve things as-is.
+		lis, err := net.Listen("tcp", server.Addr)
+		if err != nil {
+			log.Fatalf("Failed to listen on port %d: %s", *port, err)
+		}
 		go func() {
-			server.ListenAndServe()
+			_ = server.Serve(lis)
 		}()
 	}
 
