@@ -394,7 +394,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 	}
 
 	subdomainGroupID := ""
-	if serverAdminGID := s.env.GetAuthenticator().AdminGroupID(); serverAdminGID != "" {
+	if serverAdminGID := claims.ServerAdminGroupID(); serverAdminGID != "" {
 		for _, gr := range tu.Groups {
 			if gr.Group.GroupID == serverAdminGID && gr.HasCapability(cappb.Capability_ORG_ADMIN) {
 				gid, err := s.getGroupIDForSubdomain(ctx)
@@ -469,15 +469,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 	var group *tables.Group
 	if req.GetGroupId() != "" {
 		// Looking up by group ID is restricted to server admins.
-		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-		if err != nil {
-			return nil, err
-		}
-		adminGroupID := s.env.GetAuthenticator().AdminGroupID()
-		if adminGroupID == "" {
-			return nil, status.PermissionDeniedError("Access denied")
-		}
-		if err := authutil.AuthorizeOrgAdmin(u, adminGroupID); err != nil {
+		if err := claims.AuthorizeServerAdmin(ctx); err != nil {
 			return nil, err
 		}
 		g, err := userDB.GetGroupByID(ctx, req.GetGroupId())

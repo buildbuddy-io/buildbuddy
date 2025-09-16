@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -724,7 +725,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	// Check permissions for server admin-only properties.
 	if props.ContainerRegistryBypass {
-		if err := authutil.AuthorizeServerAdmin(ctx, s.env); err != nil {
+		if err := claims.AuthorizeServerAdmin(ctx); err != nil {
 			return nil, status.WrapError(err, "authorize container-registry-bypass property")
 		}
 	}

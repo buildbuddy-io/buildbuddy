@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"flag"
 	"net/http"
 	"strings"
 
@@ -22,15 +21,11 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
-var (
-	adminGroupID = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
-)
-
 func Register(ctx context.Context, env *real_environment.RealEnv) error {
 	httpAuthenticators := []interfaces.HTTPAuthenticator{}
 	userAuthenticators := []interfaces.UserAuthenticator{}
 
-	oidc, err := oidc.NewOpenIDAuthenticator(ctx, env, *adminGroupID)
+	oidc, err := oidc.NewOpenIDAuthenticator(ctx, env)
 	if err != nil {
 		return status.InternalErrorf("OIDC authenticator failed to configure: %v", err)
 	}
@@ -70,12 +65,8 @@ func Register(ctx context.Context, env *real_environment.RealEnv) error {
 }
 
 func RegisterNullAuth(env *real_environment.RealEnv) error {
-	env.SetAuthenticator(
-		nullauth.NewNullAuthenticator(
-			oidc.AnonymousUsageEnabled(),
-			*adminGroupID,
-		),
-	)
+	na := nullauth.NewNullAuthenticator(oidc.AnonymousUsageEnabled())
+	env.SetAuthenticator(na)
 	return nil
 }
 
