@@ -317,8 +317,7 @@ func (vfs *VFS) PrepareForTask(ctx context.Context, taskID string, invalidatedIn
 		}
 		success, _ := node.RmChild(invalidatedEntry.Name)
 		if !success {
-			log.CtxWarningf(ctx, "Failed to remove child %q from inode %d for path %q: %d", invalidatedEntry.Name, invalidatedEntry.InodeID, node.Path(nil), errno)
-			return status.InternalErrorf("could not remove child %q from inode %d for path %q: %s", invalidatedEntry.Name, invalidatedEntry.InodeID, node.Path(nil), errno)
+			log.CtxInfof(ctx, "Could not remove child %q from inode %d for path %q (may already have been removed async via kernel notification)", invalidatedEntry.Name, invalidatedEntry.InodeID, node.Path(nil))
 		}
 		numInvalidated++
 	}
