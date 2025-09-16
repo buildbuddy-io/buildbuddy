@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 
@@ -148,21 +149,32 @@ func main() {
 			Handler:   server.Handler,
 			TLSConfig: tlsConfig,
 		}
+		sslListener, err := net.Listen("tcp", sslServer.Addr)
+		if err != nil {
+			log.Fatalf("Failed to listen on SSL port %d: %s", *sslPort, err)
+		}
 		go func() {
 			log.Debugf("Listening for HTTPS traffic on %s", sslServer.Addr)
-			sslServer.ListenAndServeTLS("", "")
+			_ = sslServer.ServeTLS(sslListener, "", "")
 		}()
+		httpListener, err := net.Listen("tcp", server.Addr)
+		if err != nil {
+			log.Fatalf("Failed to listen on port %d: %s", *port, err)
+		}
 		go func() {
-			addr := fmt.Sprintf("%s:%d", *listen, *port)
-			log.Debugf("Listening for HTTP traffic on %s", addr)
-			http.ListenAndServe(addr, http_interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
+			log.Debugf("Listening for HTTP traffic on %s", server.Addr)
+			_ = http.Serve(httpListener, http_interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
 		}()
 	} else {
 		log.Debug("SSL Disabled")
 		// If no SSL is enabled, we'll just serve things as-is.
+		lis, err := net.Listen("tcp", server.Addr)
+		if err != nil {
+			log.Fatalf("Failed to listen on port %d: %s", *port, err)
+		}
 		go func() {
 			log.Debugf("Listening for HTTP traffic on %s", server.Addr)
-			server.ListenAndServe()
+			_ = server.Serve(lis)
 		}()
 	}
 

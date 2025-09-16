@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -405,9 +406,14 @@ func main() {
 		reg.Start(rootContext)
 	}()
 
+	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *listen, *port))
+	if err != nil {
+		log.Fatalf("Failed to listen on port %d: %s", *port, err)
+	}
 	go func() {
-		http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), nil)
+		_ = http.Serve(lis, nil)
 	}()
+
 	env.GetHealthChecker().WaitForGracefulShutdown()
 }
 
