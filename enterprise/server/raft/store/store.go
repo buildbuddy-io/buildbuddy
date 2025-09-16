@@ -619,6 +619,15 @@ func (s *Store) Statusz(ctx context.Context) string {
 		)
 	}
 	buf += s.usages.Statusz(ctx)
+	buf += "Partitions from meta range:\n"
+	partitions, err := s.sender.FetchPartitionDescriptors(ctx)
+	if err != nil {
+		buf += fmt.Sprintf("failed to fetch partition descriptors error: %s\n", err)
+	} else {
+		for _, p := range partitions {
+			buf += fmt.Sprintf("\t%s: %s\n", p.GetId(), p.GetState())
+		}
+	}
 	buf += "</pre>"
 	return buf
 }
