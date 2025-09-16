@@ -869,7 +869,7 @@ func usersFromUserGroupJoin(ugj []*userGroupJoin) ([]*tables.User, error) {
 		if err != nil {
 			return nil, status.WrapError(err, "could not convert role to capabilities")
 		}
-		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: v.UserGroup.Role, Capabilities: caps})
+		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: &v.UserGroup.Role, Capabilities: caps})
 	}
 	return users, nil
 }
@@ -943,7 +943,8 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 	}
 	// Grant admin role within the impersonated group.
 	gr.Capabilities = role.AdminCapabilities
-	gr.Role = uint32(role.Admin)
+	r := uint32(role.Admin)
+	gr.Role = &r
 	user.Groups = []*tables.GroupRole{gr}
 	return user, nil
 }

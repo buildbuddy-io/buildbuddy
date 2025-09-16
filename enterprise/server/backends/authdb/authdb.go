@@ -532,7 +532,7 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 		if err != nil {
 			return nil, status.WrapError(err, "could not convert role to capabilities")
 		}
-		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: v.UserGroup.Role, Capabilities: caps})
+		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: &v.UserGroup.Role, Capabilities: caps})
 	}
 	return user, nil
 }
