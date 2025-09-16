@@ -27,6 +27,7 @@ interface State {
   direction: "asc" | "desc";
   mnemonicFilter: string;
   runnerFilter: string;
+  platformPropertyFilters: Map<string, string>;
   limit: number;
   log: tools.protos.ExecLogEntry[] | undefined;
 }
@@ -40,6 +41,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     direction: "desc",
     mnemonicFilter: "",
     runnerFilter: "",
+    platformPropertyFilters: new Map<string, string>(),
     limit: 100,
     log: undefined,
   };
@@ -158,6 +160,18 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     });
   }
 
+  handlePlatformPropertyFilterChange(propertyName: string, value: string) {
+    this.setState((prevState) => {
+      const newFilters = new Map(prevState.platformPropertyFilters);
+      if (value === "*") {
+        newFilters.delete(propertyName);
+      } else {
+        newFilters.set(propertyName, value);
+      }
+      return { platformPropertyFilters: newFilters };
+    });
+  }
+
   handleMoreClicked() {
     this.setState({ limit: this.state.limit + 100 });
   }
@@ -176,6 +190,23 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     return `/invocation/${this.props.model.getInvocationId()}?${search}#action`;
   }
 
+  getPlatformProperties(platform?: any): Map<string, string> {
+    const props = new Map<string, string>();
+    if (!platform?.properties) return props;
+    for (const prop of platform.properties) {
+      if (prop.name && prop.value) {
+        props.set(prop.name, prop.value);
+      }
+    }
+    return props;
+  }
+
+  getPlatformPropertyValue(platform?: any, propertyName?: string): string {
+    if (!platform?.properties || !propertyName) return "";
+    const prop = platform.properties.find((p: any) => p.name === propertyName);
+    return prop?.value || "";
+  }
+
   render() {
     if (this.state.loading) {
       return <div className="loading" />;
@@ -190,6 +221,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
 
     const mnemonics = new Set<string>();
     const runners = new Set<string>();
+    const platformPropertyValues = new Map<string, Set<string>>();
 
     const spawns = this.state.log
       .filter((l) => {
@@ -199,6 +231,14 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
         if (l.spawn?.runner) {
           runners.add(l.spawn.runner);
         }
+        const platformProps = this.getPlatformProperties(l.spawn?.platform);
+        for (const [propName, propValue] of platformProps) {
+          if (!platformPropertyValues.has(propName)) {
+            platformPropertyValues.set(propName, new Set<string>());
+          }
+          platformPropertyValues.get(propName)!.add(propValue);
+        }
+
         if (l.type != "spawn") {
           return false;
         }
@@ -207,6 +247,12 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
         }
         if (this.state.runnerFilter != "" && l.spawn?.runner != this.state.runnerFilter) {
           return false;
+        }
+        for (const [propName, filterValue] of this.state.platformPropertyFilters) {
+          const actualValue = this.getPlatformPropertyValue(l.spawn?.platform, propName);
+          if (filterValue != "*" && actualValue != filterValue) {
+            return false;
+          }
         }
         if (
           this.props.filter != "" &&
@@ -232,24 +278,52 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                 <Download className="download-exec-log-button" onClick={() => this.downloadLog()} />
               </div>
               <div className="invocation-sort-controls">
-                <span className="invocation-filter-title">Mnemonic</span>
-                <Select onChange={this.handleMnemonicFilterChange.bind(this)} value={this.state.mnemonicFilter}>
-                  <Option value="">All</Option>
-                  {sorted(mnemonics).map((m) => (
-                    <Option value={m}>{m}</Option>
+                <div className="invocation-filter-control">
+                  <span className="invocation-filter-title">Mnemonic</span>
+                  <Select onChange={this.handleMnemonicFilterChange.bind(this)} value={this.state.mnemonicFilter}>
+                    <Option value="">All</Option>
+                    {sorted(mnemonics).map((m) => (
+                      <Option value={m}>{m}</Option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="invocation-filter-control">
+                  <span className="invocation-filter-title">Runner</span>
+                  <Select onChange={this.handleRunnerFilterChange.bind(this)} value={this.state.runnerFilter}>
+                    <Option value="">All</Option>
+                    {sorted(runners).map((m) => (
+                      <Option value={m}>{m}</Option>
+                    ))}
+                  </Select>
+                </div>
+                {Array.from(platformPropertyValues.entries())
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([propName, values]) => (
+                    <div className="invocation-filter-control" key={propName}>
+                      <span className="invocation-filter-title">{propName}</span>
+                      <Select
+                        onChange={(e) => this.handlePlatformPropertyFilterChange(propName, e.target.value)}
+                        value={
+                          this.state.platformPropertyFilters.has(propName)
+                            ? this.state.platformPropertyFilters.get(propName)
+                            : "*"
+                        }>
+                        <Option value="*">All</Option>
+                        {sorted(values).map((value) => (
+                          <Option key={value} value={value}>
+                            {value}
+                          </Option>
+                        ))}
+                        <Option value="">Not set</Option>
+                      </Select>
+                    </div>
                   ))}
-                </Select>
-                <span className="invocation-sort-title">Runner</span>
-                <Select onChange={this.handleRunnerFilterChange.bind(this)} value={this.state.runnerFilter}>
-                  <Option value="">All</Option>
-                  {sorted(runners).map((m) => (
-                    <Option value={m}>{m}</Option>
-                  ))}
-                </Select>
-                <span className="invocation-sort-title">Sort by</span>
-                <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
-                  <Option value="total-duration">Total Duration</Option>
-                </Select>
+                <div className="invocation-filter-control">
+                  <span className="invocation-filter-title">Sort by</span>
+                  <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
+                    <Option value="total-duration">Total Duration</Option>
+                  </Select>
+                </div>
                 <span className="group-container">
                   <div>
                     <input
@@ -299,6 +373,11 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                         )}
                         <div>Mnemonic: {spawn.spawn?.mnemonic}</div>
                         <div>Runner: {spawn.spawn?.runner}</div>
+                        {Array.from(this.getPlatformProperties(spawn.spawn?.platform)).map(([propName, propValue]) => (
+                          <div key={propName}>
+                            {propName}: {propValue}
+                          </div>
+                        ))}
                         <div>Remotable: {spawn.spawn?.remotable ? "true" : "false"}</div>
                         <div>Cachable: {spawn.spawn?.cacheable ? "true" : "false"}</div>
                         <div>Exit code: {spawn.spawn?.exitCode || 0}</div>
