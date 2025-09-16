@@ -23,6 +23,9 @@ var (
 	apiTarget = flags.String("target", "remote.buildbuddy.io", "BuildBuddy gRPC target")
 	lines     = flags.Int("lines", 100_000, "Minimum number of lines to fetch")
 
+	pathPattern = regexp.MustCompile(`/invocation/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})`)
+	uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
 	usage = `
 bb ` + flags.Name() + ` <invocation-id-or-url> [--lines=100000] [--target=remote.buildbuddy.io]
 
@@ -35,14 +38,12 @@ Examples:
 )
 
 func extractInvocationID(input string) (string, error) {
-	uuidPattern := regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 	if uuidPattern.MatchString(input) {
 		return input, nil
 	}
 
 	parsedURL, err := url.Parse(input)
 	if err == nil {
-		pathPattern := regexp.MustCompile(`/invocation/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})`)
 		if matches := pathPattern.FindStringSubmatch(parsedURL.Path); len(matches) > 1 {
 			return matches[1], nil
 		}
