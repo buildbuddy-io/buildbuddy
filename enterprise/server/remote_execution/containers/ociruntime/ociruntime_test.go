@@ -208,6 +208,54 @@ func TestLimitedStd(t *testing.T) {
 	assert.Contains(t, res.Error.Error(), "limit: 10 bytes")
 }
 
+// TestDisableOutputLimits_Exec verifies that when DisableOutputLimits is set
+// on stdio, large outputs do not trigger a ResourceExhausted error for OCI exec.
+func TestDisableOutputLimits_Exec(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = c.Remove(ctx)
+	})
+
+	// Small limit globally, but disabled at stdio level
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 10)
+
+	// Pull and create before exec
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+
+	// Produce >10B of stdout
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `echo 'hello world'`}}
+	stdio := &interfaces.Stdio{DisableOutputLimits: true}
+	res := c.Exec(ctx, cmd, stdio)
+
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "hello world\n", string(res.Stdout))
+}
+
 func TestCgroupSettings(t *testing.T) {
 	setupNetworking(t)
 

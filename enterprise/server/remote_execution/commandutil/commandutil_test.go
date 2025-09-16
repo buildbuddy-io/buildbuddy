@@ -118,6 +118,28 @@ func TestLimitStdErrOutWriter(t *testing.T) {
 	}
 }
 
+func TestLimitReader_AllowsExactLimit(t *testing.T) {
+	r := commandutil.LimitReader(bytes.NewBufferString("hello"), 5)
+	buf := make([]byte, 3)
+	// First read should succeed and consume 3 bytes.
+	n, err := r.Read(buf)
+	require.NoError(t, err)
+	assert.Equal(t, 3, n)
+	assert.Equal(t, "hel", string(buf[:n]))
+
+	// Second read should consume the remaining 2 bytes without error.
+	n, err = r.Read(buf)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	assert.Equal(t, "lo", string(buf[:n]))
+
+	// Subsequent read should fail with ResourceExhausted since the limit is reached.
+	n, err = r.Read(buf)
+	assert.Equal(t, 0, n)
+	assert.Error(t, err)
+	assert.True(t, status.IsResourceExhaustedError(err), "expected resource exhausted error, got: %v", err)
+}
+
 func TestCommandWithOutputLimit(t *testing.T) {
 	flags.Set(t, "executor.stdouterr_max_size_bytes", 10)
 	ctx := context.Background()
