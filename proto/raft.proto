@@ -706,3 +706,20 @@ message GetRangeDebugInfoResponse {
   bool has_lease = 4;
   RaftMembership membership = 5;
 }
+
+message RangeDescriptorChange {
+  RangeDescriptor old_descriptor = 1;
+  RangeDescriptor new_descriptor = 2;
+}
+
+message PartitionDescriptorChange {
+  PartitionDescriptor old_descriptor = 1;
+  PartitionDescriptor new_descriptor = 2;
+}
+
+message AdminUpdateDescriptorRequest {
+	RangeDescriptorChange range_descriptor_change = 1;
+	repeated PartitionDescriptorChange partition_descriptor_change = 2;
+}
+
+message AdminUpdateDescriptorResponse {}
