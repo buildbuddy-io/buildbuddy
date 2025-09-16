@@ -561,6 +561,79 @@ func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugIn
 	return rsp, nil
 }
 
+func (s *Store) AdminUpdateDescriptor(ctx context.Context, req *rfpb.AdminUpdateDescriptorRequest) (*rfpb.AdminUpdateDescriptorResponse, error) {
+	if rangeChange := req.GetRangeDescriptorChange(); rangeChange != nil {
+		oldDesc := rangeChange.GetOldDescriptor()
+		newDesc := rangeChange.GetNewDescriptor()
+
+		if oldDesc == nil || newDesc == nil {
+			return nil, status.InvalidArgumentError("both old and new range descriptors must be provided")
+		}
+
+		if expected := oldDesc.GetGeneration() + 1; newDesc.GetGeneration() != expected {
+			return nil, status.InvalidArgumentErrorf("the new generation should be %d, but is %d instead", expected, newDesc.GetGeneration())
+		}
+
+		err := s.UpdateRangeDescriptor(ctx, oldDesc, newDesc)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "failed to update range descriptor: %s", err)
+		}
+		return &rfpb.AdminUpdateDescriptorResponse{}, nil
+	}
+
+	if len(req.GetPartitionDescriptorChange()) == 0 {
+		return &rfpb.AdminUpdateDescriptorResponse{}, nil
+	}
+
+	batch := rbuilder.NewBatchBuilder()
+	for _, partitionChange := range req.GetPartitionDescriptorChange() {
+		oldDesc := partitionChange.GetOldDescriptor()
+		newDesc := partitionChange.GetNewDescriptor()
+
+		if oldDesc == nil || newDesc == nil {
+			return nil, status.InvalidArgumentError("both old and new partition descriptors must be provided")
+		}
+
+		if oldDesc.GetId() != newDesc.GetId() {
+			return nil, status.InvalidArgumentError("both partition ID must be provided")
+		}
+
+		if expected := oldDesc.GetGeneration() + 1; newDesc.GetGeneration() != expected {
+			return nil, status.InvalidArgumentErrorf("the new generation should be %d, but is %d instead", expected, newDesc.GetGeneration())
+		}
+
+		key := keys.MakeKey(constants.PartitionPrefix, []byte(oldDesc.GetId()))
+		oldBuf, err := proto.Marshal(oldDesc)
+		if err != nil {
+			return nil, status.InternalErrorf("failed to marshal old partition descriptor: %s", err)
+		}
+
+		newBuf, err := proto.Marshal(newDesc)
+		if err != nil {
+			return nil, status.InternalErrorf("failed to marshal new partition descriptor: %s", err)
+		}
+		batch.Add(&rfpb.CASRequest{
+			Kv: &rfpb.KV{
+				Key:   key,
+				Value: newBuf,
+			},
+			ExpectedValue: oldBuf,
+		})
+	}
+
+	batchProto, err := batch.ToProto()
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := s.sender.SyncPropose(ctx, constants.MetaRangePrefix, batchProto)
+	if err != nil {
+		return nil, err
+	}
+	batchResp := rbuilder.NewBatchResponseFromProto(rsp)
+	err = batchResp.AnyError()
+	return &rfpb.AdminUpdateDescriptorResponse{}, err
+}
+
 func (s *Store) Statusz(ctx context.Context) string {
 	buf := "<pre>"
 	buf += s.liveness.String() + "\n"
