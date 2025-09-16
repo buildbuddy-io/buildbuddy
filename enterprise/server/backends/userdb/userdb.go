@@ -937,7 +937,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 			WHERE group_id = ?
 		`,
 		u.GetGroupID(),
-	).Take(gr)
+	).Take(&gr.Group)
 	if err != nil {
 		return nil, err
 	}
