@@ -21,6 +21,7 @@ go_library(
         "//enterprise/server/content_addressable_storage_server_proxy",
         "//enterprise/server/hit_tracker_client",
         "//enterprise/server/remoteauth",
+        "//enterprise/server/routing/operators",
         "//enterprise/server/routing/routing_action_cache_client",
         "//enterprise/server/routing/routing_byte_stream_client",
         "//enterprise/server/routing/routing_capabilities_client",

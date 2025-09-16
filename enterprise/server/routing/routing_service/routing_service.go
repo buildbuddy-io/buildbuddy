@@ -116,28 +116,28 @@ func (r *routingService) getPrimaryClientSet(ctx context.Context) (*clientSet, e
 	return clientSet, nil
 }
 
-func (r *routingService) GetPrimaryCASClient(ctx context.Context) (repb.ContentAddressableStorageClient, error) {
+func (r *routingService) GetCASClients(ctx context.Context) (repb.ContentAddressableStorageClient, repb.ContentAddressableStorageClient, error) {
 	clientSet, err := r.getPrimaryClientSet(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return clientSet.cas, nil
+	return clientSet.cas, nil, nil
 }
 
-func (r *routingService) GetPrimaryACClient(ctx context.Context) (repb.ActionCacheClient, error) {
+func (r *routingService) GetACClients(ctx context.Context) (repb.ActionCacheClient, repb.ActionCacheClient, error) {
 	clientSet, err := r.getPrimaryClientSet(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return clientSet.ac, nil
+	return clientSet.ac, nil, nil
 }
 
-func (r *routingService) GetPrimaryBSClient(ctx context.Context) (bspb.ByteStreamClient, error) {
+func (r *routingService) GetBSClients(ctx context.Context) (bspb.ByteStreamClient, bspb.ByteStreamClient, error) {
 	clientSet, err := r.getPrimaryClientSet(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return clientSet.bs, nil
+	return clientSet.bs, nil, nil
 }
 
 func (r *routingService) GetPrimaryCapabilitiesClient(ctx context.Context) (repb.CapabilitiesClient, error) {

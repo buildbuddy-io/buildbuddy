@@ -62,6 +62,10 @@ func WithLocalServerLabels(ctx context.Context) context.Context {
 	return ctx
 }
 
+func DisableUsageTracking(ctx context.Context) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, SkipUsageTrackingHeaderName, SkipUsageTrackingEnabledValue)
+}
+
 // ClientOrigin returns the configured value of x-buildbuddy-origin that will be
 // set on *outgoing* gRPC requests with label propagation enabled.
 func ClientOrigin() string {
