@@ -36,6 +36,10 @@ const (
 	gormRecordOpStartTimeCallbackKey = "bb_clickhouse:record_op_start_time"
 	gormRecordMetricsCallbackKey     = "bb_clickhouse:record_metrics"
 	gormQueryNameKey                 = "bb_clickhouse:query_name"
+
+	// How long to wait for a single invocation batch insert to complete
+	// before timing out and logging an error.
+	invocationBatchInsertTimeout = 1 * time.Minute
 )
 
 var (
@@ -47,10 +51,15 @@ var (
 
 	autoMigrateDB             = flag.Bool("olap_database.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
 	printSchemaChangesAndExit = flag.Bool("olap_database.print_schema_changes_and_exit", false, "If set, print schema changes from auto-migration, then exit the program.")
+
+	invocationBatchInsertInterval = flag.Duration("olap_database.invocation_batch_insert_interval", 1*time.Second, "The interval at which to insert invocation batches into clickhouse")
 )
 
 type DBHandle struct {
 	db *gorm.DB
+
+	shutdown     chan struct{}
+	invocationCh chan *schema.Invocation
 }
 
 func (dbh *DBHandle) GORM(ctx context.Context, name string) *gorm.DB {
@@ -67,6 +76,52 @@ func (dbh *DBHandle) NowFunc() time.Time {
 
 func (dbh *DBHandle) DB(ctx context.Context) *gorm.DB {
 	return dbh.db.WithContext(ctx)
+}
+
+func (dbh *DBHandle) startInvocationBatchInserter(interval time.Duration) func() {
+	ctx := context.Background()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		var batch []*schema.Invocation
+		for shutdown := false; !shutdown; {
+			select {
+			case item := <-dbh.invocationCh:
+				// Add item to batch
+				batch = append(batch, item)
+				continue
+			case <-dbh.shutdown:
+				// Flush the final batch then exit the loop.
+				shutdown = true
+			case <-ticker.C:
+			}
+			// Flush batch
+			if len(batch) == 0 {
+				continue
+			}
+			(func() {
+				ctx, cancel := context.WithTimeout(ctx, invocationBatchInsertTimeout)
+				defer cancel()
+				if err := dbh.insertWithRetrier(ctx, (&schema.Invocation{}).TableName(), len(batch), batch); err != nil {
+					log.CtxErrorf(ctx, "Failed to insert invocation batch (n=%d): %s", len(batch), err)
+				} else {
+					log.CtxInfof(ctx, "Inserted invocation batch (n=%d)", len(batch))
+				}
+			})()
+			// reuse slice
+			clear(batch)
+			batch = batch[:0]
+		}
+	}()
+	return func() {
+		close(dbh.shutdown)
+		<-done
+	}
 }
 
 type query struct {
@@ -190,6 +245,17 @@ func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numE
 
 func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
 	inv := schema.ToInvocationFromPrimaryDB(ti)
+	if *invocationBatchInsertInterval > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case h.invocationCh <- inv:
+			// Accepted by batch inserter.
+			return nil
+		case <-h.shutdown:
+			// Batch inserter was stopped due to shutdown. Flush synchronously.
+		}
+	}
 	if err := h.insertWithRetrier(ctx, inv.TableName(), 1, inv); err != nil {
 		return status.UnavailableErrorf("failed to insert invocation (invocation_id = %q), err: %s", ti.InvocationID, err)
 	}
@@ -403,7 +469,18 @@ func Register(env *real_environment.RealEnv) error {
 	}
 
 	dbh := &DBHandle{
-		db: db,
+		db:           db,
+		shutdown:     make(chan struct{}),
+		invocationCh: make(chan *schema.Invocation),
+	}
+	if *invocationBatchInsertInterval > 0 {
+		stop := dbh.startInvocationBatchInserter(*invocationBatchInsertInterval)
+		if hc := env.GetHealthChecker(); hc != nil {
+			env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+				stop()
+				return nil
+			})
+		}
 	}
 
 	env.SetOLAPDBHandle(dbh)
