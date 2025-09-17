@@ -33,38 +33,48 @@ func main() {
 
 	log.Printf("Running %d loops...", *n)
 
-	f, err := os.CreateTemp(*dir, "example")
-	if err != nil {
-		log.Fatalf("oh shit: %s", err)
-	}
-	f.Write([]byte("THIS IS SOME GREAT TESTING ISNT IT"))
-	f.Write([]byte("REFLINKS ARE THE SHIT"))
-	f.Close()
-	log.Printf("Wrote some shit to %q", f.Name())
+	files := make([]*os.File, *concurrency)
+	nodes := make([]*repb.FileNode, *concurrency)
 
+	
 	fc, err := filecache.NewFileCache(filepath.Join(*dir, "filecache"), 1e9, true)
 	if err != nil {
 		log.Fatalf("Err making filecache: %s", err)
 	}	
-	d, err := digest.ComputeForFile(f.Name(), repb.DigestFunction_BLAKE3)
-	if err != nil {
-		log.Fatalf("Error hashing file: %s", err)
-	}
-	node := &repb.FileNode{
-		Name:   "sourceFile",
-		Digest: d,
-	}
-	log.Printf("Node is: %+v", node)
-	if err := fc.AddFile(ctx, node, f.Name()); err != nil {
-		log.Fatalf("error adding file: %s", err)
-	}
 
+
+	for c := range *concurrency {
+		f, err := os.CreateTemp(*dir, fmt.Sprintf("example-%d", c))
+		if err != nil {
+			log.Fatalf("oh shit: %s", err)
+		}
+		f.Write([]byte(fmt.Sprintf("This is source file %d", c)))
+		f.Close()
+		log.Printf("Wrote test file %d (%q)", c, f.Name())
+		files[c] = f
+
+		d, err := digest.ComputeForFile(f.Name(), repb.DigestFunction_BLAKE3)
+		if err != nil {
+			log.Fatalf("Error hashing file: %s", err)
+		}
+		node := &repb.FileNode{
+			Name:   "sourceFile",
+			Digest: d,
+		}
+		log.Printf("Node is: %+v", node)
+		if err := fc.AddFile(ctx, node, f.Name()); err != nil {
+			log.Fatalf("error adding file: %s", err)
+		}
+		nodes[c] = node
+	}
 	eg := errgroup.Group{}
 	eg.SetLimit(*concurrency)
 
 	start := time.Now()
 	for i := 0; i < *n; i++ {
 		i := i
+		f := files[i%(*concurrency)]
+		node := nodes[i%(*concurrency)]
 		eg.Go(func() error {
 			if !fc.FastLinkFile(ctx, node, fmt.Sprintf("%s-%d", f.Name(), i)) {
 				log.Fatalf("Error fastlinking")
