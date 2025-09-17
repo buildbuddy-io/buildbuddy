@@ -41,6 +41,7 @@ var (
 	forcedNetworkIsolationType = flag.String("executor.forced_network_isolation_type", "", "If set, run all commands that require networking with this isolation")
 	defaultImage               = flag.String("executor.default_image", Ubuntu16_04Image, "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
 	enableVFS                  = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
+	forceVFS                   = flag.Bool("executor.force_vfs", false, "Whether FUSE based filesystem is forced.")
 	extraEnvVars               = flag.Slice("executor.extra_env_vars", []string{}, "Additional environment variables to pass to remotely executed actions: can be specified either as a `NAME=VALUE` assignment, or just `NAME` to inherit the environment variable from the executor process.")
 )
 
@@ -361,6 +362,9 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 
 	// Only Enable VFS if it is also enabled via flags.
 	vfsEnabled := boolProp(m, enableVFSPropertyName, false) && *enableVFS
+	if !vfsEnabled && *forceVFS {
+		vfsEnabled = true
+	}
 	// Runner recycling is not yet supported in combination with VFS workspaces.
 	// Firecracker VFS performance is not good enough yet to be enabled.
 	if ContainerType(isolationType) == FirecrackerContainerType {
