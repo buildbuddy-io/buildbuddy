@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/metrics",
+        "//server/util/bytebufferpool",
         "//server/util/log",
         "@com_github_klauspost_compress//zstd",
         "@com_github_prometheus_client_golang//prometheus",
