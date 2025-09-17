@@ -61,13 +61,28 @@ var (
 	cumulatives     []int
 )
 
+const (
+	methodLabel = "method"
+)
+
 var (
-	MDLoadErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	MDLoadTotalErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "buildbuddy",
-		Subsystem: "cacheload",
-		Name:      "error_count",
-		Help:      "The total number of mdload errors.",
+		Subsystem: "mdload",
+		Name:      "total_error_count",
+		Help:      "The total number of mdload errors, including errors in retry",
 	}, []string{
+		methodLabel,
+		metrics.StatusHumanReadableLabel,
+	})
+
+	MDLoadFinalErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "buildbuddy",
+		Subsystem: "mdload",
+		Name:      "final_error_count",
+		Help:      "The total number of mdload errors after retries",
+	}, []string{
+		methodLabel,
 		metrics.StatusHumanReadableLabel,
 	})
 )
@@ -133,11 +148,22 @@ func randomFileMetadata(sizeBytes int64) *sgpb.FileMetadata {
 	return md
 }
 
-func incrementPromErrorMetric(err error) {
+func incrementPromTotalErrorMetric(method string, err error) {
 	if err == nil {
 		return
 	}
-	MDLoadErrorCount.With(prometheus.Labels{
+	MDLoadTotalErrorCount.With(prometheus.Labels{
+		methodLabel:                      method,
+		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+	}).Inc()
+}
+
+func incrementPromFinalErrorMetric(method string, err error) {
+	if err == nil {
+		return
+	}
+	MDLoadFinalErrorCount.With(prometheus.Labels{
+		methodLabel:                      method,
 		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
 	}).Inc()
 }
@@ -150,7 +176,7 @@ func writeBlob(ctx context.Context, client mdspb.MetadataServiceClient) (*sgpb.F
 				FileMetadata: md,
 			}},
 		})
-		incrementPromErrorMetric(err)
+		incrementPromTotalErrorMetric("write", err)
 		if err == nil {
 			return md.GetFileRecord(), nil
 		} else if status.IsUnavailableError(err) {
@@ -165,7 +191,7 @@ func readBlob(ctx context.Context, client mdspb.MetadataServiceClient, fr *sgpb.
 		rsp, err := client.Get(ctx, &mdpb.GetRequest{
 			FileRecords: []*sgpb.FileRecord{fr},
 		})
-		incrementPromErrorMetric(err)
+		incrementPromTotalErrorMetric("read", err)
 		if err == nil {
 			if !proto.Equal(rsp.GetFileMetadatas()[0].GetFileRecord(), fr) {
 				log.Fatalf("returned md did not match request")
@@ -264,6 +290,7 @@ func main() {
 			cancel()
 			if err != nil {
 				log.Errorf("Write err: %s", err)
+				incrementPromFinalErrorMetric("write", err)
 				if *keepGoing {
 					return nil
 				}
@@ -311,6 +338,7 @@ func main() {
 			cancel()
 			if err != nil {
 				log.Errorf("Read err: %s", err)
+				incrementPromFinalErrorMetric("read", err)
 				if *keepGoing {
 					return nil
 				}
