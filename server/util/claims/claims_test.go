@@ -5,13 +5,18 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
@@ -171,4 +176,77 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	_, err = claims.APIKeyGroupClaims(rctx, akg)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestExperimentTargetingGroupID(t *testing.T) {
+	const (
+		adminGroupID    = "GR1"
+		nonAdminGroupID = "GR2"
+	)
+
+	for _, tc := range []struct {
+		name                           string
+		grpcMetadata                   metadata.MD
+		apiKeyGroupID                  string
+		apiKeyCapabilities             []cappb.Capability
+		wantExperimentTargetingGroupID string
+		wantPermissionDenied           bool
+	}{
+		{
+			name:                           "header not set",
+			grpcMetadata:                   nil,
+			apiKeyGroupID:                  nonAdminGroupID,
+			apiKeyCapabilities:             nil,
+			wantExperimentTargetingGroupID: nonAdminGroupID,
+			wantPermissionDenied:           false,
+		},
+		{
+			name:                 "header set, but not a server admin",
+			grpcMetadata:         metadata.Pairs("x-buildbuddy-experiment.group_id", nonAdminGroupID),
+			apiKeyGroupID:        nonAdminGroupID,
+			apiKeyCapabilities:   nil,
+			wantPermissionDenied: true,
+		},
+		{
+			name:                 "header set, and in the server admin group, but not with admin role",
+			grpcMetadata:         metadata.Pairs("x-buildbuddy-experiment.group_id", nonAdminGroupID),
+			apiKeyGroupID:        adminGroupID,
+			apiKeyCapabilities:   nil,
+			wantPermissionDenied: true,
+		},
+		{
+			name:                           "header set, and in the server admin group, with admin role",
+			grpcMetadata:                   metadata.Pairs("x-buildbuddy-experiment.group_id", nonAdminGroupID),
+			apiKeyGroupID:                  adminGroupID,
+			apiKeyCapabilities:             []cappb.Capability{cappb.Capability_ORG_ADMIN},
+			wantPermissionDenied:           false,
+			wantExperimentTargetingGroupID: nonAdminGroupID,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "auth.admin_group_id", adminGroupID)
+
+			ctx := t.Context()
+			ctx = metadata.NewIncomingContext(ctx, tc.grpcMetadata)
+			env := testenv.GetTestEnv(t)
+			auth := testauth.NewTestAuthenticator(testauth.TestUsers(
+				"US1", adminGroupID,
+				"US2", nonAdminGroupID,
+			))
+			env.SetAuthenticator(auth)
+			akg := &fakeAPIKeyGroup{
+				groupID:      tc.apiKeyGroupID,
+				capabilities: capabilities.ToInt(tc.apiKeyCapabilities),
+			}
+
+			c, err := claims.APIKeyGroupClaims(ctx, akg)
+			if tc.wantPermissionDenied {
+				assert.Error(t, err)
+				assert.True(t, status.IsPermissionDeniedError(err), "error: %+#v", err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.wantExperimentTargetingGroupID, c.GetExperimentTargetingGroupID())
+			}
+		})
+	}
 }
