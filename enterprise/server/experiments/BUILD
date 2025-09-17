@@ -26,6 +26,7 @@ go_test(
     deps = [
         ":experiments",
         "//server/tables",
+        "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/authutil",
         "//server/util/claims",

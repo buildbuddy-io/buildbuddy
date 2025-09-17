@@ -121,8 +121,8 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 	}
 
 	if claims, err := claims.ClaimsFromContext(ctx); err == nil {
-		options.targetingKey = claims.GetGroupID()
-		options.attributes["group_id"] = claims.GetGroupID()
+		options.targetingKey = claims.GetExperimentTargetingGroupID()
+		options.attributes["group_id"] = claims.GetExperimentTargetingGroupID()
 		options.attributes["user_id"] = claims.GetUserID()
 	}
 	rmd := bazel_request.GetRequestMetadata(ctx)

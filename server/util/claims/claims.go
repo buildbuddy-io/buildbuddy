@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/golang-jwt/jwt/v4"
+	"google.golang.org/grpc/metadata"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
@@ -50,9 +51,10 @@ var (
 
 type Claims struct {
 	jwt.StandardClaims
-	APIKeyID string `json:"api_key_id,omitempty"`
-	UserID   string `json:"user_id"`
-	GroupID  string `json:"group_id"`
+	APIKeyID                   string `json:"api_key_id,omitempty"`
+	UserID                     string `json:"user_id"`
+	GroupID                    string `json:"group_id"`
+	ExperimentTargetingGroupID string `json:"experiment_targeting_group_id"`
 	// APIKeyOwnerGroupID identifies the group that owns the API key used
 	// for authentication. Will be empty if authentication was not performed
 	// using an API key.
@@ -83,6 +85,13 @@ func (c *Claims) GetUserID() string {
 
 func (c *Claims) GetGroupID() string {
 	return c.GroupID
+}
+
+func (c *Claims) GetExperimentTargetingGroupID() string {
+	if c.ExperimentTargetingGroupID == "" {
+		return c.GroupID
+	}
+	return c.ExperimentTargetingGroupID
 }
 
 func (c *Claims) IsImpersonating() bool {
@@ -181,17 +190,29 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 		}
 	}
 
+	experimentTargetingGroup := ""
+	if v := metadata.ValueFromIncomingContext(ctx, "x-buildbuddy-experiment.group_id"); len(v) > 0 {
+		// Only server admins can set this header. Note: can't use
+		// AuthorizeServerAdmin directly, since the claims aren't in the ctx yet
+		// (this function is building the claims).
+		if !isAdminOfServerAdminGroup(groupMemberships) {
+			return nil, errPermissionDenied
+		}
+		experimentTargetingGroup = v[len(v)-1]
+	}
+
 	return &Claims{
-		APIKeyID:               akg.GetAPIKeyID(),
-		UserID:                 akg.GetUserID(),
-		GroupID:                effectiveGroup,
-		APIKeyOwnerGroupID:     akg.GetGroupID(),
-		AllowedGroups:          allowedGroups,
-		GroupMemberships:       groupMemberships,
-		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
-		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
-		CacheEncryptionEnabled: akg.GetCacheEncryptionEnabled(),
-		EnforceIPRules:         akg.GetEnforceIPRules(),
+		APIKeyID:                   akg.GetAPIKeyID(),
+		UserID:                     akg.GetUserID(),
+		GroupID:                    effectiveGroup,
+		ExperimentTargetingGroupID: experimentTargetingGroup,
+		APIKeyOwnerGroupID:         akg.GetGroupID(),
+		AllowedGroups:              allowedGroups,
+		GroupMemberships:           groupMemberships,
+		Capabilities:               capabilities.FromInt(akg.GetCapabilities()),
+		UseGroupOwnedExecutors:     akg.GetUseGroupOwnedExecutors(),
+		CacheEncryptionEnabled:     akg.GetCacheEncryptionEnabled(),
+		EnforceIPRules:             akg.GetEnforceIPRules(),
 	}, nil
 }
 
@@ -287,9 +308,9 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	}
 	return &Claims{
 		UserID:                 u.UserID,
+		GroupID:                effectiveGroup,
 		GroupMemberships:       groupMemberships,
 		AllowedGroups:          allowedGroups,
-		GroupID:                effectiveGroup,
 		Capabilities:           capabilities,
 		CacheEncryptionEnabled: cacheEncryptionEnabled,
 		EnforceIPRules:         enforceIPRules,
@@ -389,16 +410,24 @@ func AuthorizeServerAdmin(ctx context.Context) error {
 		return nil
 	}
 
+	if isAdminOfServerAdminGroup(u.GetGroupMemberships()) {
+		return nil
+	}
+
+	return errPermissionDenied
+}
+
+func isAdminOfServerAdminGroup(memberships []*interfaces.GroupMembership) bool {
 	serverAdminGID := *serverAdminGroupID
 	if serverAdminGID == "" {
-		return errPermissionDenied
+		return false
 	}
-	for _, m := range u.GetGroupMemberships() {
+	for _, m := range memberships {
 		if m.GroupID == serverAdminGID && slices.Contains(m.Capabilities, cappb.Capability_ORG_ADMIN) {
-			return nil
+			return true
 		}
 	}
-	return errPermissionDenied
+	return false
 }
 
 // ServerAdminGroupID returns the ID of the server admin group.
