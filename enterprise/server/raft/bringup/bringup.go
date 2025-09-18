@@ -184,7 +184,7 @@ func (cs *ClusterStarter) InitializeClusters() error {
 		// have info about other nodes that started simultaneously. Don't return
 		// the error as this will restart the server. Instead, we assumes that
 		// this is not the bringup coordinator.
-		cs.log.Infof("failed to match listen address %q: %s", err)
+		cs.log.Infof("failed to match listen address %q: %s", cs.join[0], err)
 	}
 	isBringupCoordinator := (isMatch && err == nil)
 	if cs.bootstrapped || !isBringupCoordinator {
