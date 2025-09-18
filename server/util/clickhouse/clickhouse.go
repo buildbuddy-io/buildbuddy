@@ -325,6 +325,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) *s
 		OutputUploadCompletedTimestampUsec: in.GetOutputUploadCompletedTimestampUsec(),
 		StatusCode:                         in.GetStatusCode(),
 		StatusMessage:                      in.GetStatusMessage(),
+		OutputPath:                         in.GetOutputPath(),
 		ExitCode:                           in.GetExitCode(),
 		CachedResult:                       in.GetCachedResult(),
 		DoNotCache:                         in.GetDoNotCache(),
