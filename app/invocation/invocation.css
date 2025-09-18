@@ -1112,6 +1112,10 @@
   margin-right: 8px;
 }
 
+.invocation-filter-control select {
+  max-width: 160px;
+}
+
 .invocation-sort-controls {
   display: flex;
   align-items: center;
