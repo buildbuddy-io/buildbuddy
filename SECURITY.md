@@ -16,4 +16,4 @@ Safety and data security is of utmost priority for the BuildBuddy community. If 
 4. If your report is reproducible as an exploit and results in a change to the code base or documentation of a BuildBuddy product, we will–at your option–publicly acknowledge your responsible disclosure.
 5. After a fix is made, we ask security researchers to wait 30 days after a release before announcing the specific details of a vulnerability, and to provide BuildBuddy with a link to any such announcements. In releases containing security fixes, BuildBuddy announces an update is available, acknowledges the contributions of security researches, and it withholds specific details until 30 days after availability to give time for the community to apply updates.
 
-For more information, see [BuildBuddy's Responsible Disclosure Policy](https://buildbuddy.dev/security-vulnerability-report/)
+For more information, see [BuildBuddy's Responsible Disclosure Policy](https://buildbuddy.io/security-vulnerability-report/)
