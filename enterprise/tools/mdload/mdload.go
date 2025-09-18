@@ -39,8 +39,8 @@ import (
 
 var (
 	target       = flag.String("target", "grpc://localhost:1970", "Cache target to connect to.")
-	writeQPS     = flag.UInt("write_qps", 1000, "How many queries per second to attempt to write.")
-	readQPS      = flag.UInt("read_qps", 1000, "How many queries per second to attempt to read.")
+	writeQPS     = flag.Uint("write_qps", 1000, "How many queries per second to attempt to write.")
+	readQPS      = flag.Uint("read_qps", 1000, "How many queries per second to attempt to read.")
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
 	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
 	qpsAvgWindow = flag.Duration("qps_avg_window", 5*time.Second, "QPS averaging window")
