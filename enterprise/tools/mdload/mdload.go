@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -16,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
@@ -39,8 +39,8 @@ import (
 
 var (
 	target       = flag.String("target", "grpc://localhost:1970", "Cache target to connect to.")
-	writeQPS     = flag.Uint("write_qps", 1000, "How many queries per second to attempt to write.")
-	readQPS      = flag.Uint("read_qps", 1000, "How many queries per second to attempt to read.")
+	writeQPS     = flag.UInt("write_qps", 1000, "How many queries per second to attempt to write.")
+	readQPS      = flag.UInt("read_qps", 1000, "How many queries per second to attempt to read.")
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
 	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
 	qpsAvgWindow = flag.Duration("qps_avg_window", 5*time.Second, "QPS averaging window")
@@ -50,24 +50,47 @@ var (
 	timeout        = flag.Duration("timeout", 60*time.Second, "Use this timeout as the context timeout for rpc calls")
 	keepGoing      = flag.Bool("keep_going", false, "If true, warn on errors but continue running")
 	monitoringAddr = flag.String("listen", "", "The interface to listen on, like 0.0.0.0:9090 (default: disabled)")
+	partitions     = flag.Slice("partitions", []Partition{}, "")
 )
 
 var (
 	digestGenerator *digest.Generator
 	mu              sync.Mutex
 	filestorer      = filestore.New()
+	partitionIDs    []string
+	cumulatives     []int
+)
+
+const (
+	methodLabel = "method"
 )
 
 var (
-	MDLoadErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	MDLoadTotalErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "buildbuddy",
-		Subsystem: "cacheload",
-		Name:      "error_count",
-		Help:      "The total number of mdload errors.",
+		Subsystem: "mdload",
+		Name:      "total_error_count",
+		Help:      "The total number of mdload errors, including errors in retry",
 	}, []string{
+		methodLabel,
+		metrics.StatusHumanReadableLabel,
+	})
+
+	MDLoadFinalErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "buildbuddy",
+		Subsystem: "mdload",
+		Name:      "final_error_count",
+		Help:      "The total number of mdload errors after retries",
+	}, []string{
+		methodLabel,
 		metrics.StatusHumanReadableLabel,
 	})
 )
+
+type Partition struct {
+	ID      string `yaml:"id" json:"id" usage:"The ID of the partition."`
+	Percent int    `yaml:"percent" json:"percent" usage:"The percentage of requests to route to this partition (0-100)"`
+}
 
 func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
 	d, buf, err := digestGenerator.RandomDigestBuf(sizeBytes)
@@ -75,6 +98,20 @@ func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
 		log.Fatalf("Error generating digest: %s", err)
 	}
 	return d, buf
+}
+
+func selectPartitionID() string {
+	if len(partitionIDs) == 0 {
+		return "default"
+	}
+
+	randNum := rand.Intn(100)
+	for i, cumulative := range cumulatives {
+		if randNum < cumulative {
+			return partitionIDs[i]
+		}
+	}
+	return partitionIDs[len(partitionIDs)-1]
 }
 
 func randomFileMetadata(sizeBytes int64) *sgpb.FileMetadata {
@@ -93,7 +130,7 @@ func randomFileMetadata(sizeBytes int64) *sgpb.FileMetadata {
 			Isolation: &sgpb.Isolation{
 				CacheType:          rn.GetCacheType(),
 				RemoteInstanceName: rn.GetInstanceName(),
-				PartitionId:        "default",
+				PartitionId:        selectPartitionID(),
 				GroupId:            interfaces.AuthAnonymousUser,
 			},
 			Digest:         rn.GetDigest(),
@@ -111,11 +148,22 @@ func randomFileMetadata(sizeBytes int64) *sgpb.FileMetadata {
 	return md
 }
 
-func incrementPromErrorMetric(err error) {
+func incrementPromTotalErrorMetric(method string, err error) {
 	if err == nil {
 		return
 	}
-	MDLoadErrorCount.With(prometheus.Labels{
+	MDLoadTotalErrorCount.With(prometheus.Labels{
+		methodLabel:                      method,
+		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+	}).Inc()
+}
+
+func incrementPromFinalErrorMetric(method string, err error) {
+	if err == nil {
+		return
+	}
+	MDLoadFinalErrorCount.With(prometheus.Labels{
+		methodLabel:                      method,
 		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
 	}).Inc()
 }
@@ -128,7 +176,7 @@ func writeBlob(ctx context.Context, client mdspb.MetadataServiceClient) (*sgpb.F
 				FileMetadata: md,
 			}},
 		})
-		incrementPromErrorMetric(err)
+		incrementPromTotalErrorMetric("write", err)
 		if err == nil {
 			return md.GetFileRecord(), nil
 		} else if status.IsUnavailableError(err) {
@@ -143,7 +191,7 @@ func readBlob(ctx context.Context, client mdspb.MetadataServiceClient, fr *sgpb.
 		rsp, err := client.Get(ctx, &mdpb.GetRequest{
 			FileRecords: []*sgpb.FileRecord{fr},
 		})
-		incrementPromErrorMetric(err)
+		incrementPromTotalErrorMetric("read", err)
 		if err == nil {
 			if !proto.Equal(rsp.GetFileMetadatas()[0].GetFileRecord(), fr) {
 				log.Fatalf("returned md did not match request")
@@ -160,6 +208,27 @@ func main() {
 	flag.Parse()
 	if err := log.Configure(); err != nil {
 		log.Fatalf("Failed to configure logging: %s", err)
+	}
+
+	// Validate that partition percentages sum to 100 and build cumulative distribution
+	if len(*partitions) > 0 {
+		var totalPercent int
+		for _, partition := range *partitions {
+			totalPercent += partition.Percent
+		}
+		if totalPercent != 100 {
+			log.Fatalf("Partition percentages must sum to 100, got %d", totalPercent)
+		}
+
+		// Pre-compute cumulative distribution for efficient partition selection
+		partitionIDs = make([]string, len(*partitions))
+		cumulatives = make([]int, len(*partitions))
+		cumulative := 0
+		for i, partition := range *partitions {
+			partitionIDs[i] = partition.ID
+			cumulative += partition.Percent
+			cumulatives[i] = cumulative
+		}
 	}
 
 	digestGenerator = digest.RandomGenerator(time.Now().Unix())
@@ -221,6 +290,7 @@ func main() {
 			cancel()
 			if err != nil {
 				log.Errorf("Write err: %s", err)
+				incrementPromFinalErrorMetric("write", err)
 				if *keepGoing {
 					return nil
 				}
@@ -268,6 +338,7 @@ func main() {
 			cancel()
 			if err != nil {
 				log.Errorf("Read err: %s", err)
+				incrementPromFinalErrorMetric("read", err)
 				if *keepGoing {
 					return nil
 				}

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,6 +23,8 @@ var (
 	// either for streaming decompression using ReadFrom or batch decompression
 	// using DecodeAll. The returned decoders *must not* be closed.
 	zstdDecoderPool = NewZstdDecoderPool()
+
+	bufPool = bytebufferpool.VariableSize(4e6) // 4MB
 
 	// These are used a bunch and the labels are constant so just do it once.
 	zstdCompressedBytesMetric   = metrics.BytesCompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"})
@@ -42,6 +45,147 @@ func mustGetZstdEncoder() *zstd.Encoder {
 func CompressZstd(dst []byte, src []byte) []byte {
 	zstdCompressedBytesMetric.Add(float64(len(src)))
 	return zstdEncoder.EncodeAll(src, dst[:0])
+}
+
+// ZstdCompressingWriter is an io.WriteCloser that accepts uncompressed bytes
+// and writes zstd-compressed bytes to the underlying writer.
+type ZstdCompressingWriter struct {
+	// The number of compressed bytes written to the underlying writer, so far.
+	CompressedBytesWritten int
+
+	writer         io.Writer
+	buffer         []byte
+	buffered       int
+	compressBuffer []byte
+	returnBuffers  func()
+	err            error
+	closed         bool
+}
+
+// Flush compresses any buffered data and writes it to the underlying writer. It
+// is generally not required since Close will flush any remaining data, but
+// Flush can be used to flush data before Close.
+func (c *ZstdCompressingWriter) Flush() error {
+	if c.closed {
+		return errors.New("ZstdCompressingWriter.Flush used after Close")
+	}
+	if c.err != nil {
+		return c.err
+	}
+	if c.buffered == 0 {
+		return nil
+	}
+	err := c.writeCompressed(c.buffer[:c.buffered])
+	c.buffered = 0
+	return err
+}
+
+func (c *ZstdCompressingWriter) writeCompressed(p []byte) error {
+	c.compressBuffer = CompressZstd(c.compressBuffer, p)
+	n, err := c.writer.Write(c.compressBuffer)
+	c.CompressedBytesWritten += n
+	if err == nil && n < len(c.compressBuffer) {
+		c.err = io.ErrShortWrite
+	}
+	c.err = err
+	return c.err
+}
+
+func (c *ZstdCompressingWriter) Write(p []byte) (int, error) {
+	if c.closed {
+		return 0, errors.New("ZstdCompressingWriter.Write used after Close")
+	}
+	if c.err != nil {
+		return 0, c.err
+	}
+	total := 0
+	for len(p) > 0 {
+		if c.buffered == 0 && len(p) >= len(c.buffer) {
+			// If the input is larger than the buffer, and the buffer is empty,
+			// then just compress and write a buffer-sized chunk directly. Don't
+			// write the whole input at once since that might force us to
+			// allocate a much larger compression buffer.
+			n := len(c.buffer)
+			if err := c.writeCompressed(p[:n]); err != nil {
+				return total, err
+			}
+			p = p[n:]
+			total += n
+			continue
+		}
+		n := copy(c.buffer[c.buffered:], p)
+		p = p[n:]
+		c.buffered += n
+		if c.buffered == len(c.buffer) {
+			if err := c.Flush(); err != nil {
+				return total, err
+			}
+		}
+		total += n
+	}
+	return total, nil
+}
+
+func (c *ZstdCompressingWriter) ReadFrom(r io.Reader) (int64, error) {
+	if c.closed {
+		return 0, errors.New("ZstdCompressingWriter.ReadFrom used after Close")
+	}
+	if c.err != nil {
+		return 0, c.err
+	}
+	var total int64
+	for {
+		n, err := r.Read(c.buffer[c.buffered:])
+		if n > 0 {
+			c.buffered += n
+			total += int64(n)
+			if c.buffered == len(c.buffer) {
+				if err := c.Flush(); err != nil {
+					return total, err
+				}
+			}
+		}
+		if err == io.EOF {
+			return total, c.Flush()
+		}
+		if err != nil {
+			c.err = err
+			return total, err
+		}
+	}
+}
+
+// Close must be called when done writing to ensure that all bytes are flushed
+// and resources are released. It can be called multiple times. No other methods
+// may be called after Close.
+func (c *ZstdCompressingWriter) Close() error {
+	if c.closed {
+		return nil
+	}
+	err := c.Flush()
+	c.returnBuffers()
+	c.closed = true
+	return err
+}
+
+// NewZstdCompressingWriter returns a new ZstdCompressingWriter. bufSize must be
+// > 0 and determines how much data is buffered before being compressed and
+// written out. Larger buffer sizes generally result in better compression
+// ratios, but will be capped to an implementation-defined maximum.
+func NewZstdCompressingWriter(writer io.Writer, bufSize int64) (*ZstdCompressingWriter, error) {
+	if bufSize <= 0 {
+		return nil, errors.New("bufSize must be > 0")
+	}
+	a, b := bufPool.Get(bufSize), bufPool.Get(bufSize)
+	return &ZstdCompressingWriter{
+		writer:         writer,
+		buffer:         a,
+		compressBuffer: b,
+		returnBuffers: func() {
+			bufPool.Put(a)
+			bufPool.Put(b)
+		},
+	}, nil
 }
 
 // DecompressZstd decompresses a full chunk of zstd data into dst. If dst is

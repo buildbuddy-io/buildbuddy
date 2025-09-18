@@ -398,8 +398,11 @@ func GetAPIKey() (string, error) {
 		return apiKey, nil
 	}
 	apiKey, err = storage.ReadRepoConfig("api-key")
+	apiKey = strings.TrimSpace(apiKey)
 	if err != nil {
 		log.Debugf("Could not read api key from bb config: %s", err)
+	} else if apiKey == "" {
+		log.Debugf("API key is empty")
 	} else {
 		log.Debugf("API key read from `buildbuddy.api-key` in .git/config.")
 		return apiKey, nil

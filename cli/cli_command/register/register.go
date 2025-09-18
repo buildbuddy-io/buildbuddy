@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
 	"github.com/buildbuddy-io/buildbuddy/cli/versioncmd"
+	"github.com/buildbuddy-io/buildbuddy/cli/view"
 )
 
 // Register registers all known cli commands in the structures laid out in
@@ -121,6 +122,11 @@ func register() {
 			Name:    "version",
 			Help:    "Prints bb cli version info.",
 			Handler: versioncmd.HandleVersion,
+		},
+		{
+			Name:    "view",
+			Help:    "Views build logs from BuildBuddy.",
+			Handler: view.HandleView,
 		},
 		{
 			Name:    "explain",

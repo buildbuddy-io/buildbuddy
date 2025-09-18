@@ -125,6 +125,28 @@ func generateCommandSnippet(command *repb.Command) string {
 	return snippet
 }
 
+func primaryOutputPath(cmd *repb.Command) string {
+	if cmd == nil {
+		return ""
+	}
+	for _, path := range cmd.GetOutputPaths() {
+		if path != "" {
+			return path
+		}
+	}
+	for _, path := range cmd.GetOutputFiles() {
+		if path != "" {
+			return path
+		}
+	}
+	for _, path := range cmd.GetOutputDirectories() {
+		if path != "" {
+			return path
+		}
+	}
+	return ""
+}
+
 func redisKeyForTaskStatusStream(taskID string) string {
 	return fmt.Sprintf("taskStatusStream/%s", taskID)
 }
@@ -188,7 +210,7 @@ func (s *ExecutionServer) pubSubChannelForExecutionID(executionID string) *pubsu
 	return s.streamPubSub.UnmonitoredChannel(redisKeyForTaskStatusStream(executionID))
 }
 
-func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invocationID, snippet string, stage repb.ExecutionStage_Value) error {
+func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invocationID string, command *repb.Command, stage repb.ExecutionStage_Value) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -202,7 +224,7 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 		ExecutionID:    executionID,
 		InvocationID:   invocationID,
 		Stage:          int64(stage),
-		CommandSnippet: snippet,
+		CommandSnippet: generateCommandSnippet(command),
 	}
 
 	var permissions *perms.UserGroupPerm
@@ -224,7 +246,9 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 		now := time.Now()
 		execution.Model.CreatedAtUsec = now.UnixMicro()
 		execution.Model.UpdatedAtUsec = now.UnixMicro()
-		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executil.TableExecToProto(execution, nil /*=invocationLink*/)); err != nil {
+		executionProto := executil.TableExecToProto(execution, nil /*=invocationLink*/)
+		executionProto.OutputPath = primaryOutputPath(command)
+		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executionProto); err != nil {
 			log.CtxErrorf(ctx, "Failed to write execution update to redis: %s", err)
 		}
 	}
@@ -685,7 +709,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		rmd.ToolDetails = nil
 	}
 
-	if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
+	if err := s.insertExecution(ctx, executionID, invocationID, command, repb.ExecutionStage_UNKNOWN); err != nil {
 		return nil, status.UnavailableErrorf("create execution: %s", err)
 	}
 
