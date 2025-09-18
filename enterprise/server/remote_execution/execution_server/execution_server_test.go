@@ -777,6 +777,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		SelfHosted:                   test.expectedSelfHosted,
 		Region:                       "test-region",
 		CommandSnippet:               "test",
+		OutputPath:                   "bazel-out/k8-fastbuild/bin/some/test",
 		QueuedTimestampUsec:          queuedTime.UnixMicro(),
 		WorkerStartTimestampUsec:     workerStartTime.UnixMicro(),
 		WorkerCompletedTimestampUsec: workerEndTime.UnixMicro(),
@@ -898,7 +899,10 @@ func TestInvocationLink_EmptyInvocationID(t *testing.T) {
 }
 
 func uploadAction(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value, action *repb.Action) *digest.CASResourceName {
-	cmd := &repb.Command{Arguments: []string{"test"}}
+	cmd := &repb.Command{
+		Arguments:   []string{"test"},
+		OutputFiles: []string{"bazel-out/k8-fastbuild/bin/some/test"},
+	}
 	cd, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, cmd)
 	require.NoError(t, err)
 	action.CommandDigest = cd
