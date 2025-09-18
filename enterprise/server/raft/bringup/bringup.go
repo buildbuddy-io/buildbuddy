@@ -178,10 +178,15 @@ func (cs *ClusterStarter) InitializeClusters() error {
 	cs.bootstrapped = cs.store.ConfiguredClusters() > 0
 	cs.log.Infof("%d clusters already configured. (bootstrapped: %t)", cs.store.ConfiguredClusters(), cs.bootstrapped)
 
-	isBringupCoordinator, err := cs.matchesListenAddress(cs.join[0])
+	isMatch, err := cs.matchesListenAddress(cs.join[0])
 	if err != nil {
-		return err
+		// matchesListenAddress can return no such host error when it doesn't
+		// have info about other nodes that started simultaneously. Don't return
+		// the error as this will restart the server. Instead, we assumes that
+		// this is not the bringup coordinator.
+		cs.log.Infof("failed to match listen address %q: %s", err)
 	}
+	isBringupCoordinator := (isMatch && err == nil)
 	if cs.bootstrapped || !isBringupCoordinator {
 		cs.markBringupComplete()
 		return nil
