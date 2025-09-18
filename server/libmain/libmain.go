@@ -369,7 +369,7 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		log.Fatalf("Error initializing static file server: %s", err)
 	}
 
-	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, "")
+	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
 	if err != nil {
 		log.Fatalf("Error initializing app server: %s", err)
 	}
