@@ -1283,6 +1283,27 @@ func sortDrilldownChartKeys(dm map[stpb.DrilldownType]float64) *[]stpb.Drilldown
 	return &result
 }
 
+func getAggregationFnString(a stpb.TargetAggregation) string {
+	switch a {
+	case stpb.TargetAggregation_SUM_TARGET_AGGREGATION:
+		return "sum"
+	case stpb.TargetAggregation_AVG_TARGET_AGGREGATION:
+		return "avg"
+	case stpb.TargetAggregation_MAX_TARGET_AGGREGATION:
+		return "max"
+	case stpb.TargetAggregation_MIN_TARGET_AGGREGATION:
+		return "min"
+	case stpb.TargetAggregation_P50_TARGET_AGGREGATION:
+		return "quantile(0.5)"
+	case stpb.TargetAggregation_P90_TARGET_AGGREGATION:
+		return "quantile(0.9)"
+	case stpb.TargetAggregation_P99_TARGET_AGGREGATION:
+		return "quantile(0.99)"
+	default:
+		return "sum"
+	}
+}
+
 func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.GetTargetTrendsRequest) (*stpb.GetTargetTrendsResponse, error) {
 	if !*targetTrendsEnabled {
 		return nil, status.UnimplementedError("GetTargetTrends RPC is disabled.")
@@ -1328,8 +1349,8 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 	innerQStr, innerQArgs := innerQ.Build()
 
 	q := query_builder.NewQueryWithArgs(fmt.Sprintf(`
-		SELECT target_label as target, SUM(v) as value
-		FROM ( %s )`, innerQStr), innerQArgs)
+		SELECT target_label as target, toInt64(%s(v)) as value
+		FROM ( %s )`, getAggregationFnString(req.GetAgg()), innerQStr), innerQArgs)
 	q.SetGroupBy("target_label")
 	q.SetOrderBy("value", false) // Descending order
 	q.SetLimit(1000)             // Reasonable limit to avoid overwhelming the response

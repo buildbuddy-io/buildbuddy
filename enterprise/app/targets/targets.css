@@ -39,6 +39,10 @@
   min-width: 150px;
 }
 
+.targets .targets-agg-select {
+  min-width: 100px;
+}
+
 .targets .loading-section {
   display: flex;
   justify-content: center;

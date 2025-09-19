@@ -302,10 +302,24 @@ message GetStatDrilldownResponse {
   int64 total_in_selection = 4;
 }
 
+enum TargetAggregation {
+  UNKNOWN_TARGET_AGGREGATION = 0;
+  SUM_TARGET_AGGREGATION = 1;
+  AVG_TARGET_AGGREGATION = 2;
+  MAX_TARGET_AGGREGATION = 3;
+  MIN_TARGET_AGGREGATION = 4;
+  P50_TARGET_AGGREGATION = 5;
+  P90_TARGET_AGGREGATION = 6;
+  P99_TARGET_AGGREGATION = 7;
+}
+
 message GetTargetTrendsRequest {
   context.RequestContext request_context = 1;
   TrendQuery query = 2;
   stat_filter.ExecutionMetricType metric = 3;
+
+  // If unspecified, defaults to SUM_TARGET_AGGREGATION.
+  TargetAggregation agg = 4;
 }
 
 message TargetStats {
