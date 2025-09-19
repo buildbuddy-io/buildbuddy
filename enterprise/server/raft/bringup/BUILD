@@ -16,6 +16,7 @@ go_library(
         "//enterprise/server/raft/txn",
         "//proto:raft_go_proto",
         "//server/interfaces",
+        "//server/metrics",
         "//server/util/disk",
         "//server/util/log",
         "//server/util/proto",
@@ -23,6 +24,7 @@ go_library(
         "//server/util/status",
         "@com_github_hashicorp_serf//serf",
         "@com_github_lni_dragonboat_v4//:dragonboat",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_x_sync//errgroup",
     ],
 )

@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -27,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v4"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -458,7 +460,14 @@ func InitializeShardsForMetaRange(ctx context.Context, session *client.Session, 
 // Note: since we are writing the range descriptors in a transaction, it might
 // have performance issues when we try to initialize tons of range descriptors at
 // once.
-func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAddrs map[string]string, partition disk.Partition) error {
+func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAddrs map[string]string, partition disk.Partition) (returnedErr error) {
+	defer func() {
+		metrics.RaftPartitionOperations.With(prometheus.Labels{
+			metrics.PartitionsID:             partition.ID,
+			metrics.RaftPartitionOpLabel:     "initialize",
+			metrics.StatusHumanReadableLabel: status.MetricsLabel(returnedErr),
+		}).Inc()
+	}()
 	if partition.NumRanges > 10 {
 		return status.FailedPreconditionErrorf("NumRanges is set to %d (>10) for partition %s", partition.NumRanges, partition.ID)
 	}

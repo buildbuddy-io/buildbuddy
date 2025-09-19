@@ -3523,6 +3523,7 @@ func (s *Store) setupPartitions(ctx context.Context) {
 	ticker := s.clock.NewTicker(30 * time.Second) // Check every 30 seconds
 	for {
 		if s.partitionsAllInitialized {
+			s.log.Infof("partitions are all initialized")
 			return
 		}
 		select {
@@ -3537,7 +3538,7 @@ func (s *Store) setupPartitions(ctx context.Context) {
 	}
 }
 
-func (s *Store) deletePartitions(ctx context.Context, partitionID string) error {
+func (s *Store) deletePartitions(ctx context.Context, partitionID string) (returnedErr error) {
 	// 1. Use directDelete to remove the partition descriptor
 	partitionKey := keys.MakeKey(constants.PartitionPrefix, []byte(partitionID))
 	batchBuilder := rbuilder.NewBatchBuilder().Add(&rfpb.DirectDeleteRequest{
@@ -3677,10 +3678,16 @@ func (s *Store) ProcessPartitions(ctx context.Context) {
 				continue
 			}
 
-			if err := s.sender.UpdatePartitionDescriptor(ctx, partitionKey, newBuf, oldBuf); err != nil {
+			err = s.sender.UpdatePartitionDescriptor(ctx, partitionKey, newBuf, oldBuf)
+			if err != nil {
 				s.log.Errorf("failed to set soft deleted for partition %q: %s", p.ID, err)
 				partitionsNeedsSetup = true
 			}
+			metrics.RaftPartitionOperations.With(prometheus.Labels{
+				metrics.PartitionID:              p.ID,
+				metrics.RaftPartitionOpLabel:     "soft-delete",
+				metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+			}).Inc()
 		} else {
 			if pd != nil && pd.GetState() == rfpb.PartitionDescriptor_INITIALIZED {
 				continue
@@ -3707,10 +3714,16 @@ func (s *Store) ProcessPartitions(ctx context.Context) {
 			continue
 		}
 
-		if err := s.deletePartitions(ctx, pd.GetId()); err != nil {
+		err = s.deletePartitions(ctx, pd.GetId())
+		if err != nil {
 			s.log.Errorf("failed to delete partition and range descriptors for partition id %q: %s", pd.GetId(), err)
 			partitionsNeedsSetup = true
 		}
+		metrics.RaftPartitionOperations.With(prometheus.Labels{
+			metrics.PartitionID:              pd.GetId(),
+			metrics.RaftPartitionOpLabel:     "hard-delete",
+			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+		}).Inc()
 	}
 
 	if !partitionsNeedsSetup {
