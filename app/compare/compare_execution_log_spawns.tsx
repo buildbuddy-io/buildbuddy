@@ -1,4 +1,4 @@
-import { ArrowRight, CircleDot, MinusCircle, PlusCircle, Circle } from "lucide-react";
+import { ArrowRight, Circle, CircleDot, MinusCircle, PlusCircle } from "lucide-react";
 import React from "react";
 import * as varint from "varint";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
@@ -70,16 +70,14 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
   }
 
   async fetchLogs() {
-    await Promise.all([
-      this.fetchLog(this.props.modelA),
-      this.fetchLog(this.props.modelB),
-    ]).then(([logA, logB]) => {
-      this.setState({ logA, logB }, () => {
-        this.compareSpawns();
-      });
-    })
-    .catch((e) => error_service.handleError(e))
-    .finally(() => this.setState({ loading: false }));
+    await Promise.all([this.fetchLog(this.props.modelA), this.fetchLog(this.props.modelB)])
+      .then(([logA, logB]) => {
+        this.setState({ logA, logB }, () => {
+          this.compareSpawns();
+        });
+      })
+      .catch((e) => error_service.handleError(e))
+      .finally(() => this.setState({ loading: false }));
   }
 
   fetchLog(model?: InvocationModel) {
@@ -166,7 +164,6 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
   }
 
   sort(a: SpawnComparison, b: SpawnComparison): number {
-
     const getSpawn = (comp: SpawnComparison) => comp.a?.spawn || comp.b?.spawn;
     const firstSpawn = getSpawn(a);
     const secondSpawn = getSpawn(b);
@@ -203,17 +200,18 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
     return `/action/compare/${this.props.modelA.getInvocationId()}:${encodeURIComponent(digestA)}...${this.props.modelB.getInvocationId()}:${encodeURIComponent(digestB)}`;
   }
 
-    renderComparisonRow(comparison: SpawnComparison, index: number) {
-      const spawn = comparison.a?.spawn || comparison.b?.spawn;
+  renderComparisonRow(comparison: SpawnComparison, index: number) {
+    const spawn = comparison.a?.spawn || comparison.b?.spawn;
     let link = this.getCompareActionLink(comparison);
 
     if (comparison.status === "removed") {
-      link = this.getActionPageLink(this.props.modelA, comparison.a?.spawn)
+      link = this.getActionPageLink(this.props.modelA, comparison.a?.spawn);
     } else if (comparison.status === "added" || comparison.status === "unchanged") {
-      link = this.getActionPageLink(this.props.modelB, comparison.b?.spawn)
+      link = this.getActionPageLink(this.props.modelB, comparison.b?.spawn);
     }
 
-    return <Link key={index} className={`invocation-execution-row spawn-comparison-row ${comparison.status}`} href={link}>
+    return (
+      <Link key={index} className={`invocation-execution-row spawn-comparison-row ${comparison.status}`} href={link}>
         <div>
           <div className="invocation-execution-row-header">
             <span className="invocation-execution-row-header-status">{spawn?.targetLabel}</span>
@@ -231,35 +229,39 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
           <div className="invocation-spawn-args">{spawn?.args.join(" ").slice(0, 200)}...</div>
         </div>
       </Link>
-    
-;
+    );
   }
 
   renderCard(comparisons: SpawnComparison[], section: string, icon: React.ReactNode) {
-    return <div className={`card expanded`}>
-    <div className="content">
-      <div className="invocation-content-header">
-        <div className="title">
-          {icon}{comparisons.length} {section} spawn{comparisons.length == 1 ? "" : "s"}
-        </div>
-      <div>
-        <div className="invocation-execution-table">
-          {comparisons
-            .slice(0, this.state.limit.get(section) || PAGE_SIZE)
-            .map((comparison, index) => {
-              return this.renderComparisonRow(comparison, index);
-            })}
-        </div>
-        {comparisons.length > (this.state.limit.get(section) || PAGE_SIZE) && (
-          <div className="compare-spawns-more-buttons">
-            <OutlinedButton onClick={this.handleMoreClicked.bind(this, section)}>See more {section} spawns</OutlinedButton>
-            <OutlinedButton onClick={this.handleAllClicked.bind(this, section)}>See all {section} spawns</OutlinedButton>
+    return (
+      <div className={`card expanded`}>
+        <div className="content">
+          <div className="invocation-content-header">
+            <div className="title">
+              {icon}
+              {comparisons.length} {section} spawn{comparisons.length == 1 ? "" : "s"}
+            </div>
+            <div>
+              <div className="invocation-execution-table">
+                {comparisons.slice(0, this.state.limit.get(section) || PAGE_SIZE).map((comparison, index) => {
+                  return this.renderComparisonRow(comparison, index);
+                })}
+              </div>
+              {comparisons.length > (this.state.limit.get(section) || PAGE_SIZE) && (
+                <div className="compare-spawns-more-buttons">
+                  <OutlinedButton onClick={this.handleMoreClicked.bind(this, section)}>
+                    See more {section} spawns
+                  </OutlinedButton>
+                  <OutlinedButton onClick={this.handleAllClicked.bind(this, section)}>
+                    See all {section} spawns
+                  </OutlinedButton>
+                </div>
+              )}
+            </div>
           </div>
-        )}
+        </div>
       </div>
-    </div>
-  </div>
-  </div>
+    );
   }
 
   render() {
@@ -270,11 +272,13 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
       return <div className="invocation-execution-empty-state">No execution log spawns for these invocations.</div>;
     }
 
-    return <>
-    {this.renderCard(this.state.changed, "changed", <CircleDot className="icon yellow" />)}
-    {this.renderCard(this.state.added, "added", <PlusCircle className="icon green" />)}
-    {this.renderCard(this.state.removed, "removed", <MinusCircle className="icon red" />)}
-    {this.renderCard(this.state.unchanged, "unchanged", <Circle className="icon" />)}
-    </>;
+    return (
+      <>
+        {this.renderCard(this.state.changed, "changed", <CircleDot className="icon yellow" />)}
+        {this.renderCard(this.state.added, "added", <PlusCircle className="icon green" />)}
+        {this.renderCard(this.state.removed, "removed", <MinusCircle className="icon red" />)}
+        {this.renderCard(this.state.unchanged, "unchanged", <Circle className="icon" />)}
+      </>
+    );
   }
 }
