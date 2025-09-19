@@ -3,6 +3,7 @@ syntax = "proto3";
 import "proto/capability.proto";
 import "proto/context.proto";
 import "proto/user_id.proto";
+import "proto/user_list.proto";
 
 package grp;
 
@@ -178,6 +179,7 @@ message GetGroupUsersResponse {
 
   message GroupUser {
     user_id.DisplayUser user = 1;
+    user_list.UserList user_list = 4;
     GroupMembershipStatus group_membership_status = 2;
     Group.Role role = 3;
   }
@@ -192,28 +194,32 @@ message UpdateGroupUsersRequest {
   // The ID of the group to update.
   string group_id = 2;
 
-  // Update applied to a user in the group.
+  // Update applied to a user or user list in the group.
   message Update {
     enum MembershipAction {
       UNKNOWN_MEMBERSHIP_ACTION = 0;
-      // Add the user to the group.
+      // Add the user or user list to the group.
       ADD = 1;
-      // Remove the user from the group as well as any pending membership
-      // requests.
+      // Remove the user or user list from the group as well as any pending
+      // membership requests if the target is a user.
       REMOVE = 2;
     }
 
+    // One of either user_id or user_list_id should be set.
+
     user_id.UserId user_id = 1;
+
+    string user_list_id = 4;
 
     // New membership status. If unset, membership status is unaffected.
     MembershipAction membership_action = 2;
 
-    // New role to apply to the user within this group. If unset, role is
-    // unaffected.
+    // New role to apply to the user or user list within this group.
+    // If unset, role is unaffected.
     Group.Role role = 3;
   }
 
-  // Updates to apply to group users.
+  // Updates to apply to group members.
   repeated Update update = 3;
 }
 

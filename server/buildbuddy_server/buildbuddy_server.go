@@ -76,6 +76,7 @@ import (
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	ulpb "github.com/buildbuddy-io/buildbuddy/proto/user_list"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
@@ -655,6 +656,135 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 		return nil, err
 	}
 	return &grpb.JoinGroupResponse{}, nil
+}
+
+func (s *BuildBuddyServer) GetUserLists(ctx context.Context, request *ulpb.GetUserListsRequest) (*ulpb.GetUserListsResponse, error) {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	uls, err := udb.GetUserLists(ctx, u.GetGroupID())
+	if err != nil {
+		return nil, err
+	}
+
+	var results []*ulpb.UserList
+	for _, ul := range uls {
+		results = append(results, &ulpb.UserList{
+			UserListId: ul.UserListID,
+			Name:       ul.Name,
+		})
+	}
+	return &ulpb.GetUserListsResponse{
+		UserList: results,
+	}, nil
+}
+
+func (s *BuildBuddyServer) GetUserList(ctx context.Context, request *ulpb.GetUserListRequest) (*ulpb.GetUserListResponse, error) {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
+	}
+
+	ul, err := udb.GetUserList(ctx, request.GetUserListId())
+	if err != nil {
+		return nil, err
+	}
+	return &ulpb.GetUserListResponse{
+		UserList: &ulpb.UserList{
+			UserListId: ul.UserListID,
+			Name:       ul.Name,
+		},
+	}, nil
+}
+
+func (s *BuildBuddyServer) GetUserListMembers(ctx context.Context, request *ulpb.GetUserListMembersRequest) (*ulpb.GetUserListMembersResponse, error) {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
+	}
+
+	ul, err := udb.GetUserListMembers(ctx, request.GetUserListId())
+	if err != nil {
+		return nil, err
+	}
+	return &ulpb.GetUserListMembersResponse{
+		User: ul,
+	}, nil
+}
+
+func (s *BuildBuddyServer) CreateUserList(ctx context.Context, request *ulpb.CreateUserListRequest) (*ulpb.GetUserListsResponse, error) {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = udb.CreateUserList(ctx, &tables.UserList{
+		GroupID: u.GetGroupID(),
+		Name:    request.GetName(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ulpb.GetUserListsResponse{}, nil
+}
+
+func (s *BuildBuddyServer) DeleteUserList(ctx context.Context, request *ulpb.DeleteUserListRequest) (*ulpb.DeleteUserListResponse, error) {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
+	}
+
+	err := udb.DeleteUserList(ctx, request.GetUserListId())
+	if err != nil {
+		return nil, err
+	}
+
+	return &ulpb.DeleteUserListResponse{}, nil
+}
+
+func (s *BuildBuddyServer) UpdateUserList(ctx context.Context, request *ulpb.UpdateUserListRequest) (*ulpb.UpdateUserListResponse, error) {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = udb.UpdateUserList(ctx, &tables.UserList{
+		GroupID:    u.GetGroupID(),
+		UserListID: request.GetUserList().UserListId,
+		Name:       request.GetUserList().GetName(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ulpb.UpdateUserListResponse{}, nil
+}
+
+func (s *BuildBuddyServer) UpdateUserListMembership(ctx context.Context, request *ulpb.UpdateUserListMembershipRequest) (*ulpb.UpdateUserListMembershipResponse, error) {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
+	}
+
+	err := udb.UpdateUserListMembers(ctx, request.GetUserListId(), request.GetUpdate())
+	if err != nil {
+		return nil, err
+	}
+
+	return &ulpb.UpdateUserListMembershipResponse{}, nil
 }
 
 func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {

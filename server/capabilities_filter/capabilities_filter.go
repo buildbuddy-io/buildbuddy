@@ -147,6 +147,14 @@ var (
 		// Org members management
 		"GetGroupUsers",
 		"UpdateGroupUsers",
+		// Org user list management
+		"GetUserLists",
+		"GetUserList",
+		"GetUserListMembers",
+		"CreateUserList",
+		"DeleteUserList",
+		"UpdateUserList",
+		"UpdateUserListMembership",
 		// Org GitHub account link management
 		"UnlinkGitHubAccount",
 		// Org GitHub app link management
