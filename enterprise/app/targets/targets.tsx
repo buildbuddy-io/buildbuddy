@@ -127,8 +127,7 @@ function convertMetricUrlParam(param: string): MetricOption | undefined {
 function convertAggUrlParam(param: string): AggOption {
   const val = Number.parseInt(param);
   if (val) {
-    const opt = AGG_OPTIONS.find((v) => v.agg == val);
-    return opt ?? AGG_OPTIONS[0];
+    return AGG_OPTIONS.find((v) => v.agg == val) ?? AGG_OPTIONS[0];
   }
   return AGG_OPTIONS[0];
 }
@@ -287,7 +286,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
             <strong>{data.target}</strong>
           </div>
           <div>
-            {this.selectedMetric.name}: {renderMetricValue(this.selectedMetric.metric, data.value)}
+            {this.selectedAgg.name} {this.selectedMetric.name}:{" "}
+            {renderMetricValue(this.selectedMetric.metric, data.value)}
           </div>
         </div>
       );
@@ -312,7 +312,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <Select
                 className="targets-metric-select"
                 onChange={this.handleMetricChange.bind(this)}
-                value={this.selectedMetric.name}>
+                value={this.selectedMetric.name}
+              >
                 {METRIC_OPTIONS.map(
                   (o) =>
                     o.name && (
@@ -325,7 +326,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <Select
                 className="targets-agg-select"
                 onChange={this.handleAggChange.bind(this)}
-                value={this.selectedAgg.name}>
+                value={this.selectedAgg.name}
+              >
                 {AGG_OPTIONS.map(
                   (o) =>
                     o.name && (
@@ -366,7 +368,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 <>
                   <div className="targets-chart-section">
                     <div className="targets-section-title">
-                      Top targets by {this.selectedMetric.name} ({this.selectedAgg.name})
+                      Top targets by {this.selectedAgg.name} {this.selectedMetric.name}
                     </div>
                     <div className="targets-chart-container">
                       <ResponsiveContainer width="100%" height={300}>
@@ -407,7 +409,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                             <div
                               key={target.target || index}
                               className="row result-row clickable"
-                              onClick={() => this.handleTableRowClick(target.target || "")}>
+                              onClick={() => this.handleTableRowClick(target.target || "")}
+                            >
                               <div className="name-column targets-table-target">{target.target}</div>
                               <div className="value-column targets-table-value">
                                 {renderMetricValue(this.selectedMetric.metric, +(target.value || 0))}
@@ -421,7 +424,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                           <Button
                             className="load-more-button"
                             onClick={this.handleShowMore}
-                            disabled={this.state.loading}>
+                            disabled={this.state.loading}
+                          >
                             <span>Show more</span>
                             {this.state.loading && <Spinner className="white" />}
                           </Button>
