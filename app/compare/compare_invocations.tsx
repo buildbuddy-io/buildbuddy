@@ -12,6 +12,7 @@ import { renderComparisonFacets } from "../util/diff";
 import { BuildBuddyError } from "../util/errors";
 import { triggerRemoteRun } from "../util/remote_runner";
 import CompareExecutionLogFilesComponent from "./compare_execution_log_files";
+import CompareExecutionLogSpawnsComponent from "./compare_execution_log_spawns";
 
 export interface CompareInvocationsComponentProps {
   user?: User;
@@ -255,7 +256,7 @@ fi
                 <GitCompare className="icon" />
                 {this.state.isRunningExplain ? "Running..." : "Run bb explain"}
               </Button>
-              {this.props.tab != "#file" && (
+              {this.props.tab != "#file" && this.props.tab != "#spawn" && (
                 <CheckboxButton
                   className="show-changes-only-button"
                   onChange={this.onClickShowChangesOnly.bind(this)}
@@ -276,6 +277,9 @@ fi
               <a href="#file" className={`tab ${this.props.tab == "#file" ? "selected" : ""}`}>
                 Files
               </a>
+              <a href="#spawn" className={`tab ${this.props.tab == "#spawn" ? "selected" : ""}`}>
+                Spawns
+              </a>
             </div>
           </div>
         </div>
@@ -295,6 +299,24 @@ fi
             )}
             {this.state.modelA?.getIsExecutionLogEnabled() && this.state.modelB?.getIsExecutionLogEnabled() && (
               <CompareExecutionLogFilesComponent
+                modelA={this.state.modelA}
+                modelB={this.state.modelB}
+                search={this.props.search}
+                filter={""}
+              />
+            )}
+          </div>
+        )}
+        {this.props.tab == "#spawn" && (
+          <div className="container">
+            {(!this.state.modelA?.getIsExecutionLogEnabled() || !this.state.modelB?.getIsExecutionLogEnabled()) && (
+              <div>
+                In order to compare spawns, both invocation must have the execution log enabled with the
+                `--execution_log_compact_file=` flag.
+              </div>
+            )}
+            {this.state.modelA?.getIsExecutionLogEnabled() && this.state.modelB?.getIsExecutionLogEnabled() && (
+              <CompareExecutionLogSpawnsComponent
                 modelA={this.state.modelA}
                 modelB={this.state.modelB}
                 search={this.props.search}

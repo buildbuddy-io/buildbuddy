@@ -223,3 +223,20 @@
 .diff-tree-node .symlink-icon {
   flex-shrink: 0;
 }
+
+.spawn-comparison-row .invocation-execution-row-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.spawn-comparison-row .invocation-execution-row-header svg {
+  width: 16px;
+  height: 16px;
+}
+
+.compare-spawns-more-buttons {
+  margin-top: 16px;
+  display: flex;
+  gap: 8px;
+}
