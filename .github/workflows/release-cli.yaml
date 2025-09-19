@@ -171,14 +171,17 @@ jobs:
           if [[ "$OSTYPE" == darwin* ]]; then
             OS=darwin
             GOMODCACHE=/Users/runner/go-mod-cache
+            EXTRA_FLAGS=""
           else
             OS=linux
             GOMODCACHE=/home/runner/go-mod-cache
+            EXTRA_FLAGS="--config=static"
           fi
           ARCH=$(uname -m)
           # bazelisk uses "x86_64" / "arm64" convention
           if [[ "$ARCH" == "aarch64" ]]; then
             ARCH=arm64
+            EXTRA_FLAGS="--config=static-arm64"
           fi
           VERSION=${{ needs.push-tag.outputs.version }}
 
@@ -187,6 +190,8 @@ jobs:
               --repository_cache='~/repo-cache/' \
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
               --//cli/version:cli_version="$VERSION" \
+              --compilation_mode=opt \
+              $EXTRA_FLAGS \
               //cli/cmd/bb
 
           BINARY="bazel-${VERSION}-${OS}-${ARCH}"
