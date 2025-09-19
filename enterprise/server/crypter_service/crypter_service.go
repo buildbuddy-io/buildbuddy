@@ -76,7 +76,7 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env, clock clockwork.Clock) (*Crypter, error) {
-	cache, err := crypter_key_cache.NewKeyCache(env, clock)
+	cache, err := crypter_key_cache.New(env, clock)
 	if err != nil {
 		return nil, err
 	}

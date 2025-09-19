@@ -80,7 +80,7 @@ type KeyCache struct {
 	activeRefreshOps atomic.Int32
 }
 
-func NewKeyCache(env environment.Env, clock clockwork.Clock) (*KeyCache, error) {
+func New(env environment.Env, clock clockwork.Clock) (*KeyCache, error) {
 	kc := &KeyCache{
 		env:   env,
 		dbh:   env.GetDBHandle(),
