@@ -3538,7 +3538,7 @@ func (s *Store) setupPartitions(ctx context.Context) {
 	}
 }
 
-func (s *Store) deletePartitions(ctx context.Context, partitionID string) (returnedErr error) {
+func (s *Store) deletePartitions(ctx context.Context, partitionID string) error {
 	// 1. Use directDelete to remove the partition descriptor
 	partitionKey := keys.MakeKey(constants.PartitionPrefix, []byte(partitionID))
 	batchBuilder := rbuilder.NewBatchBuilder().Add(&rfpb.DirectDeleteRequest{
