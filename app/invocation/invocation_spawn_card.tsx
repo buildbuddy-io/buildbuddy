@@ -374,12 +374,6 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                       </div>
                       <div>{spawn.spawn?.args.join(" ").slice(0, 200)}...</div>
                       <div className="invocation-execution-row-stats">
-                        {Boolean(spawn.spawn?.metrics?.startTime) && (
-                          <div>Start time: {format.formatTimestamp(spawn.spawn.metrics.startTime)}</div>
-                        )}
-                        {Boolean(spawn.spawn?.metrics?.totalTime) && (
-                          <div>Duration: {format.durationProto(spawn.spawn.metrics.totalTime)}</div>
-                        )}
                         <div>Mnemonic: {spawn.spawn?.mnemonic}</div>
                         <div>Runner: {spawn.spawn?.runner}</div>
                         {Array.from(this.getPlatformProperties(spawn.spawn?.platform)).map(([propName, propValue]) => (
@@ -390,6 +384,12 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                         <div>Remotable: {spawn.spawn?.remotable ? "true" : "false"}</div>
                         <div>Cachable: {spawn.spawn?.cacheable ? "true" : "false"}</div>
                         <div>Exit code: {spawn.spawn?.exitCode || 0}</div>
+                        {spawn.spawn?.metrics?.startTime && (
+                          <div>Start time: {format.formatTimestamp(spawn.spawn.metrics.startTime)}</div>
+                        )}
+                        {spawn.spawn?.metrics?.totalTime && (
+                          <div>Duration: {format.durationProto(spawn.spawn.metrics.totalTime)}</div>
+                        )}
                       </div>
                       {spawn.spawn?.digest && (
                         <ActionCompareButtonComponent
