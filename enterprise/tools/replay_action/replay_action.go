@@ -152,11 +152,9 @@ func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, fr
 	return nil
 }
 
-func (r *Replayer) copyTree(ctx context.Context, sourceRemoteInstanceName string, tree *repb.Tree, digestType repb.DigestFunction_Value) error {
-	eg, ctx := errgroup.WithContext(ctx)
+func (r *Replayer) copyTree(srcCtx, targetCtx context.Context, sourceRemoteInstanceName string, tree *repb.Tree, digestType repb.DigestFunction_Value) error {
+	eg, ctx := errgroup.WithContext(srcCtx)
 	eg.SetLimit(100)
-	srcCtx := contextWithSourceCredentials(ctx)
-	targetCtx := contextWithTargetCredentials(ctx)
 	copyDir := func(dir *repb.Directory) {
 		eg.Go(func() error {
 			_, err := cachetools.UploadProto(targetCtx, r.destBSClient, *targetRemoteInstanceName, digestType, dir)
@@ -596,7 +594,7 @@ func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.A
 		if err != nil {
 			return status.WrapError(err, "GetTree")
 		}
-		if err := r.copyTree(ctx, sourceExecutionRN.GetInstanceName(), tree, sourceExecutionRN.GetDigestFunction()); err != nil {
+		if err := r.copyTree(srcCtx, targetCtx, sourceExecutionRN.GetInstanceName(), tree, sourceExecutionRN.GetDigestFunction()); err != nil {
 			return status.WrapError(err, "copy tree")
 		}
 		log.CtxDebugf(ctx, "Copied input root %s", treeRN.DownloadString())
