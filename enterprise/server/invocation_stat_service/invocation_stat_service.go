@@ -1308,6 +1308,10 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 		return nil, err
 	}
 
+	// Merged actions appear in clickhouse as multiple rows with the same
+	// execution_id, but a different invocation_uuid.  This inner query dedupes
+	// by execution_id and takes the highest value (though all rows should have
+	// the same value).
 	innerQ := query_builder.NewQuery(fmt.Sprintf(`
 		SELECT target_label, execution_id, MAX(%s) as v
 		FROM "Executions"`, metric))
