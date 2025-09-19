@@ -1317,6 +1317,7 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 		return nil, err
 	}
 
+	q.AddWhereClause("cached_result = FALSE")
 	q.AddWhereClause("target_label != ''")
 	q.SetGroupBy("target_label")
 	q.SetOrderBy("value", false) // Descending order
