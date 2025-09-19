@@ -19,12 +19,10 @@ go_library(
         "//server/util/log",
         "//server/util/retry",
         "//server/util/status",
-        "//third_party/singleflight",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@io_gorm_gorm//:gorm",
         "@org_golang_x_crypto//hkdf",
         "@org_golang_x_time//rate",
-        "@org_uber_go_atomic//:atomic",
     ],
 )
 
@@ -34,6 +32,7 @@ go_test(
     embed = [":crypter_service"],
     deps = [
         "//enterprise/server/backends/pebble_cache",
+        "//enterprise/server/crypter_key_cache",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//proto:capability_go_proto",

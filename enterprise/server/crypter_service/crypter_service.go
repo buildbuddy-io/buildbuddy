@@ -3,6 +3,8 @@ package crypter_service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -21,7 +23,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
+	"golang.org/x/crypto/hkdf"
 	"golang.org/x/time/rate"
+	"gorm.io/gorm"
 
 	mrand "math/rand"
 
@@ -76,7 +80,10 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env, clock clockwork.Clock) (*Crypter, error) {
-	cache, err := crypter_key_cache.New(env, clock)
+	refreshFn := func(ctx context.Context, ck crypter_key_cache.CacheKey) ([]byte, *sgpb.EncryptionMetadata, error) {
+		return refreshKey(ctx, ck, env.GetDBHandle(), env.GetKMS())
+	}
+	cache, err := crypter_key_cache.New(env, refreshFn, clock)
 	if err != nil {
 		return nil, err
 	}
@@ -92,6 +99,81 @@ func New(env environment.Env, clock clockwork.Clock) (*Crypter, error) {
 	}
 	c.startKeyReencryptor(quitChan)
 	return c, nil
+}
+
+func derivedKey(groupID string, key *tables.EncryptionKeyVersion, kms interfaces.KMS) ([]byte, error) {
+	bbmk, err := kms.FetchMasterKey()
+	if err != nil {
+		return nil, err
+	}
+
+	gmk, err := kms.FetchKey(key.GroupKeyURI)
+	if err != nil {
+		return nil, err
+	}
+
+	masterKeyPortion, err := bbmk.Decrypt(key.MasterEncryptedKey, []byte(groupID))
+	if err != nil {
+		return nil, err
+	}
+	groupKeyPortion, err := gmk.Decrypt(key.GroupEncryptedKey, []byte(groupID))
+	if err != nil {
+		return nil, err
+	}
+
+	ckSrc := make([]byte, 0, len(masterKeyPortion)+len(groupKeyPortion))
+	ckSrc = append(ckSrc, masterKeyPortion...)
+	ckSrc = append(ckSrc, groupKeyPortion...)
+
+	info := append([]byte{crypter.EncryptedDataHeaderVersion}, []byte(groupID)...)
+	derivedKey := make([]byte, 32)
+	r := hkdf.Expand(sha256.New, ckSrc, info)
+	n, err := r.Read(derivedKey)
+	if err != nil {
+		return nil, err
+	}
+	if n != 32 {
+		return nil, status.InternalError("invalid key length")
+	}
+	return derivedKey, nil
+}
+
+func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, dbh interfaces.DBHandle, kms interfaces.KMS) ([]byte, *sgpb.EncryptionMetadata, error) {
+	var query string
+	var args []interface{}
+	if ck.KeyID != "" {
+		query = `
+			SELECT * FROM "EncryptionKeyVersions" ekv
+			JOIN "EncryptionKeys" ek ON ekv.encryption_key_id = ek.encryption_key_id
+			WHERE ek.group_id = ? 
+			AND ekv.encryption_key_id = ? AND ekv.version = ?
+		`
+		args = []interface{}{ck.GroupID, ck.KeyID, ck.Version}
+	} else {
+		query = `
+			SELECT * FROM "EncryptionKeyVersions" ekv
+			JOIN "EncryptionKeys" ek ON ekv.encryption_key_id = ek.encryption_key_id
+			WHERE ek.group_id = ?
+		`
+		args = []interface{}{ck.GroupID}
+	}
+
+	ekv := &tables.EncryptionKeyVersion{}
+	if err := dbh.NewQuery(ctx, "crypter_refresh_key").Raw(query, args...).Take(ekv); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, status.NotFoundError("no key available")
+		}
+		return nil, nil, err
+	}
+	key, err := derivedKey(ck.GroupID, ekv, kms)
+	if err != nil {
+		return nil, nil, err
+	}
+	md := &sgpb.EncryptionMetadata{
+		EncryptionKeyId: ekv.EncryptionKeyID,
+		Version:         int64(ekv.Version),
+	}
+	return key, md, nil
 }
 
 func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser, groupID string, chunkSize int) (*crypter.Encryptor, error) {
