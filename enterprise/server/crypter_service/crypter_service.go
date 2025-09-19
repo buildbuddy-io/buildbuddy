@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"strings"
@@ -19,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -39,6 +39,7 @@ import (
 var (
 	keyTTL               = flag.Duration("crypter.key_ttl", 10*time.Minute, "The maximum amount of time a key can be cached without being re-verified before it is considered invalid.")
 	keyReencryptInterval = flag.Duration("crypter.key_reencrypt_interval", 6*time.Hour, "How frequently keys will be re-encrypted (to support key rotation).")
+	permittedClients     = flag.Slice("crypter.permitted_clients", []string{}, "Clients (identified by clientidentity) that are permitted to access encryption keys via RPC.")
 )
 
 const (
@@ -844,4 +845,49 @@ func (c *Crypter) GetEncryptionConfig(ctx context.Context, req *enpb.GetEncrypti
 	}
 
 	return rsp, err
+}
+
+func (c *Crypter) GetEncryptionKey(ctx context.Context, req *enpb.GetEncryptionKeyRequest) (*enpb.GetEncryptionKeyResponse, error) {
+	identityService := c.env.GetClientIdentityService()
+	if identityService == nil {
+		return nil, status.InternalError("Client Identity Service is required for EncryptionService")
+	}
+	identity, err := identityService.IdentityFromContext(ctx)
+	if err != nil {
+		return nil, status.InvalidArgumentError("Client Identity is required")
+	}
+	permitted := false
+	for _, client := range *permittedClients {
+		if identity.Client == client {
+			permitted = true
+			break
+		}
+	}
+	if !permitted {
+		return nil, status.InvalidArgumentErrorf("Client %s may not access EncryptionService", identity.Client)
+	}
+
+	var loadedKey *crypter.DerivedKey
+	if req.GetMetadata().GetVersion() == 0 {
+		loadedKey, err = c.cache.encryptionKey(ctx)
+	} else {
+		metadata := sgpb.EncryptionMetadata{
+			EncryptionKeyId: req.GetMetadata().GetId(),
+			Version:         req.GetMetadata().GetVersion(),
+		}
+		loadedKey, err = c.cache.decryptionKey(ctx, &metadata)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &enpb.GetEncryptionKeyResponse{
+		Key: &enpb.EncryptionKey{
+			Metadata: &enpb.EncryptionKeyMetadata{
+				Id:      loadedKey.Metadata.GetEncryptionKeyId(),
+				Version: loadedKey.Metadata.GetVersion(),
+			},
+			Key: loadedKey.Key,
+		},
+	}, nil
 }

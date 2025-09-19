@@ -1533,6 +1533,8 @@ type Crypter interface {
 
 	NewEncryptor(ctx context.Context, d *repb.Digest, w CommittedWriteCloser) (Encryptor, error)
 	NewDecryptor(ctx context.Context, d *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata) (Decryptor, error)
+
+	enpb.EncryptionServiceServer
 }
 
 // Provides a duplicate function call suppression mechanism, just like the
