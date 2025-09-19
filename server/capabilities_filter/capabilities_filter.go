@@ -150,7 +150,6 @@ var (
 		// Org user list management
 		"GetUserLists",
 		"GetUserList",
-		"GetUserListMembers",
 		"CreateUserList",
 		"DeleteUserList",
 		"UpdateUserList",
