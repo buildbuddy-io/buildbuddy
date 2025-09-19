@@ -127,6 +127,11 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     let second = this.state.direction == "asc" ? b : a;
 
     switch (this.state.sort) {
+      case "start-time":
+        if (+(first?.spawn?.metrics?.startTime?.seconds || 0) == +(second?.spawn?.metrics?.startTime?.seconds || 0)) {
+          return +(first?.spawn?.metrics?.startTime?.nanos || 0) - +(second?.spawn?.metrics?.startTime?.nanos || 0);
+        }
+        return +(first?.spawn?.metrics?.startTime?.seconds || 0) - +(second?.spawn?.metrics?.startTime?.seconds || 0);
       case "total-duration":
         if (+(first?.spawn?.metrics?.totalTime?.seconds || 0) == +(second?.spawn?.metrics?.totalTime?.seconds || 0)) {
           return +(first?.spawn?.metrics?.totalTime?.nanos || 0) - +(second?.spawn?.metrics?.totalTime?.nanos || 0);
@@ -321,6 +326,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                 <div className="invocation-filter-control">
                   <span className="invocation-filter-title">Sort by</span>
                   <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
+                    <Option value="start-time">Start Time</Option>
                     <Option value="total-duration">Total Duration</Option>
                   </Select>
                 </div>
@@ -368,9 +374,6 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                       </div>
                       <div>{spawn.spawn?.args.join(" ").slice(0, 200)}...</div>
                       <div className="invocation-execution-row-stats">
-                        {spawn.spawn?.metrics?.totalTime && (
-                          <div>Duration: {format.durationProto(spawn.spawn.metrics.totalTime)}</div>
-                        )}
                         <div>Mnemonic: {spawn.spawn?.mnemonic}</div>
                         <div>Runner: {spawn.spawn?.runner}</div>
                         {Array.from(this.getPlatformProperties(spawn.spawn?.platform)).map(([propName, propValue]) => (
@@ -381,7 +384,12 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                         <div>Remotable: {spawn.spawn?.remotable ? "true" : "false"}</div>
                         <div>Cachable: {spawn.spawn?.cacheable ? "true" : "false"}</div>
                         <div>Exit code: {spawn.spawn?.exitCode || 0}</div>
-                        {/* {spawn.spawn?.metrics.} // todo add metrics here and filters from remote exec log */}
+                        {spawn.spawn?.metrics?.startTime && (
+                          <div>Start time: {format.formatTimestamp(spawn.spawn.metrics.startTime)}</div>
+                        )}
+                        {spawn.spawn?.metrics?.totalTime && (
+                          <div>Duration: {format.durationProto(spawn.spawn.metrics.totalTime)}</div>
+                        )}
                       </div>
                       {spawn.spawn?.digest && (
                         <ActionCompareButtonComponent
