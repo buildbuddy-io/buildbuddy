@@ -215,7 +215,9 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
       <Link key={index} className={`invocation-execution-row spawn-comparison-row ${comparison.status}`} href={link}>
         <div>
           <div className="invocation-execution-row-header">
-            <span className="invocation-execution-row-header-status">{spawn?.targetLabel} ({spawn?.mnemonic})</span>
+            <span className="invocation-execution-row-header-status">
+              {spawn?.targetLabel} ({spawn?.mnemonic})
+            </span>
             {comparison.status === "changed" && comparison.a?.spawn?.digest && comparison.b?.spawn?.digest && (
               <>
                 <DigestComponent digest={comparison.a.spawn.digest} expanded={false} />
