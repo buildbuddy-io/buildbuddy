@@ -312,8 +312,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <Select
                 className="targets-metric-select"
                 onChange={this.handleMetricChange.bind(this)}
-                value={this.selectedMetric.name}
-              >
+                value={this.selectedMetric.name}>
                 {METRIC_OPTIONS.map(
                   (o) =>
                     o.name && (
@@ -326,8 +325,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <Select
                 className="targets-agg-select"
                 onChange={this.handleAggChange.bind(this)}
-                value={this.selectedAgg.name}
-              >
+                value={this.selectedAgg.name}>
                 {AGG_OPTIONS.map(
                   (o) =>
                     o.name && (
@@ -409,8 +407,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                             <div
                               key={target.target || index}
                               className="row result-row clickable"
-                              onClick={() => this.handleTableRowClick(target.target || "")}
-                            >
+                              onClick={() => this.handleTableRowClick(target.target || "")}>
                               <div className="name-column targets-table-target">{target.target}</div>
                               <div className="value-column targets-table-value">
                                 {renderMetricValue(this.selectedMetric.metric, +(target.value || 0))}
@@ -424,8 +421,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                           <Button
                             className="load-more-button"
                             onClick={this.handleShowMore}
-                            disabled={this.state.loading}
-                          >
+                            disabled={this.state.loading}>
                             <span>Show more</span>
                             {this.state.loading && <Spinner className="white" />}
                           </Button>
