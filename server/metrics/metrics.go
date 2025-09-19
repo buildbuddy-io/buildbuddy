@@ -179,7 +179,7 @@ const (
 	// Status of the Clickhouse operation: `ok`, `error`.
 	ClickhouseStatusLabel = "status"
 
-	// The ID of a raft nodehost.
+	// The ID of a partition.
 	RaftNodeHostIDLabel = "node_host_id"
 
 	// The range ID of a raft region.
@@ -193,6 +193,10 @@ const (
 
 	// The type of raft move `add`, or `remove`.
 	RaftMoveLabel = "move_type"
+
+	// The type of operation on a partition: "initialize", "soft-delte",
+	// "hard-delete".
+	RaftPartitionOpLabel = "op"
 
 	// The type of lease action `Acquire`, `Drop`.
 	RaftLeaseActionLabel = "lease_action"
@@ -2547,6 +2551,17 @@ var (
 	})
 
 	// ### Raft cache metrics
+
+	RaftPartitionOperations = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "partition_operations",
+		Help:      "Number of operations on partitions",
+	}, []string{
+		PartitionID,
+		RaftPartitionOpLabel,
+		StatusHumanReadableLabel,
+	})
 
 	RaftRanges = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
