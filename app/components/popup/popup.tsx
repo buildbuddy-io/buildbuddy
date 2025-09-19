@@ -3,7 +3,7 @@ import React from "react";
 export type PopupProps = JSX.IntrinsicElements["div"] & {
   isOpen: boolean;
   onRequestClose: (event: React.MouseEvent<HTMLElement, MouseEvent>) => void;
-  anchor?: "left" | "right";
+  anchor?: "left" | "right" | "center" | "center-right";
 };
 
 /**
