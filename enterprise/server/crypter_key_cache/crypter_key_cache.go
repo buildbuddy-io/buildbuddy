@@ -32,11 +32,11 @@ var (
 
 const (
 	// How often to check for keys that need to be refreshed.
-	keyRefreshScanFrequency = 10 * time.Second
+	KeyRefreshScanFrequency = 10 * time.Second
 	// How long to wait after a failed refresh attempt before trying again.
 	keyRefreshRetryInterval = 30 * time.Second
 	keyRefreshDeadline      = 25 * time.Second
-	keyErrCacheTime         = 10 * time.Second
+	KeyErrCacheTime         = 10 * time.Second
 )
 
 // Note: there are two types of keys in the cache, one with only groupID set
@@ -144,7 +144,7 @@ func (c *KeyCache) StartRefresher(quitChan chan struct{}) {
 	// For the sake of testing, create the timer up front before returning
 	// from this func. That way tests are guaranteed that the timer will be
 	// fired when time is advanced using a fake clock.
-	t := c.clock.NewTimer(keyRefreshScanFrequency)
+	t := c.clock.NewTimer(KeyRefreshScanFrequency)
 
 	go func() {
 		for {
@@ -164,7 +164,7 @@ func (c *KeyCache) StartRefresher(quitChan chan struct{}) {
 
 			c.mu.Lock()
 			c.lastRefreshRun = c.clock.Now()
-			t.Reset(keyRefreshScanFrequency)
+			t.Reset(KeyRefreshScanFrequency)
 			c.mu.Unlock()
 		}
 	}()
@@ -293,7 +293,7 @@ func (c *KeyCache) refreshKeyWithRetries(ctx context.Context, ck cacheKey, cache
 	if cacheError {
 		c.cacheAdd(ck, &cacheEntry{
 			err:          lastErr,
-			expiresAfter: c.clock.Now().Add(keyErrCacheTime),
+			expiresAfter: c.clock.Now().Add(KeyErrCacheTime),
 		})
 	}
 	return nil, status.UnavailableErrorf("exhausted attempts to refresh key, last error: %s", lastErr)

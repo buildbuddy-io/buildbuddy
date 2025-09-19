@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_key_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
-	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -31,6 +31,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
@@ -573,7 +574,7 @@ func TestKeyCaching(t *testing.T) {
 
 		// If we're not close enough to expiration, no refresh should be
 		// triggered.
-		advanceTimeAndWaitForRefresh(clock, crypter, keyRefreshScanFrequency)
+		advanceTimeAndWaitForRefresh(clock, crypter, crypter_key_cache.KeyRefreshScanFrequency)
 		require.Equal(t, 2, kms.GetFetchCount(group1KeyURI))
 
 		// If we are getting closer to expiration, but the keys have not been
@@ -586,7 +587,7 @@ func TestKeyCaching(t *testing.T) {
 		testEncryptDecrypt(ctx, t, auther, crypter, userID1, group1KeyID)
 		require.Equal(t, 2, kms.GetFetchCount(group1KeyURI))
 		// On the next fresh, we should attempt to fetch the keys from KMS.
-		advanceTimeAndWaitForRefresh(clock, crypter, keyRefreshScanFrequency)
+		advanceTimeAndWaitForRefresh(clock, crypter, crypter_key_cache.KeyRefreshScanFrequency)
 		require.Equal(t, 4, kms.GetFetchCount(group1KeyURI))
 
 		// If we are past expiration, the keys should be removed from the cache
@@ -618,18 +619,18 @@ func TestKeyCaching(t *testing.T) {
 		advanceTimeAndWaitForRefresh(clock, crypter, 6*time.Minute)
 		// Need to use the key so it's marked as recently used.
 		testEncryptDecrypt(ctx, t, auther, crypter, userID1, group1KeyID)
-		contAdvanceTimeAndWaitForRefresh(clock, crypter, keyRefreshScanFrequency)
+		contAdvanceTimeAndWaitForRefresh(clock, crypter, crypter_key_cache.KeyRefreshScanFrequency)
 		require.Greater(t, kms.GetFetchCount(group1KeyURI), 2)
 
 		// Next scan loop shouldn't try to refresh the key since it has already
 		// been recently checked.
 		oldCount := kms.GetFetchCount(group1KeyURI)
-		advanceTimeAndWaitForRefresh(clock, crypter, keyRefreshScanFrequency)
+		advanceTimeAndWaitForRefresh(clock, crypter, crypter_key_cache.KeyRefreshScanFrequency)
 		require.Equal(t, oldCount, kms.GetFetchCount(group1KeyURI))
 
 		// But we should try again once we get past the retry interval.
 		oldCount = kms.GetFetchCount(group1KeyURI)
-		contAdvanceTimeAndWaitForRefresh(clock, crypter, keyRefreshRetryInterval)
+		contAdvanceTimeAndWaitForRefresh(clock, crypter, crypter_key_cache.KeyRefreshScanFrequency)
 		require.Greater(t, kms.GetFetchCount(group1KeyURI), oldCount)
 
 		// Encryption should continue to use the cached key until we reach
@@ -663,7 +664,7 @@ func TestKeyCaching(t *testing.T) {
 		require.Equal(t, fetchCount, kms.GetFetchCount(group1KeyURI))
 
 		// Once enough time passes, we should try to fetch the key again.
-		clock.Advance(keyErrCacheTime)
+		clock.Advance(crypter_key_cache.KeyErrCacheTime)
 		err = testKeyError(ctx, t, auther, crypter, userID1, clock)
 		require.True(t, status.IsUnavailableError(err))
 		require.Equal(t, kms.GetFetchCount(group1KeyURI), fetchCount)
@@ -780,6 +781,8 @@ func TestConfigAPI(t *testing.T) {
 }
 
 func TestKeyReencryption(t *testing.T) {
+	ttl := time.Minute
+	flags.Set(t, "crypter.key_ttl", ttl)
 	env, kms := getEnv(t)
 
 	userID1 := "US123"
@@ -814,7 +817,7 @@ func TestKeyReencryption(t *testing.T) {
 
 	// Allow the keys to be expired from the cache now so we don't have to
 	// worry about the cached values when re-encryption happens.
-	advanceTimeAndWaitForRefresh(clock, crypter, *keyTTL+1*time.Minute)
+	advanceTimeAndWaitForRefresh(clock, crypter, ttl+1*time.Minute)
 
 	clock.Advance(*keyReencryptInterval * 2)
 
