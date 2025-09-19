@@ -1308,17 +1308,24 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 		return nil, err
 	}
 
-	q := query_builder.NewQuery(fmt.Sprintf(`
-		SELECT target_label as target, SUM(%s) as value
+	innerQ := query_builder.NewQuery(fmt.Sprintf(`
+		SELECT target_label, execution_id, MAX(%s) as v
 		FROM "Executions"`, metric))
 
 	// Add where clauses from the trend query, including execution dimension filters
-	if err := i.addWhereClauses(q, req.GetQuery(), true, req.GetRequestContext()); err != nil {
+	if err := i.addWhereClauses(innerQ, req.GetQuery(), true, req.GetRequestContext()); err != nil {
 		return nil, err
 	}
 
-	q.AddWhereClause("cached_result = FALSE")
-	q.AddWhereClause("target_label != ''")
+	innerQ.AddWhereClause("cached_result = FALSE")
+	innerQ.AddWhereClause("target_label != ''")
+	innerQ.SetGroupBy("target_label, execution_id")
+
+	innerQStr, innerQArgs := innerQ.Build()
+
+	q := query_builder.NewQueryWithArgs(fmt.Sprintf(`
+		SELECT target_label as target, SUM(v) as value
+		FROM ( %s )`, innerQStr), innerQArgs)
 	q.SetGroupBy("target_label")
 	q.SetOrderBy("value", false) // Descending order
 	q.SetLimit(1000)             // Reasonable limit to avoid overwhelming the response
