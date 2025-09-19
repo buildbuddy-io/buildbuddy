@@ -138,9 +138,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-22.04
+            flags: --config=static
           - os: ubuntu-22.04-16cpu-arm64-arm-limited # linux arm64
+            flags: --config=static-arm64
           - os: macos-13 # macOS amd64
+            flags: ""
           - os: macos-13-xlarge # macOS arm64
+            flags: ""
     runs-on: ${{ matrix.os }}
     needs: [push-tag, create-release]
     steps:
@@ -171,17 +175,14 @@ jobs:
           if [[ "$OSTYPE" == darwin* ]]; then
             OS=darwin
             GOMODCACHE=/Users/runner/go-mod-cache
-            EXTRA_FLAGS=""
           else
             OS=linux
             GOMODCACHE=/home/runner/go-mod-cache
-            EXTRA_FLAGS="--config=static"
           fi
           ARCH=$(uname -m)
           # bazelisk uses "x86_64" / "arm64" convention
           if [[ "$ARCH" == "aarch64" ]]; then
             ARCH=arm64
-            EXTRA_FLAGS="--config=static-arm64"
           fi
           VERSION=${{ needs.push-tag.outputs.version }}
 
@@ -191,7 +192,7 @@ jobs:
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
               --//cli/version:cli_version="$VERSION" \
               --compilation_mode=opt \
-              $EXTRA_FLAGS \
+              ${{ matrix.flags }} \
               //cli/cmd/bb
 
           BINARY="bazel-${VERSION}-${OS}-${ARCH}"
