@@ -52,7 +52,6 @@ import (
 	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
-	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	ulpb "github.com/buildbuddy-io/buildbuddy/proto/user_list"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
@@ -576,10 +575,9 @@ type UserDB interface {
 
 	CreateUserList(ctx context.Context, userList *tables.UserList) error
 	UpdateUserList(ctx context.Context, userList *tables.UserList) error
-	GetUserLists(ctx context.Context, groupID string) ([]*tables.UserList, error)
-	GetUserList(ctx context.Context, userListID string) (*tables.UserList, error)
+	GetUserLists(ctx context.Context, groupID string) ([]*ulpb.UserList, error)
+	GetUserList(ctx context.Context, userListID string) (*ulpb.UserList, error)
 	DeleteUserList(ctx context.Context, userListID string) error
-	GetUserListMembers(ctx context.Context, userListID string) ([]*uspb.DisplayUser, error)
 	UpdateUserListMembers(ctx context.Context, userListID string, updates []*ulpb.UpdateUserListMembershipRequest_Update) error
 
 	// Secrets API

@@ -2154,7 +2154,16 @@ func TestUserListOps(t *testing.T) {
 
 	uls, err := udb.GetUserLists(group1AdminCtx, group1ID)
 	require.NoError(t, err)
-	require.Equal(t, []*tables.UserList{group1List2, group1List1}, uls)
+	require.Equal(t, []*ulpb.UserList{
+		{
+			UserListId: group1List2.UserListID,
+			Name:       group1List2.Name,
+		},
+		{
+			UserListId: group1List1.UserListID,
+			Name:       group1List1.Name,
+		},
+	}, uls)
 	_, err = udb.GetUserLists(group1AdminCtx, group2ID)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
@@ -2187,19 +2196,19 @@ func TestUserListOps(t *testing.T) {
 
 	// Get members.
 
-	ms, err := udb.GetUserListMembers(group1AdminCtx, group1List2.UserListID)
+	ul, err := udb.GetUserList(group1AdminCtx, group1List2.UserListID)
 	require.NoError(t, err)
-	require.Len(t, ms, 2)
-	require.Equal(t, "US1", ms[0].UserId.GetId())
-	require.Equal(t, "US2", ms[1].UserId.GetId())
-	require.NotEmpty(t, ms)
-	_, err = udb.GetUserListMembers(group1AdminCtx, group2List.UserListID)
+	require.Len(t, ul.User, 2)
+	require.Equal(t, "US1", ul.User[0].UserId.GetId())
+	require.Equal(t, "US2", ul.User[1].UserId.GetId())
+	require.NotEmpty(t, ul)
+	_, err = udb.GetUserList(group1AdminCtx, group2List.UserListID)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
-	ms, err = udb.GetUserListMembers(group2AdminCtx, group2List.UserListID)
+	ul, err = udb.GetUserList(group2AdminCtx, group2List.UserListID)
 	require.NoError(t, err)
-	require.Len(t, ms, 1)
-	require.Equal(t, "US2", ms[0].UserId.GetId())
+	require.Len(t, ul.User, 1)
+	require.Equal(t, "US2", ul.User[0].UserId.GetId())
 
 	// Delete members.
 
@@ -2208,10 +2217,10 @@ func TestUserListOps(t *testing.T) {
 	err = removeUserFromUserList(group1AdminCtx, udb, group1List2.UserListID, "US1")
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
-	ms, err = udb.GetUserListMembers(group1AdminCtx, group1List2.UserListID)
+	ul, err = udb.GetUserList(group1AdminCtx, group1List2.UserListID)
 	require.NoError(t, err)
-	require.Len(t, ms, 1)
-	require.Equal(t, "US2", ms[0].UserId.GetId())
+	require.Len(t, ul.User, 1)
+	require.Equal(t, "US2", ul.User[0].UserId.GetId())
 	err = removeUserFromUserList(group1AdminCtx, udb, group2List.UserListID, "US2")
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))

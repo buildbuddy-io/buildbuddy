@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"flag"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -1163,17 +1164,52 @@ func (d *UserDB) UpdateUserList(ctx context.Context, userList *tables.UserList) 
 	return nil
 }
 
-func (d *UserDB) GetUserLists(ctx context.Context, groupID string) ([]*tables.UserList, error) {
+type userListUser struct {
+	tables.UserList
+	tables.User
+}
+
+func (d *UserDB) GetUserLists(ctx context.Context, groupID string) ([]*ulpb.UserList, error) {
 	if err := d.authorizeGroupAdminRole(ctx, groupID); err != nil {
 		return nil, err
 	}
 
-	rq := d.h.NewQuery(ctx, "userdb_get_user_lists").Raw(
-		`SELECT * from "UserLists" WHERE group_id = ? ORDER BY name`, groupID)
-	return db.ScanAll(rq, &tables.UserList{})
+	rq := d.h.NewQuery(ctx, "userdb_get_user_lists").Raw(`
+		SELECT ul.*, u.* from "UserLists" AS ul
+		LEFT JOIN "UserUserLists" as uul ON uul.user_list_user_list_id = ul.user_list_id
+		LEFT JOIN "Users" AS u ON u.user_id = uul.user_user_id
+		WHERE ul.group_id = ? 
+		ORDER BY ul.user_list_id
+	`, groupID)
+	ulus, err := db.ScanAll(rq, &userListUser{})
+	if err != nil {
+		return nil, err
+	}
+
+	var uls []*ulpb.UserList
+	for i, ulu := range ulus {
+		if i == 0 || ulu.UserListID != ulus[i-1].UserListID {
+			ul := &ulpb.UserList{
+				UserListId: ulu.UserList.UserListID,
+				Name:       ulu.UserList.Name,
+			}
+			uls = append(uls, ul)
+			if ulu.User.UserID != "" {
+				ul.User = append(ul.User, ulu.User.ToProto())
+			}
+		} else {
+			uls[i-1].User = append(uls[i-1].User, ulu.User.ToProto())
+		}
+	}
+
+	slices.SortFunc(uls, func(a, b *ulpb.UserList) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	return uls, nil
 }
 
-func (d *UserDB) GetUserList(ctx context.Context, userListID string) (*tables.UserList, error) {
+func (d *UserDB) GetUserList(ctx context.Context, userListID string) (*ulpb.UserList, error) {
 	rq := d.h.NewQuery(ctx, "userdb_get_user_list").Raw(
 		` SELECT * from "UserLists" WHERE user_list_id = ?`, userListID)
 	ul := &tables.UserList{}
@@ -1188,7 +1224,18 @@ func (d *UserDB) GetUserList(ctx context.Context, userListID string) (*tables.Us
 		return nil, err
 	}
 
-	return ul, nil
+	ms, err := d.getUserListMembers(ctx, ul.UserListID)
+	if err != nil {
+		return nil, err
+	}
+
+	ulp := &ulpb.UserList{
+		UserListId: ul.UserListID,
+		Name:       ul.Name,
+		User:       ms,
+	}
+
+	return ulp, nil
 }
 
 func (d *UserDB) DeleteUserList(ctx context.Context, userListID string) error {
@@ -1225,12 +1272,7 @@ func (d *UserDB) addUserToUserList(ctx context.Context, tx interfaces.DB, userLi
 	return nil
 }
 
-func (d *UserDB) GetUserListMembers(ctx context.Context, userListID string) ([]*uspb.DisplayUser, error) {
-	// Permission check.
-	_, err := d.GetUserList(ctx, userListID)
-	if err != nil {
-		return nil, err
-	}
+func (d *UserDB) getUserListMembers(ctx context.Context, userListID string) ([]*uspb.DisplayUser, error) {
 	rq := d.h.NewQuery(ctx, "userdb_get_user_lists").Raw(` 
 		SELECT u.* from "UserUserLists" AS uul
 		JOIN "Users" AS u ON u.user_id = uul.user_user_id

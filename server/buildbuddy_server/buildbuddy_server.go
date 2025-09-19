@@ -673,15 +673,8 @@ func (s *BuildBuddyServer) GetUserLists(ctx context.Context, request *ulpb.GetUs
 		return nil, err
 	}
 
-	var results []*ulpb.UserList
-	for _, ul := range uls {
-		results = append(results, &ulpb.UserList{
-			UserListId: ul.UserListID,
-			Name:       ul.Name,
-		})
-	}
 	return &ulpb.GetUserListsResponse{
-		UserList: results,
+		UserList: uls,
 	}, nil
 }
 
@@ -696,25 +689,7 @@ func (s *BuildBuddyServer) GetUserList(ctx context.Context, request *ulpb.GetUse
 		return nil, err
 	}
 	return &ulpb.GetUserListResponse{
-		UserList: &ulpb.UserList{
-			UserListId: ul.UserListID,
-			Name:       ul.Name,
-		},
-	}, nil
-}
-
-func (s *BuildBuddyServer) GetUserListMembers(ctx context.Context, request *ulpb.GetUserListMembersRequest) (*ulpb.GetUserListMembersResponse, error) {
-	udb := s.env.GetUserDB()
-	if udb == nil {
-		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
-	}
-
-	ul, err := udb.GetUserListMembers(ctx, request.GetUserListId())
-	if err != nil {
-		return nil, err
-	}
-	return &ulpb.GetUserListMembersResponse{
-		User: ul,
+		UserList: ul,
 	}, nil
 }
 

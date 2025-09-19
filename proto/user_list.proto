@@ -8,6 +8,7 @@ package user_list;
 message UserList {
   string user_list_id = 1;
   string name = 2;
+  repeated user_id.DisplayUser user = 3;
 }
 
 message GetUserListsRequest {
@@ -30,18 +31,6 @@ message GetUserListResponse {
   context.ResponseContext response_context = 1;
 
   UserList user_list = 2;
-}
-
-message GetUserListMembersRequest {
-  context.RequestContext request_context = 1;
-
-  string user_list_id = 2;
-}
-
-message GetUserListMembersResponse {
-  context.ResponseContext response_context = 1;
-
-  repeated user_id.DisplayUser user = 2;
 }
 
 message CreateUserListRequest {
