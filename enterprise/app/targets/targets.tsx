@@ -42,7 +42,13 @@ interface MetricOption {
   metric: stat_filter.Metric;
 }
 
+interface AggOption {
+  name: string;
+  agg: stats.TargetAggregation;
+}
+
 const TARGET_SELECTED_METRIC_URL_PARAM: string = "targetsMetric";
+const TARGET_SELECTED_AGG_URL_PARAM: string = "targetsAgg";
 
 const METRIC_OPTIONS: MetricOption[] = [
   {
@@ -79,6 +85,37 @@ const METRIC_OPTIONS: MetricOption[] = [
   },
 ];
 
+const AGG_OPTIONS: AggOption[] = [
+  {
+    name: "Total",
+    agg: stats.TargetAggregation.SUM_TARGET_AGGREGATION,
+  },
+  {
+    name: "Avg",
+    agg: stats.TargetAggregation.AVG_TARGET_AGGREGATION,
+  },
+  {
+    name: "Max",
+    agg: stats.TargetAggregation.MAX_TARGET_AGGREGATION,
+  },
+  {
+    name: "Min",
+    agg: stats.TargetAggregation.MIN_TARGET_AGGREGATION,
+  },
+  {
+    name: "P50",
+    agg: stats.TargetAggregation.P50_TARGET_AGGREGATION,
+  },
+  {
+    name: "P90",
+    agg: stats.TargetAggregation.P90_TARGET_AGGREGATION,
+  },
+  {
+    name: "P99",
+    agg: stats.TargetAggregation.P99_TARGET_AGGREGATION,
+  },
+];
+
 function convertMetricUrlParam(param: string): MetricOption | undefined {
   const metric = decodeMetricUrlParam(param);
   if (metric?.execution) {
@@ -87,8 +124,18 @@ function convertMetricUrlParam(param: string): MetricOption | undefined {
   return undefined;
 }
 
+function convertAggUrlParam(param: string): AggOption {
+  const val = Number.parseInt(param);
+  if (val) {
+    const opt = AGG_OPTIONS.find((v) => v.agg == val);
+    return opt ?? AGG_OPTIONS[0];
+  }
+  return AGG_OPTIONS[0];
+}
+
 export default class TrendsComponent extends React.Component<Props, State> {
   selectedMetric: MetricOption = METRIC_OPTIONS[0];
+  selectedAgg: AggOption = AGG_OPTIONS[0];
 
   state: State = {
     loading: false,
@@ -99,6 +146,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   componentDidMount(): void {
     this.selectedMetric =
       convertMetricUrlParam(this.props.search.get(TARGET_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
+    this.selectedAgg = convertAggUrlParam(this.props.search.get(TARGET_SELECTED_AGG_URL_PARAM) || "");
     this.fetchTargetTrends();
   }
 
@@ -106,6 +154,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     if (this.props.search !== prevProps.search) {
       this.selectedMetric =
         convertMetricUrlParam(this.props.search.get(TARGET_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
+      this.selectedAgg = convertAggUrlParam(this.props.search.get(TARGET_SELECTED_AGG_URL_PARAM) || "");
       this.fetchTargetTrends();
     }
   }
@@ -113,7 +162,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
   fetchTargetTrends() {
     this.setState({ loading: true, failed: false });
     const filterParams = getProtoFilterParams(this.props.search);
-    const request = stats.GetTargetTrendsRequest.create({ metric: this.selectedMetric.metric.execution! });
+    const request = stats.GetTargetTrendsRequest.create({
+      metric: this.selectedMetric.metric.execution!,
+      agg: this.selectedAgg.agg,
+    });
     request.query = new stats.TrendQuery({
       host: filterParams.host,
       user: filterParams.user,
@@ -155,6 +207,20 @@ export default class TrendsComponent extends React.Component<Props, State> {
       [TARGET_SELECTED_METRIC_URL_PARAM]: encodeMetricUrlParam(option.metric),
     });
     this.setState({ displayCount: 50 }); // Reset pagination when changing metrics
+  };
+
+  handleAggChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newAgg = e.target.value;
+
+    if (!newAgg || this.selectedAgg.name === newAgg) {
+      return;
+    }
+    const option = AGG_OPTIONS.find((v) => v.name === newAgg) || AGG_OPTIONS[0];
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [TARGET_SELECTED_AGG_URL_PARAM]: option.agg.toString(),
+    });
+    this.setState({ displayCount: 50 }); // Reset pagination when changing aggregation.
   };
 
   handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -256,6 +322,19 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     )
                 )}
               </Select>
+              <Select
+                className="targets-agg-select"
+                onChange={this.handleAggChange.bind(this)}
+                value={this.selectedAgg.name}>
+                {AGG_OPTIONS.map(
+                  (o) =>
+                    o.name && (
+                      <Option key={o.name} value={o.name}>
+                        {o.name}
+                      </Option>
+                    )
+                )}
+              </Select>
               <FilterInput
                 placeholder="Filter targets..."
                 value={this.state.filterText}
@@ -286,7 +365,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
               {chartData.length > 0 ? (
                 <>
                   <div className="targets-chart-section">
-                    <div className="targets-section-title">Top targets by {this.selectedMetric.name}</div>
+                    <div className="targets-section-title">
+                      Top targets by {this.selectedMetric.name} ({this.selectedAgg.name})
+                    </div>
                     <div className="targets-chart-container">
                       <ResponsiveContainer width="100%" height={300}>
                         <BarChart data={chartData}>
@@ -317,7 +398,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                       <div className="results-table">
                         <div className="row column-headers">
                           <div className="name-column">Target</div>
-                          <div className="value-column">Total {this.selectedMetric.name}</div>
+                          <div className="value-column">
+                            {this.selectedAgg.name} {this.selectedMetric.name}
+                          </div>
                         </div>
                         <div className="results-list column">
                           {tableData.map((target, index) => (
