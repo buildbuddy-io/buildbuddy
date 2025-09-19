@@ -463,7 +463,7 @@ func InitializeShardsForMetaRange(ctx context.Context, session *client.Session, 
 func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAddrs map[string]string, partition disk.Partition) (returnedErr error) {
 	defer func() {
 		metrics.RaftPartitionOperations.With(prometheus.Labels{
-			metrics.PartitionsID:             partition.ID,
+			metrics.PartitionID:              partition.ID,
 			metrics.RaftPartitionOpLabel:     "initialize",
 			metrics.StatusHumanReadableLabel: status.MetricsLabel(returnedErr),
 		}).Inc()
