@@ -220,16 +220,44 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 
 	rsp, metadata, downloadSizeBytes, err := s.fetchActionResult(ctx, rn, req)
 	ht.SetExecutedActionMetadata(metadata)
-	if err == nil {
-		if trackerErr := downloadTracker.CloseWithBytesTransferred(downloadSizeBytes, downloadSizeBytes, repb.Compressor_IDENTITY, "ac_server"); trackerErr != nil {
-			log.Debugf("GetActionResult: download tracker error: %s", trackerErr)
-		}
-	} else {
+	if err != nil {
 		if trackerErr := ht.TrackMiss(d); trackerErr != nil {
 			log.Debugf("GetActionResult: hit tracker error: %s", trackerErr)
 		}
+		if status.IsNotFoundError(err) && req.GetInstanceName() != "" {
+			// Fallback to look up ActionResult in base instance name
+			baseRsp, baseMetadata, baseDownloadSizeBytes, baseErr := s.tryFetchBaseActionResult(ctx, d, req)
+			if baseErr == nil {
+				rsp = baseRsp
+				downloadSizeBytes = baseDownloadSizeBytes
+				ht.SetExecutedActionMetadata(baseMetadata)
+				err = nil
+			} else {
+				// If the ActionResult in base instance name is not found, ignore it
+				log.Debugf("GetActionResult: base action result not found: %s", baseErr)
+			}
+		}
 	}
-	return rsp, err
+	if err != nil {
+		return rsp, err
+	}
+	if trackerErr := downloadTracker.CloseWithBytesTransferred(downloadSizeBytes, downloadSizeBytes, repb.Compressor_IDENTITY, "ac_server"); trackerErr != nil {
+		log.Debugf("GetActionResult: download tracker error: %s", trackerErr)
+	}
+	return rsp, nil
+}
+
+func (s *ActionCacheServer) tryFetchBaseActionResult(ctx context.Context, d *repb.Digest, req *repb.GetActionResultRequest) (*repb.ActionResult, *repb.ExecutedActionMetadata, int64, error) {
+	parts := strings.SplitN(req.GetInstanceName(), "/", 2)
+	if len(parts) != 2 {
+		return nil, nil, 0, status.NotFoundErrorf("instance name %q does not contain a slash", req.GetInstanceName())
+	}
+	baseRn := digest.NewACResourceName(d, parts[0], req.GetDigestFunction())
+	if valErr := baseRn.Validate(); valErr != nil {
+		log.Warningf("GetActionResult: invalid base resource name %s: %s", baseRn, valErr)
+		return nil, nil, 0, valErr
+	}
+	return s.fetchActionResult(ctx, baseRn, req)
 }
 
 // Upload a new execution result.
