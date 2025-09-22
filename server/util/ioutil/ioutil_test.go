@@ -98,14 +98,6 @@ func mustWrite(t *testing.T, w io.Writer, p []byte) {
 	require.Equal(t, len(p), n)
 }
 
-// func mustRead(t *testing.T, r io.Reader, p []byte) {
-// 	buf := make([]byte, len(p))
-// 	n, err := r.Read(buf)
-// 	require.NoError(t, err)
-// 	require.Equal(t, p, buf[:n])
-// 	fmt.Println("\t\t\tREAD", n, "bytes")
-// }
-
 func mustRead(t *testing.T, r io.Reader, p []byte) int {
 	buf := make([]byte, len(p))
 	n, err := ioutil.ReadTryFillBuffer(r, buf)
