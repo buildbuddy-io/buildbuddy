@@ -110,6 +110,9 @@ const (
 
 var (
 	versionDirRegexp = regexp.MustCompile(`^v\d+$`)
+
+	// Fake /proc/cgroups content to mount into the container.
+	fakeProcCgroupsContent = getFakeProcCgroupsContent()
 )
 
 // Set via x_defs from the BUILD file
@@ -523,6 +526,10 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	// Setup cgroup
 	if err := c.setupCgroup(ctx); err != nil {
 		return fmt.Errorf("setup cgroup: %w", err)
+	}
+	// Create backing file for fake /proc/cgroups mount
+	if err := os.WriteFile(filepath.Join(c.bundlePath(), "proc_cgroups"), []byte(fakeProcCgroupsContent), 0644); err != nil {
+		return fmt.Errorf("write proc_cgroups file: %w", err)
 	}
 
 	// Create config.json from the image config and command
@@ -1098,6 +1105,13 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 				Type:        "cgroup",
 				Source:      "cgroup",
 				Options:     []string{"rprivate", "nosuid", "noexec", "nodev", "relatime", "ro"},
+			},
+			{
+				// See comment on getFakeProcCgroupsContent
+				Destination: "/proc/cgroups",
+				Type:        "bind",
+				Source:      filepath.Join(c.bundlePath(), "proc_cgroups"),
+				Options:     []string{"bind", "rprivate", "ro"},
 			},
 			{
 				Destination: execrootPath,
@@ -1973,4 +1987,50 @@ func addFileToTar(tw *tar.Writer, filename string, content []byte) error {
 		return fmt.Errorf("failed to write content for %s: %w", filename, err)
 	}
 	return nil
+}
+
+// Returns the contents of the fake /proc/cgroups file to be mounted into the
+// container.
+//
+// /proc/cgroups is a file that existed in cgroups v1. The file provided
+// information about enabled v1 controllers. However, even if the system has
+// cgroup v2 enabled, the kernel still creates and populates this file, in an
+// attempt to avoid breaking older software that might depend on this v1 file's
+// existence. The populated data is essentially "fake" - it lists cgroup v1
+// controllers that no longer exist, and it reports all controllers as enabled.
+//
+// However, the data populated in this fake /proc/cgroups file seems to be
+// incomplete in some situations. In particular, the "cpuset" row can be
+// missing, even if the cgroup v2 cpuset controller is enabled. This breaks
+// Java's "UseContainerSupport" mechanism, which is what allows the JVM to limit
+// heap usage based on cgroup v2 hard limits. More specifically, when the JVM
+// initializes its container support, it reads this /proc/cgroups file, and if
+// any expected rows are missing (including the cpuset row), it skips enabling
+// container support. As a result, Java programs that use a lot of memory may
+// not run GC when they are getting close to their memory limit, and will wind
+// up getting OOM-killed.
+//
+// Arguably, this is a bug in the JVM, since the JVM should be reading
+// /sys/fs/cgroup/cgroup.controllers instead of /proc/cgroups. This bug has been
+// fixed, but (unfortunately) the fix is only available in JVM 25+, which does
+// not yet have widespread adoption. The fix commit is here:
+// https://github.com/openjdk/jdk/commit/9c5ed23eac7470f56d498e9c4d3c51c2f80fd571
+//
+// NOTE(bduffany): at some point, it might be nice to figure out why the cpuset
+// row is missing from /proc/cgroups. After briefly looking at the kernel
+// source, it seems like we might be able to fix this by setting the
+// 'cgroup_v1_proc' kernel boot param, but for now it seems less painful (and
+// probably more portable) to fake out this file, and it should be fine to do so
+// since it's already technically a fake file anyway. In any case, the relevant
+// kernel source is here:
+// https://github.com/torvalds/linux/blob/07e27ad16399afcd693be20211b0dfae63e0615f/kernel/cgroup/cgroup-v1.c#L676-L705
+func getFakeProcCgroupsContent() string {
+	out := "#subsys_name\thierarchy\tnum_cgroups\tenabled\n"
+	for _, v1Controller := range []string{
+		"cpuset", "cpu", "cpuacct", "blkio", "memory", "devices", "freezer",
+		"net_cls", "perf_event", "net_prio", "hugetlb", "pids", "rdma", "misc",
+	} {
+		out += v1Controller + "\t0\t1\t1\n"
+	}
+	return out
 }
