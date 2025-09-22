@@ -15,7 +15,6 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -117,7 +116,6 @@ type Env interface {
 	GetExecutionCollector() interfaces.ExecutionCollector
 	GetSuggestionService() interfaces.SuggestionService
 	GetCrypter() interfaces.Crypter
-	GetSociArtifactStoreServer() socipb.SociArtifactStoreServer
 	GetSingleFlightDeduper() interfaces.SingleFlightDeduper
 	GetPromQuerier() interfaces.PromQuerier
 	GetAuditLogger() interfaces.AuditLogger

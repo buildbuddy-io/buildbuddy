@@ -11,7 +11,6 @@ go_library(
         "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
-        "//enterprise/server/remote_execution/soci_store",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//server/environment",
