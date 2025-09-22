@@ -178,8 +178,13 @@ message GetGroupUsersResponse {
   context.ResponseContext response_context = 1;
 
   message GroupUser {
+    // Only one of `user` or `user_list` will be populated depending on
+    // the type of group member.
     user_id.DisplayUser user = 1;
     user_list.UserList user_list = 4;
+    // Indicates whether the member is part of the group or has only requested
+    // to join. This distinction is only applicable to direct user members.
+    // User lists aer always a member.
     GroupMembershipStatus group_membership_status = 2;
     Group.Role role = 3;
   }

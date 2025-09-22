@@ -5,6 +5,11 @@ import "proto/user_id.proto";
 
 package user_list;
 
+// A "user list" is a collection of users.
+//
+// This is usually called a "group" in other systems but we another type of
+// resource that's called a "group" so this is given another name to avoid
+// confusion.
 message UserList {
   string user_list_id = 1;
   string name = 2;
