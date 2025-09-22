@@ -1198,7 +1198,7 @@ func (d *UserDB) GetUserLists(ctx context.Context, groupID string) ([]*ulpb.User
 				ul.User = append(ul.User, ulu.User.ToProto())
 			}
 		} else {
-			uls[i-1].User = append(uls[i-1].User, ulu.User.ToProto())
+			uls[len(uls)-1].User = append(uls[len(uls)-1].User, ulu.User.ToProto())
 		}
 	}
 
