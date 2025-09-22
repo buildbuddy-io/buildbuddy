@@ -192,6 +192,7 @@ jobs:
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
               --//cli/version:cli_version="$VERSION" \
               --compilation_mode=opt \
+              --strip=always \
               ${{ matrix.flags }} \
               //cli/cmd/bb
 

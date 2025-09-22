@@ -81,12 +81,12 @@ http_archive(
 
 http_archive(
     name = "zlib",
+    integrity = "sha256-mpOyt9/ax3zrpaVYpYDnRmfdb+3kWFuR7vtg8Dty3yM=",
     # patch_args = ["-p1"],
     patches = [
         # from https://github.com/bazelbuild/bazel-central-registry/blob/main/modules/zlib/1.3.1.bcr.3/patches/add_build_file.patch
         "//buildpatches:zlib.patch",
     ],
-    integrity = "sha256-mpOyt9/ax3zrpaVYpYDnRmfdb+3kWFuR7vtg8Dty3yM=",
     strip_prefix = "zlib-1.3.1",
     urls = ["https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz"],
 )
@@ -667,8 +667,8 @@ register_toolchains(
 
 http_archive(
     name = "musl_toolchains",
-    sha256 = "26cacffab74e10f0840c83b0be9193dc6deccfbc8ec1cf6f8362dc61d0057fa1",
-    url = "https://github.com/bazel-contrib/musl-toolchain/releases/download/v0.1.15/musl_toolchain-v0.1.15.tar.gz",
+    sha256 = "581d280fe9b7fa2537d00359807462875a5153d67d2afa388a587f2943abec6d",
+    url = "https://github.com/bazel-contrib/musl-toolchain/releases/download/v0.1.27/musl_toolchain-v0.1.27.tar.gz",
 )
 
 load("@musl_toolchains//:repositories.bzl", "load_musl_toolchains")
