@@ -18,7 +18,6 @@ go_test(
     srcs = ["help_test.go"],
     deps = [
         ":help",
-        "//cli/cli_command",
         "//cli/cli_command/register",
         "//cli/parser/arguments",
         "//cli/parser/parsed",
