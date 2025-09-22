@@ -16,3 +16,5 @@ go_library(
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])
