@@ -1,9 +1,12 @@
 package ioutil
 
 import (
+	"context"
+	"errors"
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -156,4 +159,157 @@ func (b *BestEffortWriter) Write(p []byte) (int, error) {
 
 func (b *BestEffortWriter) Err() error {
 	return b.err
+}
+
+// DoubleBufferWrite is a buffered writer inspired by graphics double buffering,
+// but with a few differences:
+//   - If the buffer is partially full and there isn't another pending write, it
+//     wiil eagerly send that buffer without waiting for it to fill up.
+//   - The buffer starts at one size but can grow up to a limit.
+//   - Technically, it can be using 3 buffers at a time: one for an inflight
+//     write, one full one that's waiting to be written out, and one that's being
+//     filled. It can also just be using one, if the outgoing writer is faster
+//     than the incoming writes.
+type DoubleBufferWriter struct {
+	ctx            context.Context
+	w              interfaces.CommittedWriteCloser
+	minimumBufSize int
+	maximumBufSize int
+	bufPool        *bytebufferpool.VariableSizePool
+	writes         chan []byte
+	errors         chan error
+
+	bufferHasSpace bool
+	lastErr        error
+	closedWrites   bool
+	writeCount     int
+}
+
+// NewDoubleBufferWriter creates a new DoubleBufferWriter that writes to w.
+// `bufPool` should be able to allocate buffers up to `maximumBufSize`, or this
+// may allocate a lot.
+func NewDoubleBufferWriter(ctx context.Context, w interfaces.CommittedWriteCloser, bufPool *bytebufferpool.VariableSizePool, minimumBufSize, maximumBufSize int) *DoubleBufferWriter {
+	d := &DoubleBufferWriter{
+		ctx:            ctx,
+		w:              w,
+		minimumBufSize: minimumBufSize,
+		maximumBufSize: maximumBufSize,
+		bufPool:        bufPool,
+		writes:         make(chan []byte, 1),
+		errors:         make(chan error, 1),
+	}
+	go d.runWriter()
+	return d
+}
+
+func (w *DoubleBufferWriter) runWriter() {
+	defer close(w.errors)
+	for data := range w.writes {
+		n, err := w.w.Write(data)
+
+		dataLen := len(data)
+		// Instead of passing buffers back to the goroutine calling Write(),
+		// just use the pool to manage buffer reuse. This is simpler, just as
+		// fast, and returns buffers to the pool sooner when there are no more
+		// writes.
+		w.bufPool.Put(data)
+		if err == nil && n < dataLen {
+			err = io.ErrShortWrite
+		}
+		if err != nil {
+			w.errors <- err
+			return
+		}
+	}
+}
+
+// If the estimate for the minimum buffer size is smaller than the incoming
+// write, this may get a bigger buffer to avoid many small outgoing writes for a
+// single incoming write. This will also get a new buffer if we don't have one
+// already.
+func (w *DoubleBufferWriter) resizeBuffer(buffer []byte, chunkSize int) []byte {
+	if cap(buffer) >= w.maximumBufSize {
+		return buffer
+	}
+	w.minimumBufSize = min(max(chunkSize, w.minimumBufSize), w.maximumBufSize)
+	if w.minimumBufSize <= cap(buffer) {
+		return buffer
+	}
+	newBuf := w.bufPool.Get(int64(w.minimumBufSize))
+	if len(buffer) > 0 {
+		copy(newBuf, buffer)
+	}
+	w.bufPool.Put(buffer)
+	return newBuf[:len(buffer)]
+}
+
+func (w *DoubleBufferWriter) Write(data []byte) (int, error) {
+	if w.closedWrites {
+		return 0, errors.New("DoubleBufferWriter tried to write after Close or Commit")
+	}
+	if w.lastErr != nil {
+		return 0, w.lastErr
+	}
+	initialDataSize := len(data)
+	for len(data) > 0 {
+		var buffer []byte
+		if w.bufferHasSpace {
+			select {
+			case buffer = <-w.writes:
+			default:
+			}
+		} else {
+		}
+		buffer = w.resizeBuffer(buffer, initialDataSize)
+
+		copied := copy(buffer[len(buffer):cap(buffer)], data)
+		data = data[copied:]
+		buffer = buffer[:len(buffer)+copied]
+
+		select {
+		case <-w.ctx.Done():
+			w.lastErr = w.ctx.Err()
+		case err := <-w.errors:
+			w.lastErr = err
+		case w.writes <- buffer:
+			w.bufferHasSpace = len(buffer) < cap(buffer)
+		}
+		if w.lastErr != nil {
+			return initialDataSize - (copied + len(data)), w.lastErr
+		}
+	}
+	return initialDataSize, nil
+}
+
+func (w *DoubleBufferWriter) closeWrites() {
+	if w.closedWrites {
+		return
+	}
+	w.closedWrites = true
+	close(w.writes)
+	for err := range w.errors {
+		if w.lastErr == nil {
+			w.lastErr = err
+		}
+	}
+}
+
+// Commit flushes the writes and then commits to the underlying writer. It
+// returns an error if either of those fails.
+func (w *DoubleBufferWriter) Commit() error {
+	w.closeWrites()
+	if w.lastErr != nil {
+		return w.lastErr
+	}
+	return w.w.Commit()
+}
+
+// Close will return any outstanding buffers to the pool and return the result
+// of closing the underlying writer.
+func (w *DoubleBufferWriter) Close() error {
+	w.closeWrites()
+	for buf := range w.writes {
+		w.bufPool.Put(buf)
+	}
+	return w.w.Close()
 }

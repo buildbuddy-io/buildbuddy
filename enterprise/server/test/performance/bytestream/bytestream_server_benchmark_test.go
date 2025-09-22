@@ -1,4 +1,4 @@
-// Benchmarks for byte_stream_server.go. They live in enterprise because they
+// Benchmarks for byte_stream_server.go. There are in /enterprise/ because they
 // depend on the distributed cache, which is enterprise-only.
 package bytestream_server_benchmark_test
 
@@ -132,7 +132,7 @@ func BenchmarkWrite(b *testing.B) {
 
 	// Bazel uses 16KiB chunks. cachetools.UploadFromReader uses 1MB chunks, but
 	// maybe it should be changed to 256KiB.
-	chunkSizes := []int{16 * 1024, 256 * 1024, 1_000_000}
+	chunkSizes := []int{16 * 1024, 256 * 1024, 512 * 1024, 1_000_000}
 
 	for _, test := range []struct {
 		cacheType string
