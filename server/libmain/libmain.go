@@ -66,7 +66,6 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	static_bundle "github.com/buildbuddy-io/buildbuddy/static"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -251,9 +250,6 @@ func startInternalGRPCServers(env *real_environment.RealEnv) error {
 }
 
 func registerInternalServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
-	if sociArtifactStoreServer := env.GetSociArtifactStoreServer(); sociArtifactStoreServer != nil {
-		socipb.RegisterSociArtifactStoreServer(grpcServer, sociArtifactStoreServer)
-	}
 	channelzservice.RegisterChannelzServiceToServer(grpcServer)
 }
 

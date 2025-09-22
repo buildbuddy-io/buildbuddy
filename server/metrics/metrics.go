@@ -257,9 +257,6 @@ const (
 	// Container image tag.
 	ContainerImageTag = "container_image_tag"
 
-	// SociArtifactStore.GetArtifacts outcome tag.
-	GetSociArtifactsOutcomeTag = "get_soci_artifacts_outcome_tag"
-
 	// The TreeCache status: hit/miss/invalid_entry.
 	TreeCacheLookupStatus = "status"
 
@@ -3234,32 +3231,6 @@ var (
 	})
 
 	// ## Podman metrics
-
-	PodmanSociStoreCrashes = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "podman",
-		Name:      "soci_store_crash_count",
-		Help:      "Total number of times the soci store binary crashed and was restarted.",
-	})
-
-	PodmanGetSociArtifactsLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "podman",
-		Name:      "get_soci_artifacts_latency_usec",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 100*time.Minute, 10),
-		Help:      "The latency of retrieving SOCI artifacts from the app and storing them locally per image, in microseconds. Note this is slightly different than the latency of the GetArtifacts RPC as the artifacts must be fetched from the cache and stored locally, which adds some additional time.",
-	}, []string{
-		ContainerImageTag,
-	})
-
-	PodmanGetSociArtifactsOutcomes = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "podman",
-		Name:      "get_soci_artifacts_outcome",
-		Help:      "The outcome (cached or reason why not) of SociArtifactStore.GetArtifacts RPCs.",
-	}, []string{
-		GetSociArtifactsOutcomeTag,
-	})
 
 	PodmanColdImagePullLatencyMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
