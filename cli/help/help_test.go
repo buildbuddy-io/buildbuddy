@@ -98,27 +98,48 @@ func TestHelpAliases(t *testing.T) {
 	}
 }
 
-// TestHelpBazelCommands tests help for common Bazel commands (should forward to Bazel)
+// TestHelpBazelCommands tests that Bazel commands are not handled as BB commands
 func TestHelpBazelCommands(t *testing.T) {
 	// Register all CLI commands
 	register_cli_commands.Register()
 
-	// Test common Bazel commands (should forward to Bazel and fail in test environment)
+	// Test common Bazel commands - these should NOT be recognized as BB commands
 	bazelCommands := []string{
 		"build", "test", "run", "query", "cquery", "aquery", "clean", "info",
 		"coverage", "fetch", "sync", "dump", "shutdown",
 	}
 
 	for _, cmdName := range bazelCommands {
-		t.Run("bb help "+cmdName+" (bazel command)", func(t *testing.T) {
+		t.Run("bb help "+cmdName+" (not a BB command)", func(t *testing.T) {
+			// Test that this command is not recognized as a BB CLI command
+			// by checking our helper functions directly
 			orderedArgs := &parsed.OrderedArgs{Args: []arguments.Argument{
 				&arguments.PositionalArgument{Value: "help"},
 				&arguments.PositionalArgument{Value: cmdName},
 			}}
 
-			// Should forward to Bazel and fail in test environment
-			_, err := help.HandleHelp(orderedArgs)
-			assert.Error(t, err, "Should forward to bazel and fail in test env for: %s", cmdName)
+			// This should find the target command
+			targetCommand := help.FindTargetCommandFromHelpArgs(orderedArgs)
+			assert.Equal(t, cmdName, targetCommand, "Should find target command: %s", cmdName)
+
+			// But TryShowBBCommandHelp should return false (not a BB command)
+			// Capture stdout to avoid polluting test output
+			oldStdout := os.Stdout
+			_, w, _ := os.Pipe()
+			os.Stdout = w
+
+			result := help.TryShowBBCommandHelp(targetCommand)
+
+			// Restore stdout
+			w.Close()
+			os.Stdout = oldStdout
+
+			assert.False(t, result, "Should not handle %s as BB command", cmdName)
+
+			// Note: We don't test the full HandleHelp because that would require
+			// mocking bazelisk.Run or having Bazel installed. The important thing
+			// is that these commands are correctly identified as non-BB commands
+			// and would be forwarded to Bazel.
 		})
 	}
 }
