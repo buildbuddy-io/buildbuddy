@@ -21,5 +21,5 @@ FSPATH="$(abspath "$1")"
 CPIO="$(abspath "$CPIO")"
 (
   cd "$ROOT_DIR"
-  "$CPIO" -out "$FSPATH" -- init
+  "$CPIO" -out "$FSPATH" -app.log_level "warn" -- init
 )
