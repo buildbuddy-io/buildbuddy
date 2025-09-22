@@ -37,8 +37,7 @@ type VariableSizePool struct {
 	// is indexed by the exponent.
 	// index 0 containing a pool of 2^0 capacity slices, index 1 containing 2^1
 	// capacity slices and so forth.
-	pools         []*FixedSizePool
-	maxBufferSize int
+	pools []*FixedSizePool
 }
 
 // VariableSize returns a byte buffer pool that can be used when the buffer
