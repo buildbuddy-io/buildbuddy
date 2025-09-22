@@ -258,7 +258,6 @@ func (w *DoubleBufferWriter) Write(data []byte) (int, error) {
 			case buffer = <-w.writes:
 			default:
 			}
-		} else {
 		}
 		buffer = w.resizeBuffer(buffer, initialDataSize)
 
