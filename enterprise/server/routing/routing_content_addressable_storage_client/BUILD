@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "routing_content_addressable_storage_client",
     srcs = ["routing_content_addressable_storage_client.go"],
@@ -15,5 +17,3 @@ go_library(
         "@org_golang_google_grpc//:grpc",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])
