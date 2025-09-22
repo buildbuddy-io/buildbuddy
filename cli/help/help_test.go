@@ -14,6 +14,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Helper function to test BB CLI command help
+func testBBCommandHelp(t *testing.T, cmdName string, expectedCmdName string) {
+	t.Helper()
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	orderedArgs := &parsed.OrderedArgs{Args: []arguments.Argument{
+		&arguments.PositionalArgument{Value: "help"},
+		&arguments.PositionalArgument{Value: cmdName},
+	}}
+	exitCode, err := help.HandleHelp(orderedArgs)
+
+	// Restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	// Read captured output
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	require.NoError(t, err, "Help should work for BB command: %s", cmdName)
+	assert.Equal(t, 0, exitCode, "Exit code should be 0 for BB command: %s", cmdName)
+	assert.Contains(t, output, "Usage: bb "+expectedCmdName, "Output should contain usage for: %s", expectedCmdName)
+	assert.NotEmpty(t, output, "Output should not be empty for BB command: %s", cmdName)
+}
+
 // TestHelpForBBCommands exhaustively tests help for all BB CLI commands found under cli/
 func TestHelpForBBCommands(t *testing.T) {
 	// Register all CLI commands
@@ -45,30 +75,7 @@ func TestHelpForBBCommands(t *testing.T) {
 	// Test "bb help <command>" for each BB command
 	for _, cmdName := range bbCommandNames {
 		t.Run("bb help "+cmdName, func(t *testing.T) {
-			// Capture stdout
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
-
-			orderedArgs := &parsed.OrderedArgs{Args: []arguments.Argument{
-				&arguments.PositionalArgument{Value: "help"},
-				&arguments.PositionalArgument{Value: cmdName},
-			}}
-			exitCode, err := help.HandleHelp(orderedArgs)
-
-			// Restore stdout
-			w.Close()
-			os.Stdout = oldStdout
-
-			// Read captured output
-			var buf bytes.Buffer
-			io.Copy(&buf, r)
-			output := buf.String()
-
-			require.NoError(t, err, "Help should work for BB command: %s", cmdName)
-			assert.Equal(t, 0, exitCode, "Exit code should be 0 for BB command: %s", cmdName)
-			assert.Contains(t, output, "Usage: bb "+cmdName, "Output should contain usage for: %s", cmdName)
-			assert.NotEmpty(t, output, "Output should not be empty for BB command: %s", cmdName)
+			testBBCommandHelp(t, cmdName, cmdName)
 		})
 	}
 }
@@ -86,30 +93,7 @@ func TestHelpAliases(t *testing.T) {
 
 	for alias, originalCmd := range aliases {
 		t.Run("bb help "+alias+" (alias)", func(t *testing.T) {
-			// Capture stdout
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
-
-			orderedArgs := &parsed.OrderedArgs{Args: []arguments.Argument{
-				&arguments.PositionalArgument{Value: "help"},
-				&arguments.PositionalArgument{Value: alias},
-			}}
-			exitCode, err := help.HandleHelp(orderedArgs)
-
-			// Restore stdout
-			w.Close()
-			os.Stdout = oldStdout
-
-			// Read captured output
-			var buf bytes.Buffer
-			io.Copy(&buf, r)
-			output := buf.String()
-
-			require.NoError(t, err, "Help should work for alias: %s", alias)
-			assert.Equal(t, 0, exitCode, "Exit code should be 0 for alias: %s", alias)
-			assert.Contains(t, output, "Usage: bb "+originalCmd, "Output should show original command name for alias: %s", alias)
-			assert.NotEmpty(t, output, "Output should not be empty for alias: %s", alias)
+			testBBCommandHelp(t, alias, originalCmd)
 		})
 	}
 }
