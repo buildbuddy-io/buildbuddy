@@ -16,8 +16,8 @@ go_library(
 go_test(
     name = "help_test",
     srcs = ["help_test.go"],
-    embed = [":help"],
     deps = [
+        ":help",
         "//cli/cli_command",
         "//cli/parser/arguments",
         "//cli/parser/parsed",

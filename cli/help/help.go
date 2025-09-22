@@ -19,9 +19,9 @@ const (
 	cliName = "bb"
 )
 
-// findTargetCommandFromHelpArgs extracts the target command from "bb help <command>" arguments.
+// FindTargetCommandFromHelpArgs extracts the target command from "bb help <command>" arguments.
 // Returns the command name if found, empty string otherwise.
-func findTargetCommandFromHelpArgs(orderedArgs *parsed.OrderedArgs) string {
+func FindTargetCommandFromHelpArgs(orderedArgs *parsed.OrderedArgs) string {
 	_, command := parsed.Find[*parsed.Command](orderedArgs.Args)
 	if command == nil {
 		return ""
@@ -46,9 +46,9 @@ func findTargetCommandFromHelpArgs(orderedArgs *parsed.OrderedArgs) string {
 	return command.Value
 }
 
-// tryShowBBCommandHelp checks if the target command is a BB CLI command and shows its help.
+// TryShowBBCommandHelp checks if the target command is a BB CLI command and shows its help.
 // Returns true if help was shown, false if not a BB CLI command.
-func tryShowBBCommandHelp(targetCommand string) bool {
+func TryShowBBCommandHelp(targetCommand string) bool {
 	if targetCommand == "" {
 		return false
 	}
@@ -72,8 +72,8 @@ func tryShowBBCommandHelp(targetCommand string) bool {
 func HandleHelp(args parsed.Args) (exitCode int, err error) {
 	// Check if the help request is for a BB CLI command
 	if orderedArgs, ok := args.(*parsed.OrderedArgs); ok {
-		targetCommand := findTargetCommandFromHelpArgs(orderedArgs)
-		if tryShowBBCommandHelp(targetCommand) {
+		targetCommand := FindTargetCommandFromHelpArgs(orderedArgs)
+		if TryShowBBCommandHelp(targetCommand) {
 			return 0, nil
 		}
 	}
