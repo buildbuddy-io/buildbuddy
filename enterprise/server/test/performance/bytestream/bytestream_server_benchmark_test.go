@@ -1,4 +1,4 @@
-// Benchmarks for byte_stream_server.go. There are in /enterprise/ because they
+// Benchmarks for byte_stream_server.go. They live in enterprise because they
 // depend on the distributed cache, which is enterprise-only.
 package bytestream_server_benchmark_test
 
