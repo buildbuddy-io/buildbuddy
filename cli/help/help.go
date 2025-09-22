@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 )
@@ -27,6 +28,41 @@ const (
 // * bb --help `command name`
 // * bb `command name` --help
 func HandleHelp(args parsed.Args) (exitCode int, err error) {
+	// Check if the help request is for a BB CLI command
+	if orderedArgs, ok := args.(*parsed.OrderedArgs); ok {
+		if _, command := parsed.Find[*parsed.Command](orderedArgs.Args); command != nil {
+			commandName := command.Value
+
+			// Check if this is a help command asking about a BB CLI command
+			if commandName == "help" {
+				// Look for the next positional argument after "help"
+				for i, arg := range orderedArgs.Args {
+					if pos, ok := arg.(*arguments.PositionalArgument); ok && pos.Value == "help" {
+						// Check the next argument
+						if i+1 < len(orderedArgs.Args) {
+							if nextPos, ok := orderedArgs.Args[i+1].(*arguments.PositionalArgument); ok {
+								targetCommand := nextPos.Value
+								if bbCommand := cli_command.GetCommand(targetCommand); bbCommand != nil {
+									// This is a BB CLI command, show its help instead of forwarding to Bazel
+									fmt.Printf("Usage: bb %s\n\n%s\n", bbCommand.Name, bbCommand.Help)
+									return 0, nil
+								}
+							}
+						}
+						break
+					}
+				}
+			}
+
+			if bbCommand := cli_command.GetCommand(commandName); bbCommand != nil {
+				// This is a BB CLI command, show its help instead of forwarding to Bazel
+				fmt.Printf("Usage: bb %s\n\n%s\n", bbCommand.Name, bbCommand.Help)
+				return 0, nil
+			}
+		}
+	}
+
+	// Not a BB CLI command, forward to Bazel as usual
 	buf := &bytes.Buffer{}
 	exitCode, err = bazelisk.Run(args.Format(), &bazelisk.RunOpts{Stdout: buf, Stderr: buf})
 	if err != nil {
