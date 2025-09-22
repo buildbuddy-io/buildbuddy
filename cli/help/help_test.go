@@ -103,10 +103,30 @@ func TestHelpBazelCommands(t *testing.T) {
 	// Register all CLI commands
 	register_cli_commands.Register()
 
-	// Test common Bazel commands - these should NOT be recognized as BB commands
+	// All Bazel commands from Bazel 8.4.0 - these should NOT be recognized as BB commands
 	bazelCommands := []string{
-		"build", "test", "run", "query", "cquery", "aquery", "clean", "info",
-		"coverage", "fetch", "sync", "dump", "shutdown",
+		"analyze-profile",
+		"aquery",
+		"build",
+		"canonicalize-flags",
+		"clean",
+		"coverage",
+		"cquery",
+		"dump",
+		"fetch",
+		"help",
+		"info",
+		"license",
+		"mobile-install",
+		"mod",
+		"print_action",
+		"query",
+		"run",
+		"shutdown",
+		"sync",
+		"test",
+		"vendor",
+		// Do not test "version", since this is a BB CLI command.
 	}
 
 	for _, cmdName := range bazelCommands {
@@ -123,17 +143,8 @@ func TestHelpBazelCommands(t *testing.T) {
 			assert.Equal(t, cmdName, targetCommand, "Should find target command: %s", cmdName)
 
 			// But TryShowBBCommandHelp should return false (not a BB command)
-			// Capture stdout to avoid polluting test output
-			oldStdout := os.Stdout
-			_, w, _ := os.Pipe()
-			os.Stdout = w
-
+			// No stdout redirection needed since TryShowBBCommandHelp won't print anything for non-BB commands
 			result := help.TryShowBBCommandHelp(targetCommand)
-
-			// Restore stdout
-			w.Close()
-			os.Stdout = oldStdout
-
 			assert.False(t, result, "Should not handle %s as BB command", cmdName)
 
 			// Note: We don't test the full HandleHelp because that would require
