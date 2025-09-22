@@ -21,7 +21,6 @@ go_test(
         "//cli/cli_command/register",
         "//cli/parser/arguments",
         "//cli/parser/parsed",
-        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
 )
