@@ -19,6 +19,7 @@ go_test(
     deps = [
         ":help",
         "//cli/cli_command",
+        "//cli/cli_command/register",
         "//cli/parser/arguments",
         "//cli/parser/parsed",
         "@com_github_stretchr_testify//assert",

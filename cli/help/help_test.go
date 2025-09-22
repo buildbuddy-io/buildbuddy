@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
+	register_cli_commands "github.com/buildbuddy-io/buildbuddy/cli/cli_command/register"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
@@ -291,3 +292,115 @@ func TestHandleHelp_NonBBCommands(t *testing.T) {
 	}
 }
 
+// TestHelpForBBCommands exhaustively tests help for all BB CLI commands found under cli/
+func TestHelpForBBCommands(t *testing.T) {
+	// Register all CLI commands
+	register_cli_commands.Register()
+
+	// All BB CLI command names found under cli/ directories
+	bbCommandNames := []string{
+		"add",             // cli/add
+		"analyze",         // cli/analyze
+		"ask",             // cli/ask (with aliases wtf, huh)
+		"download",        // cli/download
+		"execute",         // cli/execute
+		"explain",         // cli/explain
+		"fix",             // cli/fix
+		"index",           // cli/index
+		"login",           // cli/login (includes logout functionality)
+		"print",           // cli/printlog
+		"remote",          // cli/remotebazel
+		"remote-download", // cli/remote_download
+		"search",          // cli/search
+		"update",          // cli/update
+		"upload",          // cli/upload
+		"version",         // cli/versioncmd
+		"view",            // cli/view
+		"install",         // cli/plugin (install command)
+		"logout",          // cli/login (logout command)
+	}
+
+	// Test "bb help <command>" for each BB command
+	for _, cmdName := range bbCommandNames {
+		t.Run("bb help "+cmdName, func(t *testing.T) {
+			// Capture stdout
+			oldStdout := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			orderedArgs := &parsed.OrderedArgs{Args: []arguments.Argument{
+				&arguments.PositionalArgument{Value: "help"},
+				&arguments.PositionalArgument{Value: cmdName},
+			}}
+			exitCode, err := help.HandleHelp(orderedArgs)
+
+			// Restore stdout
+			w.Close()
+			os.Stdout = oldStdout
+
+			// Read captured output
+			var buf bytes.Buffer
+			io.Copy(&buf, r)
+			output := buf.String()
+
+			require.NoError(t, err, "Help should work for BB command: %s", cmdName)
+			assert.Equal(t, 0, exitCode, "Exit code should be 0 for BB command: %s", cmdName)
+			assert.Contains(t, output, "Usage: bb "+cmdName, "Output should contain usage for: %s", cmdName)
+			assert.NotEmpty(t, output, "Output should not be empty for BB command: %s", cmdName)
+		})
+	}
+
+	// Test known aliases
+	aliases := map[string]string{
+		"wtf": "ask",
+		"huh": "ask",
+	}
+
+	for alias, originalCmd := range aliases {
+		t.Run("bb help "+alias+" (alias)", func(t *testing.T) {
+			// Capture stdout
+			oldStdout := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			orderedArgs := &parsed.OrderedArgs{Args: []arguments.Argument{
+				&arguments.PositionalArgument{Value: "help"},
+				&arguments.PositionalArgument{Value: alias},
+			}}
+			exitCode, err := help.HandleHelp(orderedArgs)
+
+			// Restore stdout
+			w.Close()
+			os.Stdout = oldStdout
+
+			// Read captured output
+			var buf bytes.Buffer
+			io.Copy(&buf, r)
+			output := buf.String()
+
+			require.NoError(t, err, "Help should work for alias: %s", alias)
+			assert.Equal(t, 0, exitCode, "Exit code should be 0 for alias: %s", alias)
+			assert.Contains(t, output, "Usage: bb "+originalCmd, "Output should show original command name for alias: %s", alias)
+			assert.NotEmpty(t, output, "Output should not be empty for alias: %s", alias)
+		})
+	}
+
+	// Test common Bazel commands (should forward to Bazel and fail in test environment)
+	bazelCommands := []string{
+		"build", "test", "run", "query", "cquery", "aquery", "clean", "info",
+		"coverage", "fetch", "sync", "dump", "shutdown",
+	}
+
+	for _, cmdName := range bazelCommands {
+		t.Run("bb help "+cmdName+" (bazel command)", func(t *testing.T) {
+			orderedArgs := &parsed.OrderedArgs{Args: []arguments.Argument{
+				&arguments.PositionalArgument{Value: "help"},
+				&arguments.PositionalArgument{Value: cmdName},
+			}}
+
+			// Should forward to Bazel and fail in test environment
+			_, err := help.HandleHelp(orderedArgs)
+			assert.Error(t, err, "Should forward to bazel and fail in test env for: %s", cmdName)
+		})
+	}
+}
