@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	register_cli_commands "github.com/buildbuddy-io/buildbuddy/cli/cli_command/register"
+	"github.com/buildbuddy-io/buildbuddy/cli/cli_command/register"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
@@ -47,7 +47,7 @@ func testBBCommandHelp(t *testing.T, cmdName string, expectedCmdName string) {
 // TestHelpForBBCommands exhaustively tests help for all BB CLI commands found under cli/
 func TestHelpForBBCommands(t *testing.T) {
 	// Register all CLI commands
-	register_cli_commands.Register()
+	register.Register()
 
 	// All BB CLI command names found under cli/ directories
 	bbCommandNames := []string{
@@ -83,7 +83,7 @@ func TestHelpForBBCommands(t *testing.T) {
 // TestHelpAliases tests help for all known BB CLI command aliases
 func TestHelpAliases(t *testing.T) {
 	// Register all CLI commands
-	register_cli_commands.Register()
+	register.Register()
 
 	// Test known aliases
 	aliases := map[string]string{
@@ -101,7 +101,7 @@ func TestHelpAliases(t *testing.T) {
 // TestHelpBazelCommands tests that Bazel commands are not handled as BB commands
 func TestHelpBazelCommands(t *testing.T) {
 	// Register all CLI commands
-	register_cli_commands.Register()
+	register.Register()
 
 	// All Bazel commands from Bazel 8.4.0 - these should NOT be recognized as BB commands
 	bazelCommands := []string{
