@@ -22,6 +22,7 @@ const (
 
 var (
 	availableRoutes = flag.Slice("remote_cache.routing.available_routes", []string{}, "The set of GRPCS cache endpoints to use for routing.  If any endpoints are defined, routing is enabled.")
+	emptyClientSet  = &clientSet{}
 )
 
 type clientSet struct {
@@ -101,49 +102,59 @@ func (r *routingService) GetCacheRoutingConfig(ctx context.Context) (*ropb.Cache
 	return out, nil
 }
 
-func (r *routingService) getPrimaryClientSet(ctx context.Context) (*clientSet, error) {
+func (r *routingService) getClientSets(ctx context.Context) (*clientSet, *clientSet, error) {
 	conf, err := r.GetCacheRoutingConfig(ctx)
 	if err != nil {
 		alert.CtxUnexpectedEvent(ctx, "routing-failure", "A routingService request failed to fetch config: %s", err)
-		return nil, status.InternalErrorf("Invalid or missing cache specification.")
+		return nil, nil, status.InternalErrorf("Invalid or missing cache specification.")
 	}
-	route := conf.GetPrimaryCache()
-	clientSet, ok := r.clientSets[route]
-	if !ok || clientSet == nil {
-		alert.CtxUnexpectedEvent(ctx, "routing-unknown-route", "routingService is not configured to support route '%s'", route)
-		return nil, status.InternalErrorf("Invalid or missing cache specification.")
+	primaryRoute := conf.GetPrimaryCache()
+	primaryClientSet, ok := r.clientSets[primaryRoute]
+	if !ok || primaryClientSet == nil {
+		alert.CtxUnexpectedEvent(ctx, "routing-unknown-route", "routingService is not configured to support route '%s'", primaryRoute)
+		return nil, nil, status.InternalErrorf("Invalid or missing cache specification.")
 	}
-	return clientSet, nil
+	secondaryRoute := conf.GetSecondaryCache()
+	if secondaryRoute == "" {
+		return primaryClientSet, emptyClientSet, nil
+	}
+	secondaryClientSet, ok := r.clientSets[secondaryRoute]
+	if !ok || secondaryClientSet == nil {
+		alert.CtxUnexpectedEvent(ctx, "routing-unknown-route", "routingService is not configured to support route '%s'", secondaryRoute)
+		return nil, nil, status.InternalErrorf("Invalid or missing cache specification.")
+	}
+
+	return primaryClientSet, secondaryClientSet, nil
 }
 
 func (r *routingService) GetCASClients(ctx context.Context) (repb.ContentAddressableStorageClient, repb.ContentAddressableStorageClient, error) {
-	clientSet, err := r.getPrimaryClientSet(ctx)
+	primary, secondary, err := r.getClientSets(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	return clientSet.cas, nil, nil
+	return primary.cas, secondary.cas, nil
 }
 
 func (r *routingService) GetACClients(ctx context.Context) (repb.ActionCacheClient, repb.ActionCacheClient, error) {
-	clientSet, err := r.getPrimaryClientSet(ctx)
+	primary, secondary, err := r.getClientSets(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	return clientSet.ac, nil, nil
+	return primary.ac, secondary.ac, nil
 }
 
 func (r *routingService) GetBSClients(ctx context.Context) (bspb.ByteStreamClient, bspb.ByteStreamClient, error) {
-	clientSet, err := r.getPrimaryClientSet(ctx)
+	primary, secondary, err := r.getClientSets(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	return clientSet.bs, nil, nil
+	return primary.bs, secondary.bs, nil
 }
 
 func (r *routingService) GetPrimaryCapabilitiesClient(ctx context.Context) (repb.CapabilitiesClient, error) {
-	clientSet, err := r.getPrimaryClientSet(ctx)
+	primary, _, err := r.getClientSets(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return clientSet.cap, nil
+	return primary.cap, nil
 }
