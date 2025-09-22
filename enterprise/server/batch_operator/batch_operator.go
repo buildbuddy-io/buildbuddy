@@ -140,9 +140,9 @@ type BatchDigestOperatorConfig struct {
 	QueueSize int
 
 	// The amount of time to wait between flushing batches.  This exists as a
-	// kind of QPS limiter when combined with `MaxBatchesPerGroup`: the maximum
-	// number of batches that will be flushed will be
-	// MaxBatchesPerGroup*[# of groups generating batches] per BatchInterval.
+	// kind of QPS limiter when combined with `MaxDigestsPerBatch`: the maximum
+	// number of digests that will be flushed will be
+	// MaxDigestsPerBatch*[# of groups generating batches] per BatchInterval.
 	BatchInterval time.Duration
 
 	// The maximum number of digests waiting to be flushed for a single GroupID,
