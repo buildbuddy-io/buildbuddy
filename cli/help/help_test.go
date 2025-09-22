@@ -13,17 +13,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testBBCommandHelp(t *testing.T, cmdName string, expectedCmdName string) {
+// Helper function to test help functionality with captured stdout
+func testHelpWithArgs(t *testing.T, args []arguments.Argument, expectSuccess bool, expectedUsage string, testDescription string) {
 	t.Helper()
 
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	orderedArgs := &parsed.OrderedArgs{Args: []arguments.Argument{
-		&arguments.PositionalArgument{Value: "help"},
-		&arguments.PositionalArgument{Value: cmdName},
-	}}
+	orderedArgs := &parsed.OrderedArgs{Args: args}
 	exitCode, err := help.HandleHelp(orderedArgs)
 
 	w.Close()
@@ -33,10 +31,85 @@ func testBBCommandHelp(t *testing.T, cmdName string, expectedCmdName string) {
 	io.Copy(&buf, r)
 	output := buf.String()
 
-	require.NoError(t, err, "Help should work for BB command: %s", cmdName)
-	require.Equal(t, 0, exitCode, "Exit code should be 0 for BB command: %s", cmdName)
-	require.Contains(t, output, "Usage: bb "+expectedCmdName, "Output should contain usage for: %s", expectedCmdName)
-	require.NotEmpty(t, output, "Output should not be empty for BB command: %s", cmdName)
+	if expectSuccess {
+		require.NoError(t, err, "Help should work for %s", testDescription)
+		require.Equal(t, 0, exitCode, "Exit code should be 0 for %s", testDescription)
+		if expectedUsage != "" {
+			require.Contains(t, output, expectedUsage, "Output should contain expected usage for %s", testDescription)
+		}
+		require.NotEmpty(t, output, "Output should not be empty for %s", testDescription)
+	}
+}
+
+func testBBCommandAllPatterns(t *testing.T, cmdName, expectedCmdName string) {
+	t.Helper()
+
+	{
+		args := []arguments.Argument{
+			&arguments.PositionalArgument{Value: "help"},
+			&arguments.PositionalArgument{Value: cmdName},
+		}
+		testHelpWithArgs(t, args, true, "Usage: bb "+expectedCmdName, "bb help "+cmdName)
+	}
+
+	{
+		args := []arguments.Argument{
+			&arguments.PositionalArgument{Value: cmdName},
+			&arguments.PositionalArgument{Value: "-h"},
+		}
+		testHelpWithArgs(t, args, true, "Usage: bb "+expectedCmdName, "bb "+cmdName+" -h")
+	}
+
+	{
+		args := []arguments.Argument{
+			&arguments.PositionalArgument{Value: cmdName},
+			&arguments.PositionalArgument{Value: "--help"},
+		}
+		testHelpWithArgs(t, args, true, "Usage: bb "+expectedCmdName, "bb "+cmdName+" --help")
+	}
+}
+
+func testBazelCommandAllPatterns(t *testing.T, cmdName string) {
+	t.Helper()
+
+	{
+		orderedArgs := &parsed.OrderedArgs{Args: []arguments.Argument{
+			&arguments.PositionalArgument{Value: "help"},
+			&arguments.PositionalArgument{Value: cmdName},
+		}}
+
+		targetCommand := help.FindTargetCommandFromHelpArgs(orderedArgs)
+		require.Equal(t, cmdName, targetCommand, "Should find target command: %s", cmdName)
+
+		result := help.TryShowBBCommandHelp(targetCommand)
+		require.False(t, result, "Should not handle %s as BB command", cmdName)
+	}
+
+	{
+		orderedArgs := &parsed.OrderedArgs{Args: []arguments.Argument{
+			&arguments.PositionalArgument{Value: cmdName},
+			&arguments.PositionalArgument{Value: "-h"},
+		}}
+
+		targetCommand := help.FindTargetCommandFromHelpArgs(orderedArgs)
+		require.Equal(t, cmdName, targetCommand, "Should find target command: %s", cmdName)
+
+		result := help.TryShowBBCommandHelp(targetCommand)
+		require.False(t, result, "Should not handle %s as BB command", cmdName)
+	}
+
+	{
+		orderedArgs := &parsed.OrderedArgs{Args: []arguments.Argument{
+			&arguments.PositionalArgument{Value: cmdName},
+			&arguments.PositionalArgument{Value: "--help"},
+		}}
+
+		targetCommand := help.FindTargetCommandFromHelpArgs(orderedArgs)
+		require.Equal(t, cmdName, targetCommand, "Should find target command: %s", cmdName)
+
+		result := help.TryShowBBCommandHelp(targetCommand)
+		require.False(t, result, "Should not handle %s as BB command", cmdName)
+	}
 }
 
 func TestHelpForBBCommands(t *testing.T) {
@@ -65,8 +138,8 @@ func TestHelpForBBCommands(t *testing.T) {
 	}
 
 	for _, cmdName := range bbCommandNames {
-		t.Run("bb help "+cmdName, func(t *testing.T) {
-			testBBCommandHelp(t, cmdName, cmdName)
+		t.Run(cmdName, func(t *testing.T) {
+			testBBCommandAllPatterns(t, cmdName, cmdName)
 		})
 	}
 }
@@ -80,8 +153,8 @@ func TestHelpAliases(t *testing.T) {
 	}
 
 	for alias, originalCmd := range aliases {
-		t.Run("bb help "+alias+" (alias)", func(t *testing.T) {
-			testBBCommandHelp(t, alias, originalCmd)
+		t.Run(alias, func(t *testing.T) {
+			testBBCommandAllPatterns(t, alias, originalCmd)
 		})
 	}
 }
@@ -99,7 +172,7 @@ func TestHelpBazelCommands(t *testing.T) {
 		"cquery",
 		"dump",
 		"fetch",
-		"help",
+		// Do not test "help".
 		"info",
 		"license",
 		"mobile-install",
@@ -115,17 +188,8 @@ func TestHelpBazelCommands(t *testing.T) {
 	}
 
 	for _, cmdName := range bazelCommands {
-		t.Run("bb help "+cmdName+" (not a BB command)", func(t *testing.T) {
-			orderedArgs := &parsed.OrderedArgs{Args: []arguments.Argument{
-				&arguments.PositionalArgument{Value: "help"},
-				&arguments.PositionalArgument{Value: cmdName},
-			}}
-
-			targetCommand := help.FindTargetCommandFromHelpArgs(orderedArgs)
-			require.Equal(t, cmdName, targetCommand, "Should find target command: %s", cmdName)
-
-			result := help.TryShowBBCommandHelp(targetCommand)
-			require.False(t, result, "Should not handle %s as BB command", cmdName)
+		t.Run(cmdName, func(t *testing.T) {
+			testBazelCommandAllPatterns(t, cmdName)
 		})
 	}
 }
