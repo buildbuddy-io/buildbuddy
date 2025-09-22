@@ -19,6 +19,48 @@ const (
 	cliName = "bb"
 )
 
+// findTargetCommandFromHelpArgs extracts the target command from "bb help <command>" arguments.
+// Returns the command name if found, empty string otherwise.
+func findTargetCommandFromHelpArgs(orderedArgs *parsed.OrderedArgs) string {
+	_, command := parsed.Find[*parsed.Command](orderedArgs.Args)
+	if command == nil {
+		return ""
+	}
+
+	// If the command is "help", look for the next positional argument
+	if command.Value == "help" {
+		for i, arg := range orderedArgs.Args {
+			if pos, ok := arg.(*arguments.PositionalArgument); ok && pos.Value == "help" {
+				// Check the next argument
+				if i+1 < len(orderedArgs.Args) {
+					if nextPos, ok := orderedArgs.Args[i+1].(*arguments.PositionalArgument); ok {
+						return nextPos.Value
+					}
+				}
+				break
+			}
+		}
+	}
+
+	// Otherwise return the command itself
+	return command.Value
+}
+
+// tryShowBBCommandHelp checks if the target command is a BB CLI command and shows its help.
+// Returns true if help was shown, false if not a BB CLI command.
+func tryShowBBCommandHelp(targetCommand string) bool {
+	if targetCommand == "" {
+		return false
+	}
+
+	if bbCommand := cli_command.GetCommand(targetCommand); bbCommand != nil {
+		fmt.Printf("Usage: bb %s\n\n%s\n", bbCommand.Name, bbCommand.Help)
+		return true
+	}
+
+	return false
+}
+
 // HandleHelp Valid cases to trigger help:
 // * bb (no additional command passed)
 // * bb help
@@ -30,35 +72,9 @@ const (
 func HandleHelp(args parsed.Args) (exitCode int, err error) {
 	// Check if the help request is for a BB CLI command
 	if orderedArgs, ok := args.(*parsed.OrderedArgs); ok {
-		if _, command := parsed.Find[*parsed.Command](orderedArgs.Args); command != nil {
-			commandName := command.Value
-
-			// Check if this is a help command asking about a BB CLI command
-			if commandName == "help" {
-				// Look for the next positional argument after "help"
-				for i, arg := range orderedArgs.Args {
-					if pos, ok := arg.(*arguments.PositionalArgument); ok && pos.Value == "help" {
-						// Check the next argument
-						if i+1 < len(orderedArgs.Args) {
-							if nextPos, ok := orderedArgs.Args[i+1].(*arguments.PositionalArgument); ok {
-								targetCommand := nextPos.Value
-								if bbCommand := cli_command.GetCommand(targetCommand); bbCommand != nil {
-									// This is a BB CLI command, show its help instead of forwarding to Bazel
-									fmt.Printf("Usage: bb %s\n\n%s\n", bbCommand.Name, bbCommand.Help)
-									return 0, nil
-								}
-							}
-						}
-						break
-					}
-				}
-			}
-
-			if bbCommand := cli_command.GetCommand(commandName); bbCommand != nil {
-				// This is a BB CLI command, show its help instead of forwarding to Bazel
-				fmt.Printf("Usage: bb %s\n\n%s\n", bbCommand.Name, bbCommand.Help)
-				return 0, nil
-			}
+		targetCommand := findTargetCommandFromHelpArgs(orderedArgs)
+		if tryShowBBCommandHelp(targetCommand) {
+			return 0, nil
 		}
 	}
 
