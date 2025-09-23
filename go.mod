@@ -76,7 +76,7 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/groob/plist v0.0.0-20220217120414-63fa881b19a5
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.1
-	github.com/hanwen/go-fuse/v2 v2.7.2
+	github.com/hanwen/go-fuse/v2 v2.8.0
 	github.com/hashicorp/golang-lru v1.0.2
 	github.com/hashicorp/memberlist v0.5.1
 	github.com/hashicorp/serf v0.10.1
@@ -109,7 +109,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/planetscale/vtprotobuf v0.6.1-0.20241121165744-79df5c4772f2
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
-	github.com/prometheus/client_golang v1.22.0
+	github.com/prometheus/client_golang v1.23.0
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.65.0
 	github.com/rantav/go-grpc-channelz v0.0.3
@@ -118,7 +118,7 @@ require (
 	github.com/shurcooL/githubv4 v0.0.0-20231126234147-1cffa1f02456
 	github.com/sirupsen/logrus v1.9.3
 	github.com/smacker/go-tree-sitter v0.0.0-20230501083651-a7d92773b3aa
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	github.com/tebeka/selenium v0.9.9
 	github.com/throttled/throttled/v2 v2.12.0
 	github.com/tink-crypto/tink-go-awskms/v2 v2.1.0
@@ -150,7 +150,7 @@ require (
 	golang.org/x/sync v0.16.0
 	golang.org/x/sys v0.35.0
 	golang.org/x/text v0.28.0
-	golang.org/x/time v0.11.0
+	golang.org/x/time v0.12.0
 	golang.org/x/tools v0.36.0
 	google.golang.org/api v0.235.0
 	google.golang.org/genproto v0.0.0-20250505200425-f936aa4a68b2
@@ -242,7 +242,7 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/diegoholiveira/jsonlogic/v3 v3.7.4 // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
-	github.com/docker/cli v27.5.0+incompatible // indirect
+	github.com/docker/cli v28.3.3+incompatible // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.8.2 // indirect
 	github.com/docker/go-connections v0.5.0 // indirect

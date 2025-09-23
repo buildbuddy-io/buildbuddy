@@ -6,9 +6,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file"
 # When changing this version, a new release of podman-static may be needed.
 # See dockerfiles/executor_image/README.md for instructions.
 # The checksums below will also need to be updated.
-PODMAN_VERSION = "v5.5.0"
-PODMAN_STATIC_SHA256_AMD64 = "8ce959cd2b0ea68ae8ac7ccbb181cad59504086d54d4c9521954ee49dae013eb"
-PODMAN_STATIC_SHA256_ARM64 = "ef1e84ab80ee5d78d4d2e59e128ff963038f39e1e4259a83e08d7c8f85faf90d"
+PODMAN_VERSION = "v5.6.1"
+PODMAN_STATIC_SHA256_AMD64 = "a37bc9d42cad0f2f72ac03dd569f9633b40378f01070ae573a2c7ba96d86b557"
+PODMAN_STATIC_SHA256_ARM64 = "e8f14b3159430a3c5ef90f2f1a0e2652a9b9bf2ad8febaf3362c2ecafc16eac8"
 
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_go_mod_dependencies -prune
 def install_go_mod_dependencies(workspace_name = "buildbuddy"):
@@ -1378,8 +1378,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_docker_cli",
         importpath = "github.com/docker/cli",
-        sum = "h1:aMphQkcGtpHixwwhAXJT1rrK/detk2JIvDaFkLctbGM=",
-        version = "v27.5.0+incompatible",
+        sum = "h1:fp9ZHAr1WWPGdIWBM1b3zLtgCF+83gRdVMTJsUeiyAo=",
+        version = "v28.3.3+incompatible",
     )
     go_repository(
         name = "com_github_docker_distribution",
@@ -2520,8 +2520,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_hanwen_go_fuse_v2",
         importpath = "github.com/hanwen/go-fuse/v2",
-        sum = "h1:SbJP1sUP+n1UF8NXBA14BuojmTez+mDgOk0bC057HQw=",
-        version = "v2.7.2",
+        sum = "h1:wV8rG7rmCz8XHSOwBZhG5YcVqcYjkzivjmbaMafPlAs=",
+        version = "v2.8.0",
     )
     go_repository(
         name = "com_github_hashicorp_consul_api",
@@ -4076,8 +4076,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
             "gazelle:resolve go github.com/prometheus/client_model/go @com_github_prometheus_client_model//io/prometheus/client:go",
         ],
         importpath = "github.com/prometheus/client_golang",
-        sum = "h1:rb93p9lokFEsctTys46VnV1kLCDpVZ0a/Y92Vm0Zc6Q=",
-        version = "v1.22.0",
+        sum = "h1:ust4zpdl9r4trLY/gSjlm07PuiBq2ynaXXlptpfy8Uc=",
+        version = "v1.23.0",
     )
     go_repository(
         name = "com_github_prometheus_client_model",
@@ -4553,8 +4553,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_stretchr_testify",
         importpath = "github.com/stretchr/testify",
-        sum = "h1:Xv5erBjTwe/5IxqUQTdXv5kgmIvbHo3QQyRwhJsOfJA=",
-        version = "v1.10.0",
+        sum = "h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=",
+        version = "v1.11.1",
     )
     go_repository(
         name = "com_github_subosito_gotenv",
@@ -6508,8 +6508,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_time",
         importpath = "golang.org/x/time",
-        sum = "h1:/bpjEDfN9tkoN/ryeYHnv5hcMlc8ncjMcM4XBk5NWV0=",
-        version = "v0.11.0",
+        sum = "h1:ScB/8o8olJvc+CQPWrK3fPZNfh7qgwCrY0zJmoEQLSE=",
+        version = "v0.12.0",
     )
     go_repository(
         name = "org_golang_x_tools",
@@ -7021,8 +7021,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
             'filegroup(name = "ctr.bin", srcs = ["ctr"])',
         ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v2.1.1/containerd-2.1.1-linux-amd64.tar.gz"],
-        sha256 = "918e88fd393c28c89424e6535df0546ca36c1dfa7d8a5d685dee70b449380a9b",
+        urls = ["https://github.com/containerd/containerd/releases/download/v2.1.4/containerd-2.1.4-linux-amd64.tar.gz"],
+        sha256 = "316d510a0428276d931023f72c09fdff1a6ba81d6cc36f31805fea6a3c88f515",
     )
     http_archive(
         name = "com_github_containerd_containerd-linux-arm64",
@@ -7033,21 +7033,21 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
             'filegroup(name = "ctr.bin", srcs = ["ctr"])',
         ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v2.1.1/containerd-2.1.1-linux-arm64.tar.gz"],
-        sha256 = "4e3c8c0c2e61438bb393a9ea6bb94f8f56b559ec3243d7b1a2943117bca4dcb4",
+        urls = ["https://github.com/containerd/containerd/releases/download/v2.1.4/containerd-2.1.4-linux-arm64.tar.gz"],
+        sha256 = "846d13bc2bf1c01ae2f20d13beb9b3a1e50b52c86e955b4ac7d658f5847f2b0e",
     )
 
     http_file(
         name = "com_github_opencontainers_runc_runc-linux-amd64",
-        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.0/runc.amd64"],
-        sha256 = "028986516ab5646370edce981df2d8e8a8d12188deaf837142a02097000ae2f2",
+        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.1/runc.amd64"],
+        sha256 = "53bfce31ca047e537e0767b21c9d529d4b5b3e1cb9c590ca81654f9a5615d80d",
         downloaded_file_path = "runc",
         executable = True,
     )
     http_file(
         name = "com_github_opencontainers_runc_runc-linux-arm64",
-        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.0/runc.arm64"],
-        sha256 = "85c5e4e4f72e442c8c17bac07527cd4f961ee48e4f2b71797f7533c94f4a52b9",
+        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.1/runc.arm64"],
+        sha256 = "e531c276312ec701be7edf2b998ac4220c858d02d274bef5546945964792d074",
         downloaded_file_path = "runc",
         executable = True,
     )
