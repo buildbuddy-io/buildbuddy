@@ -1305,6 +1305,7 @@ func (d *UserDB) removeUserFromUserList(ctx context.Context, tx interfaces.DB, u
 }
 
 func (d *UserDB) UpdateUserListMembers(ctx context.Context, userListID string, updates []*ulpb.UpdateUserListMembershipRequest_Update) error {
+	// Permission check.
 	_, err := d.GetUserList(ctx, userListID)
 	if err != nil {
 		return err
