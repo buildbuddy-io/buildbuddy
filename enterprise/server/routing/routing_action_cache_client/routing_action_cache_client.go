@@ -142,7 +142,7 @@ func (r *RoutingACClient) GetActionResult(ctx context.Context, req *repb.GetActi
 		return rsp, nil
 	}
 	singleRandValue := rand.Float32()
-	if singleRandValue < c.GetBackgroundReadFraction() {
+	if singleRandValue < c.GetBackgroundReadVerifyFraction() {
 		r.readOp.Enqueue(ctx, req.GetInstanceName(), []*repb.Digest{req.GetActionDigest()}, req.GetDigestFunction())
 	} else if (singleRandValue) < c.GetBackgroundCopyFraction() {
 		r.copyOp.Enqueue(ctx, req.GetInstanceName(), []*repb.Digest{req.GetActionDigest()}, req.GetDigestFunction())

@@ -19,11 +19,7 @@ message CacheRoutingConfig {
   // cache.  Write failures to the secondary cache are logged but not returned
   // to the caller.
   float dual_write_fraction = 4;
-  // The fraction of read requests to send as full background reads (rather
-  // than simply triggering atime updates) to the secondary cache.  This allows
-  // a gradual increase in read load on the secondary cache.
-  float background_read_fraction = 5;
   // The fraction of read operations for which we will verify the integrity
   // of reads from the secondary cache.
-  float background_read_verify_fraction = 6;
+  float background_read_verify_fraction = 5;
 }
