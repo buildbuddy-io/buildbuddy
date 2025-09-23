@@ -436,6 +436,80 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	assertCommandResult(t, expectedResult, res)
 }
 
+func TestFirecrackerSignalReturnsUnimplemented(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	readyPath := filepath.Join(workDir, "ready.txt")
+	termPath := filepath.Join(workDir, "term.txt")
+	scriptPath := filepath.Join(workDir, "wait.sh")
+	script := "#!/bin/sh\n" +
+		"set -eu\n" +
+		"trap 'echo term > /workspace/term.txt; exit 0' TERM\n" +
+		"echo ready > /workspace/ready.txt\n" +
+		"while true; do sleep 1; done\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o644))
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+
+	cached, err := c.IsImageCached(ctx)
+	require.NoError(t, err)
+	if !cached {
+		require.NoError(t, c.PullImage(ctx, oci.Credentials{}))
+	}
+	require.NoError(t, c.Create(ctx, opts.ActionWorkingDirectory))
+	t.Cleanup(func() {
+		if err := c.Remove(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	execCtx, cancelExec := context.WithCancel(ctx)
+	defer cancelExec()
+	resCh := make(chan *interfaces.CommandResult, 1)
+	go func() {
+		resCh <- c.Exec(execCtx, &repb.Command{Arguments: []string{"sh", "wait.sh"}}, nil)
+	}()
+
+	require.Eventually(t, func() bool {
+		data, err := os.ReadFile(readyPath)
+		if err != nil {
+			return false
+		}
+		return len(data) > 0
+	}, 30*time.Second, 500*time.Millisecond, "command never reported ready")
+
+	err = c.Signal(ctx, syscall.SIGTERM)
+	require.Error(t, err)
+	assert.True(t, status.IsUnimplementedError(err))
+
+	_, err = os.Stat(termPath)
+	assert.True(t, os.IsNotExist(err), "term marker unexpectedly created")
+
+	cancelExec()
+	select {
+	case res := <-resCh:
+		require.Error(t, res.Error)
+	case <-time.After(30 * time.Second):
+		t.Fatal("timed out waiting for Exec result after cancel")
+	}
+}
+
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	// Test for both small and large memory sizes
 	for _, memorySize := range []int64{minMemSizeMB, 4000} {
