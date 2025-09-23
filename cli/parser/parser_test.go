@@ -18,6 +18,22 @@ func init() {
 	SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
 }
 
+func TestMain(m *testing.M) {
+	tempHome, err := os.MkdirTemp("", "parser-test-home-*")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("HOME", tempHome); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("USERPROFILE", tempHome); err != nil {
+		panic(err)
+	}
+	code := m.Run()
+	_ = os.RemoveAll(tempHome)
+	os.Exit(code)
+}
+
 func TestNegativeStarlarkFlagWithValue(t *testing.T) {
 	for _, test := range []struct {
 		Name     string

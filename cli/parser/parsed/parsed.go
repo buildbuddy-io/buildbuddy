@@ -10,7 +10,7 @@ package parsed
 import (
 	"fmt"
 	"iter"
-	"os/user"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -614,9 +614,8 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []strin
 				rcFiles = append(rcFiles, filepath.Join(workspaceDir, ".bazelrc"))
 			}
 		case "home_rc":
-			usr, err := user.Current()
-			if err == nil {
-				rcFiles = append(rcFiles, filepath.Join(usr.HomeDir, ".bazelrc"))
+			if homeDir, err := os.UserHomeDir(); err == nil && homeDir != "" {
+				rcFiles = append(rcFiles, filepath.Join(homeDir, ".bazelrc"))
 			}
 		}
 	}
