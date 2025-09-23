@@ -71,9 +71,9 @@ archive_override(
 bazel_dep(name = "toolchains_buildbuddy")
 archive_override(
     module_name = "toolchains_buildbuddy",
-    integrity = "sha256-e6gcgLHmJHvxCNNbCSQ4OrX8FbGn8TiS7XSVphM1ZU8=",
-    strip_prefix = "buildbuddy-toolchain-badf8034b2952ec613970a27f24fb140be7eaf73",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/badf8034b2952ec613970a27f24fb140be7eaf73.tar.gz"],
+    integrity = "sha256-VtJjefgP2Vq5S6DiGYczsupNkosybmSBGWwcLUAYz8c=",
+    strip_prefix = "buildbuddy-toolchain-66146a3015faa348391fcceea2120caa390abe03",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/66146a3015faa348391fcceea2120caa390abe03.tar.gz"],
 )
 
 bazel_dep(name = "rules_docker", repo_name = "io_bazel_rules_docker")
