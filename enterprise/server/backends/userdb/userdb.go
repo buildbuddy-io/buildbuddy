@@ -1179,7 +1179,7 @@ func (d *UserDB) GetUserLists(ctx context.Context, groupID string) ([]*ulpb.User
 		LEFT JOIN "UserUserLists" as uul ON uul.user_list_user_list_id = ul.user_list_id
 		LEFT JOIN "Users" AS u ON u.user_id = uul.user_user_id
 		WHERE ul.group_id = ? 
-		ORDER BY ul.user_list_id
+		ORDER BY ul.user_list_id, u.email
 	`, groupID)
 	ulus, err := db.ScanAll(rq, &userListUser{})
 	if err != nil {
