@@ -148,7 +148,7 @@ export default class UserListComponent extends React.Component<OrgUserListProps,
                 </CheckboxButton>
                 {(this.props.buttons || []).map((button, index) => (
                   <div key={index} onClick={() => this.props.onButtonClick?.(index, this.state.selectedUserIds)}>
-                    {React.isValidElement(button) ? React.cloneElement(button, { disabled: isSelectionEmpty }) : button}
+                    {React.isValidElement(button) ? React.cloneElement(button, { disabled: isSelectionEmpty } as any) : button}
                   </div>
                 ))}
               </>
