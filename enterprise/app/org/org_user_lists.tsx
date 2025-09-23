@@ -159,21 +159,21 @@ export default class OrgUserListsComponent extends React.Component<OrgMembersPro
 
     return (
       <>
-        <div className="settings-option-title">Groups</div>
-        <div className="settings-option-description">Groups organize users into lists for easier role management.</div>
+        <div className="settings-option-title">IAM Groups</div>
+        <div className="settings-option-description">IAM Groups organize users into lists for easier role management.</div>
         <div className="org-user-lists">
           <div className="org-user-lists-list-controls">
             {this.props.user.selectedGroup.externalUserManagement && (
               <div>
                 <Banner type="warning" className="user-management-warning">
-                  Groups are being managed via an external system. All changes must be made there.
+                  IAM Groups are being managed via an external system. All changes must be made there.
                 </Banner>
               </div>
             )}
             {!this.props.user.selectedGroup.externalUserManagement && (
               <>
                 <Button className="big-button" onClick={this.onClickOpenCreateGroupModal.bind(this)}>
-                  Create new Group
+                  Create new IAM group
                 </Button>
               </>
             )}
@@ -256,7 +256,7 @@ export default class OrgUserListsComponent extends React.Component<OrgMembersPro
                 <DialogTitle>Confirm deletion</DialogTitle>
               </DialogHeader>
               <DialogBody className="modal-body">
-                Are you sure you want to delete the group {this.state.userListToBeDeleted?.name}?
+                Are you sure you want to delete the IAM group {this.state.userListToBeDeleted?.name}?
               </DialogBody>
               <DialogFooter>
                 <DialogFooterButtons>

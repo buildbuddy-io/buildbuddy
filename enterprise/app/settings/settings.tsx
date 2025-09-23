@@ -134,7 +134,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     </SettingsTab>
                     {capabilities.config.userListsUiEnabled && (
                       <SettingsTab id={TabId.OrgUserLists} activeTabId={activeTabId}>
-                        Groups
+                        IAM Groups
                       </SettingsTab>
                     )}
                   </>

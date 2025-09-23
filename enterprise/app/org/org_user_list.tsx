@@ -160,7 +160,7 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
         this.setState({
           isRenameUserListModalVisible: false,
         });
-        alert_service.success("Group renamed");
+        alert_service.success("IAM Group renamed");
         this.fetch();
       })
       .catch((e) => errorService.handleError(e))
@@ -173,7 +173,7 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
     }
 
     if (!this.state.userList || !this.state.allUsers) {
-      return <div>Group not found</div>;
+      return <div>IAM Group not found</div>;
     }
 
     const removeButton = <Button>Remove</Button>;
@@ -189,15 +189,15 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
 
     return (
       <>
-        <div className="settings-option-title">Group "{this.state.userList.name}"</div>
+        <div className="settings-option-title">IAM Group "{this.state.userList.name}"</div>
 
         <div className="org-user-list-controls">
-          <OutlinedButton onClick={this.onClickBackToAllGroups.bind(this)}>Back to all Groups</OutlinedButton>
+          <OutlinedButton onClick={this.onClickBackToAllGroups.bind(this)}>Back to all IAM groups</OutlinedButton>
           <OutlinedButton onClick={this.onClickOpenRenameUserListModal.bind(this)}>Rename</OutlinedButton>
         </div>
 
         <div className="settings-option-title">Members:</div>
-        {members.length == 0 && <div>There are no users in the group.</div>}
+        {members.length == 0 && <div>There are no users in the IAM group.</div>}
         {members.length > 0 && (
           <UserListComponent
             user={this.props.user}
@@ -228,7 +228,7 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
           onRequestClose={this.onRequestCloseRenameModal.bind(this)}>
           <Dialog>
             <DialogHeader>
-              <DialogTitle>Rename group</DialogTitle>
+              <DialogTitle>Rename IAM group</DialogTitle>
             </DialogHeader>
             <DialogBody className="modal-body">
               <form onSubmit={this.onSubmitRenameForm.bind(this)}>
