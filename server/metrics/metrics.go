@@ -2797,6 +2797,15 @@ var (
 		RaftTxnRecordProcessStatus,
 	})
 
+	RaftEvictionSamplesChanSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "eviction_samples_chan_size",
+		Help:      "Num of items in eviction samples chan",
+	}, []string{
+		PartitionID,
+	})
+
 	APIKeyLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "auth",
