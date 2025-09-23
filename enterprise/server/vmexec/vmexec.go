@@ -418,6 +418,15 @@ func (x *execServer) ExecStreamed(stream vmxpb.Exec_ExecStreamedServer) error {
 					msgs <- &message{Err: status.InternalErrorf("failed to write stdin: %s", err)}
 					return
 				}
+			} else if msg.Signal != 0 {
+				if cmd == nil {
+					msgs <- &message{Err: status.FailedPreconditionError("received signal before exec start request")}
+					return
+				}
+				if err := cmd.signal(syscall.Signal(msg.Signal)); err != nil {
+					msgs <- &message{Err: status.WrapError(err, "failed to forward signal")}
+					return
+				}
 			}
 		}
 	}()
@@ -544,6 +553,17 @@ func (c *command) logErrorDiagnostics(err error) {
 	if strings.Contains(err.Error(), "exec format error") && len(c.cmd.Args) > 0 {
 		logExecutableInfo(c.cmd.Dir, c.cmd.Args[0])
 	}
+}
+
+func (c *command) signal(sig syscall.Signal) error {
+	if c.cmd == nil || c.cmd.Process == nil {
+		return status.FailedPreconditionError("command process not running")
+	}
+	pid := c.cmd.Process.Pid
+	if err := syscall.Kill(-pid, sig); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStreamedResponse, error) {

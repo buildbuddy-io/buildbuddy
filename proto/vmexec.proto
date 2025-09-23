@@ -90,6 +90,11 @@ message ExecStreamedRequest {
   // returned. Clients should close their end of the stream once there is no
   // more input to be sent (this will close the stdin pipe).
   bytes stdin = 2;
+
+  // Sends a POSIX signal to the running process. The signal value should
+  // match the numeric values defined in `syscall.Signal` (e.g. 15 for
+  // SIGTERM). If no command is running, the request will be rejected.
+  int32 signal = 3;
 }
 
 message ExecStreamedResponse {

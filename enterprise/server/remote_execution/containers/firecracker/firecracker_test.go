@@ -149,8 +149,8 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "e912813410cb1506d27205227d9d184b985bdf047d0a8625677ace008c05eb7c"
-		expectedVersion = "16"
+		expectedHash    = "e3eb8c7f435f3ac73c652a8fee30cbe7245e98e3cd05e9d4cea64fa4b15adee7"
+		expectedVersion = "17"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
 	assert.Equal(t, expectedVersion, firecracker.GuestAPIVersion)
@@ -436,7 +436,7 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	assertCommandResult(t, expectedResult, res)
 }
 
-func TestFirecrackerSignalReturnsUnimplemented(t *testing.T) {
+func TestFirecrackerSignalTerminatesProcess(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
@@ -494,20 +494,19 @@ func TestFirecrackerSignalReturnsUnimplemented(t *testing.T) {
 		return len(data) > 0
 	}, 30*time.Second, 500*time.Millisecond, "command never reported ready")
 
-	err = c.Signal(ctx, syscall.SIGTERM)
-	require.Error(t, err)
-	assert.True(t, status.IsUnimplementedError(err))
+	require.NoError(t, c.Signal(ctx, syscall.SIGTERM))
 
-	_, err = os.Stat(termPath)
-	assert.True(t, os.IsNotExist(err), "term marker unexpectedly created")
-
-	cancelExec()
 	select {
 	case res := <-resCh:
-		require.Error(t, res.Error)
+		require.NoError(t, res.Error)
+		assert.Equal(t, 0, res.ExitCode)
 	case <-time.After(30 * time.Second):
-		t.Fatal("timed out waiting for Exec result after cancel")
+		t.Fatal("timed out waiting for Exec result after signal")
 	}
+
+	data, err := os.ReadFile(termPath)
+	require.NoError(t, err)
+	assert.Equal(t, "term\n", string(data))
 }
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {

@@ -35,7 +35,7 @@ func TestExecStreamed_Simple(t *testing.T) {
 		`},
 	}
 
-	res := vmexec_client.Execute(context.Background(), client, cmd, ".", "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/)
+	res := vmexec_client.Execute(context.Background(), client, cmd, ".", "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/, nil)
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, "foo-stdout\n", string(res.Stdout))
@@ -66,7 +66,7 @@ func TestExecStreamed_Stdio(t *testing.T) {
 		Stderr: &stderr,
 	}
 
-	res := vmexec_client.Execute(context.Background(), client, cmd, ".", "" /*=user*/, nil /*=statsListener*/, stdio)
+	res := vmexec_client.Execute(context.Background(), client, cmd, ".", "" /*=user*/, nil /*=statsListener*/, stdio, nil)
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, "foo-stdout\n", stdout.String())
@@ -87,7 +87,7 @@ func TestExecStreamed_Timeout(t *testing.T) {
 		`},
 	}
 
-	res := vmexec_client.Execute(ctx, client, cmd, ".", "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/)
+	res := vmexec_client.Execute(ctx, client, cmd, ".", "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/, nil)
 
 	assert.Error(t, res.Error)
 
@@ -122,7 +122,7 @@ func TestExecStreamed_Cancel(t *testing.T) {
 		cancel()
 	}()
 
-	res := vmexec_client.Execute(ctx, client, cmd, wd, "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/)
+	res := vmexec_client.Execute(ctx, client, cmd, wd, "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/, nil)
 
 	assert.Error(t, res.Error)
 
@@ -144,7 +144,7 @@ func TestExecStreamed_Crash(t *testing.T) {
 		`},
 	}
 
-	res := vmexec_client.Execute(ctx, client, cmd, wd, "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/)
+	res := vmexec_client.Execute(ctx, client, cmd, wd, "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/, nil)
 
 	assert.Error(t, res.Error)
 

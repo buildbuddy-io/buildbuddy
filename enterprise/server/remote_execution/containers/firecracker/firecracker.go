@@ -120,7 +120,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "16"
+	GuestAPIVersion = "17"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -681,6 +681,9 @@ type FirecrackerContainer struct {
 		conn *grpc.ClientConn
 		err  error
 	}
+
+	signalMu     sync.Mutex
+	signalSender func(syscall.Signal) error
 }
 
 var _ container.VM = (*FirecrackerContainer)(nil)
@@ -2153,7 +2156,7 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 			defer statsMu.Unlock()
 			lastGuestStats = stats
 		}
-		res := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
+		res := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio, c.registerSignalSender)
 		resultCh <- res
 	}()
 	// While we're executing the task in the VM, also track cgroup stats on the
@@ -2480,9 +2483,19 @@ func (c *FirecrackerContainer) resetGuestState(ctx context.Context, result *inte
 }
 
 func (c *FirecrackerContainer) Signal(ctx context.Context, sig syscall.Signal) error {
-	// TODO: forward the signal as a message on any currently running vmexec
-	// stream.
-	return status.UnimplementedError("not implemented")
+	c.signalMu.Lock()
+	sender := c.signalSender
+	c.signalMu.Unlock()
+	if sender == nil {
+		return status.FailedPreconditionError("no command is currently running")
+	}
+	return sender(sig)
+}
+
+func (c *FirecrackerContainer) registerSignalSender(sender func(syscall.Signal) error) {
+	c.signalMu.Lock()
+	defer c.signalMu.Unlock()
+	c.signalSender = sender
 }
 
 func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) {
@@ -2823,7 +2836,7 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", "echo 3 > /proc/sys/vm/drop_caches"},
 	}
-	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{})
+	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{}, c.registerSignalSender)
 	if res.Error != nil {
 		return res.Error
 	}

@@ -5,6 +5,8 @@ import (
 	"context"
 	"io"
 	"os"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -37,7 +39,16 @@ var (
 )
 
 // Execute executes the command using the ExecStreamed API.
-func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, workDir, user string, statsListener procstats.Listener, stdio *interfaces.Stdio) *interfaces.CommandResult {
+func Execute(
+	ctx context.Context,
+	client vmxpb.ExecClient,
+	cmd *repb.Command,
+	workDir,
+	user string,
+	statsListener procstats.Listener,
+	stdio *interfaces.Stdio,
+	registerSignal func(func(syscall.Signal) error),
+) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -73,8 +84,12 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	if err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("create execution stream: %s", err))
 	}
+	var sendMu sync.Mutex
 	startMsg := &vmxpb.ExecStreamedRequest{Start: req}
-	if err := stream.Send(startMsg); err != nil {
+	sendMu.Lock()
+	err = stream.Send(startMsg)
+	sendMu.Unlock()
+	if err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("send execution start request: %s", err))
 	}
 	var res *vmxpb.ExecResponse
@@ -82,18 +97,36 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	eg, ctx := errgroup.WithContext(ctx)
 	if stdio.Stdin != nil {
 		eg.Go(func() error {
-			if _, err := io.Copy(&stdinWriter{stream}, stdio.Stdin); err != nil {
+			if _, err := io.Copy(&stdinWriter{stream: stream, mu: &sendMu}, stdio.Stdin); err != nil {
 				return status.UnavailableErrorf("failed to write stdin: %s", err)
 			}
-			if err := stream.CloseSend(); err != nil {
+			sendMu.Lock()
+			err := stream.CloseSend()
+			sendMu.Unlock()
+			if err != nil {
 				return status.UnavailableErrorf("failed to close send direction of stream: %s", err)
 			}
 			return nil
 		})
 	} else {
-		if err := stream.CloseSend(); err != nil {
+		sendMu.Lock()
+		err := stream.CloseSend()
+		sendMu.Unlock()
+		if err != nil {
 			return commandutil.ErrorResult(status.UnavailableErrorf("failed to close send direction of stream: %s", err))
 		}
+	}
+
+	if registerSignal != nil {
+		registerSignal(func(sig syscall.Signal) error {
+			sendMu.Lock()
+			defer sendMu.Unlock()
+			if err := stream.Send(&vmxpb.ExecStreamedRequest{Signal: int32(sig)}); err != nil {
+				return status.UnavailableErrorf("failed to forward signal: %s", err)
+			}
+			return nil
+		})
+		defer registerSignal(nil)
 	}
 
 	eg.Go(func() error {
@@ -171,11 +204,15 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 
 type stdinWriter struct {
 	stream vmxpb.Exec_ExecStreamedClient
+	mu     *sync.Mutex
 }
 
 func (w *stdinWriter) Write(b []byte) (int, error) {
 	msg := &vmxpb.ExecStreamedRequest{Stdin: b}
-	if err := w.stream.Send(msg); err != nil {
+	w.mu.Lock()
+	err := w.stream.Send(msg)
+	w.mu.Unlock()
+	if err != nil {
 		return 0, err
 	}
 	return len(b), nil
