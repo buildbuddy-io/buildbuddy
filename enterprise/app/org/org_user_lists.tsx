@@ -1,4 +1,5 @@
 import React from "react";
+
 import { User } from "../../../app/auth/auth_service";
 import Banner from "../../../app/components/banner/banner";
 import Button, { OutlinedButton } from "../../../app/components/button/button";
@@ -15,16 +16,15 @@ import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
-import { grp } from "../../../proto/group_ts_proto";
 import { user_list } from "../../../proto/user_list_ts_proto";
 import OrgUserListComponent from "./org_user_list";
 import UserListComponent, { UserListUser } from "./user_list";
 
-export type OrgMembersProps = {
+type ChildProps = {
   user: User;
 };
 
-type State = {
+type ChildState = {
   loading?: boolean;
   response?: user_list.GetUserListsResponse;
 
@@ -41,10 +41,8 @@ type State = {
   isDeleteUserListRequestPending?: boolean;
 };
 
-const DEFAULT_ROLE = grp.Group.Role.DEVELOPER_ROLE;
-
-export default class OrgUserListsComponent extends React.Component<OrgMembersProps, State> {
-  state: State = {
+class OrgUserListsChildComponent extends React.Component<ChildProps, ChildState> {
+  state: ChildState = {
     loading: true,
   };
 
@@ -54,17 +52,11 @@ export default class OrgUserListsComponent extends React.Component<OrgMembersPro
     this.fetch();
   }
 
-  componentDidUpdate(prevProps: OrgMembersProps, prevState: State) {
+  componentDidUpdate(prevProps: OrgUserListsProps, prevState: ChildState) {
     if (!prevState.isDeleteUserListModalVisible && this.state.isDeleteUserListModalVisible) {
       setTimeout(() => {
         this.removeButtonRef.current?.focus();
       }, 0);
-    }
-
-    // Refresh data when navigating back from an individual user list.
-    if (this.state.editingList && prevState.editingList) {
-      this.setState({ editingList: false });
-      this.fetch();
     }
   }
 
@@ -147,11 +139,6 @@ export default class OrgUserListsComponent extends React.Component<OrgMembersPro
   }
 
   render() {
-    const path = window.location.pathname;
-    if (path.startsWith("/settings/org/user-lists/")) {
-      return <OrgUserListComponent user={this.props.user} userListID={path.split("/").pop()!} />;
-    }
-
     if (this.state.loading) {
       return <div className="loading" />;
     }
@@ -282,5 +269,20 @@ export default class OrgUserListsComponent extends React.Component<OrgMembersPro
         </div>
       </>
     );
+  }
+}
+
+export type OrgUserListsProps = {
+  user: User;
+};
+
+export default class OrgUserListsComponent extends React.Component<OrgUserListsProps> {
+  render() {
+    const path = window.location.pathname;
+    if (path.startsWith("/settings/org/user-lists/")) {
+      return <OrgUserListComponent user={this.props.user} userListID={path.split("/").pop()!} />;
+    }
+
+    return <OrgUserListsChildComponent user={this.props.user} />;
   }
 }

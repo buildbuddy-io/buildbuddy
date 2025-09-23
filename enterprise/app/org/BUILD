@@ -142,7 +142,6 @@ ts_library(
         "//app/service:rpc_service",
         "//enterprise/app/org:org_user_list",
         "//enterprise/app/org:user_list",
-        "//proto:group_ts_proto",
         "//proto:user_list_ts_proto",
     ],
 )
