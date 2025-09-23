@@ -483,7 +483,7 @@ func (pu *partitionUsage) updateMetrics() {
 	pu.mu.Lock()
 	defer pu.mu.Unlock()
 
-	metrics.PebbleCacheEvictionSamplesChanSize.With(prometheus.Labels{
+	metrics.RaftEvictionSamplesChanSize.With(prometheus.Labels{
 		metrics.PartitionID: pu.part.ID,
 	}).Set(float64(len(pu.samples)))
 }
