@@ -10,6 +10,7 @@ import Dialog, {
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
 import TextInput from "../../../app/components/input/input";
+import { TextLink } from "../../../app/components/link/link";
 import Modal from "../../../app/components/modal/modal";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
@@ -189,11 +190,19 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
 
     return (
       <>
-        <div className="settings-option-title">IAM Group "{this.state.userList.name}"</div>
+        <div className="org-user-lists">
+          <div className="org-user-lists-breadcrumbs">
+            <div className="org-user-lists-breadcrumb">
+              <TextLink href="/settings/org/user-lists">IAM groups</TextLink>
+            </div>
+            <div className="org-user-lists-breadcrumb">
+              <b>{this.state.userList.name}</b>
+            </div>
+          </div>
+        </div>
 
         <div className="org-user-list-controls">
-          <OutlinedButton onClick={this.onClickBackToAllGroups.bind(this)}>Back to all IAM groups</OutlinedButton>
-          <OutlinedButton onClick={this.onClickOpenRenameUserListModal.bind(this)}>Rename</OutlinedButton>
+          <OutlinedButton onClick={this.onClickOpenRenameUserListModal.bind(this)}>Rename group</OutlinedButton>
         </div>
 
         <div className="settings-option-title">Members:</div>

@@ -79,8 +79,24 @@
 .org-user-list-controls {
   display: flex;
   gap: 8px;
+  margin-top: 16px;
 }
 
 .org-user-lists .org-members {
   margin-top: 0;
+}
+
+.org-user-lists .org-user-lists-breadcrumbs {
+  display: flex;
+  gap: 8px;
+}
+
+.org-user-lists .org-user-lists-breadcrumb {
+  display: flex;
+  gap: 8px;
+}
+
+.org-user-lists .org-user-lists-breadcrumb:not(:last-child)::after {
+  display: block;
+  content: "›";
 }

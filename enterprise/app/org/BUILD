@@ -158,6 +158,7 @@ ts_library(
         "//app/components/button",
         "//app/components/dialog",
         "//app/components/input",
+        "//app/components/link",
         "//app/components/modal",
         "//app/components/spinner",
         "//app/errors:error_service",
