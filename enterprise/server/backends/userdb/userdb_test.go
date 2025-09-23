@@ -713,6 +713,55 @@ func TestUpdateGroupUsers_UserLists(t *testing.T) {
 		require.Equal(t, "US1", m2.User.UserId.Id)
 		require.Equal(t, grpb.Group_ADMIN_ROLE, m2.Role)
 	}
+
+	// Downgrade the admin user to a developer and verify they can't manipulate
+	// membership anymore.
+	{
+		err = udb.UpdateGroupUsers(ctx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			UserId: &uidpb.UserId{Id: "US1"},
+			Role:   grpb.Group_DEVELOPER_ROLE,
+		}})
+		require.NoError(t, err)
+		ctx1 := authUserCtx(ctx, env, t, "US1")
+
+		err = udb.UpdateGroupUsers(ctx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			UserListId:       userList2.UserListID,
+			Role:             grpb.Group_ADMIN_ROLE,
+			MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		}})
+		require.Error(t, err)
+		require.True(t, status.IsPermissionDeniedError(err))
+
+		err = udb.UpdateGroupUsers(ctx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			UserListId:       userList2.UserListID,
+			Role:             grpb.Group_ADMIN_ROLE,
+			MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+		}})
+		require.Error(t, err)
+		require.True(t, status.IsPermissionDeniedError(err))
+	}
+
+	// Verify that an admin from a different group can't manipulate membership.
+	{
+		createUser(t, ctx, env, "US2", "org2.io")
+		ctx2 := authUserCtx(ctx, env, t, "US2")
+
+		err = udb.UpdateGroupUsers(ctx2, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			UserListId:       userList2.UserListID,
+			Role:             grpb.Group_ADMIN_ROLE,
+			MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		}})
+		require.Error(t, err)
+		require.True(t, status.IsPermissionDeniedError(err))
+
+		err = udb.UpdateGroupUsers(ctx2, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			UserListId:       userList2.UserListID,
+			Role:             grpb.Group_ADMIN_ROLE,
+			MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+		}})
+		require.Error(t, err)
+		require.True(t, status.IsPermissionDeniedError(err))
+	}
 }
 
 func TestUpdateGroupUsers_Role(t *testing.T) {
