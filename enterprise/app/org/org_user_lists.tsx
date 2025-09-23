@@ -160,7 +160,9 @@ export default class OrgUserListsComponent extends React.Component<OrgMembersPro
     return (
       <>
         <div className="settings-option-title">IAM Groups</div>
-        <div className="settings-option-description">IAM Groups organize users into lists for easier role management.</div>
+        <div className="settings-option-description">
+          IAM Groups organize users into lists for easier role management.
+        </div>
         <div className="org-user-lists">
           <div className="org-user-lists-list-controls">
             {this.props.user.selectedGroup.externalUserManagement && (
