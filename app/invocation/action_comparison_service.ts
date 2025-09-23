@@ -68,6 +68,7 @@ export class ActionComparisonService {
 
   private publishState() {
     this.subject.next(this.comparisonData || {});
+    window.dispatchEvent(new Event("storage"));
   }
 
   subscribe(observer: (value: ActionComparisonData) => void): Subscription {
