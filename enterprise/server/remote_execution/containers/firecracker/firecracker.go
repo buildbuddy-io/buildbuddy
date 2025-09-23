@@ -384,9 +384,11 @@ type ExecutorConfig struct {
 
 var (
 	// set by x_defs in BUILD file
-	initrdRunfilePath     string
-	vmlinuxRunfilePath    string
-	vmlinux6_1RunfilePath string
+	initrdRunfilePath      string
+	vmlinuxRunfilePath     string
+	vmlinux6_1RunfilePath  string
+	firecrackerRunfilePath string
+	jailerRunfilePath      string
 )
 
 // GetExecutorConfig computes the ExecutorConfig for this executor instance.
@@ -426,11 +428,19 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 	// TODO: when running as root, these should come from the bundle instead of
 	// $PATH, since we don't need to rely on the user having configured special
 	// perms on these binaries.
-	firecrackerPath, err := exec.LookPath("firecracker")
+	firecrackerRunfileLocation, err := runfiles.Rlocation(firecrackerRunfilePath)
 	if err != nil {
 		return nil, err
 	}
-	jailerPath, err := exec.LookPath("jailer")
+	firecrackerPath, err := putFileIntoDir(ctx, bundle, firecrackerRunfileLocation, buildRootDir, 0755)
+	if err != nil {
+		return nil, err
+	}
+	jailerRunfileLocation, err := runfiles.Rlocation(jailerRunfilePath)
+	if err != nil {
+		return nil, err
+	}
+	jailerPath, err := putFileIntoDir(ctx, bundle, jailerRunfileLocation, buildRootDir, 0755)
 	if err != nil {
 		return nil, err
 	}
