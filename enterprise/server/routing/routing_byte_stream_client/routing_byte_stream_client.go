@@ -61,7 +61,7 @@ func (r *RoutingByteStreamClient) Read(ctx context.Context, req *bspb.ReadReques
 		return rsp, nil
 	}
 	singleRandValue := rand.Float32()
-	if singleRandValue < c.GetBackgroundReadFraction() {
+	if singleRandValue < c.GetBackgroundReadVerifyFraction() {
 		if rn, err := digest.ParseDownloadResourceName(req.GetResourceName()); err == nil {
 			r.readOp.Enqueue(ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
 		}

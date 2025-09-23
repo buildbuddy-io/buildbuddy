@@ -16,8 +16,12 @@ import (
 )
 
 const (
-	routingServiceConfigFlag = "routing-service-config"
-	primaryCacheConfigField  = "primary-cache"
+	routingServiceConfigFlag                = "routing-service-config"
+	primaryCacheConfigField                 = "primary-cache"
+	secondaryCacheConfigField               = "secondary-cache"
+	backgroundCopyFractionConfigField       = "background-copy-fraction"
+	backgroundReadVerifyFractionConfigField = "background-read-verify-fraction"
+	dualWriteFractionConfigField            = "dual-write-fraction"
 )
 
 var (
@@ -92,11 +96,56 @@ func (r *routingService) GetCacheRoutingConfig(ctx context.Context) (*ropb.Cache
 		alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "Missing PrimaryCache in routing config.")
 		return nil, status.InternalErrorf("Cache config didn't have a primary cache defined.")
 	}
-	if primaryCacheStr, ok := primary.(string); ok {
-		out.PrimaryCache = primaryCacheStr
+	if primaryCache, ok := primary.(string); ok {
+		if _, ok := r.clientSets[primaryCache]; ok {
+			out.PrimaryCache = primaryCache
+		} else {
+			alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "primary-cache is not a known cache endpoint: %s", primaryCache)
+			return nil, status.InternalErrorf("Invalid primary cache: %s", primaryCache)
+		}
+		out.PrimaryCache = primaryCache
 	} else {
-		alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "PrimaryCache is not a string: %T(%v)", primary, primary)
+		alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "primary-cache is not a string: %T(%v)", primary, primary)
 		return nil, status.InternalErrorf("Cache config didn't have a primary cache defined.")
+	}
+	if v, ok := c[secondaryCacheConfigField]; ok {
+		if secondaryCache, ok := v.(string); ok {
+			if secondaryCache == "" {
+				return out, nil
+			} else if _, ok := r.clientSets[secondaryCache]; ok {
+				out.SecondaryCache = secondaryCache
+			} else {
+				alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "secondary-cache is not a known cache endpoint: %s", secondaryCache)
+				return out, nil
+			}
+		} else {
+			alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "secondary-cache is not a string: %T(%v)", v, v)
+			return out, nil
+		}
+	}
+	if v, ok := c[backgroundCopyFractionConfigField]; ok {
+		if bgCopyFrac, ok := v.(float32); ok {
+			out.BackgroundCopyFraction = bgCopyFrac
+		} else {
+			alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "background-copy-fraction is not a float32: %T(%v)", v, v)
+			return out, nil
+		}
+	}
+	if v, ok := c[backgroundReadVerifyFractionConfigField]; ok {
+		if bgRVFrac, ok := v.(float32); ok {
+			out.BackgroundReadVerifyFraction = bgRVFrac
+		} else {
+			alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "background-read-verify-fraction is not a float32: %T(%v)", v, v)
+			return out, nil
+		}
+	}
+	if v, ok := c[dualWriteFractionConfigField]; ok {
+		if dualWriteFrac, ok := v.(float32); ok {
+			out.DualWriteFraction = dualWriteFrac
+		} else {
+			alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "dual-write-fraction is not a float32: %T(%v)", v, v)
+			return out, nil
+		}
 	}
 
 	return out, nil

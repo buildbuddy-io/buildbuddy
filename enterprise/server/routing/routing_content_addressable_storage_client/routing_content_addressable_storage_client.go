@@ -117,7 +117,7 @@ func (r *RoutingCASClient) BatchReadBlobs(ctx context.Context, req *repb.BatchRe
 		return rsp, nil
 	}
 	singleRandValue := rand.Float32()
-	if singleRandValue < c.GetBackgroundReadFraction() {
+	if singleRandValue < c.GetBackgroundReadVerifyFraction() {
 		r.readOp.Enqueue(ctx, req.GetInstanceName(), req.GetDigests(), req.GetDigestFunction())
 	} else if (singleRandValue) < c.GetBackgroundCopyFraction() {
 		r.copyOp.Enqueue(ctx, req.GetInstanceName(), req.GetDigests(), req.GetDigestFunction())
