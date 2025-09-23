@@ -681,7 +681,7 @@ func (ut *Tracker) RemoteUpdate(usage *rfpb.NodePartitionUsage) {
 }
 
 func (ut *Tracker) refreshMetrics(ctx context.Context) {
-	partitionUsages := make([]*partitionUsage, len(ut.byPartition))
+	partitionUsages := make([]*partitionUsage, 0, len(ut.byPartition))
 	ut.mu.Lock()
 	for _, pu := range ut.byPartition {
 		partitionUsages = append(partitionUsages, pu)
