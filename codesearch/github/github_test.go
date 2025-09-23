@@ -326,6 +326,10 @@ type fakeGitClient struct {
 	t        *testing.T
 }
 
+func incrementalLogCommand(firstSHA, lastSHA string) string {
+	return fmt.Sprintf("log --raw --first-parent --format=%%H --reverse %s..%s", firstSHA, lastSHA)
+}
+
 func (f *fakeGitClient) ExecuteCommand(args ...string) (string, error) {
 	fullCmd := strings.Join(args, " ")
 	if output, ok := f.commands[fullCmd]; ok {
@@ -350,7 +354,7 @@ func TestComputeIncrementalUpdate_OneCommit(t *testing.T) {
 	fakeClient := &fakeGitClient{
 		t: t,
 		commands: map[string]string{
-			fmt.Sprintf("whatchanged --first-parent --format=%%H --reverse %s..%s", firstSHA, lastSHA): `
+			incrementalLogCommand(firstSHA, lastSHA): `
 def456
 
 :100644 100644 bcd1234 0123456 M	file0
@@ -401,7 +405,7 @@ func TestComputeIncrementalUpdate_MultipleCommits(t *testing.T) {
 	fakeClient := &fakeGitClient{
 		t: t,
 		commands: map[string]string{
-			fmt.Sprintf("whatchanged --first-parent --format=%%H --reverse %s..%s", sha1, sha4): `
+			incrementalLogCommand(sha1, sha4): `
 bbb456
 
 :100644 100644 bcd1234 0123456 M	file0
@@ -458,7 +462,7 @@ func TestComputeIncrementalUpdate_SkipUnindexable(t *testing.T) {
 	fakeClient := &fakeGitClient{
 		t: t,
 		commands: map[string]string{
-			fmt.Sprintf("whatchanged --first-parent --format=%%H --reverse %s..%s", firstSHA, lastSHA): `
+			incrementalLogCommand(firstSHA, lastSHA): `
 def456
 
 :100644 100644 bcd1234 0123456 M	file0
@@ -490,7 +494,7 @@ func TestComputeIncrementalUpdate_NoChanges(t *testing.T) {
 	fakeClient := &fakeGitClient{
 		t: t,
 		commands: map[string]string{
-			fmt.Sprintf("whatchanged --first-parent --format=%%H --reverse %s..%s", firstSHA, lastSHA): "\n",
+			incrementalLogCommand(firstSHA, lastSHA): "\n",
 		},
 		files: map[string][]byte{},
 	}
@@ -507,7 +511,7 @@ func TestComputeIncrementalUpdate_WithWarnings(t *testing.T) {
 	fakeClient := &fakeGitClient{
 		t: t,
 		commands: map[string]string{
-			fmt.Sprintf("whatchanged --first-parent --format=%%H --reverse %s..%s", firstSHA, lastSHA): `
+			incrementalLogCommand(firstSHA, lastSHA): `
 warning: fetch normally indicates which branches had a forced update,
 but that check has been disabled; to re-enable, use '--show-forced-updates'
 flag or run 'git config fetch.showForcedUpdates true'
