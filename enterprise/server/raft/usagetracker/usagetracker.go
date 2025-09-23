@@ -70,6 +70,7 @@ const (
 
 	SamplerIterRefreshPeriod = 5 * time.Minute
 	evictFlushPeriod         = 10 * time.Second
+	metricsRefreshPeriod     = 30 * time.Second
 )
 
 type Tracker struct {
@@ -238,7 +239,7 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 				}
 			}
 			if errCount > 0 {
-				return res, status.InternalErrorf("failed to evict %d keys", errCount)
+				return res, status.InternalErrorf("failed to evict %d keys in partition %s", errCount, pu.part.ID)
 
 			}
 			return res, nil
@@ -478,6 +479,15 @@ func (pu *partitionUsage) sample(ctx context.Context, k int) ([]*approxlru.Sampl
 	return samples, nil
 }
 
+func (pu *partitionUsage) updateMetrics() {
+	pu.mu.Lock()
+	defer pu.mu.Unlock()
+
+	metrics.PebbleCacheEvictionSamplesChanSize.With(prometheus.Labels{
+		metrics.PartitionID: pu.part.ID,
+	}).Set(float64(len(pu.samples)))
+}
+
 func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces.GossipService, node *rfpb.NodeDescriptor, partitions []disk.Partition, clock clockwork.Clock) (*Tracker, error) {
 	ut := &Tracker{
 		gossipManager: gossipManager,
@@ -569,6 +579,10 @@ func (ut *Tracker) Start() {
 
 	eg.Go(func() error {
 		ut.broadcastLoop(gctx)
+		return nil
+	})
+	eg.Go(func() error {
+		ut.refreshMetrics(gctx)
 		return nil
 	})
 }
@@ -663,6 +677,29 @@ func (ut *Tracker) RemoteUpdate(usage *rfpb.NodePartitionUsage) {
 	for _, u := range ut.byPartition {
 		sizeBytes := u.GlobalSizeBytes()
 		u.lru.UpdateGlobalSizeBytes(sizeBytes)
+	}
+}
+
+func (ut *Tracker) refreshMetrics(ctx context.Context) {
+	partitionUsages := make([]*partitionUsage, len(ut.byPartition))
+	ut.mu.Lock()
+	for _, pu := range ut.byPartition {
+		partitionUsages = append(partitionUsages, pu)
+	}
+
+	ut.mu.Unlock()
+
+	ticker := ut.clock.NewTicker(metricsRefreshPeriod)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.Chan():
+			for _, pu := range partitionUsages {
+				pu.updateMetrics()
+			}
+		}
 	}
 }
 
