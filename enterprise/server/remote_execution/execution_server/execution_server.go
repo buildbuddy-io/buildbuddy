@@ -777,6 +777,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 			}
 		}
 		if details.Variant() != "" {
+			log.CtxInfof(ctx, ">>> TASK SIZE OVERRIDES: %s", details.Variant())
 			executionTask.Experiments = append(executionTask.Experiments, taskSizeOverridesExperiment+":"+details.Variant())
 		}
 	}

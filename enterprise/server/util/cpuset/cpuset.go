@@ -185,7 +185,7 @@ func NewLeaser(opts LeaserOpts) (*CPULeaser, error) {
 		processors[cpu.NumaNode] = struct{}{}
 	}
 	cl.numaNodes = len(processors)
-	log.Debugf("NewLeaser with %d processors and %d cores", cl.numaNodes, len(cl.cpus))
+	log.Infof("Configured cpuset: %d NUMA nodes, %d processors", cl.numaNodes, len(cl.cpus))
 	return cl, nil
 }
 

@@ -90,6 +90,10 @@ var (
 	maxThreads        = flag.Int("executor.max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
 )
 
+const (
+	isRunningUnderInitEnvVarName = "__BB_EXECUTOR_IS_RUNNING_UNDER_INIT"
+)
+
 func init() {
 	// Register the codec for all RPC servers and clients.
 	vtprotocodec.Register()
@@ -268,12 +272,9 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 }
 
 func main() {
-	version.Print("BuildBuddy executor")
-
-	setUmask()
-
-	rootContext := context.Background()
-
+	if os.Getenv(isRunningUnderInitEnvVarName) == "" {
+		version.Print("BuildBuddy executor")
+	}
 	// Flags must be parsed before config secrets integration is enabled since
 	// that feature itself depends on flag values.
 	flag.Parse()
@@ -283,6 +284,19 @@ func main() {
 	if err := config.Load(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
+	// Set up child cgroups and run-under-init very early on, since this may
+	// cause the executor process to restart and we want to avoid wasted effort.
+	tasksCgroupParent, err := setupCgroups()
+	if err != nil {
+		log.Fatalf("cgroup setup failed: %s", err)
+	}
+	if err := execUnderInitProcess(); err != nil {
+		log.Fatalf("runUnderInit failed: %s", err)
+	}
+
+	setUmask()
+
+	rootContext := context.Background()
 
 	config.ReloadOnSIGHUP()
 
@@ -344,11 +358,6 @@ func main() {
 
 	imageCacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	env.SetImageCacheAuthenticator(imageCacheAuth)
-
-	tasksCgroupParent, err := setupCgroups()
-	if err != nil {
-		log.Fatalf("cgroup setup failed: %s", err)
-	}
 
 	runnerPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{
 		CgroupParent: tasksCgroupParent,

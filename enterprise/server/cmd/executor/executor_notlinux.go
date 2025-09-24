@@ -12,6 +12,10 @@ func setupCgroups() (string, error) {
 	return "", nil
 }
 
+func execUnderInitProcess() error {
+	return nil
+}
+
 func setupNetworking(rootContext context.Context) {
 }
 

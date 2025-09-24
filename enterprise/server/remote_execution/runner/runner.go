@@ -422,8 +422,13 @@ func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *rep
 	r.doNotReuse = true
 	if r.worker == nil {
 		log.CtxInfof(ctx, "Starting persistent worker")
-		r.worker = persistentworker.Start(r.env.GetServerContext(), r.Workspace, r.Container, r.PlatformProperties.PersistentWorkerProtocol, command)
+		w, err := persistentworker.Start(r.env.GetServerContext(), r.Workspace, r.Container, r.PlatformProperties.PersistentWorkerProtocol, command)
+		if err != nil {
+			return commandutil.ErrorResult(status.WrapError(err, "start persistent worker"))
+		}
+		r.worker = w
 	}
+	log.CtxInfof(ctx, "Sending persistent work request")
 	res := r.worker.Exec(ctx, command)
 	if res.Error == nil {
 		r.doNotReuse = false

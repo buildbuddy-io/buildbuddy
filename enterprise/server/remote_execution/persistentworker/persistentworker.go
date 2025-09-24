@@ -54,11 +54,16 @@ type Worker struct {
 	container container.CommandContainer
 	protocol  string // "json" or "proto"
 
-	stdinWriter *io.PipeWriter
+	stdinWriter io.WriteCloser
 	stderr      lockingbuffer.LockingBuffer
 
 	stdoutReader *bufio.Reader
 	jsonDecoder  *json.Decoder
+
+	terminated chan struct{}
+	// Worker result (Error field may be useful if it crashes unexpectedly).
+	// Only safe to read if the terminated chan is closed.
+	result *interfaces.CommandResult
 
 	stop func() error
 }
@@ -67,8 +72,22 @@ type Worker struct {
 // a long-running Exec() command.
 // The provided context should be a long-lived context that lives longer
 // than just a single task.
-func Start(ctx context.Context, workspace *workspace.Workspace, container container.CommandContainer, protocol string, command *repb.Command) *Worker {
-	stdinReader, stdinWriter := io.Pipe()
+func Start(ctx context.Context, workspace *workspace.Workspace, container container.CommandContainer, protocol string, command *repb.Command) (*Worker, error) {
+	// Use an [os.Pipe] for stdin, not [io.Pipe], which gives us a file
+	// descriptor that can be directly set as the worker process stdin. If not
+	// passing a pipe file descriptor as stdin, the [exec.Cmd] implementation
+	// will create an OS pipe internally and spawn a goroutine to copy stdin to
+	// it. This goroutine can get stuck in certain cases, like if the worker
+	// crashes. It gets stuck on this line [1] while trying to read from stdin,
+	// which is kept open, but Wait() doesn't return until this goroutine exits
+	// (see [2]) - even if passing a non-zero WaitDelay to the command.
+	//
+	// [1] https://cs.opensource.google/go/go/+/refs/tags/go1.25.0:src/os/exec/exec.go;l=547
+	// [2] https://cs.opensource.google/go/go/+/refs/tags/go1.25.0:src/os/exec/exec.go;l=843-862
+	stdinReader, stdinWriter, err := os.Pipe()
+	if err != nil {
+		return nil, status.UnavailableErrorf("create stdin pipe: %s", err)
+	}
 	stdoutReader, stdoutWriter := io.Pipe()
 
 	w := &Worker{
@@ -84,7 +103,7 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-	workerTerminated := make(chan struct{})
+	w.terminated = make(chan struct{})
 	w.stop = func() error {
 		// Canceling the worker context and closing stdin should terminate the
 		// worker exec process.
@@ -97,7 +116,7 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 		ctx, cancel := background.ExtendContextForFinalization(ctx, persistentWorkerShutdownTimeout)
 		defer cancel()
 		select {
-		case <-workerTerminated:
+		case <-w.terminated:
 			return nil
 		case <-ctx.Done():
 			return status.DeadlineExceededError("Timed out waiting for persistent worker to shut down.")
@@ -109,25 +128,34 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 	command.Arguments = append(args.WorkerArgs, "--persistent_worker")
 
 	go func() {
-		defer close(workerTerminated)
+		defer close(w.terminated)
 		defer stdinReader.Close()
 		defer stdoutWriter.Close()
+
+		var stderr io.Writer = &w.stderr
+		if *commandutil.DebugStreamCommandOutputs {
+			stderr = io.MultiWriter(&w.stderr, log.Writer("[persistentworker] "))
+		}
 
 		stdio := &interfaces.Stdio{
 			Stdin:  stdinReader,
 			Stdout: stdoutWriter,
-			Stderr: &w.stderr,
+			Stderr: stderr,
 		}
-		res := w.container.Exec(ctx, command, stdio)
-		log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, args.FlagFiles, args.WorkerArgs)
+		w.result = w.container.Exec(ctx, command, stdio)
+		log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", w.result, args.FlagFiles, args.WorkerArgs)
 	}()
 
-	return w
+	return w, nil
 }
 
 func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
 	// Clear any stderr that might be associated with a previous request.
+	stderr := w.stderr.String()
 	w.stderr.Reset()
+	if len(stderr) > 0 {
+		log.CtxInfof(ctx, "Persistent worker stderr (possibly from previous request): %s", stderr)
+	}
 
 	args := parseArgs(command.GetArguments())
 	expandedArguments, err := w.expandFlagFiles(args.FlagFiles)
@@ -154,21 +182,44 @@ func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.Co
 		Arguments: expandedArguments,
 	}
 	if err := w.marshalWorkRequest(req); err != nil {
+		if err := w.checkCrashed(); err != nil {
+			return commandutil.ErrorResult(status.WrapError(err, "write persistent work request"))
+		}
 		return commandutil.ErrorResult(status.UnavailableErrorf(
-			"failed to send persistent work request: %s\npersistent worker stderr:\n%s",
+			"write persistent work request: %s\npersistent worker stderr:\n%s",
 			err, w.stderrDebugString()))
 	}
+
+	log.CtxInfof(ctx, "Sent persistent work request; waiting for response")
 
 	// Decode the response from stdout.
 	rsp := &wkpb.WorkResponse{}
 	if err := w.unmarshalWorkResponse(rsp); err != nil {
+		if err := w.checkCrashed(); err != nil {
+			return commandutil.ErrorResult(status.WrapError(err, "read persistent work response"))
+		}
 		return commandutil.ErrorResult(status.UnavailableErrorf(
-			"failed to read persistent work response: %s\npersistent worker stderr:\n%s",
+			"read persistent work response: %s\npersistent worker stderr:\n%s",
 			err, w.stderrDebugString()))
 	}
+
+	log.CtxInfof(ctx, "Received persistent work response")
+
 	return &interfaces.CommandResult{
 		Stderr:   []byte(rsp.Output),
 		ExitCode: int(rsp.ExitCode),
+	}
+}
+
+func (w *Worker) checkCrashed() error {
+	select {
+	case <-w.terminated:
+		if err := w.result.Error; err != nil {
+			return status.UnavailableErrorf("persistent worker crashed: %s (stderr: %s)", status.Message(err), w.stderrDebugString())
+		}
+		return status.UnavailableErrorf("persistent worker exited unexpectedly with exit code %d (stderr: %s)", w.result.ExitCode, w.stderrDebugString())
+	default:
+		return nil
 	}
 }
 
@@ -183,7 +234,7 @@ func (w *Worker) stderrDebugString() string {
 	if s == "" {
 		return "<empty>"
 	}
-	return s
+	return fmt.Sprintf("%q", s)
 }
 
 func (r *Worker) marshalWorkRequest(requestProto *wkpb.WorkRequest) error {

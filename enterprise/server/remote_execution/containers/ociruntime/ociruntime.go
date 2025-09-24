@@ -53,6 +53,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
+	"github.com/docker/go-units"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
@@ -373,6 +374,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		user:              args.Props.DockerUser,
 		forceRoot:         args.Props.DockerForceRoot,
 		persistentVolumes: args.Props.PersistentVolumes,
+		originalPool:      args.Props.OriginalPool,
 
 		milliCPU:    args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
 		memoryBytes: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(),
@@ -415,8 +417,9 @@ type ociContainer struct {
 	user           string
 	forceRoot      bool
 
-	milliCPU    int64 // milliCPU allocation from task size
-	memoryBytes int64 // memory allocation from task size in bytes
+	milliCPU     int64 // milliCPU allocation from task size
+	memoryBytes  int64 // memory allocation from task size in bytes
+	originalPool string
 }
 
 // Returns the OCI bundle directory for the container.
@@ -579,6 +582,7 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 		return commandutil.ErrorResult(status.UnavailableErrorf("generate cid: %s", err))
 	}
 	c.cid = cid
+	log.CtxInfof(ctx, "Container ID: %s", c.cid)
 
 	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.imageRef); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("pull image: %s", err))
@@ -612,6 +616,7 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 		return status.UnavailableErrorf("generate cid: %s", err)
 	}
 	c.cid = cid
+	log.CtxInfof(ctx, "Container ID: %s", c.cid)
 
 	if err := c.createNetwork(ctx); err != nil {
 		return status.UnavailableErrorf("create network: %s", err)
@@ -858,6 +863,16 @@ func (c *ociContainer) checkOOMKill(ctx context.Context, res *interfaces.Command
 	if res.ExitCode == 0 {
 		log.CtxWarningf(ctx, "Task succeeded, but cgroup reported oom_kill events.")
 		return nil
+	}
+	// If memory.max is set, include it in the error message
+	if c.cgroupSettings.MemoryLimitBytes != nil {
+		// XXX
+		return status.UnavailableErrorf(
+			"task process or child process killed by oom killer (task memory: %s, task memory limit: %s, original pool: %q)",
+			units.BytesSize(float64(c.memoryBytes)),
+			units.BytesSize(float64(c.cgroupSettings.GetMemoryLimitBytes())),
+			c.originalPool, // XXX
+		)
 	}
 	return status.UnavailableError("task process or child process killed by oom killer")
 }

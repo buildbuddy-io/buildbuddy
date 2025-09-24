@@ -16,6 +16,7 @@ go_library(
             "//proto:scheduler_go_proto",
             "//server/util/log",
             "//server/util/status",
+            "@com_github_docker_go_units//:go-units",
         ],
         "//conditions:default": [],
     }),

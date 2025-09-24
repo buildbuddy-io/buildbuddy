@@ -157,3 +157,25 @@ func (b *BestEffortWriter) Write(p []byte) (int, error) {
 func (b *BestEffortWriter) Err() error {
 	return b.err
 }
+
+// PreserveNewlinesSplitFunc is a split function that can be used with
+// [bufio.Scanner]. It keeps the newlines at the end if present, so that
+// concatenating the scanned Text() reproduces the original input exactly.
+func PreserveNewlinesSplitFunc(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	// Search for newline characters
+	for i := range data {
+		if data[i] == '\n' {
+			// Include up to and including the '\n'
+			return i + 1, data[0 : i+1], nil
+		}
+	}
+	// If at EOF, return the remaining data (may not have newline)
+	if atEOF {
+		return len(data), data, nil
+	}
+	// Request more data
+	return 0, nil, nil
+}

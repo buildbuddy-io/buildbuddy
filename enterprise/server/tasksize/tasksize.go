@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/docker/go-units"
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -570,6 +571,7 @@ func GetCgroupSettings(ctx context.Context, fp interfaces.ExperimentFlagProvider
 			memoryHardLimitAdditionalBytes := fp.Int64(ctx, "remote_execution.memory_hard_limit_additional_bytes", 0, options...)
 			limit := int64(float64(size.GetEstimatedMemoryBytes())*memoryHardLimitMultiplier) + memoryHardLimitAdditionalBytes
 			settings.MemoryLimitBytes = proto.Int64(limit)
+			log.CtxInfof(ctx, ">>> MEMORY HARD LIMIT: %s", units.BytesSize(float64(limit)))
 		}
 	}
 	return settings
