@@ -68,14 +68,14 @@ type Worker struct {
 // The provided context should be a long-lived context that lives longer
 // than just a single task.
 func Start(ctx context.Context, workspace *workspace.Workspace, container container.CommandContainer, protocol string, command *repb.Command) (*Worker, error) {
-	// Use an [os.Pipe] for stdin, not [io.Pipe], which gives us a file
-	// descriptor that can be directly set as the worker process stdin. If not
-	// passing a pipe file descriptor as stdin, the [exec.Cmd] implementation
-	// will create an OS pipe internally and spawn a goroutine to copy stdin to
-	// it. This goroutine can get stuck in certain cases, like if the worker
-	// crashes. It gets stuck on this line [1] while trying to read from stdin,
-	// which is kept open, but Wait() doesn't return until this goroutine exits
-	// (see [2]) - even if passing a non-zero WaitDelay to the command.
+	// Use an [os.Pipe] for stdin which gives us a file descriptor that can be
+	// directly set as the worker process stdin. If stdin is not an instance of
+	// [*os.File], then the [exec.Cmd] implementation will create an OS pipe
+	// internally and spawn a goroutine to copy stdin to it. This goroutine can
+	// get stuck in certain cases, like if the worker crashes. It gets stuck on
+	// this line [1] while trying to read from stdin, which is kept open, but
+	// Wait() doesn't return until this goroutine [2] exits - even if passing a
+	// non-zero WaitDelay to the command.
 	//
 	// [1] https://cs.opensource.google/go/go/+/refs/tags/go1.25.0:src/os/exec/exec.go;l=547
 	// [2] https://cs.opensource.google/go/go/+/refs/tags/go1.25.0:src/os/exec/exec.go;l=843-862
@@ -149,7 +149,7 @@ func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.Co
 	stderr := w.stderr.String()
 	w.stderr.Reset()
 	if len(stderr) > 0 {
-		log.CtxInfof(ctx, "Persistent worker stderr (possibly from previous request): %s", stderr)
+		log.CtxDebugf(ctx, "Persistent worker stderr (possibly from previous request): %s", stderr)
 	}
 
 	args := parseArgs(command.GetArguments())
@@ -176,16 +176,11 @@ func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.Co
 		Inputs:    inputs,
 		Arguments: expandedArguments,
 	}
-
-	log.CtxInfof(ctx, "Sending persistent work request: %+v", req)
-
 	if err := w.marshalWorkRequest(req); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf(
 			"failed to send persistent work request: %s\npersistent worker stderr:\n%s",
 			err, w.stderrDebugString()))
 	}
-
-	log.CtxInfof(ctx, "Sent persistent work request; waiting for response")
 
 	// Decode the response from stdout.
 	rsp := &wkpb.WorkResponse{}
@@ -194,9 +189,6 @@ func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.Co
 			"failed to read persistent work response: %s\npersistent worker stderr:\n%s",
 			err, w.stderrDebugString()))
 	}
-
-	log.CtxInfof(ctx, "Received persistent work response")
-
 	return &interfaces.CommandResult{
 		Stderr:   []byte(rsp.Output),
 		ExitCode: int(rsp.ExitCode),
