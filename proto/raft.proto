@@ -398,7 +398,7 @@ message ReplicaUsage {
   int64 read_qps = 5;
   int64 raft_propose_qps = 6;
 
-  repeated storage.PartitionMetadata partitions = 7;
+  reserved 7;
 }
 
 message StoreUsage {
