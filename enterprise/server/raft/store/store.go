@@ -78,6 +78,7 @@ var (
 	enableDriver           = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
 	enableTxnCleanup       = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
 	enableRegistryPreload  = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
+	blockCacheSizeBytes    = flag.Int64("cache.raft.block_cache_size_bytes", 1e9, "How much ram to give the block cache")
 )
 
 const (
@@ -227,13 +228,24 @@ func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr str
 	apiClient := client.NewAPIClient(env, nodeHost.ID(), registry)
 	sender := sender.New(rangeCache, apiClient)
 	mc := &pebble.MetricsCollector{}
-	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{
+
+	pebbleOpts := &pebble.Options{
+		MemTableSize: 64 << 20, // 64 MB
+		MaxOpenFiles: 2000,     // double the default
 		EventListener: &pebble.EventListener{
+			BackgroundError: mc.BackgroundError,
 			WriteStallBegin: mc.WriteStallBegin,
 			WriteStallEnd:   mc.WriteStallEnd,
 			DiskSlow:        mc.DiskSlow,
 		},
-	})
+	}
+	if *blockCacheSizeBytes > 0 {
+		c := pebble.NewCache(*blockCacheSizeBytes)
+		defer c.Unref()
+		pebbleOpts.Cache = c
+	}
+
+	db, err := pebble.Open(rootDir, "raft_store", pebbleOpts)
 	if err != nil {
 		return nil, err
 	}
