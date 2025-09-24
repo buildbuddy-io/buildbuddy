@@ -2,9 +2,15 @@
 # See README for details.
 
 # debian 12
-FROM mirror.gcr.io/debian@sha256:cd50e36013f749a1f86c6369b873e1ad607335480dc4bc2905396ec17ab0ce02
+FROM mirror.gcr.io/debian@sha256:7ca9335a5953654f8feb8b846ad3dd78309a838d62b090c785d1f5908c2d59d2
 
-RUN apt-get update && \
+RUN \
+    # /etc/apt/debian.sources doesn't pin the debian release by name, but by `stable`.
+    # Now that debian 13 was upgraded to stable, the `apt-get upgrade` command below
+    # will attempt to upgrade the OS to debian 13. Manually pin it to debian 12 (bookworkm).
+    sed -i 's/^Suites: stable stable-updates$/Suites: bookworm bookworm-updates/' /etc/apt/sources.list.d/debian.sources && \
+    sed -i 's/^Suites: stable-security$/Suites: bookworm-security/' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && \
     apt-get install -y \
     # FUSE support, used by vbd and vfs packages.
     # TODO: probably not needed since we use DirectMountStrict now?
@@ -12,16 +18,17 @@ RUN apt-get update && \
     # Networking tools used by networking package.
     # iproute2 provides the "ip" command.
     iproute2 conntrack \
+    # Credential helper for custom execution images hosted on ECR.
+    amazon-ecr-credential-helper \
     # cgroup-aware proc mounts for OCI containers.
     lxcfs && \
     apt-get upgrade -y && \
-    apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
-RUN DOCKER_VERSION="5:28.4.0-1~debian.13~trixie" && \
+RUN DOCKER_VERSION="5:28.2.2-1~debian.12~bookworm" && \
     CONTAINERD_DEB_VERSION="1.7.27-1" && \
-    DOCKER_BUILDX_VERSION="0.26.1-1~debian.13~trixie" && \
-    DOCKER_COMPOSE_VERSION="2.35.0-1~debian.13~trixie" && \
+    DOCKER_BUILDX_VERSION="0.24.0-1~debian.12~bookworm" && \
+    DOCKER_COMPOSE_VERSION="2.36.2-1~debian.12~bookworm" && \
     apt-get update && \
     apt-get install -y \
     curl ca-certificates apt-transport-https && \
@@ -39,8 +46,6 @@ RUN DOCKER_VERSION="5:28.4.0-1~debian.13~trixie" && \
     containerd.io=${CONTAINERD_DEB_VERSION} \
     docker-buildx-plugin=${DOCKER_BUILDX_VERSION} \
     docker-compose-plugin=${DOCKER_COMPOSE_VERSION} && \
-    # Credential helper for custom execution images hosted on ECR.
-    apt-get install -y amazon-ecr-credential-helper && \
     apt-mark auto \
     curl ca-certificates apt-transport-https && \
     apt-get autoremove -y && \

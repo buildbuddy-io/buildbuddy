@@ -559,7 +559,7 @@ load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
 
 container_pull(
     name = "buildbuddy_go_image_base",
-    digest = "sha256:fa15cf15a01793854a554832b5f20328080075866d5b45cb28febd8b37e6749e",
+    digest = "sha256:54b60abf4fff72d703e028d1c412a727776a6a191a00d7598214ef67b496ef95",
     registry = "gcr.io",
     repository = "distroless/cc-debian12",
 )
