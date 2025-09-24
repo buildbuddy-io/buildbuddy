@@ -54,7 +54,7 @@ type Worker struct {
 	container container.CommandContainer
 	protocol  string // "json" or "proto"
 
-	stdinWriter *io.PipeWriter
+	stdinWriter io.WriteCloser
 	stderr      lockingbuffer.LockingBuffer
 
 	stdoutReader *bufio.Reader
@@ -67,8 +67,22 @@ type Worker struct {
 // a long-running Exec() command.
 // The provided context should be a long-lived context that lives longer
 // than just a single task.
-func Start(ctx context.Context, workspace *workspace.Workspace, container container.CommandContainer, protocol string, command *repb.Command) *Worker {
-	stdinReader, stdinWriter := io.Pipe()
+func Start(ctx context.Context, workspace *workspace.Workspace, container container.CommandContainer, protocol string, command *repb.Command) (*Worker, error) {
+	// Use an [os.Pipe] for stdin, not [io.Pipe], which gives us a file
+	// descriptor that can be directly set as the worker process stdin. If not
+	// passing a pipe file descriptor as stdin, the [exec.Cmd] implementation
+	// will create an OS pipe internally and spawn a goroutine to copy stdin to
+	// it. This goroutine can get stuck in certain cases, like if the worker
+	// crashes. It gets stuck on this line [1] while trying to read from stdin,
+	// which is kept open, but Wait() doesn't return until this goroutine exits
+	// (see [2]) - even if passing a non-zero WaitDelay to the command.
+	//
+	// [1] https://cs.opensource.google/go/go/+/refs/tags/go1.25.0:src/os/exec/exec.go;l=547
+	// [2] https://cs.opensource.google/go/go/+/refs/tags/go1.25.0:src/os/exec/exec.go;l=843-862
+	stdinReader, stdinWriter, err := os.Pipe()
+	if err != nil {
+		return nil, status.UnavailableErrorf("create stdin pipe: %s", err)
+	}
 	stdoutReader, stdoutWriter := io.Pipe()
 
 	w := &Worker{
@@ -113,21 +127,30 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 		defer stdinReader.Close()
 		defer stdoutWriter.Close()
 
+		var stderr io.Writer = &w.stderr
+		if *commandutil.DebugStreamCommandOutputs {
+			stderr = io.MultiWriter(&w.stderr, log.Writer("[persistentworker] "))
+		}
+
 		stdio := &interfaces.Stdio{
 			Stdin:  stdinReader,
 			Stdout: stdoutWriter,
-			Stderr: &w.stderr,
+			Stderr: stderr,
 		}
 		res := w.container.Exec(ctx, command, stdio)
 		log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, args.FlagFiles, args.WorkerArgs)
 	}()
 
-	return w
+	return w, nil
 }
 
 func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
 	// Clear any stderr that might be associated with a previous request.
+	stderr := w.stderr.String()
 	w.stderr.Reset()
+	if len(stderr) > 0 {
+		log.CtxInfof(ctx, "Persistent worker stderr (possibly from previous request): %s", stderr)
+	}
 
 	args := parseArgs(command.GetArguments())
 	expandedArguments, err := w.expandFlagFiles(args.FlagFiles)
@@ -153,11 +176,16 @@ func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.Co
 		Inputs:    inputs,
 		Arguments: expandedArguments,
 	}
+
+	log.CtxInfof(ctx, "Sending persistent work request: %+v", req)
+
 	if err := w.marshalWorkRequest(req); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf(
 			"failed to send persistent work request: %s\npersistent worker stderr:\n%s",
 			err, w.stderrDebugString()))
 	}
+
+	log.CtxInfof(ctx, "Sent persistent work request; waiting for response")
 
 	// Decode the response from stdout.
 	rsp := &wkpb.WorkResponse{}
@@ -166,6 +194,9 @@ func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.Co
 			"failed to read persistent work response: %s\npersistent worker stderr:\n%s",
 			err, w.stderrDebugString()))
 	}
+
+	log.CtxInfof(ctx, "Received persistent work response")
+
 	return &interfaces.CommandResult{
 		Stderr:   []byte(rsp.Output),
 		ExitCode: int(rsp.ExitCode),
