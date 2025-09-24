@@ -2,24 +2,19 @@ import { ArrowRight, Download, FileSymlink, FolderMinus, FolderPlus } from "luci
 import React from "react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import DigestComponent from "../components/digest/digest";
-import format from "../format/format";
 import { TreeNode } from "../invocation/invocation_action_tree_node";
 import InvocationModel from "../invocation/invocation_model";
-import { findNodeByName, hasChildDifferences, nodesEqual } from "./tree_utils";
-
-interface TreeState {
-  inputRoot?: build.bazel.remote.execution.v2.Directory;
-  treeShaToExpanded: Map<string, boolean>;
-  treeShaToChildrenMap: Map<string, TreeNode[]>;
-}
+import { findNodeByName, nodesEqual } from "./tree_utils";
 
 interface Props {
   nodes: TreeNode[];
   otherNodes: TreeNode[];
   side: "left" | "right";
-  treeState: TreeState;
-  otherTreeState: TreeState;
-  handleFileClicked: (node: TreeNode) => void;
+  treeA?: build.bazel.remote.execution.v2.Directory;
+  treeB?: build.bazel.remote.execution.v2.Directory;
+  treeShaToExpanded: Map<string, boolean>;
+  treeShaToChildrenMap: Map<string, TreeNode[]>;
+  handleDirectoryClicked: (node: TreeNode) => void;
   showChangesOnly: boolean;
   actionDetails?: ActionDetails;
   otherActionDetails?: ActionDetails;
@@ -33,21 +28,26 @@ interface ActionDetails {
 }
 
 export default class DiffTreeNodeComponent extends React.Component<Props> {
-  private getNodeStyle(status: string): React.CSSProperties {
+  private getNodeStyle(status: string, type: string): React.CSSProperties {
     const style: React.CSSProperties = {};
+
+    let weight = type == "file" ? "600" : "normal";
 
     switch (status) {
       case "added":
-        style.backgroundColor = "rgba(34, 197, 94, 0.1)";
+        style.backgroundColor = `rgba(34, 197, 94, ${type == "file" ? "0.2" : "0.1"})`;
         style.color = "#16a34a";
+        style.fontWeight = weight;
         break;
       case "removed":
-        style.backgroundColor = "rgba(239, 68, 68, 0.1)";
+        style.backgroundColor = `rgba(239, 68, 68, ${type == "file" ? "0.2" : "0.1"})`;
         style.color = "#dc2626";
+        style.fontWeight = weight;
         break;
       case "modified":
-        style.backgroundColor = "rgba(250, 204, 21, 0.1)";
+        style.backgroundColor = `rgba(250, 204, 21, ${type == "file" ? "0.5" : "0.1"})`;
         style.color = "#a16207";
+        style.fontWeight = weight;
         break;
     }
 
@@ -64,15 +64,6 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
     }
 
     return "unchanged";
-  }
-
-  private getChildCountText(childCount: Number) {
-    if (childCount === 0) {
-      return "empty";
-    } else if (childCount === 1) {
-      return "1 child";
-    }
-    return format.formatWithCommas(childCount) + " children";
   }
 
   private handleFileClick = (node: TreeNode, otherNode?: TreeNode) => {
@@ -100,8 +91,8 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
           `/code/buildbuddy-io/buildbuddy/?${new URLSearchParams(params).toString()}` + (otherNode ? "#diff" : "");
         window.open(url, "_blank");
       }
-    } else if (node.type === "dir" || node.type === "tree") {
-      this.props.handleFileClicked(node);
+    } else if (node.type === "dir") {
+      this.props.handleDirectoryClicked(node);
     }
   };
 
@@ -124,7 +115,7 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
     if (node.type === "symlink") {
       const symlink = node.obj as build.bazel.remote.execution.v2.SymlinkNode;
 
-      const symlinkStyle = this.getNodeStyle(status);
+      const symlinkStyle = this.getNodeStyle(status, node.type);
 
       return (
         <div key={node.obj.name} className={className}>
@@ -142,19 +133,19 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
       );
     }
 
-    const isDir = node.type === "dir" || node.type === "tree";
+    const isDir = node.type === "dir";
     const fileOrDirNode = node.obj as
       | build.bazel.remote.execution.v2.FileNode
       | build.bazel.remote.execution.v2.DirectoryNode;
     const digestString = fileOrDirNode.digest?.hash || "";
-    const expanded = isDir ? this.props.treeState.treeShaToExpanded.get(digestString) : false;
+    const expanded = isDir ? this.props.treeShaToExpanded.get(digestString) : false;
 
     return (
       <div key={node.obj.name} className={className}>
         <div className="input-tree-node diff-tree-node">
           <div
             className={`input-tree-node-name ${expanded ? "input-tree-node-expanded" : ""} ${!isDir ? "clickable-file" : ""}`}
-            style={this.getNodeStyle(status)}
+            style={this.getNodeStyle(status, node.type)}
             onClick={() => this.handleFileClick(node, otherNode)}>
             <span>
               {!isDir ? (
@@ -172,7 +163,6 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
             <span className="input-tree-node-label">{fileOrDirNode.name}</span>
             {fileOrDirNode.digest && <DigestComponent digest={fileOrDirNode.digest} />}
           </div>
-          {/* {status === "modified" && otherNode && this.renderModifiedFileDigests(node, otherNode)} */}
           {expanded && isDir && this.renderChildren(node)}
         </div>
       </div>
@@ -182,7 +172,7 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
   private renderChildren(parentNode: TreeNode): React.ReactNode {
     const dirNode = parentNode.obj as build.bazel.remote.execution.v2.DirectoryNode;
     const digestString = dirNode.digest?.hash || "";
-    const children = this.props.treeState.treeShaToChildrenMap.get(digestString) || [];
+    const children = this.props.treeShaToChildrenMap.get(digestString) || [];
 
     const otherNode = findNodeByName(this.props.otherNodes, dirNode.name || "");
     let otherChildren: TreeNode[] = [];
@@ -190,7 +180,7 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
     if (otherNode && otherNode.type === "dir") {
       const otherDirNode = otherNode.obj as build.bazel.remote.execution.v2.DirectoryNode;
       const otherDigestString = otherDirNode.digest?.hash || "";
-      otherChildren = this.props.otherTreeState.treeShaToChildrenMap.get(otherDigestString) || [];
+      otherChildren = this.props.treeShaToChildrenMap.get(otherDigestString) || [];
     }
 
     if (children.length === 0 && otherChildren.length === 0) {
@@ -203,9 +193,11 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
           nodes={children}
           otherNodes={otherChildren}
           side={this.props.side}
-          treeState={this.props.treeState}
-          otherTreeState={this.props.otherTreeState}
-          handleFileClicked={this.props.handleFileClicked}
+          treeA={this.props.treeA}
+          treeB={this.props.treeB}
+          treeShaToExpanded={this.props.treeShaToExpanded}
+          treeShaToChildrenMap={this.props.treeShaToChildrenMap}
+          handleDirectoryClicked={this.props.handleDirectoryClicked}
           showChangesOnly={this.props.showChangesOnly}
           actionDetails={this.props.actionDetails}
           otherActionDetails={this.props.otherActionDetails}
@@ -239,27 +231,12 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
         return;
       }
 
-      if (node) {
-        const isDifferent = !nodesEqual(node, otherNode);
-        if (showChangesOnly && !isDifferent) {
-          // For directories, check if any nested content differs
-          if (node.type === "dir") {
-            const dirNode = node.obj as build.bazel.remote.execution.v2.DirectoryNode;
-            const digestString = dirNode.digest?.hash || "";
-            const children = this.props.treeState.treeShaToChildrenMap.get(digestString) || [];
-            const otherChildren = this.props.otherTreeState.treeShaToChildrenMap.get(digestString) || [];
-
-            // Check if any child differs
-            if (!hasChildDifferences(children, otherChildren)) {
-              return;
-            }
-          } else {
-            return;
-          }
-        }
-
-        elements.push(this.renderNode(node, otherNode));
+      const isDifferent = !nodesEqual(node, otherNode);
+      if (showChangesOnly && !isDifferent) {
+        return;
       }
+
+      elements.push(this.renderNode(node, otherNode));
     });
 
     return <>{elements}</>;

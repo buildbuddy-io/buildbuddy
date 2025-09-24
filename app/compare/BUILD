@@ -125,7 +125,6 @@ ts_library(
         "//:node_modules/react",
         "//app/compare:tree_utils",
         "//app/components/digest",
-        "//app/format",
         "//app/invocation:invocation_action_tree_node",
         "//app/invocation:invocation_model",
         "//proto:remote_execution_ts_proto",
