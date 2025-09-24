@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"os"
@@ -221,12 +222,16 @@ func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numE
 	for retrier.Next() {
 		res := h.DB(ctx).Create(value)
 		lastError = res.Error
-		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) || isTimeout(res.Error) {
+		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) || isTimeout(res.Error) || errors.Is(res.Error, driver.ErrBadConn) {
 			// Retry since it's an transient error.
 			log.CtxWarningf(ctx, "attempt (n=%d) to clickhouse table %q failed: %s", retrier.AttemptNumber(), tableName, res.Error)
 			continue
 		}
 		break
+	}
+	if ctx.Err() != nil && lastError == nil {
+		// We didn't even attempt to write because ctx expired.
+		lastError = ctx.Err()
 	}
 	statusLabel := "ok"
 	if lastError != nil {
