@@ -690,49 +690,15 @@ func (wc *streamWriteCloser) Close() error {
 	return nil
 }
 
-type bufferedStreamWriteCloser struct {
-	swc            *streamWriteCloser
-	bufferedWriter *bytebufferpool.BufioWriter
-	returnWriter   func()
-}
-
-func (bc *bufferedStreamWriteCloser) Write(data []byte) (int, error) {
-	return bc.bufferedWriter.Write(data)
-}
-
-func (bc *bufferedStreamWriteCloser) Commit() error {
-	if err := bc.bufferedWriter.Flush(); err != nil {
-		return err
-	}
-	return bc.swc.Commit()
-}
-
-func (bc *bufferedStreamWriteCloser) Close() error {
-	bc.returnWriter()
-	return bc.swc.Close()
-}
-
-func safeBufferSize(r *rspb.ResourceName) int64 {
-	size := int64(4096 * 4) // low / safe / default
+func safeBufferSize(r *rspb.ResourceName) int {
+	size := int(4096 * 4) // low / safe / default
 	if r.GetCacheType() == rspb.CacheType_CAS {
-		size = r.GetDigest().GetSizeBytes()
+		size = int(r.GetDigest().GetSizeBytes())
 	}
 	if size > readBufSizeBytes {
 		size = readBufSizeBytes
 	}
 	return size
-}
-
-func (c *Proxy) newBufferedStreamWriteCloser(swc *streamWriteCloser) *bufferedStreamWriteCloser {
-	bufWriter := c.writeBufPool.Get(safeBufferSize(swc.r))
-	bufWriter.Reset(swc)
-	return &bufferedStreamWriteCloser{
-		swc:            swc,
-		bufferedWriter: bufWriter,
-		returnWriter: func() {
-			c.writeBufPool.Put(bufWriter)
-		},
-	}
 }
 
 func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
@@ -761,7 +727,7 @@ func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 		stream:      stream,
 		r:           r,
 	}
-	return c.newBufferedStreamWriteCloser(wc), nil
+	return ioutil.NewDoubleBufferWriter(ctx, wc, c.readBufPool, safeBufferSize(r), readBufSizeBytes), nil
 }
 
 func (c *Proxy) SendHeartbeat(ctx context.Context, peer string) error {

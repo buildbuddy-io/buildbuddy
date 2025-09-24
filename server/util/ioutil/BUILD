@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/interfaces",
+        "//server/util/bytebufferpool",
         "//server/util/status",
     ],
 )
@@ -18,6 +19,7 @@ go_test(
     deps = [
         ":ioutil",
         "//server/testutil/testdigest",
+        "//server/util/bytebufferpool",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
     ],

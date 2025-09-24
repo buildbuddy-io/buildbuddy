@@ -327,7 +327,10 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		return nil, err
 	}
 	ws.checksum = NewChecksum(hasher, r.GetDigestFunction())
-	ws.writer = io.MultiWriter(ws.checksum, committedWriteCloser)
+	// Write to the cache first. This gives more time between the final cache
+	// write and the commit, reducing the amount of time that the commit has to
+	// wait to flush writes.
+	ws.writer = io.MultiWriter(committedWriteCloser, ws.checksum)
 
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		// The incoming data is compressed.
@@ -339,7 +342,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 			if err != nil {
 				return nil, err
 			}
-			ws.writer = io.MultiWriter(decompressingChecksum, committedWriteCloser)
+			ws.writer = io.MultiWriter(committedWriteCloser, decompressingChecksum)
 			ws.bufioCloser = decompressingChecksum
 		} else {
 			// If the cache doesn't support compression, wrap both the checksum and cache writer in a decompressor
@@ -358,7 +361,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		if err != nil {
 			return nil, err
 		}
-		ws.writer = io.MultiWriter(ws.checksum, compressor)
+		ws.writer = io.MultiWriter(compressor, ws.checksum)
 		ws.bufioCloser = compressor
 	}
 
