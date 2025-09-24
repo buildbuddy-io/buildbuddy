@@ -162,14 +162,15 @@ func (b *BestEffortWriter) Err() error {
 }
 
 // DoubleBufferWrite is a buffered writer inspired by graphics double buffering,
-// but with a few differences:
-//   - If the buffer is partially full and there isn't another pending write, it
-//     wiil eagerly send that buffer without waiting for it to fill up.
+// but with a few differences.
+//   - It buffers writes and flushes them in the background as soon as any
+//     previous write has completed, allowing both the reader and writer in a
+//     pipelined IO operation to make steady progress.
 //   - The buffer starts at one size but can grow up to a limit.
 //   - Technically, it can be using 3 buffers at a time: one for an inflight
-//     write, one full one that's waiting to be written out, and one that's being
-//     filled. It can also just be using one, if the outgoing writer is faster
-//     than the incoming writes.
+//     write, one full one that's waiting to be written out, and one that's
+//     being filled. It can also just be using one, if the outgoing writer is
+//     faster than the incoming writes.
 type DoubleBufferWriter struct {
 	ctx            context.Context
 	w              interfaces.CommittedWriteCloser
@@ -261,9 +262,13 @@ func (w *DoubleBufferWriter) Write(data []byte) (int, error) {
 		}
 		buffer = w.resizeBuffer(buffer, initialDataSize)
 
-		copied := copy(buffer[len(buffer):cap(buffer)], data)
+		// Append as much data as can fit from data into buffer.
+		prevBufLen := len(buffer)
+		// Copy into a reslice of buffer that has len == cap.
+		copied := copy(buffer[prevBufLen:cap(buffer)], data)
+		// Increase the len of buffer.
+		buffer = buffer[:prevBufLen+copied]
 		data = data[copied:]
-		buffer = buffer[:len(buffer)+copied]
 
 		select {
 		case <-w.ctx.Done():

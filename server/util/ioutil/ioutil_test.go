@@ -242,5 +242,11 @@ func TestDoubleBufferWriter_WriteAfterCancel(t *testing.T) {
 	require.NoError(t, err)
 	cancel()
 	_, err = dbw.Write([]byte{1, 2, 3, 4})
+	if err == nil {
+		// The first write might succeed since `select` can pick any case if
+		// multiple are ready. The next write will be blocked though so it
+		// should definitely fail.
+		_, err = dbw.Write([]byte{1, 2, 3, 4})
+	}
 	require.Equal(t, ctx.Err(), err)
 }
