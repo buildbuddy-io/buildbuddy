@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
@@ -334,12 +333,6 @@ func (c *Proxy) callHintedHandoffCB(ctx context.Context, peer string, r *rspb.Re
 	}
 }
 
-func writeStreamRecv(ctx context.Context, stream dcpb.DistributedCache_WriteServer) (*dcpb.WriteRequest, error) {
-	_, span := tracing.StartSpan(ctx)
-	defer span.End()
-	return stream.Recv()
-}
-
 func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
@@ -351,7 +344,7 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	var writeCloser interfaces.CommittedWriteCloser
 	handoffPeer := ""
 	for {
-		req, err := writeStreamRecv(ctx, stream)
+		req, err := stream.Recv()
 		if err == io.EOF {
 			break
 		}

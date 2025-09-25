@@ -296,9 +296,7 @@ type writeMover struct {
 }
 
 func (w *writeMover) Write(p []byte) (int, error) {
-	_, spn := tracing.StartSpan(w.ctx)
-	defer spn.End()
-	releaseQuota, err := reserveFileWriterQuota(context.Background())
+	releaseQuota, err := reserveFileWriterQuota(w.ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -307,7 +305,7 @@ func (w *writeMover) Write(p []byte) (int, error) {
 }
 
 func (w *writeMover) Commit() error {
-	releaseQuota, err := reserveFileWriterQuota(context.Background())
+	releaseQuota, err := reserveFileWriterQuota(w.ctx)
 	if err != nil {
 		return err
 	}
@@ -321,7 +319,7 @@ func (w *writeMover) Commit() error {
 }
 
 func (w *writeMover) Close() error {
-	releaseQuota, err := reserveFileWriterQuota(context.Background())
+	releaseQuota, err := reserveFileWriterQuota(w.ctx)
 	if err != nil {
 		return err
 	}
