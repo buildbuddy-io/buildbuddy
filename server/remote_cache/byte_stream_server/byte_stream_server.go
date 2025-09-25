@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"google.golang.org/grpc/peer"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -423,12 +422,6 @@ func (w *writeHandler) Close() error {
 	return w.cacheCloser.Close()
 }
 
-func writeStreamRecv(ctx context.Context, stream bspb.ByteStream_WriteServer) (*bspb.WriteRequest, error) {
-	_, span := tracing.StartSpan(ctx)
-	defer span.End()
-	return stream.Recv()
-}
-
 // `Write()` is used to send the contents of a resource as a sequence of
 // bytes. The bytes are sent in a sequence of request protos of a client-side
 // streaming FUNC (S *BYTESTREAMSERVER).
@@ -455,7 +448,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
 	var streamState *writeHandler
 	for {
-		req, err := writeStreamRecv(ctx, stream)
+		req, err := stream.Recv()
 		if err == io.EOF {
 			return nil
 		}
