@@ -1567,6 +1567,11 @@ func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, po
 }
 
 func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return err
+	}
+
 	ids, err := s.getInProgressExecutionIDsForInvocation(ctx, invocationID)
 	if err != nil {
 		return status.InternalErrorf("get in-progress execution IDs for invocation %q: %s", invocationID, err)
@@ -1574,6 +1579,22 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 	numCancelled := 0
 	for _, id := range ids {
 		ctx := log.EnrichContext(ctx, log.ExecutionIDKey, id)
+
+		rn, err := digest.ParseUploadResourceName(id)
+		if err == nil {
+			merged, err := action_merger.CheckMerged(ctx, s.env.GetRemoteExecutionRedisClient(), rn)
+			if err != nil {
+				log.CtxWarningf(ctx, "Error checking merge status of %q: %s", id, err)
+			}
+			// Don't cancel execution if it has been merged against.
+			if merged {
+				log.CtxInfof(ctx, "Skip cancellation for %q as it has been merged against.", id)
+				continue
+			}
+		} else {
+			log.CtxWarningf(ctx, "could not parse execution ID %q: %s", id, err)
+		}
+
 		log.CtxInfof(ctx, "Cancelling execution %q due to user request for invocation %q", id, invocationID)
 		cancelled, err := s.env.GetSchedulerService().CancelTask(ctx, id)
 		if cancelled {
