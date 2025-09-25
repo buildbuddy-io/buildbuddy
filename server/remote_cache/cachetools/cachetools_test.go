@@ -948,7 +948,8 @@ func TestUploadWriter_BlobExists(t *testing.T) {
 				uw, err := cachetools.NewUploadWriter(ctx, te.GetByteStreamClient(), casRN)
 				require.NoError(t, err)
 
-				// This will return an error iff it flushed.
+				// This will return an error iff it flushed and the server
+				// closed the stream before the last client send started.
 				n, err := uw.Write(buf)
 				if err != nil {
 					require.Equalf(t, gstatus.Code(err).String(), codes.AlreadyExists.String(), "Error wasn't AlreadyExists: %v", err)
@@ -958,7 +959,6 @@ func TestUploadWriter_BlobExists(t *testing.T) {
 
 				err = uw.Commit()
 				require.NoError(t, err)
-				// require.Equalf(t, gstatus.Code(err).String(), codes.AlreadyExists.String(), "Error wasn't AlreadyExists: %v", err)
 				if useZstd {
 					require.Equal(t, int64(-1), uw.GetCommittedSize())
 				} else {

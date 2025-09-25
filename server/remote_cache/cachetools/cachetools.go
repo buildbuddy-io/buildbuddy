@@ -1275,11 +1275,11 @@ func (uw *UploadWriter) Commit() error {
 		if status.IsAlreadyExistsError(err) {
 			// If we know the resource already exists, flush already called
 			// CloseAndRecv and populated uw.committedSize. Don't return an
-			// error because from the clients point of view. Also, sends
-			// are not guaranteed to return an EOF, so it's possible the server
-			// didn't let us know that the object exists. For consistency,
-			// it's better to always return nil instead of sometimes returning
-			// AlreadyExists here.
+			// error because from the clients point of view, the write
+			// succeeded. Also, sends are not guaranteed to return an EOF, so
+			// it's possible the server didn't let us know that the object
+			// exists. For consistency, it's better to always return nil instead
+			// of sometimes returning AlreadyExists here.
 			return nil
 		}
 		return err
