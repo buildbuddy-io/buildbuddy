@@ -69,15 +69,29 @@ func (lw *limitWriter) Write(p []byte) (int, error) {
 		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", lw.n+uint64(len(p)), lw.limit)
 	}
 	totalRequested := lw.n + uint64(len(p))
-	if totalRequested > *StdOutErrMaxSize {
-		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, *StdOutErrMaxSize)
+	if totalRequested <= lw.limit {
+		n, err := lw.w.Write(p)
+		lw.n += uint64(n)
+		if err != nil {
+			return n, err
+		}
+		return n, nil
 	}
-	n, err := lw.w.Write(p)
+	remaining := lw.limit - lw.n
+	if remaining == 0 {
+		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
+	}
+	toWrite := p[:remaining]
+	n, err := lw.w.Write(toWrite)
 	lw.n += uint64(n)
 	if err != nil {
 		return n, err
 	}
-	return n, nil
+	if uint64(n) < remaining {
+		// Underlying writer wrote fewer bytes; limit not yet hit.
+		return n, nil
+	}
+	return n, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
 }
 
 // LimitReader returns a reader that fails with RESOURCE_EXHAUSTED once
