@@ -39,7 +39,7 @@ const (
 
 var (
 	poolSize                       = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
-	enableGoogleDefaultCredentials = flag.Bool("grpc_client.enable_google_default_credentials", true, "Whether to enable Google default credentials for all outgoing RPCs.", flag.Internal)
+	enableGoogleDefaultCredentials = flag.Bool("grpc_client.enable_google_default_credentials", false, "Whether to enable Google default credentials for all outgoing RPCs.", flag.Internal)
 )
 
 type clientConn struct {
