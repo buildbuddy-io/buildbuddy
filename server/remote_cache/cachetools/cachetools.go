@@ -39,8 +39,7 @@ import (
 )
 
 const (
-	uploadBufSizeBytes    = 1000000 // 1MB
-	maxCompressionBufSize = int64(4000000)
+	uploadBufSizeBytes = 128 * 1024 // 128KiB
 	// Matches https://github.com/bazelbuild/bazel/blob/9c22032c8dc0eb2ec20d8b5a5c73d1f5f075ae37/src/main/java/com/google/devtools/build/lib/remote/options/RemoteOptions.java#L461-L464
 	minSizeBytesToCompress = 100
 )
