@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -134,6 +135,21 @@ func TestLimitReader_AllowsExactLimit(t *testing.T) {
 	assert.Equal(t, "lo", string(buf[:n]))
 
 	// Subsequent read should fail with ResourceExhausted since the limit is reached.
+	n, err = r.Read(buf)
+	assert.Equal(t, 0, n)
+	assert.ErrorIs(t, err, io.EOF)
+}
+
+func TestLimitReader_ErrorsWhenOverLimit(t *testing.T) {
+	r := commandutil.LimitReader(bytes.NewBufferString("hello world"), 5)
+	buf := make([]byte, 8)
+
+	// First read returns up to the limit without error.
+	n, err := r.Read(buf)
+	require.NoError(t, err)
+	assert.Equal(t, 5, n)
+
+	// Next read detects additional data and surfaces a limit error.
 	n, err = r.Read(buf)
 	assert.Equal(t, 0, n)
 	assert.Error(t, err)

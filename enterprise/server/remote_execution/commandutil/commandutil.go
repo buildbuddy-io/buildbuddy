@@ -109,6 +109,9 @@ type limitReader struct {
 	r   io.Reader
 	max uint64
 	n   uint64
+	// scratch holds a single byte buffer used to detect over-limit reads without
+	// allocating.
+	scratch [1]byte
 }
 
 func (lr *limitReader) Read(p []byte) (int, error) {
@@ -116,7 +119,14 @@ func (lr *limitReader) Read(p []byte) (int, error) {
 		return lr.r.Read(p)
 	}
 	if lr.n >= lr.max {
-		return 0, status.ResourceExhaustedErrorf("output size limit exceeded: %d bytes", lr.max)
+		n, err := lr.r.Read(lr.scratch[:])
+		if n > 0 {
+			return 0, status.ResourceExhaustedErrorf("output size limit exceeded: %d bytes", lr.max)
+		}
+		if err == io.EOF {
+			return 0, io.EOF
+		}
+		return 0, err
 	}
 	// Do not allow underlying reader to consume more than remaining bytes.
 	remain := lr.max - lr.n
@@ -126,6 +136,9 @@ func (lr *limitReader) Read(p []byte) (int, error) {
 	n, err := lr.r.Read(p)
 	lr.n += uint64(n)
 	if err != nil {
+		if err == io.EOF && lr.n <= lr.max {
+			return n, io.EOF
+		}
 		return n, err
 	}
 	if lr.n > lr.max {
