@@ -58,9 +58,7 @@ type Worker struct {
 	stderr      *lockingbuffer.LockingBuffer
 
 	stdoutReader *bufio.Reader
-	jsonDecoder  *json.Decoder
-
-	stop func() error
+	stop         func() error
 }
 
 // Start spawns a persistent worker inside the given container using
