@@ -688,3 +688,14 @@ http_archive(
     sha256 = "a203b9f098297b8e5b38e8e746d3f9e55ce2687a76a18599ae0b3fbf8359a7eb",
     url = "https://github.com/keith/rules_multirun/releases/download/0.13.0/rules_multirun.0.13.0.tar.gz",
 )
+
+http_archive(
+    name = "container_structure_test",
+    sha256 = "b56a53fb7734f93216b60f8cdd3b98fbbd767e9f412c061d4fa4798e579c4971",
+    strip_prefix = "container-structure-test-1.19.1",
+    urls = ["https://github.com/GoogleContainerTools/container-structure-test/archive/v1.19.1.tar.gz"],
+)
+
+load("@container_structure_test//:repositories.bzl", "container_structure_test_register_toolchain")
+
+container_structure_test_register_toolchain(name = "structure_test")

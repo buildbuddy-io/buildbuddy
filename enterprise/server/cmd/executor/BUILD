@@ -1,3 +1,4 @@
+load("@container_structure_test//:defs.bzl", "container_structure_test")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
@@ -273,6 +274,14 @@ container_image(
         "/app/enterprise/server/cmd/executor/executor",
     ],
     tags = ["manual"],
+)
+
+container_structure_test(
+    name = "base_image_structure_test",
+    configs = ["base_image_structure_test.yaml"],
+    driver = "tar",
+    image = ":base_image.tar",
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
 # This image is the docker image used by the executor to run actions that do not

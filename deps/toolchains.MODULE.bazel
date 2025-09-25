@@ -52,3 +52,20 @@ toolchains_musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolc
 toolchains_musl.config(
     extra_target_compatible_with = ["//toolchains:musl_on"],
 )
+
+container_structure_test_ext = use_extension(
+    "@container_structure_test//:repositories.bzl",
+    "extension",
+)
+use_repo(
+    container_structure_test_ext,
+    "structure_test_st_darwin_amd64",
+    "structure_test_st_darwin_arm64",
+    "structure_test_st_linux_amd64",
+    "structure_test_st_linux_arm64",
+    "structure_test_st_linux_s390x",
+    "structure_test_st_windows_amd64",
+    "structure_test_toolchains",
+)
+
+register_toolchains("@structure_test_toolchains//:all")

@@ -1,0 +1,35 @@
+schemaVersion: "2.0.0"
+fileExistenceTests:
+  - name: tini present
+    path: /tini
+    shouldExist: true
+  - name: docker credential helper present
+    path: /usr/bin/docker-credential-gcr
+    shouldExist: true
+  - name: containerd present
+    path: /usr/bin/containerd
+    shouldExist: true
+  - name: containerd shim present
+    path: /usr/bin/containerd-shim-runc-v2
+    shouldExist: true
+  - name: ctr present
+    path: /usr/bin/ctr
+    shouldExist: true
+  - name: firecracker present
+    path: /usr/bin/firecracker
+    shouldExist: true
+  - name: jailer present
+    path: /usr/bin/jailer
+    shouldExist: true
+  - name: crun present
+    path: /usr/bin/crun
+    shouldExist: true
+  - name: podman present
+    path: /usr/local/bin/podman
+    shouldExist: true
+  - name: rootlesskit present
+    path: /usr/bin/rootlesskit
+    shouldExist: true
+  - name: mke2fs present
+    path: /sbin/mke2fs
+    shouldExist: true
