@@ -57,7 +57,7 @@ func (r *RoutingCASClient) FindMissingBlobs(ctx context.Context, req *repb.FindM
 		return rsp, nil
 	}
 
-	if rand.Float32() < c.GetBackgroundCopyFraction() {
+	if rand.Float64() < c.GetBackgroundCopyFraction() {
 		foundDigestsMap := map[string]*repb.Digest{}
 		for _, d := range req.BlobDigests {
 			foundDigestsMap[d.GetHash()] = d
@@ -71,7 +71,7 @@ func (r *RoutingCASClient) FindMissingBlobs(ctx context.Context, req *repb.FindM
 		}
 		r.copyOp.Enqueue(ctx, req.GetInstanceName(), digestsToSync, req.GetDigestFunction())
 	}
-	return primaryClient.FindMissingBlobs(ctx, req, opts...)
+	return rsp, nil
 }
 
 func (r *RoutingCASClient) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest, opts ...grpc.CallOption) (*repb.BatchUpdateBlobsResponse, error) {
@@ -90,7 +90,7 @@ func (r *RoutingCASClient) BatchUpdateBlobs(ctx context.Context, req *repb.Batch
 		return rsp, nil
 	}
 
-	if rand.Float32() < c.GetBackgroundCopyFraction() {
+	if rand.Float64() < c.GetBackgroundCopyFraction() {
 		digestsToSync := make([]*repb.Digest, 0, len(req.GetRequests()))
 		for _, d := range req.GetRequests() {
 			digestsToSync = append(digestsToSync, d.GetDigest())
@@ -116,7 +116,7 @@ func (r *RoutingCASClient) BatchReadBlobs(ctx context.Context, req *repb.BatchRe
 		log.CtxWarningf(ctx, "Failed to fetch routing config: %s", err)
 		return rsp, nil
 	}
-	singleRandValue := rand.Float32()
+	singleRandValue := rand.Float64()
 	if singleRandValue < c.GetBackgroundReadVerifyFraction() {
 		r.readOp.Enqueue(ctx, req.GetInstanceName(), req.GetDigests(), req.GetDigestFunction())
 	} else if (singleRandValue) < c.GetBackgroundCopyFraction() {
@@ -141,7 +141,7 @@ func (r *RoutingCASClient) GetTree(ctx context.Context, req *repb.GetTreeRequest
 		log.CtxWarningf(ctx, "Failed to fetch routing config: %s", err)
 		return rsp, nil
 	}
-	if rand.Float32() < c.GetBackgroundCopyFraction() {
+	if rand.Float64() < c.GetBackgroundCopyFraction() {
 		r.treeOp.Enqueue(ctx, req.GetInstanceName(), []*repb.Digest{req.GetRootDigest()}, req.GetDigestFunction())
 	}
 	return rsp, nil

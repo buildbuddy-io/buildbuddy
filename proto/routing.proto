@@ -14,12 +14,12 @@ message CacheRoutingConfig {
 
   // The fraction of operations to send to the secondary cache as background
   // requests.
-  float background_copy_fraction = 3;
+  double background_copy_fraction = 3;
   // The fraction of write requests to send synchronously to the secondary
   // cache.  Write failures to the secondary cache are logged but not returned
   // to the caller.
-  float dual_write_fraction = 4;
+  double dual_write_fraction = 4;
   // The fraction of read operations for which we will verify the integrity
   // of reads from the secondary cache.
-  float background_read_verify_fraction = 5;
+  double background_read_verify_fraction = 5;
 }

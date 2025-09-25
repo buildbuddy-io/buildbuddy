@@ -13,6 +13,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
+        "//server/util/authutil",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",

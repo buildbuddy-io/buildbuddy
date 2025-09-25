@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/batch_operator",
+        "//enterprise/server/routing/operators",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
