@@ -89,7 +89,7 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 		err := tc.PrepareStatement(ctx, txnID, statement)
 		if err != nil {
 			prepareError = err
-			log.Errorf("failed to prepare txn for %d: %s", statement.GetRange().GetRangeId(), err)
+			log.Errorf("failed to prepare txn %q for %d: %s", txnID, statement.GetRange().GetRangeId(), err)
 		}
 	}
 
@@ -113,7 +113,7 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 				// if there is error during preparation for this range, then txn not found is expected during rollback.
 				continue
 			}
-			return status.InternalErrorf("failed to finalize statement in txn(%q)for range_id:%d, operation: %s, %s", txnID, stmt.GetRange().GetRangeId(), operation, err)
+			return status.InternalErrorf("failed to finalize statement in txn(%q) for range_id:%d, operation: %s, %s", txnID, stmt.GetRange().GetRangeId(), operation, err)
 		}
 	}
 
@@ -233,7 +233,7 @@ func (tc *Coordinator) finalizeTxn(ctx context.Context, txnID []byte, op rfpb.Fi
 	}
 	err = tc.run(ctx, stmt, batchProto)
 	if err != nil {
-		return status.WrapErrorf(err, "unable to finalize txn on stmt")
+		return status.WrapErrorf(err, "unable to finalize txn on stmt op=%s", op)
 	}
 	return nil
 }
@@ -262,7 +262,7 @@ func (tc *Coordinator) processTxnRecords(ctx context.Context) {
 	for _, txnRecord := range txnRecords {
 		txnID := txnRecord.GetTxnRequest().GetTransactionId()
 		if err := tc.ProcessTxnRecord(ctx, txnRecord); err != nil {
-			log.Warningf("Failed to processTxnRecords: %s, statements: %+v", err, txnRecord.GetTxnRequest().GetStatements())
+			log.Warningf("Failed to processTxnRecord for txn (%q): %s, statements: %+v", txnID, err, txnRecord.GetTxnRequest().GetStatements())
 			errCount++
 		} else {
 			log.Debugf("Successfully processed txn record %q", txnID)
@@ -349,7 +349,7 @@ func (tc *Coordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.Txn
 			err := tc.finalizeTxn(ctx, txnID, txnRecord.GetOp(), stmt)
 			if err != nil && !isTxnNotFoundError(err) {
 				// if the statement is already finalized, we will get NotFound Error when we finalize and this is fine.
-				return status.WrapErrorf(err, "failed to finalize prepared statement on range %d", stmt.GetRange().GetRangeId())
+				return status.WrapErrorf(err, "failed to finalize prepared statement on range %d, operation=%s", stmt.GetRange().GetRangeId(), txnRecord.GetOp())
 			}
 		}
 	}
