@@ -1,4 +1,4 @@
-import { HelpCircle, ShieldCheck, UserCircle } from "lucide-react";
+import { HelpCircle, ShieldCheck, UserCircle, Users } from "lucide-react";
 import React from "react";
 import { accountName, User } from "../../../app/auth/user";
 import Banner from "../../../app/components/banner/banner";
@@ -8,6 +8,7 @@ import { GithubIcon } from "../../../app/icons/github";
 import { GoogleIcon } from "../../../app/icons/google";
 import { grp } from "../../../proto/group_ts_proto";
 import { user_id } from "../../../proto/user_id_ts_proto";
+import { user_list } from "../../../proto/user_list_ts_proto";
 
 export function iconFromAccountType(accountType: user_id.AccountType | undefined) {
   switch (accountType) {
@@ -39,21 +40,53 @@ export function getRoleLabel(role: grp.Group.Role): string {
   }
 }
 
-export class UserListUser {
-  user: user_id.DisplayUser;
+export class MemberListMember {
+  // One of user or userList will be set.
+  user?: user_id.DisplayUser;
+  userList?: user_list.UserList;
   role?: grp.Group.Role;
 
-  constructor(user: user_id.DisplayUser, role?: grp.Group.Role) {
+  constructor(user?: user_id.DisplayUser, userList?: user_list.UserList, role?: grp.Group.Role) {
     this.user = user;
+    this.userList = userList;
     this.role = role;
+  }
+
+  id() {
+    if (this.user) {
+      return this.user.userId?.id || "";
+    } else if (this.userList) {
+      return this.userList.userListId || "";
+    }
+    return "";
+  }
+
+  displayName() {
+    if (this.user) {
+      return accountName(this.user);
+    } else if (this.userList) {
+      return this.userList.name;
+    } else {
+      return "unknown member type";
+    }
+  }
+
+  icon() {
+    if (this.user) {
+      return iconFromAccountType(this.user.accountType);
+    } else if (this.userList) {
+      return <Users />;
+    } else {
+      return <HelpCircle />;
+    }
   }
 }
 
-export type OrgUserListProps = {
+export type MemberListProps = {
   user: User;
-  users: UserListUser[];
+  members: MemberListMember[];
   buttons?: React.ReactNode[];
-  onButtonClick?: (buttonIndex: number, selectedUserIds: Set<string>) => void;
+  onButtonClick?: (buttonIndex: number, selectedMembers: Map<string, MemberListMember>) => void;
   showRole: boolean;
   readOnly?: boolean;
   maxRows?: number;
@@ -61,30 +94,31 @@ export type OrgUserListProps = {
 
 type State = {
   isSelectingAll?: boolean;
-  selectedUserIds: Set<string>;
+  selectedMembers: Map<string, MemberListMember>;
 
   showAll: boolean;
 };
 
-export default class UserListComponent extends React.Component<OrgUserListProps, State> {
+export default class MemberListComponent extends React.Component<MemberListProps, State> {
   state: State = {
-    selectedUserIds: new Set<string>(),
+    selectedMembers: new Map<string, MemberListMember>(),
     showAll: false,
   };
 
-  private onClickRow(userID: string) {
+  private onClickRow(member: MemberListMember) {
     if (this.props.readOnly) {
       return;
     }
-    const clone = new Set(this.state.selectedUserIds);
-    if (clone.has(userID)) {
-      clone.delete(userID);
+    const id = member.id();
+    const clone = new Map(this.state.selectedMembers);
+    if (clone.has(id)) {
+      clone.delete(id);
     } else {
-      clone.add(userID);
+      clone.set(id, member);
     }
     this.setState({
-      isSelectingAll: (this.state.isSelectingAll && clone.size > 0) || clone.size === this.props.users?.length,
-      selectedUserIds: clone,
+      isSelectingAll: (this.state.isSelectingAll && clone.size > 0) || clone.size === this.props.members?.length,
+      selectedMembers: clone,
     });
   }
 
@@ -92,12 +126,12 @@ export default class UserListComponent extends React.Component<OrgUserListProps,
     if (this.state.isSelectingAll) {
       this.setState({
         isSelectingAll: false,
-        selectedUserIds: new Set(),
+        selectedMembers: new Map(),
       });
     } else {
       this.setState({
         isSelectingAll: true,
-        selectedUserIds: new Set((this.props.users || []).map((member) => member.user?.userId?.id || "")),
+        selectedMembers: new Map((this.props.members || []).map((member) => [member.id(), member])),
       });
     }
   }
@@ -110,14 +144,20 @@ export default class UserListComponent extends React.Component<OrgUserListProps,
     return member?.user?.userId?.id === this.props.user.displayUser?.userId?.id;
   }
 
-  private getSelectedMembers(): grp.GetGroupUsersResponse.IGroupUser[] {
-    return (this.props.users || []).filter((member) => this.state.selectedUserIds.has(member.user?.userId?.id || ""));
+  private onButtonClick(buttonIdx: number) {
+    // selectedMembers is stored in the order that the user selected the items.
+    // We refilter the original members list here so that we can return
+    // the selected items in the same order that they appear in the list.
+    this.props.onButtonClick?.(
+      buttonIdx,
+      new Map(this.props.members.filter((m) => this.state.selectedMembers.has(m.id())).map((u) => [u.id(), u]))
+    );
   }
 
   render() {
-    const isSelectionEmpty = this.state.selectedUserIds.size === 0;
+    const isSelectionEmpty = this.state.selectedMembers.size === 0;
 
-    let users = this.props.users;
+    let users = this.props.members;
     let numOverflow = 0;
     if (this.props.maxRows && users.length > this.props.maxRows && !this.state.showAll) {
       numOverflow = users.length - this.props.maxRows;
@@ -145,7 +185,7 @@ export default class UserListComponent extends React.Component<OrgUserListProps,
                   Select all
                 </CheckboxButton>
                 {(this.props.buttons || []).map((button, index) => (
-                  <div key={index} onClick={() => this.props.onButtonClick?.(index, this.state.selectedUserIds)}>
+                  <div key={index} onClick={this.onButtonClick.bind(this, index)}>
                     {React.isValidElement(button)
                       ? React.cloneElement(button, { disabled: isSelectionEmpty } as any)
                       : button}
@@ -159,24 +199,26 @@ export default class UserListComponent extends React.Component<OrgUserListProps,
           {users.map((member) => (
             <div
               className={`org-members-list-item ${
-                this.state.selectedUserIds.has(member?.user?.userId?.id || "") ? "selected" : ""
+                this.state.selectedMembers.has(member.id()) ? "selected" : ""
               } ${!this.props.readOnly ? "editable" : ""}`}
-              onClick={() => this.onClickRow(member?.user?.userId?.id || "")}>
+              onClick={() => this.onClickRow(member)}>
               {!this.props.readOnly && (
                 <div>
                   <Checkbox
-                    title={`Select ${accountName(member.user)}`}
+                    title={`Select ${member.displayName()}`}
                     className="org-member-checkbox"
-                    checked={this.state.selectedUserIds.has(member?.user?.userId?.id || "")}
+                    checked={this.state.selectedMembers.has(member.id())}
                   />
                 </div>
               )}
               <div className="org-member-name">
-                {accountName(member.user)} {iconFromAccountType(member.user?.accountType)}
+                {member.displayName()} {member.icon()}
               </div>
               {this.props.showRole && (
                 <div className="org-member-role">
-                  {getRoleLabel(member?.role || 0)} {this.isLoggedInUser(member) && <>(You)</>}
+                  {member.role === undefined && <div className="org-member-role-unassigned">unassigned</div>}
+                  {member.role !== undefined && getRoleLabel(member.role || 0)}{" "}
+                  {this.isLoggedInUser(member) && <>(You)</>}
                 </div>
               )}
             </div>

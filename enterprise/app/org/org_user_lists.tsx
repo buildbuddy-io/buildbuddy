@@ -17,8 +17,8 @@ import errorService from "../../../app/errors/error_service";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { user_list } from "../../../proto/user_list_ts_proto";
+import MemberListComponent, { MemberListMember } from "./member_list";
 import OrgUserListComponent from "./org_user_list";
-import UserListComponent, { UserListUser } from "./user_list";
 
 type ChildProps = {
   user: User;
@@ -173,9 +173,9 @@ class OrgUserListsChildComponent extends React.Component<ChildProps, ChildState>
                 <div className="org-user-list-name">{userList.name}</div>
                 <div className="org-user-list-members">
                   {userList.user.length > 0 && (
-                    <UserListComponent
+                    <MemberListComponent
                       user={this.props.user}
-                      users={userList.user.map((u) => new UserListUser(u))}
+                      members={userList.user.map((u) => new MemberListMember(u))}
                       showRole={false}
                       readOnly={true}
                       maxRows={10}
