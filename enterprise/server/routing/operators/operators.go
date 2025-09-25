@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -25,17 +26,17 @@ var (
 	migrationFMDigestsPerBatch  = flag.Int("cache_proxy.migration.findmissing_digests_per_batch", 10_000, "The number of digests to flush out to the AC migration operator in a single batch, per (group ID, instance name) tuple.")
 	migrationFMBatchesPerGroup  = flag.Int("cache_proxy.migration.findmissing_batches_per_group", 50, "The number of batches to hold for the AC migration operator, per (group ID, instance name) tuple.")
 	migrationFMDigestsPerGroup  = flag.Int("cache_proxy.migration.findmissing_digests_per_group", 200_000, "The number of digests that we're willing to hold in batches per Group ID (across all instance names).")
-	migrationFMBatchInterval    = flag.Duration("cache_proxy.migration.cas_batch_interval", 10*time.Second, "The time interval to wait between flushing AC batches, one batch (group ID, instance name) tuple per flush.")
+	migrationFMBatchInterval    = flag.Duration("cache_proxy.migration.findmissing_batch_interval", 100*time.Millisecond, "The time interval to wait between flushing AC batches, one batch (group ID, instance name) tuple per flush.")
 	migrationCASQueueSize       = flag.Int("cache_proxy.migration.cas_queue_size", 1_000_000, "The length of the holding queue from which we create AC migration batches (shared across all group IDs).")
 	migrationCASDigestsPerBatch = flag.Int("cache_proxy.migration.cas_digests_per_batch", 1_000, "The number of digests to flush out to the AC migration operator in a single batch, per (group ID, instance name) tuple.")
 	migrationCASBatchesPerGroup = flag.Int("cache_proxy.migration.cas_batches_per_group", 500, "The number of batches to hold for the AC migration operator, per (group ID, instance name) tuple.")
 	migrationCASDigestsPerGroup = flag.Int("cache_proxy.migration.cas_digests_per_group", 500_000, "The number of digests that we're willing to hold in batches per Group ID (across all instance names).")
-	migrationCASBatchInterval   = flag.Duration("cache_proxy.migration.cas_batch_interval", 10*time.Second, "The time interval to wait between flushing AC batches, one batch (group ID, instance name) tuple per flush.")
+	migrationCASBatchInterval   = flag.Duration("cache_proxy.migration.cas_batch_interval", 100*time.Millisecond, "The time interval to wait between flushing AC batches, one batch (group ID, instance name) tuple per flush.")
 	migrationBSQueueSize        = flag.Int("cache_proxy.migration.bs_queue_size", 1_000_000, "The length of the holding queue from which we create AC migration batches (shared across all group IDs).")
 	migrationBSDigestsPerBatch  = flag.Int("cache_proxy.migration.bs_digests_per_batch", 100, "The number of digests to flush out to the AC migration operator in a single batch, per (group ID, instance name) tuple.")
 	migrationBSBatchesPerGroup  = flag.Int("cache_proxy.migration.bs_batches_per_group", 10_000, "The number of batches to hold for the AC migration operator, per (group ID, instance name) tuple.")
 	migrationBSDigestsPerGroup  = flag.Int("cache_proxy.migration.bs_digests_per_group", 30_000, "The number of digests that we're willing to hold in batches per Group ID (across all instance names).")
-	migrationBSBatchInterval    = flag.Duration("cache_proxy.migration.bs_batch_interval", 10*time.Millisecond, "The time interval to wait between flushing bytestream batches, one batch (group ID, instance name) tuple per flush.")
+	migrationBSBatchInterval    = flag.Duration("cache_proxy.migration.bs_batch_interval", 100*time.Millisecond, "The time interval to wait between flushing bytestream batches, one batch (group ID, instance name) tuple per flush.")
 )
 
 // Creates a composite operator that copies digests from one cache to another.
@@ -93,12 +94,23 @@ func byteStreamCopy(ctx context.Context, router interfaces.CacheRoutingService, 
 			return err
 		}
 		offset := int64(0)
+		log.Printf("bscopy starting to copy")
 		for {
 			res, err := readStream.Recv()
 			if err == io.EOF {
+				log.Printf("got an eof")
+				if res != nil && len(res.Data) > 0 {
+					log.Printf("that was it, i think")
+					writeClient.Send(&bspb.WriteRequest{
+						Data:        res.Data,
+						WriteOffset: offset,
+					})
+					offset += int64(len(res.Data))
+				}
 				break
 			}
 			if err != nil {
+				log.Printf("got a read stream err : %s", err)
 				return err
 			}
 			err = writeClient.Send(&bspb.WriteRequest{
@@ -106,23 +118,31 @@ func byteStreamCopy(ctx context.Context, router interfaces.CacheRoutingService, 
 				WriteOffset: offset,
 			})
 			if err != nil {
+				log.Printf("got a write stream err : %s", err)
 				return err
 			}
 			offset += int64(len(res.Data))
 		}
+		log.Printf("bscopy about to finishwrite")
 		writeClient.Send(&bspb.WriteRequest{
 			FinishWrite: true,
 			WriteOffset: offset,
 		})
+		log.Printf("bscopy closing")
 		if _, writeErr := writeClient.CloseAndRecv(); writeErr != nil {
+			log.Printf("bscopy closed with err")
 			return writeErr
 		}
+		log.Printf("bscopy closed cleanly")
 	}
 	return nil
 }
 
 func NewByteStreamCopyOperator(env environment.Env, router interfaces.CacheRoutingService) (batch_operator.BatchDigestOperator, error) {
-	return batch_operator.New(
+	return NewDirectFlushOperator(func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
+		return byteStreamCopy(ctx, router, groupID, b)
+	}, env.GetAuthenticator()), nil
+	/*return batch_operator.New(
 		env,
 		"byte_stream_copy",
 		func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
@@ -135,7 +155,7 @@ func NewByteStreamCopyOperator(env environment.Env, router interfaces.CacheRouti
 			MaxDigestsPerBatch: *migrationBSDigestsPerBatch,
 			MaxBatchesPerGroup: *migrationBSBatchesPerGroup,
 		},
-	)
+	)*/
 }
 
 func casBatchCopy(ctx context.Context, router interfaces.CacheRoutingService, groupID string, b *batch_operator.DigestBatch) error {
@@ -185,7 +205,10 @@ func casBatchCopy(ctx context.Context, router interfaces.CacheRoutingService, gr
 }
 
 func NewCASBatchCopyOperator(env environment.Env, router interfaces.CacheRoutingService) (batch_operator.BatchDigestOperator, error) {
-	return batch_operator.New(
+	return NewDirectFlushOperator(func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
+		return casBatchCopy(ctx, router, groupID, b)
+	}, env.GetAuthenticator()), nil
+	/*return batch_operator.New(
 		env,
 		"cas_batch_copy",
 		func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
@@ -198,7 +221,7 @@ func NewCASBatchCopyOperator(env environment.Env, router interfaces.CacheRouting
 			MaxDigestsPerBatch: *migrationCASDigestsPerBatch,
 			MaxBatchesPerGroup: *migrationCASBatchesPerGroup,
 		},
-	)
+	)*/
 }
 
 func findMissingCheckAndDirect(ctx context.Context, router interfaces.CacheRoutingService, casOperator batch_operator.BatchDigestOperator, bsOperator batch_operator.BatchDigestOperator, groupID string, b *batch_operator.DigestBatch) error {
@@ -217,10 +240,12 @@ func findMissingCheckAndDirect(ctx context.Context, router interfaces.CacheRouti
 	}
 
 	smallStuff := []*repb.Digest{}
-	bigStuff := []*repb.Digest{}
+	//bigStuff := []*repb.Digest{}
 	for _, d := range res.GetMissingBlobDigests() {
 		if d.GetSizeBytes() >= maxSizeForBatching {
-			bigStuff = append(bigStuff, d)
+			//bigStuff = append(bigStuff, d)
+			log.Printf("jdhollen: directing %d digests to bs copy", 1)
+			bsOperator.Enqueue(ctx, b.InstanceName, []*repb.Digest{d}, b.DigestFunction)
 		} else {
 			smallStuff = append(smallStuff, d)
 		}
@@ -235,18 +260,21 @@ func findMissingCheckAndDirect(ctx context.Context, router interfaces.CacheRouti
 		}
 
 	}
-	if len(bigStuff) > 0 {
+	/*if len(bigStuff) > 0 {
 		success := bsOperator.Enqueue(ctx, b.InstanceName, bigStuff, b.DigestFunction)
 		if !success {
 			log.CtxWarningf(ctx, "Failed to enqueue bytestream sync operations for group %s", groupID)
 			enqueueErr = status.ResourceExhaustedErrorf("Failed to enqueue bytestream sync")
 		}
-	}
+	}*/
 	return enqueueErr
 }
 
 func NewFindMissingAndCopyOperator(env environment.Env, router interfaces.CacheRoutingService, casOperator batch_operator.BatchDigestOperator, bsOperator batch_operator.BatchDigestOperator) (batch_operator.BatchDigestOperator, error) {
-	return batch_operator.New(
+	return NewDirectFlushOperator(func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
+		return findMissingCheckAndDirect(ctx, router, casOperator, bsOperator, groupID, b)
+	}, env.GetAuthenticator()), nil
+	/*return batch_operator.New(
 		env,
 		"find_missing_and_copy",
 		func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
@@ -259,7 +287,7 @@ func NewFindMissingAndCopyOperator(env environment.Env, router interfaces.CacheR
 			MaxDigestsPerBatch: *migrationFMDigestsPerBatch,
 			MaxBatchesPerGroup: *migrationFMBatchesPerGroup,
 		},
-	)
+	)*/
 }
 
 func findMissing(ctx context.Context, router interfaces.CacheRoutingService, groupID string, b *batch_operator.DigestBatch) error {
@@ -281,7 +309,10 @@ func NewFindMissingOperator(env environment.Env) (batch_operator.BatchDigestOper
 	if router == nil {
 		return nil, status.FailedPreconditionError("No routing service registered!")
 	}
-	return batch_operator.New(
+	return NewDirectFlushOperator(func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
+		return findMissing(ctx, router, groupID, b)
+	}, env.GetAuthenticator()), nil
+	/*return batch_operator.New(
 		env,
 		"find_missing",
 		func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
@@ -294,7 +325,7 @@ func NewFindMissingOperator(env environment.Env) (batch_operator.BatchDigestOper
 			MaxDigestsPerBatch: *migrationFMDigestsPerBatch,
 			MaxBatchesPerGroup: *migrationFMBatchesPerGroup,
 		},
-	)
+	)*/
 }
 
 func readAndVerifyCASBatch(ctx context.Context, router interfaces.CacheRoutingService, groupID string, b *batch_operator.DigestBatch) error {
@@ -391,10 +422,11 @@ type ReadOperator struct {
 // Enqueue implements batch_operator.BatchDigestOperator.
 func (r *ReadOperator) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool {
 	smallStuff := []*repb.Digest{}
-	bigStuff := []*repb.Digest{}
+	//bigStuff := []*repb.Digest{}
 	for _, d := range digests {
 		if d.GetSizeBytes() >= maxSizeForBatching {
-			bigStuff = append(bigStuff, d)
+			// bigStuff = append(bigStuff, d)
+			r.bsOperator.Enqueue(ctx, instanceName, []*repb.Digest{d}, digestFunction)
 		} else {
 			smallStuff = append(smallStuff, d)
 		}
@@ -404,9 +436,9 @@ func (r *ReadOperator) Enqueue(ctx context.Context, instanceName string, digests
 	if len(smallStuff) > 0 {
 		success = success && r.casOperator.Enqueue(ctx, instanceName, smallStuff, digestFunction)
 	}
-	if len(bigStuff) > 0 {
+	/*if len(bigStuff) > 0 {
 		success = success && r.bsOperator.Enqueue(ctx, instanceName, bigStuff, digestFunction)
-	}
+	}*/
 	return success
 }
 
@@ -442,12 +474,16 @@ func (r *ReadOperator) Start(hc interfaces.HealthChecker) {
 	r.casOperator.Start(hc)
 }
 
+// XXX
 func NewReadOperator(env environment.Env) (batch_operator.BatchDigestOperator, error) {
 	router := env.GetCacheRoutingService()
 	if router == nil {
 		return nil, status.FailedPreconditionError("No routing service registered!")
 	}
-	casOperator, err := batch_operator.New(
+	casOperator := NewDirectFlushOperator(func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
+		return readAndVerifyCASBatch(ctx, router, groupID, b)
+	}, env.GetAuthenticator())
+	/*casOperator, err := batch_operator.New(
 		env,
 		"cas_read_and_verify",
 		func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
@@ -463,8 +499,11 @@ func NewReadOperator(env environment.Env) (batch_operator.BatchDigestOperator, e
 	)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to initialize cas read operator: %s", err.Error())
-	}
-	bsOperator, err := batch_operator.New(
+	}*/
+	bsOperator := NewDirectFlushOperator(func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
+		return readAndVerifyByteStream(ctx, router, groupID, b)
+	}, env.GetAuthenticator())
+	/*bsOperator, err := batch_operator.New(
 		env,
 		"byte_stream_read_and_verify",
 		func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
@@ -480,10 +519,73 @@ func NewReadOperator(env environment.Env) (batch_operator.BatchDigestOperator, e
 	)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to initialize bytestream read operator: %s", err.Error())
-	}
+	}*/
 
 	return &ReadOperator{
 		bsOperator:  bsOperator,
 		casOperator: casOperator,
 	}, nil
+}
+
+type directFlushOperator struct {
+	authenticator interfaces.Authenticator
+	op            batch_operator.OperatorFunc
+	// XXX
+	maxInflightRequests int
+}
+
+func (d *directFlushOperator) groupID(ctx context.Context) string {
+	user, err := d.authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser
+	}
+	return user.GetGroupID()
+}
+
+// Enqueue implements batch_operator.BatchDigestOperator.
+func (d *directFlushOperator) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool {
+	// XXX: Metrics and logging!
+	// XXX: Check and block anon.
+	groupID := d.groupID(ctx)
+	// XXX: Wasteful!
+	ctx = authutil.ContextWithCachedAuthHeaders(ctx, d.authenticator)
+	authHeaders := authutil.GetAuthHeaders(ctx)
+
+	bgCtx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
+	authCtx := authutil.AddAuthHeadersToContext(bgCtx, authHeaders, d.authenticator)
+
+	go func() {
+		d.op(authCtx, groupID, &batch_operator.DigestBatch{InstanceName: instanceName, Digests: digests, DigestFunction: digestFunction})
+		cancel()
+	}()
+	return true
+}
+
+func (d *directFlushOperator) EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool {
+	return d.Enqueue(ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
+}
+
+func (d *directFlushOperator) ForceBatchingForTesting() {
+	panic("unimplemented")
+}
+
+func (d *directFlushOperator) ForceFlushBatchesForTesting(ctx context.Context) {
+	panic("unimplemented")
+}
+
+func (d *directFlushOperator) ForceShutdownForTesting() {
+	panic("unimplemented")
+}
+
+// Start implements batch_operator.BatchDigestOperator.
+func (d *directFlushOperator) Start(hc interfaces.HealthChecker) {
+	// XXX
+	// panic("unimplemented")
+}
+
+func NewDirectFlushOperator(op batch_operator.OperatorFunc, authenticator interfaces.Authenticator) batch_operator.BatchDigestOperator {
+	return &directFlushOperator{
+		op:            op,
+		authenticator: authenticator,
+	}
 }

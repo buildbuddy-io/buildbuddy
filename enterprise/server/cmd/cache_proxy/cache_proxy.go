@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/operators"
@@ -99,6 +100,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	env.SetAuthenticator(authenticator)
+	if err := experiments.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	hit_tracker_client.Register(env)
 
@@ -249,16 +253,19 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 		if err != nil {
 			log.Fatalf("Error initializing CAS migration logic: %s", err.Error())
 		}
+		casCopyOperator.Start(env.GetHealthChecker())
 
 		findMissingOperator, err := operators.NewFindMissingOperator(env)
 		if err != nil {
 			log.Fatalf("Error initializing CAS migration logic: %s", err.Error())
 		}
+		findMissingOperator.Start(env.GetHealthChecker())
 
 		readOperator, err := operators.NewReadOperator(env)
 		if err != nil {
 			log.Fatalf("Error initializing CAS migration validation logic: %s", err.Error())
 		}
+		readOperator.Start(env.GetHealthChecker())
 
 		ac, err := routing_action_cache_client.New(env)
 		if err != nil {
@@ -313,7 +320,11 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	bspb.RegisterByteStreamServer(grpcServer, env.GetByteStreamServer())
 	repb.RegisterContentAddressableStorageServer(grpcServer, env.GetCASServer())
 	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
-	log.Infof("Cache proxy proxying requests to %s", *remoteCache)
+	if routing_service.IsCacheRoutingEnabled() {
+		log.Infof("Cache proxy proxying requests to i dunno")
+	} else {
+		log.Infof("Cache proxy proxying requests to %s", *remoteCache)
+	}
 }
 
 func registerInternalServices(env *real_environment.RealEnv) error {

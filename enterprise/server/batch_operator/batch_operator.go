@@ -20,7 +20,7 @@ import (
 
 const (
 	defaultQueueSize          = 1_000_000
-	defaultBatchInterval      = 10 * time.Second
+	defaultBatchInterval      = 100 * time.Millisecond
 	defaultMaxDigestsPerBatch = 10_000
 	defaultMaxBatchesPerGroup = 50
 	defaultMaxDigestsPerGroup = 200_000
@@ -93,6 +93,10 @@ func (u *groupDigestBatches) findOrCreatePendingBatch(instanceName string, diges
 	}
 
 	if len(u.batches) >= u.MaxBatchesPerGroup {
+		log.Printf("TOO MANY !")
+		for _, b := range u.batches {
+			log.Printf("batch: %+v", b)
+		}
 		return nil
 	}
 	newPendingBatch := &pendingDigestBatch{
@@ -255,11 +259,14 @@ func (u *batchOperator) groupID(ctx context.Context) string {
 }
 
 func (u *batchOperator) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool {
+	log.Printf("Enqueue: %s %d", u.name, len(digests))
 	if len(digests) == 0 {
 		return true
 	}
 
 	groupID := u.groupID(ctx)
+	// XXX: wasteful!
+	ctx = authutil.ContextWithCachedAuthHeaders(ctx, u.authenticator)
 	authHeaders := authutil.GetAuthHeaders(ctx)
 	if len(authHeaders) == 0 {
 		log.Infof("[%s] Dropping batch op due to missing auth headers in context", u.name)
@@ -433,6 +440,7 @@ func (u *batchOperator) sender() {
 // batch per group each time or something, but that could starve lesser used
 // instance-names.
 func (u *batchOperator) flushBatches(ctx context.Context) int {
+	// log.Printf("flushing batches: %s", u.name)
 	// Remove batches to flush and release the mutex before sending RPCs.
 	batchesToFlush := map[string]*DigestBatch{}
 	batchesFlushed := 0

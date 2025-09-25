@@ -60,7 +60,7 @@ func (r *RoutingByteStreamClient) Read(ctx context.Context, req *bspb.ReadReques
 		log.CtxWarningf(ctx, "Failed to fetch routing config: %s", err)
 		return rsp, nil
 	}
-	singleRandValue := rand.Float32()
+	singleRandValue := rand.Float64()
 	if singleRandValue < c.GetBackgroundReadVerifyFraction() {
 		if rn, err := digest.ParseDownloadResourceName(req.GetResourceName()); err == nil {
 			r.readOp.Enqueue(ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
@@ -78,6 +78,7 @@ type wrappedWriteStream struct {
 	op  batch_operator.BatchDigestOperator
 	rn  *digest.CASResourceName
 	bspb.ByteStream_WriteClient
+	success bool
 }
 
 func (w *wrappedWriteStream) Send(req *bspb.WriteRequest) error {
@@ -89,9 +90,17 @@ func (w *wrappedWriteStream) Send(req *bspb.WriteRequest) error {
 
 	err := w.ByteStream_WriteClient.Send(req)
 	if err == nil && req.GetFinishWrite() && w.rn != nil {
-		w.op.EnqueueByResourceName(w.ctx, w.rn)
+		w.success = true
 	}
 	return err
+}
+
+func (w *wrappedWriteStream) CloseAndRecv() (*bspb.WriteResponse, error) {
+	resp, err := w.ByteStream_WriteClient.CloseAndRecv()
+	if w.success && err == nil && w.rn != nil {
+		w.op.EnqueueByResourceName(w.ctx, w.rn)
+	}
+	return resp, err
 }
 
 func (r *RoutingByteStreamClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
@@ -109,7 +118,7 @@ func (r *RoutingByteStreamClient) Write(ctx context.Context, opts ...grpc.CallOp
 		log.CtxWarningf(ctx, "Failed to fetch routing config: %s", err)
 		return rsp, nil
 	}
-	singleRandValue := rand.Float32()
+	singleRandValue := rand.Float64()
 	if (singleRandValue) < c.GetBackgroundCopyFraction() {
 		return &wrappedWriteStream{
 			ctx:                    ctx,

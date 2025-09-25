@@ -10,9 +10,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -58,7 +60,7 @@ func RegisterRoutingService(env *real_environment.RealEnv) error {
 		if _, ok := clientSets[r]; ok {
 			continue
 		}
-		conn, err := grpc_client.DialInternal(env, r)
+		conn, err := grpc_client.DialInternal(env, r, grpc.WithInsecure())
 		if err != nil {
 			// The default Dial() behavior doesn't wait for the connection, so
 			// this indicates some issue other than the server being down.
@@ -124,30 +126,31 @@ func (r *routingService) GetCacheRoutingConfig(ctx context.Context) (*ropb.Cache
 		}
 	}
 	if v, ok := c[backgroundCopyFractionConfigField]; ok {
-		if bgCopyFrac, ok := v.(float32); ok {
+		if bgCopyFrac, ok := v.(float64); ok {
 			out.BackgroundCopyFraction = bgCopyFrac
 		} else {
-			alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "background-copy-fraction is not a float32: %T(%v)", v, v)
+			alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "background-copy-fraction is not a float64: %T(%v)", v, v)
 			return out, nil
 		}
 	}
 	if v, ok := c[backgroundReadVerifyFractionConfigField]; ok {
-		if bgRVFrac, ok := v.(float32); ok {
+		if bgRVFrac, ok := v.(float64); ok {
 			out.BackgroundReadVerifyFraction = bgRVFrac
 		} else {
-			alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "background-read-verify-fraction is not a float32: %T(%v)", v, v)
+			alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "background-read-verify-fraction is not a float64: %T(%v)", v, v)
 			return out, nil
 		}
 	}
 	if v, ok := c[dualWriteFractionConfigField]; ok {
-		if dualWriteFrac, ok := v.(float32); ok {
+		if dualWriteFrac, ok := v.(float64); ok {
 			out.DualWriteFraction = dualWriteFrac
 		} else {
-			alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "dual-write-fraction is not a float32: %T(%v)", v, v)
+			alert.CtxUnexpectedEvent(ctx, "routing-service-invalid-config", "dual-write-fraction is not a float64: %T(%v)", v, v)
 			return out, nil
 		}
 	}
 
+	log.Printf("primary: %s", out.PrimaryCache)
 	return out, nil
 }
 
