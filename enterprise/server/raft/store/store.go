@@ -1072,6 +1072,19 @@ func (s *Store) validatedRangeAgainstMetaRange(ctx context.Context, rd *rfpb.Ran
 
 }
 
+func validateHeaderRangeGen(header *rfpb.Header, rd *rfpb.RangeDescriptor) error {
+	// Ensure the header generation matches what we have locally -- if not,
+	// force client to go back and re-pull the rangeDescriptor from the meta
+	// range.
+	if header.GetSkipGenerationCheck() {
+		return nil
+	}
+	if rd.GetGeneration() != header.GetGeneration() {
+		return status.OutOfRangeErrorf("%s: id %d generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
+	}
+	return nil
+}
+
 // validatedRange verifies that the header is valid and the client is using
 // an up-to-date range descriptor. In most cases, it's also necessary to verify
 // that a local replica has a range lease for the given range ID which can be
@@ -1086,13 +1099,9 @@ func (s *Store) validatedRange(header *rfpb.Header) (*replica.Replica, *rfpb.Ran
 		return nil, nil, err
 	}
 
-	// Ensure the header generation matches what we have locally -- if not,
-	// force client to go back and re-pull the rangeDescriptor from the meta
-	// range.
-	if !header.GetSkipGenerationCheck() {
-		if rd.GetGeneration() != header.GetGeneration() {
-			return nil, nil, status.OutOfRangeErrorf("%s: id %d generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
-		}
+	err = validateHeaderRangeGen(header, rd)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	return r, rd, nil
@@ -1110,20 +1119,31 @@ func (s *Store) HaveLease(ctx context.Context, rangeID uint64) bool {
 // an up-to-date range descriptor. It also checks that a local replica owns
 // the range lease for the requested range.
 func (s *Store) LeasedRange(ctx context.Context, header *rfpb.Header) (*replica.Replica, error) {
-	r, _, err := s.validatedRange(header)
+	if header == nil {
+		return nil, status.FailedPreconditionError("Header must be set (was nil)")
+	}
+
+	r, rd, err := s.replicaForRange(header.GetRangeId())
 	if err != nil {
 		return nil, err
 	}
 
-	// Stale reads don't need a lease, so return early.
-	if header.GetConsistencyMode() == rfpb.Header_STALE {
-		return r, nil
+	// HaveLease should be checked before generation check. This is because a
+	// replica that is behind can fail the generation check because its
+	// generation is less than the requested one. The sender is not going to
+	// try a different replica when the generation check failed.
+	if header.GetConsistencyMode() != rfpb.Header_STALE {
+		if !s.HaveLease(ctx, header.GetRangeId()) {
+			return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
+		}
 	}
 
-	if s.HaveLease(ctx, header.GetRangeId()) {
-		return r, nil
+	err = validateHeaderRangeGen(header, rd)
+	if err != nil {
+		return nil, err
 	}
-	return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
+
+	return r, nil
 }
 
 func (s *Store) ReplicaFactoryFn(rangeID, replicaID uint64) dbsm.IOnDiskStateMachine {

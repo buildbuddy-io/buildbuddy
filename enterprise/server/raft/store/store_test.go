@@ -88,6 +88,79 @@ func TestConfiguredClusters(t *testing.T) {
 	require.Equal(t, 2, s1.ConfiguredClusters())
 }
 
+func TestLeasedRange_LeaseInvalid(t *testing.T) {
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+	sf.StartShard(t, ctx, s1)
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+
+	rd := s.GetRange(2)
+	newRD := rd.CloneVT()
+	newRD.Generation++
+
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
+	require.NoError(t, err)
+	var storeNotLeaseHolder *testutil.TestingStore
+	for storeNotLeaseHolder == nil {
+		storeWithLease := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+
+		for _, s := range stores {
+			if s.NHID() == storeWithLease.NHID() {
+				continue
+			}
+			if s.GetRange(2) == nil {
+				continue
+			}
+			storeNotLeaseHolder = s
+			break
+		}
+	}
+
+	h := &rfpb.Header{
+		RangeId:         2,
+		Generation:      1,
+		ConsistencyMode: rfpb.Header_LINEARIZABLE,
+	}
+	_, err = storeNotLeaseHolder.LeasedRange(ctx, h)
+	require.True(t, status.IsOutOfRangeError(err), "err is %s", err)
+	require.ErrorContains(t, err, constants.RangeLeaseInvalidMsg)
+}
+
+func TestLeasedRange_LeaseNotCurrent(t *testing.T) {
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+	sf.StartShard(t, ctx, s1)
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+
+	rd := s.GetRange(2)
+	newRD := rd.CloneVT()
+	newRD.Generation++
+
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
+	require.NoError(t, err)
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	h := &rfpb.Header{
+		RangeId:         2,
+		Generation:      1,
+		ConsistencyMode: rfpb.Header_LINEARIZABLE,
+	}
+	_, err = s.LeasedRange(ctx, h)
+	require.True(t, status.IsOutOfRangeError(err), "err is %s", err)
+	require.ErrorContains(t, err, constants.RangeNotCurrentMsg)
+}
+
 func TestAddGetRemoveRange(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
