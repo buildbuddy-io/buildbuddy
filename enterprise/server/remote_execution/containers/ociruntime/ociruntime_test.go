@@ -1540,9 +1540,10 @@ func TestPersistentWorker(t *testing.T) {
 	}
 
 	// Start worker (Exec)
-	worker := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+	worker, err := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
 		Arguments: []string{"./testworker", "--response_base64", responseBase64},
 	})
+	require.NoError(t, err)
 
 	// Send work request.
 	// The command doesn't matter - the test worker always just returns a fixed
@@ -1557,6 +1558,65 @@ func TestPersistentWorker(t *testing.T) {
 	require.NoError(t, err)
 	err = worker.Stop()
 	assert.NoError(t, err)
+}
+
+func TestPersistentWorker_WorkerCrashes(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	// Create workspace with testworker binary
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	ws, err := workspace.New(env, buildRoot, &workspace.Opts{Preserve: true})
+	require.NoError(t, err)
+	testworkerPath, err := runfiles.Rlocation(testworkerRlocationpath)
+	require.NoError(t, err)
+	testfs.CopyFile(t, testworkerPath, ws.Path(), "testworker")
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, ws.Path())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Start worker (Exec) with flags telling it to print 'test-stderr' on
+	// stderr, then crash, after receiving the first request.
+	worker, err := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+		Arguments: []string{
+			"./testworker",
+			"--fail_with_stderr=test-stderr-message",
+		},
+	})
+	require.NoError(t, err)
+	defer worker.Stop()
+
+	// Send work request.
+	// The command doesn't matter - the test worker always just returns a fixed
+	// response.
+	res := worker.Exec(ctx, &repb.Command{})
+
+	require.Error(t, res.Error)
+	require.Contains(t, res.Error.Error(), "test-stderr-message")
 }
 
 func TestCancelRun(t *testing.T) {
