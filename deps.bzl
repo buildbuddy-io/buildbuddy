@@ -7037,6 +7037,23 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         sha256 = "4e3c8c0c2e61438bb393a9ea6bb94f8f56b559ec3243d7b1a2943117bca4dcb4",
     )
 
+    http_archive(
+        name = "com_github_sluongng_nogo_analyzer",
+        sha256 = "a74a5e44751d292d17bd879e5aa8b40baa94b5dc2f043df1e3acbb3e23ead073",
+        strip_prefix = "nogo-analyzer-0.0.2",
+        urls = [
+            "https://github.com/sluongng/nogo-analyzer/archive/refs/tags/v0.0.2.tar.gz",
+        ],
+    )
+
+    http_archive(
+        name = "cloudprober",
+        build_file_content = "exports_files([\"cloudprober\"])",
+        sha256 = "0a824a6e224d9810514f4a2f4a13f09488672ad483bb0e978c16d8a6b3372625",
+        strip_prefix = "cloudprober-v0.11.2-ubuntu-x86_64",
+        urls = ["https://github.com/google/cloudprober/releases/download/v0.11.2/cloudprober-v0.11.2-ubuntu-x86_64.zip"],
+    )
+
     http_file(
         name = "com_github_opencontainers_runc_runc-linux-amd64",
         urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.0/runc.amd64"],

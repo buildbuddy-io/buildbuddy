@@ -1,0 +1,46 @@
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
+npm.npm_translate_lock(
+    name = "npm",
+    npmrc = "//:.npmrc",
+    patch_args = {
+        "@protobufjs/inquire": [
+            "-p1",
+            "--binary",
+        ],
+    },
+    patches = {
+        "@protobufjs/inquire": [
+            # Patch out use of eval to satisfy a strict CSP.
+            # https://github.com/protobufjs/protobuf.js/issues/593
+            "//buildpatches:protobuf.js_inquire.patch",
+        ],
+    },
+    pnpm_lock = "//:pnpm-lock.yaml",
+    verify_node_modules_ignored = "//:.bazelignore",
+)
+use_repo(npm, "npm")
+
+rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
+rules_ts_ext.deps(
+    # TODO: Remove after the next aspect_rules_ts update.
+    ts_integrity = "sha512-aJn6wq13/afZp/jT9QZmwEjDqqvSGp1VT5GVg+f/t6/oVyrgXM6BY1h9BRh/O5p3PlUPAe+WuiEZOmb/49RqoQ==",
+    ts_version_from = "//:package.json",
+)
+
+# TODO: Remove this after the next aspect_rules_ts update.
+# https://github.com/aspect-build/rules_ts/pull/786
+use_repo(rules_ts_ext, "npm_typescript")
+
+browser_repositories = use_extension("@rules_webtesting//web:extension.bzl", "browser_repositories_extension")
+browser_repositories.install(version = "0.3.4")
+use_repo(
+    browser_repositories,
+    "org_chromium_chromedriver_linux_x64",
+    "org_chromium_chromedriver_macos_arm64",
+    "org_chromium_chromedriver_macos_x64",
+    "org_chromium_chromedriver_windows_x64",
+    "org_chromium_chromium_linux_x64",
+    "org_chromium_chromium_macos_arm64",
+    "org_chromium_chromium_macos_x64",
+    "org_chromium_chromium_windows_x64",
+)
