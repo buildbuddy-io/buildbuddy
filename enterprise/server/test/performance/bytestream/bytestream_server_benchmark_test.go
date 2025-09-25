@@ -130,9 +130,9 @@ func BenchmarkWrite(b *testing.B) {
 	*log.LogLevel = "error"
 	log.Configure()
 
-	// Bazel uses 16KiB chunks. cachetools.UploadFromReader uses 1MB chunks, but
-	// maybe it should be changed to 256KiB.
-	chunkSizes := []int{16 * 1024, 256 * 1024, 512 * 1024, 1_000_000}
+	// Bazel uses 16KiB chunks. cachetools.UploadFromReader uses 128KiB chunks,
+	// and this shows that's the sweetspot.
+	chunkSizes := []int{16 * 1024, 64 * 1024, 128 * 1024, 256 * 1024, 512 * 1024, 1_000_000}
 
 	for _, test := range []struct {
 		cacheType string
