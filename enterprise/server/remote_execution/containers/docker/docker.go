@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -257,6 +259,9 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	var mu sync.Mutex
 	state := ctrRunning
+	var limitHit atomic.Bool
+	waitCtx, waitCancel := context.WithCancel(ctx)
+	defer waitCancel()
 	defer func() {
 		// Clean up the container in the background.
 		// TODO: Add this removal as a job to a centralized queue.
@@ -278,13 +283,35 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	eg := &errgroup.Group{}
 	eg.Go(func() error {
-		var stdout, stderr bytes.Buffer
-		_, err := stdcopy.StdCopy(&stdout, &stderr, hijackedResp.Reader)
-		result.Stdout = stdout.Bytes()
-		result.Stderr = stderr.Bytes()
+		var stdoutBuf, stderrBuf bytes.Buffer
+		stdout := io.Writer(&stdoutBuf)
+		stderr := io.Writer(&stderrBuf)
+		if *commandutil.StdOutErrMaxSize > 0 {
+			stdout = commandutil.LimitStdOutErrWriter(stdout)
+			stderr = commandutil.LimitStdOutErrWriter(stderr)
+		}
+		_, err := stdcopy.StdCopy(stdout, stderr, hijackedResp.Reader)
+		result.Stdout = stdoutBuf.Bytes()
+		result.Stderr = stderrBuf.Bytes()
+		limitExceeded := status.IsResourceExhaustedError(err)
+		if limitExceeded {
+			limitHit.Store(true)
+			waitCancel()
+			// Forcefully terminate the container so ContainerWait unblocks.
+			if killErr := r.client.ContainerKill(context.Background(), cid, "SIGKILL"); killErr != nil {
+				if strings.Contains(killErr.Error(), "is not running") {
+					// Container already exited; nothing to do.
+				} else {
+					log.Errorf("Failed to kill docker container after hitting stdout/stderr limit: %s", killErr)
+				}
+			}
+		}
 		mu.Lock()
 		defer mu.Unlock()
-		if state == ctrDidNotExitCleanly {
+		if limitExceeded && state == ctrRunning {
+			state = ctrDidNotExitCleanly
+		}
+		if state == ctrDidNotExitCleanly && !limitExceeded {
 			// If the container did not exit cleanly, the goroutine below will
 			// return an error, so we should not to avoid clobbering the error.
 			return nil
@@ -292,12 +319,15 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return wrapDockerErr(err, "failed to copy docker container output")
 	})
 	eg.Go(func() error {
-		statusCh, errCh := r.client.ContainerWait(ctx, cid, dockercontainer.WaitConditionNotRunning)
+		statusCh, errCh := r.client.ContainerWait(waitCtx, cid, dockercontainer.WaitConditionNotRunning)
 		select {
 		case err := <-errCh:
 			mu.Lock()
 			state = ctrDidNotExitCleanly
 			mu.Unlock()
+			if limitHit.Load() && (errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "context canceled")) {
+				return nil
+			}
 			// Close the output reader so that the above goroutine can also
 			// exit.
 			hijackedResp.Close()
@@ -445,6 +475,10 @@ func copyOutputs(reader io.Reader, result *interfaces.CommandResult, stdio *inte
 	if *commandutil.DebugStreamCommandOutputs {
 		stdout, stderr = io.MultiWriter(stdout, os.Stdout), io.MultiWriter(stderr, os.Stderr)
 	}
+	if !stdio.DisableOutputLimits {
+		stdout = commandutil.LimitStdOutErrWriter(stdout)
+		stderr = commandutil.LimitStdOutErrWriter(stderr)
+	}
 
 	_, err := stdcopy.StdCopy(stdout, stderr, reader)
 	result.Stdout = stdoutBuf.Bytes()
@@ -455,6 +489,9 @@ func copyOutputs(reader io.Reader, result *interfaces.CommandResult, stdio *inte
 func errCode(err error) codes.Code {
 	if err == context.DeadlineExceeded {
 		return codes.DeadlineExceeded
+	}
+	if status.IsResourceExhaustedError(err) {
+		return codes.ResourceExhausted
 	}
 	return codes.Unavailable
 }
