@@ -429,21 +429,21 @@ func (r *readThroughCacher) Read(p []byte) (int, error) {
 
 	if n > 0 {
 		written, writeErr := r.cache.Write(p[:n])
-		if writeErr != nil {
-			log.Warningf("Error writing to cache: %s", writeErr)
-			r.cacheErr = writeErr
-			return n, err
-		}
-		if written < n {
-			r.cacheErr = io.ErrShortWrite
-			return n, err
+		r.cacheErr = writeErr
+		if r.cacheErr == nil {
+			if written < n {
+				log.Warningf("Short write to cache. Wanted %v, wrote %v", n, written)
+				r.cacheErr = io.ErrShortWrite
+			}
+		} else if !status.IsAlreadyExistsError(r.cacheErr) {
+			log.Warningf("Error writing to cache: %s", r.cacheErr)
 		}
 	}
 
-	if err == io.EOF {
-		if err := r.cache.Commit(); err != nil {
-			log.Warningf("Error committing blob to cache: %s", err)
-			r.cacheErr = err
+	if err == io.EOF && r.cacheErr == nil {
+		r.cacheErr = r.cache.Commit()
+		if r.cacheErr != nil {
+			log.Warningf("Error committing blob to cache: %s", r.cacheErr)
 		}
 	}
 
