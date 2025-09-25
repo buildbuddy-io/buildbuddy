@@ -81,7 +81,7 @@ func (lw *limitWriter) Write(p []byte) (int, error) {
 	if remaining == 0 {
 		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
 	}
-	toWrite := p[:remaining]
+	toWrite := p[:int(remaining)]
 	n, err := lw.w.Write(toWrite)
 	lw.n += uint64(n)
 	if err != nil {
@@ -131,7 +131,7 @@ func (lr *limitReader) Read(p []byte) (int, error) {
 	// Do not allow underlying reader to consume more than remaining bytes.
 	remain := lr.max - lr.n
 	if uint64(len(p)) > remain {
-		p = p[:remain]
+		p = p[:int(remain)]
 	}
 	n, err := lr.r.Read(p)
 	lr.n += uint64(n)
