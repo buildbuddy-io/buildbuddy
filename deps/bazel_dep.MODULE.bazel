@@ -1,0 +1,115 @@
+## Overrides
+
+# abseil-cpp 20240722.0 in BCR does not have feature parity with its github analog
+bazel_dep(name = "abseil-cpp", repo_name = "com_google_absl")
+archive_override(
+    module_name = "abseil-cpp",
+    integrity = "sha256-9Q5awxGoE4Laf6dblzEOS5AGR0+VYKxG9UqZZ/B9SuM=",
+    strip_prefix = "abseil-cpp-20240722.0",
+    urls = ["https://github.com/abseil/abseil-cpp/releases/download/20240722.0/abseil-cpp-20240722.0.tar.gz"],
+)
+
+bazel_dep(name = "gazelle", repo_name = "bazel_gazelle")
+single_version_override(
+    module_name = "gazelle",
+    patch_strip = 1,
+    patches = [
+        "@@//buildpatches:gazelle.patch",
+    ],
+    version = "0.45.0",
+)
+
+bazel_dep(name = "googleapis")
+single_version_override(
+    module_name = "googleapis",
+    patch_strip = 1,
+    patches = [
+        "@@//buildpatches:bzlmod_googleapis.patch",
+    ],
+    version = "0.0.0-20241220-5e258e33",
+)
+
+# Note that this is 'rules_nodejs-core'
+# Keep in sync with build_bazel_rules_nodejs in WORKSPACE.bzlmod
+bazel_dep(name = "rules_nodejs")
+single_version_override(
+    module_name = "rules_nodejs",
+    patch_strip = 1,
+    patches = [
+        "@@//buildpatches:build_bazel_rules_nodejs.patch",
+    ],
+    version = "5.8.5",
+)
+
+# dependencies of rules_webtesting module
+# TODO(sluongng): remove this once rules_scala is released on Central Registry
+archive_override(
+    module_name = "rules_scala",
+    integrity = "sha256-+Sc7oo2LlLxL12lg0TdBgGsr83CUTKZnMrrZL6tGMm0=",
+    strip_prefix = "rules_scala-219e63983e8e483e66ebf70372969ba227382001",
+    urls = [
+        "https://github.com/mbland/rules_scala/archive/219e63983e8e483e66ebf70372969ba227382001.tar.gz",
+    ],
+)
+
+bazel_dep(name = "rules_webtesting")
+archive_override(
+    module_name = "rules_webtesting",
+    integrity = "sha256-wJV/ZIAEYtzoEynx+f6NYA1ilAIrK6ppbUuaeI0+j3Y=",
+    patch_strip = 1,
+    patches = [
+        "@@//buildpatches:rules_webtesting.patch",
+    ],
+    strip_prefix = "rules_webtesting-7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed",
+    urls = [
+        "https://github.com/bazelbuild/rules_webtesting/archive/7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed.tar.gz",
+    ],
+)
+
+bazel_dep(name = "toolchains_buildbuddy")
+archive_override(
+    module_name = "toolchains_buildbuddy",
+    integrity = "sha256-VtJjefgP2Vq5S6DiGYczsupNkosybmSBGWwcLUAYz8c=",
+    strip_prefix = "buildbuddy-toolchain-66146a3015faa348391fcceea2120caa390abe03",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/66146a3015faa348391fcceea2120caa390abe03.tar.gz"],
+)
+
+bazel_dep(name = "rules_docker", repo_name = "io_bazel_rules_docker")
+archive_override(
+    module_name = "rules_docker",
+    integrity = "sha256-IWwvS6cUMRgusMhq2fvBtkrV3wNylTgxp9IlF7KVk2I=",
+    strip_prefix = "rules_docker-fd17b1c56380f4f661a9c4649cd95809a132d9e3",
+    # This is BuildBuddy fork of rules_docker with bzlmod support.
+    # Diff: https://github.com/bazelbuild/rules_docker/compare/master...buildbuddy-io:rules_docker:master
+    urls = ["https://github.com/buildbuddy-io/rules_docker/archive/fd17b1c56380f4f661a9c4649cd95809a132d9e3.tar.gz"],
+)
+
+bazel_dep(name = "rules_k8s", repo_name = "io_bazel_rules_k8s")
+archive_override(
+    module_name = "rules_k8s",
+    integrity = "sha256-3Mlx7XOFKElr7S+RjozqWqb7LPUf1pg48W0RV5XT4cc=",
+    strip_prefix = "rules_k8s-a40e8ad10fe00afd8bd149e558e5572793ca5873",
+    # This is our own fork of rules_k8s with bzlmod support.
+    # Diff: https://github.com/bazelbuild/rules_k8s/compare/master...buildbuddy-io:rules_k8s:master
+    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/a40e8ad10fe00afd8bd149e558e5572793ca5873.tar.gz"],
+)
+
+## Regular bazel_deps
+
+bazel_dep(name = "aspect_bazel_lib", version = "2.14.0")
+bazel_dep(name = "aspect_rules_esbuild", version = "0.21.0")
+bazel_dep(name = "aspect_rules_jasmine", version = "2.0.0")
+bazel_dep(name = "aspect_rules_js", version = "2.1.3")
+bazel_dep(name = "aspect_rules_swc", version = "2.3.0")
+bazel_dep(name = "aspect_rules_ts", version = "3.6.3")
+bazel_dep(name = "bazel_skylib", version = "1.8.1")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "protobuf", version = "29.3", repo_name = "com_google_protobuf")
+bazel_dep(name = "rules_cc", version = "0.1.1")
+bazel_dep(name = "rules_go", version = "0.57.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_oci", version = "2.0.0")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "rules_proto", version = "7.1.0")
+bazel_dep(name = "toolchains_musl", version = "0.1.27")
+bazel_dep(name = "zlib", version = "1.3.1.bcr.5")
+bazel_dep(name = "rules_multirun", version = "0.13.0")
