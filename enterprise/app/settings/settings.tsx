@@ -14,6 +14,7 @@ import IpRulesComponent from "../iprules/iprules";
 import EditOrgComponent from "../org/edit_org";
 import OrgJoinRequests from "../org/org_join_requests";
 import OrgMembersComponent from "../org/org_members";
+import OrgUserListsComponent from "../org/org_user_lists";
 import QuotaComponent from "../quota/quota";
 import SecretsComponent from "../secrets/secrets";
 import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
@@ -30,6 +31,7 @@ export interface SettingsProps {
 enum TabId {
   OrgDetails = "org/details",
   OrgMembers = "org/members",
+  OrgUserLists = "org/user-lists",
   OrgGitHub = "org/github",
   OrgApiKeys = "org/api-keys",
   OrgSecrets = "org/secrets",
@@ -126,9 +128,16 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   </SettingsTab>
                 )}
                 {router.canAccessOrgMembersPage(this.props.user) && (
-                  <SettingsTab id={TabId.OrgMembers} activeTabId={activeTabId}>
-                    Members
-                  </SettingsTab>
+                  <>
+                    <SettingsTab id={TabId.OrgMembers} activeTabId={activeTabId}>
+                      Members
+                    </SettingsTab>
+                    {capabilities.config.userListsUiEnabled && (
+                      <SettingsTab id={TabId.OrgUserLists} activeTabId={activeTabId}>
+                        IAM Groups
+                      </SettingsTab>
+                    )}
+                  </>
                 )}
                 {router.canAccessOrgGitHubLinkPage(this.props.user) &&
                   (capabilities.github || capabilities.config.githubAppEnabled) && (
@@ -247,6 +256,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       <OrgMembersComponent user={this.props.user} />
                     </>
                   )}
+                  {activeTabId === TabId.OrgUserLists && <OrgUserListsComponent user={this.props.user} />}
                   {activeTabId === TabId.OrgGitHub &&
                     (capabilities.github || capabilities.config.githubAppEnabled) &&
                     this.props.user.canCall("unlinkGitHubAccount") && (

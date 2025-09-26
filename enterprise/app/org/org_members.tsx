@@ -1,13 +1,10 @@
-import { CheckCircle, HelpCircle, ShieldCheck, UserCircle, XCircle } from "lucide-react";
+import { CheckCircle, XCircle } from "lucide-react";
 import React from "react";
 import alertService from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/auth_service";
 import { accountName } from "../../../app/auth/user";
 import capabilities from "../../../app/capabilities/capabilities";
-import Banner from "../../../app/components/banner/banner";
 import Button, { OutlinedButton } from "../../../app/components/button/button";
-import CheckboxButton from "../../../app/components/button/checkbox_button";
-import Checkbox from "../../../app/components/checkbox/checkbox";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -19,11 +16,11 @@ import Modal from "../../../app/components/modal/modal";
 import Select, { Option } from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
-import { GithubIcon } from "../../../app/icons/github";
-import { GoogleIcon } from "../../../app/icons/google";
 import rpcService from "../../../app/service/rpc_service";
 import { grp } from "../../../proto/group_ts_proto";
 import { user_id } from "../../../proto/user_id_ts_proto";
+import * as user_list from "./user_list";
+import UserListComponent, { UserListUser } from "./user_list";
 
 export type OrgMembersProps = {
   user: User;
@@ -33,7 +30,6 @@ type State = {
   loading?: boolean;
   response?: grp.GetGroupUsersResponse;
 
-  isSelectingAll?: boolean;
   selectedUserIds: Set<string>;
 
   isEditRoleModalVisible?: boolean;
@@ -43,36 +39,6 @@ type State = {
   isRemoveModalVisible?: boolean;
   isRemoveLoading?: boolean;
 };
-
-function iconFromAccountType(accountType: user_id.AccountType | undefined) {
-  switch (accountType) {
-    case user_id.AccountType.GOOGLE:
-      return <GoogleIcon />;
-    case user_id.AccountType.GITHUB:
-      return <GithubIcon />;
-    case user_id.AccountType.SAML:
-      return <ShieldCheck />;
-    case user_id.AccountType.OIDC:
-      return <UserCircle />;
-    default:
-      return <HelpCircle />;
-  }
-}
-
-function getRoleLabel(role: grp.Group.Role): string {
-  switch (role) {
-    case grp.Group.Role.ADMIN_ROLE:
-      return "Admin";
-    case grp.Group.Role.DEVELOPER_ROLE:
-      return "Developer";
-    case grp.Group.Role.WRITER_ROLE:
-      return "Writer";
-    case grp.Group.Role.READER_ROLE:
-      return "Reader";
-    default:
-      return "";
-  }
-}
 
 const DEFAULT_ROLE = grp.Group.Role.DEVELOPER_ROLE;
 
@@ -102,36 +68,6 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
       .then((response) => this.setState({ response }))
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ loading: false }));
-  }
-
-  private onClickRow(userID: string) {
-    if (this.props.user.selectedGroup.externalUserManagement) {
-      return;
-    }
-    const clone = new Set(this.state.selectedUserIds);
-    if (clone.has(userID)) {
-      clone.delete(userID);
-    } else {
-      clone.add(userID);
-    }
-    this.setState({
-      isSelectingAll: (this.state.isSelectingAll && clone.size > 0) || clone.size === this.state.response?.user.length,
-      selectedUserIds: clone,
-    });
-  }
-
-  private onClickSelectAllToggle() {
-    if (this.state.isSelectingAll) {
-      this.setState({
-        isSelectingAll: false,
-        selectedUserIds: new Set(),
-      });
-    } else {
-      this.setState({
-        isSelectingAll: true,
-        selectedUserIds: new Set((this.state.response?.user || []).map((member) => member.user?.userId?.id || "")),
-      });
-    }
   }
 
   // Edit role modal
@@ -251,7 +187,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
         <div className="affected-users-list">
           {selectedMembers.map((member) => (
             <div className={`affected-users-list-item ${this.isLoggedInUser(member) ? "flagged-self-user" : ""}`}>
-              {accountName(member.user)} {iconFromAccountType(member.user?.accountType)}
+              {accountName(member.user)} {user_list.iconFromAccountType(member.user?.accountType)}
             </div>
           ))}
         </div>
@@ -316,146 +252,122 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
     );
   }
 
+  private onClickUserListButton(idx: number, selectedUsers: Set<string>) {
+    this.setState({ selectedUserIds: selectedUsers });
+    if (idx == 0) {
+      this.onClickEditRole();
+    } else if (idx == 1) {
+      this.onClickRemove();
+    }
+  }
+
   render() {
     if (this.state.loading) {
       return <div className="loading" />;
     }
     if (!this.state.response) return null;
 
-    const isSelectionEmpty = this.state.selectedUserIds.size === 0;
+    const editRoleButton = <Button>Edit role</Button>;
+
+    const removeButton = <Button className="destructive org-member-remove-button">Remove</Button>;
+
+    const users = this.state.response.user.map((gu) => new UserListUser(gu.user!, gu.role));
 
     return (
-      <div className="org-members">
-        <div className="org-members-list-controls">
-          {this.props.user.selectedGroup.externalUserManagement && (
-            <div>
-              <Banner type="warning" className="user-management-warning">
-                Users are being managed via an external system. All changes must be made there.
-              </Banner>
-            </div>
-          )}
-          {!this.props.user.selectedGroup.externalUserManagement && (
-            <>
-              <CheckboxButton
-                className="select-all-button"
-                checked={this.state.isSelectingAll}
-                onClick={this.onClickSelectAllToggle.bind(this)}
-                checkboxOnLeft>
-                Select all
-              </CheckboxButton>
-              <Button onClick={this.onClickEditRole.bind(this)} disabled={isSelectionEmpty}>
-                Edit role
-              </Button>
-              <Button
-                onClick={this.onClickRemove.bind(this)}
-                disabled={isSelectionEmpty}
-                className="destructive org-member-remove-button">
-                Remove
-              </Button>
-            </>
-          )}
-        </div>
-        <div className="org-members-list">
-          {this.state.response.user.map((member) => (
-            <div
-              className={`org-members-list-item ${
-                this.state.selectedUserIds.has(member?.user?.userId?.id || "") ? "selected" : ""
-              } ${!this.props.user.selectedGroup.externalUserManagement ? "editable" : ""}`}
-              onClick={() => this.onClickRow(member?.user?.userId?.id || "")}>
-              {!this.props.user.selectedGroup.externalUserManagement && (
-                <div>
-                  <Checkbox
-                    title={`Select ${accountName(member.user)}`}
-                    className="org-member-checkbox"
-                    checked={this.state.selectedUserIds.has(member?.user?.userId?.id || "")}
-                  />
+      <>
+        <UserListComponent
+          user={this.props.user}
+          users={users}
+          showRole={true}
+          buttons={[editRoleButton, removeButton]}
+          onButtonClick={this.onClickUserListButton.bind(this)}
+          readOnly={this.props.user.selectedGroup.externalUserManagement}
+        />
+        <div className="org-members">
+          {/* Edit role modal */}
+          <Modal
+            className="org-members-edit-modal"
+            isOpen={Boolean(this.state.isEditRoleModalVisible)}
+            onRequestClose={this.onRequestCloseEditRoleModal.bind(this)}>
+            <Dialog>
+              <DialogHeader>
+                <DialogTitle>Edit role</DialogTitle>
+              </DialogHeader>
+              <DialogBody className="modal-body">
+                {this.renderAffectedUsersList({ verb: "Editing" })}
+                <div className="select-role-row">
+                  <div>Role</div>
+                  <Select value={this.state.roleToApply} onChange={this.onChangeRoleToApply.bind(this)}>
+                    {capabilities.config.readerWriterRolesEnabled && (
+                      <>
+                        <Option value={grp.Group.Role.READER_ROLE}>
+                          {user_list.getRoleLabel(grp.Group.Role.READER_ROLE)}
+                        </Option>
+                      </>
+                    )}
+                    <Option value={grp.Group.Role.DEVELOPER_ROLE}>
+                      {user_list.getRoleLabel(grp.Group.Role.DEVELOPER_ROLE)}
+                    </Option>
+                    {capabilities.config.readerWriterRolesEnabled && (
+                      <>
+                        <Option value={grp.Group.Role.WRITER_ROLE}>
+                          {user_list.getRoleLabel(grp.Group.Role.WRITER_ROLE)}
+                        </Option>
+                      </>
+                    )}
+                    <Option value={grp.Group.Role.ADMIN_ROLE}>
+                      {user_list.getRoleLabel(grp.Group.Role.ADMIN_ROLE)}
+                    </Option>
+                  </Select>
                 </div>
-              )}
-              <div className="org-member-name">
-                {accountName(member.user)} {iconFromAccountType(member.user?.accountType)}
-              </div>
-              <div className="org-member-role">
-                {getRoleLabel(member?.role || 0)} {this.isLoggedInUser(member) && <>(You)</>}
-              </div>
-            </div>
-          ))}
+                <div className="role-description">{this.renderRoleDescription(this.state.roleToApply)}</div>
+              </DialogBody>
+              <DialogFooter>
+                <DialogFooterButtons>
+                  {this.state.isRoleUpdateLoading && <Spinner />}
+                  <OutlinedButton
+                    onClick={this.onRequestCloseEditRoleModal.bind(this)}
+                    disabled={this.state.isRoleUpdateLoading}>
+                    Cancel
+                  </OutlinedButton>
+                  <Button onClick={this.onClickApplyRoleEdits.bind(this)} disabled={this.state.isRoleUpdateLoading}>
+                    Apply
+                  </Button>
+                </DialogFooterButtons>
+              </DialogFooter>
+            </Dialog>
+          </Modal>
+
+          {/* Remove modal */}
+          <Modal
+            className="org-members-edit-modal"
+            isOpen={Boolean(this.state.isRemoveModalVisible)}
+            onRequestClose={this.onRequestCloseRemoveModal.bind(this)}>
+            <Dialog>
+              <DialogHeader>
+                <DialogTitle>Confirm removal</DialogTitle>
+              </DialogHeader>
+              <DialogBody className="modal-body">{this.renderAffectedUsersList({ verb: "Removing" })}</DialogBody>
+              <DialogFooter>
+                <DialogFooterButtons>
+                  {this.state.isRemoveLoading && <Spinner />}
+                  <OutlinedButton
+                    onClick={this.onRequestCloseRemoveModal.bind(this)}
+                    disabled={this.state.isRemoveLoading}>
+                    Cancel
+                  </OutlinedButton>
+                  <Button
+                    className="destructive"
+                    onClick={this.onClickConfirmRemove.bind(this)}
+                    disabled={this.state.isRemoveLoading}>
+                    Remove
+                  </Button>
+                </DialogFooterButtons>
+              </DialogFooter>
+            </Dialog>
+          </Modal>
         </div>
-
-        {/* Edit role modal */}
-        <Modal
-          className="org-members-edit-modal"
-          isOpen={Boolean(this.state.isEditRoleModalVisible)}
-          onRequestClose={this.onRequestCloseEditRoleModal.bind(this)}>
-          <Dialog>
-            <DialogHeader>
-              <DialogTitle>Edit role</DialogTitle>
-            </DialogHeader>
-            <DialogBody className="modal-body">
-              {this.renderAffectedUsersList({ verb: "Editing" })}
-              <div className="select-role-row">
-                <div>Role</div>
-                <Select value={this.state.roleToApply} onChange={this.onChangeRoleToApply.bind(this)}>
-                  {capabilities.config.readerWriterRolesEnabled && (
-                    <>
-                      <Option value={grp.Group.Role.READER_ROLE}>{getRoleLabel(grp.Group.Role.READER_ROLE)}</Option>
-                    </>
-                  )}
-                  <Option value={grp.Group.Role.DEVELOPER_ROLE}>{getRoleLabel(grp.Group.Role.DEVELOPER_ROLE)}</Option>
-                  {capabilities.config.readerWriterRolesEnabled && (
-                    <>
-                      <Option value={grp.Group.Role.WRITER_ROLE}>{getRoleLabel(grp.Group.Role.WRITER_ROLE)}</Option>
-                    </>
-                  )}
-                  <Option value={grp.Group.Role.ADMIN_ROLE}>{getRoleLabel(grp.Group.Role.ADMIN_ROLE)}</Option>
-                </Select>
-              </div>
-              <div className="role-description">{this.renderRoleDescription(this.state.roleToApply)}</div>
-            </DialogBody>
-            <DialogFooter>
-              <DialogFooterButtons>
-                {this.state.isRoleUpdateLoading && <Spinner />}
-                <OutlinedButton
-                  onClick={this.onRequestCloseEditRoleModal.bind(this)}
-                  disabled={this.state.isRoleUpdateLoading}>
-                  Cancel
-                </OutlinedButton>
-                <Button onClick={this.onClickApplyRoleEdits.bind(this)} disabled={this.state.isRoleUpdateLoading}>
-                  Apply
-                </Button>
-              </DialogFooterButtons>
-            </DialogFooter>
-          </Dialog>
-        </Modal>
-
-        {/* Remove modal */}
-        <Modal
-          className="org-members-edit-modal"
-          isOpen={Boolean(this.state.isRemoveModalVisible)}
-          onRequestClose={this.onRequestCloseRemoveModal.bind(this)}>
-          <Dialog>
-            <DialogHeader>
-              <DialogTitle>Confirm removal</DialogTitle>
-            </DialogHeader>
-            <DialogBody className="modal-body">{this.renderAffectedUsersList({ verb: "Removing" })}</DialogBody>
-            <DialogFooter>
-              <DialogFooterButtons>
-                {this.state.isRemoveLoading && <Spinner />}
-                <OutlinedButton
-                  onClick={this.onRequestCloseRemoveModal.bind(this)}
-                  disabled={this.state.isRemoveLoading}>
-                  Cancel
-                </OutlinedButton>
-                <Button
-                  className="destructive"
-                  onClick={this.onClickConfirmRemove.bind(this)}
-                  disabled={this.state.isRemoveLoading}>
-                  Remove
-                </Button>
-              </DialogFooterButtons>
-            </DialogFooter>
-          </Dialog>
-        </Modal>
-      </div>
+      </>
     );
   }
 }

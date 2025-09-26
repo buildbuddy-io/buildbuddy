@@ -25,6 +25,7 @@ ts_library(
         "//enterprise/app/org:edit_org",
         "//enterprise/app/org:org_join_requests",
         "//enterprise/app/org:org_members",
+        "//enterprise/app/org:org_user_lists",
         "//enterprise/app/quota",
         "//enterprise/app/secrets",
         "//enterprise/app/settings:github_complete_installation",
