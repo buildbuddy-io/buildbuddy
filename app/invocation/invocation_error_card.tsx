@@ -138,7 +138,8 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
         }
       }
     }
-    let text = lines.join("\n");
+
+    let text = deduplicateLines(lines).join("\n");
     text = deemphasizeSandboxDebug(text);
     text = underlineFileNames(text);
     return text;
@@ -213,6 +214,10 @@ function formatFailureDescription(failureDetail: failure_details.IFailureDetail)
 
 function joinNonEmpty(parts: string[], join: string) {
   return parts.filter((x) => x).join(join);
+}
+
+function deduplicateLines(lines: string[]): string[] {
+  return lines.filter((x, index, self) => self.indexOf(x) === index);
 }
 
 function modelsEqual(a: CardModel, b: CardModel): boolean {
