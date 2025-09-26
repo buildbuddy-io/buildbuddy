@@ -799,12 +799,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	executionTask.QueuedTimestamp = timestamppb.Now()
-	serializedTask, err := proto.Marshal(executionTask)
-	if err != nil {
-		// Should never happen.
-		return nil, status.InternalErrorf("Error marshalling execution task %q: %s", executionID, err)
-	}
-
 	defaultTaskSize := tasksize.Default(executionTask)
 	requestedTaskSize := tasksize.Requested(executionTask)
 	taskSize := tasksize.ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), executionTask, tasksize.Override(defaultTaskSize, requestedTaskSize))
@@ -855,12 +849,16 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		TaskGroupId:       taskGroupID,
 		Priority:          req.GetExecutionPolicy().GetPriority(),
 	}
+	serializedTask, err := proto.Marshal(executionTask)
+	if err != nil {
+		// Should never happen.
+		return nil, status.InternalErrorf("marshal execution task %q: %s", executionID, err)
+	}
 	scheduleReq := &scpb.ScheduleTaskRequest{
 		TaskId:         executionID,
 		Metadata:       schedulingMetadata,
 		SerializedTask: serializedTask,
 	}
-
 	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, deletePendingExecutionExtraTimeout)
 		defer cancel()
