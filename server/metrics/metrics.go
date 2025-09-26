@@ -2387,6 +2387,7 @@ var (
 		Help:      "Number of ClickHouse SQL queries that resulted in an error.",
 	}, []string{
 		SQLQueryTemplateLabel,
+		StatusHumanReadableLabel,
 	})
 	ClickhouseQueryCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
