@@ -495,6 +495,10 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 		return nil, err
 	}
 
+	if err := ext4.EnsureDependencies(); err != nil {
+		return nil, status.WrapError(err, "verify ext4 tooling")
+	}
+
 	if _, err := os.Stat("/dev/kvm"); err != nil {
 		return nil, status.WrapError(err, "Firecracker isolation requires kvm")
 	}
