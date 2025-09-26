@@ -36,10 +36,7 @@ const (
 	// FS block size that we always use when creating ext4 images.
 	blockSize = 4096
 
-	// mke2fsPath is the path to the binary used for creating ext4 images.
-	mke2fsPath = "/sbin/mke2fs"
-
-	// debugfsPath is the path to the binary used for extracting from ext4 images.
+	mke2fsPath  = "/sbin/mke2fs"
 	debugfsPath = "/sbin/debugfs"
 )
 
