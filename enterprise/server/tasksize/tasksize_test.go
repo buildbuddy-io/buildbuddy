@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -25,6 +26,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 )
 
@@ -444,6 +446,83 @@ func TestSizer_RespectsMinimumSize(t *testing.T) {
 	ts = sizer.Get(ctx, task)
 	assert.Equal(t, int64(1000), ts.GetEstimatedMilliCpu())
 	assert.Equal(t, int64(800*1e6), ts.GetEstimatedMemoryBytes())
+}
+
+func TestSizer_P90CPUExperiment(t *testing.T) {
+	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
+	env := testenv.GetTestEnv(t)
+	rdb := testredis.Start(t).Client()
+	env.SetRemoteExecutionRedisClient(rdb)
+	auth := testauth.NewTestAuthenticator(testauth.TestUsers())
+	env.SetAuthenticator(auth)
+
+	tmp := testfs.MakeTempDir(t)
+	// Enable p90 experiment
+	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "remote_execution.task_size_use_p90_cpu": {
+      "state": "ENABLED",
+      "variants": { "default": true },
+      "defaultVariant": "default"
+    }
+  }
+}
+`)
+	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	// Simulate a task with a burst of 4000m CPU (4 cores) for 1 second, then
+	// 1000m CPU (1 core) for 9 seconds.
+	execStartTimestamp := time.Now()
+	usageStats := &repb.UsageStats{
+		CpuNanos:        0,   // Updated in loop below
+		PeakMemoryBytes: 1e9, // Arbitrary
+		Timeline: &repb.UsageTimeline{
+			// Set initial samples for delta-encoding - these are arbitrary;
+			// we only care about the deltas.
+			Timestamps: []int64{777},
+			CpuSamples: []int64{999},
+		},
+	}
+	md := &repb.ExecutedActionMetadata{
+		ExecutionStartTimestamp:     timestamppb.New(execStartTimestamp),
+		ExecutionCompletedTimestamp: timestamppb.New(execStartTimestamp), // Updated in loop below
+		UsageStats:                  usageStats,
+	}
+	// Simulate CPU usage as described above
+	timeline := usageStats.Timeline
+	for i := 0; i < 10; i++ {
+		elapsedDuration := 1 * time.Second
+		timeline.Timestamps = append(timeline.Timestamps, elapsedDuration.Milliseconds())
+		md.ExecutionCompletedTimestamp = timestamppb.New(md.ExecutionCompletedTimestamp.AsTime().Add(elapsedDuration))
+		if i == 0 {
+			timeline.CpuSamples = append(timeline.CpuSamples, 4000)
+		} else {
+			timeline.CpuSamples = append(timeline.CpuSamples, 1000)
+		}
+		usageStats.CpuNanos += timeline.CpuSamples[len(timeline.CpuSamples)-1] * 1e6 // ms to nanos
+	}
+
+	// Update task sizer
+	sizer, err := tasksize.NewSizer(env)
+	require.NoError(t, err)
+	ctx := context.Background()
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: []string{"big_linker_action", "<blah>"},
+		},
+	}
+	err = sizer.Update(ctx, task.GetAction(), task.GetCommand(), md)
+	require.NoError(t, err)
+
+	// Get task size and make sure it reports the p90 CPU usage
+	ts := sizer.Get(ctx, task)
+	assert.Equal(t, int64(4000), ts.GetEstimatedMilliCpu())
 }
 
 func TestCgroupSettings(t *testing.T) {

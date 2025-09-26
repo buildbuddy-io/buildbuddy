@@ -814,6 +814,16 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		predictedSize = sizer.Predict(ctx, executionTask)
 	}
 
+	if measuredSize != nil {
+		// If we have a measured task size, make sure we associate the p90 cpu
+		// experiment arm with the task, so we can later evaluate the experiment
+		// results. Note, the first time this is evaluated, we'll use the avg
+		// sample, so we'll probably want to ignore the first few days of data.
+		if _, experiment := tasksize.EvaluateP90CPUTrial(ctx, s.env.GetExperimentFlagProvider(), command); experiment != "" {
+			executionTask.Experiments = append(executionTask.Experiments, experiment)
+		}
+	}
+
 	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.WorkflowID, props.PoolType)
 	if err != nil {
 		return nil, status.WrapError(err, "get executor pool info")

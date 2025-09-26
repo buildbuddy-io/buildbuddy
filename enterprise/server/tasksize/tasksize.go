@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -237,8 +238,8 @@ func (s *taskSizer) Update(ctx context.Context, action *repb.Action, cmd *repb.C
 		statusLabel = "missing_stats"
 		return nil
 	}
-	milliCPU := computeMilliCPU(ctx, md)
-	if milliCPU <= 0 {
+	averageMilliCPU := computeAverageMilliCPU(ctx, md)
+	if averageMilliCPU <= 0 {
 		statusLabel = "missing_stats"
 		return status.InvalidArgumentErrorf("execution duration is missing or invalid")
 	}
@@ -248,9 +249,23 @@ func (s *taskSizer) Update(ctx context.Context, action *repb.Action, cmd *repb.C
 		return err
 	}
 	size := &scpb.TaskSize{
-		EstimatedMilliCpu:    milliCPU,
+		EstimatedMilliCpu:    averageMilliCPU,
 		EstimatedMemoryBytes: stats.GetPeakMemoryBytes(),
 	}
+
+	if useP90, _ := EvaluateP90CPUTrial(ctx, s.env.GetExperimentFlagProvider(), cmd); useP90 {
+		p90MilliCPU := computeP90MilliCPU(stats)
+		// Use p90 or avg; whichever is larger. This makes sure we fall back to
+		// the avg if timelines aren't available, and safeguards against
+		// possible corner cases where p90 might somehow be computed as even
+		// lower than the avg.
+		size.EstimatedMilliCpu = max(size.EstimatedMilliCpu, p90MilliCPU)
+	}
+
+	// Apply the configured max CPU limit for computed task sizes. Sizes larger
+	// than this amount must be manually requested.
+	size.EstimatedMilliCpu = min(size.EstimatedMilliCpu, *milliCPULimit)
+
 	b, err := proto.Marshal(size)
 	if err != nil {
 		statusLabel = "error"
@@ -260,7 +275,34 @@ func (s *taskSizer) Update(ctx context.Context, action *repb.Action, cmd *repb.C
 	return err
 }
 
-func computeMilliCPU(ctx context.Context, md *repb.ExecutedActionMetadata) int64 {
+// EvaluateP90CPUTrial returns whether the command is included in the treatment
+// arm for the p90 CPU experiment. The second return value is the experiment arm
+// identifier (experiment name + arm name) which will be non-empty if the
+// command is included in either the control or treatment arm.
+func EvaluateP90CPUTrial(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd *repb.Command) (enabled bool, exp string) {
+	if efp == nil {
+		return false, ""
+	}
+
+	cmdKey, err := commandKey(cmd)
+	if err != nil {
+		return false, ""
+	}
+	const flagName = "remote_execution.task_size_use_p90_cpu"
+	enabled, details := efp.BooleanDetails(
+		ctx, flagName, false,
+		// Include the command key in the evaluation context since we'll use it
+		// for the %-based diversion.
+		experiments.WithContext("command_key", cmdKey),
+	)
+	if details.Variant() == "" || details.Variant() == "default" {
+		// Not in any experiment arm (control or treatment).
+		return enabled, ""
+	}
+	return enabled, flagName + ":" + details.Variant()
+}
+
+func computeAverageMilliCPU(ctx context.Context, md *repb.ExecutedActionMetadata) int64 {
 	execDuration := md.GetExecutionCompletedTimestamp().AsTime().Sub(md.GetExecutionStartTimestamp().AsTime())
 	// Subtract full-stall durations from execution duration, to avoid inflating
 	// the denominator. Note that these durations shouldn't overlap in terms of
@@ -302,7 +344,74 @@ func computeMilliCPU(ctx context.Context, md *repb.ExecutedActionMetadata) int64
 		milliCPU, cpuMillisUsed, execDuration, cpuFullStallDuration, memoryFullStallDuration, ioFullStallDuration,
 	)
 
-	return min(milliCPU, *milliCPULimit)
+	return milliCPU
+}
+
+func computeP90MilliCPU(stats *repb.UsageStats) int64 {
+	// Some clarification on how we compute p90 from the usage data in the
+	// proto:
+	//
+	// - The 'timestamps' field is an array of delta-encoded timestamps
+	//   (milliseconds since Unix epoch).
+	// - The 'cpu_samples' field is an array of delta-encoded cumulative
+	//   CPU-millis (since the runner was created).
+	// - Both arrays represent *cumulative* metrics, so their delta-encoding
+	//   (ignoring the first sample) contains the *incremental* metrics that
+	//   we want to use in order to compute CPU utilization.
+	//
+	// Example:
+	//
+	// Original timestamps: [9000000, 9001000, 9002001] (units: ms since epoch)
+	// Cumulative CPU:      [  77000,   79000,   79500] (units: cpu-millis since
+	// container created)
+	//
+	// The delta-encodings (stored in the Timeline proto) will look like this:
+	//         timestamps = [9000000, (+1000), (+1001)]
+	//        cpu_samples = [  77000, (+2000),  (+500)]
+	//
+	// In this example, we compute the CPU utilization samples by looking
+	// directly at the delta-encodings, ignoring the first sample:
+	//
+	// CPU utilization samples: [(+2000)/(+1000), (+500)/(+1001)]
+	//                        = [              2,         0.4995]
+	//
+	// Then we return the p90 value from this final array (the value is in
+	// cpu-ms/ms, so we multiply by 1000 to get cpu-ms/s i.e. milliCPU)
+
+	timestampsDeltaEncoding := stats.GetTimeline().GetTimestamps()
+	cumulativeCPUDeltaEncoding := stats.GetTimeline().GetCpuSamples()
+	// These should be the same, but sanity check.
+	if len(timestampsDeltaEncoding) != len(cumulativeCPUDeltaEncoding) {
+		return 0
+	}
+	// Need multiple samples in order to compute p90.
+	if len(timestampsDeltaEncoding) <= 1 {
+		return 0
+	}
+	// Samples are delta-encoded, so each sample after the first index
+	// tells us the incremental duration/CPU usage respectively.
+	durations := timestampsDeltaEncoding[1:]
+	cpuMillisIncrements := cumulativeCPUDeltaEncoding[1:]
+	// Make a list with the CPU utilization samples over time, in units of
+	// cpu-millis/millis (CPU cores). For simplicity, don't bother with
+	// smoothing / averaging - just get p90 from the delta samples that we have,
+	// normalized by duration. The data may be a bit noisy and may occasionally
+	// have some extremes, but the p90 metric should mostly be robust to these
+	// outliers.
+	utilizationSamples := make([]float64, len(durations))
+	for i := range durations {
+		if durations[i] <= 0 {
+			// Should never happen, but safeguard against dividing by zero.
+			return 0
+		}
+		utilizationSamples[i] = float64(cpuMillisIncrements[i]) / float64(durations[i])
+	}
+	// Get p90 delta.
+	sort.Float64s(utilizationSamples)
+	p90 := utilizationSamples[int(float64(len(utilizationSamples))*0.9)]
+	// The units are cpu-ms/ms (CPU cores), but we want cpu-ms/s (milli-CPU
+	// cores). Multiply by 1000 ms/s to get the correct units.
+	return int64(p90 * 1000)
 }
 
 func (s *taskSizer) lastRecordedSize(ctx context.Context, task *repb.ExecutionTask) (*scpb.TaskSize, error) {
