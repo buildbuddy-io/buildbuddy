@@ -535,7 +535,7 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, opts *interf
 		Role       role.Role
 	}
 
-	if authutil.UserListsEnabled() {
+	if authutil.UserListsEnabled() && (slices.Contains(opts.Statuses, grpb.GroupMembershipStatus_MEMBER) && opts.SubIDPrefix == "") {
 		ulQuery := d.h.NewQuery(ctx, "userdb_get_group_user_lists").Raw(
 			`SELECT ul.name, ul.user_list_id, ulg.role FROM "UserLists" ul
 			JOIN "UserListGroups" ulg on ulg.user_list_user_list_id = ul.user_list_id

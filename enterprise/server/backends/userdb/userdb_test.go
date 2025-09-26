@@ -714,6 +714,29 @@ func TestUpdateGroupUsers_UserLists(t *testing.T) {
 		require.Equal(t, grpb.Group_ADMIN_ROLE, m2.Role)
 	}
 
+	// Verify that options are respected.
+	{
+		// User lists can never be in "requested" status so this should only
+		// return direct users.
+		groupUsers, err = udb.GetGroupUsers(ctx1, us1Group.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_REQUESTED}})
+		require.NoError(t, err)
+		require.Empty(t, groupUsers)
+
+		// When filtering by Sub ID prefix, no user lists should be returned.
+		groupUsers, err = udb.GetGroupUsers(ctx1, us1Group.GroupID, &interfaces.GetGroupUsersOpts{
+			Statuses:    []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER},
+			SubIDPrefix: "US1",
+		})
+		require.NoError(t, err)
+		require.Len(t, groupUsers, 1)
+
+		m1 = groupUsers[0]
+		require.NotNil(t, m1.User)
+		require.Nil(t, m1.UserList)
+		require.Equal(t, "US1", m1.User.UserId.Id)
+		require.Equal(t, grpb.Group_ADMIN_ROLE, m1.Role)
+	}
+
 	// Downgrade the admin user to a developer and verify they can't manipulate
 	// membership anymore.
 	{
@@ -969,13 +992,13 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	adminOnlyKey, err := adb.CreateAPIKey(
 		ctx1, groupID1, "Admin-only key",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	developerKey, err := adb.CreateAPIKey(
 		ctx1, groupID1, "Developer key",
 		[]cappb.Capability{cappb.Capability_CAS_WRITE},
-		0, /*=expiresIn*/
+		0,   /*=expiresIn*/
 		true /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 
@@ -1022,7 +1045,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	_, err = adb.CreateAPIKey(
 		ctx2, groupID1, "test-label-2",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
@@ -1032,7 +1055,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	_, err = adb.CreateAPIKey(
 		ctx3, groupID1, "test-label-3",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
@@ -2077,7 +2100,7 @@ func TestChildGroupAuth(t *testing.T) {
 	key1, err := env.GetAuthDB().CreateAPIKey(
 		ctx1, us1Group.GroupID, "admin",
 		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	adminCtx1 := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key1.Value)
@@ -2088,7 +2111,7 @@ func TestChildGroupAuth(t *testing.T) {
 	key2, err := env.GetAuthDB().CreateAPIKey(
 		ctx2, us2Group.GroupID, "admin",
 		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 
