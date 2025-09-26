@@ -1080,7 +1080,7 @@ func validateHeaderRangeGen(header *rfpb.Header, rd *rfpb.RangeDescriptor) error
 		return nil
 	}
 	if rd.GetGeneration() != header.GetGeneration() {
-		return status.OutOfRangeErrorf("%s: id %d generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
+		return status.OutOfRangeErrorf("%s: range_id %d generation on store: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
 	}
 	return nil
 }
@@ -3141,7 +3141,7 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		}
 
 		if rd.GetGeneration() != req.GetRange().GetGeneration() {
-			return nil, status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), req.GetRange().GetGeneration())
+			return nil, status.OutOfRangeErrorf("%s: generation: %d  on store requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), req.GetRange().GetGeneration())
 		}
 
 		var replicaDesc *rfpb.ReplicaDescriptor
