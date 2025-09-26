@@ -913,6 +913,9 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		log.CtxInfof(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
 		if err := s.Dispatch(ctx, req, action, executionID); err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
+			if err := s.MarkExecutionFailed(ctx, executionID, err); err != nil {
+				log.CtxWarningf(ctx, "Error marking execution failed: %s", err)
+			}
 			return err
 		}
 		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)

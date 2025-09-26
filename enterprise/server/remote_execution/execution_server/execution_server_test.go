@@ -865,6 +865,55 @@ func TestMarkFailed(t *testing.T) {
 	require.True(t, status.IsNotFoundError(err), "error should be NotFoundError, but was %s", err)
 }
 
+func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
+	env, conn, _ := setupEnv(t)
+	ctx := context.Background()
+
+	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	env.SetSecretService(nil)
+
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+
+	action := &repb.Action{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "include-secrets", Value: "true"},
+		}},
+	}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ad := arn.GetDigest()
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	client := repb.NewExecutionClient(conn)
+	stream, err := client.Execute(ctx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   ad,
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+
+	_, err = stream.Recv()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Secrets requested but secret service not available")
+
+	rows := getExecutions(t, env)
+	require.Equal(t, 1, len(rows))
+	require.Equal(t, int64(repb.ExecutionStage_COMPLETED), rows[0].Stage)
+
+	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), rows[0].ExecutionID)
+	require.NoError(t, err)
+	require.Contains(t, executeResponse.GetStatus().GetMessage(), "Secrets requested but secret service not available")
+}
+
 func TestInvocationLink_EmptyInvocationID(t *testing.T) {
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 	env, conn, _ := setupEnv(t)
