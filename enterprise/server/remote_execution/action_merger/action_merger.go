@@ -147,6 +147,23 @@ func RecordHedgedExecution(ctx context.Context, rdb redis.UniversalClient, adRes
 	return err
 }
 
+// CheckMerged returns true if the specified action has been merged against.
+func CheckMerged(ctx context.Context, rdb redis.UniversalClient, adResource *digest.CASResourceName) (bool, error) {
+	key, err := redisKeyForPendingExecutionID(ctx, adResource)
+	if err != nil {
+		return false, err
+	}
+	rawCount, err := rdb.HGet(ctx, key, actionCountKey).Result()
+	if err == redis.Nil {
+		return false, nil
+	}
+	count, err := strconv.Atoi(rawCount)
+	if err != nil {
+		return false, err
+	}
+	return count > 1, nil
+}
+
 // This function records a merged execution in Redis.
 func RecordMergedExecution(ctx context.Context, rdb redis.UniversalClient, adResource *digest.CASResourceName, groupIdForMetrics string) error {
 	key, err := redisKeyForPendingExecutionID(ctx, adResource)

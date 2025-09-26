@@ -1846,6 +1846,66 @@ func TestActionMerging_Success(t *testing.T) {
 	require.Equal(t, op3, op4, "expected actions to be merged, even with skip_cache_lookup")
 }
 
+func TestActionMerging_CancellationDoesntAffectMergedActions(t *testing.T) {
+	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
+
+	bbServer := rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	bep, err := build_event_publisher.New(bbServer.GRPCAddress(), "", "invocation1")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	bep.Start(ctx)
+
+	startTime := time.Now()
+	err = bep.Publish(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_Started{
+			Started: &bespb.BuildStarted{
+				StartTime: timestamppb.New(startTime),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", "sleep 5"},
+		Platform:  platform,
+	}
+	cmd1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"})
+	op1 := cmd1.WaitAccepted()
+
+	cmd2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
+	op2 := cmd2.WaitAccepted()
+	require.Equal(t, op1, op2, "the execution IDs for both commands should be the same")
+
+	// Cancel the first invocation.
+	finishTime := time.Now()
+	err = bep.Publish(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_Finished{
+			Finished: &bespb.BuildFinished{
+				ExitCode:   &bespb.BuildFinished_ExitCode{Name: "INTERRUPTED", Code: build_event_handler.InterruptedExitCode},
+				FinishTime: timestamppb.New(finishTime),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	// Verify that the action can run to completion.
+
+	res := cmd1.Wait()
+	require.Equal(t, 0, res.ExitCode)
+
+	res = cmd2.Wait()
+	require.Equal(t, 0, res.ExitCode)
+}
+
 func TestActionMerging_ScheduledConcurrently(t *testing.T) {
 	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
 
