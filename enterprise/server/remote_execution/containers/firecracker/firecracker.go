@@ -1463,6 +1463,10 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 	}
 
 	if err := c.mountWorkspace(ctx, execClient); err != nil {
+		// Translate deadline-exceeded to unavailable so the caller retries.
+		if status.IsDeadlineExceededError(err) {
+			return status.UnavailableErrorf("failed to remount workspace after update: %v", err)
+		}
 		return status.WrapError(err, "failed to remount workspace after update")
 	}
 
