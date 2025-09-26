@@ -38,17 +38,24 @@ const (
 
 	// mke2fsPath is the path to the binary used for creating ext4 images.
 	mke2fsPath = "/sbin/mke2fs"
+
+	// debugfsPath is the path to the binary used for extracting from ext4 images.
+	debugfsPath = "/sbin/debugfs"
 )
 
-// EnsureDependencies verifies that all external binaries required for creating
-// ext4 images are present and executable.
+// EnsureDependencies verifies that all external binaries required for ext4
+// image operations are present and executable.
 func EnsureDependencies() error {
-	info, err := os.Stat(mke2fsPath)
-	if err != nil {
-		return status.UnavailableErrorf("required binary %q is missing: %s", mke2fsPath, err)
-	}
-	if info.Mode()&0o111 == 0 {
-		return status.UnavailableErrorf("required binary %q is not executable", mke2fsPath)
+	requiredBinaries := []string{mke2fsPath, debugfsPath}
+
+	for _, binary := range requiredBinaries {
+		info, err := os.Stat(binary)
+		if err != nil {
+			return status.UnavailableErrorf("required binary %q is missing: %s", binary, err)
+		}
+		if info.Mode()&0o111 == 0 {
+			return status.UnavailableErrorf("required binary %q is not executable", binary)
+		}
 	}
 	return nil
 }
@@ -222,7 +229,7 @@ func ImageToDirectory(ctx context.Context, inputFile, outputDir string, paths []
 		}
 		requests = append(requests, fmt.Sprintf("rdump %q %q", p, filepath.Join(outputDir, parent)))
 	}
-	cmd := exec.CommandContext(ctx, "/sbin/debugfs", inputFile)
+	cmd := exec.CommandContext(ctx, debugfsPath, inputFile)
 	cmd.Stdin = strings.NewReader(strings.Join(requests, "\n"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return status.InternalErrorf("%s: %s", err, out)
