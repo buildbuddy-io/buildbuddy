@@ -39,7 +39,14 @@ import (
 )
 
 const (
-	uploadBufSizeBytes = 128 * 1024 // 128KiB
+	// uploadBufSizeBytes controls the size of the buffers used for uploading
+	// to bytestream.Write. This means it also controls the payload size for
+	// each WriteRequest. https://github.com/grpc/grpc.github.io/issues/371
+	// that 16KiB-64KiB payloads work best, but our experiments and benchmarks
+	// show that 128KiB works best. Values bigger and slower than that are both
+	// slower. Values bigger than that allocate more bytes, and values smaller
+	// than that allocate the same number of bytes but with more allocations.
+	uploadBufSizeBytes = 128 * 1024
 	// Matches https://github.com/bazelbuild/bazel/blob/9c22032c8dc0eb2ec20d8b5a5c73d1f5f075ae37/src/main/java/com/google/devtools/build/lib/remote/options/RemoteOptions.java#L461-L464
 	minSizeBytesToCompress = 100
 )

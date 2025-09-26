@@ -34,6 +34,12 @@ const (
 	// (Match the readBufSizeBytes in byte_stream_server.go)
 	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
 
+	// writeBufSizeBytes controls the maximum size of buffers used for writing
+	// to a remote cache. This is also the maximum payload size for each
+	// WriteRequest, though with ioutil.DoubleBufferWriter, payloads will be
+	// smaller unless the remote cache is falling behind. Experiments and
+	// benchmarks show that values between 256KiB and 1MB are all about as fast.
+	// Values over 1MB cause more allocation in gRPC code.
 	writeBufSizeBytes = 512 * 1024 // 512 KiB
 )
 
