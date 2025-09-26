@@ -1131,7 +1131,7 @@ func (s *SchedulerServer) GetSharedExecutorPoolGroupID() string {
 	return *sharedExecutorPoolGroupID
 }
 
-func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os, arch string, originalPool *interfaces.PoolInfo) *interfaces.PoolInfo {
+func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os, arch string, requestedPool *interfaces.PoolInfo, originalPool string) *interfaces.PoolInfo {
 	fp := s.env.GetExperimentFlagProvider()
 	if fp == nil {
 		return nil
@@ -1142,8 +1142,13 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 		ctx, experimentName, map[string]any{},
 		experiments.WithContext("os", os),
 		experiments.WithContext("arch", arch),
-		experiments.WithContext("pool", originalPool.Name),
-		experiments.WithContext("self_hosted", originalPool.IsSelfHosted),
+		experiments.WithContext("pool", requestedPool.Name),
+		experiments.WithContext("self_hosted", requestedPool.IsSelfHosted),
+		// OriginalPool in this case is referring to a pool from another remote
+		// execution platform. Some users may set this to inform BB about how
+		// traffic is being routed in their current setup, without having to
+		// actually set the Pool property.
+		experiments.WithContext("OriginalPool", originalPool),
 	)
 
 	// If null or empty, don't override.
@@ -1153,7 +1158,7 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 
 	log.CtxInfof(ctx, "Pool override: %+#v", obj)
 
-	override := *originalPool // shallow copy
+	override := *requestedPool // shallow copy
 	if groupIDValue, ok := obj["group_id"]; ok {
 		if groupID, ok := groupIDValue.(string); ok {
 			override.GroupID = groupID
@@ -1177,7 +1182,7 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 	return &override
 }
 
-func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
+func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
 	poolInfo, err := s.getPoolInfo(ctx, os, requestedPool, workflowID, poolType)
 	if err != nil {
 		return nil, err
@@ -1185,7 +1190,7 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPo
 	// Now that we know the pool we would normally route to, feed that into the
 	// experiment context and use that to potentially reroute to a different
 	// pool.
-	if override := s.getPoolOverrideFromExperiments(ctx, os, arch, poolInfo); override != nil {
+	if override := s.getPoolOverrideFromExperiments(ctx, os, arch, poolInfo, originalPool); override != nil {
 		return override, nil
 	}
 
