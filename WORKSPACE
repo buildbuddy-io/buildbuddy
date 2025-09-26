@@ -161,7 +161,7 @@ http_archive(
     integrity = "sha256-5Ge4AQRrZZjGVzCbRdJCbcA1E3d70Qkq8sYu6/mQrKU=",
     patch_args = ["-p1"],
     patches = [
-        "//buildpatches:gazelle.patch",
+        "//buildpatches/bazel_dep:gazelle.patch",
     ],
     urls = [
         "https://mirror.bazel.build/github.com/bazel-contrib/bazel-gazelle/releases/download/v0.45.0/bazel-gazelle-v0.45.0.tar.gz",

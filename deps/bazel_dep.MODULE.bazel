@@ -14,7 +14,7 @@ single_version_override(
     module_name = "gazelle",
     patch_strip = 1,
     patches = [
-        "@@//buildpatches:gazelle.patch",
+        "//buildpatches/bazel_dep:gazelle.patch",
     ],
     version = "0.45.0",
 )
@@ -24,7 +24,7 @@ single_version_override(
     module_name = "googleapis",
     patch_strip = 1,
     patches = [
-        "@@//buildpatches:bzlmod_googleapis.patch",
+        "//buildpatches/bazel_dep:bzlmod_googleapis.patch",
     ],
     version = "0.0.0-20241220-5e258e33",
 )
@@ -36,7 +36,7 @@ single_version_override(
     module_name = "rules_nodejs",
     patch_strip = 1,
     patches = [
-        "@@//buildpatches:build_bazel_rules_nodejs.patch",
+        "//buildpatches/bazel_dep:build_bazel_rules_nodejs.patch",
     ],
     version = "5.8.5",
 )
@@ -58,7 +58,7 @@ archive_override(
     integrity = "sha256-wJV/ZIAEYtzoEynx+f6NYA1ilAIrK6ppbUuaeI0+j3Y=",
     patch_strip = 1,
     patches = [
-        "@@//buildpatches:rules_webtesting.patch",
+        "//buildpatches/bazel_dep:rules_webtesting.patch",
     ],
     strip_prefix = "rules_webtesting-7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed",
     urls = [

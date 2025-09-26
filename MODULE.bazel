@@ -1,4 +1,7 @@
-module(name = "buildbuddy")
+module(
+    name = "buildbuddy",
+    repo_name = "com_github_buildbuddy_io_buildbuddy",
+)
 
 include("//deps:bazel_dep.MODULE.bazel")
 include("//deps:docker.MODULE.bazel")

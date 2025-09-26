@@ -32,6 +32,10 @@ jobs:
           cp buildbuddy/deps.bzl buildbuddy-internal/deps.bzl
           cp buildbuddy/.bazelversion buildbuddy-internal/.bazelversion
           cp buildbuddy/shared.bazelrc buildbuddy-internal/shared.bazelrc
+          mkdir -p buildpatches/bazel_dep
+          cp buildbuddy/buildpatches/bazel_dep/* buildbuddy-internal/buildpatches/bazel_dep/
+          mkdir -p deps
+          cp buildbuddy/deps/* buildbuddy-internal/deps/
 
       - name: Update SHA
         run: |

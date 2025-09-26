@@ -1,7 +1,7 @@
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
 npm.npm_translate_lock(
     name = "npm",
-    npmrc = "//:.npmrc",
+    npmrc = "@com_github_buildbuddy_io_buildbuddy//:.npmrc",
     patch_args = {
         "@protobufjs/inquire": [
             "-p1",
@@ -15,8 +15,8 @@ npm.npm_translate_lock(
             "//buildpatches:protobuf.js_inquire.patch",
         ],
     },
-    pnpm_lock = "//:pnpm-lock.yaml",
-    verify_node_modules_ignored = "//:.bazelignore",
+    pnpm_lock = "@com_github_buildbuddy_io_buildbuddy//:pnpm-lock.yaml",
+    verify_node_modules_ignored = "@com_github_buildbuddy_io_buildbuddy//:.bazelignore",
 )
 use_repo(npm, "npm")
 
@@ -24,7 +24,7 @@ rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
 rules_ts_ext.deps(
     # TODO: Remove after the next aspect_rules_ts update.
     ts_integrity = "sha512-aJn6wq13/afZp/jT9QZmwEjDqqvSGp1VT5GVg+f/t6/oVyrgXM6BY1h9BRh/O5p3PlUPAe+WuiEZOmb/49RqoQ==",
-    ts_version_from = "//:package.json",
+    ts_version_from = "@com_github_buildbuddy_io_buildbuddy//:package.json",
 )
 
 # TODO: Remove this after the next aspect_rules_ts update.
