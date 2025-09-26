@@ -35,7 +35,23 @@ const (
 
 	// FS block size that we always use when creating ext4 images.
 	blockSize = 4096
+
+	// mke2fsPath is the path to the binary used for creating ext4 images.
+	mke2fsPath = "/sbin/mke2fs"
 )
+
+// EnsureDependencies verifies that all external binaries required for creating
+// ext4 images are present and executable.
+func EnsureDependencies() error {
+	info, err := os.Stat(mke2fsPath)
+	if err != nil {
+		return status.UnavailableErrorf("required binary %q is missing: %s", mke2fsPath, err)
+	}
+	if info.Mode()&0o111 == 0 {
+		return status.UnavailableErrorf("required binary %q is not executable", mke2fsPath)
+	}
+	return nil
+}
 
 // DirectoryToImage creates an ext4 image of the specified size from inputDir
 // and writes it to outputFile.
@@ -48,7 +64,7 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 	defer span.End()
 
 	args := []string{
-		"/sbin/mke2fs",
+		mke2fsPath,
 		"-L", "''",
 		"-N", "0",
 		"-O", "^64bit",
@@ -94,7 +110,7 @@ func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64) err
 	defer span.End()
 
 	args := []string{
-		"/sbin/mke2fs",
+		mke2fsPath,
 		"-L", "",
 		"-N", "0",
 		"-O", "^64bit",
