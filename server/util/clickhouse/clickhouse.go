@@ -411,6 +411,7 @@ func recordMetricsAfterFn(db *gorm.DB) {
 	// Ignore "record not found" errors as they don't generally indicate a
 	// problem with the server.
 	if db.Error != nil && !errors.Is(db.Error, gorm.ErrRecordNotFound) {
+		labels[metrics.StatusHumanReadableLabel] = status.MetricsLabel(db.Error)
 		metrics.ClickhouseQueryErrorCount.With(labels).Inc()
 	}
 }
