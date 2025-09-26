@@ -535,7 +535,18 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, opts *interf
 		Role       role.Role
 	}
 
-	if authutil.UserListsEnabled() && (slices.Contains(opts.Statuses, grpb.GroupMembershipStatus_MEMBER) && opts.SubIDPrefix == "") {
+	queryUserLists := authutil.UserListsEnabled()
+	// User lists are always members. Don't return any if the caller is
+	// querying for members that have requested to join the group.
+	if !slices.Contains(opts.Statuses, grpb.GroupMembershipStatus_MEMBER) {
+		queryUserLists = false
+	}
+	// User lists don't have Sub IDs. Only return users if the caller is
+	// filtering by Sub ID.
+	if opts.SubIDPrefix != "" {
+		queryUserLists = false
+	}
+	if queryUserLists {
 		ulQuery := d.h.NewQuery(ctx, "userdb_get_group_user_lists").Raw(
 			`SELECT ul.name, ul.user_list_id, ulg.role FROM "UserLists" ul
 			JOIN "UserListGroups" ulg on ulg.user_list_user_list_id = ul.user_list_id
