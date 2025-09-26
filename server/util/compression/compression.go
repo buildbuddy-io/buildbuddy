@@ -2,6 +2,7 @@ package compression
 
 import (
 	"errors"
+	"flag"
 	"io"
 	"runtime"
 	"sync"
@@ -29,6 +30,10 @@ var (
 	// These are used a bunch and the labels are constant so just do it once.
 	zstdCompressedBytesMetric   = metrics.BytesCompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"})
 	zstdDecompressedBytesMetric = metrics.BytesDecompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"})
+)
+
+var (
+	MinBytesAutoZstdCompression = flag.Int64("compression.min_bytes_auto_zstd_compression", 100, "Blobs larger than this will be zstd compressed before written to disk.")
 )
 
 func mustGetZstdEncoder() *zstd.Encoder {

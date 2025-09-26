@@ -1025,14 +1025,13 @@ func (mc *MigrationCache) copy(c *copyData) {
 		log.CtxDebugf(ctx, "Migration already copied on dequeue, returning early: digest %v", c.d)
 		return
 	}
-	if c.d.GetDigest().GetSizeBytes() > 100 && c.conf.src.SupportsCompressor(repb.Compressor_ZSTD) && c.conf.dest.SupportsCompressor(repb.Compressor_ZSTD) {
+	if c.d.GetDigest().GetSizeBytes() > *compression.MinBytesAutoZstdCompression && c.conf.src.SupportsCompressor(repb.Compressor_ZSTD) && c.conf.dest.SupportsCompressor(repb.Compressor_ZSTD) {
 		// Use compression if both caches support it. This will usually mean
 		// that at src cache doesn't need to decompress and the dest cache
 		// doesn't need to compress, which saves CPU and speeds up the copy.
 		// Ideally, we would only do this when the destination cache would
-		// automatically compress, but since there's no way to check that, rely
-		// on the fact that `cache.pebble.min_bytes_auto_zstd_compression` is
-		// 100.
+		// automatically compress, but since there's no way to check that, check
+		// the same flag that the destination cache would use.
 		c.d = c.d.CloneVT()
 		c.d.Compressor = repb.Compressor_ZSTD
 	}
