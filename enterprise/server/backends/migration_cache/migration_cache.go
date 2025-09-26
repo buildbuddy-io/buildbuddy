@@ -1025,7 +1025,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 		log.CtxDebugf(ctx, "Migration already copied on dequeue, returning early: digest %v", c.d)
 		return
 	}
-	if c.d.GetDigest().GetSizeBytes() > *compression.MinBytesAutoZstdCompression && c.conf.src.SupportsCompressor(repb.Compressor_ZSTD) && c.conf.dest.SupportsCompressor(repb.Compressor_ZSTD) {
+	if c.d.GetDigest().GetSizeBytes() >= *compression.MinBytesAutoZstdCompression && c.conf.src.SupportsCompressor(repb.Compressor_ZSTD) && c.conf.dest.SupportsCompressor(repb.Compressor_ZSTD) {
 		// Use compression if both caches support it. This will usually mean
 		// that at src cache doesn't need to decompress and the dest cache
 		// doesn't need to compress, which saves CPU and speeds up the copy.
