@@ -540,6 +540,15 @@ proto_library(
 )
 
 proto_library(
+    name = "user_list_proto",
+    srcs = ["user_list.proto"],
+    deps = [
+        ":context_proto",
+        ":user_id_proto",
+    ],
+)
+
+proto_library(
     name = "user_id_proto",
     srcs = ["user_id.proto"],
 )
@@ -554,6 +563,7 @@ proto_library(
         ":capability_proto",
         ":context_proto",
         ":user_id_proto",
+        ":user_list_proto",
     ],
 )
 
@@ -614,6 +624,7 @@ proto_library(
         ":suggestion_proto",
         ":target_proto",
         ":usage_proto",
+        ":user_list_proto",
         ":user_proto",
         ":workflow_proto",
         ":workspace_proto",
@@ -1610,6 +1621,7 @@ go_proto_library(
         ":target_go_proto",
         ":usage_go_proto",
         ":user_go_proto",
+        ":user_list_go_proto",
         ":workflow_go_proto",
         ":workspace_go_proto",
         ":zip_go_proto",
@@ -1675,6 +1687,20 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "user_list_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/user_list",
+    proto = ":user_list_proto",
+    deps = [
+        ":context_go_proto",
+        ":user_id_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "group_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
@@ -1687,6 +1713,7 @@ go_proto_library(
         ":capability_go_proto",
         ":context_go_proto",
         ":user_id_go_proto",
+        ":user_list_go_proto",
     ],
 )
 
@@ -2421,6 +2448,7 @@ ts_proto_library(
         ":capability_ts_proto",
         ":context_ts_proto",
         ":user_id_ts_proto",
+        ":user_list_ts_proto",
     ],
 )
 
@@ -2545,6 +2573,15 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "user_list_ts_proto",
+    proto = ":user_list_proto",
+    deps = [
+        ":context_ts_proto",
+        ":user_id_ts_proto",
+    ],
+)
+
+ts_proto_library(
     name = "encryption_ts_proto",
     proto = ":encryption_proto",
     deps = [":context_ts_proto"],
@@ -2577,6 +2614,7 @@ ts_proto_library(
         ":suggestion_ts_proto",
         ":target_ts_proto",
         ":usage_ts_proto",
+        ":user_list_ts_proto",
         ":user_ts_proto",
         ":workflow_ts_proto",
         ":workspace_ts_proto",

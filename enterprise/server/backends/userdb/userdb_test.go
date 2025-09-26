@@ -32,6 +32,7 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	ulpb "github.com/buildbuddy-io/buildbuddy/proto/user_list"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -52,7 +53,7 @@ func authUserCtx(ctx context.Context, env environment.Env, t *testing.T, userID 
 
 func findGroupUser(t *testing.T, userID string, groupUsers []*grpb.GetGroupUsersResponse_GroupUser) *grpb.GetGroupUsersResponse_GroupUser {
 	for _, user := range groupUsers {
-		if user.User.UserId.Id == userID {
+		if user.User != nil && user.User.UserId.Id == userID {
 			return user
 		}
 	}
@@ -576,6 +577,190 @@ func TestUpdateGroupUsers_RoleAuth(t *testing.T) {
 				require.Truef(t, test.Err(err), "unexpected error type %v", err)
 			}
 		})
+	}
+}
+
+func addUserToUserList(ctx context.Context, udb interfaces.UserDB, userListID string, userID string) error {
+	return udb.UpdateUserListMembers(ctx, userListID, []*ulpb.UpdateUserListMembershipRequest_Update{
+		{
+			UserId: &uidpb.UserId{Id: userID},
+			Action: ulpb.UpdateUserListMembershipRequest_ADD,
+		},
+	})
+}
+
+func removeUserFromUserList(ctx context.Context, udb interfaces.UserDB, userListID string, userID string) error {
+	return udb.UpdateUserListMembers(ctx, userListID, []*ulpb.UpdateUserListMembershipRequest_Update{
+		{
+			UserId: &uidpb.UserId{Id: userID},
+			Action: ulpb.UpdateUserListMembershipRequest_REMOVE,
+		},
+	})
+}
+
+func TestUpdateGroupUsers_UserLists(t *testing.T) {
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+	flags.Set(t, "database.create_user_list_tables", true)
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	us1Group := getGroup(t, ctx1, env).Group
+
+	userList1 := &tables.UserList{
+		GroupID: us1Group.GroupID,
+		Name:    "cool people",
+	}
+	err := udb.CreateUserList(ctx1, userList1)
+	require.NoError(t, err)
+	err = addUserToUserList(ctx1, udb, userList1.UserListID, "US1")
+	require.NoError(t, err)
+
+	userList2 := &tables.UserList{
+		GroupID: us1Group.GroupID,
+		Name:    "even cooler people",
+	}
+	err = udb.CreateUserList(ctx1, userList2)
+	require.NoError(t, err)
+
+	err = udb.UpdateGroupUsers(ctx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       userList1.UserListID,
+		Role:             grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+	err = udb.UpdateGroupUsers(ctx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       userList2.UserListID,
+		Role:             grpb.Group_READER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	groupUsers, err := udb.GetGroupUsers(ctx1, us1Group.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
+	require.NoError(t, err)
+	require.Len(t, groupUsers, 3)
+
+	m1 := groupUsers[0]
+	require.Nil(t, m1.User)
+	require.NotNil(t, m1.UserList)
+	require.Equal(t, userList1.Name, m1.UserList.Name)
+	require.Equal(t, grpb.Group_DEVELOPER_ROLE, m1.Role)
+
+	m2 := groupUsers[1]
+	require.Nil(t, m2.User)
+	require.NotNil(t, m2.UserList)
+	require.Equal(t, userList2.Name, m2.UserList.Name)
+	require.Equal(t, grpb.Group_READER_ROLE, m2.Role)
+
+	m3 := groupUsers[2]
+	require.NotNil(t, m3.User)
+	require.Nil(t, m3.UserList)
+	require.Equal(t, "US1", m3.User.UserId.Id)
+	require.Equal(t, grpb.Group_ADMIN_ROLE, m3.Role)
+
+	// Remove the first user list as a member.
+
+	{
+		err = udb.UpdateGroupUsers(ctx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+			UserListId:       userList1.UserListID,
+		}})
+		require.NoError(t, err)
+
+		groupUsers, err = udb.GetGroupUsers(ctx1, us1Group.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
+		require.NoError(t, err)
+		require.Len(t, groupUsers, 2)
+
+		m1 := groupUsers[0]
+		require.Nil(t, m1.User)
+		require.NotNil(t, m1.UserList)
+		require.Equal(t, userList2.Name, m1.UserList.Name)
+		require.Equal(t, grpb.Group_READER_ROLE, m1.Role)
+
+		m2 := groupUsers[1]
+		require.NotNil(t, m2.User)
+		require.Nil(t, m2.UserList)
+		require.Equal(t, "US1", m2.User.UserId.Id)
+		require.Equal(t, grpb.Group_ADMIN_ROLE, m2.Role)
+	}
+
+	// Update the role for the user list.
+
+	{
+		err = udb.UpdateGroupUsers(ctx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			UserListId: userList2.UserListID,
+			Role:       grpb.Group_ADMIN_ROLE,
+		}})
+		require.NoError(t, err)
+
+		groupUsers, err = udb.GetGroupUsers(ctx1, us1Group.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
+		require.NoError(t, err)
+		require.Len(t, groupUsers, 2)
+
+		m1 := groupUsers[0]
+		require.Nil(t, m1.User)
+		require.NotNil(t, m1.UserList)
+		require.Equal(t, userList2.Name, m1.UserList.Name)
+		require.Equal(t, grpb.Group_ADMIN_ROLE, m1.Role)
+
+		m2 := groupUsers[1]
+		require.NotNil(t, m2.User)
+		require.Nil(t, m2.UserList)
+		require.Equal(t, "US1", m2.User.UserId.Id)
+		require.Equal(t, grpb.Group_ADMIN_ROLE, m2.Role)
+	}
+
+	// Downgrade the admin user to a developer and verify they can't manipulate
+	// membership anymore.
+	{
+		err = udb.UpdateGroupUsers(ctx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			UserId: &uidpb.UserId{Id: "US1"},
+			Role:   grpb.Group_DEVELOPER_ROLE,
+		}})
+		require.NoError(t, err)
+		ctx1 := authUserCtx(ctx, env, t, "US1")
+
+		err = udb.UpdateGroupUsers(ctx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			UserListId:       userList2.UserListID,
+			Role:             grpb.Group_ADMIN_ROLE,
+			MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		}})
+		require.Error(t, err)
+		require.True(t, status.IsPermissionDeniedError(err))
+
+		err = udb.UpdateGroupUsers(ctx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			UserListId:       userList2.UserListID,
+			Role:             grpb.Group_ADMIN_ROLE,
+			MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+		}})
+		require.Error(t, err)
+		require.True(t, status.IsPermissionDeniedError(err))
+	}
+
+	// Verify that an admin from a different group can't manipulate membership.
+	{
+		createUser(t, ctx, env, "US2", "org2.io")
+		ctx2 := authUserCtx(ctx, env, t, "US2")
+
+		err = udb.UpdateGroupUsers(ctx2, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			UserListId:       userList2.UserListID,
+			Role:             grpb.Group_ADMIN_ROLE,
+			MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		}})
+		require.Error(t, err)
+		require.True(t, status.IsPermissionDeniedError(err))
+
+		err = udb.UpdateGroupUsers(ctx2, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			UserListId:       userList2.UserListID,
+			Role:             grpb.Group_ADMIN_ROLE,
+			MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+		}})
+		require.Error(t, err)
+		require.True(t, status.IsPermissionDeniedError(err))
 	}
 }
 
@@ -2018,7 +2203,16 @@ func TestUserListOps(t *testing.T) {
 
 	uls, err := udb.GetUserLists(group1AdminCtx, group1ID)
 	require.NoError(t, err)
-	require.Equal(t, []*tables.UserList{group1List2, group1List1}, uls)
+	require.Equal(t, []*ulpb.UserList{
+		{
+			UserListId: group1List2.UserListID,
+			Name:       group1List2.Name,
+		},
+		{
+			UserListId: group1List1.UserListID,
+			Name:       group1List1.Name,
+		},
+	}, uls)
 	_, err = udb.GetUserLists(group1AdminCtx, group2ID)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
@@ -2036,50 +2230,47 @@ func TestUserListOps(t *testing.T) {
 
 	// Add list members.
 
-	err = udb.AddUserToUserList(group1AdminCtx, group1List2.UserListID, "US1")
+	err = addUserToUserList(group1AdminCtx, udb, group1List2.UserListID, "US1")
 	require.NoError(t, err)
-	err = udb.AddUserToUserList(group1AdminCtx, group1List2.UserListID, "US1")
+	err = addUserToUserList(group1AdminCtx, udb, group1List2.UserListID, "US1")
 	require.Error(t, err)
 	require.True(t, status.IsAlreadyExistsError(err))
-	err = udb.AddUserToUserList(group1AdminCtx, group2List.UserListID, "US1")
+	err = addUserToUserList(group1AdminCtx, udb, group2List.UserListID, "US1")
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
-	err = udb.AddUserToUserList(group1AdminCtx, group1List2.UserListID, "US2")
+	err = addUserToUserList(group1AdminCtx, udb, group1List2.UserListID, "US2")
 	require.NoError(t, err)
-	err = udb.AddUserToUserList(group2AdminCtx, group2List.UserListID, "US2")
+	err = addUserToUserList(group2AdminCtx, udb, group2List.UserListID, "US2")
 	require.NoError(t, err)
 
 	// Get members.
 
-	ms, err := udb.GetUserListMembers(group1AdminCtx, group1List2.UserListID)
+	ul, err := udb.GetUserList(group1AdminCtx, group1List2.UserListID)
 	require.NoError(t, err)
-	require.Equal(t, []*tables.UserUserList{
-		{UserUserID: "US1", UserListUserListID: group1List2.UserListID},
-		{UserUserID: "US2", UserListUserListID: group1List2.UserListID},
-	}, ms)
-	require.NotEmpty(t, ms)
-	_, err = udb.GetUserListMembers(group1AdminCtx, group2List.UserListID)
+	require.Len(t, ul.User, 2)
+	require.Equal(t, "US1", ul.User[0].UserId.GetId())
+	require.Equal(t, "US2", ul.User[1].UserId.GetId())
+	require.NotEmpty(t, ul)
+	_, err = udb.GetUserList(group1AdminCtx, group2List.UserListID)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
-	ms, err = udb.GetUserListMembers(group2AdminCtx, group2List.UserListID)
+	ul, err = udb.GetUserList(group2AdminCtx, group2List.UserListID)
 	require.NoError(t, err)
-	require.Equal(t, []*tables.UserUserList{
-		{UserUserID: "US2", UserListUserListID: group2List.UserListID},
-	}, ms)
+	require.Len(t, ul.User, 1)
+	require.Equal(t, "US2", ul.User[0].UserId.GetId())
 
 	// Delete members.
 
-	err = udb.RemoveUserFromUserList(group1AdminCtx, group1List2.UserListID, "US1")
+	err = removeUserFromUserList(group1AdminCtx, udb, group1List2.UserListID, "US1")
 	require.NoError(t, err)
-	err = udb.RemoveUserFromUserList(group1AdminCtx, group1List2.UserListID, "US1")
+	err = removeUserFromUserList(group1AdminCtx, udb, group1List2.UserListID, "US1")
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
-	ms, err = udb.GetUserListMembers(group1AdminCtx, group1List2.UserListID)
+	ul, err = udb.GetUserList(group1AdminCtx, group1List2.UserListID)
 	require.NoError(t, err)
-	require.Equal(t, []*tables.UserUserList{
-		{UserUserID: "US2", UserListUserListID: group1List2.UserListID},
-	}, ms)
-	err = udb.RemoveUserFromUserList(group1AdminCtx, group2List.UserListID, "US2")
+	require.Len(t, ul.User, 1)
+	require.Equal(t, "US2", ul.User[0].UserId.GetId())
+	err = removeUserFromUserList(group1AdminCtx, udb, group2List.UserListID, "US2")
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
 }
