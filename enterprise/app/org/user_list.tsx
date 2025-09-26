@@ -72,8 +72,6 @@ export default class UserListComponent extends React.Component<OrgUserListProps,
     showAll: false,
   };
 
-  componentDidMount() {}
-
   private onClickRow(userID: string) {
     if (this.props.readOnly) {
       return;

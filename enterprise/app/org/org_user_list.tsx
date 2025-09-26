@@ -205,7 +205,7 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
           <OutlinedButton onClick={this.onClickOpenRenameUserListModal.bind(this)}>Rename group</OutlinedButton>
         </div>
 
-        <div className="settings-option-title">Members:</div>
+        <div className="settings-option-title">Members</div>
         {members.length == 0 && <div>There are no users in the IAM group.</div>}
         {members.length > 0 && (
           <UserListComponent
@@ -217,7 +217,7 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
             readOnly={this.props.user.selectedGroup.externalUserManagement}
           />
         )}
-        <div className="settings-option-title">Add users:</div>
+        <div className="settings-option-title">Add users</div>
         {nonMembers?.length == 0 && <div>There are no users that can be added.</div>}
         {nonMembers?.length > 0 && (
           <UserListComponent
