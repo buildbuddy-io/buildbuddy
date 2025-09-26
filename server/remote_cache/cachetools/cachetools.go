@@ -1188,7 +1188,7 @@ type UploadWriter struct {
 
 // Write copies the input bytes to an internal buffer and may send some or all of the bytes to the CAS.
 // Bytes are not guaranteed to be uploaded to the CAS until a call to Commit() succeeds.
-// Returning EOF indicates that the blob already exists in the CAS and no further writes are necessary.
+// Returning status.AlreadyExists indicates that the blob already exists in the CAS and no further writes are necessary.
 func (uw *UploadWriter) Write(p []byte) (int, error) {
 	if uw.closed {
 		return 0, status.FailedPreconditionError("Cannot write to UploadWriter after it is closed")
@@ -1205,9 +1205,6 @@ func (uw *UploadWriter) Write(p []byte) (int, error) {
 		uw.bytesBuffered += n
 		written += n
 		if err := uw.flush(false /* finish */); err != nil {
-			if err == io.EOF {
-				return written, io.ErrShortWrite
-			}
 			return written, err
 		}
 		p = p[n:]
@@ -1236,6 +1233,19 @@ func (uw *UploadWriter) flush(finish bool) error {
 	}
 	uw.sendErr = uw.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
 	if uw.sendErr != nil {
+		if uw.sendErr == io.EOF {
+			// The server closed the stream, so we need to call CloseAndRecv
+			// to find the error.
+			rsp, err := uw.stream.CloseAndRecv()
+			if err == nil {
+				uw.committedSize = rsp.GetCommittedSize()
+				// byte_stream_server.go doesn't return an error when the
+				// resource already exists, but this is the only case where
+				// send returns EOF and recv returns nil.
+				err = status.AlreadyExistsError(req.GetResourceName())
+			}
+			uw.sendErr = err
+		}
 		return uw.sendErr
 	}
 	uw.bytesUploaded += int64(len(data))
@@ -1252,15 +1262,26 @@ func (uw *UploadWriter) Commit() error {
 	if uw.committed {
 		return nil
 	}
-	if uw.sendErr != nil && uw.sendErr != io.EOF {
+	if uw.sendErr != nil {
+		if status.IsAlreadyExistsError(uw.sendErr) {
+			return nil
+		}
 		return status.WrapError(uw.sendErr, "UploadWriter already encountered send error, cannot commit")
 	}
 
 	uw.committed = true
 	err := uw.flush(true /* finish */)
-	// If the blob already exists in the CAS, the server can respond with an EOF.
-	// The blob exists, it is safe to finish committing.
-	if err != nil && err != io.EOF {
+	if err != nil {
+		if status.IsAlreadyExistsError(err) {
+			// If we know the resource already exists, flush already called
+			// CloseAndRecv and populated uw.committedSize. Don't return an
+			// error because from the clients point of view, the write
+			// succeeded. Also, sends are not guaranteed to return an EOF, so
+			// it's possible the server didn't let us know that the object
+			// exists. For consistency, it's better to always return nil instead
+			// of sometimes returning AlreadyExists here.
+			return nil
+		}
 		return err
 	}
 	rsp, err := uw.stream.CloseAndRecv()
