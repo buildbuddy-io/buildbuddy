@@ -96,7 +96,6 @@ ts_library(
         "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
-        "//app/auth:user",
         "//app/capabilities",
         "//app/components/button",
         "//app/components/dialog",
@@ -105,9 +104,10 @@ ts_library(
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/service:rpc_service",
-        "//enterprise/app/org:user_list",
+        "//enterprise/app/org:member_list",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
+        "//proto:user_list_ts_proto",
     ],
 )
 
@@ -140,8 +140,8 @@ ts_library(
         "//app/errors:error_service",
         "//app/router",
         "//app/service:rpc_service",
+        "//enterprise/app/org:member_list",
         "//enterprise/app/org:org_user_list",
-        "//enterprise/app/org:user_list",
         "//proto:user_list_ts_proto",
     ],
 )
@@ -163,7 +163,7 @@ ts_library(
         "//app/errors:error_service",
         "//app/router",
         "//app/service:rpc_service",
-        "//enterprise/app/org:user_list",
+        "//enterprise/app/org:member_list",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
         "//proto:user_list_ts_proto",
@@ -171,8 +171,8 @@ ts_library(
 )
 
 ts_library(
-    name = "user_list",
-    srcs = ["user_list.tsx"],
+    name = "member_list",
+    srcs = ["member_list.tsx"],
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
@@ -186,5 +186,6 @@ ts_library(
         "//app/icons:google",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
+        "//proto:user_list_ts_proto",
     ],
 )

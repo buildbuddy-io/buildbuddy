@@ -318,6 +318,10 @@
   border: 1px solid transparent;
 }
 
+.org-members .org-member-role-unassigned {
+  color: #616161;
+}
+
 .org-members .org-member-more-rows-link {
   cursor: pointer;
 }
