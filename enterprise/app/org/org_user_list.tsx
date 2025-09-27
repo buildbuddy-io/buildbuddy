@@ -91,26 +91,26 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
     });
   }
 
-  private onClickAddUsers(idx: number, selectedUsers: Set<string>) {
+  private onClickAddUsers(idx: number, selectedUsers: Map<string, MemberListMember>) {
     if (selectedUsers.size == 0) {
       return;
     }
 
     this.setState({ loading: true });
     rpcService.service
-      .updateUserListMembership(this.newMembershipUpdateRequest(selectedUsers, MembershipAction.ADD))
+      .updateUserListMembership(this.newMembershipUpdateRequest(new Set(selectedUsers.keys()), MembershipAction.ADD))
       .catch((e) => errorService.handleError(e))
       .finally(() => this.fetch());
   }
 
-  private onClickRemoveUsers(idx: number, selectedUsers: Set<string>) {
+  private onClickRemoveUsers(idx: number, selectedUsers: Map<string, MemberListMember>) {
     if (selectedUsers.size == 0) {
       return;
     }
 
     this.setState({ loading: true });
     rpcService.service
-      .updateUserListMembership(this.newMembershipUpdateRequest(selectedUsers, MembershipAction.REMOVE))
+      .updateUserListMembership(this.newMembershipUpdateRequest(new Set(selectedUsers.keys()), MembershipAction.REMOVE))
       .catch((e) => errorService.handleError(e))
       .finally(() => this.fetch());
   }
@@ -186,7 +186,7 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
     const members = this.state.userList.user.map((m) => new MemberListMember(m));
     const nonMembers = this.state.allUsers
       ?.filter((gu) => gu.user && !memberIDs.has(gu.user.userId!.id))
-      .map((gu) => new MemberListMember(gu.user!, gu.role));
+      .map((gu) => new MemberListMember(gu.user!, undefined, gu.role));
 
     return (
       <>
