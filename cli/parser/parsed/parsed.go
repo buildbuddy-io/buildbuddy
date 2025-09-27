@@ -10,6 +10,7 @@ package parsed
 import (
 	"fmt"
 	"iter"
+	"os"
 	"os/user"
 	"path/filepath"
 	"slices"
@@ -614,9 +615,17 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []strin
 				rcFiles = append(rcFiles, filepath.Join(workspaceDir, ".bazelrc"))
 			}
 		case "home_rc":
-			usr, err := user.Current()
-			if err == nil {
-				rcFiles = append(rcFiles, filepath.Join(usr.HomeDir, ".bazelrc"))
+			// Use $HOME or %USERPROFILE% to locate the home_rc file.
+			// This enables mocking $HOME in test environments.
+			//
+			// On Unix, if $HOME variable is unset, fallback to finding home directory
+			// by syscall (getpwuid), which typically parse /etc/passwd for the information.
+			if homeDir, osErr := os.UserHomeDir(); osErr != nil && homeDir != "" {
+				rcFiles = append(rcFiles, filepath.Join(homeDir, ".bazelrc"))
+			} else if currUser, userErr := user.Current(); userErr != nil && currUser.HomeDir != "" {
+				rcFiles = append(rcFiles, filepath.Join(currUser.HomeDir, ".bazelrc"))
+			} else {
+				log.Debugf("Unable to locate home_rc: %s - %s", osErr, userErr)
 			}
 		}
 	}
