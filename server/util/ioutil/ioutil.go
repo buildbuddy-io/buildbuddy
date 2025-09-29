@@ -317,3 +317,27 @@ func (w *DoubleBufferWriter) Close() error {
 	}
 	return w.w.Close()
 }
+
+// PreserveNewlinesSplitFunc is a [bufio.SplitFunc] that can be used with
+// [bufio.Scanner]. It keeps the newlines at the end if present, so that
+// concatenating the scanned Text() reproduces the original input exactly. By
+// contrast, the default split function splits on newlines but discards all
+// trailing newline characters, which can be undesired.
+func PreserveNewlinesSplitFunc(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	// Search for newline characters
+	for i := range data {
+		if data[i] == '\n' {
+			// Include up to and including the '\n'
+			return i + 1, data[0 : i+1], nil
+		}
+	}
+	// If at EOF, return the remaining data (may not have newline)
+	if atEOF {
+		return len(data), data, nil
+	}
+	// Request more data
+	return 0, nil, nil
+}
