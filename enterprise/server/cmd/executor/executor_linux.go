@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
+	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
@@ -19,7 +21,8 @@ import (
 )
 
 var (
-	childCgroupsEnabled = flag.Bool("executor.child_cgroups_enabled", false, "On startup, sets up separate child cgroups for the executor process and any action processes that it starts. When using this flag, the executor's starting cgroup must not have any other processes besides the executor. In particular, the executor cannot be run under tini when using this flag.")
+	childCgroupsEnabled = flag.Bool("executor.child_cgroups_enabled", false, "On startup, sets up separate child cgroups for the executor process and any action processes that it starts. When using this flag, the executor's starting cgroup must not have any other processes besides the executor. In particular, the executor cannot be run under tini when using this flag - use 'executor.run_under_init' instead.")
+	runUnderInit        = flag.Bool("executor.run_under_init", false, "Have the executor respawn itself under a lightweight init process on startup. This helps prevent buildup of zombie processes.")
 )
 
 const (
@@ -63,6 +66,16 @@ func setupCgroups() (string, error) {
 		}
 	}
 
+	// When running under tini, we will have already moved to the new cgroup,
+	// before re-exec'ing under tini. Just return the paths that we already
+	// set up.
+	if os.Getenv(isRunningUnderInitEnvVarName) != "" {
+		// We've been moved to the executor child cgroup already, so the
+		// original starting cgroup is the parent of the current cgroup.
+		startingCgroup = filepath.Dir(startingCgroup)
+		return filepath.Join(startingCgroup, taskCgroupName), nil
+	}
+
 	// Create the executor cgroup and move the executor process to it.
 	executorCgroupPath := filepath.Join(cgroup.RootPath, startingCgroup, executorCgroupName)
 	if err := os.MkdirAll(executorCgroupPath, 0755); err != nil {
@@ -88,6 +101,42 @@ func setupCgroups() (string, error) {
 
 	taskCgroupRelpath := filepath.Join(startingCgroup, taskCgroupName)
 	return taskCgroupRelpath, nil
+}
+
+func execUnderInitProcess() error {
+	if !*runUnderInit {
+		return nil
+	}
+	if os.Getenv(isRunningUnderInitEnvVarName) != "" {
+		// Already running as child of init.
+		return nil
+	}
+	// Sanity check: make sure we're pid 1, otherwise there might already be an
+	// init process running. We could technically run tini as a subreaper
+	// process, but it's just not necessary, assuming pid 1 is already an init
+	// process.
+	if os.Getpid() != 1 {
+		return fmt.Errorf("run_under_init: executor must be pid 1 to use this flag")
+	}
+
+	os.Setenv(isRunningUnderInitEnvVarName, "1")
+
+	var tiniPath string
+	// Look for tini in / (where it should be found in the executor image) and
+	// in PATH.
+	// TODO: consolidate this logic with ociruntime.
+	_, err := os.Stat("/tini")
+	if err == nil {
+		tiniPath = "/tini"
+	} else {
+		tiniPath, err = exec.LookPath("tini")
+		if err != nil {
+			return fmt.Errorf("run_under_init: could not find tini in PATH")
+		}
+	}
+
+	cmd := append([]string{tiniPath, "--"}, os.Args...)
+	return syscall.Exec(cmd[0], cmd, os.Environ())
 }
 
 func setupNetworking(rootContext context.Context) {
