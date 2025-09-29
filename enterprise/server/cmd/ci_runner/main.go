@@ -486,6 +486,9 @@ func (r *buildEventReporter) Stop() error {
 		r.cancelBackgroundFlush()
 		r.cancelBackgroundFlush = nil
 	}
+	if err := r.log.Flush(); err != nil {
+		return err
+	}
 	r.FlushProgress()
 
 	elapsedTimeSeconds := float64(time.Since(r.startTime)) / float64(time.Second)
@@ -938,6 +941,9 @@ type invocationLog struct {
 	lockingbuffer.LockingBuffer
 	writer        io.Writer
 	writeListener func(s string)
+
+	mu          sync.Mutex
+	partialLine bytes.Buffer
 }
 
 func newInvocationLog() *invocationLog {
@@ -947,16 +953,69 @@ func newInvocationLog() *invocationLog {
 }
 
 func (invLog *invocationLog) Write(b []byte) (int, error) {
-	output := string(b)
+	invLog.mu.Lock()
+	defer invLog.mu.Unlock()
 
-	redacted := redact.RedactText(output)
+	if _, err := invLog.partialLine.Write(b); err != nil {
+		return len(b), err
+	}
 
-	invLog.writeListener(redacted)
-	_, err := invLog.writer.Write([]byte(redacted))
+	var writeErr error
+
+	for {
+		data := invLog.partialLine.Bytes()
+		if len(data) == 0 {
+			break
+		}
+
+		idx := bytes.IndexAny(data, "\n\r")
+		if idx < 0 {
+			break
+		}
+
+		newlineLen := 1
+		newlineSuffix := data[idx : idx+newlineLen]
+
+		if data[idx] == '\r' && idx+1 < len(data) && data[idx+1] == '\n' {
+			newlineLen = 2
+			newlineSuffix = data[idx : idx+newlineLen]
+		}
+
+		lineContent := string(data[:idx])
+		newlineStr := string(newlineSuffix)
+
+		invLog.partialLine.Next(idx + newlineLen)
+
+		redacted := redact.RedactText(lineContent)
+		output := redacted + newlineStr
+
+		invLog.writeListener(output)
+		if _, err := invLog.writer.Write([]byte(output)); err != nil && writeErr == nil {
+			writeErr = err
+		}
+	}
 
 	// Return the size of the original buffer even if a redacted size was written,
 	// or clients will return a short write error
-	return len(b), err
+	return len(b), writeErr
+}
+
+func (invLog *invocationLog) Flush() error {
+	invLog.mu.Lock()
+	defer invLog.mu.Unlock()
+
+	if invLog.partialLine.Len() == 0 {
+		return nil
+	}
+
+	line := invLog.partialLine.String()
+	invLog.partialLine.Reset()
+
+	redacted := redact.RedactText(line)
+
+	invLog.writeListener(redacted)
+	_, err := invLog.writer.Write([]byte(redacted))
+	return err
 }
 
 func (invLog *invocationLog) Println(vals ...interface{}) {

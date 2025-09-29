@@ -43,3 +43,16 @@ func TestInvocationLogRedactsMultipleLines(t *testing.T) {
 		"line1 --remote_exec_header=<REDACTED>\nline2 --remote_exec_header=<REDACTED>\n",
 		buf.String())
 }
+
+func TestInvocationLogFlushesPartialLine(t *testing.T) {
+	invLog, buf := newTestInvocationLog()
+
+	chunk := "common --remote_exec_header=secret-token"
+	n, err := invLog.Write([]byte(chunk))
+	require.NoError(t, err)
+	require.Equal(t, len(chunk), n)
+	require.Equal(t, "", buf.String(), "should not flush before newline")
+
+	require.NoError(t, invLog.Flush())
+	require.Equal(t, "common --remote_exec_header=<REDACTED>", buf.String())
+}
