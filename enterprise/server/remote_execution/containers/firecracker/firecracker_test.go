@@ -3275,6 +3275,85 @@ func TestBazelBuild(t *testing.T) {
 	require.NoError(t, res.Error)
 }
 
+func TestConcurrentBazelBuilds(t *testing.T) {
+	// Disable overprovisioning
+	flags.Set(t, "executor.firecracker_overprovision_cpus", 0)
+
+	const numConcurrentVMs = 4 // VMs to run concurrently
+	const cpusPerVM = 6        // vCPUs per VM
+	const totalVMRAMGB = 32    // Total RAM on system that you want to try allocating to the test
+	const numRuns = 2          // Number of bazel builds to run in each VM (first run will start from clean VM)
+
+	const mmapRAMReservationGB = 10 // Default flag value of 'executor.mmap_memory_bytes' (resources.go)
+	const memoryMBPerVM = 1000 * (totalVMRAMGB - mmapRAMReservationGB) / numConcurrentVMs
+
+	ctx := t.Context()
+	env := getTestEnv(ctx, t, envOpts{})
+
+	run := func(vmIdx, runIdx int) error {
+		workDir := testfs.MakeTempDir(t)
+
+		cmd := &repb.Command{
+			Arguments: []string{"bash", "-ec", `
+				export HOME=/home/buildbuddy	
+
+				REPO=https://github.com/bazelbuild/bazel-gazelle
+
+				cd ~
+				! [ -e workspace ] && git clone "$REPO" ./workspace
+				cd workspace
+
+				git config advice.detachedHead false
+				# Check out the commit for this run
+				git checkout master~` + fmt.Sprint(numRuns-runIdx) + `
+
+				bazelisk test //... --nocache_test_results
+			`},
+			Platform: &repb.Platform{
+				Properties: []*repb.Platform_Property{
+					// Allow snapshot/restore
+					{Name: "recycle-runner", Value: "true"},
+					{Name: "runner-recycling-key", Value: fmt.Sprintf("vm-%d", vmIdx)},
+				},
+			},
+		}
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           int64(cpusPerVM),
+				MemSizeMb:         memoryMBPerVM,
+				EnableNetworking:  true,
+				ScratchDiskSizeMb: 20_000,
+			},
+			ExecutorConfig: getExecutorConfig(t),
+			User:           "buildbuddy",
+		}
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Command: cmd}, opts)
+		require.NoError(t, err)
+
+		res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+		require.NoError(t, res.Error)
+		require.Equal(t, 0, res.ExitCode, "stderr: %s", string(res.Stderr))
+
+		return nil
+	}
+
+	eg, ctx := errgroup.WithContext(ctx)
+	for i := 0; i < numConcurrentVMs; i++ {
+		eg.Go(func() error {
+			for j := range numRuns {
+				if err := run(i, j); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	err := eg.Wait()
+	require.NoError(t, err)
+}
+
 func tree(label string) {
 	fmt.Println("jailer root", label, ":")
 	b, err := exec.Command("tree", "-A", "-C", "--inodes", "/tmp/buildbuddy-test-jailer-root", "-I", "executor").CombinedOutput()

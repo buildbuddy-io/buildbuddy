@@ -430,15 +430,39 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 			sequential:     true,
 		},
 		{
-			name:           "RandReadWrite_InitiallyEmpty",
+			name:           "SeqWrite_InitiallyQuarterFull",
+			initialDensity: 0.25,
+			readFraction:   0,
+			sequential:     true,
+		},
+		{
+			name:           "RandReadWrite_ReadHeavy_InitiallyEmpty",
 			initialDensity: 0,
 			readFraction:   0.9,
 			sequential:     false,
 		},
 		{
-			name:           "RandReadWrite_InitiallyHalfFull",
+			name:           "RandReadWrite_ReadHeavy_InitiallyHalfFull",
 			initialDensity: 0.5,
 			readFraction:   0.9,
+			sequential:     false,
+		},
+		{
+			name:           "RandReadWrite_WriteHeavy_InitiallyHalfFull",
+			initialDensity: 0.5,
+			readFraction:   0.1,
+			sequential:     false,
+		},
+		{
+			name:           "RandReadWrite_ReadHeavy_InitiallyFull",
+			initialDensity: 1,
+			readFraction:   0.9,
+			sequential:     false,
+		},
+		{
+			name:           "RandReadWrite_WriteHeavy_InitiallyFull",
+			initialDensity: 1,
+			readFraction:   0.1,
 			sequential:     false,
 		},
 	} {
@@ -448,6 +472,8 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 		}
 		name := fmt.Sprintf("%s[D=%.1f,%s:N=%d:R=%.1f/W=%.1f]", test.name, test.initialDensity, order, ioCountPerBenchOp, test.readFraction, 1-test.readFraction)
 		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+
 			b.StopTimer()
 			tmp := testfs.MakeTempDir(b)
 			for i := 0; i < b.N; i++ {

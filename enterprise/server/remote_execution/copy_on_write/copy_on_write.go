@@ -588,91 +588,76 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 	}()
 
 	dstChunkSize := s.calculateChunkSize(chunkStartOffset)
-	src, dst, err := s.initDirtyChunk(chunkStartOffset, dstChunkSize)
-	if err != nil {
-		return status.WrapError(err, "initialize dirty chunk")
-	}
 
-	if src == nil {
-		// We had no data at this offset; nothing to copy.
-		return nil
-	}
-	// Once we've created a copy, we no longer need the source chunk.
-	defer func() {
-		src.Close()
-	}()
-
-	// note: the src chunk might be smaller than the dst chunk if we resized
-	// and now we're copying the last chunk, since resizing is done lazily.
-	srcChunkSize, err := src.SizeBytes()
+	dstPath := filepath.Join(s.dataDir, fmt.Sprintf("%d%s", chunkStartOffset, dirtySuffix))
+	dstFD, err := syscall.Open(dstPath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
 	if err != nil {
 		return err
 	}
-	if srcChunkSize > dstChunkSize {
-		return status.InternalErrorf("chunk source size %d is greater than dest size %d; this is a bug", srcChunkSize, dstChunkSize)
-	}
-
-	b := s.copyBufPool.Get().(*[]byte)
-	defer s.copyBufPool.Put(b)
-	copyBuf := (*b)[:srcChunkSize]
-
-	// TODO: avoid a full read here in the case where the chunk contains holes.
-	// Can achieve this by having the Mmap keep around the underlying file
-	// descriptor and use fseek (SEEK_DATA) on it.
-	if _, err := readFullAt(src, copyBuf, 0); err != nil {
-		return status.WrapError(err, "read chunk for copy")
-	}
-	// Copy to the mmap but skip holes to avoid materializing them as blocks.
-	for off := int64(0); off < srcChunkSize; off += s.ioBlockSize {
-		blockSize := s.ioBlockSize
-		if remainder := srcChunkSize - off; blockSize > remainder {
-			blockSize = remainder
-		}
-		dataBlock := copyBuf[off : off+blockSize]
-		if IsEmptyOrAllZero(dataBlock) {
-			continue
-		}
-		if _, err := dst.WriteAt(dataBlock, off); err != nil {
-			return status.WrapError(err, "copy data to new chunk")
-		}
-	}
-	return nil
-}
-
-// Writes a new dirty chunk containing all 0s for the given chunk index.
-// NOTE: This function should be executed atomically. Callers should manage locking
-func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newChunk *Mmap, err error) {
-	path := filepath.Join(s.dataDir, fmt.Sprintf("%d%s", offset, dirtySuffix))
-	fd, err := syscall.Open(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer syscall.Close(fd)
-	if err := syscall.Ftruncate(fd, size); err != nil {
-		return nil, nil, err
-	}
+	defer syscall.Close(dstFD)
 
 	s.storeLock.RLock()
-	ogChunk = s.chunks[offset]
+	ogChunk := s.chunks[chunkStartOffset]
 	s.storeLock.RUnlock()
 	chunkSource := snaputil.ChunkSourceHole
+
+	// If there is data at this index, copy to the destination chunk.
 	if ogChunk != nil {
-		if err := ogChunk.initMap(); err != nil {
-			return nil, nil, err
+		// Unmap the original chunk - we no longer need it to be mapped in
+		// memory.
+		if err := ogChunk.Close(); err != nil {
+			return fmt.Errorf("close original chunk: %w", err)
 		}
 		chunkSource = ogChunk.source
+
+		// Get the size of the original chunk so we know how much data to copy.
+		// This should usually be the same as the destination chunk, except in
+		// the case where the COWStore was increased in size and the source
+		// chunk was originally the last chunk before resizing.
+		srcSize, err := ogChunk.SizeBytes()
+		if err != nil {
+			return fmt.Errorf("get size of original chunk: %w", err)
+		}
+		if srcSize > dstChunkSize {
+			return status.InternalErrorf("chunk source size %d is greater than dest size %d; this is a bug", srcSize, dstChunkSize)
+		}
+
+		// Get a file descriptor for the original chunk.
+		srcFd, err := syscall.Open(ogChunk.path(), os.O_RDONLY, 0)
+		if err != nil {
+			return fmt.Errorf("open original chunk: %w", err)
+		}
+		defer syscall.Close(srcFd)
+
+		// Copy the data from the original chunk to the new dirty chunk using
+		// copy_file_range(2).
+		//
+		// This serves two purposes:
+		// - On filesystems that support reflinking (e.g. XFS), the filesystem
+		//   will create a reflink instead of copying the data.
+		// - If a reflink is not possible, this should still let us avoid
+		//   copying data through user space.
+		if _, err := unix.CopyFileRange(srcFd, nil, dstFD, nil, int(srcSize), 0); err != nil {
+			return fmt.Errorf("copy file range from original chunk to new dirty chunk: %w", err)
+		}
 	}
-	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), true /*=dirty*/, fd, int(size), offset, chunkSource, s.remoteInstanceName, s.remoteEnabled)
+
+	// Truncate the new dirty chunk to the desired size.
+	if err := syscall.Ftruncate(dstFD, dstChunkSize); err != nil {
+		return err
+	}
+
+	dstChunk, err := NewMmapFd(s.ctx, s.env, s.DataDir(), true /*=dirty*/, dstFD, int(dstChunkSize), chunkStartOffset, chunkSource, s.remoteInstanceName, s.remoteEnabled)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	s.storeLock.Lock()
-	s.chunks[offset] = newChunk
-	s.dirty[offset] = true
+	s.chunks[chunkStartOffset] = dstChunk
+	s.dirty[chunkStartOffset] = true
 	s.storeLock.Unlock()
 
-	return ogChunk, newChunk, nil
+	return nil
 }
 
 func (s *COWStore) eagerFetchNextChunks(offset int64) {
