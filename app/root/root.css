@@ -1477,7 +1477,7 @@ code .comment {
   color: #757575;
 }
 
-.login-buttons button svg {
+.login-buttons button :is(svg, img) {
   margin-right: 16px;
 }
 
