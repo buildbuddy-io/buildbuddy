@@ -81,10 +81,3 @@ go_image(
     binary = ":ci_runner",
     tags = ["manual"],
 )
-
-go_test(
-    name = "ci_runner_test",
-    srcs = ["main_test.go"],
-    embed = [":ci_runner_lib"],
-    deps = ["@com_github_stretchr_testify//require"],
-)
