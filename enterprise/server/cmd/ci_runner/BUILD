@@ -1,6 +1,6 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 # gazelle:default_visibility //enterprise:__subpackages__
 package(
@@ -57,6 +57,15 @@ go_binary(
     embed = [":main"],
     pure = "on",
     static = "on",
+)
+
+go_test(
+    name = "main_test",
+    srcs = ["main_test.go"],
+    embed = [":main"],
+    deps = [
+        "@com_github_stretchr_testify//require",
+    ],
 )
 
 container_image(
