@@ -23,7 +23,8 @@ import (
 )
 
 type executionsClickhouseTest struct {
-	flags []string
+	flags                    []string
+	expectTargetLabelVisible bool
 }
 
 func TestInvocationWithRemoteExecutionWithClickHouse_StoreMetadataInRedisAndClickHouse(t *testing.T) {
@@ -34,6 +35,7 @@ func TestInvocationWithRemoteExecutionWithClickHouse_StoreMetadataInRedisAndClic
 			"--remote_execution.primary_db_reads_enabled=false",
 			"--remote_execution.olap_reads_enabled=true",
 		},
+		expectTargetLabelVisible: true,
 	})
 }
 
@@ -124,9 +126,13 @@ common --incompatible_strict_action_env=true
 	wt.Find(`[href="#execution"]`).Click()
 	waitForExecutionsToAppear(t, wt)
 
-	// There should be one execution in in-progress state.
+	// There should be one execution in in-progress state, and it should show
+	// the target label (if the new redis implementation is enabled).
 	execution := wt.Find(".invocation-execution-row")
 	require.Regexp(t, "(Executing|Starting)", execution.Text())
+	if tc.expectTargetLabelVisible {
+		require.Contains(t, execution.Text(), "//:target1")
+	}
 	execution.Click()
 	originalExecutionID := wt.Find(`[debug-id="execution-id"]`).Text()
 
