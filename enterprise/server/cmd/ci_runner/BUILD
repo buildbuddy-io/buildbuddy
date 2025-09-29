@@ -59,15 +59,6 @@ go_binary(
     static = "on",
 )
 
-go_test(
-    name = "main_test",
-    srcs = ["main_test.go"],
-    embed = [":main"],
-    deps = [
-        "@com_github_stretchr_testify//require",
-    ],
-)
-
 container_image(
     name = "base_image",
     base = "@ci_runner_image//image:dockerfile_image.tar",
@@ -80,4 +71,11 @@ go_image(
     base = ":base_image",
     binary = ":ci_runner",
     tags = ["manual"],
+)
+
+go_test(
+    name = "ci_runner_test",
+    srcs = ["main_test.go"],
+    embed = [":main"],
+    deps = ["@com_github_stretchr_testify//require"],
 )
