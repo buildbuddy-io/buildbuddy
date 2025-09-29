@@ -920,7 +920,7 @@ type SchedulerService interface {
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	TaskExists(ctx context.Context, req *scpb.TaskExistsRequest) (*scpb.TaskExistsResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
-	GetPoolInfo(ctx context.Context, os, arch, requestedPool, workflowID string, poolType PoolType) (*PoolInfo, error)
+	GetPoolInfo(ctx context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType PoolType) (*PoolInfo, error)
 	GetSharedExecutorPoolGroupID() string
 }
 
