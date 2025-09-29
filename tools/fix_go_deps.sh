@@ -97,5 +97,9 @@ if ! "$BAZEL_COMMAND" mod tidy --enable_bzlmod &>"$tmp_log_file"; then
 fi
 
 if ((DIFF_MODE)); then
-  git diff
+  DIFF=$(git diff -- "${AFFECTED_FILES[@]}")
+  if [[ "$DIFF" ]]; then
+    echo >&2 "$DIFF"
+    exit 1
+  fi
 fi
