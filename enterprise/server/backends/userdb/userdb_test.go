@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -2383,4 +2384,70 @@ func TestUserListOps(t *testing.T) {
 	err = removeUserFromUserList(group1AdminCtx, udb, group2List.UserListID, "US2")
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestLookupUserFromSubID(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	randUser := users[rand.Intn(len(users))]
+
+	u, err := udb.GetUserBySubIDWithoutAuthCheck(ctx, randUser.SubID)
+	require.NoError(t, err)
+	require.Equal(t, randUser, u)
+
+	user := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
+	for i := 0; i < 10; i++ {
+		u := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
+		ctx2, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, u.UserID)
+		require.NoError(t, err)
+		err = env.GetUserDB().UpdateGroupUsers(ctx2, u.Groups[0].GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+			{UserId: &uidpb.UserId{Id: user.UserID}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
+		})
+		require.NoError(t, err)
+
+		// The new user is an admin in the new group but the user we added as a member should
+		// only be added as a developer.
+		r := uint32(role.Developer)
+		u.Groups[0].Role = &r
+		u.Groups[0].Capabilities = role.DeveloperCapabilities
+		user.Groups = append(user.Groups, u.Groups[0])
+	}
+
+	sort.Slice(user.Groups, func(i, j int) bool { return user.Groups[i].GroupID < user.Groups[j].GroupID })
+
+	u, err = udb.GetUserBySubIDWithoutAuthCheck(ctx, user.SubID)
+	require.NoError(t, err)
+	require.Equal(t, user, u)
+
+	// Using empty or invalid values should produce an error
+	u, err = udb.GetUserBySubIDWithoutAuthCheck(ctx, "")
+	require.Nil(t, u)
+	require.Truef(
+		t, status.IsFailedPreconditionError(err),
+		"expected FailedPrecondition error; got: %v", err)
+	u, err = udb.GetUserBySubIDWithoutAuthCheck(ctx, "INVALID")
+	require.Nil(t, u)
+	require.Truef(
+		t, status.IsNotFoundError(err),
+		"expected RecordNotFound error; got: %v", err)
+}
+
+func TestLookupUserFromSubIDNoGroup(t *testing.T) {
+	flags.Set(t, "database.log_queries", true)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	flags.Set(t, "app.add_user_to_domain_group", false)
+	flags.Set(t, "app.create_group_per_user", false)
+
+	randUser := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
+
+	u, err := udb.GetUserBySubIDWithoutAuthCheck(ctx, randUser.SubID)
+	require.NoError(t, err)
+	require.Equal(t, randUser, u)
 }

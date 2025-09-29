@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
-	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -23,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -38,7 +36,6 @@ import (
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -502,72 +499,6 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	assert.Equal(t, key.GroupID, akg.GetGroupID())
 	assert.Equal(t, key.Capabilities, akg.GetCapabilities())
 	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
-}
-
-func TestLookupUserFromSubID(t *testing.T) {
-	ctx := context.Background()
-	env := setupEnv(t)
-	adb := env.GetAuthDB()
-
-	users := enterprise_testauth.CreateRandomGroups(t, env)
-	randUser := users[rand.Intn(len(users))]
-
-	u, err := adb.LookupUserFromSubID(ctx, randUser.SubID)
-	require.NoError(t, err)
-	require.Equal(t, randUser, u)
-
-	user := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
-	for i := 0; i < 10; i++ {
-		u := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
-		ctx2, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, u.UserID)
-		require.NoError(t, err)
-		err = env.GetUserDB().UpdateGroupUsers(ctx2, u.Groups[0].GroupID, []*grpb.UpdateGroupUsersRequest_Update{
-			{UserId: &uidpb.UserId{Id: user.UserID}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
-		})
-		require.NoError(t, err)
-
-		// The new user is an admin in the new group but the user we added as a member should
-		// only be added as a developer.
-		r := uint32(role.Developer)
-		u.Groups[0].Role = &r
-		u.Groups[0].Capabilities = role.DeveloperCapabilities
-		user.Groups = append(user.Groups, u.Groups[0])
-	}
-
-	sort.Slice(user.Groups, func(i, j int) bool { return user.Groups[i].GroupID < user.Groups[j].GroupID })
-
-	u, err = adb.LookupUserFromSubID(ctx, user.SubID)
-	require.NoError(t, err)
-	require.Equal(t, user, u)
-
-	// Using empty or invalid values should produce an error
-	u, err = adb.LookupUserFromSubID(ctx, "")
-	require.Nil(t, u)
-	require.Truef(
-		t, status.IsNotFoundError(err),
-		"expected RecordNotFound error; got: %v", err)
-	u, err = adb.LookupUserFromSubID(ctx, "INVALID")
-	require.Nil(t, u)
-	require.Truef(
-		t, status.IsNotFoundError(err),
-		"expected RecordNotFound error; got: %v", err)
-}
-
-func TestLookupUserFromSubIDNoGroup(t *testing.T) {
-	flags.Set(t, "database.log_queries", true)
-
-	ctx := context.Background()
-	env := setupEnv(t)
-	adb := env.GetAuthDB()
-
-	flags.Set(t, "app.add_user_to_domain_group", false)
-	flags.Set(t, "app.create_group_per_user", false)
-
-	randUser := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
-
-	u, err := adb.LookupUserFromSubID(ctx, randUser.SubID)
-	require.NoError(t, err)
-	require.Equal(t, randUser, u)
 }
 
 func newFakeUser(userID, domain string) *tables.User {

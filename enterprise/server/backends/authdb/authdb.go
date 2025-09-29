@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -494,53 +493,6 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 		d.apiKeyGroupCache.Add(cacheKey, akg)
 	}
 	return akg, nil
-}
-
-func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
-	rq := d.h.NewQueryWithOpts(ctx, "authdb_lookup_user_groups", db.Opts().WithStaleReads()).Raw(`
-		SELECT u.*, g.*, ug.*
-		FROM (
-			SELECT * FROM "Users" 
-			WHERE sub_id = ?
-			ORDER BY user_id ASC
-			LIMIT 1
-		) AS u
-			LEFT JOIN "UserGroups" AS ug
-				ON u.user_id = ug.user_user_id AND ug.membership_status = ?
-			LEFT JOIN "Groups" AS g
-				ON ug.group_group_id = g.group_id
-		ORDER BY u.user_id, g.group_id ASC
-		`, subID, int32(grpb.GroupMembershipStatus_MEMBER),
-	)
-	ugr, err := db.ScanAll(rq, &struct {
-		tables.User
-		*tables.Group
-		*tables.UserGroup
-	}{})
-	if err != nil {
-		return nil, err
-	}
-	if len(ugr) == 0 {
-		return nil, status.NotFoundErrorf("Sub id %s was not found in LookupUserFromSubID.", subID)
-	}
-	user := &ugr[0].User
-	if ugr[0].UserGroup == nil {
-		// no user groups matched this user ID
-		return user, nil
-	}
-	for _, v := range ugr {
-		if v.Group == nil {
-			// no group matched the user group (this shouldn't really happen)
-			log.CtxWarningf(ctx, "In LookupUserFromSubID, the UserGroup row User: %s Group %s did not match a group with that ID.", v.UserGroup.UserUserID, v.UserGroup.GroupGroupID)
-			continue
-		}
-		caps, err := role.ToCapabilities(role.Role(v.UserGroup.Role))
-		if err != nil {
-			return nil, status.WrapError(err, "could not convert role to capabilities")
-		}
-		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: &v.UserGroup.Role, Capabilities: caps})
-	}
-	return user, nil
 }
 
 func (d *AuthDB) newAPIKeyGroupQuery(subDomain string, allowUserOwnedKeys bool) *query_builder.Query {
