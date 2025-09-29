@@ -714,6 +714,29 @@ func TestUpdateGroupUsers_UserLists(t *testing.T) {
 		require.Equal(t, grpb.Group_ADMIN_ROLE, m2.Role)
 	}
 
+	// Verify that options are respected.
+	{
+		// User lists can never be in "requested" status so this should only
+		// return direct users.
+		groupUsers, err = udb.GetGroupUsers(ctx1, us1Group.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_REQUESTED}})
+		require.NoError(t, err)
+		require.Empty(t, groupUsers)
+
+		// When filtering by Sub ID prefix, no user lists should be returned.
+		groupUsers, err = udb.GetGroupUsers(ctx1, us1Group.GroupID, &interfaces.GetGroupUsersOpts{
+			Statuses:    []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER},
+			SubIDPrefix: "US1",
+		})
+		require.NoError(t, err)
+		require.Len(t, groupUsers, 1)
+
+		m1 = groupUsers[0]
+		require.NotNil(t, m1.User)
+		require.Nil(t, m1.UserList)
+		require.Equal(t, "US1", m1.User.UserId.Id)
+		require.Equal(t, grpb.Group_ADMIN_ROLE, m1.Role)
+	}
+
 	// Downgrade the admin user to a developer and verify they can't manipulate
 	// membership anymore.
 	{
