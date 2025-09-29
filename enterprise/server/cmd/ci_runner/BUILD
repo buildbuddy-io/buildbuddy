@@ -76,6 +76,6 @@ go_image(
 go_test(
     name = "ci_runner_test",
     srcs = ["main_test.go"],
-    embed = [":main"],
+    embed = [":main"],  # keep
     deps = ["@com_github_stretchr_testify//require"],
 )
