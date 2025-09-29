@@ -19,7 +19,7 @@ import rpcService from "../../../app/service/rpc_service";
 import { grp } from "../../../proto/group_ts_proto";
 import { user_id } from "../../../proto/user_id_ts_proto";
 import { user_list } from "../../../proto/user_list_ts_proto";
-import UserListComponent, { UserListUser } from "./user_list";
+import MemberListComponent, { MemberListMember } from "./member_list";
 import MembershipAction = user_list.UpdateUserListMembershipRequest.MembershipAction;
 
 export type OrgUserListProps = {
@@ -91,26 +91,26 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
     });
   }
 
-  private onClickAddUsers(idx: number, selectedUsers: Set<string>) {
+  private onClickAddUsers(idx: number, selectedUsers: Map<string, MemberListMember>) {
     if (selectedUsers.size == 0) {
       return;
     }
 
     this.setState({ loading: true });
     rpcService.service
-      .updateUserListMembership(this.newMembershipUpdateRequest(selectedUsers, MembershipAction.ADD))
+      .updateUserListMembership(this.newMembershipUpdateRequest(new Set(selectedUsers.keys()), MembershipAction.ADD))
       .catch((e) => errorService.handleError(e))
       .finally(() => this.fetch());
   }
 
-  private onClickRemoveUsers(idx: number, selectedUsers: Set<string>) {
+  private onClickRemoveUsers(idx: number, selectedUsers: Map<string, MemberListMember>) {
     if (selectedUsers.size == 0) {
       return;
     }
 
     this.setState({ loading: true });
     rpcService.service
-      .updateUserListMembership(this.newMembershipUpdateRequest(selectedUsers, MembershipAction.REMOVE))
+      .updateUserListMembership(this.newMembershipUpdateRequest(new Set(selectedUsers.keys()), MembershipAction.REMOVE))
       .catch((e) => errorService.handleError(e))
       .finally(() => this.fetch());
   }
@@ -183,10 +183,10 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
 
     const memberIDs = new Set<string>(this.state.userList.user.map((m) => m.userId!.id));
 
-    const members = this.state.userList.user.map((m) => new UserListUser(m));
+    const members = this.state.userList.user.map((m) => new MemberListMember(m));
     const nonMembers = this.state.allUsers
       ?.filter((gu) => gu.user && !memberIDs.has(gu.user.userId!.id))
-      .map((gu) => new UserListUser(gu.user!, gu.role));
+      .map((gu) => new MemberListMember(gu.user!, undefined, gu.role));
 
     return (
       <>
@@ -208,9 +208,9 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
         <div className="settings-option-title">Members</div>
         {members.length == 0 && <div>There are no users in the IAM group.</div>}
         {members.length > 0 && (
-          <UserListComponent
+          <MemberListComponent
             user={this.props.user}
-            users={members}
+            members={members}
             buttons={[removeButton]}
             showRole={false}
             onButtonClick={this.onClickRemoveUsers.bind(this)}
@@ -220,9 +220,9 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
         <div className="settings-option-title">Add users</div>
         {nonMembers?.length == 0 && <div>There are no users that can be added.</div>}
         {nonMembers?.length > 0 && (
-          <UserListComponent
+          <MemberListComponent
             user={this.props.user}
-            users={nonMembers}
+            members={nonMembers}
             buttons={[addButton]}
             showRole={false}
             onButtonClick={this.onClickAddUsers.bind(this)}

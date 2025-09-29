@@ -306,6 +306,10 @@
   gap: 8px;
 }
 
+.org-members .org-member-name .org-member-user-list-count {
+  font-weight: normal;
+}
+
 .org-members .org-member-name :is(svg, img) {
   width: 16px;
   height: 16px;
@@ -316,6 +320,10 @@
   padding: 4px 12px;
   border-radius: 13px;
   border: 1px solid transparent;
+}
+
+.org-members .org-member-role-unassigned {
+  color: #616161;
 }
 
 .org-members .org-member-more-rows-link {
