@@ -5,6 +5,7 @@ go_deps.from_file(go_mod = "@com_github_buildbuddy_io_buildbuddy//:go.mod")
 # Non-Go repos referenced by Go repos
 inject_repo(
     go_deps,
+    "com_github_buildbuddy_io_buildbuddy",
     "googleapis",
     "zlib",
 )
@@ -78,7 +79,7 @@ go_deps.module_override(
 # Go repos with custom directives
 go_deps.gazelle_override(
     directives = [
-        "gazelle:go_proto_compilers @io_bazel_rules_go//proto:go_proto,@@//proto:vtprotobuf_compiler",
+        "gazelle:go_proto_compilers @io_bazel_rules_go//proto:go_proto,@com_github_buildbuddy_io_buildbuddy//proto:vtprotobuf_compiler",
     ],
     path = "github.com/prometheus/client_model",
 )

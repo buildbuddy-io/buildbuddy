@@ -35,7 +35,7 @@ register_toolchains(
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.25.0")
-go_sdk.nogo(nogo = "@//:vet")
+go_sdk.nogo(nogo = "@com_github_buildbuddy_io_buildbuddy//:vet")
 use_repo(
     go_sdk,
     "go_toolchains",

@@ -239,7 +239,7 @@ go_download_sdk(
 )
 
 go_register_nogo(
-    nogo = "@//:vet",
+    nogo = "@com_github_buildbuddy_io_buildbuddy//:vet",
 )
 
 go_register_toolchains()
