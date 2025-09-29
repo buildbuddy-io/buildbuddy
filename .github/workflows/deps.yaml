@@ -56,6 +56,8 @@ jobs:
           git add deps.bzl
           git add .bazelversion
           git add shared.bazelrc
+          git add buildpatches
+          git add deps
           cat <<EOF > message.txt
           🔄 $COMMIT_MESSAGE
           Update buildbuddy-io/buildbuddy commit SHA
