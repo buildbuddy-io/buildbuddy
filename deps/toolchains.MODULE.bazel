@@ -50,5 +50,5 @@ node.toolchain(
 
 toolchains_musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl", dev_dependency = True)
 toolchains_musl.config(
-    extra_target_compatible_with = ["//toolchains:musl_on"],
+    extra_target_compatible_with = ["@com_github_buildbuddy_io_buildbuddy//toolchains:musl_on"],
 )
