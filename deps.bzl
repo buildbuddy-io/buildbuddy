@@ -11,7 +11,7 @@ PODMAN_STATIC_SHA256_AMD64 = "8ce959cd2b0ea68ae8ac7ccbb181cad59504086d54d4c95219
 PODMAN_STATIC_SHA256_ARM64 = "ef1e84ab80ee5d78d4d2e59e128ff963038f39e1e4259a83e08d7c8f85faf90d"
 
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_go_mod_dependencies -prune
-def install_go_mod_dependencies(workspace_name = "buildbuddy"):
+def install_go_mod_dependencies(workspace_name = "com_github_buildbuddy_io_buildbuddy"):
     go_repository(
         name = "build_buf_gen_go_bufbuild_protovalidate_protocolbuffers_go",
         importpath = "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go",

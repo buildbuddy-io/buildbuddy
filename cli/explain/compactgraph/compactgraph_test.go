@@ -835,7 +835,7 @@ func TestChainOfLocalChanges(t *testing.T) {
 }
 
 func diffLogsAllowingError(t *testing.T, name, bazelVersion string) ([]*spawn_diff.SpawnDiff, error) {
-	dir := "buildbuddy/cli/explain/compactgraph/testdata"
+	dir := "com_github_buildbuddy_io_buildbuddy/cli/explain/compactgraph/testdata"
 	oldPath, err := runfiles.Rlocation(path.Join(dir, bazelVersion, name+"_old.pb.zstd"))
 	require.NoError(t, err)
 	newPath, err := runfiles.Rlocation(path.Join(dir, bazelVersion, name+"_new.pb.zstd"))

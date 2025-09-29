@@ -1,6 +1,6 @@
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.config(check_direct_dependencies = "error")
-go_deps.from_file(go_mod = "//:go.mod")
+go_deps.from_file(go_mod = "@com_github_buildbuddy_io_buildbuddy//:go.mod")
 
 # Non-Go repos referenced by Go repos
 inject_repo(
@@ -24,33 +24,33 @@ go_deps.gazelle_override(
 go_deps.module_override(
     patch_strip = 1,
     patches = [
-        "@buildbuddy//buildpatches:cloudflare_circl.patch",
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:cloudflare_circl.patch",
     ],
     path = "github.com/cloudflare/circl",
 )
 go_deps.module_override(
     patch_strip = 1,
     patches = [
-        "@buildbuddy//buildpatches:vtprotobuf.patch",
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:vtprotobuf.patch",
     ],
     path = "github.com/planetscale/vtprotobuf",
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["@@//buildpatches:buildifier.patch"],
+    patches = ["@com_github_buildbuddy_io_buildbuddy//buildpatches:buildifier.patch"],
     path = "github.com/bazelbuild/buildtools",
 )
 go_deps.module_override(
     patch_strip = 1,
     patches = [
-        "@@//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_jailer.patch",
-        "@@//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_cgroup.patch",
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_jailer.patch",
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_cgroup.patch",
     ],
     path = "github.com/firecracker-microvm/firecracker-go-sdk",
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["@@//buildpatches:com_github_mattn_go_sqlite3.patch"],
+    patches = ["@com_github_buildbuddy_io_buildbuddy//buildpatches:com_github_mattn_go_sqlite3.patch"],
     path = "github.com/mattn/go-sqlite3",
 )
 go_deps.module_override(
@@ -63,14 +63,14 @@ go_deps.module_override(
         # inflight "grpc-over-http" requests. Since we also shutdown the HTTP
         # server gracefully, it's safe for us to allow gRPC to wait for all
         # ongoing requests to finish.
-        "@@//buildpatches:org_golang_google_grpc_remove_drain_panic.patch",
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:org_golang_google_grpc_remove_drain_panic.patch",
     ],
     path = "google.golang.org/grpc",
 )
 go_deps.module_override(
     patch_strip = 1,
     patches = [
-        "@@//buildpatches:io_kythe.patch",
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:io_kythe.patch",
     ],
     path = "kythe.io",
 )
