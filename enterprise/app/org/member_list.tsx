@@ -65,7 +65,15 @@ export class MemberListMember {
     if (this.user) {
       return accountName(this.user);
     } else if (this.userList) {
-      return this.userList.name;
+      const suffix = this.userList.user.length == 1 ? "user" : "users";
+      return (
+        <>
+          {this.userList.name}
+          <span className="org-member-user-list-count">
+            ({this.userList.user.length} {suffix})
+          </span>
+        </>
+      );
     } else {
       return "unknown member type";
     }
@@ -216,7 +224,7 @@ export default class MemberListComponent extends React.Component<MemberListProps
               </div>
               {this.props.showRole && (
                 <div className="org-member-role">
-                  {member.role === undefined && <div className="org-member-role-unassigned">unassigned</div>}
+                  {member.role === undefined && <div className="org-member-role-unassigned">Unassigned</div>}
                   {member.role !== undefined && getRoleLabel(member.role || 0)}{" "}
                   {this.isLoggedInUser(member) && <>(You)</>}
                 </div>

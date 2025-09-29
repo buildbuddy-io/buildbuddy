@@ -306,6 +306,10 @@
   gap: 8px;
 }
 
+.org-members .org-member-name .org-member-user-list-count {
+  font-weight: normal;
+}
+
 .org-members .org-member-name :is(svg, img) {
   width: 16px;
   height: 16px;
