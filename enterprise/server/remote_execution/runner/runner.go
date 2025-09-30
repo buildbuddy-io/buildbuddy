@@ -43,13 +43,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -170,11 +171,16 @@ type taskRunner struct {
 	// key controls which tasks can execute on this runner.
 	key *rnpb.RunnerKey
 
+	// metadata holds metadata about the runner.
+	metadata *espb.RunnerMetadata
+
 	// PlatformProperties holds the parsed platform properties for the last task
 	// executed by this runner.
 	PlatformProperties *platform.Properties
-	// debugID is a short debug ID used to identify this runner.
-	// It is not necessarily globally unique.
+	// debugID is a short debug ID used to identify this runner in logs without
+	// adding too much noise. It is not necessarily globally unique (see
+	// metadata.RunnerId for a unique id), but is highly likely to be unique
+	// within each executor.
 	debugID string
 
 	// Container is the handle on the container (possibly the bare /
@@ -185,10 +191,6 @@ type taskRunner struct {
 
 	// task is the current task assigned to the runner.
 	task *repb.ExecutionTask
-	// taskNumber starts at 1 and is incremented each time the runner is
-	// assigned a new task. Note: this is not necessarily the same as the number
-	// of tasks that have actually been executed.
-	taskNumber int64
 	// State is the current state of the runner as it pertains to reuse.
 	state state
 
@@ -208,10 +210,14 @@ type taskRunner struct {
 	diskUsageBytes   int64
 }
 
+func (r *taskRunner) Metadata() *espb.RunnerMetadata {
+	return r.metadata.CloneVT()
+}
+
 func (r *taskRunner) String() string {
 	// Note: we don't log r.state here as this can make log statements calling
 	// this function racy. Beware of this if re-adding r.state below.
-	return fmt.Sprintf("%s:%d:%s", r.debugID, r.taskNumber, keyString(r.key))
+	return fmt.Sprintf("%s:%d:%s", r.debugID, r.metadata.GetTaskNumber(), keyString(r.key))
 }
 
 func (r *taskRunner) pullCredentials() (oci.Credentials, error) {
@@ -1036,7 +1042,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		if r != nil {
 			p.mu.Lock()
 			r.task = task
-			r.taskNumber += 1
+			r.metadata.TaskNumber++
 			r.PlatformProperties = props
 			p.mu.Unlock()
 			log.CtxInfof(ctx, "Reusing existing runner %s for task", r)
@@ -1066,6 +1072,11 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 // newRunner creates a runner either for the given task (if set) or restores the
 // runner from the given state.ContainerState.
 func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platform.Properties, st *repb.ScheduledTask) (*taskRunner, error) {
+	platformSHA256, err := digest.ComputeForMessage(key.GetPlatform(), repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, status.UnavailableErrorf("compute platform hash: %s", err)
+	}
+
 	useOverlayfs, err := isOverlayfsEnabledForAction(ctx, props)
 	if err != nil {
 		return nil, err
@@ -1085,13 +1096,18 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 	if err != nil {
 		return nil, err
 	}
-	debugID, _ := random.RandomString(8)
+	runnerID := uuid.New()
 	r := &taskRunner{
-		env:                p.env,
-		p:                  p,
-		key:                key,
-		debugID:            debugID,
-		taskNumber:         1,
+		env:     p.env,
+		p:       p,
+		key:     key,
+		debugID: strings.ReplaceAll(runnerID, "-", "")[:8],
+		metadata: &espb.RunnerMetadata{
+			RunnerId:            runnerID,
+			TaskNumber:          1,
+			PlatformHash:        platformSHA256.GetHash(),
+			PersistentWorkerKey: key.GetPersistentWorkerKey(),
+		},
 		task:               st.GetExecutionTask(),
 		PlatformProperties: props,
 		Container:          ctr,

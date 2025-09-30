@@ -229,6 +229,12 @@ type Execution struct {
 	RequestedIsolationType string
 	EffectiveIsolationType string `gorm:"type:LowCardinality(String)"` // This values comes from the executor
 
+	// Runner metadata
+	RunnerID            string
+	RunnerTaskNumber    int64
+	PlatformHash        string
+	PersistentWorkerKey string
+
 	RequestedTimeoutUsec int64
 	EffectiveTimeoutUsec int64
 
@@ -317,6 +323,10 @@ func (e *Execution) AdditionalFields() []string {
 		"ExecutionPriority",
 		"RequestedIsolationType",
 		"EffectiveIsolationType",
+		"RunnerID",
+		"RunnerTaskNumber",
+		"PlatformHash",
+		"PersistentWorkerKey",
 		"RequestedTimeoutUsec",
 		"EffectiveTimeoutUsec",
 		"Region",

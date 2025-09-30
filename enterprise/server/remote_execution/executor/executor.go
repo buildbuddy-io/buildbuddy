@@ -298,6 +298,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	if span.IsRecording() {
 		span.SetAttributes(attribute.String("isolation_type", r.GetIsolationType()))
 	}
+	auxMetadata.RunnerMetadata = r.Metadata()
 	auxMetadata.IsolationType = r.GetIsolationType()
 	actionMetrics.Isolation = r.GetIsolationType()
 	reuseRunner := false

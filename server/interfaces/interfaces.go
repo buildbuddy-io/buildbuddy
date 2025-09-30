@@ -1060,6 +1060,9 @@ type TaskLease interface {
 // runners can be added back to the pool, then later retrieved from the pool
 // to execute a new task.
 type Runner interface {
+	// Metadata returns metadata about the runner.
+	Metadata() *espb.RunnerMetadata
+
 	// PrepareForTask prepares the filesystem for the task assigned to the runner,
 	// downloading the task's container image if applicable and cleaning up the
 	// workspace state from the previously assigned task if applicable.

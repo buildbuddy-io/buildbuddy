@@ -2873,6 +2873,10 @@ message StoredExecution {
   int32 execution_priority = 51;
   string requested_isolation_type = 52;
   string effective_isolation_type = 54;
+  string runner_id = 73;
+  int64 runner_task_number = 74;
+  string platform_hash = 75;
+  string persistent_worker_key = 76;
 
   string output_path = 31;
   string status_message = 32;
