@@ -40,6 +40,7 @@ register_toolchains(
 ```
 
 Then, to build remotely on x86_64 Linux:
+
 ```bash
 bazel build //... \
     --bes_results_url=https://app.buildbuddy.io/invocation/ \
