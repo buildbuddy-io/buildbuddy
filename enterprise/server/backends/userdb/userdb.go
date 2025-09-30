@@ -994,7 +994,7 @@ func (d *UserDB) GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID strin
 	return d.getUserByID(ctx, d.h, &getUserOpts{subID: subID})
 }
 
-// processMembershipResult updates the groupRoles map using the results
+// processUserGroupMemberships updates the groupRoles map using the results
 // of the passed query which is expected contain user table, group table and
 // role columns.
 func processUserGroupMemberships(rq interfaces.DBRawQuery, groupRoles map[string]*tables.GroupRole) (*tables.User, error) {
@@ -1077,7 +1077,7 @@ func (d *UserDB) getUserByID(ctx context.Context, h interfaces.DB, opts *getUser
 	} else if opts.subID != "" {
 		qb.AddWhereClause("u.sub_id = ?", opts.subID)
 	} else {
-		return nil, status.FailedPreconditionErrorf("query does not specify neither sub_id or user_id")
+		return nil, status.FailedPreconditionErrorf("query specifies neither sub_id or user_id")
 	}
 
 	q, qArgs := qb.Build()
