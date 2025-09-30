@@ -683,6 +683,8 @@ func runBazelHelpWithCache() (string, error) {
 		// Make sure this server doesn't stick around for long.
 		"--max_idle_secs=10",
 		"help",
+		// Don't print any debug information
+		"--logging=6",
 		topic,
 	}, opts)
 	if err != nil {
