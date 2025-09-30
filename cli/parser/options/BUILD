@@ -11,6 +11,7 @@ go_library(
         "//cli/log",
         "//cli/parser/arguments",
         "//cli/parser/bazelrc",
+        "//cli/parser/options/flag_form",
         "//proto:bazel_flags_go_proto",
         "//server/util/lib/seq",
         "//server/util/lib/set",
