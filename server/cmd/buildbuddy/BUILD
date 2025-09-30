@@ -30,7 +30,7 @@ container_image(
     name = "base_image",
     base = "@buildbuddy_go_image_base//image",
     symlinks = {
-        "config.yaml": "app/server/cmd/buildbuddy/buildbuddy.runfiles/buildbuddy/config/buildbuddy.release.yaml",
+        "config.yaml": "app/server/cmd/buildbuddy/buildbuddy.runfiles/com_github_buildbuddy_io_buildbuddy/config/buildbuddy.release.yaml",
         "buildbuddy": "tmp",
     },
     tags = [

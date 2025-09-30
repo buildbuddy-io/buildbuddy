@@ -247,7 +247,7 @@ container_image(
         ":podman_static_layer",
     ],
     symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/buildbuddy/enterprise/config/executor.release.yaml",
+        "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/com_github_buildbuddy_io_buildbuddy/enterprise/config/executor.release.yaml",
     },
     tags = ["manual"],
     visibility = ["//visibility:public"],
