@@ -224,7 +224,6 @@ func Do[T any](ctx context.Context, opts *Options, fn func(ctx context.Context) 
 	for {
 		makeAttempt, err := r.next()
 		if err != nil {
-			logFailedAttempt(lastError, " and could not be retried as the context is done")
 			return *new(T), err
 		}
 		if !makeAttempt {
