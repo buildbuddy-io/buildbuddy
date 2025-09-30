@@ -12,7 +12,7 @@ go_web_test_suite(
         "test.runner-recycling-key": "clickhouse",
         "test.EstimatedComputeUnits": "8",
     },
-    shard_count = 1,
+    shard_count = 2,
     tags = ["docker"],
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
