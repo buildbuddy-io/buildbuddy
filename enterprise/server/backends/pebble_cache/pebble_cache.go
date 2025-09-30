@@ -3,6 +3,7 @@ package pebble_cache
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -1926,6 +1927,9 @@ func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 
 	if err := p.deleteFileAndMetadata(ctx, key, version, md); err != nil {
 		log.Errorf("[%s] Error deleting old record %q: %s", p.name, key.String(), err)
+		if errors.Is(err, fs.ErrNotExist) {
+			return status.NotFoundErrorf("Resource %s not found in cache", r)
+		}
 		return err
 	}
 	return nil
