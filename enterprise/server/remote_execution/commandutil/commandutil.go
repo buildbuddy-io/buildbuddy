@@ -38,12 +38,61 @@ var (
 	ErrSIGKILL = status.UnavailableErrorf("command was terminated by SIGKILL, likely due to executor shutdown or OOM")
 
 	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
+	StdOutErrMaxSize          = flag.Uint64("executor.stdouterr_max_size_bytes", 0, "The maximum size of stdout/stderr for each action, in bytes. If the size of stdout/stderr exceeds this limit, the command will fail with a RESOURCE_EXHAUSTED error. If set to 0, no limit is enforced.")
 )
 
 var (
 	// Regexp matching a string consisting solely of digits (0-9).
 	allDigits = regexp.MustCompile(`^\d+$`)
 )
+
+func LimitStdOutErrWriter(w io.Writer) io.Writer {
+	if *StdOutErrMaxSize == 0 {
+		return w
+	}
+	return &limitWriter{w: w, limit: *StdOutErrMaxSize}
+}
+
+// limitWriter limits the number of bytes written to it.
+type limitWriter struct {
+	w     io.Writer
+	limit uint64
+
+	n uint64
+}
+
+func (lw *limitWriter) Write(p []byte) (int, error) {
+	if lw.limit == 0 {
+		return lw.w.Write(p)
+	}
+	if lw.n >= lw.limit {
+		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", lw.n+uint64(len(p)), lw.limit)
+	}
+	totalRequested := lw.n + uint64(len(p))
+	if totalRequested <= lw.limit {
+		n, err := lw.w.Write(p)
+		lw.n += uint64(n)
+		if err != nil {
+			return n, err
+		}
+		return n, nil
+	}
+	remaining := lw.limit - lw.n
+	if remaining == 0 {
+		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
+	}
+	toWrite := p[:int(remaining)]
+	n, err := lw.w.Write(toWrite)
+	lw.n += uint64(n)
+	if err != nil {
+		return n, err
+	}
+	if uint64(n) < remaining {
+		// Underlying writer wrote fewer bytes; limit not yet hit.
+		return n, nil
+	}
+	return n, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
+}
 
 func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
 	if stdio == nil {
