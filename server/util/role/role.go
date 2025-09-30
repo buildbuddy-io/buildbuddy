@@ -45,16 +45,16 @@ const (
 
 var (
 	AdminCapabilities = []cappb.Capability{
-		cappb.Capability_CAS_WRITE,
 		cappb.Capability_CACHE_WRITE,
+		cappb.Capability_CAS_WRITE,
 		cappb.Capability_ORG_ADMIN,
 	}
 	DeveloperCapabilities = []cappb.Capability{
 		cappb.Capability_CAS_WRITE,
 	}
 	WriterCapabilities = []cappb.Capability{
-		cappb.Capability_CAS_WRITE,
 		cappb.Capability_CACHE_WRITE,
+		cappb.Capability_CAS_WRITE,
 	}
 	ReaderCapabilities []cappb.Capability
 )

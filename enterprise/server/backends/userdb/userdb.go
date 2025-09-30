@@ -1035,6 +1035,17 @@ type getUserOpts struct {
 }
 
 func (d *UserDB) getUserByID(ctx context.Context, h interfaces.DB, opts *getUserOpts) (*tables.User, error) {
+	addWhereClause := func(q *query_builder.Query) error {
+		if opts.userID != "" {
+			q.AddWhereClause("u.user_id = ?", opts.userID)
+		} else if opts.subID != "" {
+			q.AddWhereClause("u.sub_id = ?", opts.subID)
+		} else {
+			return status.FailedPreconditionErrorf("query does not specify neither sub_id or user_id")
+		}
+		return nil
+	}
+
 	qb := query_builder.NewQueryWithArgs(`
 		SELECT u.*, g.*, ug.*
 		FROM "Users" AS u
@@ -1044,12 +1055,8 @@ func (d *UserDB) getUserByID(ctx context.Context, h interfaces.DB, opts *getUser
 		ON ug.group_group_id = g.group_id
 	`, []any{int32(grpb.GroupMembershipStatus_MEMBER)})
 
-	if opts.userID != "" {
-		qb.AddWhereClause("u.user_id = ?", opts.userID)
-	} else if opts.subID != "" {
-		qb.AddWhereClause("u.sub_id = ?", opts.subID)
-	} else {
-		return nil, status.FailedPreconditionErrorf("query does not specify neither sub_id or user_id")
+	if err := addWhereClause(qb); err != nil {
+		return nil, err
 	}
 
 	q, qArgs := qb.Build()
@@ -1060,6 +1067,32 @@ func (d *UserDB) getUserByID(ctx context.Context, h interfaces.DB, opts *getUser
 	user, err := processUserGroupMemberships(rq, groupRoles)
 	if err != nil {
 		return nil, err
+	}
+
+	// Query indirect membership via user lists, if enabled.
+	if authutil.UserListsEnabled() {
+		qb := query_builder.NewQuery(`
+			SELECT u.*, g.*, ug.*
+			FROM "Users" u
+			LEFT JOIN "UserUserLists" AS ul 
+				ON u.user_id = ul.user_user_id
+			LEFT JOIN "UserListGroups" AS ug 
+				ON ug.user_list_user_list_id = ul.user_list_user_list_id
+			LEFT JOIN "Groups" AS g 
+				ON g.group_id = ug.group_group_id
+		`)
+
+		if err := addWhereClause(qb); err != nil {
+			return nil, err
+		}
+
+		q, qArgs := qb.Build()
+		rq := h.NewQuery(ctx, "userdb_get_user_indirect_memberships").Raw(q, qArgs...)
+
+		_, err = processUserGroupMemberships(rq, groupRoles)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Return the groups in a deterministic order.
