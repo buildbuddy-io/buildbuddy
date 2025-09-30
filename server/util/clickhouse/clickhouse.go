@@ -219,8 +219,9 @@ func isTimeout(err error) bool {
 func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numEntries int, value interface{}) error {
 	retrier := retry.DefaultWithContext(ctx)
 	var lastError error
+	queryName := fmt.Sprintf("INSERT INTO '%v'", tableName)
 	for retrier.Next() {
-		res := h.DB(ctx).Create(value)
+		res := h.GORM(ctx, queryName).Create(value)
 		lastError = res.Error
 		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) || isTimeout(res.Error) || errors.Is(res.Error, driver.ErrBadConn) {
 			// Retry since it's an transient error.
