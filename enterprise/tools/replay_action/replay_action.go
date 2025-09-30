@@ -95,7 +95,7 @@ var (
 	executionIDs = flag.Slice("execution_id", []string{}, "Execution IDs to replay. Can be specified more than once.")
 	invocationID = flag.String("invocation_id", "", "Invocation ID to replay all actions from.")
 
-	toolInvocationID = flag.String("tool_invocation_id", "", "If set, create an Invocation for the replay_action tool itself. This is useful for querying results from ClickHouse after the replay is complete.")
+	toolInvocationID = flag.String("tool_invocation_id", "", "If set, create an Invocation for the replay_action tool itself. This is useful for querying results from ClickHouse after the replay is complete. Must be a `uuid` - generate with --tool_invocation_id=$(uuidgen | tr '[[:upper:]]' '[[:lower:]]')")
 
 	actionDigest             = flag.String("action_digest", "", "The digest of the action you want to replay.")
 	sourceRemoteInstanceName = flag.String("source_remote_instance_name", "", "The remote instance name used in the source action")
@@ -228,7 +228,7 @@ func inCopyMode(sourceRemoteInstanceName string) bool {
 		*targetAPIKey != *sourceAPIKey
 }
 
-func contextWithSourceCredentials(ctx context.Context) (context.Context, error) {
+func getOutgoingSourceContext(ctx context.Context) (context.Context, error) {
 	if *sourceAPIKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *sourceAPIKey)
 	}
@@ -250,7 +250,7 @@ func contextWithSourceCredentials(ctx context.Context) (context.Context, error) 
 	return ctx, nil
 }
 
-func contextWithTargetCredentials(ctx context.Context) (context.Context, error) {
+func getOutgoingTargetContext(ctx context.Context) (context.Context, error) {
 	if *targetAPIKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *targetAPIKey)
 	}
@@ -269,6 +269,15 @@ func contextWithTargetCredentials(ctx context.Context) (context.Context, error) 
 			return ctx, fmt.Errorf("set target client identity: %s", err)
 		}
 	}
+
+	for _, targetHeader := range *targetHeaders {
+		pair := strings.SplitN(targetHeader, "=", 2)
+		if len(pair) != 2 {
+			return ctx, fmt.Errorf("target headers must be of form key=val, got: %q", targetHeader)
+		}
+		ctx = metadata.AppendToOutgoingContext(ctx, pair[0], pair[1])
+	}
+
 	return ctx, nil
 }
 
@@ -278,23 +287,61 @@ func main() {
 	}
 }
 
-func run() (err error) {
+// run is the real main function; [main] does nothing but call this func and log
+// + exit with any error that it returns.
+func run() error {
+	rootCtx := context.Background()
+	rootCtx, stop := signal.NotifyContext(rootCtx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// Configure flags.
+	if err := configure(); err != nil {
+		return fmt.Errorf("configure: %w", err)
+	}
+
+	// Init source/dest contexts with appropriate gRPC headers applied.
+	srcCtx, err := getOutgoingSourceContext(rootCtx)
+	if err != nil {
+		return fmt.Errorf("set source credentials: %s", err)
+	}
+	targetCtx, err := getOutgoingTargetContext(rootCtx)
+	if err != nil {
+		return fmt.Errorf("set target credentials: %s", err)
+	}
+
+	if *toolInvocationID == "" {
+		// Run the tool without wrapping it with an invocation stream (replay
+		// results will not be stored in ClickHouse or visible in the UI)
+		return runTool(rootCtx, srcCtx, targetCtx)
+	}
+
+	// Init the invocation stream, then run the tool under the stream, streaming
+	// results via the invocation stream so the results can be queried from
+	// ClickHouse. Use the target context so the BES stream is authorized as the
+	// same user replaying the invocation.
+	pub, err := startToolInvocation(targetCtx)
+	if err != nil {
+		return fmt.Errorf("start tool invocation: %s", err)
+	}
+	defer func() {
+		if err := pub.FinishWithError(err); err != nil {
+			log.Errorf("Failed to finalize build event stream for tool invocation: %s", err)
+		}
+	}()
+	return runTool(rootCtx, srcCtx, targetCtx)
+}
+
+// Initializes flag defaults, parses flags, and validates flag constraints.
+func configure() error {
 	// When serving from a bundle, default grpc_port to avoid conflicts with
 	// default local app port.
 	if err := flagutil.SetValueForFlagName("grpc_port", 11985, nil, false); err != nil {
 		return fmt.Errorf("set default grpc_port: %s", err)
 	}
-
 	flag.Parse()
-
 	if err := log.Configure(); err != nil {
 		return fmt.Errorf("configure logging: %w", err)
 	}
-
-	rootCtx := context.Background()
-	rootCtx, stop := signal.NotifyContext(rootCtx, syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
 	if *targetBundle != "" && (*targetExecutor != "" || *targetAPIKey != "" || *targetClientIdentityKey != "") {
 		return fmt.Errorf("Cannot set both target_bundle and other target_* flags")
 	}
@@ -310,11 +357,9 @@ func run() (err error) {
 	if *sourceBundle != "" && *targetBundle != "" {
 		return fmt.Errorf("Cannot set both source_bundle and target_bundle (use 'cp -r' to copy bundles)")
 	}
-
 	if *sourceAPIKey != "" && *targetAPIKey == "" {
 		log.Warningf("--target_api_key is not set, but --source_api_key was set. Replaying as anonymous user.")
 	}
-
 	if *outDir == "" {
 		tmp, err := os.MkdirTemp("", "replay-action-*")
 		if err != nil {
@@ -323,73 +368,54 @@ func run() (err error) {
 		log.Infof("Writing results to %s", tmp)
 		*outDir = tmp
 	}
+	return nil
+}
 
-	srcCtx, err := contextWithSourceCredentials(rootCtx)
-	if err != nil {
-		return fmt.Errorf("set source credentials: %s", err)
-	}
-	targetCtx, err := contextWithTargetCredentials(rootCtx)
-	if err != nil {
-		return fmt.Errorf("set target credentials: %s", err)
-	}
-
-	headersToSet := make([]string, 0)
-	for _, targetHeader := range *targetHeaders {
-		pair := strings.SplitN(targetHeader, "=", 2)
-		if len(pair) != 2 {
-			return fmt.Errorf("Target headers must be of form key=val, got: %q", targetHeader)
-		}
-		headersToSet = append(headersToSet, pair[0])
-		headersToSet = append(headersToSet, pair[1])
-	}
-	if len(headersToSet) > 0 {
-		targetCtx = metadata.AppendToOutgoingContext(targetCtx, headersToSet...)
-	}
-
+// runTool should be called after configure() and after initializing the tool's
+// BES stream if applicable. It contains the main logic from the tool,
+// initializing the source/dest clients, copying inputs, then replaying
+// executions.
+func runTool(rootCtx, srcCtx, targetCtx context.Context) error {
+	// If we are replaying from a saved bundle, transparently start a cache
+	// server with the bundle as the cache root directory, and set
+	// --source_executor to point to the bundle server. This simplifies the
+	// copying logic quite a bit, and works because the source executor is only
+	// needed for the cache APIs (copying inputs).
 	if *sourceBundle != "" {
 		localCache, err := startCacheServerForBundle(*sourceBundle)
 		if err != nil {
-			return fmt.Errorf("start local cache: %s", err)
+			return fmt.Errorf("start local cache for source bundle: %w", err)
 		}
 		defer localCache.Shutdown()
 		*sourceExecutor = localCache.GRPCTarget()
 	}
-	log.Infof("Connecting to source %q", *sourceExecutor)
-	sourceConn, sourceBSClient, _, sourceCASClient, sourceACClient, err := getClients(*sourceExecutor)
-	if err != nil {
-		return fmt.Errorf("connect to source: %s", err)
-	}
-	defer sourceConn.Close()
-
+	// Same for target bundle - start a cache server to serve as the
+	// --target_executor, and copy files to it. Note, the replay logic will skip
+	// actually trying to execute - executions will be written to the target
+	// bundle manifest, for later replaying via --source_bundle, but not
+	// actually executed.
 	if *targetBundle != "" {
 		localCache, err := startCacheServerForBundle(*targetBundle)
 		if err != nil {
-			return fmt.Errorf("start local cache: %s", err)
+			return fmt.Errorf("start local cache for target bundle: %w", err)
 		}
 		defer localCache.Shutdown()
 		*targetExecutor = localCache.GRPCTarget()
 	}
+
+	log.Infof("Connecting to source %q", *sourceExecutor)
+	sourceConn, sourceBSClient, _, sourceCASClient, sourceACClient, err := getClients(*sourceExecutor)
+	if err != nil {
+		return fmt.Errorf("connect to source: %w", err)
+	}
+	defer sourceConn.Close()
+
 	log.Infof("Connecting to target %q", *targetExecutor)
 	destConn, destBSClient, execClient, destCASClient, destACClient, err := getClients(*targetExecutor)
 	if err != nil {
-		return fmt.Errorf("connect to target: %s", err)
+		return fmt.Errorf("connect to target: %w", err)
 	}
 	defer destConn.Close()
-
-	var pub *toolInvocationStream
-	if *toolInvocationID != "" {
-		pub, err = startToolInvocation(targetCtx)
-		if err != nil {
-			return fmt.Errorf("start tool invocation: %s", err)
-		}
-	}
-	defer func() {
-		if pub != nil {
-			if err := pub.FinishWithError(err); err != nil {
-				log.Errorf("Failed to finalize build event stream for tool invocation: %s", err)
-			}
-		}
-	}()
 
 	replayer := &Replayer{
 		sourceBSClient:  sourceBSClient,
@@ -403,7 +429,38 @@ func run() (err error) {
 	replayer.uploadGroup.SetLimit(3)
 	replayer.executeGroup.SetLimit(*jobs)
 
+	// Get the source executions to be replayed.
+	sourceExecutions, err := getSourceExecutions(srcCtx)
+	if err != nil {
+		return fmt.Errorf("get source executions: %w", err)
+	}
+
+	// Replay the source executions from source -> target using the configured
+	// replayer.
+	if err := replayAll(rootCtx, srcCtx, targetCtx, replayer, sourceExecutions); err != nil {
+		return fmt.Errorf("do replay: %w", err)
+	}
+	return nil
+}
+
+type sourceExecutions struct {
+	// resource names to replay.
+	resourceNames []*digest.CASResourceName
+
+	// Source metadata (target label, action mnemonic, etc.).
+	// Indexed by `rn.DownloadString()` for each resource name in resourceNames.
+	// Only populated if replaying from an invocation or source bundle.
+	metadata map[string]*Execution
+}
+
+// getSourceExecutions returns the resource names and metadata of the executions
+// to be replayed. The logic is somewhat involved since the tool is very
+// flexible and supports replaying executions from several different sources
+// (e.g. an action_digest, execution_id, all executions from an invocation_id,
+// or all executions from a source_bundle).
+func getSourceExecutions(srcCtx context.Context) (*sourceExecutions, error) {
 	var resourceNames []*digest.CASResourceName
+	executionMetadata := map[string]*Execution{}
 
 	if *actionDigest != "" {
 		// For backwards compatibility, attempt to fixup old style digest
@@ -414,7 +471,7 @@ func run() (err error) {
 		}
 		rn, err := digest.ParseDownloadResourceName(digestString)
 		if err != nil {
-			return fmt.Errorf("Error parsing action digest %q: %s", *actionDigest, err)
+			return nil, fmt.Errorf("Error parsing action digest %q: %s", *actionDigest, err)
 		}
 		resourceNames = append(resourceNames, rn)
 	}
@@ -424,26 +481,22 @@ func run() (err error) {
 			// Fall back to parsing as download resource name.
 			rn, err = digest.ParseDownloadResourceName(executionID)
 			if err != nil {
-				return fmt.Errorf("Invalid execution ID %q: %s", executionID, err)
+				return nil, fmt.Errorf("Invalid execution ID %q: %s", executionID, err)
 			}
 		}
 		resourceNames = append(resourceNames, rn)
 	}
-
-	// Execution metadata (for bundle manifest) by download resource name.
-	// Only populated if replaying from an invocation or source bundle.
-	executionMetadata := map[string]*Execution{}
 
 	// If replaying from a bundle, and not filtering to specific execution(s)
 	// from the bundle, load execution resource names from the manifest.
 	if *sourceBundle != "" {
 		bundleManifestBytes, err := os.ReadFile(filepath.Join(*sourceBundle, bundleManifestFileName))
 		if err != nil {
-			return fmt.Errorf("read bundle manifest: %s", err)
+			return nil, fmt.Errorf("read bundle manifest: %s", err)
 		}
 		bundleManifest := &BundleManifest{}
 		if err := json.Unmarshal(bundleManifestBytes, bundleManifest); err != nil {
-			return fmt.Errorf("unmarshal bundle manifest: %s", err)
+			return nil, fmt.Errorf("unmarshal bundle manifest: %s", err)
 		}
 		executions := bundleManifest.Executions
 		// Sort executions by queued timestamp so that they are replayed
@@ -469,7 +522,7 @@ func run() (err error) {
 		for _, execution := range executions {
 			rn, err := digest.ParseDownloadResourceName(execution.ActionResourceName)
 			if err != nil {
-				return fmt.Errorf("Invalid action resource name %q: %s", execution.ActionResourceName, err)
+				return nil, fmt.Errorf("Invalid action resource name %q: %s", execution.ActionResourceName, err)
 			}
 			rns := rn.DownloadString()
 			if len(keep) > 0 {
@@ -483,10 +536,12 @@ func run() (err error) {
 		}
 	}
 
+	// If we're replaying from an invocation, load execution resource names from
+	// the invocation.
 	if *invocationID != "" {
 		conn, err := grpc_client.DialSimple(*sourceExecutor)
 		if err != nil {
-			return fmt.Errorf("Error dialing executor: %s", err.Error())
+			return nil, fmt.Errorf("Error dialing executor: %s", err.Error())
 		}
 		defer conn.Close()
 		client := bbspb.NewBuildBuddyServiceClient(conn)
@@ -496,12 +551,12 @@ func run() (err error) {
 			},
 		})
 		if err != nil {
-			return fmt.Errorf("Could not retrieve invocation executions: %s", err)
+			return nil, fmt.Errorf("Could not retrieve invocation executions: %s", err)
 		}
 		for _, e := range rsp.Execution {
 			rn, err := digest.ParseUploadResourceName(e.ExecutionId)
 			if err != nil {
-				return fmt.Errorf("Invalid execution ID %q: %s", e.ExecutionId, err)
+				return nil, fmt.Errorf("Invalid execution ID %q: %s", e.ExecutionId, err)
 			}
 			resourceNames = append(resourceNames, rn)
 			executionMetadata[rn.DownloadString()] = &Execution{
@@ -515,44 +570,65 @@ func run() (err error) {
 		}
 	}
 
+	// Validate that we have something to replay.
 	if len(resourceNames) == 0 {
-		return fmt.Errorf("Missing -action_digest or -execution_id or -invocation_id")
+		return nil, fmt.Errorf("missing -action_digest or -execution_id or -invocation_id")
 	}
+	return &sourceExecutions{
+		resourceNames: resourceNames,
+		metadata:      executionMetadata,
+	}, nil
+}
 
-	defer func() {
-		if replayErr := replayer.Wait(); replayErr != nil {
-			if err != nil {
-				log.Errorf("Replay failed: %s", err)
-			} else {
-				err = replayErr
-			}
-		}
-	}()
+// replayAll replays the given source executions from source -> target using the
+// given replayer. For each action, this includes (1) copying action inputs and
+// (2) executing the action (depending on flags, one or both of these steps may
+// be skipped).
+func replayAll(rootCtx, srcCtx, targetCtx context.Context, replayer *Replayer, sourceExecutions *sourceExecutions) (err error) {
+	resourceNames := sourceExecutions.resourceNames
+	executionMetadata := sourceExecutions.metadata
+
 	for _, rn := range resourceNames {
 		if err := replayer.Start(rootCtx, srcCtx, targetCtx, rn, executionMetadata[rn.DownloadString()]); err != nil {
-			return fmt.Errorf("start replay: %s", err)
+			return fmt.Errorf("start replay: %w", err)
 		}
 	}
+
+	// Wait for all started replay operations to complete.
+	if err := replayer.Wait(); err != nil {
+		return fmt.Errorf("wait for replay: %w", err)
+	}
+
+	// If we've got a target bundle, then at this point we will have copied all
+	// files, but won't have written the manifest yet. Do that now.
 	if *targetBundle != "" {
-		bundleManifest := &BundleManifest{
-			Executions: make([]Execution, 0, len(resourceNames)),
+		if err := writeTargetBundleManifest(resourceNames, executionMetadata); err != nil {
+			return fmt.Errorf("write target bundle manifest: %w", err)
 		}
-		for _, rn := range resourceNames {
-			if md, ok := executionMetadata[rn.DownloadString()]; ok {
-				bundleManifest.Executions = append(bundleManifest.Executions, *md)
-			} else {
-				bundleManifest.Executions = append(bundleManifest.Executions, Execution{
-					ActionResourceName: rn.DownloadString(),
-				})
-			}
+	}
+	return nil
+
+}
+
+func writeTargetBundleManifest(resourceNames []*digest.CASResourceName, executionMetadata map[string]*Execution) error {
+	bundleManifest := &BundleManifest{
+		Executions: make([]Execution, 0, len(resourceNames)),
+	}
+	for _, rn := range resourceNames {
+		if md, ok := executionMetadata[rn.DownloadString()]; ok {
+			bundleManifest.Executions = append(bundleManifest.Executions, *md)
+		} else {
+			bundleManifest.Executions = append(bundleManifest.Executions, Execution{
+				ActionResourceName: rn.DownloadString(),
+			})
 		}
-		bundleManifestBytes, err := json.MarshalIndent(bundleManifest, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal bundle manifest: %s", err)
-		}
-		if err := os.WriteFile(filepath.Join(*targetBundle, bundleManifestFileName), bundleManifestBytes, 0644); err != nil {
-			return fmt.Errorf("write bundle manifest: %s", err)
-		}
+	}
+	bundleManifestBytes, err := json.MarshalIndent(bundleManifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal bundle manifest: %s", err)
+	}
+	if err := os.WriteFile(filepath.Join(*targetBundle, bundleManifestFileName), bundleManifestBytes, 0644); err != nil {
+		return fmt.Errorf("write bundle manifest: %s", err)
 	}
 	return nil
 }
