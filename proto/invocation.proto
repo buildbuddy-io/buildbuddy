@@ -62,6 +62,17 @@ message Invocation {
   // The number of actions performed.
   int64 action_count = 9;
 
+  // The CPU time of the local bazel process in CPU-nanoseconds. This comes from
+  // the TimingMetrics.cpu_time_in_ms field but it is stored in nanoseconds here
+  // to allow for higher precision later.
+  int64 tool_cpu_time_nanos = 39;
+
+  // The CPU time of the system for all executed actions in CPU-nanoseconds.
+  int64 total_action_system_cpu_time_nanos = 40;
+
+  // The CPU time of the user for all executed actions in CPU-nanoseconds.
+  int64 total_action_user_cpu_time_nanos = 41;
+
   invocation_status.InvocationStatus invocation_status = 10;
 
   // The console buffer extracted from the build events in this invocation.

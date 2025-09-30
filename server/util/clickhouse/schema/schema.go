@@ -88,6 +88,9 @@ type Invocation struct {
 	Attempt          uint64
 
 	ActionCount                       int64
+	ToolCPUTimeNanos                  int64
+	TotalActionUserCPUTimeNanos       int64
+	TotalActionSystemCPUTimeNanos     int64
 	RepoURL                           string
 	DurationUsec                      int64
 	Success                           bool
@@ -580,6 +583,9 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		Pattern:                           ti.Pattern,
 		Attempt:                           ti.Attempt,
 		ActionCount:                       ti.ActionCount,
+		ToolCPUTimeNanos:                  ti.ToolCPUTimeNanos,
+		TotalActionSystemCPUTimeNanos:     ti.TotalActionSystemCPUTimeNanos,
+		TotalActionUserCPUTimeNanos:       ti.TotalActionUserCPUTimeNanos,
 		InvocationStatus:                  ti.InvocationStatus,
 		RepoURL:                           ti.RepoURL,
 		DurationUsec:                      ti.DurationUsec,

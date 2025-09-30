@@ -209,7 +209,15 @@ func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent
 		}
 	case *build_event_stream.BuildEvent_BuildMetrics:
 		{
-			sep.invocation.ActionCount = p.BuildMetrics.ActionSummary.ActionsExecuted
+			sep.invocation.ActionCount = p.BuildMetrics.GetActionSummary().GetActionsExecuted()
+			sep.invocation.ToolCpuTimeNanos = p.BuildMetrics.GetTimingMetrics().GetCpuTimeInMs() * 1e6
+			// Sum up action CPU across all action mnemonics. Note: by default,
+			// as of bazel 8.4.2, only the top 20 mnemonics are reported unless
+			// --experimental_record_metrics_for_all_mnemonics is set.
+			for _, actionData := range p.BuildMetrics.GetActionSummary().GetActionData() {
+				sep.invocation.TotalActionSystemCpuTimeNanos += actionData.GetSystemTime().AsDuration().Nanoseconds()
+				sep.invocation.TotalActionUserCpuTimeNanos += actionData.GetUserTime().AsDuration().Nanoseconds()
+			}
 		}
 	case *build_event_stream.BuildEvent_WorkspaceInfo:
 		{
