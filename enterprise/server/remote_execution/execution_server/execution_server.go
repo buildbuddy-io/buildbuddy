@@ -247,6 +247,11 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 		execution.Model.CreatedAtUsec = now.UnixMicro()
 		execution.Model.UpdatedAtUsec = now.UnixMicro()
 		executionProto := executil.TableExecToProto(execution, nil /*=invocationLink*/)
+		// Store some basic metadata in the initial proto so we can show a nicer
+		// UI while the execution is in progress.
+		rmd := bazel_request.GetRequestMetadata(ctx)
+		executionProto.TargetLabel = rmd.GetTargetId()
+		executionProto.ActionMnemonic = rmd.GetActionMnemonic()
 		executionProto.OutputPath = primaryOutputPath(command)
 		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executionProto); err != nil {
 			log.CtxErrorf(ctx, "Failed to write execution update to redis: %s", err)
