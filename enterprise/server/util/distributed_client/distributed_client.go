@@ -30,9 +30,11 @@ import (
 )
 
 const (
-	// Keep under the limit of ~4MB (save 256KB).
-	// (Match the readBufSizeBytes in byte_stream_server.go)
-	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
+	// readBufSizeBytes controls the buffer size used for reading from the
+	// remote cache. This should match the readBufSizeBytes in
+	// byte_stream_server.go, or it can be up to 2 times larger and still have
+	// similar performance.
+	readBufSizeBytes = 256 * 1024 // 256 KiB
 
 	// writeBufSizeBytes controls the maximum size of buffers used for writing
 	// to a remote cache. This is also the maximum payload size for each
@@ -47,8 +49,7 @@ type Proxy struct {
 	env                   environment.Env
 	cache                 interfaces.Cache
 	log                   log.Logger
-	readBufPool           *bytebufferpool.VariableSizePool
-	writeBufPool          *bytebufferpool.VariableWriteBufPool
+	bufPool               *bytebufferpool.VariableSizePool
 	mu                    *sync.Mutex
 	server                *grpc.Server
 	clients               map[string]*grpc_client.ClientConnPool
@@ -60,13 +61,12 @@ type Proxy struct {
 
 func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
 	proxy := &Proxy{
-		env:          env,
-		cache:        c,
-		log:          log.NamedSubLogger(fmt.Sprintf("Proxy(%s)", listenAddr)),
-		readBufPool:  bytebufferpool.VariableSize(readBufSizeBytes),
-		writeBufPool: bytebufferpool.NewVariableWriteBufPool(readBufSizeBytes),
-		listenAddr:   listenAddr,
-		mu:           &sync.Mutex{},
+		env:        env,
+		cache:      c,
+		log:        log.NamedSubLogger(fmt.Sprintf("Proxy(%s)", listenAddr)),
+		bufPool:    bytebufferpool.VariableSize(max(readBufSizeBytes, writeBufSizeBytes)),
+		listenAddr: listenAddr,
+		mu:         &sync.Mutex{},
 		// server goes here
 		clients: make(map[string]*grpc_client.ClientConnPool),
 	}
@@ -313,18 +313,17 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 	}
 	defer reader.Close()
 
-	bufSize := int64(readBufSizeBytes)
-	resourceSize := rn.GetDigest().GetSizeBytes()
-	if resourceSize > 0 && resourceSize < bufSize {
-		bufSize = resourceSize
-	}
-	copyBuf := c.readBufPool.Get(bufSize)
-	defer c.readBufPool.Put(copyBuf)
+	bufSize := int64(safeBufferSize(rn, readBufSizeBytes))
+	copyBuf := c.bufPool.Get(bufSize)
+	defer c.bufPool.Put(copyBuf)
 
 	for {
 		n, err := ioutil.ReadTryFillBuffer(reader, copyBuf)
 		if err == io.EOF {
 			break
+		}
+		if err != nil {
+			return err
 		}
 		if err := stream.Send(&dcpb.ReadResponse{Data: copyBuf[:n]}); err != nil {
 			return err
@@ -332,7 +331,7 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 	}
 
 	c.log.Debugf("Read(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
-	return err
+	return nil
 }
 
 func (c *Proxy) callHintedHandoffCB(ctx context.Context, peer string, r *rspb.ResourceName) {
@@ -691,15 +690,11 @@ func (wc *streamWriteCloser) Close() error {
 	return nil
 }
 
-func safeBufferSize(r *rspb.ResourceName) int {
-	size := int(4096 * 4) // low / safe / default
-	if r.GetCacheType() == rspb.CacheType_CAS {
-		size = int(r.GetDigest().GetSizeBytes())
+func safeBufferSize(r *rspb.ResourceName, maxSize int) int {
+	if r.GetCacheType() != rspb.CacheType_CAS || r.GetDigest().GetSizeBytes() <= 0 {
+		return 4096 * 4 // low / safe / default
 	}
-	if size > writeBufSizeBytes {
-		size = writeBufSizeBytes
-	}
-	return size
+	return min(int(r.GetDigest().GetSizeBytes()), maxSize)
 }
 
 func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
@@ -728,7 +723,7 @@ func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 		stream:      stream,
 		r:           r,
 	}
-	return ioutil.NewDoubleBufferWriter(ctx, wc, c.readBufPool, safeBufferSize(r), writeBufSizeBytes), nil
+	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, safeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), nil
 }
 
 func (c *Proxy) SendHeartbeat(ctx context.Context, peer string) error {
