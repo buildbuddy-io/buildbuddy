@@ -8,15 +8,12 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -25,28 +22,9 @@ import (
 )
 
 const (
-	// Apple Container exit codes
 	appleContainerExecSIGKILLExitCode = 137
 	appleContainerExecSIGTERMExitCode = 143
-
-	containerFinalizationTimeout = 10 * time.Second
 )
-
-var (
-	appleContainerNetwork = flag.String("executor.apple_container_network", "", "If set, set apple container --network to this value by default. Can be overridden per-action with the `dockerNetwork` exec property, which accepts values 'off' (--network=none) or 'bridge' (--network=<default>).")
-	appleContainerCapAdd  = flag.String("apple_container_cap_add", "", "Sets --cap-add= on the apple container command. Comma separated.")
-	appleContainerDevices = flag.Slice("executor.apple_container_devices", []container.DockerDeviceMapping{}, `Configure devices that will be available inside the sandbox container. Format is --executor.apple_container_devices='[{"PathOnHost":"/dev/foo","PathInContainer":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
-	appleContainerVolumes = flag.Slice("executor.apple_container_volumes", []string{}, "Additional --volume arguments to be passed to apple container.")
-	appleContainerGPU     = flag.String("executor.apple_container_gpus", "", "Specifies the value of the --gpus= flag to pass to apple container. Set to 'all' to pass all GPUs.")
-
-	// A map from image name to pull status to avoid parallel pulling of the same image
-	pullOperations sync.Map
-)
-
-type pullStatus struct {
-	mu     *sync.RWMutex
-	pulled bool
-}
 
 type Provider struct {
 	env       environment.Env
@@ -61,53 +39,15 @@ func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
 }
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
-	// Re-use docker flags for apple container
-	networkMode, err := flagutil.GetDereferencedValue[string]("executor.docker_network")
-	if err != nil {
-		return nil, err
-	}
-	capAdd, err := flagutil.GetDereferencedValue[string]("docker_cap_add")
-	if err != nil {
-		return nil, err
-	}
-	devices, err := flagutil.GetDereferencedValue[[]container.DockerDeviceMapping]("executor.docker_devices")
-	if err != nil {
-		return nil, err
-	}
-	volumes, err := flagutil.GetDereferencedValue[[]string]("executor.docker_volumes")
-	if err != nil {
-		return nil, err
-	}
-
 	return &appleContainerCommandContainer{
 		env:       p.env,
 		image:     args.Props.ContainerImage,
 		buildRoot: p.buildRoot,
-		options: &AppleContainerOptions{
-			ForceRoot:          args.Props.DockerForceRoot,
-			Init:               args.Props.DockerInit,
-			User:               args.Props.DockerUser,
-			Network:            args.Props.DockerNetwork,
-			DefaultNetworkMode: networkMode,
-			CapAdd:             capAdd,
-			Devices:            devices,
-			Volumes:            volumes,
-		},
+		forceRoot: args.Props.DockerForceRoot,
+		user:      args.Props.DockerUser,
 	}, nil
 }
 
-type AppleContainerOptions struct {
-	ForceRoot          bool
-	Init               bool
-	User               string
-	DefaultNetworkMode string
-	Network            string
-	CapAdd             string
-	Devices            []container.DockerDeviceMapping
-	Volumes            []string
-}
-
-// appleContainerCommandContainer containerizes a single command's execution using Apple Container.
 type appleContainerCommandContainer struct {
 	env   environment.Env
 	image string
@@ -115,79 +55,26 @@ type appleContainerCommandContainer struct {
 	buildRoot string
 	workDir   string
 
-	options *AppleContainerOptions
+	forceRoot bool
+	user      string
 
-	// name is the container name
-	name string
-
-	mu sync.Mutex // protects(removed)
-	// removed is a flag that is set once Remove is called
+	name    string
+	mu      sync.Mutex
 	removed bool
 }
 
-func addUserArgs(args []string, options *AppleContainerOptions) []string {
-	if options.ForceRoot {
-		args = append(args, "--user=0:0")
-	} else if options.User != "" {
-		args = append(args, "--user="+options.User)
-	}
-	return args
-}
-
-func (c *appleContainerCommandContainer) getAppleContainerRunArgs(workDir string) []string {
+func (c *appleContainerCommandContainer) baseRunArgs(workDir string) []string {
+	hostWorkDir := filepath.Join(c.buildRoot, filepath.Base(workDir))
 	args := []string{
 		"--name", c.name,
 		"--workdir", workDir,
-		"--volume", fmt.Sprintf("%s:%s",
-			filepath.Join(c.buildRoot, filepath.Base(workDir)),
-			workDir,
-		),
+		"--volume", fmt.Sprintf("%s:%s", hostWorkDir, workDir),
 	}
 
-	args = addUserArgs(args, c.options)
-
-	networkMode := c.options.DefaultNetworkMode
-	// Translate network platform prop to the equivalent Apple Container network mode
-	switch strings.ToLower(c.options.Network) {
-	case "off":
-		networkMode = "none"
-	case "bridge":
-		networkMode = ""
-	default:
-		// ignore other values for now, sticking to the configured default
-	}
-	if networkMode != "" {
-		args = append(args, "--network="+networkMode)
-	}
-
-	if c.options.CapAdd != "" {
-		args = append(args, "--cap-add="+c.options.CapAdd)
-	}
-
-	if *appleContainerGPU != "" {
-		args = append(args, "--gpus="+*appleContainerGPU)
-	}
-
-	for _, device := range c.options.Devices {
-		deviceSpecs := make([]string, 0)
-		if device.PathOnHost != "" {
-			deviceSpecs = append(deviceSpecs, device.PathOnHost)
-		}
-		if device.PathInContainer != "" {
-			deviceSpecs = append(deviceSpecs, device.PathInContainer)
-		}
-		if device.CgroupPermissions != "" {
-			deviceSpecs = append(deviceSpecs, device.CgroupPermissions)
-		}
-		args = append(args, "--device="+strings.Join(deviceSpecs, ":"))
-	}
-
-	for _, volume := range c.options.Volumes {
-		args = append(args, "--volume="+volume)
-	}
-
-	if c.options.Init {
-		args = append(args, "--init")
+	if c.forceRoot {
+		args = append(args, "--user=0:0")
+	} else if c.user != "" {
+		args = append(args, "--user="+c.user)
 	}
 
 	return args
@@ -203,28 +90,28 @@ func (c *appleContainerCommandContainer) Run(ctx context.Context, command *repb.
 		CommandDebugString: fmt.Sprintf("(applecontainer) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
 	}
-	containerName, err := generateContainerName()
-	c.name = containerName
+
+	name, err := generateContainerName()
 	if err != nil {
 		result.Error = status.UnavailableErrorf("failed to generate apple container name: %s", err)
 		return result
 	}
+	c.name = name
 
 	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.image); err != nil {
 		result.Error = status.UnavailableErrorf("failed to pull container image: %s", err)
 		return result
 	}
 
-	appleContainerRunArgs := c.getAppleContainerRunArgs(workDir)
+	runArgs := c.baseRunArgs(workDir)
 	for _, envVar := range command.GetEnvironmentVariables() {
-		appleContainerRunArgs = append(appleContainerRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
+		runArgs = append(runArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
-	appleContainerRunArgs = append(appleContainerRunArgs, c.image)
-	appleContainerRunArgs = append(appleContainerRunArgs, command.Arguments...)
+	runArgs = append(runArgs, c.image)
+	runArgs = append(runArgs, command.Arguments...)
 
-	result = c.runAppleContainer(ctx, "run", &interfaces.Stdio{}, appleContainerRunArgs...)
+	result = c.runAppleContainer(ctx, "run", &interfaces.Stdio{}, runArgs...)
 
-	// Handle special exit codes
 	if result.ExitCode == appleContainerExecSIGKILLExitCode {
 		log.CtxInfof(ctx, "apple container received SIGKILL")
 		result.ExitCode = commandutil.KilledExitCode
@@ -235,60 +122,63 @@ func (c *appleContainerCommandContainer) Run(ctx context.Context, command *repb.
 		result.Error = commandutil.ErrSIGKILL
 	}
 
-	if exitedCleanly := result.ExitCode >= 0; !exitedCleanly {
+	if result.ExitCode < 0 {
 		if err := c.killContainerIfRunning(ctx); err != nil {
 			log.Warningf("Failed to shut down apple container: %s", err)
 		}
 	}
+
 	return result
 }
 
 func (c *appleContainerCommandContainer) Create(ctx context.Context, workDir string) error {
-	containerName, err := generateContainerName()
+	name, err := generateContainerName()
 	if err != nil {
 		return status.UnavailableErrorf("failed to generate apple container name: %s", err)
 	}
-	c.name = containerName
+	c.name = name
 	c.workDir = workDir
 
-	appleContainerRunArgs := c.getAppleContainerRunArgs(workDir)
-	appleContainerRunArgs = append(appleContainerRunArgs, c.image)
-	appleContainerRunArgs = append(appleContainerRunArgs, "sleep", "infinity")
+	args := c.baseRunArgs(workDir)
+	args = append(args, c.image, "sleep", "infinity")
 
-	createResult := c.runAppleContainer(ctx, "create", &interfaces.Stdio{}, appleContainerRunArgs...)
-	if err := createResult.Error; err != nil {
-		return status.UnavailableErrorf("failed to create container: %s", err)
+	res := c.runAppleContainer(ctx, "create", &interfaces.Stdio{}, args...)
+	if res.Error != nil {
+		return status.UnavailableErrorf("failed to create container: %s", res.Error)
 	}
-
-	if createResult.ExitCode != 0 {
-		return status.UnknownErrorf("apple container create failed: exit code %d, stderr: %s", createResult.ExitCode, createResult.Stderr)
+	if res.ExitCode != 0 {
+		return status.UnknownErrorf("apple container create failed: exit code %d, stderr: %s", res.ExitCode, string(res.Stderr))
 	}
 
-	startResult := c.runAppleContainer(ctx, "start", &interfaces.Stdio{}, c.name)
-	if startResult.Error != nil {
-		return startResult.Error
+	start := c.runAppleContainer(ctx, "start", &interfaces.Stdio{}, c.name)
+	if start.Error != nil {
+		return start.Error
 	}
-	if startResult.ExitCode != 0 {
-		return status.UnknownErrorf("apple container start failed: exit code %d, stderr: %s", startResult.ExitCode, startResult.Stderr)
+	if start.ExitCode != 0 {
+		return status.UnknownErrorf("apple container start failed: exit code %d, stderr: %s", start.ExitCode, string(start.Stderr))
 	}
+
 	return nil
 }
 
-func (c *appleContainerCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	appleContainerRunArgs := make([]string, 0, 2*len(cmd.GetEnvironmentVariables())+len(cmd.Arguments)+1)
-	for _, envVar := range cmd.GetEnvironmentVariables() {
-		appleContainerRunArgs = append(appleContainerRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
+func (c *appleContainerCommandContainer) Exec(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
+	args := make([]string, 0, 2*len(command.GetEnvironmentVariables())+len(command.Arguments)+2)
+	for _, envVar := range command.GetEnvironmentVariables() {
+		args = append(args, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
-	appleContainerRunArgs = addUserArgs(appleContainerRunArgs, c.options)
+	if c.forceRoot {
+		args = append(args, "--user=0:0")
+	} else if c.user != "" {
+		args = append(args, "--user="+c.user)
+	}
 	if stdio.Stdin != nil {
-		appleContainerRunArgs = append(appleContainerRunArgs, "--interactive")
+		args = append(args, "--interactive")
 	}
-	appleContainerRunArgs = append(appleContainerRunArgs, c.name)
-	appleContainerRunArgs = append(appleContainerRunArgs, cmd.Arguments...)
+	args = append(args, c.name)
+	args = append(args, command.Arguments...)
 
-	res := c.runAppleContainer(ctx, "exec", stdio, appleContainerRunArgs...)
+	res := c.runAppleContainer(ctx, "exec", stdio, args...)
 
-	// Handle SIGKILL/SIGTERM if the container was removed
 	c.mu.Lock()
 	removed := c.removed
 	c.mu.Unlock()
@@ -296,6 +186,7 @@ func (c *appleContainerCommandContainer) Exec(ctx context.Context, cmd *repb.Com
 		res.ExitCode = commandutil.KilledExitCode
 		res.Error = commandutil.ErrSIGKILL
 	}
+
 	return res
 }
 
@@ -314,10 +205,9 @@ func (c *appleContainerCommandContainer) Signal(ctx context.Context, sig syscall
 }
 
 func (c *appleContainerCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
-	var stdout, stderr bytes.Buffer
-	stdio := &interfaces.Stdio{Stdout: &stdout, Stderr: &stderr}
+	var stdout bytes.Buffer
+	stdio := &interfaces.Stdio{Stdout: &stdout}
 
-	// Use 'container image list --quiet' to check if image exists
 	res := c.runAppleContainer(ctx, "image", stdio, "list", "--quiet")
 	if res.Error != nil {
 		return false, res.Error
@@ -326,7 +216,6 @@ func (c *appleContainerCommandContainer) IsImageCached(ctx context.Context) (boo
 		return false, status.InternalErrorf("'container image list' failed (code %d): stderr: %q", res.ExitCode, string(res.Stderr))
 	}
 
-	// Check if our image is in the list
 	images := strings.Split(strings.TrimSpace(stdout.String()), "\n")
 	for _, img := range images {
 		if strings.Contains(img, c.image) {
@@ -338,65 +227,31 @@ func (c *appleContainerCommandContainer) IsImageCached(ctx context.Context) (boo
 }
 
 func (c *appleContainerCommandContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
-	psi, _ := pullOperations.LoadOrStore(c.image, &pullStatus{&sync.RWMutex{}, false})
-	ps, ok := psi.(*pullStatus)
-	if !ok {
-		return status.InternalError("PullImage failed: cannot get pull status")
-	}
-
-	ps.mu.RLock()
-	alreadyPulled := ps.pulled
-	ps.mu.RUnlock()
-
-	if alreadyPulled {
-		return c.pullImage(ctx, creds)
-	}
-
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-
-	startTime := time.Now()
-	if err := c.pullImage(ctx, creds); err != nil {
-		return err
-	}
-	pullLatency := time.Since(startTime)
-	log.Infof("apple container pulled image %s in %s", c.image, pullLatency)
-	ps.pulled = true
-	return nil
-}
-
-func (c *appleContainerCommandContainer) pullImage(ctx context.Context, creds oci.Credentials) error {
-	appleContainerArgs := make([]string, 0, 2)
-
 	if !creds.IsEmpty() {
-		// Apple Container requires registry login before pulling
 		var stdin bytes.Buffer
 		stdin.WriteString(creds.Password)
 		stdio := &interfaces.Stdio{Stdin: &stdin}
 
-		// Extract registry from image reference
 		registry := c.image
 		if idx := strings.Index(c.image, "/"); idx != -1 {
 			registry = c.image[:idx]
 		}
 
-		loginResult := c.runAppleContainer(ctx, "registry", stdio, "login", "--username", creds.Username, "--password-stdin", registry)
-		if loginResult.Error != nil {
-			return loginResult.Error
+		login := c.runAppleContainer(ctx, "registry", stdio, "login", "--username", creds.Username, "--password-stdin", registry)
+		if login.Error != nil {
+			return login.Error
 		}
-		if loginResult.ExitCode != 0 {
-			return status.UnavailableErrorf("apple container registry login failed: exit code %d", loginResult.ExitCode)
+		if login.ExitCode != 0 {
+			return status.UnavailableErrorf("apple container registry login failed: exit code %d", login.ExitCode)
 		}
 	}
 
-	appleContainerArgs = append(appleContainerArgs, c.image)
-
-	pullResult := c.runAppleContainer(ctx, "image", &interfaces.Stdio{}, append([]string{"pull"}, appleContainerArgs...)...)
-	if pullResult.Error != nil {
-		return pullResult.Error
+	pull := c.runAppleContainer(ctx, "image", &interfaces.Stdio{}, "pull", c.image)
+	if pull.Error != nil {
+		return pull.Error
 	}
-	if pullResult.ExitCode != 0 {
-		return status.UnavailableErrorf("apple container pull failed: exit code %d, stderr: %s", pullResult.ExitCode, string(pullResult.Stderr))
+	if pull.ExitCode != 0 {
+		return status.UnavailableErrorf("apple container pull failed: exit code %d, stderr: %s", pull.ExitCode, string(pull.Stderr))
 	}
 
 	return nil
@@ -418,19 +273,14 @@ func (c *appleContainerCommandContainer) Remove(ctx context.Context) error {
 }
 
 func (c *appleContainerCommandContainer) Pause(ctx context.Context) error {
-	// Apple Container doesn't have a direct pause command
-	// We could implement this using signals or other mechanisms if needed
 	return status.UnimplementedError("pause not implemented for apple container")
 }
 
 func (c *appleContainerCommandContainer) Unpause(ctx context.Context) error {
-	// Apple Container doesn't have a direct unpause command
 	return status.UnimplementedError("unpause not implemented for apple container")
 }
 
 func (c *appleContainerCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	// Apple Container doesn't expose detailed stats via CLI
-	// We could parse logs or use other mechanisms if needed
 	return &repb.UsageStats{}, nil
 }
 
@@ -438,7 +288,7 @@ func (c *appleContainerCommandContainer) runAppleContainer(ctx context.Context, 
 	command := []string{"container", subCommand}
 	command = append(command, args...)
 
-	return c.env.GetCommandRunner().Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, stdio)
+	return c.env.GetCommandRunner().Run(ctx, &repb.Command{Arguments: command}, "", nil, stdio)
 }
 
 func generateContainerName() (string, error) {
