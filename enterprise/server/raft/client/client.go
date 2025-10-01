@@ -32,6 +32,7 @@ import (
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -139,7 +140,6 @@ func (c *APIClient) HaveReadyConnections(ctx context.Context, rd *rfpb.ReplicaDe
 }
 
 func singleOpTimeout(ctx context.Context, maxSingleOpTimeout time.Duration) time.Duration {
-
 	if deadline, ok := ctx.Deadline(); ok {
 		dur := time.Until(deadline)
 		if dur <= 0 {
@@ -159,20 +159,62 @@ type aggErr struct {
 	lastNonTimeoutErr error
 }
 
+// statusError wraps an error with a gRPC status code while preserving the
+// underlying error for errors.Is() checks.
+type statusError struct {
+	code codes.Code
+	msg  string
+	err  error
+}
+
+func (e *statusError) Error() string {
+	return e.msg
+}
+
+func (e *statusError) Unwrap() error {
+	return e.err
+}
+
+func (e *statusError) GRPCStatus() *gstatus.Status {
+	return gstatus.New(e.code, e.msg)
+}
+
+func wrapWithStatusCode(err error, code codes.Code) error {
+	return &statusError{
+		code: code,
+		msg:  err.Error(),
+		err:  err,
+	}
+}
+
 func (e *aggErr) err() error {
 	if e.lastErr == nil {
 		return nil
 	}
 
+	// Build the error to return
+	var err error
 	if e.lastErr == dragonboat.ErrShardNotFound || e.lastErr == dragonboat.ErrRejected || e.lastErr == dragonboat.ErrShardNotReady {
-		return e.lastErr
-	} else if status.IsOutOfRangeError(e.lastErr) {
-		return e.lastErr
+		err = e.lastErr
 	} else if e.lastErr == e.lastNonTimeoutErr || e.lastNonTimeoutErr == nil {
-		return fmt.Errorf("last error: %s, errors encountered: %+v", e.lastErr, e.errCount)
+		err = fmt.Errorf("last error: %w, errors encountered: %+v", e.lastErr, e.errCount)
 	} else {
-		return fmt.Errorf("last error: %s, last non-timeout error: %s, errors encountered: %+v", e.lastErr, e.lastNonTimeoutErr, e.errCount)
+		err = fmt.Errorf("last error: %w, last non-timeout error: %s, errors encountered: %+v", e.lastErr, e.lastNonTimeoutErr, e.errCount)
 	}
+
+	// If error already has a status code, return as-is
+	if !status.IsUnknownError(err) {
+		return err
+	}
+
+	// Add appropriate status code based on error type
+	if dragonboat.IsTempError(err) {
+		return wrapWithStatusCode(err, codes.Unavailable)
+	}
+	if errors.Is(err, dragonboat.ErrCanceled) {
+		return wrapWithStatusCode(err, codes.Canceled)
+	}
+	return wrapWithStatusCode(err, codes.Internal)
 }
 
 func (e *aggErr) Add(err error) {
