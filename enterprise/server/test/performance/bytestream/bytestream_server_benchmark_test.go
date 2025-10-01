@@ -86,7 +86,7 @@ type slowWriter struct {
 }
 
 func (w *slowWriter) Write(p []byte) (int, error) {
-	proportinalSleep(len(p))
+	proportionalSleep(len(p))
 	return w.CommittedWriteCloser.Write(p)
 }
 
@@ -97,7 +97,7 @@ type slowWriterReaderFrom struct {
 
 func (w *slowWriterReaderFrom) ReadFrom(r io.Reader) (int64, error) {
 	n, err := w.ReaderFrom.ReadFrom(r)
-	proportinalSleep(int(n))
+	proportionalSleep(int(n))
 	return n, err
 }
 
@@ -107,7 +107,7 @@ type slowReader struct {
 
 func (r *slowReader) Read(buf []byte) (int, error) {
 	n, err := r.ReadCloser.Read(buf)
-	proportinalSleep(n)
+	proportionalSleep(n)
 	return n, err
 }
 
@@ -118,11 +118,11 @@ type slowReaderWriterTo struct {
 
 func (r *slowReaderWriterTo) WriteTo(w io.Writer) (int64, error) {
 	n, err := r.WriterTo.WriteTo(w)
-	proportinalSleep(int(n))
+	proportionalSleep(int(n))
 	return n, err
 }
 
-func proportinalSleep(n int) {
+func proportionalSleep(n int) {
 	busyLoop(time.Duration(n/100) * time.Microsecond)
 }
 
