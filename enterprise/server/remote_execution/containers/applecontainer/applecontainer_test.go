@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/applecontainer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -28,6 +29,7 @@ func TestRun(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
+	env.SetCommandRunner(&commandutil.CommandRunner{})
 
 	provider, err := applecontainer.NewProvider(env, rootDir)
 	require.NoError(t, err)
@@ -36,7 +38,7 @@ func TestRun(t *testing.T) {
 	require.NoError(t, err)
 
 	res := ctr.Run(ctx, cmd, workDir, oci.Credentials{})
-	require.Equal(t, int32(0), res.ExitCode)
+	require.Zero(t, res.ExitCode)
 	require.Equal(t, "Hello\n", string(res.Stdout))
 	require.NoError(t, res.Error)
 }
@@ -53,6 +55,7 @@ EOF
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
+	env.SetCommandRunner(&commandutil.CommandRunner{})
 
 	provider, err := applecontainer.NewProvider(env, rootDir)
 	require.NoError(t, err)
@@ -64,7 +67,7 @@ EOF
 	require.NoError(t, ctr.Create(ctx, workDir))
 
 	res := ctr.Exec(ctx, cmd, &interfaces.Stdio{})
-	require.Equal(t, int32(0), res.ExitCode)
+	require.Zero(t, res.ExitCode)
 	require.Equal(t, "HelloFromExec\n", string(res.Stdout))
 	require.NoError(t, res.Error)
 

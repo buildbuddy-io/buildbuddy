@@ -13,8 +13,6 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
-        "//server/util/flag",
-        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
@@ -27,6 +25,7 @@ go_test(
     tags = ["applecontainer"],
     deps = [
         ":applecontainer",
+        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/util/oci",
@@ -35,7 +34,6 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
-        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
 )
