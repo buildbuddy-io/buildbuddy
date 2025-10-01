@@ -98,8 +98,8 @@ type Definition struct {
 	hasNegative bool
 
 	// Flags that do not require a value must be parsed differently. Their name
-	// and value, if any,must appear as a single token, which means the "=" syntax
-	// has to be used when assigning a value. For example, "bazel build
+	// and value, if any, must appear as a single token, which means the "="
+	// syntax has to be used when assigning a value. For example, "bazel build
 	// --subcommands false" is actually equivalent to "bazel build
 	// --subcommands=true //false:false".
 	requiresValue bool
