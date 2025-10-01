@@ -687,15 +687,12 @@ func runBazelHelpWithCache() (string, error) {
 	}
 	// try with `--quiet` to avoid problems caused by log messages.
 	exitCode, err := bazelisk.Run(append([]string{"--quiet"}, args...), opts)
-	if err != nil {
-		if exitCode != 2 {
-			return "", fmt.Errorf("failed to run bazel: %s", err)
-		}
+	if exitCode == 2 {
 		// try again without `--quiet`, which is only supported by bazel 8+
 		exitCode, err = bazelisk.Run(args, opts)
-		if err != nil {
-			return "", fmt.Errorf("failed to run bazel: %s", err)
-		}
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to run bazel: %s", err)
 	}
 	if exitCode != 0 {
 		return "", fmt.Errorf("unknown error from `bazel help %s`: exit code %d", topic, exitCode)
