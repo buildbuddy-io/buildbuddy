@@ -356,6 +356,10 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) *s
 		ActionMnemonic:                     in.GetActionMnemonic(),
 		Experiments:                        in.GetExperiments(),
 		CommandSnippet:                     in.GetCommandSnippet(),
+		RunnerTaskNumber:                   in.GetRunnerTaskNumber(),
+		RunnerID:                           in.GetRunnerId(),
+		PlatformHash:                       in.GetPlatformHash(),
+		PersistentWorkerKey:                in.GetPersistentWorkerKey(),
 	}
 }
 

@@ -51,6 +51,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
@@ -133,12 +134,7 @@ func TestActionResultCacheWithFailedAction(t *testing.T) {
 	// ExecuteResponse should eventually be cached (this can happen in the
 	// background since it's only used to power the Execution page, and is not
 	// strictly needed by the RE client).
-	require.Eventually(t, func() bool {
-		_, err := execution.GetCachedExecuteResponse(ctx, rbe.GetActionResultStorageClient(), res.ID)
-		return err == nil
-	}, 1*time.Minute, 100*time.Millisecond)
-	execRes, err := execution.GetCachedExecuteResponse(ctx, rbe.GetActionResultStorageClient(), res.ID)
-	require.NoError(t, err)
+	execRes := waitForCachedExecuteResponse(ctx, t, rbe, res)
 	assert.Equal(t, int32(5), execRes.GetResult().GetExitCode(), "exit code should be set in action result")
 	stdout, stderr, err := rbe.GetStdoutAndStderr(ctx, execRes.GetResult(), res.InstanceName)
 	require.NoError(t, err)
@@ -492,6 +488,7 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 		},
 	}
 	opts := &rbetest.ExecuteOpts{APIKey: rbe.APIKey1}
+	ctx = rbe.WithAPIKey(ctx, rbe.APIKey1)
 
 	// Note: output_paths are needed for affinity routing to work, and
 	// output_paths are also deleted between runs. So we always write the
@@ -509,6 +506,14 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 
 	require.Equal(t, 0, res.ExitCode)
 
+	execRes := waitForCachedExecuteResponse(ctx, t, rbe, res)
+	auxMeta := getExecutionAuxiliaryMetadata(t, execRes)
+	// Check runner task number - should be 1
+	require.Equal(t, int64(1), auxMeta.GetRunnerMetadata().GetTaskNumber())
+	runnerID := auxMeta.GetRunnerMetadata().GetRunnerId()
+	// Runner ID is arbitrary, but should be nonempty
+	require.NotEmpty(t, runnerID)
+
 	rbetest.WaitForAnyPooledRunner(t, ctx)
 
 	cmd = rbe.Execute(&repb.Command{
@@ -523,6 +528,13 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 
 	require.Equal(t, "", res.Stderr)
 	require.Equal(t, 0, res.ExitCode)
+
+	execRes = waitForCachedExecuteResponse(ctx, t, rbe, res)
+	auxMeta = getExecutionAuxiliaryMetadata(t, execRes)
+	// Check task number - should be 2 now
+	require.Equal(t, int64(2), auxMeta.GetRunnerMetadata().GetTaskNumber())
+	// Runner ID should be the same as the previous one
+	require.Equal(t, runnerID, auxMeta.GetRunnerMetadata().GetRunnerId())
 }
 
 func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExecutor(t *testing.T) {
@@ -2524,4 +2536,22 @@ func getProgressStates(t *testing.T, c *rbetest.Command) []repb.ExecutionProgres
 		}
 	}
 	return states
+}
+
+func waitForCachedExecuteResponse(ctx context.Context, t testing.TB, rbe *rbetest.Env, res *rbetest.CommandResult) *repb.ExecuteResponse {
+	require.Eventually(t, func() bool {
+		_, err := execution.GetCachedExecuteResponse(ctx, rbe.GetActionResultStorageClient(), res.ID)
+		return err == nil
+	}, 1*time.Minute, 100*time.Millisecond)
+	execRes, err := execution.GetCachedExecuteResponse(ctx, rbe.GetActionResultStorageClient(), res.ID)
+	require.NoError(t, err)
+	return execRes
+}
+
+func getExecutionAuxiliaryMetadata(t testing.TB, execRes *repb.ExecuteResponse) *espb.ExecutionAuxiliaryMetadata {
+	auxMeta := &espb.ExecutionAuxiliaryMetadata{}
+	ok, err := rexec.AuxiliaryMetadata(execRes.GetResult().GetExecutionMetadata(), auxMeta)
+	require.NoError(t, err)
+	require.True(t, ok)
+	return auxMeta
 }

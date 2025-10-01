@@ -134,4 +134,8 @@ message RunnerKey {
   // platform property, or if unset, will default to the persistent worker's
   // command-line configuration (non-flagfile arguments).
   string persistent_worker_key = 4;
+
+  // NOTE: if adding more fields to this proto, consider also updating
+  // execution_stats.RunnerMetadata (as well as adding the field to ClickHouse)
+  // so that all runner key fields are queryable.
 }
