@@ -609,6 +609,7 @@ oci_pull(
 # - docs/rbe-setup.md
 # - docs/rbe-github-actions.md
 # - tools/dev_qa.py
+# - deps/bazel_dep.MODULE.bazel
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
     integrity = "sha256-VtJjefgP2Vq5S6DiGYczsupNkosybmSBGWwcLUAYz8c=",

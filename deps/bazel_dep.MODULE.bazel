@@ -66,6 +66,12 @@ archive_override(
     ],
 )
 
+# BuildBuddy Toolchain
+# Keep up-to-date with
+# - docs/rbe-setup.md
+# - docs/rbe-github-actions.md
+# - tools/dev_qa.py
+# - WORKSPACE
 bazel_dep(name = "toolchains_buildbuddy")
 archive_override(
     module_name = "toolchains_buildbuddy",

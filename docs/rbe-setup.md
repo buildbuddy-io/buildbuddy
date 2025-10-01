@@ -10,21 +10,49 @@ This guide assumes you're using [BuildBuddy Cloud](cloud.md) or [BuildBuddy Ente
 
 ## The basics
 
-The very simplest Bazel command needed to enable RBE is the following:
+To execute a build remotely on BuildBuddy, pass the `--remote_executor` flag to your `bazel build` command:
 
 ```bash
 bazel build //... --remote_executor=grpcs://remote.buildbuddy.io
 ```
 
-This points Bazel at BuildBuddy Cloud as a remote executor. A simple repo that has no C/C++/CGO or Java dependencies will build just fine like this. Most interesting repos have some dependencies on C/C++/CGO or Java - so we'll need to tell our remote executors where to find tools like gcc or the JRE. We do this with [platforms](https://docs.bazel.build/versions/master/platforms.html) and [toolchains](https://docs.bazel.build/versions/master/toolchains.html).
+This points Bazel at BuildBuddy Cloud as a remote executor. Projects that do not build native libraries or binaries will likely build correctly using the command above.
 
-## Configuring your workspace
+Projects that build native libraries or binaries or depend on platform-specific tools will need more configuration to take advantage of RBE. We do this with [platforms](https://docs.bazel.build/versions/master/platforms.html) and [toolchains](https://docs.bazel.build/versions/master/toolchains.html). Adding the [BuildBuddy Toolchain](https://github.com/buildbuddy-io/buildbuddy-toolchain) to your project will let you build and test targets remotely.
 
-There are several options for configuring your platforms and toolchains, the most fully features of which being [bazel-toolchains](https://releases.bazel.build/bazel-toolchains.html). It comes with an `rbe_autoconfig` rule that works nicely with BuildBuddy.
+## Using the BuildBuddy Toolchain with Bazel modules
 
-Unfortunately, bazel-toolchains has a dependency on Docker and can take quite some time to start up in a clean workspace, so we provide a simple and easy-to-use [BuildBuddy toolchain](https://github.com/buildbuddy-io/toolchain) that enables you to get up and running quickly, and works for most use cases.
+If your project uses [Bazel modules](https://bazel.build/external/module), you can add the BuildBuddy Toolchain as a dependency for your module:
 
-To get started with the BuildBuddy Toolchain, add the following lines to your `WORKSPACE` file:
+```python title="MODULE.bazel"
+bazel_dep(name = "toolchains_buildbuddy")
+archive_override(
+    module_name = "toolchains_buildbuddy",
+    integrity = "sha256-VtJjefgP2Vq5S6DiGYczsupNkosybmSBGWwcLUAYz8c=",
+    strip_prefix = "buildbuddy-toolchain-66146a3015faa348391fcceea2120caa390abe03",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/66146a3015faa348391fcceea2120caa390abe03.tar.gz"],
+)
+buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
+
+register_toolchains(
+    "@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64",
+)
+```
+
+Then, to build remotely on x86_64 Linux:
+
+```bash
+bazel build //... \
+    --bes_results_url=https://app.buildbuddy.io/invocation/ \
+    --bes_backend=grpcs://remote.buildbuddy.io \
+    --remote_executor=grpcs://remote.buildbuddy.io \
+    --platforms=@toolchains_buildbuddy//platforms:linux_x86_64 \
+    --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+```
+
+## Using the BuildBuddy Toolchain with a WORKSPACE file
+
+If your project still uses a [`WORKSPACE`](https://bazel.build/concepts/build-ref) file, you can add the BuildBuddy Toolchain with this snippet:
 
 ```python title="WORKSPACE"
 http_archive(
