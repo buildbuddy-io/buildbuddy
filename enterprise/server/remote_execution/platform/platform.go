@@ -155,13 +155,13 @@ const (
 	// Property name prefix indicating a custom resource assignment.
 	customResourcePrefix = "resources:"
 
-	BareContainerType         ContainerType = "none"
-	PodmanContainerType       ContainerType = "podman"
-	DockerContainerType       ContainerType = "docker"
-	FirecrackerContainerType  ContainerType = "firecracker"
-	OCIContainerType          ContainerType = "oci"
-	SandboxContainerType      ContainerType = "sandbox"
-	AppleContainerType        ContainerType = "applecontainer"
+	BareContainerType        ContainerType = "none"
+	PodmanContainerType      ContainerType = "podman"
+	DockerContainerType      ContainerType = "docker"
+	FirecrackerContainerType ContainerType = "firecracker"
+	OCIContainerType         ContainerType = "oci"
+	SandboxContainerType     ContainerType = "sandbox"
+	AppleContainerType       ContainerType = "applecontainer"
 	// If you add a container type, also add it to KnownContainerTypes
 
 	// The app will mint a signed client identity token to workflows.

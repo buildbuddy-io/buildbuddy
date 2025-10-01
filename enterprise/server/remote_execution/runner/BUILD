@@ -50,6 +50,7 @@ go_library(
         "@org_golang_x_sync//errgroup",
     ] + select({
         "@io_bazel_rules_go//go/platform:darwin": [
+            "//enterprise/server/remote_execution/containers/applecontainer",
             "//enterprise/server/remote_execution/containers/bare",
             "//enterprise/server/remote_execution/containers/sandbox",
         ],
