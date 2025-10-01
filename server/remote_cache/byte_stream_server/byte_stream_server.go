@@ -29,8 +29,11 @@ import (
 )
 
 const (
-	// Keep under the limit of ~4MB (save 256KB).
-	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
+	// readBufSizeBytes controls the buffer size used for reading from the
+	// cache. Benchmarks show that 256KiB or 512KiB perform similarly,
+	// but experiments in dev show that 256KiB is better. Values smaller than
+	// 256KiB or larger than 1MiB are both slower and allocate more bytes.
+	readBufSizeBytes = 256 * 1024
 )
 
 var (

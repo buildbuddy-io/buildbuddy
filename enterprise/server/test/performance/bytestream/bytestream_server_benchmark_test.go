@@ -45,13 +45,13 @@ func runByteStreamServer(ctx context.Context, t testing.TB, env *testenv.TestEnv
 	return clientConn
 }
 
-// slowWriteCache wraps a Cache, but makes each write operation sleep for 1us per
-// 100 bytes (or 10ms per 1MB).
-type slowWriteCache struct {
+// slowCache wraps a Cache, but makes each write and read operation sleep for
+// 1us per 100 bytes (or 10ms per 1MB).
+type slowCache struct {
 	interfaces.Cache
 }
 
-func (c *slowWriteCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (c *slowCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	w, err := c.Cache.Writer(ctx, r)
 	if err != nil {
 		return nil, err
@@ -67,21 +67,27 @@ func (c *slowWriteCache) Writer(ctx context.Context, r *rspb.ResourceName) (inte
 	}, nil
 }
 
+func (c *slowCache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	r, err := c.Cache.Reader(ctx, rn, uncompressedOffset, limit)
+	if err != nil {
+		return nil, err
+	}
+	if writerTo, ok := r.(io.WriterTo); ok {
+		return &slowReaderWriterTo{
+			slowReader: slowReader{r},
+			WriterTo:   writerTo,
+		}, nil
+	}
+	return &slowReader{r}, nil
+}
+
 type slowWriter struct {
 	interfaces.CommittedWriteCloser
 }
 
 func (w *slowWriter) Write(p []byte) (int, error) {
-	busyLoop(time.Duration(len(p)/100) * time.Microsecond)
+	proportionalSleep(len(p))
 	return w.CommittedWriteCloser.Write(p)
-}
-
-// time.Sleep can't reliably sleep for less than 1ms, so use a busy loop
-// instead.
-func busyLoop(dur time.Duration) {
-	start := time.Now()
-	for time.Since(start) < dur {
-	}
 }
 
 type slowWriterReaderFrom struct {
@@ -91,8 +97,41 @@ type slowWriterReaderFrom struct {
 
 func (w *slowWriterReaderFrom) ReadFrom(r io.Reader) (int64, error) {
 	n, err := w.ReaderFrom.ReadFrom(r)
-	busyLoop(time.Duration(n/100) * time.Microsecond)
+	proportionalSleep(int(n))
 	return n, err
+}
+
+type slowReader struct {
+	io.ReadCloser
+}
+
+func (r *slowReader) Read(buf []byte) (int, error) {
+	n, err := r.ReadCloser.Read(buf)
+	proportionalSleep(n)
+	return n, err
+}
+
+type slowReaderWriterTo struct {
+	slowReader
+	io.WriterTo
+}
+
+func (r *slowReaderWriterTo) WriteTo(w io.Writer) (int64, error) {
+	n, err := r.WriterTo.WriteTo(w)
+	proportionalSleep(int(n))
+	return n, err
+}
+
+func proportionalSleep(n int) {
+	busyLoop(time.Duration(n/100) * time.Microsecond)
+}
+
+// time.Sleep can't reliably sleep for less than 1ms, so use a busy loop
+// instead.
+func busyLoop(dur time.Duration) {
+	start := time.Now()
+	for time.Since(start) < dur {
+	}
 }
 
 func getDistributedCache(t testing.TB, te environment.Env, c interfaces.Cache, lookasideCacheSizeBytes int64) interfaces.Cache {
@@ -147,7 +186,7 @@ func BenchmarkWrite(b *testing.B) {
 		{
 			"slow",
 			func(b *testing.B, env environment.Env) interfaces.Cache {
-				return getDistributedCache(b, env, &slowWriteCache{getPebbleCache(b, env)}, 0)
+				return getDistributedCache(b, env, &slowCache{getPebbleCache(b, env)}, 0)
 			},
 		},
 	} {
@@ -245,5 +284,102 @@ func benchmarkWrite(b *testing.B, ctx context.Context, objectSize int64, chunkSi
 			require.False(b, cont)
 		}
 		b.StartTimer()
+	}
+}
+
+func BenchmarkRead(b *testing.B) {
+	*log.LogLevel = "error"
+	log.Configure()
+
+	for _, test := range []struct {
+		cacheType string
+		cacheFunc func(b *testing.B, env environment.Env) interfaces.Cache
+	}{
+		{
+			"fast",
+			func(b *testing.B, env environment.Env) interfaces.Cache {
+				return getDistributedCache(b, env, getPebbleCache(b, env), 0)
+			},
+		},
+		{
+			"slow",
+			func(b *testing.B, env environment.Env) interfaces.Cache {
+				return getDistributedCache(b, env, &slowCache{getPebbleCache(b, env)}, 0)
+			},
+		},
+		{
+			"non-distributed", // benchmark reads which land on the correct app
+			func(b *testing.B, env environment.Env) interfaces.Cache {
+				return getPebbleCache(b, env)
+			},
+		},
+	} {
+		b.Run(fmt.Sprintf("cache_type=%v", test.cacheType), func(b *testing.B) {
+			env := testenv.GetTestEnv(b)
+			ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
+			require.NoError(b, err)
+			cache := test.cacheFunc(b, env)
+			env.SetCache(cache)
+			conn := runByteStreamServer(ctx, b, env)
+			client := bspb.NewByteStreamClient(conn)
+			for _, objectSize := range []int64{1000, 100_000, 5_000_001, 15_000_001} {
+				b.Run(fmt.Sprintf("object_size=%d", objectSize), func(b *testing.B) {
+					for _, compressor := range []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD} {
+						b.Run(fmt.Sprintf("compressor=%s", compressor), func(b *testing.B) {
+							benchmarkRead(b, ctx, objectSize, compressor, cache, client)
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
+func benchmarkRead(b *testing.B, ctx context.Context, objectSize int64, compressor repb.Compressor_Value, cache interfaces.Cache, client bspb.ByteStreamClient) {
+	r, buf := testdigest.RandomCASResourceBuf(b, objectSize)
+	r.Compressor = compressor
+	rn, err := digest.CASResourceNameFromProto(r)
+	require.NoError(b, err)
+	compressedBuf := buf
+	if compressor == repb.Compressor_ZSTD {
+		compressedBuf = compression.CompressZstd(nil, buf)
+	}
+	writeClient, err := client.Write(ctx)
+	require.NoError(b, err)
+	err = writeClient.Send(&bspb.WriteRequest{Data: compressedBuf, ResourceName: rn.NewUploadString(), FinishWrite: true})
+	require.NoError(b, err)
+	resp, err := writeClient.CloseAndRecv()
+	require.NoError(b, err)
+	require.Less(b, int64(0), resp.GetCommittedSize())
+
+	b.ReportAllocs()
+	b.SetBytes(objectSize)
+	i := 0
+	for b.Loop() {
+		i++
+		stream, err := client.Read(ctx, &bspb.ReadRequest{ResourceName: rn.DownloadString()})
+		require.NoError(b, err)
+		var readBytes []byte
+		if i == 1 {
+			readBytes = make([]byte, 0, len(compressedBuf))
+		}
+		for {
+			reply, err := stream.Recv()
+			if i == 1 {
+				// Only test data validity once
+				b.StopTimer()
+				readBytes = append(readBytes, reply.GetData()...)
+				b.StartTimer()
+			}
+			if err == io.EOF {
+				break
+			}
+			require.NoError(b, err)
+		}
+		if i == 1 {
+			b.StopTimer()
+			require.Equal(b, compressedBuf, readBytes)
+			b.StartTimer()
+		}
 	}
 }
