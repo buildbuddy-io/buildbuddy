@@ -6,14 +6,24 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/applecontainer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/sandbox"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 func (p *pool) registerContainerProviders(ctx context.Context, providers map[platform.ContainerType]container.Provider, executor *platform.ExecutorProperties) error {
+	if executor.SupportsIsolation(platform.AppleContainerType) {
+		appleContainerProvider, err := applecontainer.NewProvider(p.env, p.buildRoot)
+		if err != nil {
+			return status.FailedPreconditionErrorf("Failed to initialize apple container provider: %s", err)
+		}
+		providers[platform.AppleContainerType] = appleContainerProvider
+	}
+
 	if executor.SupportsIsolation(platform.SandboxContainerType) {
 		providers[platform.SandboxContainerType] = &sandbox.Provider{}
 	}

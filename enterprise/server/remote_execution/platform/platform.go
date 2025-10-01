@@ -36,6 +36,7 @@ var (
 	enablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman containers.")
 	enableOCI                  = flag.Bool("executor.enable_oci", false, "Enables running execution commands using an OCI runtime directly.")
 	enableSandbox              = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
+	enableAppleContainer       = flag.Bool("executor.enable_applecontainer", false, "Enables running execution commands inside Apple Container VMs (macOS only).")
 	EnableFirecracker          = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
 	containerRegistryRegion    = flag.String("executor.container_registry_region", "", "All occurrences of '{{region}}' in container image names will be replaced with this string, if specified.")
 	forcedNetworkIsolationType = flag.String("executor.forced_network_isolation_type", "", "If set, run all commands that require networking with this isolation")
@@ -154,12 +155,13 @@ const (
 	// Property name prefix indicating a custom resource assignment.
 	customResourcePrefix = "resources:"
 
-	BareContainerType        ContainerType = "none"
-	PodmanContainerType      ContainerType = "podman"
-	DockerContainerType      ContainerType = "docker"
-	FirecrackerContainerType ContainerType = "firecracker"
-	OCIContainerType         ContainerType = "oci"
-	SandboxContainerType     ContainerType = "sandbox"
+	BareContainerType         ContainerType = "none"
+	PodmanContainerType       ContainerType = "podman"
+	DockerContainerType       ContainerType = "docker"
+	FirecrackerContainerType  ContainerType = "firecracker"
+	OCIContainerType          ContainerType = "oci"
+	SandboxContainerType      ContainerType = "sandbox"
+	AppleContainerType        ContainerType = "applecontainer"
 	// If you add a container type, also add it to KnownContainerTypes
 
 	// The app will mint a signed client identity token to workflows.
@@ -168,7 +170,7 @@ const (
 
 // KnownContainerTypes are all the types that are currently supported, or were
 // previously supported.
-var KnownContainerTypes []ContainerType = []ContainerType{BareContainerType, PodmanContainerType, DockerContainerType, FirecrackerContainerType, OCIContainerType, SandboxContainerType}
+var KnownContainerTypes []ContainerType = []ContainerType{BareContainerType, PodmanContainerType, DockerContainerType, FirecrackerContainerType, OCIContainerType, SandboxContainerType, AppleContainerType}
 
 // CoerceContainerType returns t if it's empty or in KnownContainerTypes.
 // Otherwise it returns "Unknown".
@@ -571,6 +573,14 @@ func GetExecutorProperties() *ExecutorProperties {
 			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, SandboxContainerType)
 		} else {
 			log.Warning("Sandbox was enabled, but is unsupported outside of darwin. Ignoring.")
+		}
+	}
+
+	if *enableAppleContainer {
+		if runtime.GOOS == "darwin" {
+			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, AppleContainerType)
+		} else {
+			log.Warning("Apple Container was enabled, but is unsupported outside of darwin. Ignoring.")
 		}
 	}
 
