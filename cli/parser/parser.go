@@ -675,7 +675,7 @@ func runBazelHelpWithCache() (string, error) {
 	errBuf := &bytes.Buffer{}
 	log.Debugf("\x1b[90mGathering metadata for bazel %s...\x1b[m", topic)
 	opts := &bazelisk.RunOpts{Stdout: io.MultiWriter(tmp, buf), Stderr: errBuf}
-	exitCode, err := bazelisk.Run([]string{
+	args := []string{
 		"--ignore_all_rc_files",
 		// Run in a temp output base to avoid messing with any running bazel
 		// server in the current workspace.
@@ -683,12 +683,19 @@ func runBazelHelpWithCache() (string, error) {
 		// Make sure this server doesn't stick around for long.
 		"--max_idle_secs=10",
 		"help",
-		// Don't print any debug information
-		"--logging=6",
 		topic,
-	}, opts)
+	}
+	// try with `--quiet` to avoid problems caused by log messages.
+	exitCode, err := bazelisk.Run(append([]string{"--quiet"}, args...), opts)
 	if err != nil {
-		return "", fmt.Errorf("failed to run bazel: %s", err)
+		if exitCode != 2 {
+			return "", fmt.Errorf("failed to run bazel: %s", err)
+		}
+		// try again without `--quiet`, which is only supported by bazel 8+
+		exitCode, err = bazelisk.Run(args, opts)
+		if err != nil {
+			return "", fmt.Errorf("failed to run bazel: %s", err)
+		}
 	}
 	if exitCode != 0 {
 		return "", fmt.Errorf("unknown error from `bazel help %s`: exit code %d", topic, exitCode)
