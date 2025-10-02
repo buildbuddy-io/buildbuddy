@@ -68,6 +68,40 @@ func TestCompareNameTypes(t *testing.T) {
 	assert.False(t, flag_form.Unknown.CompareNameType(flag_form.Unknown+2))
 }
 
+func TestAsNameType(t *testing.T) {
+	// Convert from Standard
+	assert.Equal(t, flag_form.Standard, flag_form.Standard.AsNameType(flag_form.Standard))
+	assert.Equal(t, flag_form.Standard, flag_form.Standard.AsNameType(flag_form.Negative))
+	assert.Equal(t, flag_form.Short, flag_form.Standard.AsNameType(flag_form.Short))
+	assert.Equal(t, flag_form.Unknown, flag_form.Standard.AsNameType(flag_form.Unknown))
+	assert.Equal(t, flag_form.Unknown, flag_form.Standard.AsNameType(flag_form.Unknown+1))
+	assert.Equal(t, flag_form.Unknown, flag_form.Standard.AsNameType(flag_form.Unknown+2))
+
+	// Convert from Negative
+	assert.Equal(t, flag_form.Negative, flag_form.Negative.AsNameType(flag_form.Standard))
+	assert.Equal(t, flag_form.Negative, flag_form.Negative.AsNameType(flag_form.Negative))
+	assert.Equal(t, flag_form.Unknown, flag_form.Negative.AsNameType(flag_form.Short))
+	assert.Equal(t, flag_form.Unknown, flag_form.Negative.AsNameType(flag_form.Unknown))
+	assert.Equal(t, flag_form.Unknown, flag_form.Negative.AsNameType(flag_form.Unknown+1))
+	assert.Equal(t, flag_form.Unknown, flag_form.Negative.AsNameType(flag_form.Unknown+2))
+
+	// Convert from Short
+	assert.Equal(t, flag_form.Standard, flag_form.Short.AsNameType(flag_form.Standard))
+	assert.Equal(t, flag_form.Standard, flag_form.Short.AsNameType(flag_form.Negative))
+	assert.Equal(t, flag_form.Short, flag_form.Short.AsNameType(flag_form.Short))
+	assert.Equal(t, flag_form.Unknown, flag_form.Short.AsNameType(flag_form.Unknown))
+	assert.Equal(t, flag_form.Unknown, flag_form.Short.AsNameType(flag_form.Unknown+1))
+	assert.Equal(t, flag_form.Unknown, flag_form.Short.AsNameType(flag_form.Unknown+2))
+
+	// Convert from Unknown
+	assert.Equal(t, flag_form.Unknown, flag_form.Unknown.AsNameType(flag_form.Standard))
+	assert.Equal(t, flag_form.Unknown, flag_form.Unknown.AsNameType(flag_form.Negative))
+	assert.Equal(t, flag_form.Unknown, flag_form.Unknown.AsNameType(flag_form.Short))
+	assert.Equal(t, flag_form.Unknown, flag_form.Unknown.AsNameType(flag_form.Unknown))
+	assert.Equal(t, flag_form.Unknown, flag_form.Unknown.AsNameType(flag_form.Unknown+1))
+	assert.Equal(t, flag_form.Unknown, flag_form.Unknown.AsNameType(flag_form.Unknown+2))
+}
+
 func TestUnknown(t *testing.T) {
 	assert.False(t, flag_form.Standard.Unknown())
 	assert.False(t, flag_form.Negative.Unknown())
