@@ -2,9 +2,12 @@ package remote_crypter
 
 import (
 	"context"
+	"flag"
 	"io"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_key_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
@@ -12,7 +15,18 @@ import (
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
-type RemoteCrypter struct{}
+var (
+	target = flag.String("crypter.remote_target", "", "The gRPC target of the remote encryption API.")
+)
+
+type RemoteCrypter struct {
+	cache *crypter_key_cache.KeyCache
+}
+
+func Register(env *real_environment.RealEnv) {
+	crypter := &RemoteCrypter{}
+	env.SetCrypter(crypter)
+}
 
 func (c *RemoteCrypter) SetEncryptionConfig(ctx context.Context, req *enpb.SetEncryptionConfigRequest) (*enpb.SetEncryptionConfigResponse, error) {
 	return nil, status.UnimplementedError("RemoteCrypter.SetEncryptionConfig unsupported")
