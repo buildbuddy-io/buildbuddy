@@ -25,6 +25,7 @@ genquery(
     name = "server_enterprise_deps",
     expression = "filter(//enterprise, deps(//server))",
     scope = ["//server"],
+    tags = ["manual"],
 )
 
 sh_test(
@@ -32,4 +33,9 @@ sh_test(
     srcs = ["server_no_enterprise_deps_test.sh"],
     args = ["$(rootpath :server_enterprise_deps)"],
     data = [":server_enterprise_deps"],
+    tags = [
+        # TODO: Drop this tag after updating to Bazel 8.5.0.
+        # https://github.com/bazelbuild/bazel/pull/27117
+        "public-only",
+    ],
 )

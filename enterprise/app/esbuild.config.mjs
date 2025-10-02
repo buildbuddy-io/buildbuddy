@@ -10,7 +10,17 @@ let browserifyPathPlugin = {
     // detect if we are building from buildbuddy-internal repo and
     // adjust 'node_modules' path accordingly
     if (!existsSync(entry)) {
-      entry = path.join(process.cwd(), "external/com_github_buildbuddy_io_buildbuddy", "node_modules");
+      // WORKSPACE
+      entry = path.join(process.cwd(), "external", "com_github_buildbuddy_io_buildbuddy", "node_modules");
+      if (!existsSync(entry)) {
+        // MODULE.bazel
+        entry = path.join(
+          process.cwd(),
+          "external",
+          "+_repo_rules+com_github_buildbuddy_io_buildbuddy",
+          "node_modules"
+        );
+      }
     }
     build.onResolve({ filter: /^path$/ }, () => ({
       // Note: the plugin API currently doesn't have a way to just replace
