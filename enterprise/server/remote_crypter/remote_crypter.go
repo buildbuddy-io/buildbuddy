@@ -15,11 +15,11 @@ import (
 type RemoteCrypter struct{}
 
 func (c *RemoteCrypter) SetEncryptionConfig(ctx context.Context, req *enpb.SetEncryptionConfigRequest) (*enpb.SetEncryptionConfigResponse, error) {
-	return nil, status.UnimplementedError("unimplemented")
+	return nil, status.UnimplementedError("RemoteCrypter.SetEncryptionConfig unsupported")
 }
 
 func (c *RemoteCrypter) GetEncryptionConfig(ctx context.Context, req *enpb.GetEncryptionConfigRequest) (*enpb.GetEncryptionConfigResponse, error) {
-	return nil, status.UnimplementedError("unimplemented")
+	return nil, status.UnimplementedError("RemoteCrypter.GetEncryptionConfig unsupported")
 }
 
 func (c *RemoteCrypter) ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, error) {
