@@ -998,16 +998,15 @@ func (d *UserDB) getUser(ctx context.Context, h interfaces.DB, userID string) (*
 	rq := h.NewQuery(ctx, "userdb_get_user").Raw(`
 		SELECT u.*, ug.*, g.*
 		FROM "Users" u 
-			LEFT JOIN "UserGroups" AS ug
-				ON u.user_id = ug.user_user_id
-			LEFT JOIN "Groups" AS g
-				ON ug.group_group_id = g.group_id
+		LEFT JOIN "UserGroups" AS ug
+			ON u.user_id = ug.user_user_id AND ug.membership_status = ?
+		LEFT JOIN "Groups" AS g
+			ON ug.group_group_id = g.group_id
 		WHERE u.user_id = ?
-		AND (ug.membership_status = ? OR ug.user_user_id IS NULL)
 		ORDER BY u.user_id, g.group_id ASC
 		`,
-		userID,
 		int32(grpb.GroupMembershipStatus_MEMBER),
+		userID,
 	)
 	ugj, err := db.ScanAll(rq, &userGroupJoin{})
 	if err != nil {
