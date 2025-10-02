@@ -159,34 +159,6 @@ type aggErr struct {
 	lastNonTimeoutErr error
 }
 
-// statusError wraps an error with a gRPC status code while preserving the
-// underlying error for errors.Is() checks.
-type statusError struct {
-	code codes.Code
-	msg  string
-	err  error
-}
-
-func (e *statusError) Error() string {
-	return e.msg
-}
-
-func (e *statusError) Unwrap() error {
-	return e.err
-}
-
-func (e *statusError) GRPCStatus() *gstatus.Status {
-	return gstatus.New(e.code, e.msg)
-}
-
-func wrapWithStatusCode(err error, code codes.Code) error {
-	return &statusError{
-		code: code,
-		msg:  err.Error(),
-		err:  err,
-	}
-}
-
 func (e *aggErr) err() error {
 	if e.lastErr == nil {
 		return nil
@@ -209,12 +181,12 @@ func (e *aggErr) err() error {
 
 	// Add appropriate status code based on error type
 	if dragonboat.IsTempError(err) {
-		return wrapWithStatusCode(err, codes.Unavailable)
+		return status.WrapWithCode(err, codes.Unavailable)
 	}
 	if errors.Is(err, dragonboat.ErrCanceled) {
-		return wrapWithStatusCode(err, codes.Canceled)
+		return status.WrapWithCode(err, codes.Canceled)
 	}
-	return wrapWithStatusCode(err, codes.Internal)
+	return status.WrapWithCode(err, codes.Internal)
 }
 
 func (e *aggErr) Add(err error) {
