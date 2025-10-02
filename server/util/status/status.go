@@ -2,6 +2,7 @@ package status
 
 import (
 	"context"
+	stderrors "errors"
 	"flag"
 	"fmt"
 	"runtime"
@@ -31,6 +32,10 @@ func (w *wrappedError) GRPCStatus() *status.Status {
 	return status.New(codes.Unknown, "")
 }
 
+func (w *wrappedError) Unwrap() error {
+	return w.error
+}
+
 type StackTrace = errors.StackTrace
 type stack []uintptr
 
@@ -49,27 +54,68 @@ func callers() *stack {
 	return &st
 }
 
-func makeStatusError(code codes.Code, msg string, details ...protoadapt.MessageV1) error {
-	var statusError error
+// statusError wraps an error with a gRPC status code while preserving the
+// underlying error for errors.Is() checks.
+type statusError struct {
+	code    codes.Code
+	err     error
+	details []protoadapt.MessageV1
+}
 
-	// If no details are provided (most common case) don't call WithDetails
-	// since it allocates a new status proto.
-	if len(details) > 0 {
-		s := status.New(code, msg)
-		s, err := s.WithDetails(details...)
+func (e *statusError) Error() string {
+	return e.err.Error()
+}
+
+func (e *statusError) Unwrap() error {
+	return e.err
+}
+
+func (e *statusError) withDetails(details ...protoadapt.MessageV1) {
+	e.details = details
+}
+
+func (e *statusError) GRPCStatus() *status.Status {
+	s := status.New(e.code, e.err.Error())
+	if len(e.details) > 0 {
+		var err error
+		s, err = s.WithDetails(e.details...)
 		if err != nil {
-			return InternalErrorf("add error details to error: %s", err)
+			return status.New(codes.Internal, fmt.Sprintf("add error details to error: %s", err))
 		}
-		statusError = s.Err()
-	} else {
-		statusError = status.Error(code, msg)
+		return s
+	}
+	return s
+}
+
+// WrapWithCode wraps an error with a gRPC status code while preserving the
+// underlying error for errors.Is() checks. This allows the error to have
+// both a specific status code AND maintain its identity for error comparison.
+func WrapWithCode(err error, code codes.Code) error {
+	return &statusError{
+		code: code,
+		err:  err,
+	}
+}
+
+func makeStatusErrorFromMessage(code codes.Code, msg string, details ...protoadapt.MessageV1) error {
+	return makeStatusError(code, stderrors.New(msg), details...)
+}
+
+func makeStatusError(code codes.Code, err error, details ...protoadapt.MessageV1) error {
+	statusErr := &statusError{
+		code: code,
+		err:  err,
+	}
+
+	if len(details) > 0 {
+		statusErr.details = details
 	}
 
 	if !*LogErrorStackTraces {
-		return statusError
+		return statusErr
 	}
 	return &wrappedError{
-		statusError,
+		statusErr,
 		callers(),
 	}
 }
@@ -78,7 +124,7 @@ func OK() error {
 	return status.Error(codes.OK, "")
 }
 func CanceledError(msg string) error {
-	return makeStatusError(codes.Canceled, msg)
+	return makeStatusErrorFromMessage(codes.Canceled, msg)
 }
 func IsCanceledError(err error) bool {
 	return status.Code(err) == codes.Canceled
@@ -87,7 +133,7 @@ func CanceledErrorf(format string, a ...interface{}) error {
 	return CanceledError(fmt.Sprintf(format, a...))
 }
 func UnknownError(msg string) error {
-	return makeStatusError(codes.Unknown, msg)
+	return makeStatusErrorFromMessage(codes.Unknown, msg)
 }
 func IsUnknownError(err error) bool {
 	return status.Code(err) == codes.Unknown
@@ -96,7 +142,7 @@ func UnknownErrorf(format string, a ...interface{}) error {
 	return UnknownError(fmt.Sprintf(format, a...))
 }
 func InvalidArgumentError(msg string) error {
-	return makeStatusError(codes.InvalidArgument, msg)
+	return makeStatusErrorFromMessage(codes.InvalidArgument, msg)
 }
 func IsInvalidArgumentError(err error) bool {
 	return status.Code(err) == codes.InvalidArgument
@@ -105,7 +151,7 @@ func InvalidArgumentErrorf(format string, a ...interface{}) error {
 	return InvalidArgumentError(fmt.Sprintf(format, a...))
 }
 func DeadlineExceededError(msg string) error {
-	return makeStatusError(codes.DeadlineExceeded, msg)
+	return makeStatusErrorFromMessage(codes.DeadlineExceeded, msg)
 }
 func IsDeadlineExceededError(err error) bool {
 	return status.Code(err) == codes.DeadlineExceeded
@@ -114,7 +160,7 @@ func DeadlineExceededErrorf(format string, a ...interface{}) error {
 	return DeadlineExceededError(fmt.Sprintf(format, a...))
 }
 func NotFoundError(msg string) error {
-	return makeStatusError(codes.NotFound, msg)
+	return makeStatusErrorFromMessage(codes.NotFound, msg)
 }
 func IsNotFoundError(err error) bool {
 	return status.Code(err) == codes.NotFound
@@ -123,7 +169,7 @@ func NotFoundErrorf(format string, a ...interface{}) error {
 	return NotFoundError(fmt.Sprintf(format, a...))
 }
 func AlreadyExistsError(msg string) error {
-	return makeStatusError(codes.AlreadyExists, msg)
+	return makeStatusErrorFromMessage(codes.AlreadyExists, msg)
 }
 func IsAlreadyExistsError(err error) bool {
 	return status.Code(err) == codes.AlreadyExists
@@ -132,7 +178,7 @@ func AlreadyExistsErrorf(format string, a ...interface{}) error {
 	return AlreadyExistsError(fmt.Sprintf(format, a...))
 }
 func PermissionDeniedError(msg string) error {
-	return makeStatusError(codes.PermissionDenied, msg)
+	return makeStatusErrorFromMessage(codes.PermissionDenied, msg)
 }
 func IsPermissionDeniedError(err error) bool {
 	return status.Code(err) == codes.PermissionDenied
@@ -141,7 +187,7 @@ func PermissionDeniedErrorf(format string, a ...interface{}) error {
 	return PermissionDeniedError(fmt.Sprintf(format, a...))
 }
 func ResourceExhaustedError(msg string) error {
-	return makeStatusError(codes.ResourceExhausted, msg)
+	return makeStatusErrorFromMessage(codes.ResourceExhausted, msg)
 }
 func IsResourceExhaustedError(err error) bool {
 	return status.Code(err) == codes.ResourceExhausted
@@ -150,7 +196,7 @@ func ResourceExhaustedErrorf(format string, a ...interface{}) error {
 	return ResourceExhaustedError(fmt.Sprintf(format, a...))
 }
 func FailedPreconditionError(msg string) error {
-	return makeStatusError(codes.FailedPrecondition, msg)
+	return makeStatusErrorFromMessage(codes.FailedPrecondition, msg)
 }
 func IsFailedPreconditionError(err error) bool {
 	return status.Code(err) == codes.FailedPrecondition
@@ -159,7 +205,7 @@ func FailedPreconditionErrorf(format string, a ...interface{}) error {
 	return FailedPreconditionError(fmt.Sprintf(format, a...))
 }
 func AbortedError(msg string) error {
-	return makeStatusError(codes.Aborted, msg)
+	return makeStatusErrorFromMessage(codes.Aborted, msg)
 }
 func IsAbortedError(err error) bool {
 	return status.Code(err) == codes.Aborted
@@ -168,7 +214,7 @@ func AbortedErrorf(format string, a ...interface{}) error {
 	return AbortedError(fmt.Sprintf(format, a...))
 }
 func OutOfRangeError(msg string) error {
-	return makeStatusError(codes.OutOfRange, msg)
+	return makeStatusErrorFromMessage(codes.OutOfRange, msg)
 }
 func IsOutOfRangeError(err error) bool {
 	return status.Code(err) == codes.OutOfRange
@@ -177,7 +223,7 @@ func OutOfRangeErrorf(format string, a ...interface{}) error {
 	return OutOfRangeError(fmt.Sprintf(format, a...))
 }
 func UnimplementedError(msg string) error {
-	return makeStatusError(codes.Unimplemented, msg)
+	return makeStatusErrorFromMessage(codes.Unimplemented, msg)
 }
 func IsUnimplementedError(err error) bool {
 	return status.Code(err) == codes.Unimplemented
@@ -186,7 +232,7 @@ func UnimplementedErrorf(format string, a ...interface{}) error {
 	return UnimplementedError(fmt.Sprintf(format, a...))
 }
 func InternalError(msg string) error {
-	return makeStatusError(codes.Internal, msg)
+	return makeStatusErrorFromMessage(codes.Internal, msg)
 }
 func IsInternalError(err error) bool {
 	return status.Code(err) == codes.Internal
@@ -195,7 +241,7 @@ func InternalErrorf(format string, a ...interface{}) error {
 	return InternalError(fmt.Sprintf(format, a...))
 }
 func UnavailableError(msg string) error {
-	return makeStatusError(codes.Unavailable, msg)
+	return makeStatusErrorFromMessage(codes.Unavailable, msg)
 }
 func IsUnavailableError(err error) bool {
 	return status.Code(err) == codes.Unavailable
@@ -204,7 +250,7 @@ func UnavailableErrorf(format string, a ...interface{}) error {
 	return UnavailableError(fmt.Sprintf(format, a...))
 }
 func DataLossError(msg string) error {
-	return makeStatusError(codes.DataLoss, msg)
+	return makeStatusErrorFromMessage(codes.DataLoss, msg)
 }
 func IsDataLossError(err error) bool {
 	return status.Code(err) == codes.DataLoss
@@ -213,7 +259,7 @@ func DataLossErrorf(format string, a ...interface{}) error {
 	return DataLossError(fmt.Sprintf(format, a...))
 }
 func UnauthenticatedError(msg string) error {
-	return makeStatusError(codes.Unauthenticated, msg)
+	return makeStatusErrorFromMessage(codes.Unauthenticated, msg)
 }
 func IsUnauthenticatedError(err error) bool {
 	return status.Code(err) == codes.Unauthenticated
@@ -225,8 +271,16 @@ func UnauthenticatedErrorf(format string, a ...interface{}) error {
 // WrapError prepends additional context to an error description, preserving the
 // underlying status code and error details.
 func WrapError(err error, msg string) error {
-	s, _ := status.FromError(err)
+	if err == nil {
+		return nil
+	}
+	var statusErr *statusError
+	if errors.As(err, &statusErr) {
+		statusErr.err = fmt.Errorf("%s: %w", msg, err)
+		return statusErr
+	}
 
+	s, _ := status.FromError(err)
 	// Preserve any details from the original error.
 	decodedDetails := s.Details()
 	details := make([]protoadapt.MessageV1, len(decodedDetails))
@@ -241,7 +295,8 @@ func WrapError(err error, msg string) error {
 		}
 	}
 
-	return makeStatusError(status.Code(err), fmt.Sprintf("%s: %s", msg, Message(err)), details...)
+	errWithContext := fmt.Errorf("%s: %w", msg, err)
+	return makeStatusError(status.Code(err), errWithContext, details...)
 }
 
 // Wrapf is the "Printf" version of `Wrap`.
@@ -259,15 +314,17 @@ func WithReason(err error, reason string) error {
 		Reason: reason,
 		Domain: "buildbuddy.io",
 	}
-	st := status.New(status.Code(err), Message(err))
-	st, detailsErr := st.WithDetails(info)
-	if detailsErr != nil {
-		// Ideally we'd alert.UnexpectedEvent here but it'd cause a circular
-		// dep. This should never happen in practice, but conservatively just
-		// return an INTERNAL error for now.
-		return InternalErrorf("add error details to error %q: %s", err, detailsErr)
+
+	var statusErr *statusError
+	if errors.As(err, &statusErr) {
+	} else {
+		statusErr = &statusError{
+			code: status.Code(err),
+			err:  err,
+		}
 	}
-	return st.Err()
+	statusErr.details = append(statusErr.details, info)
+	return statusErr
 }
 
 // Message extracts the error message from a given error, which for gRPC errors
