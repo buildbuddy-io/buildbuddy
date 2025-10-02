@@ -1468,6 +1468,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		mwc.peerClosers[peer] = rwc
 	}
 	if len(mwc.peerClosers) < c.config.ReplicationFactor {
+		mwc.Close()
 		openPeers := make([]string, len(mwc.peerClosers))
 		for peer := range mwc.peerClosers {
 			openPeers = append(openPeers, peer)
