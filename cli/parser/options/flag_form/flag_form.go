@@ -25,7 +25,7 @@ const negativeMask = Negative
 // Return whether or not this is a negative form. Unknown forms will always
 // return false, as we cannot identify them as being in a negative form.
 func (f Form) Negative() bool {
-	return f < Unknown && f & negativeMask != 0
+	return f < Unknown && f&negativeMask != 0
 }
 
 // Return this form with the negative bit set. Returns Unknown if this is not a
@@ -53,9 +53,14 @@ func (f Form) ClearNegative() Form {
 // always return false, even if they have the same value, since we can't compare
 // the types of unknown forms.
 func (f Form) CompareNameType(f2 Form) bool {
-	return !f.Unknown() && !f2.Unknown() && (
-		f == f2 || (
-			f.ClearNegative() == f2.ClearNegative()))
+	return !f.Unknown() && !f2.Unknown() && (f == f2 || (f.ClearNegative() == f2.ClearNegative()))
+}
+
+func (f Form) AsNameType(f2 Form) Form {
+	if f.Unknown() || f2.Unknown() {
+		return Unknown
+	}
+	return (f & negativeMask) | (f2 & clearNegativeMask)
 }
 
 // Return whether or not this is an unknown form.

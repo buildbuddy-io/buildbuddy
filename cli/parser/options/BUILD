@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
@@ -15,5 +15,15 @@ go_library(
         "//proto:bazel_flags_go_proto",
         "//server/util/lib/seq",
         "//server/util/lib/set",
+    ],
+)
+
+go_test(
+    name = "options_test",
+    srcs = ["options_test.go"],
+    deps = [
+        ":options",
+        "//cli/parser/options/flag_form",
+        "@com_github_stretchr_testify//assert",
     ],
 )

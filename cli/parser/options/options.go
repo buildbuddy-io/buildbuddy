@@ -287,6 +287,8 @@ type Option interface {
 	BoolLike() BoolLike
 }
 
+// The base type for all option types. Handles a lot of formatting and option
+// representation transformations.
 type optionBase struct {
 	*Definition
 
@@ -294,24 +296,26 @@ type optionBase struct {
 	Form flag_form.Form
 }
 
-func newOptionBase(optName string, d *Definition) (*optionBase, error) {
+// Returns a new option base derived from the option string (without the leading
+// dashes) and the provided Definition.
+func NewOptionBase(opt string, d *Definition) (*optionBase, error) {
 	// validate optName
 	var form flag_form.Form
-	switch optName {
+	switch opt {
 	case d.name:
 		form = flag_form.Standard
 	case d.shortName:
 		form = flag_form.Short
 	default:
 		if d.hasNegative {
-			if n, cut := strings.CutPrefix(optName, "no"); cut {
+			if n, cut := strings.CutPrefix(opt, "no"); cut {
 				if n == d.name {
 					form = flag_form.Negative
 					break
 				}
 			}
 		}
-		return nil, fmt.Errorf("option name '%s' cannot specify an option with definition '%#v'", optName, d)
+		return nil, fmt.Errorf("option name '%s' cannot specify an option with definition '%#v'", opt, d)
 	}
 	return &optionBase{
 		Definition: d,
@@ -319,30 +323,42 @@ func newOptionBase(optName string, d *Definition) (*optionBase, error) {
 	}, nil
 }
 
+// Coerce this option base to use the standard name for this option.
 func (o *optionBase) UseName() {
 	if o.Name() == "" {
 		log.Warnf("Attempted to use name for option %s, which lacks a name.", o.Name())
 		return
 	}
-	o.Form = flag_form.Standard
+	o.Form = o.Form.AsNameType(flag_form.Standard)
 }
 
+// Coerce this option base to use the short name for this option. Does not
+// support coercing from a negative (`--no`) type flag.
 func (o *optionBase) UseShortName() {
 	if o.ShortName() == "" {
 		log.Warnf("Attempted to use short name for option %s, which lacks a short name.", o.Name())
 		return
 	}
+	if o.Form.Negative() {
+		log.Warnf("Cannot coerce short form from negative form for option %s.", o.Name())
+		return
+	}
 	o.Form = flag_form.Short
 }
 
+// Returns whether or not this option will be represented using the standard
+// name for the option.
 func (o *optionBase) UsesName() bool {
 	return o.Form.CompareNameType(flag_form.Standard)
 }
 
+// Returns whether or not this option will be represented using the short name
+// for the option.
 func (o *optionBase) UsesShortName() bool {
 	return o.ShortName() != "" && o.Form == flag_form.Short
 }
 
+// Returns a formatted version of the option.
 func (o *optionBase) Format() string {
 	switch o.Form {
 	case flag_form.Standard:
@@ -350,29 +366,45 @@ func (o *optionBase) Format() string {
 	case flag_form.Negative:
 		return "--" + "no" + o.Name()
 	case flag_form.Short:
-		return "--" + o.ShortName()
+		return "-" + o.ShortName()
 	default:
 		// Just default to the standard representaation if the form is unknown.
 		return "--" + o.Name()
 	}
 }
 
+// Coerces this option base to be a negative (`--no`) form option. If this is
+// called on option base which uses a short name representation,  it will
+// default to using the standard name representation instead, so long as one
+// exists.
+//
+// Has no effect if called on an option base with a definition that does not
+// have a negative representation.
+//
+// Has no effect if called on option base with an unknown representation.
 func (o *optionBase) SetNegative() {
 	if !o.HasNegative() {
 		log.Warnf("Can't negate flag '%s', which does not have a negative form.", o.Name())
-		return
-	}
-	if o.Form == flag_form.Short {
-		log.Warnf("Can't negate short form of flag '%s'.", o.Name)
 		return
 	}
 	if o.Form.Unknown() {
 		log.Warnf("Can't negate flag '%s', which does not have a known form.", o.Name())
 		return
 	}
+	if o.Form == flag_form.Short {
+		if o.Name() != "" {
+			log.Warnf("Can't negate short name of flag '%s'; defaulting to using negative form of the standard name.", o.Name)
+			o.Form = flag_form.Negative
+			return
+		}
+		log.Warnf("Can't negate short name of flag '%s' and there is no known standard name to default to; flag could not be negated.", o.Name)
+	}
 	o.Form = o.Form.SetNegative()
 }
 
+// Coerces this option base to not be a negative (`--no`) form option.
+//
+// Has no effect if called on option base with an unknown representation.
 func (o *optionBase) ClearNegative() error {
 	if o.Form.Unknown() {
 		return fmt.Errorf("Can't clear negation of flag '%s', which does not have a known form.", o.Name())
@@ -381,6 +413,7 @@ func (o *optionBase) ClearNegative() error {
 	return nil
 }
 
+// Returns whether or not this option base is a negative (`--no`) form option.
 func (o *optionBase) Negative() bool {
 	return o.Form.Negative()
 }
@@ -698,7 +731,7 @@ func newOptionImpl(optName string, v *string, d *Definition) (Option, error) {
 	if d == nil {
 		return nil, fmt.Errorf("In NewOption: definition was nil for optname %s and value %+v", optName, v)
 	}
-	base, err := newOptionBase(optName, d)
+	base, err := NewOptionBase(optName, d)
 	if err != nil {
 		return nil, err
 	}
