@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,42 @@ var (
 	docker               = &ExecutorProperties{SupportedIsolationTypes: []ContainerType{DockerContainerType}}
 	podmanAndFirecracker = &ExecutorProperties{SupportedIsolationTypes: []ContainerType{PodmanContainerType, FirecrackerContainerType}}
 )
+
+func TestGetExecutorProperties_AppleContainerAdvertisesLinux(t *testing.T) {
+	flags.Set(t, "executor.enable_applecontainer", true)
+
+	props := GetExecutorProperties()
+	require.Len(t, props.SupportedIsolationTypes, 1)
+	assert.Equal(t, AppleContainerType, props.SupportedIsolationTypes[0])
+	assert.Equal(t, LinuxOperatingSystemName, props.AdvertisedOSFamily)
+	assert.Equal(t, ARM64ArchitectureName, props.AdvertisedArch)
+}
+
+func TestValidateIsolationTypes_AppleContainerHostRequirement(t *testing.T) {
+	flags.Set(t, "executor.enable_applecontainer", true)
+
+	err := ValidateIsolationTypes()
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
+		require.NoError(t, err)
+		return
+	}
+	require.Error(t, err)
+	assert.True(t, status.IsInvalidArgumentError(err))
+	assert.Contains(t, err.Error(), "darwin/arm64")
+}
+
+func TestValidateIsolationTypes_AppleContainerConflicts(t *testing.T) {
+	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+		t.Skip("requires darwin/arm64 host")
+	}
+	flags.Set(t, "executor.enable_applecontainer", true)
+	flags.Set(t, "executor.enable_bare_runner", true)
+
+	err := ValidateIsolationTypes()
+	require.Error(t, err)
+	assert.True(t, status.IsInvalidArgumentError(err))
+	assert.Contains(t, err.Error(), "cannot be combined")
+}
 
 func TestParse_ContainerImage_Success(t *testing.T) {
 	flags.Set(t, "executor.container_registry_region", "us-test1")
