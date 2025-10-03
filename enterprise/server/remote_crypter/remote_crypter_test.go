@@ -70,6 +70,9 @@ func (f *fakeEncryptionService) GetEncryptionKey(ctx context.Context, req *enpb.
 	}
 	gid := groupID(userInfo.GetGroupID())
 
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	// Figure out which key is being requested.
 	var kid keyID
 	if req.GetMetadata().GetId() != "" {
