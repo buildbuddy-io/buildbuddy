@@ -22,6 +22,7 @@ ts_library(
         "//app/router",
         "//app/terminal:row",
         "//app/terminal:text",
+        "//app/util:clipboard",
         "//app/util:math",
         "//app/util:scroller",
     ],
