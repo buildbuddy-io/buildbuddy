@@ -1,13 +1,19 @@
 package remote_crypter
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"fmt"
+	"io"
 	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdata"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
@@ -20,6 +26,13 @@ var (
 	// The digest contents is not important as long as the same value is passed
 	// to the encrypt and decrypt functions.
 	dummyDigest = &repb.Digest{Hash: "foo", SizeBytes: 123}
+)
+
+const (
+	user1  = "user1"
+	group1 = "group1"
+	user2  = "user2"
+	group2 = "group2"
 )
 
 type groupID string
@@ -132,9 +145,9 @@ func (f *fakeEncryptionService) GetEncryptionKey(ctx context.Context, req *enpb.
 	}, nil
 }
 
-func setup(t *testing.T) (interfaces.Authenticator, interfaces.Crypter, clockwork.Clock, *fakeEncryptionService) {
+func setup(t *testing.T) (*testauth.TestAuthenticator, interfaces.Crypter, clockwork.Clock, *fakeEncryptionService) {
 	te := testenv.GetTestEnv(t)
-	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers())
+	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
 	te.SetAuthenticator(authenticator)
 	encryptionService := newFakeEncryptionService(authenticator)
 	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
@@ -149,40 +162,32 @@ func setup(t *testing.T) (interfaces.Authenticator, interfaces.Crypter, clockwor
 }
 
 func TestEncryptDecrypt(t *testing.T) {
-	// env, fakeService := getTestEnv(t)
-	// fakeService.add("EK123", 1)
+	authenticator, crypter, _, service := setup(t)
+	ctx, err := authenticator.WithAuthenticatedUser(context.Background(), user1)
+	require.NoError(t, err)
+	service.add(t, group1, &fakeKey{id: "1", version: 1, key: []byte("11111")})
 
-	// userID := "US123"
-	// groupID := "GR123"
-	// auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
-	// env.SetAuthenticator(auther)
+	for _, size := range []int64{1, 10, 100, 1000, 1000 * 1000} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			out := bytes.NewBuffer(nil)
+			e, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out))
+			require.NoError(t, err)
 
-	// ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
-	// require.NoError(t, err)
+			testData := make([]byte, size)
+			_, err = rand.Read(testData)
+			require.NoError(t, err)
 
-	// crypter := setup(t, env, fakeService)
+			// Write the test data in random chunk sizes
+			testdata.WriteInRandomChunks(t, e, testData)
 
-	// for _, size := range []int64{1, 10, 100, 1000, 1000 * 1000} {
-	// 	t.Run(fmt.Sprint(size), func(t *testing.T) {
-	// 		out := bytes.NewBuffer(nil)
-	// 		e, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out))
-	// 		require.NoError(t, err)
+			d, err := crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(out), e.Metadata())
+			require.NoError(t, err)
+			decrypted, err := io.ReadAll(d)
+			require.NoError(t, err)
 
-	// 		testData := make([]byte, size)
-	// 		_, err = rand.Read(testData)
-	// 		require.NoError(t, err)
-
-	// 		// Write the test data in random chunk sizes
-	// 		testdata.WriteInRandomChunks(t, e, testData)
-
-	// 		d, err := crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(out), e.Metadata())
-	// 		require.NoError(t, err)
-	// 		decrypted, err := io.ReadAll(d)
-	// 		require.NoError(t, err)
-
-	// 		require.Equal(t, testData, decrypted, "original plaintext and decrypted plaintext do not match")
-	// 	})
-	// }
+			require.Equal(t, testData, decrypted, "original plaintext and decrypted plaintext do not match")
+		})
+	}
 }
 
 // func TestDecryptWrongDigest(t *testing.T) {

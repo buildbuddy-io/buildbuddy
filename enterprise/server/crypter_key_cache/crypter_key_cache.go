@@ -260,7 +260,7 @@ func (c *KeyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*c
 		if em.GetVersion() == 0 {
 			return nil, status.FailedPreconditionError("metadata does not contain a valid key version")
 		}
-		ck = CacheKey{GroupID: u.GetGroupID(), KeyID: em.GetEncryptionKeyId(), Version: int(em.GetVersion())}
+		ck = CacheKey{GroupID: u.GetGroupID(), KeyID: em.GetEncryptionKeyId(), Version: em.GetVersion()}
 	} else {
 		ck = CacheKey{GroupID: u.GetGroupID()}
 	}
