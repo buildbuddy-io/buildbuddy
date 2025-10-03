@@ -22,7 +22,7 @@ ts_library(
         "//app/router",
         "//app/terminal:row",
         "//app/terminal:text",
-        "//app/util:clipboard",
+        "//app/terminal:copy",
         "//app/util:math",
         "//app/util:scroller",
     ],
@@ -32,6 +32,21 @@ ts_jasmine_node_test(
     name = "text_test",
     srcs = ["text_test.ts"],
     deps = [":terminal"],
+)
+
+ts_jasmine_node_test(
+    name = "terminal_copy_test",
+    srcs = ["terminal_copy_test.ts"],
+    deps = [":copy"],
+)
+
+ts_library(
+    name = "copy",
+    srcs = ["copy.ts"],
+    deps = [
+        "//app/terminal:text",
+        "//app/util:clipboard",
+    ],
 )
 
 ts_library(

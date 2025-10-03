@@ -7,11 +7,11 @@ import capabilities from "../capabilities/capabilities";
 import TextInput from "../components/input/input";
 import Spinner from "../components/spinner/spinner";
 import router from "../router/router";
-import { copyToClipboard } from "../util/clipboard";
 import { mod } from "../util/math";
 import { Scroller } from "../util/scroller";
 import { Row, ROW_HEIGHT_PX } from "./row";
 import { getContent, ListData, Range, SearchQuery, toPlainText, updatedMatchIndexForSearch } from "./text";
+import { copyTerminalText } from "./copy";
 
 const WRAP_LOCAL_STORAGE_KEY = "terminal-wrap";
 const WRAP_LOCAL_STORAGE_VALUE = "wrap";
@@ -360,9 +360,8 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
   }
 
   private onCopyClick() {
-    const value = this.props.value || "";
     try {
-      copyToClipboard(toPlainText(value));
+      copyTerminalText(this.props.value);
       if (this.copyResetTimeout !== null) {
         window.clearTimeout(this.copyResetTimeout);
       }
