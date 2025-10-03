@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 
@@ -23,9 +24,7 @@ import (
 )
 
 var (
-	// The digest contents is not important as long as the same value is passed
-	// to the encrypt and decrypt functions.
-	dummyDigest = &repb.Digest{Hash: "foo", SizeBytes: 123}
+	fooDigest = &repb.Digest{Hash: "foo", SizeBytes: 123}
 )
 
 const (
@@ -40,8 +39,8 @@ type keyID string
 
 type fakeEncryptionService struct {
 	authenticator interfaces.Authenticator
-	mu            sync.Mutex
-	seq           int // internal ordering, a la time.Now()
+	mu            sync.Mutex // TODO(iain): I think this mutex is technically unnecessary?
+	seq           int        // internal ordering, a la time.Now()
 	keys          map[groupID]map[keyID][]*fakeKey
 }
 
@@ -73,6 +72,9 @@ func (f *fakeEncryptionService) add(t *testing.T, group string, newKey *fakeKey)
 
 	newKey.seq = f.seq
 	f.seq++
+	if f.keys[gid] == nil {
+		f.keys[gid] = map[keyID][]*fakeKey{}
+	}
 	f.keys[gid][newKey.id] = append(f.keys[gid][newKey.id], newKey)
 }
 
@@ -165,12 +167,12 @@ func TestEncryptDecrypt(t *testing.T) {
 	authenticator, crypter, _, service := setup(t)
 	ctx, err := authenticator.WithAuthenticatedUser(context.Background(), user1)
 	require.NoError(t, err)
-	service.add(t, group1, &fakeKey{id: "1", version: 1, key: []byte("11111")})
+	service.add(t, group1, &fakeKey{id: "1", version: 1, key: []byte(strings.Repeat("1", 32))})
 
 	for _, size := range []int64{1, 10, 100, 1000, 1000 * 1000} {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
 			out := bytes.NewBuffer(nil)
-			e, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out))
+			e, err := crypter.NewEncryptor(ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out))
 			require.NoError(t, err)
 
 			testData := make([]byte, size)
@@ -180,7 +182,7 @@ func TestEncryptDecrypt(t *testing.T) {
 			// Write the test data in random chunk sizes
 			testdata.WriteInRandomChunks(t, e, testData)
 
-			d, err := crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(out), e.Metadata())
+			d, err := crypter.NewDecryptor(ctx, fooDigest, io.NopCloser(out), e.Metadata())
 			require.NoError(t, err)
 			decrypted, err := io.ReadAll(d)
 			require.NoError(t, err)
@@ -190,51 +192,57 @@ func TestEncryptDecrypt(t *testing.T) {
 	}
 }
 
-// func TestDecryptWrongDigest(t *testing.T) {
-// 	env, fakeService := getTestEnv(t)
-// 	fakeService.addKey("EK123", 1)
+func TestDecryptWrongDigest(t *testing.T) {
 
-// 	userID := "US123"
-// 	groupID := "GR123"
-// 	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
-// 	env.SetAuthenticator(auther)
+	authenticator, crypter, _, service := setup(t)
+	ctx, err := authenticator.WithAuthenticatedUser(context.Background(), user1)
+	require.NoError(t, err)
+	service.add(t, group1, &fakeKey{id: "1", version: 1, key: []byte(strings.Repeat("1", 32))})
 
-// 	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
-// 	require.NoError(t, err)
+	// env, fakeService := getTestEnv(t)
+	// fakeService.addKey(group1, "EK123", 1)
 
-// 	crypter := setup(t, env, fakeService)
-// 	out := bytes.NewBuffer(nil)
+	// userID := "US123"
+	// groupID := "GR123"
+	// auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	// env.SetAuthenticator(auther)
 
-// 	e, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out))
-// 	require.NoError(t, err)
+	// ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+	// require.NoError(t, err)
 
-// 	testData := make([]byte, 1000)
-// 	_, err = rand.Read(testData)
-// 	require.NoError(t, err)
+	// crypter := setup(t, env, fakeService)
+	out := bytes.NewBuffer(nil)
 
-// 	testdata.WriteInRandomChunks(t, e, testData)
+	e, err := crypter.NewEncryptor(ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out))
+	require.NoError(t, err)
 
-// 	// Correct digest should work
-// 	d, err := crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata())
-// 	require.NoError(t, err)
-// 	decrypted, err := io.ReadAll(d)
-// 	require.NoError(t, err)
-// 	require.Equal(t, testData, decrypted)
+	testData := make([]byte, 1000)
+	_, err = rand.Read(testData)
+	require.NoError(t, err)
 
-// 	// Wrong hash should fail authentication
-// 	wrongHashDigest := &repb.Digest{Hash: "badhash", SizeBytes: dummyDigest.SizeBytes}
-// 	d, err = crypter.NewDecryptor(ctx, wrongHashDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata())
-// 	require.NoError(t, err)
-// 	_, err = io.ReadAll(d)
-// 	require.ErrorContains(t, err, "authentication failed")
+	testdata.WriteInRandomChunks(t, e, testData)
 
-// 	// Wrong size should fail authentication
-// 	wrongSizeDigest := &repb.Digest{Hash: dummyDigest.Hash, SizeBytes: 9999999999999999}
-// 	d, err = crypter.NewDecryptor(ctx, wrongSizeDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata())
-// 	require.NoError(t, err)
-// 	_, err = io.ReadAll(d)
-// 	require.ErrorContains(t, err, "authentication failed")
-// }
+	// Correct digest should work
+	d, err := crypter.NewDecryptor(ctx, fooDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata())
+	require.NoError(t, err)
+	decrypted, err := io.ReadAll(d)
+	require.NoError(t, err)
+	require.Equal(t, testData, decrypted)
+
+	// Wrong hash should fail authentication
+	wrongHashDigest := &repb.Digest{Hash: "badhash", SizeBytes: fooDigest.SizeBytes}
+	d, err = crypter.NewDecryptor(ctx, wrongHashDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata())
+	require.NoError(t, err)
+	_, err = io.ReadAll(d)
+	require.ErrorContains(t, err, "authentication failed")
+
+	// Wrong size should fail authentication
+	wrongSizeDigest := &repb.Digest{Hash: fooDigest.Hash, SizeBytes: 9999999999999999}
+	d, err = crypter.NewDecryptor(ctx, wrongSizeDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata())
+	require.NoError(t, err)
+	_, err = io.ReadAll(d)
+	require.ErrorContains(t, err, "authentication failed")
+}
 
 // func TestKeyLookup(t *testing.T) {
 // 	env, fakeService := getTestEnv(t)
