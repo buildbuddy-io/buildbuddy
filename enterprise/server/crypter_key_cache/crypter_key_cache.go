@@ -38,7 +38,7 @@ const (
 type CacheKey struct {
 	GroupID string
 	KeyID   string
-	Version int
+	Version int64
 }
 
 func (ck *CacheKey) String() string {

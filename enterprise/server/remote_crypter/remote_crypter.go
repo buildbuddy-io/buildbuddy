@@ -70,12 +70,14 @@ func new(env environment.Env, clock clockwork.Clock, conn grpc.ClientConnInterfa
 }
 
 func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, client enpb.EncryptionServiceClient) ([]byte, *sgpb.EncryptionMetadata, error) {
-	// TODO(iain): dunno if this is right
-	req := &enpb.GetEncryptionKeyRequest{
-		Metadata: &enpb.EncryptionKeyMetadata{
-			Id:      ck.KeyID,
-			Version: int64(ck.Version),
-		},
+	req := &enpb.GetEncryptionKeyRequest{}
+	if ck.KeyID != "" {
+		req = &enpb.GetEncryptionKeyRequest{
+			Metadata: &enpb.EncryptionKeyMetadata{
+				Id:      ck.KeyID,
+				Version: ck.Version,
+			},
+		}
 	}
 
 	resp, err := client.GetEncryptionKey(ctx, req)
