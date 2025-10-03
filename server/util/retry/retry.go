@@ -3,6 +3,7 @@ package retry
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"time"
 
@@ -236,7 +237,7 @@ func Do[T any](ctx context.Context, opts *Options, fn func(ctx context.Context) 
 			return rsp, nil
 		}
 		if _, ok := err.(*nonRetryableError); ok {
-			logFailedAttempt(lastError, " and could not be retried due to a non-retryable error")
+			logFailedAttempt(err, fmt.Sprintf(" (last error: %s) and could not be retried due to a non-retryable error", lastError))
 			return rsp, err
 		}
 		lastError = err
