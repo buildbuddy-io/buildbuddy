@@ -16,6 +16,7 @@ go_library(
         "//cli/workspace",
         "//server/util/flag",
         "@com_github_bazelbuild_buildtools//buildifier:buildifier_lib",
+        "@com_github_bazelbuild_buildtools//edit",
     ],
 )
 
