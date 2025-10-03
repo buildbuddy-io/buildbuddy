@@ -30,15 +30,10 @@ single_version_override(
 )
 
 # Note that this is 'rules_nodejs-core'
-# Keep in sync with build_bazel_rules_nodejs in WORKSPACE.bzlmod
 bazel_dep(name = "rules_nodejs")
 single_version_override(
     module_name = "rules_nodejs",
-    patch_strip = 1,
-    patches = [
-        "//buildpatches/bazel_dep:build_bazel_rules_nodejs.patch",
-    ],
-    version = "5.8.5",
+    version = "6.5.2",
 )
 
 # dependencies of rules_webtesting module
