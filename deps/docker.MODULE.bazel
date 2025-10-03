@@ -9,9 +9,9 @@ container_pull(
 
 container_pull(
     name = "bazel_image_base",
-    digest = "sha256:ab0c5fbe16bc01c03eb081a5724ba618110cbd24940ab123a8dbee0382a4c175",
+    digest = "sha256:8bb82ccf73085b71159ce05d2cc6030cbaa927b403c04774f0b22f37ab4fd78a",
     registry = "gcr.io",
-    repository = "distroless/java11-debian11",
+    repository = "distroless/java17-debian12",
 )
 
 dockerfile_image = use_repo_rule("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
