@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
+	"google.golang.org/grpc"
 
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -34,22 +35,20 @@ func Register(env *real_environment.RealEnv) error {
 		return nil
 	}
 
-	rc, err := new(env, env.GetClock())
+	conn, err := grpc_client.DialSimple(*target)
 	if err != nil {
 		return err
 	}
-	env.SetCrypter(rc)
+	crypter, err := new(env, env.GetClock(), conn)
+	if err != nil {
+		return err
+	}
+	env.SetCrypter(crypter)
 	return nil
 }
 
-func new(env environment.Env, clock clockwork.Clock) (*RemoteCrypter, error) {
-	conn, err := grpc_client.DialSimple(*target)
-	if err != nil {
-		return nil, err
-	}
-
+func new(env environment.Env, clock clockwork.Clock, conn grpc.ClientConnInterface) (*RemoteCrypter, error) {
 	client := enpb.NewEncryptionServiceClient(conn)
-
 	refreshFn := func(ctx context.Context, ck crypter_key_cache.CacheKey) ([]byte, *sgpb.EncryptionMetadata, error) {
 		return refreshKey(ctx, ck, client)
 	}
@@ -71,6 +70,7 @@ func new(env environment.Env, clock clockwork.Clock) (*RemoteCrypter, error) {
 }
 
 func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, client enpb.EncryptionServiceClient) ([]byte, *sgpb.EncryptionMetadata, error) {
+	// TODO(iain): dunno if this is right
 	req := &enpb.GetEncryptionKeyRequest{
 		Metadata: &enpb.EncryptionKeyMetadata{
 			Id:      ck.KeyID,

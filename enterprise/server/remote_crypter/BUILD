@@ -19,13 +19,27 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@org_golang_google_grpc//:grpc",
     ],
 )
 
 go_test(
     name = "remote_crypter_test",
     srcs = ["remote_crypter_test.go"],
+    embed = [":remote_crypter"],
     deps = [
+        "//proto:encryption_go_proto",
+        "//proto:remote_execution_go_proto",
+        "//proto:storage_go_proto",
+        "//enterprise/server/crypter",
+        "//enterprise/server/crypter_key_cache",
+        "//server/interfaces",
+        "//server/testutil/testauth",
+        "//server/testutil/testdata",
+        "//server/testutil/testenv",
+        "//server/util/ioutil",
+        "//server/util/status",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
     ],
 )
