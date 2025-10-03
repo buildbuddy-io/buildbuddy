@@ -42,7 +42,7 @@ start_clickhouse() {
     --publish="$BB_CLICKHOUSE_PORT:9000" \
     --publish="$BB_CLICKHOUSE_HTTP_PORT:8123" \
     --volume="/tmp/${USER}_clickhouse_data:/var/lib/clickhouse" \
-    "$BB_CLICKHOUSE_IMAGE"
+    "$BB_CLICKHOUSE_IMAGE" >/dev/null
 }
 
 if ! "$docker" container inspect bb-clickhouse-local &>/dev/null; then
@@ -58,10 +58,7 @@ clickhouse_client() {
 
 init_db() {
   for _ in {1..10}; do
-    if clickhouse_client --query '
-        CREATE DATABASE IF NOT EXISTS buildbuddy_local;
-        CREATE DATABASE IF NOT EXISTS otel_local;
-    ' &>/dev/null; then
+    if clickhouse_client --query 'CREATE DATABASE IF NOT EXISTS buildbuddy_local;' 1>&2 && clickhouse_client --query 'CREATE DATABASE IF NOT EXISTS otel_local;' 1>&2; then
       return 0
     fi
     echo >&2 "$0: waiting for clickhouse to initialize..."
