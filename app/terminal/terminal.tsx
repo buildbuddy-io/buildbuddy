@@ -9,9 +9,9 @@ import Spinner from "../components/spinner/spinner";
 import router from "../router/router";
 import { mod } from "../util/math";
 import { Scroller } from "../util/scroller";
+import { copyTerminalText } from "./copy";
 import { Row, ROW_HEIGHT_PX } from "./row";
 import { getContent, ListData, Range, SearchQuery, toPlainText, updatedMatchIndexForSearch } from "./text";
-import { copyTerminalText } from "./copy";
 
 const WRAP_LOCAL_STORAGE_KEY = "terminal-wrap";
 const WRAP_LOCAL_STORAGE_VALUE = "wrap";
@@ -467,11 +467,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
               title={this.state.copied ? "Copied" : "Copy"}
               onClick={this.onCopyClick.bind(this)}
               className="terminal-action active">
-              {this.state.copied ? (
-                <Check className={`icon ${iconClass}`} />
-              ) : (
-                <Copy className={`icon ${iconClass}`} />
-              )}
+              {this.state.copied ? <Check className={`icon ${iconClass}`} /> : <Copy className={`icon ${iconClass}`} />}
             </button>
             <button
               title="Download"
