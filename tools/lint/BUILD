@@ -4,7 +4,6 @@ go_library(
     name = "lint_lib",
     srcs = ["lint.go"],
     data = [
-        "//:gazelle",
         "//:node_modules/prettier-plugin-organize-imports",
         "//:node_modules/prettier-plugin-organize-imports/dir",
         "//cli/cmd/bb",
@@ -18,7 +17,6 @@ go_library(
     x_defs = {
         "goimportsRlocationpath": "$(rlocationpath @org_golang_x_tools//cmd/goimports)",
         "goRlocationpath": "$(rlocationpath @io_bazel_rules_go//go)",
-        "gazelleRlocationpath": "$(rlocationpath //:gazelle)",
         "clangFormatRlocationpath": "$(rlocationpath //tools/clang-format)",
         "prettierRlocationpath": "$(rlocationpath //tools/prettier)",
         "prettierPluginOrganizeImportsRlocationpath": "$(rlocationpath //:node_modules/prettier-plugin-organize-imports/dir)",

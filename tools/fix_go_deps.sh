@@ -2,17 +2,11 @@
 set -euo pipefail
 
 : "${GO_PATH:=}"
-: "${GAZELLE_PATH:=}"
 : "${BAZEL_COMMAND:=bazelisk}"
 
 CI_FLAGS=""
 if [[ "${CI:-}" == true ]]; then
   CI_FLAGS=(--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url)
-fi
-
-GAZELLE_COMMAND=("$BAZEL_COMMAND" run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true ${CI_FLAGS[@]} //:gazelle --)
-if [[ "$GAZELLE_PATH" ]]; then
-  GAZELLE_COMMAND=("$GAZELLE_PATH")
 fi
 
 GO_COMMAND=("$BAZEL_COMMAND" run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true  ${CI_FLAGS[@]} //:go --)
@@ -25,7 +19,7 @@ if [[ "${1:-}" == "-d" ]] || [[ "${1:-}" == "--diff" ]]; then
   DIFF_MODE=1
 fi
 
-AFFECTED_FILES=(go.mod go.sum deps.bzl MODULE.bazel)
+AFFECTED_FILES=(go.mod go.sum MODULE.bazel)
 
 if ((DIFF_MODE)); then
   if ! git diff --quiet -- "${AFFECTED_FILES[@]}"; then
@@ -77,22 +71,6 @@ first_two_lines=$( (grep -E '(^require \(|// indirect)' go.mod 2>/dev/null || tr
 if [[ $(echo "$first_two_lines" | uniq) != 'require (' ]]; then
   echo "ERROR: Found direct and indirect imports mixed within the same require() block in go.mod" >&2
   echo "Please fix by manually merging all require() blocks into a single block, then running tools/fix_go_deps.sh" >&2
-  exit 1
-fi
-
-# Update deps.bzl (using Gazelle)
-if ! "${GAZELLE_COMMAND[@]}" update-repos -from_file=go.mod \
-  -to_macro=deps.bzl%install_go_mod_dependencies \
-  -prune=true &>"$tmp_log_file"; then
-  echo "Auto-updating 'deps.bzl' failed. Logs:" >&2
-  cat "$tmp_log_file" >&2
-  exit 1
-fi
-
-# Check MODULE.bazel (using 'bazel mod tidy')
-if ! "$BAZEL_COMMAND" mod tidy --enable_bzlmod &>"$tmp_log_file"; then
-  echo "Auto-updating 'MODULE.bazel' failed. Logs:" >&2
-  cat "$tmp_log_file" >&2
   exit 1
 fi
 
