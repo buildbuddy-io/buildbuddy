@@ -18,56 +18,56 @@ dockerfile_image = use_repo_rule("@io_bazel_rules_docker//contrib:dockerfile_bui
 
 dockerfile_image(
     name = "default_execution_image",
-    dockerfile = "//dockerfiles/default_execution_image:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/default_execution_image:Dockerfile",
     visibility = ["//visibility:public"],
 )
 
 dockerfile_image(
     name = "executor_image",
-    dockerfile = "//dockerfiles/executor_image:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/executor_image:Dockerfile",
     visibility = ["//visibility:public"],
 )
 
 dockerfile_image(
     name = "nonroot_user_image",
-    dockerfile = "//dockerfiles/test_images/nonroot_user_image:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/test_images/nonroot_user_image:Dockerfile",
     visibility = ["//visibility:public"],
 )
 
 dockerfile_image(
     name = "rbe-ubuntu20-04_image",
-    dockerfile = "//dockerfiles/rbe-ubuntu20-04:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/rbe-ubuntu20-04:Dockerfile",
 )
 
 dockerfile_image(
     name = "rbe-ubuntu20-04-webtest_image",
-    dockerfile = "//dockerfiles/rbe-ubuntu20-04-webtest:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/rbe-ubuntu20-04-webtest:Dockerfile",
 )
 
 dockerfile_image(
     name = "rbe-ubuntu22-04_image",
-    dockerfile = "//dockerfiles/rbe-ubuntu22-04:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/rbe-ubuntu22-04:Dockerfile",
 )
 
 dockerfile_image(
     name = "rbe-ubuntu24-04_image",
-    dockerfile = "//dockerfiles/rbe-ubuntu24-04:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/rbe-ubuntu24-04:Dockerfile",
 )
 
 dockerfile_image(
     name = "ci_runner_image",
-    dockerfile = "//enterprise/dockerfiles/ci_runner_image:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//enterprise/dockerfiles/ci_runner_image:Dockerfile",
     visibility = ["//visibility:public"],
 )
 
 dockerfile_image(
     name = "rbe-ubuntu20-04-workflows_image",
-    dockerfile = "//enterprise/dockerfiles/rbe-ubuntu20-04-workflows:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//enterprise/dockerfiles/rbe-ubuntu20-04-workflows:Dockerfile",
     visibility = ["//visibility:public"],
 )
 
 dockerfile_image(
     name = "run_script_image",
-    dockerfile = "//dockerfiles/run_script:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/run_script:Dockerfile",
     visibility = ["//visibility:public"],
 )
