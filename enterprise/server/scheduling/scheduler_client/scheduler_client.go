@@ -70,6 +70,14 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 	for _, t := range executorProps.SupportedIsolationTypes {
 		supportedTypes = append(supportedTypes, string(t))
 	}
+	osFamily := executorProps.AdvertisedOSFamily
+	if osFamily == "" {
+		osFamily = resources.GetOSFamily()
+	}
+	arch := executorProps.AdvertisedArch
+	if arch == "" {
+		arch = resources.GetArch()
+	}
 
 	return &scpb.ExecutionNode{
 		Host: hostname,
@@ -78,9 +86,9 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 		AssignableMemoryBytes:     resources.GetAllocatedRAMBytes(),
 		AssignableMilliCpu:        resources.GetAllocatedCPUMillis(),
 		AssignableCustomResources: resources.GetAllocatedCustomResources(),
-		OsFamily:                  resources.GetOSFamily(),
+		OsFamily:                  osFamily,
 		OsDisplayName:             resources.GetOSDisplayName(),
-		Arch:                      resources.GetArch(),
+		Arch:                      arch,
 		Pool:                      strings.ToLower(pool),
 		Version:                   version.Tag(),
 		ExecutorId:                executorID,

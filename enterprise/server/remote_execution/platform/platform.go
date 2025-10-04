@@ -32,6 +32,7 @@ var (
 	dockerSocket               = flag.String("executor.docker_socket", "", "If set, run execution commands in docker using the provided socket.")
 	defaultXcodeVersion        = flag.String("executor.default_xcode_version", "", "Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used.")
 	defaultIsolationType       = flag.String("executor.default_isolation_type", "", "The default workload isolation type when no type is specified in an action. If not set, we use the first of the following that is set: docker, podman, firecracker, or none (bare).")
+	enableAppleContainer       = flag.Bool("executor.enable_applecontainer", false, "Enables running execution commands via Apple's container tool.")
 	enableBareRunner           = flag.Bool("executor.enable_bare_runner", false, "Enables running execution commands directly on the host without isolation.")
 	enablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman containers.")
 	enableOCI                  = flag.Bool("executor.enable_oci", false, "Enables running execution commands using an OCI runtime directly.")
@@ -160,6 +161,7 @@ const (
 	FirecrackerContainerType ContainerType = "firecracker"
 	OCIContainerType         ContainerType = "oci"
 	SandboxContainerType     ContainerType = "sandbox"
+	AppleContainerType       ContainerType = "applecontainer"
 	// If you add a container type, also add it to KnownContainerTypes
 
 	// The app will mint a signed client identity token to workflows.
@@ -168,7 +170,7 @@ const (
 
 // KnownContainerTypes are all the types that are currently supported, or were
 // previously supported.
-var KnownContainerTypes []ContainerType = []ContainerType{BareContainerType, PodmanContainerType, DockerContainerType, FirecrackerContainerType, OCIContainerType, SandboxContainerType}
+var KnownContainerTypes []ContainerType = []ContainerType{BareContainerType, PodmanContainerType, DockerContainerType, FirecrackerContainerType, OCIContainerType, SandboxContainerType, AppleContainerType}
 
 // CoerceContainerType returns t if it's empty or in KnownContainerTypes.
 // Otherwise it returns "Unknown".
@@ -321,6 +323,8 @@ type ContainerType string
 type ExecutorProperties struct {
 	SupportedIsolationTypes []ContainerType
 	DefaultXcodeVersion     string
+	AdvertisedOSFamily      string
+	AdvertisedArch          string
 }
 
 func (p *ExecutorProperties) SupportsIsolation(c ContainerType) bool {
@@ -531,6 +535,16 @@ func GetExecutorProperties() *ExecutorProperties {
 		DefaultXcodeVersion:     *defaultXcodeVersion,
 	}
 
+	if *enableAppleContainer {
+		if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+			log.Warningf("Apple container runtime enabled, but executor host is %s/%s; startup will fail during validation.", runtime.GOOS, runtime.GOARCH)
+		}
+		p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, AppleContainerType)
+		p.AdvertisedOSFamily = LinuxOperatingSystemName
+		p.AdvertisedArch = ARM64ArchitectureName
+		return p
+	}
+
 	// NB: order matters! this list will be used in order to determine the which
 	// isolation method to use if none was set.
 
@@ -584,6 +598,37 @@ func GetExecutorProperties() *ExecutorProperties {
 }
 
 func ValidateIsolationTypes() error {
+	if *enableAppleContainer {
+		if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+			return status.InvalidArgumentErrorf("executor.enable_applecontainer requires a darwin/arm64 host (got %s/%s)", runtime.GOOS, runtime.GOARCH)
+		}
+		var conflicts []string
+		if *enableBareRunner {
+			conflicts = append(conflicts, "executor.enable_bare_runner")
+		}
+		if *enablePodman {
+			conflicts = append(conflicts, "executor.enable_podman")
+		}
+		if *enableOCI {
+			conflicts = append(conflicts, "executor.enable_oci")
+		}
+		if *enableSandbox {
+			conflicts = append(conflicts, "executor.enable_sandbox")
+		}
+		if *EnableFirecracker {
+			conflicts = append(conflicts, "executor.enable_firecracker")
+		}
+		if *dockerSocket != "" {
+			conflicts = append(conflicts, "executor.docker_socket")
+		}
+		if len(conflicts) > 0 {
+			return status.InvalidArgumentErrorf("executor.enable_applecontainer cannot be combined with %s", strings.Join(conflicts, ", "))
+		}
+		if *defaultIsolationType != "" && ContainerType(*defaultIsolationType) != AppleContainerType {
+			return status.InvalidArgumentErrorf("the configured 'default_isolation_type' %q is invalid when executor.enable_applecontainer is enabled; it must be %q", *defaultIsolationType, AppleContainerType)
+		}
+	}
+
 	if *defaultIsolationType == "" {
 		return nil
 	}
