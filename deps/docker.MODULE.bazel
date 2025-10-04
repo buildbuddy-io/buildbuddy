@@ -36,22 +36,22 @@ dockerfile_image(
 
 dockerfile_image(
     name = "rbe-ubuntu20-04_image",
-    dockerfile = "//dockerfiles/rbe-ubuntu20-04:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/rbe-ubuntu20-04:Dockerfile",
 )
 
 dockerfile_image(
     name = "rbe-ubuntu20-04-webtest_image",
-    dockerfile = "//dockerfiles/rbe-ubuntu20-04-webtest:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/rbe-ubuntu20-04-webtest:Dockerfile",
 )
 
 dockerfile_image(
     name = "rbe-ubuntu22-04_image",
-    dockerfile = "//dockerfiles/rbe-ubuntu22-04:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/rbe-ubuntu22-04:Dockerfile",
 )
 
 dockerfile_image(
     name = "rbe-ubuntu24-04_image",
-    dockerfile = "//dockerfiles/rbe-ubuntu24-04:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/rbe-ubuntu24-04:Dockerfile",
 )
 
 dockerfile_image(
@@ -68,6 +68,6 @@ dockerfile_image(
 
 dockerfile_image(
     name = "run_script_image",
-    dockerfile = "//dockerfiles/run_script:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/run_script:Dockerfile",
     visibility = ["//visibility:public"],
 )
