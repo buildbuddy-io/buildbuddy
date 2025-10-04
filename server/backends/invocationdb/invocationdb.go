@@ -326,6 +326,9 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 		out.Pattern = strings.Split(i.Pattern, ", ")
 	}
 	out.ActionCount = i.ActionCount
+	out.ToolCpuTimeNanos = i.ToolCPUTimeNanos
+	out.TotalActionSystemCpuTimeNanos = i.TotalActionSystemCPUTimeNanos
+	out.TotalActionUserCpuTimeNanos = i.TotalActionUserCPUTimeNanos
 	// BlobID is not present in output client proto.
 	out.InvocationStatus = inspb.InvocationStatus(i.InvocationStatus)
 	out.CreatedAtUsec = i.Model.CreatedAtUsec

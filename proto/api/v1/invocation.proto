@@ -66,6 +66,28 @@ message Invocation {
   // The number of actions performed.
   int64 action_count = 9;
 
+  // The total CPU time of the build tool process (usually bazel) in
+  // CPU-nanoseconds.
+  int64 tool_cpu_time_nanos = 27;
+
+  // The total system CPU time for locally executed actions in CPU-nanoseconds.
+  // Does not include remotely executed action CPU time.
+  //
+  // IMPORTANT: The bazel flag '--experimental_record_metrics_for_all_mnemonics'
+  // must be set in order to ensure that this reports the time for all actions.
+  // Otherwise, only the top 20 action mnemonics (by execution count) will be
+  // reported (as of bazel 8.4.2).
+  int64 total_action_system_cpu_time_nanos = 28;
+
+  // The total CPU time of the user for locally executed actions in
+  // CPU-nanoseconds. Does not include remotely executed action CPU time.
+  //
+  // IMPORTANT: The bazel flag '--experimental_record_metrics_for_all_mnemonics'
+  // must be set in order to ensure that this reports the time for all actions.
+  // Otherwise, only the top 20 action mnemonics (by execution count) will be
+  // reported (as of bazel 8.4.2).
+  int64 total_action_user_cpu_time_nanos = 29;
+
   // The time this invocation was created and updated, respectively. Invocations
   // are created as soon as the first event is received from the client and
   // updated with subsequent events until they are finalized.

@@ -1662,6 +1662,9 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 		i.Pattern = invocation_format.ShortFormatPatterns(p.GetPattern())
 	}
 	i.ActionCount = p.GetActionCount()
+	i.ToolCPUTimeNanos = p.GetToolCpuTimeNanos()
+	i.TotalActionSystemCPUTimeNanos = p.GetTotalActionSystemCpuTimeNanos()
+	i.TotalActionUserCPUTimeNanos = p.GetTotalActionUserCpuTimeNanos()
 	i.BlobID = blobID
 	i.InvocationStatus = int64(p.GetInvocationStatus())
 	i.LastChunkId = p.GetLastChunkId()

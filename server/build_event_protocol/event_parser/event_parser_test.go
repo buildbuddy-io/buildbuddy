@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -236,6 +237,31 @@ func TestFillInvocation(t *testing.T) {
 	events = append(events, &build_event_stream.BuildEvent{
 		Payload: &build_event_stream.BuildEvent_BuildMetadata{BuildMetadata: buildMetadata},
 	})
+
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_BuildMetrics{BuildMetrics: &build_event_stream.BuildMetrics{
+			TimingMetrics: &build_event_stream.BuildMetrics_TimingMetrics{
+				CpuTimeInMs: 777,
+			},
+			ActionSummary: &build_event_stream.BuildMetrics_ActionSummary{
+				ActionData: []*build_event_stream.BuildMetrics_ActionSummary_ActionData{
+					{
+						Mnemonic:        "TestRunner",
+						ActionsExecuted: 10,
+						SystemTime:      durationpb.New(2 * time.Second),
+						UserTime:        durationpb.New(30 * time.Second),
+					},
+					{
+						Mnemonic:        "GoLink",
+						ActionsExecuted: 20,
+						SystemTime:      durationpb.New(1 * time.Second),
+						UserTime:        durationpb.New(21 * time.Second),
+					},
+				},
+			},
+		}},
+	})
+
 	invocation := &inpb.Invocation{
 		InvocationId:     "test-invocation",
 		InvocationStatus: inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
@@ -264,6 +290,9 @@ func TestFillInvocation(t *testing.T) {
 	}
 	assert.Equal(t, []string{"el", "barto", "was", "here"}, outputTags)
 	assert.Equal(t, inpb.DownloadOutputsOption_MINIMAL, invocation.GetDownloadOutputsOption())
+	assert.Equal(t, int64(777*1e6), invocation.ToolCpuTimeNanos)
+	assert.Equal(t, int64(3*1e9), invocation.TotalActionSystemCpuTimeNanos)
+	assert.Equal(t, int64(51*1e9), invocation.TotalActionUserCpuTimeNanos)
 }
 
 func TestBuildMetadataWithTagPrefix(t *testing.T) {

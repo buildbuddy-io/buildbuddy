@@ -122,16 +122,27 @@ type Invocation struct {
 	DurationUsec                   int64
 	UploadThroughputBytesPerSecond int64
 	ActionCount                    int64
-	Perms                          int32 `gorm:"index:perms;default:NULL"`
-	CreatedWithCapabilities        int32
-	RedactionFlags                 int32 `gorm:"default:NULL"`
-	InvocationStatus               int64 `gorm:"index:invocation_status_idx"`
-	ActionCacheHits                int64
-	ActionCacheMisses              int64
-	ActionCacheUploads             int64
-	CasCacheHits                   int64
-	CasCacheMisses                 int64
-	CasCacheUploads                int64
+
+	// ToolCPUTimeNanos is the CPU time from TimingMetrics.cpu_time_in_ms, which
+	// is the CPU time used by the build tool process (e.g. bazel) itself.
+	ToolCPUTimeNanos int64
+	// TotalActionSystemCPUTimeNanos is the CPU time used by the system for all
+	// executed actions.
+	TotalActionSystemCPUTimeNanos int64
+	// TotalActionUserCPUTimeNanos is the CPU time used by the user for all
+	// executed actions.
+	TotalActionUserCPUTimeNanos int64
+
+	Perms                   int32 `gorm:"index:perms;default:NULL"`
+	CreatedWithCapabilities int32
+	RedactionFlags          int32 `gorm:"default:NULL"`
+	InvocationStatus        int64 `gorm:"index:invocation_status_idx"`
+	ActionCacheHits         int64
+	ActionCacheMisses       int64
+	ActionCacheUploads      int64
+	CasCacheHits            int64
+	CasCacheMisses          int64
+	CasCacheUploads         int64
 
 	// TotalDownloadSizeBytes is the sum of digest sizes for all cache download
 	// requests made by this invocation.
