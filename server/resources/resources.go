@@ -25,6 +25,8 @@ var (
 	mmapMemoryBytes = flag.Int64("executor.mmap_memory_bytes", 10e9, "Maximum memory to be allocated towards mmapped files for Firecracker copy-on-write functionality. This is subtraced from the configured memory_bytes. Has no effect if firecracker is disabled or snapshot sharing is disabled.")
 	milliCPU        = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_CPU env var.")
 	zoneOverride    = flag.String("zone_override", "", "A value that will override the auto-detected zone. Ignored if empty")
+	osOverride      = flag.String("executor.os_override", "", "Override the OS family reported by the executor. If empty, uses runtime.GOOS. Used when executors run containers with a different OS than the host (e.g., macOS host running Linux containers).")
+	archOverride    = flag.String("executor.arch_override", "", "Override the architecture reported by the executor. If empty, uses runtime.GOARCH.")
 )
 
 const (
@@ -215,10 +217,16 @@ func GetPoolName() string {
 }
 
 func GetArch() string {
+	if *archOverride != "" {
+		return *archOverride
+	}
 	return runtime.GOARCH
 }
 
 func GetOSFamily() string {
+	if *osOverride != "" {
+		return *osOverride
+	}
 	return runtime.GOOS
 }
 
