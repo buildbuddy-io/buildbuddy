@@ -102,9 +102,9 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
 
   componentDidMount() {
     this.initialScrollToEnd();
-    window.addEventListener("keydown", (this.windowKeyDownListener = this.onWindowKeyDown.bind(this)));
-    window.addEventListener("fullscreenchange", (this.fullScreenListener = () => this.forceUpdate.bind(this)));
-    window.addEventListener("resize", (this.resizeListener = this.updateLineLengthLimit.bind(this)));
+    window.addEventListener("keydown", (this.windowKeyDownListener = (e) => this.onWindowKeyDown(e)));
+    window.addEventListener("fullscreenchange", (this.fullScreenListener = () => this.forceUpdate()));
+    window.addEventListener("resize", (this.resizeListener = () => this.updateLineLengthLimit()));
   }
 
   componentWillUnmount() {
