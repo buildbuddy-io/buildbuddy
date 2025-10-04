@@ -191,17 +191,11 @@ common:cache --config=cache-shared
 common:cache --remote_cache=grpcs://buildbuddy.remote.buildbuddy.io
 
 # Target+Exec Platforms configuration
-common:workspace-target-darwin-arm64 --platforms=@buildbuddy_toolchain//:platform_darwin_arm64
-common:workspace-target-darwin-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_darwin_arm64
-common:workspace-target-linux-x86 --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
-common:workspace-target-linux-x86 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
-common:workspace-target-linux-arm64 --platforms=@buildbuddy_toolchain//:platform_linux_arm64
-common:workspace-target-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_arm64
-common:bzlmod-target-darwin-arm64 --platforms=@buildbuddy_toolchain//:platform_darwin_arm64
-common:bzlmod-target-darwin-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_darwin_arm64
+common:bzlmod-target-darwin-arm64 --platforms=@toolchains_buildbuddy//platforms:darwin_arm64
+common:bzlmod-target-darwin-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:darwin_arm64
 common:bzlmod-target-linux-x86 --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:bzlmod-target-linux-x86 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
-common:bzlmod-target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:linux_arm64
+common:bzlmod-target-linux-arm64 --platforms=@toolchains_buildbuddy//platform:linux_arm64
 common:bzlmod-target-linux-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
 
 common:download-minimal --remote_download_minimal
