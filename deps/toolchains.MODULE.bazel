@@ -13,7 +13,6 @@ buildbuddy.msvc_toolchain(
     windows_kits_release = "10",
     windows_kits_version = "10.0.26100.0",
 )
-# use_repo(buildbuddy, "buildbuddy_toolchain")
 
 # Explicitly register the toolchains in the order which we want to use.
 #
