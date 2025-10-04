@@ -118,10 +118,9 @@ func runFixGoDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 
-	// Set GAZELLE_PATH and GO_PATH to runfile tool paths so that we don't
-	// have to run nested bazel invocations to build the tools. Also forward
-	// runfiles.Env() through env so that those tools can find their runfiles
-	// (technically not needed for go binaries but good practice).
+	// Set GO_PATH to runfile tool paths so that we don't have to run nested
+	// bazel invocations to build the tools. Also forward runfiles.Env() through
+	// env so that the tool can find its runfiles.
 	runfilesEnv, err := runfiles.Env()
 	if err != nil {
 		return fmt.Errorf("get runfiles env: %w", err)
@@ -130,13 +129,8 @@ func runFixGoDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 	if err != nil {
 		return fmt.Errorf("find go in runfiles: %w", err)
 	}
-	gazelleRlocation, err := runfiles.Rlocation(gazelleRlocationpath)
-	if err != nil {
-		return fmt.Errorf("find gazelle in runfiles: %w", err)
-	}
 	cmd.Env = append(os.Environ(), runfilesEnv...)
 	cmd.Env = append(cmd.Env, "GO_PATH="+goRlocation)
-	cmd.Env = append(cmd.Env, "GAZELLE_PATH="+gazelleRlocation)
 
 	// Run the tool
 	if err := cmd.Run(); err != nil {

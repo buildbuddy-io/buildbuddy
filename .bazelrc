@@ -15,10 +15,6 @@ import %workspace%/shared.bazelrc
 # PUBLIC REPO EXCLUSIVE CONFIGS #
 #################################
 
-# TODO(sluongng): Remove this when we migrate to bzlmod
-common --noenable_bzlmod
-common --enable_workspace
-
 # By default, build logs get sent to the production server
 #
 # Note: Use remote.buildbuddy.io and NOT buildbuddy.buildbuddy.io

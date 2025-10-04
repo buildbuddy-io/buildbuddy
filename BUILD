@@ -224,9 +224,9 @@ buildifier(
     name = "buildifier",
 )
 
-go_sdk_tool(
+alias(
     name = "go",
-    goroot_relative_path = "bin/go",
+    actual = "@io_bazel_rules_go//go",
 )
 
 # Example usage: "bazel run //:gofmt -- -w ."
