@@ -18,19 +18,19 @@ dockerfile_image = use_repo_rule("@io_bazel_rules_docker//contrib:dockerfile_bui
 
 dockerfile_image(
     name = "default_execution_image",
-    dockerfile = "//dockerfiles/default_execution_image:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/default_execution_image:Dockerfile",
     visibility = ["//visibility:public"],
 )
 
 dockerfile_image(
     name = "executor_image",
-    dockerfile = "//dockerfiles/executor_image:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/executor_image:Dockerfile",
     visibility = ["//visibility:public"],
 )
 
 dockerfile_image(
     name = "nonroot_user_image",
-    dockerfile = "//dockerfiles/test_images/nonroot_user_image:Dockerfile",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/test_images/nonroot_user_image:Dockerfile",
     visibility = ["//visibility:public"],
 )
 
