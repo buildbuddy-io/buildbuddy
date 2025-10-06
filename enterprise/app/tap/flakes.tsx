@@ -13,8 +13,8 @@ import { FlakyTargetSampleLogCardComponent } from "../../../app/target/target_te
 import { CancelablePromise } from "../../../app/util/async";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import { timestampToDateWithFallback } from "../../../app/util/proto";
-import { target } from "../../../proto/target_ts_proto";
 import { github } from "../../../proto/github_ts_proto";
+import { target } from "../../../proto/target_ts_proto";
 import { getProtoFilterParams } from "../filter/filter_util";
 import TrendsChartComponent, { ChartColor } from "../trends/trends_chart";
 import TapEmptyStateComponent from "./tap_empty_state";
@@ -100,6 +100,12 @@ export default class FlakesComponent extends React.Component<Props, State> {
   }
 
   fetchRepoMetadata() {
+    // If there's an explicit branch in the URL, no need to fetch metadata
+    if (this.props.search.get("branch")) {
+      this.fetch();
+      return;
+    }
+
     if (!this.props.repo) {
       this.fetch();
       return;
