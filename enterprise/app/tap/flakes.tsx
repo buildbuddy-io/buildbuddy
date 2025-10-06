@@ -14,6 +14,7 @@ import { CancelablePromise } from "../../../app/util/async";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import { timestampToDateWithFallback } from "../../../app/util/proto";
 import { target } from "../../../proto/target_ts_proto";
+import { github } from "../../../proto/github_ts_proto";
 import { getProtoFilterParams } from "../filter/filter_util";
 import TrendsChartComponent, { ChartColor } from "../trends/trends_chart";
 import TapEmptyStateComponent from "./tap_empty_state";
@@ -46,6 +47,7 @@ interface State {
   flakeSamples?: target.GetTargetFlakeSamplesResponse;
   flakeTestLogs: Map<string, TestLogDataOrError>;
   error?: string;
+  repoResponse?: github.GetGithubRepoResponse;
 }
 
 export default class FlakesComponent extends React.Component<Props, State> {
@@ -62,7 +64,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
   };
 
   componentDidMount(): void {
-    this.fetch();
+    this.fetchRepoMetadata();
   }
 
   componentDidUpdate(prevProps: Props) {
@@ -77,9 +79,12 @@ export default class FlakesComponent extends React.Component<Props, State> {
     const prevEnd = timestampToDateWithFallback(prevProtoParams.updatedBefore, 0).getTime();
 
     const dateChanged = currentStart != prevStart || currentEnd != prevEnd;
+    if (this.props.repo !== prevProps.repo) {
+      this.fetchRepoMetadata();
+      return;
+    }
     if (
       currentTarget !== prevTarget ||
-      this.props.repo !== prevProps.repo ||
       this.props.search.get("branch") !== prevProps.search.get("branch") ||
       dateChanged
     ) {
@@ -94,10 +99,46 @@ export default class FlakesComponent extends React.Component<Props, State> {
     });
   }
 
+  fetchRepoMetadata() {
+    if (!this.props.repo) {
+      this.fetch();
+      return;
+    }
+
+    // Parse owner and repo from URL like "https://github.com/owner/repo"
+    const match = this.props.repo.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+    if (!match) {
+      this.fetch();
+      return;
+    }
+
+    const [, owner, repo] = match;
+    rpc_service.service
+      .getGithubRepo(new github.GetGithubRepoRequest({ owner, repo: repo.replace(/\.git$/, "") }))
+      .then((response) => {
+        this.setState({ repoResponse: response }, () => {
+          this.fetch();
+        });
+      })
+      .catch(() => {
+        // Silently fail if we can't get repo metadata, but still fetch flakes
+        this.fetch();
+      });
+  }
+
+  getBranchName(): string {
+    const branchFromUrl = this.props.search.get("branch");
+    if (branchFromUrl) {
+      return branchFromUrl;
+    }
+    return this.state.repoResponse?.defaultBranch || "";
+  }
+
   fetch() {
     const label = this.props.search.get("target");
     const labels = label ? [label] : [];
     const params = getProtoFilterParams(this.props.search);
+    const branchName = this.getBranchName();
 
     this.pendingChartRequest?.cancel();
     this.pendingTableRequest?.cancel();
@@ -114,14 +155,14 @@ export default class FlakesComponent extends React.Component<Props, State> {
     const chartRequest = rpc_service.service.getDailyTargetStats({
       labels,
       repo: this.props.repo,
-      branchName: this.props.search.get("branch") || "",
+      branchName: branchName,
       startedAfter: params.updatedAfter,
       startedBefore: params.updatedBefore,
     });
     const tableRequest = rpc_service.service.getTargetStats({
       labels,
       repo: this.props.repo,
-      branchName: this.props.search.get("branch") || "",
+      branchName: branchName,
       startedAfter: params.updatedAfter,
       startedBefore: params.updatedBefore,
     });
@@ -174,7 +215,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
       const flakeSamplesRequest = rpc_service.service.getTargetFlakeSamples({
         label,
         repo: this.props.repo,
-        branchName: this.props.search.get("branch") || "",
+        branchName: branchName,
         startedAfter: params.updatedAfter,
         startedBefore: params.updatedBefore,
       });
@@ -271,7 +312,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
     const flakeSamplesRequest = rpc_service.service.getTargetFlakeSamples({
       label,
       repo: this.props.repo,
-      branchName: this.props.search.get("branch") || "",
+      branchName: this.getBranchName(),
       pageToken: this.state.flakeSamples.nextPageToken,
     });
 
