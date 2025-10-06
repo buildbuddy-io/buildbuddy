@@ -303,14 +303,14 @@ func NewOptionBase(opt string, d *Definition) (*optionBase, error) {
 	var form flag_form.Form
 	switch opt {
 	case d.name:
-		form = flag_form.Standard
+		form = flag_form.Name
 	case d.shortName:
-		form = flag_form.Short
+		form = flag_form.ShortName
 	default:
 		if d.hasNegative {
 			if n, cut := strings.CutPrefix(opt, "no"); cut {
 				if n == d.name {
-					form = flag_form.Negative
+					form = flag_form.NegativeName
 					break
 				}
 			}
@@ -329,7 +329,7 @@ func (o *optionBase) UseName() {
 		log.Warnf("Attempted to use name for option %s, which lacks a name.", o.Name())
 		return
 	}
-	o.Form = o.Form.AsNameType(flag_form.Standard)
+	o.Form = o.Form.AsNameType(flag_form.Name)
 }
 
 // Coerce this option base to use the short name for this option. Does not
@@ -343,29 +343,29 @@ func (o *optionBase) UseShortName() {
 		log.Warnf("Cannot coerce short form from negative form for option %s.", o.Name())
 		return
 	}
-	o.Form = flag_form.Short
+	o.Form = flag_form.ShortName
 }
 
 // Returns whether or not this option will be represented using the standard
 // name for the option.
 func (o *optionBase) UsesName() bool {
-	return o.Form.CompareNameType(flag_form.Standard)
+	return o.Form.CompareNameType(flag_form.Name)
 }
 
 // Returns whether or not this option will be represented using the short name
 // for the option.
 func (o *optionBase) UsesShortName() bool {
-	return o.ShortName() != "" && o.Form == flag_form.Short
+	return o.ShortName() != "" && o.Form == flag_form.ShortName
 }
 
 // Returns a formatted version of the option.
 func (o *optionBase) Format() string {
 	switch o.Form {
-	case flag_form.Standard:
+	case flag_form.Name:
 		return "--" + o.Name()
-	case flag_form.Negative:
+	case flag_form.NegativeName:
 		return "--" + "no" + o.Name()
-	case flag_form.Short:
+	case flag_form.ShortName:
 		return "-" + o.ShortName()
 	default:
 		// Just default to the standard representaation if the form is unknown.
@@ -391,10 +391,10 @@ func (o *optionBase) SetNegative() {
 		log.Warnf("Can't negate flag '%s', which does not have a known form.", o.Name())
 		return
 	}
-	if o.Form == flag_form.Short {
+	if o.Form == flag_form.ShortName {
 		if o.Name() != "" {
 			log.Warnf("Can't negate short name of flag '%s'; defaulting to using negative form of the standard name.", o.Name)
-			o.Form = flag_form.Negative
+			o.Form = flag_form.NegativeName
 			return
 		}
 		log.Warnf("Can't negate short name of flag '%s' and there is no known standard name to default to; flag could not be negated.", o.Name)

@@ -6,18 +6,18 @@ package flag_form
 type Form byte
 
 // When adding a new form to this enum definition block, it should be added
-// before `Short`, and the definition of its negative form should immediately
-// follow it.
+// before `ShortName`, and the definition of its negative form should
+// immediately follow it.
 const (
-	// The form of a flag using a standard name; for example: "--name"
-	Standard Form = iota
-	// The negative form of flag using a standard name; for example: "--noname"
-	Negative
+	// The form of a flag using its name; for example: "--name"
+	Name Form = iota
+	// The negative form of flag using its standard name; for example: "--noname"
+	NegativeName
 
-	// The short form of a flag; for example: "-x"
-	Short
+	// The form of a flag using its short name; for example: "-x"
+	ShortName
 
-	// The form is unknown. We use the value after short because this would
+	// The form is unknown. We use the value after ShortName because this would
 	// normally be the negative of short form, but since short form cannot be
 	// negative, this value is a convenient 'undefined'.
 	//
@@ -26,7 +26,7 @@ const (
 )
 
 // Mask to check if flag is negative form with '&' or negate flag with '|'
-const negativeMask = Negative
+const negativeMask = NegativeName
 
 // Negative returns whether or not this is a negative form. Unknown forms will
 // always return false, as we cannot identify them as being in a negative form.
