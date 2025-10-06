@@ -26,7 +26,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/stream"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
 
@@ -148,7 +148,7 @@ func (r *Registry) PushNamedImageWithFiles(t *testing.T, imageName string, files
 	return r.Push(t, image, imageName), image
 }
 
-// imageFromFiles reimplement cranes.Image() but with proper permission added to each tar.Header.
+// imageFromFiles reimplements crane.Image() but with proper permission added to each tar.Header.
 // This allows us to unpack the tarball locally without priviledged permission (i.e. sudo).
 func imageFromFiles(files map[string][]byte) (gcr.Image, error) {
 	buf := bytes.Buffer{}
@@ -182,12 +182,13 @@ func imageFromFiles(files map[string][]byte) (gcr.Image, error) {
 		return nil, err
 	}
 
-	layer := stream.NewLayer(io.NopCloser(bytes.NewReader(buf.Bytes())))
-	img, err := mutate.AppendLayers(empty.Image, layer)
+	layer, err := tarball.LayerFromOpener(func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	return img, nil
+	return mutate.AppendLayers(empty.Image, layer)
 }
 
 func (r *Registry) PushNamedImageWithMultipleLayers(t *testing.T, imageName string) (string, gcr.Image) {

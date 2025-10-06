@@ -18,7 +18,7 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1/mutate",
         "@com_github_google_go_containerregistry//pkg/v1/partial",
         "@com_github_google_go_containerregistry//pkg/v1/remote",
-        "@com_github_google_go_containerregistry//pkg/v1/stream",
+        "@com_github_google_go_containerregistry//pkg/v1/tarball",
         "@com_github_google_go_containerregistry//pkg/v1/types",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles",
