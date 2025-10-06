@@ -88,10 +88,10 @@ func (e *statusError) GRPCStatus() *status.Status {
 	return s
 }
 
-// WrapWithCode wraps an error with a gRPC status code while preserving the
-// underlying error for errors.Is() checks. This allows the error to have
+// WithCode creates a statuserror with a given gRPC status code while preserving
+// the underlying error for the errors.Is() check. This allows the error to have
 // both a specific status code AND maintain its identity for error comparison.
-func WrapWithCode(err error, code codes.Code) error {
+func WithCode(err error, code codes.Code) error {
 	return &statusError{
 		code: code,
 		err:  err,

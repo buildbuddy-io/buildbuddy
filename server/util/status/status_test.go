@@ -120,9 +120,9 @@ func TestWrapErrorPreservesDetails(t *testing.T) {
 	assert.True(t, foundReason, "could not find reason in wrapped error")
 }
 
-func TestWrapWithCodePreservesErrorIdentity(t *testing.T) {
+func TestWithCodePreservesErrorIdentity(t *testing.T) {
 	baseErr := errors.New("base error")
-	wrappedErr := status.WrapWithCode(baseErr, codes.Unavailable)
+	wrappedErr := status.WithCode(baseErr, codes.Unavailable)
 
 	// Verify status code is set correctly
 	assert.True(t, status.IsUnavailableError(wrappedErr))
@@ -134,10 +134,10 @@ func TestWrapWithCodePreservesErrorIdentity(t *testing.T) {
 	assert.Equal(t, "base error", status.Message(wrappedErr))
 }
 
-func TestWrapWithCodeWithNestedErrors(t *testing.T) {
+func TestWithCodeWithNestedErrors(t *testing.T) {
 	baseErr := errors.New("base error")
 	nestedErr := fmt.Errorf("nested: %w", baseErr)
-	wrappedErr := status.WrapWithCode(nestedErr, codes.Internal)
+	wrappedErr := status.WithCode(nestedErr, codes.Internal)
 
 	// Verify status code is set correctly
 	assert.True(t, status.IsInternalError(wrappedErr))
