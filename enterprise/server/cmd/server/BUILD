@@ -3,6 +3,7 @@ load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//rules:utils.bzl", "runfiles_directory")
 
 # gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
 package(default_visibility = [
@@ -111,7 +112,7 @@ container_image(
     name = "base_image",
     base = "@buildbuddy_go_image_base//image",
     symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/com_github_buildbuddy_io_buildbuddy/enterprise/config/buildbuddy.release.yaml",
+        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % runfiles_directory(),
         "buildbuddy": "tmp",
     },
     tags = ["manual"],
@@ -145,7 +146,7 @@ pkg_tar(
         "/buildbuddy": "/app/enterprise/server/cmd/server/buildbuddy",
     },
     symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/com_github_buildbuddy_io_buildbuddy/enterprise/config/buildbuddy.release.yaml",
+        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % runfiles_directory(),
         "buildbuddy": "tmp",
     },
 )

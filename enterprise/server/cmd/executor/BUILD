@@ -1,6 +1,7 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//rules:utils.bzl", "runfiles_directory")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -247,7 +248,7 @@ container_image(
         ":podman_static_layer",
     ],
     symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/com_github_buildbuddy_io_buildbuddy/enterprise/config/executor.release.yaml",
+        "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/%s/enterprise/config/executor.release.yaml" % runfiles_directory(),
     },
     tags = ["manual"],
     visibility = ["//visibility:public"],
