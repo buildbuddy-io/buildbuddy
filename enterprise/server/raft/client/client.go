@@ -181,12 +181,12 @@ func (e *aggErr) err() error {
 
 	// Add appropriate status code based on error type
 	if dragonboat.IsTempError(err) {
-		return status.WrapWithCode(err, codes.Unavailable)
+		return status.WithCode(err, codes.Unavailable)
 	}
 	if errors.Is(err, dragonboat.ErrCanceled) {
-		return status.WrapWithCode(err, codes.Canceled)
+		return status.WithCode(err, codes.Canceled)
 	}
-	return status.WrapWithCode(err, codes.Internal)
+	return status.WithCode(err, codes.Internal)
 }
 
 func (e *aggErr) Add(err error) {
