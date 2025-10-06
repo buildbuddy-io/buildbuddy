@@ -281,7 +281,7 @@ func WrapError(err error, msg string) error {
 		return statusErr
 	}
 
-	s, _ := status.FromError(err)
+	s, isStatusErr := status.FromError(err)
 	// Preserve any details from the original error.
 	decodedDetails := s.Details()
 	details := make([]protoadapt.MessageV1, len(decodedDetails))
@@ -296,7 +296,12 @@ func WrapError(err error, msg string) error {
 		}
 	}
 
-	errWithContext := fmt.Errorf("%s: %w", msg, err)
+	var errWithContext error
+	if isStatusErr {
+		errWithContext = fmt.Errorf("%s: %s", msg, s.Message())
+	} else {
+		errWithContext = fmt.Errorf("%s: %w", msg, err)
+	}
 	return makeStatusError(status.Code(err), errWithContext, details...)
 }
 

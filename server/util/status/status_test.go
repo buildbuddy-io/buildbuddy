@@ -70,19 +70,29 @@ func TestNoStacktrace(t *testing.T) {
 }
 
 func TestWrapErrorPreservesWrappedStatusCodeAndMessage(t *testing.T) {
-	inner := status.FailedPreconditionError("inner error")
-	wrapped := status.WrapError(inner, "outer context")
-	assert.True(t, stderrors.Is(wrapped, inner))
-	assert.True(t, status.IsFailedPreconditionError(wrapped))
-	assert.Equal(t, "outer context: inner error", status.Message(wrapped))
+	{
+		inner := status.FailedPreconditionError("inner error")
+		wrapped := status.WrapError(inner, "outer context")
+		assert.True(t, stderrors.Is(wrapped, inner))
+		assert.True(t, status.IsFailedPreconditionError(wrapped))
+		assert.Equal(t, "outer context: inner error", status.Message(wrapped))
+		assert.Equal(t, status.FailedPreconditionError("outer context: inner error").Error(), wrapped.Error())
+	}
+
+	{
+		inner := gstatus.New(codes.FailedPrecondition, "inner error")
+		wrapped := status.WrapError(inner.Err(), "outer context")
+		assert.Equal(t, status.FailedPreconditionError("outer context: inner error").Error(), wrapped.Error())
+	}
 }
 
 func TestWrapErrorHandlesNonStatusError(t *testing.T) {
 	inner := fmt.Errorf("normal error")
 	wrapped := status.WrapError(inner, "outer context")
-	assert.True(t, stderrors.Is(wrapped, inner))
-	assert.True(t, status.IsUnknownError(wrapped))
+	assert.True(t, stderrors.Is(wrapped, inner), "wrapped error should be inner error")
+	assert.True(t, status.IsUnknownError(wrapped), "wrapped error should be unknown")
 	assert.Equal(t, "outer context: normal error", status.Message(wrapped))
+	assert.Equal(t, status.UnknownError("outer context: normal error").Error(), wrapped.Error())
 }
 
 func TestWrapErrorPreservesNilError(t *testing.T) {
