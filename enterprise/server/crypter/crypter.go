@@ -23,6 +23,8 @@ const (
 	// key-derivation function in crypter_service.
 	EncryptedDataHeaderVersion = 1
 
+	PlainTextChunkSize = 1024 * 1024 // 1 MiB
+
 	encryptedDataHeaderSignature = "BB"
 	nonceSize                    = chacha20poly1305.NonceSizeX
 	encryptedChunkOverhead       = nonceSize + chacha20poly1305.Overhead
