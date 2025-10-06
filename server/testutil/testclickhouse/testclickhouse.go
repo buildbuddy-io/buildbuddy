@@ -61,6 +61,8 @@ func Start(t testing.TB, reuseServer bool) string {
 			"--env", "CLICKHOUSE_DB="+dbName,
 			"--publish", fmt.Sprintf("%d:9000", port),
 			"--name", containerName,
+			// allow using the default user without a password
+			"--env", "CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1",
 			fmt.Sprintf("clickhouse/clickhouse-server:%s", clickhouseVersion))
 
 		cmd.Stderr = &logWriter{"docker run clickhouse"}
