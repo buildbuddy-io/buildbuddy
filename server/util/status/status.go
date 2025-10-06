@@ -2,13 +2,13 @@ package status
 
 import (
 	"context"
-	stderrors "errors"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"runtime"
 
-	"github.com/pkg/errors"
+	pkgerrors "github.com/pkg/errors"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -37,13 +37,13 @@ func (w *wrappedError) Unwrap() error {
 	return w.error
 }
 
-type StackTrace = errors.StackTrace
+type StackTrace = pkgerrors.StackTrace
 type stack []uintptr
 
 func (s *stack) StackTrace() StackTrace {
-	f := make([]errors.Frame, len(*s))
+	f := make([]pkgerrors.Frame, len(*s))
 	for i := 0; i < len(f); i++ {
-		f[i] = errors.Frame((*s)[i])
+		f[i] = pkgerrors.Frame((*s)[i])
 	}
 	return f
 }
@@ -99,10 +99,14 @@ func WithCode(err error, code codes.Code) error {
 }
 
 func makeStatusErrorFromMessage(code codes.Code, msg string, details ...protoadapt.MessageV1) error {
-	return makeStatusError(code, stderrors.New(msg), details...)
+	return makeStatusError(code, errors.New(msg), details...)
 }
 
 func makeStatusError(code codes.Code, err error, details ...protoadapt.MessageV1) error {
+	if code == codes.OK {
+		return nil
+	}
+
 	statusErr := &statusError{
 		code: code,
 		err:  err,

@@ -2329,7 +2329,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	} else {
 		req := &vmfspb.PrepareRequest{}
 		_, err := c.SendPrepareFileSystemRequestToGuest(ctx, req)
-		// nolint:SA4023
 		if err != nil {
 			result.Error = err
 			return result

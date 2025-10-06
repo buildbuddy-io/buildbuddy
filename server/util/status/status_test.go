@@ -1,12 +1,12 @@
 package status_test
 
 import (
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/pkg/errors"
+	pkgerrors "github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -53,7 +53,7 @@ func TestHasStacktrace(t *testing.T) {
 	*status.LogErrorStackTraces = true
 	err := status.FailedPreconditionError("FailedPrecondition")
 	se, ok := err.(interface {
-		StackTrace() errors.StackTrace
+		StackTrace() pkgerrors.StackTrace
 	})
 	assert.True(t, ok)
 	stackTrace := se.StackTrace()
@@ -64,7 +64,7 @@ func TestNoStacktrace(t *testing.T) {
 	*status.LogErrorStackTraces = false
 	err := status.FailedPreconditionError("FailedPrecondition")
 	_, ok := err.(interface {
-		StackTrace() errors.StackTrace
+		StackTrace() pkgerrors.StackTrace
 	})
 	assert.False(t, ok)
 }
@@ -73,7 +73,7 @@ func TestWrapErrorPreservesWrappedStatusCodeAndMessage(t *testing.T) {
 	{
 		inner := status.FailedPreconditionError("inner error")
 		wrapped := status.WrapError(inner, "outer context")
-		assert.True(t, stderrors.Is(wrapped, inner))
+		assert.True(t, errors.Is(wrapped, inner))
 		assert.True(t, status.IsFailedPreconditionError(wrapped))
 		assert.Equal(t, "outer context: inner error", status.Message(wrapped))
 		assert.Equal(t, status.FailedPreconditionError("outer context: inner error").Error(), wrapped.Error())
@@ -89,7 +89,7 @@ func TestWrapErrorPreservesWrappedStatusCodeAndMessage(t *testing.T) {
 func TestWrapErrorHandlesNonStatusError(t *testing.T) {
 	inner := fmt.Errorf("normal error")
 	wrapped := status.WrapError(inner, "outer context")
-	assert.True(t, stderrors.Is(wrapped, inner), "wrapped error should be inner error")
+	assert.True(t, errors.Is(wrapped, inner), "wrapped error should be inner error")
 	assert.True(t, status.IsUnknownError(wrapped), "wrapped error should be unknown")
 	assert.Equal(t, "outer context: normal error", status.Message(wrapped))
 	assert.Equal(t, status.UnknownError("outer context: normal error").Error(), wrapped.Error())
@@ -106,7 +106,7 @@ func TestWrapErrorPreservesDetails(t *testing.T) {
 	outer := status.WrapError(inner, "outer context")
 	toplevel := status.WrapError(outer, "toplevel context")
 
-	assert.True(t, stderrors.Is(toplevel, inner))
+	assert.True(t, errors.Is(toplevel, inner))
 	assert.True(t, status.IsFailedPreconditionError(toplevel))
 	assert.Equal(t, "toplevel context: outer context: inner error", status.Message(toplevel))
 	// Top-level error should preserve the reason.
@@ -128,7 +128,7 @@ func TestWithCodePreservesErrorIdentity(t *testing.T) {
 	assert.True(t, status.IsUnavailableError(wrappedErr))
 
 	// Verify error identity is preserved for errors.Is check
-	assert.True(t, stderrors.Is(wrappedErr, baseErr))
+	assert.True(t, errors.Is(wrappedErr, baseErr))
 
 	// Verify error message is preserved
 	assert.Equal(t, "base error", status.Message(wrappedErr))
@@ -143,8 +143,8 @@ func TestWithCodeWithNestedErrors(t *testing.T) {
 	assert.True(t, status.IsInternalError(wrappedErr))
 
 	// Verify error identity is preserved through the chain
-	assert.True(t, stderrors.Is(wrappedErr, nestedErr))
-	assert.True(t, stderrors.Is(wrappedErr, baseErr))
+	assert.True(t, errors.Is(wrappedErr, nestedErr))
+	assert.True(t, errors.Is(wrappedErr, baseErr))
 
 	// Verify error message includes nesting
 	assert.Equal(t, "nested: base error", status.Message(wrappedErr))
