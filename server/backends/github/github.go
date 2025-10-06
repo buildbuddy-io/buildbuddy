@@ -21,11 +21,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-github/v59/github"
+
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
 var (
@@ -532,6 +535,15 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 	if ownerRepo == "" {
 		return status.InvalidArgumentErrorf("failed to create GitHub status: ownerRepo argument is empty")
 	}
+
+	enabled, err := c.IsStatusReportingEnabled(ctx, ownerRepo)
+	if err != nil {
+		return status.WrapErrorf(err, "failed to check if status reporting is enabled for %s", ownerRepo)
+	}
+	if !enabled {
+		return nil
+	}
+
 	if commitSHA == "" {
 		return status.InvalidArgumentError("failed to create GitHub status: commitSHA argument is empty")
 	}
@@ -662,6 +674,60 @@ func (c *GithubClient) fetchToken(ctx context.Context, ownerRepo string) error {
 		c.tokenValue = *group.GithubToken
 	}
 	return nil
+}
+
+func (c *GithubClient) IsStatusReportingEnabled(ctx context.Context, repoURL string) (bool, error) {
+	if AlwaysEnableStatusReporting() {
+		return true, nil
+	}
+
+	dbh := c.env.GetDBHandle()
+	if dbh == nil {
+		return false, status.InternalError("no database handle")
+	}
+
+	userInfo, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return false, status.WrapError(err, "failed to get authenticated user")
+	}
+
+	parsedRepo, err := gitutil.ParseGitHubRepoURL(repoURL)
+	if err != nil {
+		return false, status.InvalidArgumentErrorf("invalid repo URL %s: %s", repoURL, err)
+	}
+
+	installation := &tables.GitHubAppInstallation{}
+	err = dbh.NewQuery(ctx, "build_status_reporter_get_app_installation").Raw(
+		`SELECT * from "GitHubAppInstallations" WHERE group_id = ? AND owner = ?`, userInfo.GetGroupID(), parsedRepo.Owner).Take(installation)
+	if err == nil {
+		return installation.ReportCommitStatusesForCIBuilds, nil
+	} else if !db.IsRecordNotFound(err) {
+		return false, status.WrapErrorf(err, "failed to query GitHubAppInstallations: %s", err)
+	}
+
+	// If the user hasn't installed our GH app, check legacy methods for
+	// enabling status reporting. Always report statuses for users that
+	// onboarded through a legacy method, because status reporting was
+	// automatically enabled for them.
+	legacyWorkflow := &struct{ Count int64 }{}
+	err = dbh.NewQuery(ctx, "build_status_reporter_get_workflow").Raw(
+		`SELECT COUNT(*) as count from "Workflows" WHERE repo_url = ?`, repoURL).Take(legacyWorkflow)
+	if err == nil && legacyWorkflow.Count > 0 {
+		return true, nil
+	} else if err != nil {
+		return false, status.WrapErrorf(err, "failed to query Workflows: %s", err)
+	}
+
+	groupWithLegacyToken := &struct{ Count int64 }{}
+	err = dbh.NewQuery(ctx, "build_status_reporter_get_group").Raw(
+		`SELECT COUNT(*) as count from "Groups" WHERE group_id = ? AND github_token <> '' AND github_token IS NOT NULL`, userInfo.GetGroupID()).Take(groupWithLegacyToken)
+	if err == nil && groupWithLegacyToken.Count > 0 {
+		return true, nil
+	} else if err != nil {
+		return false, status.WrapErrorf(err, "failed to query Groups: %s", err)
+	}
+
+	return false, nil
 }
 
 func appendStatusNameSuffix(p *GithubStatusPayload) *GithubStatusPayload {

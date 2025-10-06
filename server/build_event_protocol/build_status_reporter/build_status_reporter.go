@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
@@ -63,6 +62,7 @@ func (r *BuildStatusReporter) SetBaseBuildBuddyURL(url string) {
 
 func (r *BuildStatusReporter) initGHClient(ctx context.Context) interfaces.GitHubStatusClient {
 	accessToken := ""
+	// TODO(Maggie): Remove this - unneeded
 	if workflowID := r.buildEventAccumulator.WorkflowID(); workflowID != "" {
 		if dbh := r.env.GetDBHandle(); dbh != nil {
 			workflow := &tables.Workflow{}
@@ -77,64 +77,17 @@ func (r *BuildStatusReporter) initGHClient(ctx context.Context) interfaces.GitHu
 
 func (r *BuildStatusReporter) isStatusReportingEnabled(ctx context.Context, repoURL string) bool {
 	r.once.Do(func() {
-		if github.AlwaysEnableStatusReporting() {
-			r.shouldReportCommitStatuses = true
-			return
+		// TODO: Move initialization into creation of reporter
+		if r.githubClient == nil {
+			r.githubClient = r.initGHClient(ctx)
 		}
-
-		dbh := r.env.GetDBHandle()
-		if dbh == nil {
-			return
-		}
-
-		userInfo, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+		enabled, err := r.githubClient.IsStatusReportingEnabled(ctx, repoURL)
 		if err != nil {
-			log.CtxInfof(ctx, "Failed to report GitHub status, no authenticated user: %s", err)
+			log.CtxInfof(ctx, "Failed to check if GitHub status reporting is enabled: %s", err)
 			return
 		}
 
-		parsedRepo, err := gitutil.ParseGitHubRepoURL(repoURL)
-		if err != nil {
-			log.CtxInfof(ctx, "Failed to report GitHub status, invalid repo url %s: %s", repoURL, err)
-			return
-		}
-
-		installation := &tables.GitHubAppInstallation{}
-		err = dbh.NewQuery(ctx, "build_status_reporter_get_app_installation").Raw(
-			`SELECT * from "GitHubAppInstallations" WHERE group_id = ? AND owner = ?`, userInfo.GetGroupID(), parsedRepo.Owner).Take(installation)
-		if err == nil {
-			r.shouldReportCommitStatuses = installation.ReportCommitStatusesForCIBuilds
-			return
-		} else if !db.IsRecordNotFound(err) {
-			log.CtxWarningf(ctx, "Failed to report GitHub status for %s, failed to query GitHubAppInstallations: %s", repoURL, err)
-			return
-		}
-
-		// If the user hasn't installed our GH app, check legacy methods for
-		// enabling status reporting. Always report statuses for users that
-		// onboarded through a legacy method, because status reporting was
-		// automatically enabled for them.
-		legacyWorkflow := &struct{ Count int64 }{}
-		err = dbh.NewQuery(ctx, "build_status_reporter_get_workflow").Raw(
-			`SELECT COUNT(*) as count from "Workflows" WHERE repo_url = ?`, repoURL).Take(legacyWorkflow)
-		if err == nil && legacyWorkflow.Count > 0 {
-			r.shouldReportCommitStatuses = true
-			return
-		} else if err != nil {
-			log.CtxWarningf(ctx, "Failed to report GitHub status for %s, failed to query Workflows: %s", repoURL, err)
-			return
-		}
-
-		groupWithLegacyToken := &struct{ Count int64 }{}
-		err = dbh.NewQuery(ctx, "build_status_reporter_get_group").Raw(
-			`SELECT COUNT(*) as count from "Groups" WHERE group_id = ? AND github_token <> '' AND github_token IS NOT NULL`, userInfo.GetGroupID()).Take(groupWithLegacyToken)
-		if err == nil && groupWithLegacyToken.Count > 0 {
-			r.shouldReportCommitStatuses = true
-			return
-		} else if err != nil {
-			log.CtxWarningf(ctx, "Failed to report GitHub status for %s, failed to query Groups: %s", repoURL, err)
-			return
-		}
+		r.shouldReportCommitStatuses = enabled
 	})
 
 	return r.shouldReportCommitStatuses
