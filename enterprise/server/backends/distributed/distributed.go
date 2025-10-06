@@ -1522,6 +1522,14 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 			return err
 		}
 	}
+	if c.lookasideCacheEnabled() {
+		key, ok := c.lookasideKey(ctx, r)
+		if ok {
+			c.lookasideMu.Lock()
+			defer c.lookasideMu.Unlock()
+			c.lookaside.Remove(key)
+		}
+	}
 	return nil
 }
 
