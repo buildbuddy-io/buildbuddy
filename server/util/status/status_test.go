@@ -121,7 +121,7 @@ func TestWrapWithCodePreservesErrorIdentity(t *testing.T) {
 	assert.True(t, stderrors.Is(wrappedErr, baseErr))
 
 	// Verify error message is preserved
-	assert.Equal(t, "base error", wrappedErr.Error())
+	assert.Equal(t, "base error", status.Message(wrappedErr))
 }
 
 func TestWrapWithCodeWithNestedErrors(t *testing.T) {
@@ -137,5 +137,5 @@ func TestWrapWithCodeWithNestedErrors(t *testing.T) {
 	assert.True(t, stderrors.Is(wrappedErr, baseErr))
 
 	// Verify error message includes nesting
-	assert.Equal(t, "nested: base error", wrappedErr.Error())
+	assert.Equal(t, "nested: base error", status.Message(wrappedErr))
 }

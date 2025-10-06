@@ -5,6 +5,7 @@ import (
 	stderrors "errors"
 	"flag"
 	"fmt"
+	"log"
 	"runtime"
 
 	"github.com/pkg/errors"
@@ -63,7 +64,7 @@ type statusError struct {
 }
 
 func (e *statusError) Error() string {
-	return e.err.Error()
+	return e.GRPCStatus().String()
 }
 
 func (e *statusError) Unwrap() error {
@@ -276,7 +277,7 @@ func WrapError(err error, msg string) error {
 	}
 	var statusErr *statusError
 	if errors.As(err, &statusErr) {
-		statusErr.err = fmt.Errorf("%s: %w", msg, err)
+		statusErr.err = fmt.Errorf("%s: %w", msg, statusErr.err)
 		return statusErr
 	}
 
@@ -333,9 +334,18 @@ func Message(err error) string {
 	if err == nil {
 		return ""
 	}
+
+	var statusErr *statusError
+	if errors.As(err, &statusErr) {
+		log.Printf("returned statusErr.err.Error()")
+		return statusErr.err.Error()
+	}
+
 	if s, ok := status.FromError(err); ok {
+		log.Printf("returned s.Message()")
 		return s.Message()
 	}
+	log.Printf("returned err.Error()")
 	return err.Error()
 }
 
