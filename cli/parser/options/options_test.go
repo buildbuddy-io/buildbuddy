@@ -8,11 +8,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func RequiredValueDefinition(name, shortname string, opts ...options.DefinitionOpt) *options.Definition {
+func RequiredValueDefinition(name, oldname, shortname string, opts ...options.DefinitionOpt) *options.Definition {
 	return options.NewDefinition(
 		name,
 		append(
 			[]options.DefinitionOpt{
+				options.WithOldName(oldname),
 				options.WithShortName(shortname),
 				options.WithRequiresValue(),
 			},
@@ -21,11 +22,12 @@ func RequiredValueDefinition(name, shortname string, opts ...options.DefinitionO
 	)
 }
 
-func BoolOrEnumDefinition(name, shortname string, opts ...options.DefinitionOpt) *options.Definition {
+func BoolOrEnumDefinition(name, oldname, shortname string, opts ...options.DefinitionOpt) *options.Definition {
 	return options.NewDefinition(
 		name,
 		append(
 			[]options.DefinitionOpt{
+				options.WithOldName(oldname),
 				options.WithShortName(shortname),
 				options.WithNegative(),
 			},
@@ -34,11 +36,12 @@ func BoolOrEnumDefinition(name, shortname string, opts ...options.DefinitionOpt)
 	)
 }
 
-func ExpansionDefinition(name, shortname string, opts ...options.DefinitionOpt) *options.Definition {
+func ExpansionDefinition(name, oldname, shortname string, opts ...options.DefinitionOpt) *options.Definition {
 	return options.NewDefinition(
 		name,
 		append(
 			[]options.DefinitionOpt{
+				options.WithOldName(oldname),
 				options.WithShortName(shortname),
 			},
 			opts...,
@@ -49,6 +52,8 @@ func ExpansionDefinition(name, shortname string, opts ...options.DefinitionOpt) 
 func TestRequiredValueOptionBase(t *testing.T) {
 	name := "name"
 	noName := "noname"
+	oldName := "experimental_name"
+	noOldName := "noexperimental_name"
 	shortName := "n"
 	badName := "badname"
 	badShortName := "x"
@@ -56,30 +61,107 @@ func TestRequiredValueOptionBase(t *testing.T) {
 	t.Run("Required value option base with name from name", func(t *testing.T) {
 		base, err := options.NewOptionBase(
 			name,
-			RequiredValueDefinition(name, ""),
+			RequiredValueDefinition(name, "", ""),
 		)
 
 		assert.NoError(t, err)
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseShortName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.Equal(t, "--"+name, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.Equal(t, "--"+name, base.Format())
+	})
+
+	t.Run("Required value option base with name and old name from name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			name,
+			RequiredValueDefinition(name, oldName, ""),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
@@ -97,30 +179,48 @@ func TestRequiredValueOptionBase(t *testing.T) {
 	t.Run("Required value option base with name and short name from name", func(t *testing.T) {
 		base, err := options.NewOptionBase(
 			name,
-			RequiredValueDefinition(name, shortName),
+			RequiredValueDefinition(name, "", shortName),
 		)
 
 		assert.NoError(t, err)
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseShortName()
 		assert.Equal(t, flag_form.ShortName, base.Form)
 		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.True(t, base.UsesShortName())
 		assert.Equal(t, "-"+shortName, base.Format())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
@@ -135,33 +235,287 @@ func TestRequiredValueOptionBase(t *testing.T) {
 		assert.Equal(t, "--"+name, base.Format())
 	})
 
-	t.Run("Required value option base with name and short name from short name", func(t *testing.T) {
+	t.Run("Required value option base with name, old name, and short name from name", func(t *testing.T) {
 		base, err := options.NewOptionBase(
-			shortName,
-			RequiredValueDefinition(name, shortName),
+			name,
+			RequiredValueDefinition(name, oldName, shortName),
 		)
 
 		assert.NoError(t, err)
-		assert.Equal(t, flag_form.ShortName, base.Form)
-		assert.False(t, base.UsesName())
-		assert.True(t, base.UsesShortName())
-		assert.Equal(t, "-"+shortName, base.Format())
-		assert.False(t, base.Negative())
-		base.UseShortName()
-		assert.Equal(t, flag_form.ShortName, base.Form)
-		assert.False(t, base.UsesName())
-		assert.True(t, base.UsesShortName())
-		assert.Equal(t, "-"+shortName, base.Format())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseShortName()
 		assert.Equal(t, flag_form.ShortName, base.Form)
 		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.Equal(t, "--"+name, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.Equal(t, "--"+name, base.Format())
+	})
+
+	t.Run("Required value option base with name and old name from old name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			oldName,
+			RequiredValueDefinition(name, oldName, ""),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.Equal(t, "--"+oldName, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.Equal(t, "--"+oldName, base.Format())
+	})
+
+	t.Run("Required value option base with name, old name, and short name from old name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			oldName,
+			RequiredValueDefinition(name, oldName, shortName),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.Equal(t, "--"+oldName, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.Equal(t, "--"+oldName, base.Format())
+	})
+
+	t.Run("Required value option base with name and short name from short name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			shortName,
+			RequiredValueDefinition(name, "", shortName),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.Equal(t, "-"+shortName, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.Equal(t, "-"+shortName, base.Format())
+	})
+
+	t.Run("Required value option base with name, old name, and short name from short name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			shortName,
+			RequiredValueDefinition(name, oldName, shortName),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.True(t, base.UsesShortName())
 		assert.Equal(t, "-"+shortName, base.Format())
 		assert.False(t, base.Negative())
@@ -179,7 +533,15 @@ func TestRequiredValueOptionBase(t *testing.T) {
 	t.Run("Required value option base with name from negative name", func(t *testing.T) {
 		_, err := options.NewOptionBase(
 			noName,
-			RequiredValueDefinition(name, ""),
+			RequiredValueDefinition(name, "", ""),
+		)
+		assert.Error(t, err)
+	})
+
+	t.Run("Required value option base with name and old name from negative name", func(t *testing.T) {
+		_, err := options.NewOptionBase(
+			noName,
+			RequiredValueDefinition(name, oldName, ""),
 		)
 		assert.Error(t, err)
 	})
@@ -187,23 +549,47 @@ func TestRequiredValueOptionBase(t *testing.T) {
 	t.Run("Required value option base with name and short name from negative name", func(t *testing.T) {
 		_, err := options.NewOptionBase(
 			noName,
-			RequiredValueDefinition(name, shortName),
+			RequiredValueDefinition(name, "", shortName),
 		)
 		assert.Error(t, err)
 	})
 
-	t.Run("Required value option base with name and short name from invalid name", func(t *testing.T) {
+	t.Run("Required value option base with name, old name, and short name from negative name", func(t *testing.T) {
+		_, err := options.NewOptionBase(
+			noName,
+			RequiredValueDefinition(name, oldName, shortName),
+		)
+		assert.Error(t, err)
+	})
+
+	t.Run("Required value option base with name and old name from negative old name", func(t *testing.T) {
+		_, err := options.NewOptionBase(
+			noOldName,
+			RequiredValueDefinition(name, oldName, ""),
+		)
+		assert.Error(t, err)
+	})
+
+	t.Run("Required value option base with name, old name, and short name from negative old name", func(t *testing.T) {
+		_, err := options.NewOptionBase(
+			noOldName,
+			RequiredValueDefinition(name, oldName, shortName),
+		)
+		assert.Error(t, err)
+	})
+
+	t.Run("Required value option base with name, old name, and short name from invalid name", func(t *testing.T) {
 		_, err := options.NewOptionBase(
 			badName,
-			RequiredValueDefinition(name, shortName),
+			RequiredValueDefinition(name, oldName, shortName),
 		)
 		assert.Error(t, err)
 	})
 
-	t.Run("Required value option base with name and short name from invalid short name", func(t *testing.T) {
+	t.Run("Required value option base with name, old name, and short name from invalid short name", func(t *testing.T) {
 		_, err := options.NewOptionBase(
 			badShortName,
-			RequiredValueDefinition(name, shortName),
+			RequiredValueDefinition(name, oldName, shortName),
 		)
 		assert.Error(t, err)
 	})
@@ -212,6 +598,8 @@ func TestRequiredValueOptionBase(t *testing.T) {
 func TestBoolOrEnumOptionBase(t *testing.T) {
 	name := "name"
 	noName := "noname"
+	oldName := "experimental_name"
+	noOldName := "noexperimental_name"
 	shortName := "n"
 	badName := "badname"
 	badShortName := "x"
@@ -219,29 +607,106 @@ func TestBoolOrEnumOptionBase(t *testing.T) {
 	t.Run("Bool or enum option base with name from name", func(t *testing.T) {
 		base, err := options.NewOptionBase(
 			name,
-			BoolOrEnumDefinition(name, ""),
+			BoolOrEnumDefinition(name, "", ""),
 		)
 
 		assert.NoError(t, err)
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseShortName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.True(t, base.Negative())
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.Equal(t, "--"+noName, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.Equal(t, "--"+name, base.Format())
+	})
+
+	t.Run("Bool or enum option base with name and old name from name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			name,
+			BoolOrEnumDefinition(name, oldName, ""),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
@@ -259,30 +724,48 @@ func TestBoolOrEnumOptionBase(t *testing.T) {
 	t.Run("Bool or enum option base with name and short name from name", func(t *testing.T) {
 		base, err := options.NewOptionBase(
 			name,
-			BoolOrEnumDefinition(name, shortName),
+			BoolOrEnumDefinition(name, "", shortName),
 		)
 
 		assert.NoError(t, err)
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseShortName()
 		assert.Equal(t, flag_form.ShortName, base.Form)
 		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.True(t, base.UsesShortName())
 		assert.Equal(t, "-"+shortName, base.Format())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
@@ -297,33 +780,287 @@ func TestBoolOrEnumOptionBase(t *testing.T) {
 		assert.Equal(t, "--"+name, base.Format())
 	})
 
-	t.Run("Bool or enum option base with name and short name from short name", func(t *testing.T) {
+	t.Run("Bool or enum option base with name, old name, and short name from name", func(t *testing.T) {
 		base, err := options.NewOptionBase(
-			shortName,
-			BoolOrEnumDefinition(name, shortName),
+			name,
+			BoolOrEnumDefinition(name, oldName, shortName),
 		)
 
 		assert.NoError(t, err)
-		assert.Equal(t, flag_form.ShortName, base.Form)
-		assert.False(t, base.UsesName())
-		assert.True(t, base.UsesShortName())
-		assert.Equal(t, "-"+shortName, base.Format())
-		assert.False(t, base.Negative())
-		base.UseShortName()
-		assert.Equal(t, flag_form.ShortName, base.Form)
-		assert.False(t, base.UsesName())
-		assert.True(t, base.UsesShortName())
-		assert.Equal(t, "-"+shortName, base.Format())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseShortName()
 		assert.Equal(t, flag_form.ShortName, base.Form)
 		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.True(t, base.Negative())
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.Equal(t, "--"+noName, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.Equal(t, "--"+name, base.Format())
+	})
+
+	t.Run("Bool or enum option base with name and old name from old name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			oldName,
+			BoolOrEnumDefinition(name, oldName, ""),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.True(t, base.Negative())
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.Equal(t, "--"+noOldName, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.Equal(t, "--"+oldName, base.Format())
+	})
+
+	t.Run("Bool or enum option base with name, old name, and short name from old name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			oldName,
+			BoolOrEnumDefinition(name, oldName, shortName),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.True(t, base.Negative())
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.Equal(t, "--"+noOldName, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.Equal(t, "--"+oldName, base.Format())
+	})
+
+	t.Run("Bool or enum option base with name and short name from short name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			shortName,
+			BoolOrEnumDefinition(name, "", shortName),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.True(t, base.Negative())
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.Equal(t, "--"+noName, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.Equal(t, "--"+name, base.Format())
+	})
+
+	t.Run("Bool or enum option base with name, old name, and short name from short name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			shortName,
+			BoolOrEnumDefinition(name, oldName, shortName),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.True(t, base.UsesShortName())
 		assert.Equal(t, "-"+shortName, base.Format())
 		assert.False(t, base.Negative())
@@ -341,30 +1078,48 @@ func TestBoolOrEnumOptionBase(t *testing.T) {
 	t.Run("Bool or enum option base with name from negative name", func(t *testing.T) {
 		base, err := options.NewOptionBase(
 			noName,
-			BoolOrEnumDefinition(name, ""),
+			BoolOrEnumDefinition(name, "", ""),
 		)
 
 		assert.NoError(t, err)
 		assert.Equal(t, flag_form.NegativeName, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+noName, base.Format())
 		assert.True(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.NegativeName, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+noName, base.Format())
 		assert.True(t, base.Negative())
 		base.UseShortName()
 		assert.Equal(t, flag_form.NegativeName, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+noName, base.Format())
 		assert.True(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.NegativeName, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+noName, base.Format())
 		assert.True(t, base.Negative())
@@ -377,35 +1132,112 @@ func TestBoolOrEnumOptionBase(t *testing.T) {
 		assert.True(t, base.Negative())
 		assert.Equal(t, flag_form.NegativeName, base.Form)
 		assert.Equal(t, "--"+noName, base.Format())
+	})
+
+	t.Run("Bool or enum option base with name and old name from negative name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			noName,
+			BoolOrEnumDefinition(name, oldName, ""),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noOldName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+
+		base.SetNegative()
+		assert.True(t, base.Negative())
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.Equal(t, "--"+noName, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.Equal(t, "--"+name, base.Format())
 	})
 
 	t.Run("Bool or enum option base with name and short name from negative name", func(t *testing.T) {
 		base, err := options.NewOptionBase(
 			noName,
-			BoolOrEnumDefinition(name, shortName),
+			BoolOrEnumDefinition(name, "", shortName),
 		)
 
 		assert.NoError(t, err)
 		assert.Equal(t, flag_form.NegativeName, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+noName, base.Format())
 		assert.True(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.NegativeName, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+noName, base.Format())
 		assert.True(t, base.Negative())
 		base.UseShortName()
 		assert.Equal(t, flag_form.NegativeName, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+noName, base.Format())
 		assert.True(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.NegativeName, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+noName, base.Format())
 		assert.True(t, base.Negative())
@@ -420,18 +1252,195 @@ func TestBoolOrEnumOptionBase(t *testing.T) {
 		assert.Equal(t, "--"+noName, base.Format())
 	})
 
-	t.Run("Bool or enum option base with name and short name from invalid name", func(t *testing.T) {
+	t.Run("Bool or enum option base with name, old name, and short name from negative name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			noName,
+			BoolOrEnumDefinition(name, oldName, shortName),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noOldName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+
+		base.SetNegative()
+		assert.True(t, base.Negative())
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.Equal(t, "--"+noName, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.Equal(t, "--"+name, base.Format())
+	})
+
+	t.Run("Bool or enum option base with name and old name from negative old name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			noOldName,
+			BoolOrEnumDefinition(name, oldName, ""),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noOldName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noOldName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noOldName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noOldName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noOldName, base.Format())
+		assert.True(t, base.Negative())
+
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.Equal(t, "--"+oldName, base.Format())
+		base.SetNegative()
+		assert.True(t, base.Negative())
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.Equal(t, "--"+noOldName, base.Format())
+	})
+
+	t.Run("Bool or enum option base with name, old name, and short name from negative old name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			noOldName,
+			BoolOrEnumDefinition(name, oldName, shortName),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noOldName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noOldName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.NegativeName, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noOldName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noOldName, base.Format())
+		assert.True(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+noOldName, base.Format())
+		assert.True(t, base.Negative())
+
+		base.SetNegative()
+		assert.True(t, base.Negative())
+		assert.Equal(t, flag_form.NegativeOldName, base.Form)
+		assert.Equal(t, "--"+noOldName, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.Equal(t, "--"+oldName, base.Format())
+	})
+
+	t.Run("Bool or enum option base with name, old name, and short name from invalid name", func(t *testing.T) {
 		_, err := options.NewOptionBase(
 			badName,
-			BoolOrEnumDefinition(name, shortName),
+			BoolOrEnumDefinition(name, oldName, shortName),
 		)
 		assert.Error(t, err)
 	})
 
-	t.Run("Bool or enum option base with name and short name from invalid short name", func(t *testing.T) {
+	t.Run("Bool or enum option base with name, old name, and short name from invalid short name", func(t *testing.T) {
 		_, err := options.NewOptionBase(
 			badShortName,
-			BoolOrEnumDefinition(name, shortName),
+			BoolOrEnumDefinition(name, oldName, shortName),
 		)
 		assert.Error(t, err)
 	})
@@ -440,6 +1449,8 @@ func TestBoolOrEnumOptionBase(t *testing.T) {
 func TestExpansionOptionBase(t *testing.T) {
 	name := "name"
 	noName := "noname"
+	oldName := "experimental_name"
+	noOldName := "noexperimental_name"
 	shortName := "n"
 	badName := "badname"
 	badShortName := "x"
@@ -447,30 +1458,107 @@ func TestExpansionOptionBase(t *testing.T) {
 	t.Run("Expansion option base with name from name", func(t *testing.T) {
 		base, err := options.NewOptionBase(
 			name,
-			ExpansionDefinition(name, ""),
+			ExpansionDefinition(name, "", ""),
 		)
 
 		assert.NoError(t, err)
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseShortName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.Equal(t, "--"+name, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.Equal(t, "--"+name, base.Format())
+	})
+
+	t.Run("Expansion option base with name and old name from name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			name,
+			ExpansionDefinition(name, oldName, ""),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
@@ -488,30 +1576,48 @@ func TestExpansionOptionBase(t *testing.T) {
 	t.Run("Expansion option base with name and short name from name", func(t *testing.T) {
 		base, err := options.NewOptionBase(
 			name,
-			ExpansionDefinition(name, shortName),
+			ExpansionDefinition(name, "", shortName),
 		)
 
 		assert.NoError(t, err)
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseShortName()
 		assert.Equal(t, flag_form.ShortName, base.Form)
 		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.True(t, base.UsesShortName())
 		assert.Equal(t, "-"+shortName, base.Format())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
@@ -526,33 +1632,287 @@ func TestExpansionOptionBase(t *testing.T) {
 		assert.Equal(t, "--"+name, base.Format())
 	})
 
-	t.Run("Expansion option base with name and short name from short name", func(t *testing.T) {
+	t.Run("Expansion option base with name, old name, and short name from name", func(t *testing.T) {
 		base, err := options.NewOptionBase(
-			shortName,
-			ExpansionDefinition(name, shortName),
+			name,
+			ExpansionDefinition(name, oldName, shortName),
 		)
 
 		assert.NoError(t, err)
-		assert.Equal(t, flag_form.ShortName, base.Form)
-		assert.False(t, base.UsesName())
-		assert.True(t, base.UsesShortName())
-		assert.Equal(t, "-"+shortName, base.Format())
-		assert.False(t, base.Negative())
-		base.UseShortName()
-		assert.Equal(t, flag_form.ShortName, base.Form)
-		assert.False(t, base.UsesName())
-		assert.True(t, base.UsesShortName())
-		assert.Equal(t, "-"+shortName, base.Format())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseName()
 		assert.Equal(t, flag_form.Name, base.Form)
 		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.False(t, base.UsesShortName())
 		assert.Equal(t, "--"+name, base.Format())
 		assert.False(t, base.Negative())
 		base.UseShortName()
 		assert.Equal(t, flag_form.ShortName, base.Form)
 		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.Equal(t, "--"+name, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.Equal(t, "--"+name, base.Format())
+	})
+
+	t.Run("Expansion option base with name and old name from old name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			oldName,
+			ExpansionDefinition(name, oldName, ""),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.Equal(t, "--"+oldName, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.Equal(t, "--"+oldName, base.Format())
+	})
+
+	t.Run("Expansion option base with name, old name, and short name from old name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			oldName,
+			ExpansionDefinition(name, oldName, shortName),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.Equal(t, "--"+oldName, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.Equal(t, "--"+oldName, base.Format())
+	})
+
+	t.Run("Expansion option base with name and short name from short name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			shortName,
+			ExpansionDefinition(name, "", shortName),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+
+		base.SetNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.Equal(t, "-"+shortName, base.Format())
+		base.ClearNegative()
+		assert.False(t, base.Negative())
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.Equal(t, "-"+shortName, base.Format())
+	})
+
+	t.Run("Expansion option base with name, old name, and short name from short name", func(t *testing.T) {
+		base, err := options.NewOptionBase(
+			shortName,
+			ExpansionDefinition(name, oldName, shortName),
+		)
+
+		assert.NoError(t, err)
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseName()
+		assert.Equal(t, flag_form.Name, base.Form)
+		assert.True(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+name, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
+		assert.True(t, base.UsesShortName())
+		assert.Equal(t, "-"+shortName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseOldName()
+		assert.Equal(t, flag_form.OldName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.True(t, base.UsesOldName())
+		assert.False(t, base.UsesShortName())
+		assert.Equal(t, "--"+oldName, base.Format())
+		assert.False(t, base.Negative())
+		base.UseShortName()
+		assert.Equal(t, flag_form.ShortName, base.Form)
+		assert.False(t, base.UsesName())
+		assert.False(t, base.UsesOldName())
 		assert.True(t, base.UsesShortName())
 		assert.Equal(t, "-"+shortName, base.Format())
 		assert.False(t, base.Negative())
@@ -570,7 +1930,15 @@ func TestExpansionOptionBase(t *testing.T) {
 	t.Run("Expansion option base with name from negative name", func(t *testing.T) {
 		_, err := options.NewOptionBase(
 			noName,
-			ExpansionDefinition(name, ""),
+			ExpansionDefinition(name, "", ""),
+		)
+		assert.Error(t, err)
+	})
+
+	t.Run("Expansion option base with name and old name from negative name", func(t *testing.T) {
+		_, err := options.NewOptionBase(
+			noName,
+			ExpansionDefinition(name, oldName, ""),
 		)
 		assert.Error(t, err)
 	})
@@ -578,23 +1946,47 @@ func TestExpansionOptionBase(t *testing.T) {
 	t.Run("Expansion option base with name and short name from negative name", func(t *testing.T) {
 		_, err := options.NewOptionBase(
 			noName,
-			ExpansionDefinition(name, shortName),
+			ExpansionDefinition(name, "", shortName),
 		)
 		assert.Error(t, err)
 	})
 
-	t.Run("Expansion option base with name and short name from invalid name", func(t *testing.T) {
+	t.Run("Expansion option base with name, old name, and short name from negative name", func(t *testing.T) {
+		_, err := options.NewOptionBase(
+			noName,
+			ExpansionDefinition(name, oldName, shortName),
+		)
+		assert.Error(t, err)
+	})
+
+	t.Run("Expansion option base with name and old name from negative old name", func(t *testing.T) {
+		_, err := options.NewOptionBase(
+			noOldName,
+			ExpansionDefinition(name, oldName, ""),
+		)
+		assert.Error(t, err)
+	})
+
+	t.Run("Expansion option base with name, old name, and short name from negative old name", func(t *testing.T) {
+		_, err := options.NewOptionBase(
+			noOldName,
+			ExpansionDefinition(name, oldName, shortName),
+		)
+		assert.Error(t, err)
+	})
+
+	t.Run("Expansion option base with name, old name, and short name from invalid name", func(t *testing.T) {
 		_, err := options.NewOptionBase(
 			badName,
-			ExpansionDefinition(name, shortName),
+			ExpansionDefinition(name, oldName, shortName),
 		)
 		assert.Error(t, err)
 	})
 
-	t.Run("Expansion option base with name and short name from invalid short name", func(t *testing.T) {
+	t.Run("Expansion option base with name, old name, and short name from invalid short name", func(t *testing.T) {
 		_, err := options.NewOptionBase(
 			badShortName,
-			ExpansionDefinition(name, shortName),
+			ExpansionDefinition(name, oldName, shortName),
 		)
 		assert.Error(t, err)
 	})

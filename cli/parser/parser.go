@@ -112,6 +112,12 @@ func (m *Subparser) ForceAdd(d *options.Definition) {
 	if d.ShortName() != "" {
 		m.ByShortName[d.ShortName()] = d
 	}
+	if d.OldName() != "" {
+		m.ByName[d.OldName()] = d
+		if d.OldName() != "" {
+			m.ByName["no"+d.OldName()] = d
+		}
+	}
 }
 
 func (m *Subparser) Add(d *options.Definition) error {
@@ -121,9 +127,17 @@ func (m *Subparser) Add(d *options.Definition) error {
 	if _, ok := m.ByShortName[d.ShortName()]; ok {
 		return fmt.Errorf("Naming collision adding flag with short name %s; flag already exists with that short name.", d.ShortName())
 	}
+	if _, ok := m.ByName[d.OldName()]; ok {
+		return fmt.Errorf("Naming collision adding flag %s; flag has old name %s, but another flag already exists with that name.", d.Name(), d.OldName())
+	}
 	if d.HasNegative() {
 		if _, ok := m.ByName["no"+d.Name()]; ok {
 			return fmt.Errorf("Naming collision adding flag %s; flag has negative form %s, but a flag already exists with that name.", d.Name(), "no"+d.Name())
+		}
+		if d.OldName() != "" {
+			if _, ok := m.ByName["no"+d.OldName()]; ok {
+				return fmt.Errorf("Naming collision adding flag %s; flag has old negative form %s, but another flag already exists with that name.", d.Name(), "no"+d.OldName())
+			}
 		}
 	}
 	m.ForceAdd(d)
