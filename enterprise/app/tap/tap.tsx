@@ -25,6 +25,7 @@ interface Props {
 interface State {
   selectedRepo?: string;
   repos: string[];
+  defaultBranch?: string;
 }
 
 type Tab = "grid" | "flakes";
@@ -38,6 +39,7 @@ export default class TapComponent extends React.Component<Props, State> {
 
   isV2 = Boolean(capabilities.config.testGridV2Enabled);
   branchInputRef = React.createRef<HTMLInputElement>();
+  branchInputDirty = false;
 
   componentWillMount() {
     document.title = `Tests | BuildBuddy`;
@@ -45,13 +47,37 @@ export default class TapComponent extends React.Component<Props, State> {
   }
 
   componentDidMount() {
-    if (this.branchInputRef.current) {
-      this.branchInputRef.current.value = this.props.search.get("branch") || "";
+    this.updateBranchInput();
+  }
+  componentDidUpdate(prevProps: Props, prevState: State) {
+    const prevTab = capabilities.config.targetFlakesUiEnabled && prevProps.tab === "#flakes" ? "flakes" : "grid";
+    if (
+      this.props.search.get("branch") !== prevProps.search.get("branch") ||
+      this.state.defaultBranch !== prevState.defaultBranch ||
+      this.getSelectedTab() !== prevTab
+    ) {
+      this.updateBranchInput();
     }
   }
-  componentDidUpdate() {
+
+  updateBranchInput() {
     if (this.branchInputRef.current) {
-      this.branchInputRef.current.value = this.props.search.get("branch") || "";
+      const explicitBranch = this.props.search.get("branch");
+      const tab = this.getSelectedTab();
+      const showDefaultPlaceholder = !explicitBranch && tab === "flakes" && this.state.defaultBranch;
+
+      if (explicitBranch) {
+        if (this.branchInputRef.current.value !== explicitBranch) {
+          this.branchInputRef.current.value = explicitBranch;
+        }
+        this.branchInputDirty = false;
+      } else if (!this.branchInputDirty) {
+        this.branchInputRef.current.value = "";
+      }
+
+      this.branchInputRef.current.placeholder = showDefaultPlaceholder
+        ? `Branch (default: ${this.state.defaultBranch})`
+        : "Branch";
     }
   }
 
@@ -110,13 +136,25 @@ export default class TapComponent extends React.Component<Props, State> {
 
   handleRepoChange(event: React.ChangeEvent<HTMLSelectElement>) {
     const repo = event.target.value;
+    // Clear default branch when repo changes
+    this.setState({ defaultBranch: undefined });
+    this.branchInputDirty = false;
     router.setQueryParam("repo", repo || undefined);
+  }
+
+  handleDefaultBranchLoaded(defaultBranch: string) {
+    this.setState({ defaultBranch });
   }
 
   handleBranchInputKeyPress(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
       router.setQueryParam("branch", (event.target as HTMLInputElement).value || undefined);
+      this.branchInputDirty = false;
     }
+  }
+
+  handleBranchInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+    this.branchInputDirty = event.target.value.length > 0;
   }
 
   render() {
@@ -126,7 +164,13 @@ export default class TapComponent extends React.Component<Props, State> {
     let tabContent;
     if (tab === "flakes") {
       title = "Flakes";
-      tabContent = <FlakesComponent repo={repo} search={this.props.search} dark={this.props.dark}></FlakesComponent>;
+      tabContent = (
+        <FlakesComponent
+          repo={repo}
+          search={this.props.search}
+          dark={this.props.dark}
+          onDefaultBranchLoaded={(branch) => this.handleDefaultBranchLoaded(branch)}></FlakesComponent>
+      );
     } else {
       title = "Tests";
       tabContent = (
@@ -158,6 +202,7 @@ export default class TapComponent extends React.Component<Props, State> {
                         placeholder="Branch"
                         // Use uncontrolled input to avoid re-rendering.
                         ref={this.branchInputRef}
+                        onChange={(e) => this.handleBranchInputChange(e)}
                         onKeyPress={(e) => this.handleBranchInputKeyPress(e)}
                       />
                     </>

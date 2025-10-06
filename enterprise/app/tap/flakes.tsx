@@ -23,6 +23,7 @@ interface Props {
   search: URLSearchParams;
   repo: string;
   dark: boolean;
+  onDefaultBranchLoaded?: (defaultBranch: string) => void;
 }
 
 // Exactly one of these three fields will be set.
@@ -123,6 +124,10 @@ export default class FlakesComponent extends React.Component<Props, State> {
       .getGithubRepo(new github.GetGithubRepoRequest({ owner, repo: repo.replace(/\.git$/, "") }))
       .then((response) => {
         this.setState({ repoResponse: response }, () => {
+          // Notify parent component of the default branch
+          if (response.defaultBranch && this.props.onDefaultBranchLoaded) {
+            this.props.onDefaultBranchLoaded(response.defaultBranch);
+          }
           this.fetch();
         });
       })
