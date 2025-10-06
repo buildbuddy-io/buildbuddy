@@ -29,6 +29,7 @@ jobs:
 
       - name: Copy files from OSS to internal
         run: |
+          cp buildbuddy/deps.bzl buildbuddy-internal/deps.bzl
           cp buildbuddy/.bazelversion buildbuddy-internal/.bazelversion
           cp buildbuddy/shared.bazelrc buildbuddy-internal/shared.bazelrc
           mkdir -p buildbuddy-internal/buildpatches/bazel_dep
@@ -39,7 +40,7 @@ jobs:
       - name: Update SHA
         run: |
           cd "$GITHUB_WORKSPACE"/buildbuddy-internal
-          sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" MODULE.bazel
+          sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" WORKSPACE MODULE.bazel
 
       - name: Commit
         env:
@@ -51,6 +52,8 @@ jobs:
           cd "$GITHUB_WORKSPACE"/buildbuddy-internal
           git config --local user.email "$AUTHOR_EMAIL"
           git config --local user.name "$AUTHOR_NAME"
+          git add WORKSPACE
+          git add deps.bzl
           git add .bazelversion
           git add shared.bazelrc
           git add buildpatches
