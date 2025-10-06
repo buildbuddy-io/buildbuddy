@@ -606,7 +606,7 @@ func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAdd
 
 	err = store.TxnCoordinator().RunTxn(ctx, tx)
 	if err != nil {
-		return status.InternalErrorf("failed to run txn to start %d shards with starting range_id=%d, err: %s", len(ranges), pd.GetFirstRangeId(), err)
+		return status.WrapErrorf(err, "failed to run txn to start %d shards with starting range_id=%d", len(ranges), pd.GetFirstRangeId())
 	}
 	return nil
 }
