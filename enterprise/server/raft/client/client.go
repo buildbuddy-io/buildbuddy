@@ -166,9 +166,7 @@ func (e *aggErr) err() error {
 
 	// Build the error to return
 	var err error
-	if e.lastErr == dragonboat.ErrShardNotFound || e.lastErr == dragonboat.ErrRejected || e.lastErr == dragonboat.ErrShardNotReady {
-		err = e.lastErr
-	} else if e.lastErr == e.lastNonTimeoutErr || e.lastNonTimeoutErr == nil {
+	if e.lastErr == e.lastNonTimeoutErr || e.lastNonTimeoutErr == nil {
 		err = fmt.Errorf("last error: %w, errors encountered: %+v", e.lastErr, e.errCount)
 	} else {
 		err = fmt.Errorf("last error: %w, last non-timeout error: %s, errors encountered: %+v", e.lastErr, e.lastNonTimeoutErr, e.errCount)
