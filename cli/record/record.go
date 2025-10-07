@@ -15,17 +15,14 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
 
 var (
@@ -86,39 +83,41 @@ func record(cmdArgs []string) (int, error) {
 		iid = uuid.New()
 	}
 
+	apiKey := ""
+	if key, err := login.GetAPIKey(); err == nil {
+		apiKey = strings.TrimSpace(key)
+	}
+
 	log.Debugf("Starting recording session with invocation ID: %s", iid)
 
 	invocationURL := fmt.Sprintf("%s/invocation/%s", *resultsURL, iid)
 	streamingLog := fmt.Sprintf("\033[32mINFO:\033[0m Streaming results to: \033[4;34m%s\033[0m\n", invocationURL)
 
-	fmt.Fprintf(os.Stderr, "%s\n\n", streamingLog)
+	fmt.Fprintf(os.Stderr, "%s\n", streamingLog)
 
-	publisher, err := NewPublisher(ctx, *besBackend, iid)
+	publisher, err := build_event_publisher.New(*besBackend, apiKey, iid)
 	if err != nil {
 		return 1, status.WrapError(err, "failed to create publisher")
 	}
+	publisher.Start(ctx)
 
-	if err := publisher.Start(ctx); err != nil {
-		return 1, status.WrapError(err, "failed to start publisher")
-	}
-
-	if err := publisher.PublishStarted(cmdArgs); err != nil {
+	if err := publisher.Publish(startedEvent(cmdArgs, iid, time.Now())); err != nil {
 		log.Warnf("Failed to publish started event: %s", err)
 	}
 
-	if err := publisher.PublishStructuredCommandLine(cmdArgs); err != nil {
+	if err := publisher.Publish(structuredCommandLineEvent(cmdArgs)); err != nil {
 		log.Warnf("Failed to publish structured command line: %s", err)
 	}
 
-	if err := publisher.PublishBuildMetadata(); err != nil {
+	if err := publisher.Publish(buildMetadataEvent()); err != nil {
 		log.Warnf("Failed to publish build metadata: %s", err)
 	}
 
-	if err := publisher.PublishWorkspaceStatus(); err != nil {
+	if err := publisher.Publish(workspaceStatusEvent()); err != nil {
 		log.Warnf("Failed to publish workspace status: %s", err)
 	}
 
-	if err := publisher.PublishConfiguration(); err != nil {
+	if err := publisher.Publish(configurationEvent()); err != nil {
 		log.Warnf("Failed to publish configuration: %s", err)
 	}
 
@@ -162,7 +161,7 @@ func record(cmdArgs []string) (int, error) {
 		}
 	}
 
-	if err := publisher.PublishFinished(exitCode); err != nil {
+	if err := publisher.Publish(finishedEvent(exitCode)); err != nil {
 		log.Warnf("Failed to publish finished event: %s", err)
 	}
 
@@ -170,19 +169,19 @@ func record(cmdArgs []string) (int, error) {
 		log.Warnf("Failed to finish publishing events: %s", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "\n%s\n", streamingLog)
+	fmt.Fprintf(os.Stderr, "\n%s", streamingLog)
 
 	return exitCode, nil
 }
 
-func streamOutput(src io.Reader, dst io.Writer, publisher *Publisher, streamType bepb.ConsoleOutputStream) {
+func streamOutput(src io.Reader, dst io.Writer, publisher *build_event_publisher.Publisher, streamType bepb.ConsoleOutputStream) {
 	scanner := bufio.NewScanner(src)
 	scanner.Buffer(nil, 1024*1024)
 
 	for scanner.Scan() {
 		line := scanner.Text()
 		fmt.Fprintln(dst, line)
-		if err := publisher.PublishConsoleOutput(line+"\n", streamType); err != nil {
+		if err := publisher.Publish(consoleOutputEvent(line+"\n", streamType)); err != nil {
 			log.Debugf("Failed to publish console output: %s", err)
 		}
 	}
@@ -191,126 +190,8 @@ func streamOutput(src io.Reader, dst io.Writer, publisher *Publisher, streamType
 	}
 }
 
-type Publisher struct {
-	streamID   *bepb.StreamId
-	besBackend string
-	ctx        context.Context
-	startTime  time.Time
-
-	mu             sync.Mutex
-	sequenceNumber int64
-	stream         pepb.PublishBuildEvent_PublishBuildToolEventStreamClient
-	streamErr      error
-	finished       bool
-	recvDone       chan error
-}
-
-func NewPublisher(ctx context.Context, besBackend, invocationID string) (*Publisher, error) {
-	buildID := uuid.New()
-	streamID := &bepb.StreamId{
-		InvocationId: invocationID,
-		BuildId:      buildID,
-	}
-
-	return &Publisher{
-		streamID:       streamID,
-		besBackend:     besBackend,
-		ctx:            ctx,
-		sequenceNumber: 0,
-		startTime:      time.Now(),
-		recvDone:       make(chan error, 1),
-	}, nil
-}
-
-func (p *Publisher) Start(ctx context.Context) error {
-	apiKey := ""
-	if key, err := login.GetAPIKey(); err == nil {
-		apiKey = strings.TrimSpace(key)
-	}
-
-	conn, err := grpc_client.DialSimple(p.besBackend)
-	if err != nil {
-		return status.WrapError(err, "error dialing bes_backend")
-	}
-
-	besClient := pepb.NewPublishBuildEventClient(conn)
-
-	if apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
-	}
-
-	stream, err := besClient.PublishBuildToolEventStream(ctx)
-	if err != nil {
-		return status.WrapError(err, "error creating build event stream")
-	}
-
-	p.stream = stream
-
-	// Start receiving responses in the background
-	go func() {
-		defer close(p.recvDone)
-		for {
-			_, err := stream.Recv()
-			if err == io.EOF {
-				return
-			}
-			if err != nil {
-				p.mu.Lock()
-				p.streamErr = err
-				p.mu.Unlock()
-				p.recvDone <- err
-				return
-			}
-		}
-	}()
-
-	return nil
-}
-
-func (p *Publisher) publish(bazelEvent *bespb.BuildEvent) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.finished {
-		return status.FailedPreconditionError("publisher already finished")
-	}
-
-	if p.streamErr != nil {
-		return p.streamErr
-	}
-
-	p.sequenceNumber++
-
-	bazelEventAny, err := anypb.New(bazelEvent)
-	if err != nil {
-		return status.WrapError(err, "failed to marshal bazel event")
-	}
-
-	event := &bepb.BuildEvent{
-		EventTime: timestamppb.Now(),
-		Event:     &bepb.BuildEvent_BazelEvent{BazelEvent: bazelEventAny},
-	}
-
-	obe := &pepb.OrderedBuildEvent{
-		StreamId:       p.streamID,
-		SequenceNumber: p.sequenceNumber,
-		Event:          event,
-	}
-
-	req := &pepb.PublishBuildToolEventStreamRequest{
-		OrderedBuildEvent: obe,
-	}
-
-	if err := p.stream.Send(req); err != nil {
-		p.streamErr = err
-		return status.WrapError(err, "failed to send event")
-	}
-
-	return nil
-}
-
-func (p *Publisher) PublishStarted(cmdArgs []string) error {
-	bazelEvent := &bespb.BuildEvent{
+func startedEvent(cmdArgs []string, invocationID string, startTime time.Time) *bespb.BuildEvent {
+	return &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{
 			Id: &bespb.BuildEventId_Started{},
 		},
@@ -327,18 +208,16 @@ func (p *Publisher) PublishStarted(cmdArgs []string) error {
 		},
 		Payload: &bespb.BuildEvent_Started{
 			Started: &bespb.BuildStarted{
-				Uuid:               p.streamID.InvocationId,
-				StartTime:          timestamppb.New(p.startTime),
+				Uuid:               invocationID,
+				StartTime:          timestamppb.New(startTime),
 				Command:            strings.Join(cmdArgs[:min(2, len(cmdArgs))], " "),
 				OptionsDescription: strings.Join(cmdArgs, " "),
 			},
 		},
 	}
-
-	return p.publish(bazelEvent)
 }
 
-func (p *Publisher) PublishStructuredCommandLine(cmdArgs []string) error {
+func structuredCommandLineEvent(cmdArgs []string) *bespb.BuildEvent {
 	sections := []*clpb.CommandLineSection{
 		{
 			SectionLabel: "command",
@@ -366,7 +245,7 @@ func (p *Publisher) PublishStructuredCommandLine(cmdArgs []string) error {
 		Sections:         sections,
 	}
 
-	bazelEvent := &bespb.BuildEvent{
+	return &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{
 			Id: &bespb.BuildEventId_StructuredCommandLine{
 				StructuredCommandLine: &bespb.BuildEventId_StructuredCommandLineId{
@@ -378,12 +257,10 @@ func (p *Publisher) PublishStructuredCommandLine(cmdArgs []string) error {
 			StructuredCommandLine: commandLine,
 		},
 	}
-
-	return p.publish(bazelEvent)
 }
 
-func (p *Publisher) PublishBuildMetadata() error {
-	bazelEvent := &bespb.BuildEvent{
+func buildMetadataEvent() *bespb.BuildEvent {
+	return &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{
 			Id: &bespb.BuildEventId_BuildMetadata{},
 		},
@@ -395,10 +272,9 @@ func (p *Publisher) PublishBuildMetadata() error {
 			},
 		},
 	}
-	return p.publish(bazelEvent)
 }
 
-func (p *Publisher) PublishWorkspaceStatus() error {
+func workspaceStatusEvent() *bespb.BuildEvent {
 	user := os.Getenv("USER")
 	if user == "" {
 		user = "unknown"
@@ -414,7 +290,7 @@ func (p *Publisher) PublishWorkspaceStatus() error {
 		cwd = "unknown"
 	}
 
-	bazelEvent := &bespb.BuildEvent{
+	return &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{
 			Id: &bespb.BuildEventId_WorkspaceStatus{},
 		},
@@ -429,11 +305,10 @@ func (p *Publisher) PublishWorkspaceStatus() error {
 		},
 	}
 
-	return p.publish(bazelEvent)
 }
 
-func (p *Publisher) PublishConfiguration() error {
-	bazelEvent := &bespb.BuildEvent{
+func configurationEvent() *bespb.BuildEvent {
+	return &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{
 			Id: &bespb.BuildEventId_Configuration{
 				Configuration: &bespb.BuildEventId_ConfigurationId{
@@ -453,16 +328,15 @@ func (p *Publisher) PublishConfiguration() error {
 		},
 	}
 
-	return p.publish(bazelEvent)
 }
 
-func (p *Publisher) PublishFinished(exitCode int) error {
+func finishedEvent(exitCode int) *bespb.BuildEvent {
 	exitCodeName := "SUCCESS"
 	if exitCode != 0 {
 		exitCodeName = "FAILED"
 	}
 
-	bazelEvent := &bespb.BuildEvent{
+	return &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{
 			Id: &bespb.BuildEventId_BuildFinished{},
 		},
@@ -481,10 +355,9 @@ func (p *Publisher) PublishFinished(exitCode int) error {
 		},
 	}
 
-	return p.publish(bazelEvent)
 }
 
-func (p *Publisher) PublishConsoleOutput(output string, streamType bepb.ConsoleOutputStream) error {
+func consoleOutputEvent(output string, streamType bepb.ConsoleOutputStream) *bespb.BuildEvent {
 	progress := &bespb.Progress{}
 	if streamType == bepb.ConsoleOutputStream_STDOUT {
 		progress.Stdout = output
@@ -492,11 +365,11 @@ func (p *Publisher) PublishConsoleOutput(output string, streamType bepb.ConsoleO
 		progress.Stderr = output
 	}
 
-	bazelEvent := &bespb.BuildEvent{
+	return &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{
 			Id: &bespb.BuildEventId_Progress{
 				Progress: &bespb.BuildEventId_ProgressId{
-					OpaqueCount: int32(p.sequenceNumber),
+					OpaqueCount: int32(time.Now().UnixNano()),
 				},
 			},
 		},
@@ -504,21 +377,4 @@ func (p *Publisher) PublishConsoleOutput(output string, streamType bepb.ConsoleO
 			Progress: progress,
 		},
 	}
-	return p.publish(bazelEvent)
-}
-
-func (p *Publisher) Finish() error {
-	p.mu.Lock()
-	p.finished = true
-	p.mu.Unlock()
-
-	if err := p.stream.CloseSend(); err != nil {
-		return status.WrapError(err, "failed to close stream")
-	}
-
-	if err := <-p.recvDone; err != nil {
-		return status.WrapError(err, "failed to receive all acknowledgements")
-	}
-
-	return nil
 }
