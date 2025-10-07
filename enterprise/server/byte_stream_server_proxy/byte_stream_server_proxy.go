@@ -23,10 +23,11 @@ import (
 )
 
 type ByteStreamServerProxy struct {
-	atimeUpdater  interfaces.AtimeUpdater
-	authenticator interfaces.Authenticator
-	local         interfaces.ByteStreamServer
-	remote        bspb.ByteStreamClient
+	supportsEncryption bool
+	atimeUpdater       interfaces.AtimeUpdater
+	authenticator      interfaces.Authenticator
+	local              interfaces.ByteStreamServer
+	remote             bspb.ByteStreamClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -56,10 +57,11 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		return nil, fmt.Errorf("A local ByteStreamServer is required to enable ByteStreamServerProxy")
 	}
 	return &ByteStreamServerProxy{
-		atimeUpdater:  atimeUpdater,
-		authenticator: authenticator,
-		local:         local,
-		remote:        remote,
+		supportsEncryption: env.GetCrypter() != nil,
+		atimeUpdater:       atimeUpdater,
+		authenticator:      authenticator,
+		local:              local,
+		remote:             remote,
 	}, nil
 }
 
@@ -90,7 +92,7 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 }
 
 func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream) (string, error) {
-	if authutil.EncryptionEnabled(ctx, s.authenticator) {
+	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption {
 		return metrics.UncacheableStatusLabel, s.readRemoteOnly(ctx, req, stream)
 	}
 
@@ -287,7 +289,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	meteredStream := &meteredServerSideClientStream{ByteStream_WriteServer: stream}
 	stream = meteredStream
 	var err error
-	if authutil.EncryptionEnabled(ctx, s.authenticator) {
+	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption {
 		err = s.writeRemoteOnly(ctx, stream)
 	} else if proxy_util.SkipRemote(ctx) {
 		err = s.writeLocalOnly(stream)
