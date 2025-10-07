@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//enterprise/server/backends/pebble_cache",
-        "//enterprise/server/build_event_publisher",
         "//enterprise/server/clientidentity",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
@@ -18,6 +17,7 @@ go_library(
         "//proto:command_line_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
+        "//server/build_event_publisher",
         "//server/nullauth",
         "//server/real_environment",
         "//server/remote_cache/action_cache_server",
