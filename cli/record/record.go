@@ -8,10 +8,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
-	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
@@ -22,8 +22,8 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
@@ -288,7 +288,7 @@ func (p *Publisher) publish(bazelEvent *bespb.BuildEvent) error {
 
 	event := &bepb.BuildEvent{
 		EventTime: timestamppb.Now(),
-		Event: &bepb.BuildEvent_BazelEvent{BazelEvent: bazelEventAny},
+		Event:     &bepb.BuildEvent_BazelEvent{BazelEvent: bazelEventAny},
 	}
 
 	obe := &pepb.OrderedBuildEvent{
@@ -379,7 +379,6 @@ func (p *Publisher) PublishStructuredCommandLine(cmdArgs []string) error {
 		},
 	}
 
-
 	return p.publish(bazelEvent)
 }
 
@@ -429,7 +428,7 @@ func (p *Publisher) PublishWorkspaceStatus() error {
 			},
 		},
 	}
-	
+
 	return p.publish(bazelEvent)
 }
 
