@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"runtime"
 
 	pkgerrors "github.com/pkg/errors"
@@ -346,15 +345,12 @@ func Message(err error) string {
 
 	var statusErr *statusError
 	if errors.As(err, &statusErr) {
-		log.Printf("returned statusErr.err.Error()")
 		return statusErr.err.Error()
 	}
 
 	if s, ok := status.FromError(err); ok {
-		log.Printf("returned s.Message()")
 		return s.Message()
 	}
-	log.Printf("returned err.Error()")
 	return err.Error()
 }
 
