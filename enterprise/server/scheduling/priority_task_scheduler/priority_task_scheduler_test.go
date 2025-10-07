@@ -360,7 +360,12 @@ func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 			// Inspect the lease and make sure it was closed with a retry.
 			lease := <-leaser.GrantedLeases
 			retry, err := lease.WaitClosed()
-			require.Equal(t, test.expectedLeaseCloseErr, err, "unexpected lease close error")
+			if test.expectedLeaseCloseErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.Equal(t, test.expectedLeaseCloseErr.Error(), err.Error(), "unexpected lease close error")
+			}
 			require.Equal(t, test.expectedLeaseCloseRetry, retry, "unexpected lease retry value")
 		})
 	}
