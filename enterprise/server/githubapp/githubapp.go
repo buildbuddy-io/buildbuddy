@@ -271,7 +271,13 @@ func (s *GitHubAppService) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetL
 	`, u.GetGroupID())
 	res := &ghpb.GetLinkedReposResponse{}
 	err = db.ScanEach(rq, func(ctx context.Context, row *tables.GitRepository) error {
+		// TODO(Maggie): Clean up after BE change is deployed
 		res.RepoUrls = append(res.RepoUrls, row.RepoURL)
+
+		res.Repos = append(res.Repos, &ghpb.GitRepository{
+			RepoUrl:                  row.RepoURL,
+			UseDefaultWorkflowConfig: row.UseDefaultWorkflowConfig,
+		})
 		return nil
 	})
 	if err != nil {
@@ -860,6 +866,31 @@ func (a *GitHubApp) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRe
 		return nil, status.NotFoundError("repo not found")
 	}
 	return &ghpb.UnlinkRepoResponse{}, nil
+}
+
+func (a *GitHubApp) UpdateRepoSettings(ctx context.Context, req *ghpb.UpdateRepoSettingsRequest) (*ghpb.UpdateRepoSettingsResponse, error) {
+	norm, err := gitutil.NormalizeRepoURL(req.GetRepoUrl())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("failed to parse repo URL: %s", err)
+	}
+	normalizedURL := norm.String()
+	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := a.env.GetDBHandle().NewQuery(ctx, "githubapp_update_repo_settings").Raw(`
+		UPDATE "GitRepositories"
+		SET use_default_workflow_config = ?
+		WHERE group_id = ?
+		AND repo_url = ?
+	`, req.GetUseDefaultWorkflowConfig(), u.GetGroupID(), normalizedURL).Exec()
+	if result.Error != nil {
+		return nil, status.InternalErrorf("failed to update repo settings: %s", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, status.NotFoundError("repo not found")
+	}
+	return &ghpb.UpdateRepoSettingsResponse{}, nil
 }
 
 func (a *GitHubApp) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error) {

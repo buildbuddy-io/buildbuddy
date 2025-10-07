@@ -682,6 +682,7 @@ type GitHubApp interface {
 
 	LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.LinkRepoResponse, error)
 	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
+	UpdateRepoSettings(context.Context, *ghpb.UpdateRepoSettingsRequest) (*ghpb.UpdateRepoSettingsResponse, error)
 
 	GetAccessibleGitHubRepos(context.Context, *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error)
 

@@ -182,10 +182,24 @@ message GetLinkedReposRequest {
   context.RequestContext request_context = 1;
 }
 
+message GitRepository {
+  string repo_url = 1;
+
+  // Whether to use the default workflow config if buildbuddy.yaml is missing.
+  // If enabled, workflows will automatically start running for a git repo when linked,
+  // even if buildbuddy.yaml is missing from the repo. If disabled, workflows will only run
+  // when buildbuddy.yaml is present in the repo.
+  bool use_default_workflow_config = 2;
+}
+
 message GetLinkedReposResponse {
   context.ResponseContext response_context = 1;
 
-  repeated string repo_urls = 2;
+  repeated GitRepository repos = 3;
+
+  // DEPRECATED: Use repos instead.
+  repeated string repo_urls = 2 [deprecated = true];
+
 }
 
 // A request to link a repo to the authenticated org.
@@ -215,6 +229,18 @@ message UnlinkRepoRequest {
 }
 
 message UnlinkRepoResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message UpdateRepoSettingsRequest {
+  context.RequestContext request_context = 1;
+
+  string repo_url = 2;
+
+  bool use_default_workflow_config = 3;
+}
+
+message UpdateRepoSettingsResponse {
   context.ResponseContext response_context = 1;
 }
 
