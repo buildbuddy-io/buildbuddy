@@ -17936,7 +17936,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by(sql_query_templte) (rate(buildbuddy_clickhouse_error_count{region=\"${region}\"}[${window}]))\n/ (sum by(sql_query_template) (rate(buildbuddy_clickhouse_query_count{region=\"${region}\"}[${window}])))",
+              "expr": "sum by(sql_query_template) (rate(buildbuddy_clickhouse_error_count{region=\"${region}\"}[${window}]))\n/ (sum by(sql_query_template) (rate(buildbuddy_clickhouse_query_count{region=\"${region}\"}[${window}])))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
