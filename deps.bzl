@@ -456,9 +456,9 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     http_archive(
         name = "cloudprober",
         build_file_content = "exports_files([\"cloudprober\"])",
-        sha256 = "0a824a6e224d9810514f4a2f4a13f09488672ad483bb0e978c16d8a6b3372625",
-        strip_prefix = "cloudprober-v0.11.2-ubuntu-x86_64",
-        urls = ["https://github.com/google/cloudprober/releases/download/v0.11.2/cloudprober-v0.11.2-ubuntu-x86_64.zip"],
+        sha256 = "84db0c196fc8581ff4f6c9339036967bcf9b3a7cbe4d8d753067f474da9ca167",
+        strip_prefix = "cloudprober-v0.11.9-linux-x86_64",
+        urls = ["https://github.com/cloudprober/cloudprober/releases/download/v0.11.9/cloudprober-v0.11.9-linux-x86_64.zip"],
     )
 
     http_file(
