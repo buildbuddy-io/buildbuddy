@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
+	"github.com/buildbuddy-io/buildbuddy/cli/record"
 	"github.com/buildbuddy-io/buildbuddy/cli/remote_download"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/search"
@@ -87,6 +88,11 @@ func register() {
 			Name:    "print",
 			Help:    "Displays various log file types written by bazel.",
 			Handler: printlog.HandlePrint,
+		},
+		{
+			Name:    "record",
+			Help:    "Records command output and streams it to BuildBuddy.",
+			Handler: record.HandleRecord,
 		},
 		{
 			Name:    "remote",

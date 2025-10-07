@@ -1,11 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
-package(default_visibility = ["//enterprise:__subpackages__"])
-
 go_library(
     name = "build_event_publisher",
     srcs = ["build_event_publisher.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_publisher",
+    visibility = ["//visibility:public"],
     deps = [
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
