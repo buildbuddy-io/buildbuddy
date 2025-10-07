@@ -146,9 +146,10 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 		stderr := io.MultiWriter(writers...)
 
 		stdio := &interfaces.Stdio{
-			Stdin:  stdinReader,
-			Stdout: stdoutWriter,
-			Stderr: stderr,
+			Stdin:               stdinReader,
+			Stdout:              stdoutWriter,
+			Stderr:              stderr,
+			DisableOutputLimits: true,
 		}
 		res := w.container.Exec(ctx, command, stdio)
 		log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, args.FlagFiles, args.WorkerArgs)
