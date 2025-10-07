@@ -85,8 +85,8 @@ type FakeGitHubStatusService struct {
 	StatusReportingEnabled bool
 }
 
-func (s *FakeGitHubStatusService) GetStatusClient(accessToken string) interfaces.GitHubStatusClient {
-	client := &FakeGitHubStatusClient{AccessToken: accessToken, StatusReportingEnabled: s.StatusReportingEnabled}
+func (s *FakeGitHubStatusService) GetStatusClient() interfaces.GitHubStatusClient {
+	client := &FakeGitHubStatusClient{StatusReportingEnabled: s.StatusReportingEnabled}
 	s.Clients = append(s.Clients, client)
 	return client
 }
@@ -1463,7 +1463,7 @@ func TestBuildStatusReporting(t *testing.T) {
 
 			// Should not have reported any statuses yet, since we haven't
 			// handled any metadata events.
-			require.Empty(t, fakeGH.Clients)
+			require.True(t, fakeGH.HasNoStatuses())
 
 			// Handle *all but the last* metadata event - no statuses should be
 			// reported yet. We should only report a status once *all* of the
@@ -1474,7 +1474,7 @@ func TestBuildStatusReporting(t *testing.T) {
 				md = md[1:]
 				err := channel.HandleEvent(seq.NextRequest(event))
 				require.NoError(t, err)
-				require.Empty(t, fakeGH.Clients)
+				require.True(t, fakeGH.HasNoStatuses())
 			}
 
 			// Now handle the last metadata event - should report a status,
@@ -1764,7 +1764,6 @@ func TestBuildStatusReporting_LegacyMethods(t *testing.T) {
 			// since all metadata events have been handled.
 			err = channel.HandleEvent(seq.NextRequest(md[0]))
 			require.NoError(t, err)
-			require.Equal(t, 1, len(fakeGH.Clients))
 			client := fakeGH.GetCreatedClient(t)
 			require.Equal(t, []*FakeGitHubStatus{
 				{

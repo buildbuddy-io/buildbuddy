@@ -247,7 +247,7 @@ type BuildEventHandler interface {
 }
 
 type GitHubStatusService interface {
-	GetStatusClient(accessToken string) GitHubStatusClient
+	GetStatusClient() GitHubStatusClient
 }
 
 type GitHubStatusClient interface {

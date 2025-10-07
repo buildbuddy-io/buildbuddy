@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
@@ -46,7 +45,7 @@ type GroupStatus struct {
 }
 
 func NewBuildStatusReporter(env environment.Env, buildEventAccumulator accumulator.Accumulator) *BuildStatusReporter {
-	return &BuildStatusReporter{
+	r := &BuildStatusReporter{
 		baseBBURL:                 build_buddy_url.String(),
 		env:                       env,
 		shouldReportStatusPerTest: *statusPerTestTarget,
@@ -54,33 +53,19 @@ func NewBuildStatusReporter(env environment.Env, buildEventAccumulator accumulat
 		payloads:                  make([]*github.GithubStatusPayload, 0),
 		inFlight:                  make(map[string]bool),
 	}
+
+	if env.GetGitHubStatusService() != nil {
+		r.githubClient = env.GetGitHubStatusService().GetStatusClient()
+	}
+	return r
 }
 
 func (r *BuildStatusReporter) SetBaseBuildBuddyURL(url string) {
 	r.baseBBURL = url
 }
 
-func (r *BuildStatusReporter) initGHClient(ctx context.Context) interfaces.GitHubStatusClient {
-	accessToken := ""
-	// TODO(Maggie): Remove this - unneeded
-	if workflowID := r.buildEventAccumulator.WorkflowID(); workflowID != "" {
-		if dbh := r.env.GetDBHandle(); dbh != nil {
-			workflow := &tables.Workflow{}
-			if err := dbh.NewQuery(ctx, "build_status_reporter_get_workflow").Raw(
-				`SELECT * from "Workflows" WHERE workflow_id = ?`, workflowID).Take(workflow); err == nil {
-				accessToken = workflow.AccessToken
-			}
-		}
-	}
-	return r.env.GetGitHubStatusService().GetStatusClient(accessToken)
-}
-
 func (r *BuildStatusReporter) isStatusReportingEnabled(ctx context.Context, repoURL string) bool {
 	r.once.Do(func() {
-		// TODO: Move initialization into creation of reporter
-		if r.githubClient == nil {
-			r.githubClient = r.initGHClient(ctx)
-		}
 		enabled, err := r.githubClient.IsStatusReportingEnabled(ctx, repoURL)
 		if err != nil {
 			log.CtxInfof(ctx, "Failed to check if GitHub status reporting is enabled: %s", err)
@@ -162,10 +147,6 @@ func (r *BuildStatusReporter) flushPayloadsIfMetadataLoaded(ctx context.Context)
 		r.buildEventAccumulator.DisableCommitStatusReporting() ||
 		!r.isStatusReportingEnabled(ctx, r.buildEventAccumulator.Invocation().GetRepoUrl()) {
 		return
-	}
-
-	if r.githubClient == nil {
-		r.githubClient = r.initGHClient(ctx)
 	}
 
 	for _, payload := range r.payloads {
