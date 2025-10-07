@@ -94,7 +94,7 @@ func record(cmdArgs []string) (int, error) {
 	invocationURL := fmt.Sprintf("%s/invocation/%s", *resultsURL, iid)
 	streamingLog := fmt.Sprintf(terminal.Esc(32) + "INFO:" + terminal.Esc() + fmt.Sprintf(" Streaming results to: %s", terminal.Esc(4, 34)+invocationURL+terminal.Esc()))
 
-	fmt.Fprintf(os.Stderr, "%s\n", streamingLog)
+	fmt.Fprintln(os.Stderr, streamingLog)
 
 	publisher, err := build_event_publisher.New(*besBackend, apiKey, iid)
 	if err != nil {
@@ -170,7 +170,7 @@ func record(cmdArgs []string) (int, error) {
 		log.Warnf("Failed to finish publishing events: %s", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "%s", streamingLog)
+	fmt.Fprintln(os.Stderr, streamingLog)
 
 	return exitCode, nil
 }
