@@ -943,7 +943,7 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 			})
 		}
 
-		if isolation == platform.PodmanContainerType && !*podmanWarmupDefaultImages {
+		if (isolation == platform.PodmanContainerType || isolation == platform.OCIContainerType) && !*podmanWarmupDefaultImages {
 			continue
 		}
 
