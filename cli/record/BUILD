@@ -7,6 +7,7 @@ go_library(
     deps = [
         "//cli/log",
         "//cli/login",
+        "//cli/terminal",
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
         "//proto:command_line_go_proto",

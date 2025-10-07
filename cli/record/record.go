@@ -15,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -91,7 +92,7 @@ func record(cmdArgs []string) (int, error) {
 	log.Debugf("Starting recording session with invocation ID: %s", iid)
 
 	invocationURL := fmt.Sprintf("%s/invocation/%s", *resultsURL, iid)
-	streamingLog := fmt.Sprintf("\033[32mINFO:\033[0m Streaming results to: \033[4;34m%s\033[0m\n", invocationURL)
+	streamingLog := fmt.Sprintf(terminal.Esc(32) + "INFO:" + terminal.Esc() + fmt.Sprintf(" Streaming results to: %s", terminal.Esc(4, 34)+invocationURL+terminal.Esc()))
 
 	fmt.Fprintf(os.Stderr, "%s\n", streamingLog)
 
@@ -169,7 +170,7 @@ func record(cmdArgs []string) (int, error) {
 		log.Warnf("Failed to finish publishing events: %s", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "\n%s", streamingLog)
+	fmt.Fprintf(os.Stderr, "%s", streamingLog)
 
 	return exitCode, nil
 }
