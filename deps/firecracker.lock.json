@@ -1,0 +1,43 @@
+{
+  "$schema": "https://github.com/theoremlp/rules_multitool/lockfile.schema.json",
+  "com_github_firecracker_microvm_firecracker": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.11.0/firecracker-v1.11.0-x86_64.tgz",
+        "sha256": "38ad6fb34273b2fa616956237b15ea6e064cf21336b0d990d5de347b35b9328b",
+        "os": "linux",
+        "cpu": "x86_64",
+        "file": "release-v1.11.0-x86_64/firecracker-v1.11.0-x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.11.0/firecracker-v1.11.0-aarch64.tgz",
+        "sha256": "4b98f7cd669a772716fd1bef59c75188ba05a683bc0759ee4169eb351274fcb0",
+        "os": "linux",
+        "cpu": "arm64",
+        "file": "release-v1.11.0-aarch64/firecracker-v1.11.0-aarch64"
+      }
+    ]
+  },
+  "com_github_firecracker_microvm_jailer": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.11.0/firecracker-v1.11.0-x86_64.tgz",
+        "sha256": "38ad6fb34273b2fa616956237b15ea6e064cf21336b0d990d5de347b35b9328b",
+        "os": "linux",
+        "cpu": "x86_64",
+        "file": "release-v1.11.0-x86_64/jailer-v1.11.0-x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.11.0/firecracker-v1.11.0-aarch64.tgz",
+        "sha256": "4b98f7cd669a772716fd1bef59c75188ba05a683bc0759ee4169eb351274fcb0",
+        "os": "linux",
+        "cpu": "arm64",
+        "file": "release-v1.11.0-aarch64/jailer-v1.11.0-aarch64"
+      }
+    ]
+  }
+}

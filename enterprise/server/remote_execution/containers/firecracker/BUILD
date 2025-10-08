@@ -8,32 +8,26 @@ go_library(
         "containeropts.go",
         "firecracker.go",
     ],
-    data = select({
-        "//platforms/configs:linux_x86_64": [
-            "//enterprise/vmsupport/bin:initrd.cpio",
-            "//enterprise/vmsupport/bin:vmlinux",
-            "//enterprise/vmsupport/bin:vmlinux_6.1",
-        ],
-        "//platforms/configs:linux_arm64": [
-            "//enterprise/vmsupport/bin:initrd.cpio",
-            "//enterprise/vmsupport/bin:vmlinux",
-        ],
+    data = [
+        "//enterprise/vmsupport/bin:initrd.cpio",
+        "//enterprise/vmsupport/bin:vmlinux",
+    ] + select({
+        "//platforms/configs:linux_x86_64": ["//enterprise/vmsupport/bin:vmlinux_6.1"],
+        "//platforms/configs:linux_arm64": [],
     }),
     embedsrcs = ["guest_api_hash.sha256"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker",
     target_compatible_with = [
         "@platforms//os:linux",
     ],
-    x_defs = select({
+    x_defs = {
+        "initrdRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:initrd.cpio)",
+        "vmlinuxRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux)",
+    } | select({
         "//platforms/configs:linux_x86_64": {
-            "initrdRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:initrd.cpio)",
-            "vmlinuxRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux)",
             "vmlinux6_1RunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux_6.1)",
         },
-        "//platforms/configs:linux_arm64": {
-            "initrdRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:initrd.cpio)",
-            "vmlinuxRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux)",
-        },
+        "//platforms/configs:linux_arm64": {},
     }),
     deps = [
         "//enterprise/server/remote_execution/block_io",

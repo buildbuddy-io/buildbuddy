@@ -1,6 +1,9 @@
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
+def _bazel_binary_label(version):
+    return 
+
 def _extract_bazel_installation_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.attr.out_dir)
     ctx.actions.run_shell(
@@ -77,12 +80,7 @@ def bazel_pkg_tar(name, versions = [], **kwargs):
     for version in versions:
         copy_file(
             name = "bazel-{}_crossplatform".format(version),
-            src = select({
-                "//platforms/configs:linux_x86_64": "@io_bazel_bazel-{}-linux-x86_64//file:downloaded".format(version),
-                "//platforms/configs:linux_arm64": "@io_bazel_bazel-{}-linux-arm64//file:downloaded".format(version),
-                "//platforms/configs:macos_x86_64": "@io_bazel_bazel-{}-darwin-x86_64//file:downloaded".format(version),
-                "//platforms/configs:macos_arm64": "@io_bazel_bazel-{}-darwin-arm64//file:downloaded".format(version),
-            }),
+            src = "@bazel_bins//tools/io_bazel_bazel-{version}".format(version = version.replace(".", "_")),
             out = "bazel-{}".format(version),
             allow_symlink = True,
             is_executable = True,

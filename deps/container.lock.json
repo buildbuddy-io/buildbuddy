@@ -1,0 +1,205 @@
+{
+  "$schema": "https://github.com/theoremlp/rules_multitool/lockfile.schema.json",
+  "com_github_buildbuddy_io_podman_static_podman": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/buildbuddy-io/podman-static/releases/download/buildbuddy-v5.5.0/podman-linux-amd64.tar.gz",
+        "sha256": "8ce959cd2b0ea68ae8ac7ccbb181cad59504086d54d4c9521954ee49dae013eb",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "file",
+        "url": "https://github.com/buildbuddy-io/podman-static/releases/download/buildbuddy-v5.5.0/podman-linux-arm64.tar.gz",
+        "sha256": "ef1e84ab80ee5d78d4d2e59e128ff963038f39e1e4259a83e08d7c8f85faf90d",
+        "os": "linux",
+        "cpu": "arm64"
+      }
+    ]
+  },
+  "com_github_containers_crun_crun": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/containers/crun/releases/download/1.15/crun-1.15-linux-amd64-disable-systemd",
+        "sha256": "03fd3ec6a7799183eaeefba5ebd3f66f9b5fb41a5b080c196285879631ff5dc1",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "file",
+        "url": "https://github.com/containers/crun/releases/download/1.15/crun-1.15-linux-arm64-disable-systemd",
+        "sha256": "1bd840c95e9ae8edc25654dcf2481309724b9ff18ce95dbcd2535da9b026a47d",
+        "os": "linux",
+        "cpu": "arm64"
+      }
+    ]
+  },
+  "com_github_opencontainers_runc_runc": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/opencontainers/runc/releases/download/v1.3.0/runc.amd64",
+        "sha256": "028986516ab5646370edce981df2d8e8a8d12188deaf837142a02097000ae2f2",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "file",
+        "url": "https://github.com/opencontainers/runc/releases/download/v1.3.0/runc.arm64",
+        "sha256": "85c5e4e4f72e442c8c17bac07527cd4f961ee48e4f2b71797f7533c94f4a52b9",
+        "os": "linux",
+        "cpu": "arm64"
+      }
+    ]
+  },
+  "com_github_rootless_containers_rootlesskit": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/rootless-containers/rootlesskit/releases/download/v2.3.5/rootlesskit-x86_64.tar.gz",
+        "sha256": "118208e25becd144ee7317c172fc9decce7b16174d5c1bbf80f1d1d0eacc6b5f",
+        "os": "linux",
+        "cpu": "x86_64",
+        "file": "rootlesskit"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/rootless-containers/rootlesskit/releases/download/v2.3.5/rootlesskit-aarch64.tar.gz",
+        "sha256": "478c14c3195bf989cd9a8e6bd129d227d5d88f1c11418967ffdc84a0072cc7a2",
+        "os": "linux",
+        "cpu": "arm64",
+        "file": "rootlesskit"
+      }
+    ]
+  },
+  "com_github_containerd_containerd_containerd": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/containerd/containerd/releases/download/v2.1.1/containerd-2.1.1-linux-amd64.tar.gz",
+        "sha256": "918e88fd393c28c89424e6535df0546ca36c1dfa7d8a5d685dee70b449380a9b",
+        "os": "linux",
+        "cpu": "x86_64",
+        "file": "bin/containerd"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/containerd/containerd/releases/download/v2.1.1/containerd-2.1.1-linux-arm64.tar.gz",
+        "sha256": "4e3c8c0c2e61438bb393a9ea6bb94f8f56b559ec3243d7b1a2943117bca4dcb4",
+        "os": "linux",
+        "cpu": "arm64",
+        "file": "bin/containerd"
+      }
+    ]
+  },
+  "com_github_containerd_containerd_containerd_shim_runc_v2": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/containerd/containerd/releases/download/v2.1.1/containerd-2.1.1-linux-amd64.tar.gz",
+        "sha256": "918e88fd393c28c89424e6535df0546ca36c1dfa7d8a5d685dee70b449380a9b",
+        "os": "linux",
+        "cpu": "x86_64",
+        "file": "bin/containerd-shim-runc-v2"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/containerd/containerd/releases/download/v2.1.1/containerd-2.1.1-linux-arm64.tar.gz",
+        "sha256": "4e3c8c0c2e61438bb393a9ea6bb94f8f56b559ec3243d7b1a2943117bca4dcb4",
+        "os": "linux",
+        "cpu": "arm64",
+        "file": "bin/containerd-shim-runc-v2"
+      }
+    ]
+  },
+  "com_github_containerd_containerd_ctr": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/containerd/containerd/releases/download/v2.1.1/containerd-2.1.1-linux-amd64.tar.gz",
+        "sha256": "918e88fd393c28c89424e6535df0546ca36c1dfa7d8a5d685dee70b449380a9b",
+        "os": "linux",
+        "cpu": "x86_64",
+        "file": "bin/ctr"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/containerd/containerd/releases/download/v2.1.1/containerd-2.1.1-linux-arm64.tar.gz",
+        "sha256": "4e3c8c0c2e61438bb393a9ea6bb94f8f56b559ec3243d7b1a2943117bca4dcb4",
+        "os": "linux",
+        "cpu": "arm64",
+        "file": "bin/ctr"
+      }
+    ]
+  },
+  "com_github_containerd_stargz_snapshotter_stargz_store": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/containerd/stargz-snapshotter/releases/download/v0.11.4/stargz-snapshotter-v0.11.4-linux-amd64.tar.gz",
+        "sha256": "56933aa04a64d3bf6991f9b1be127ac9896fe597d2fba194c67c2dd4368bbae3",
+        "os": "linux",
+        "cpu": "x86_64",
+        "file": "stargz-store"
+      }
+    ]
+  },
+  "com_github_krallin_tini_tini": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/krallin/tini/releases/download/v0.19.0/tini-amd64",
+        "sha256": "93dcc18adc78c65a028a84799ecf8ad40c936fdfc5f2a57b1acda5a8117fa82c",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "file",
+        "url": "https://github.com/krallin/tini/releases/download/v0.19.0/tini-arm64",
+        "sha256": "07952557df20bfd2a95f9bef198b445e006171969499a1d361bd9e6f8e5e0e81",
+        "os": "linux",
+        "cpu": "arm64"
+      }
+    ]
+  },
+  "net_busybox_busybox": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://storage.googleapis.com/buildbuddy-tools/binaries/busybox/busybox-1.36.1_linux-amd64",
+        "sha256": "f1c20582a7efb70382d63ec71fbeb6f422d7338592ff28ffe0bdff55c839a94c",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "file",
+        "url": "https://storage.googleapis.com/buildbuddy-tools/binaries/busybox/busybox-1.36.1_linux-arm64",
+        "sha256": "19601547c937e9636f64ae2dbd7d2d318dc5bbd58f7d5624bfa452f22cfe33d1",
+        "os": "linux",
+        "cpu": "arm64"
+      }
+    ]
+  },
+  "com_github_googlecloudplatform_docker-credential-gcr": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v2.1.30/docker-credential-gcr_linux_amd64-2.1.30.tar.gz",
+        "sha256": "d5c90c03d90271873a8619b1f73023a0266ae3fc91965ce9c81d7903e4b54eb6",
+        "os": "linux",
+        "cpu": "x86_64",
+        "file": "docker-credential-gcr"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v2.1.30/docker-credential-gcr_linux_arm64-2.1.30.tar.gz",
+        "sha256": "ac9c0237e40505f09796c2bf8a90377246a6fd3cb65e6eada77009ae0f2d3b00",
+        "os": "linux",
+        "cpu": "arm64",
+        "file": "docker-credential-gcr"
+      }
+    ]
+  }
+}

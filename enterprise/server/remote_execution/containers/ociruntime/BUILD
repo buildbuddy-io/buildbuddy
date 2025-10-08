@@ -53,7 +53,7 @@ go_library(
 
 genrule(
     name = "tini_binary",
-    srcs = ["//enterprise/server/cmd/executor:tini"],
+    srcs = ["@container_bins//tools/com_github_krallin_tini_tini"],
     outs = ["tini"],
     cmd = "cp $(SRCS) $@",
 )
@@ -63,9 +63,9 @@ go_test(
     srcs = ["ociruntime_test.go"],
     data = [
         ":crun",
-        "//enterprise/server/cmd/executor:tini",
         "//enterprise/server/remote_execution/runner/testworker",
         "@busybox",
+        "@container_bins//tools/com_github_krallin_tini_tini",
         "@net_tools",
     ],
     exec_properties = {
@@ -131,16 +131,10 @@ go_test(
 
 alias(
     name = "crun",
-    actual = select({
-        "@platforms//cpu:x86_64": "@com_github_containers_crun_crun-linux-amd64//file:crun",
-        "@platforms//cpu:aarch64": "@com_github_containers_crun_crun-linux-arm64//file:crun",
-    }),
+    actual = "@container_bins//tools/com_github_containers_crun_crun",
 )
 
 alias(
     name = "busybox",
-    actual = select({
-        "@platforms//cpu:x86_64": "@net_busybox_busybox-linux-amd64//file:busybox",
-        "@platforms//cpu:aarch64": "@net_busybox_busybox-linux-arm64//file:busybox",
-    }),
+    actual = "@container_bins//tools/net_busybox_busybox",
 )

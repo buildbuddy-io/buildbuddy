@@ -64,10 +64,8 @@ go_test(
 #   support stripping components, currently.
 genrule(
     name = "podman-static",
-    srcs = select({
-        "@platforms//cpu:x86_64": ["@com_github_buildbuddy_io_podman_static_podman-linux-amd64//file"],
-        "@platforms//cpu:aarch64": ["@com_github_buildbuddy_io_podman_static_podman-linux-arm64//file"],
-    }) + [
+    srcs = [
+        "@container_bins//tools/com_github_buildbuddy_io_podman_static_podman",
         "//dockerfiles/executor_image:data/registries.conf",
     ],
     outs = ["podman-static.tar.gz"],

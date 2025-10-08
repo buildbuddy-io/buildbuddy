@@ -1,0 +1,35 @@
+{
+  "$schema": "https://github.com/theoremlp/rules_multitool/lockfile.schema.json",
+  "com_github_bazelbuild_bazelisk-bazelisk": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-darwin-amd64",
+        "sha256": "0af019eeb642fa70744419d02aa32df55e6e7a084105d49fb26801a660aa56d3",
+        "os": "macos",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "file",
+        "url": "https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-darwin-arm64",
+        "sha256": "b13dd89c6ecd90944ca3539f5a2c715a18f69b7458878c471a902a8e482ceb4b",
+        "os": "macos",
+        "cpu": "arm64"
+      },
+      {
+        "kind": "file",
+        "url": "https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64",
+        "sha256": "fd8fdff418a1758887520fa42da7e6ae39aefc788cf5e7f7bb8db6934d279fc4",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "file",
+        "url": "https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-arm64",
+        "sha256": "4c8d966e40ac2c4efcc7f1a5a5cceef2c0a2f16b957e791fa7a867cce31e8fcb",
+        "os": "linux",
+        "cpu": "arm64"
+      }
+    ]
+  }
+}

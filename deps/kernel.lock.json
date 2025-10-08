@@ -1,0 +1,32 @@
+{
+  "$schema": "https://github.com/theoremlp/rules_multitool/lockfile.schema.json",
+  "org_kernel_git_linux_kernel-vmlinux": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-v5.15-3fd19c602f2b11969ad563d4d4855c9147cf13c34238537c1e434097a11aa6b7",
+        "sha256": "3fd19c602f2b11969ad563d4d4855c9147cf13c34238537c1e434097a11aa6b7",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "file",
+        "url": "https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-43dd6dff759ab7b8abfb5a9d34b4ef1ea97de735141436cc77db1a90359991c3",
+        "sha256": "43dd6dff759ab7b8abfb5a9d34b4ef1ea97de735141436cc77db1a90359991c3",
+        "os": "linux",
+        "cpu": "arm64"
+      }
+    ]
+  },
+  "org_kernel_git_linux_kernel-vmlinux-6_1": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.1-221765c1c163d7f4687c0fba573c47a17ada6cbe4063c16e6205fabc7066fd15",
+        "sha256": "221765c1c163d7f4687c0fba573c47a17ada6cbe4063c16e6205fabc7066fd15",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

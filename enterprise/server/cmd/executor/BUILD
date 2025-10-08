@@ -91,33 +91,17 @@ go_binary(
     embed = [":executor_lib"],
 )
 
-alias(
-    name = "tini",
-    actual = select({
-        "@platforms//cpu:arm64": "@com_github_krallin_tini_tini-linux-arm64//file:tini",
-        "//conditions:default": "@com_github_krallin_tini_tini-linux-amd64//file:tini",
-    }),
-)
-
 container_layer(
     name = "tini_layer",
     directory = "/",
-    files = [":tini"],
+    files = ["@container_bins//tools/com_github_krallin_tini_tini"],
     tags = ["manual"],
 )
 
 container_layer(
     name = "docker_credential_gcr_layer",
     directory = "/usr/bin",
-    files = select({
-        "@platforms//cpu:x86_64": [
-            "@com_github_googlecloudplatform_docker-credential-gcr-linux-amd64//:docker-credential-gcr.bin",
-        ],
-        "@platforms//cpu:arm64": [
-            "@com_github_googlecloudplatform_docker-credential-gcr-linux-arm64//:docker-credential-gcr.bin",
-        ],
-        "//conditions:default": [],
-    }),
+    files = ["@container_bins//tools/com_github_googlecloudplatform_docker-credential-gcr"],
     tags = ["manual"],
 )
 
@@ -133,51 +117,29 @@ container_layer(
 container_layer(
     name = "containerd_layer",
     directory = "/usr/bin",
-    files = select({
-        "@platforms//cpu:x86_64": [
-            "@com_github_containerd_containerd-linux-amd64//:containerd.bin",
-            "@com_github_containerd_containerd-linux-amd64//:containerd-shim-runc-v2.bin",
-            "@com_github_containerd_containerd-linux-amd64//:ctr.bin",
-        ],
-        "@platforms//cpu:arm64": [
-            "@com_github_containerd_containerd-linux-arm64//:containerd.bin",
-            "@com_github_containerd_containerd-linux-arm64//:containerd-shim-runc-v2.bin",
-            "@com_github_containerd_containerd-linux-arm64//:ctr.bin",
-        ],
-        "//conditions:default": [],
-    }),
+    files = [
+        "@container_bins//tools/com_github_containerd_containerd_containerd",
+        "@container_bins//tools/com_github_containerd_containerd_containerd_shim_runc_v2",
+        "@container_bins//tools/com_github_containerd_containerd_ctr",
+    ],
     tags = ["manual"],
 )
 
 container_layer(
     name = "rootlesskit_layer",
     directory = "/usr/bin",
-    files = select({
-        "@platforms//cpu:x86_64": [
-            # "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlessctl.bin",
-            "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlesskit.bin",
-        ],
-        "@platforms//cpu:arm64": [
-            # "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlessctl.bin",
-            "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlesskit.bin",
-        ],
-        "//conditions:default": [],
-    }),
+    files = [
+        "@container_bins//tools/com_github_rootless_containers_rootlesskit",
+    ],
     tags = ["manual"],
 )
 
 container_layer(
     name = "runc_layer",
     directory = "/usr/bin",
-    files = select({
-        "@platforms//cpu:x86_64": [
-            "@com_github_opencontainers_runc_runc-linux-amd64//file:runc",
-        ],
-        "@platforms//cpu:arm64": [
-            "@com_github_opencontainers_runc_runc-linux-arm64//file:runc",
-        ],
-        "//conditions:default": [],
-    }),
+    files = [
+        "@container_bins//tools/com_github_opencontainers_runc_runc",
+    ],
     tags = ["manual"],
 )
 
@@ -188,20 +150,14 @@ container_layer(
 
 genrule(
     name = "firecracker_rename",
-    srcs = select({
-        "@platforms//cpu:arm64": ["@com_github_firecracker_microvm_firecracker_arm64//:firecracker"],
-        "//conditions:default": ["@com_github_firecracker_microvm_firecracker//:firecracker"],
-    }),
+    srcs = ["@firecracker_bins//tools/com_github_firecracker_microvm_firecracker"],
     outs = ["firecracker"],
     cmd = "cp $(SRCS) $@",
 )
 
 genrule(
     name = "jailer_rename",
-    srcs = select({
-        "@platforms//cpu:arm64": ["@com_github_firecracker_microvm_firecracker_arm64//:jailer"],
-        "//conditions:default": ["@com_github_firecracker_microvm_firecracker//:jailer"],
-    }),
+    srcs = ["@firecracker_bins//tools/com_github_firecracker_microvm_jailer"],
     outs = ["jailer"],
     cmd = "cp $(SRCS) $@",
 )
@@ -209,19 +165,11 @@ genrule(
 container_layer(
     name = "executor_tools_layer",
     directory = "/usr/bin",
-    files = select({
-        "@platforms//cpu:x86_64": [
-            ":firecracker",
-            ":jailer",
-            "@com_github_containers_crun_crun-linux-amd64//file:crun",
-        ],
-        "@platforms//cpu:aarch64": [
-            ":firecracker",
-            ":jailer",
-            "@com_github_containers_crun_crun-linux-arm64//file:crun",
-        ],
-        "//conditions:default": [],
-    }),
+    files = [
+        ":firecracker",
+        ":jailer",
+        "@container_bins//tools/com_github_containers_crun_crun",
+    ],
     tags = ["manual"],
 )
 

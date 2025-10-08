@@ -1,71 +1,87 @@
-install_static_dependencies_ext = use_extension(":deps.bzl", "install_static_dependencies_ext")
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "com_github_buildbuddy_io_protoc_gen_protobufjs",
+    integrity = "sha256-VL3iXrCZj9OiYrads5Ve6uHjppfc5i8mHexOrVvpOI4=",
+    urls = [
+        "https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.13/protoc-gen-protobufjs-v0.0.13.tar.gz",
+    ],
+)
+
+http_archive(
+    name = "com_github_sluongng_nogo_analyzer",
+    sha256 = "a74a5e44751d292d17bd879e5aa8b40baa94b5dc2f043df1e3acbb3e23ead073",
+    strip_prefix = "nogo-analyzer-0.0.2",
+    urls = [
+        "https://github.com/sluongng/nogo-analyzer/archive/refs/tags/v0.0.2.tar.gz",
+    ],
+)
+
+multitool_ext = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
+multitool_ext.hub(
+    hub_name = "bazel_bins",
+    lockfile = "//deps:bazel.lock.json",
+)
+multitool_ext.hub(
+    hub_name = "bazelisk_bins",
+    lockfile = "//deps:bazelisk.lock.json",
+)
+multitool_ext.hub(
+    hub_name = "container_bins",
+    lockfile = "//deps:container.lock.json",
+)
+multitool_ext.hub(
+    hub_name = "firecracker_bins",
+    lockfile = "//deps:firecracker.lock.json",
+)
+multitool_ext.hub(
+    hub_name = "kernel_bins",
+    lockfile = "//deps:kernel.lock.json",
+)
+multitool_ext.hub(
+    hub_name = "redis_bins",
+    lockfile = "//deps:redis.lock.json",
+)
+multitool_ext.hub(
+    hub_name = "tools_bins",
+    lockfile = "//deps:tools.lock.json",
+)
 use_repo(
-    install_static_dependencies_ext,
-    "cloudprober",
-    "com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64",
-    "com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64",
-    "com_github_bazelbuild_bazelisk-bazelisk-linux-amd64",
-    "com_github_bazelbuild_bazelisk-bazelisk-linux-arm64",
-    "com_github_buildbuddy_io_podman_static_podman-linux-amd64",
-    "com_github_buildbuddy_io_podman_static_podman-linux-arm64",
-    "com_github_buildbuddy_io_protoc_gen_protobufjs",
-    "com_github_containerd_containerd-linux-amd64",
-    "com_github_containerd_containerd-linux-arm64",
-    "com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64",
-    "com_github_containers_crun_crun-linux-amd64",
-    "com_github_containers_crun_crun-linux-arm64",
-    "com_github_firecracker_microvm_firecracker",
-    "com_github_firecracker_microvm_firecracker_arm64",
-    "com_github_googlecloudplatform_docker-credential-gcr-linux-amd64",
-    "com_github_googlecloudplatform_docker-credential-gcr-linux-arm64",
-    "com_github_krallin_tini_tini-linux-amd64",
-    "com_github_krallin_tini_tini-linux-arm64",
-    "com_github_opencontainers_runc_runc-linux-amd64",
-    "com_github_opencontainers_runc_runc-linux-arm64",
-    "com_github_redis_redis-redis-server-v6.2.1-linux-arm64",
-    "com_github_redis_redis-redis-server-v6.2.1-linux-x86_64",
-    "com_github_redis_redis-redis-server-v6.2.6-darwin-arm64",
-    "com_github_redis_redis-redis-server-v6.2.6-darwin-x86_64",
-    "com_github_rootless_containers_rootlesskit-linux-amd64",
-    "com_github_rootless_containers_rootlesskit-linux-arm64",
-    "com_github_sluongng_nogo_analyzer",
-    "io_bazel_bazel-5.3.2-darwin-arm64",
-    "io_bazel_bazel-5.3.2-darwin-x86_64",
-    "io_bazel_bazel-5.3.2-linux-arm64",
-    "io_bazel_bazel-5.3.2-linux-x86_64",
-    "io_bazel_bazel-6.2.1-darwin-arm64",
-    "io_bazel_bazel-6.2.1-darwin-x86_64",
-    "io_bazel_bazel-6.2.1-linux-arm64",
-    "io_bazel_bazel-6.2.1-linux-x86_64",
-    "io_bazel_bazel-6.5.0-darwin-arm64",
-    "io_bazel_bazel-6.5.0-darwin-x86_64",
-    "io_bazel_bazel-6.5.0-linux-arm64",
-    "io_bazel_bazel-6.5.0-linux-x86_64",
-    "io_bazel_bazel-7.1.0-darwin-arm64",
-    "io_bazel_bazel-7.1.0-darwin-x86_64",
-    "io_bazel_bazel-7.1.0-linux-arm64",
-    "io_bazel_bazel-7.1.0-linux-x86_64",
-    "io_bazel_bazel-7.6.1-darwin-arm64",
-    "io_bazel_bazel-7.6.1-darwin-x86_64",
-    "io_bazel_bazel-7.6.1-linux-arm64",
-    "io_bazel_bazel-7.6.1-linux-x86_64",
-    "io_bazel_bazel-8.1.1-darwin-arm64",
-    "io_bazel_bazel-8.1.1-darwin-x86_64",
-    "io_bazel_bazel-8.1.1-linux-arm64",
-    "io_bazel_bazel-8.1.1-linux-x86_64",
-    "io_bazel_bazel-8.2.1-darwin-arm64",
-    "io_bazel_bazel-8.2.1-darwin-x86_64",
-    "io_bazel_bazel-8.2.1-linux-arm64",
-    "io_bazel_bazel-8.2.1-linux-x86_64",
-    "io_bazel_bazel-8.3.1-darwin-arm64",
-    "io_bazel_bazel-8.3.1-darwin-x86_64",
-    "io_bazel_bazel-8.3.1-linux-arm64",
-    "io_bazel_bazel-8.3.1-linux-x86_64",
-    "net_busybox_busybox-linux-amd64",
-    "net_busybox_busybox-linux-arm64",
-    "org_kernel_git_linux_kernel-vmlinux",
-    "org_kernel_git_linux_kernel-vmlinux-6.1",
-    "org_kernel_git_linux_kernel-vmlinux-arm64",
-    "org_llvm_llvm_clang-format_linux-x86_64",
-    "org_llvm_llvm_clang-format_macos-x86_64",
+    multitool_ext,
+    "bazel_bins",
+    "multitool",
+)
+use_repo(
+    multitool_ext,
+    "bazelisk_bins",
+)
+use_repo(
+    multitool_ext,
+    "container_bins",
+)
+use_repo(
+    multitool_ext,
+    "firecracker_bins",
+)
+use_repo(
+    multitool_ext,
+    "kernel_bins",
+)
+use_repo(
+    multitool_ext,
+    "redis_bins",
+)
+use_repo(
+    multitool_ext,
+    "tools_bins",
+)
+
+register_toolchains(
+    "@bazel_bins//toolchains:all",
+    "@bazelisk_bins//toolchains:all",
+    "@container_bins//toolchains:all",
+    "@firecracker_bins//toolchains:all",
+    "@kernel_bins//toolchains:all",
+    "@redis_bins//toolchains:all",
+    "@tools_bins//toolchains:all",
 )
