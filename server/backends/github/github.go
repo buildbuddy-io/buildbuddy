@@ -144,8 +144,8 @@ func NewGitHubStatusService(env environment.Env) *githubStatusService {
 	return &githubStatusService{env}
 }
 
-func (s *githubStatusService) GetStatusClient(accessToken string) interfaces.GitHubStatusClient {
-	return NewGithubClient(s.env, accessToken)
+func (s *githubStatusService) GetStatusClient() interfaces.GitHubStatusClient {
+	return NewGithubClient(s.env, "")
 }
 
 func Register(env *real_environment.RealEnv) error {
