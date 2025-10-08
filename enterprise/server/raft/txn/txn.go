@@ -118,7 +118,7 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 	}
 
 	if err := tc.deleteTxnRecord(ctx, txnID); err != nil {
-		return status.WrapErrorf("failed to delete txn record (txid=%q)", txnID)
+		return status.WrapErrorf(err, "failed to delete txn record (txid=%q)", txnID)
 	}
 	if prepareError != nil {
 		return prepareError
