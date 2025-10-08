@@ -121,7 +121,7 @@ func clearPrevCache(dir string, currentSubDir string) error {
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return status.InternalErrorf("failed to read directory %q: %s", dir, err)
+		return status.InternalErrorf("failed to read directory %q: %w", dir, err)
 	}
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -132,7 +132,7 @@ func clearPrevCache(dir string, currentSubDir string) error {
 		}
 		path := filepath.Join(dir, e.Name())
 		if err := os.RemoveAll(path); err != nil {
-			return status.InternalErrorf("failed to delete dir %q: %s", path, err)
+			return status.InternalErrorf("failed to delete dir %q: %w", path, err)
 		}
 	}
 	return nil
@@ -183,7 +183,7 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		}
 	} else if *clearPrevCacheOnStartup {
 		if err := clearPrevCache(*rootDirectory, *subdir); err != nil {
-			return nil, status.InternalErrorf("failed to delete cache from previous run: %s", err)
+			return nil, status.InternalErrorf("failed to delete cache from previous run: %w", err)
 		}
 	}
 

@@ -218,7 +218,7 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 			}
 			batchCmd, err := batch.ToProto()
 			if err != nil {
-				return nil, status.InternalErrorf("could not construct delete req proto: %s", err)
+				return nil, status.WrapError(err, "could not construct delete req proto")
 			}
 			rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 				Header: h,
