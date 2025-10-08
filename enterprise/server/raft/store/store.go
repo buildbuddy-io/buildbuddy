@@ -385,7 +385,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 			rc := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
 			s.replicaInitStatusWaiter.MarkStarted(logInfo.ShardID, logInfo.ReplicaID)
 			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, rc); err != nil {
-				if err == dragonboat.ErrReplicaRemoved {
+				if errors.Is(err, dragonboat.ErrReplicaRemoved) {
 					s.log.Debugf("Replica c%dn%d was removed in the past, skipping.", logInfo.ShardID, logInfo.ReplicaID)
 					return nil
 				}
@@ -1346,7 +1346,7 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	rc.IsNonVoting = req.GetIsNonVoting()
 	startShardErr := s.nodeHost.StartOnDiskReplica(req.GetInitialMember(), req.GetJoin(), s.ReplicaFactoryFn, rc)
 	if startShardErr != nil {
-		if startShardErr != dragonboat.ErrShardAlreadyExist {
+		if !errors.Is(startShardErr, dragonboat.ErrShardAlreadyExist) {
 			return nil, status.WrapErrorf(startShardErr, "failed to start node c%dn%d on dragonboat", req.GetRangeId(), req.GetReplicaId())
 		}
 		nu, nuErr := s.nodeHost.GetNodeUser(req.GetRangeId())
@@ -1391,12 +1391,12 @@ func (s *Store) stopReplica(ctx context.Context, rangeID, replicaID uint64) erro
 	}
 	err := client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		err := s.nodeHost.StopReplica(rangeID, replicaID)
-		if err == dragonboat.ErrShardClosed {
+		if errors.Is(err, dragonboat.ErrShardClosed) {
 			return nil
 		}
 		return err
 	})
-	if err != nil && err != dragonboat.ErrShardNotFound {
+	if err != nil && !errors.Is(err, dragonboat.ErrShardNotFound) {
 		// Ignore ShardNotFound error. The shard can be unloaded or deleted by
 		// syncRequestDeleteReplica.
 		return status.WrapErrorf(err, "failed to stop replica c%dn%d", rangeID, replicaID)
@@ -1439,7 +1439,7 @@ func (s *Store) syncRemoveData(ctx context.Context, rangeID, replicaID uint64) e
 	err := client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		err := s.nodeHost.SyncRemoveData(ctx, rangeID, replicaID)
 		// If the shard is not stopped, we want to retry SyncRemoveData call.
-		if err == dragonboat.ErrShardNotStopped {
+		if errors.Is(err, dragonboat.ErrShardNotStopped) {
 			log.Warning("shard not stopped when remove data")
 			err = dragonboat.ErrTimeout
 		}
@@ -1563,7 +1563,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 	}
 	batchResponse, err := session.SyncProposeLocal(ctx, s.nodeHost, rangeID, req.GetBatch())
 	if err != nil {
-		if err == dragonboat.ErrShardNotFound {
+		if errors.Is(err, dragonboat.ErrShardNotFound) {
 			return nil, status.OutOfRangeErrorf("%s: range %d not found", constants.RangeNotFoundMsg, rangeID)
 		}
 		return nil, err
@@ -1589,7 +1589,7 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	rangeID := req.GetHeader().GetReplica().GetRangeId()
 	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, rangeID, batch, s.maxSingleOpTimeout)
 	if err != nil {
-		if err == dragonboat.ErrShardNotFound {
+		if errors.Is(err, dragonboat.ErrShardNotFound) {
 			return nil, status.OutOfRangeErrorf("%s: cluster not found for %+v", constants.RangeLeaseInvalidMsg, req.GetHeader())
 		}
 		return nil, err
@@ -2048,7 +2048,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			// created without any range descriptors created.
 			rd, err = j.store.newRangeDescriptorFromRaftMembership(ctx, task.rangeID)
 			if err != nil {
-				if err == dragonboat.ErrShardNotReady || err == dragonboat.ErrShardNotFound {
+				if errors.Is(err, dragonboat.ErrShardNotReady) || errors.Is(err, dragonboat.ErrShardNotFound) {
 					// This can happen when SplitRange failed to initialize all initial members.
 					// move on to stop replica
 					log.Warningf("getMembership for c%dn%d failed: %s", task.rangeID, task.replicaID, err)
@@ -2087,7 +2087,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		if rd != nil {
 			err = j.store.removeReplica(ctx, rd, removeReplicaReq)
 			if err != nil {
-				if strings.Contains(err.Error(), dragonboat.ErrRejected.Error()) {
+				if errors.Is(err, dragonboat.ErrRejected) {
 					// move on to stop replica
 					log.Warningf("request to delete replica c%dn%d was rejected, attempting to stop: %s", task.rangeID, task.replicaID, err)
 				} else {
@@ -2977,7 +2977,7 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 		return s.nodeHost.SyncRequestAddReplica(ctx, rd.GetRangeId(), newReplicaID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {
-		if err == dragonboat.ErrRejected {
+		if errors.Is(err, dragonboat.ErrRejected) {
 			// SyncRequestAddReplica can be retried by RunNodehostFn. In some
 			// rare cases, when it returns a temp dragonboat error such as system
 			// busy, the config change can actually be applied in the background.
