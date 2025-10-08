@@ -43,6 +43,7 @@ go_library(
         "//server/util/unixcred",
         "//server/util/uuid",
         "//third_party/singleflight",
+        "@com_github_docker_go_units//:go-units",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_opencontainers_runtime_spec//specs-go",
         "@io_bazel_rules_go//go/runfiles",

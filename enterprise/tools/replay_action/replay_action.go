@@ -417,7 +417,18 @@ func runTool(rootCtx, srcCtx, targetCtx context.Context) error {
 	}
 	defer destConn.Close()
 
+	// Get the source executions to be replayed.
+	sourceExecutions, err := getSourceExecutions(srcCtx)
+	if err != nil {
+		return fmt.Errorf("get source executions: %w", err)
+	}
+	if len(sourceExecutions.resourceNames) == 0 {
+		return fmt.Errorf("no executions to replay")
+	}
+
+	digestFunction := sourceExecutions.resourceNames[0].GetDigestFunction()
 	replayer := &Replayer{
+		fmb:             NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, digestFunction, destCASClient, FindMissingBatcherOpts{}),
 		sourceBSClient:  sourceBSClient,
 		sourceCASClient: sourceCASClient,
 		sourceACClient:  sourceACClient,
@@ -426,15 +437,6 @@ func runTool(rootCtx, srcCtx, targetCtx context.Context) error {
 		destACClient:    destACClient,
 		execClient:      execClient,
 	}
-	replayer.uploadGroup.SetLimit(3)
-	replayer.executeGroup.SetLimit(*jobs)
-
-	// Get the source executions to be replayed.
-	sourceExecutions, err := getSourceExecutions(srcCtx)
-	if err != nil {
-		return fmt.Errorf("get source executions: %w", err)
-	}
-
 	// Replay the source executions from source -> target using the configured
 	// replayer.
 	if err := replayAll(rootCtx, srcCtx, targetCtx, replayer, sourceExecutions); err != nil {
@@ -588,15 +590,67 @@ func replayAll(rootCtx, srcCtx, targetCtx context.Context, replayer *Replayer, s
 	resourceNames := sourceExecutions.resourceNames
 	executionMetadata := sourceExecutions.metadata
 
-	for _, rn := range resourceNames {
-		if err := replayer.Start(rootCtx, srcCtx, targetCtx, rn, executionMetadata[rn.DownloadString()]); err != nil {
-			return fmt.Errorf("start replay: %w", err)
+	// Initialize executions list - one list entry for each execution resource
+	// name to replay.
+	type execution struct {
+		ready       chan struct{} // Closed when the execution is prepared.
+		executeFunc executeFunc   // Can be safely called if [ready] is closed.
+	}
+	executions := make([]*execution, len(resourceNames))
+	for i := range resourceNames {
+		executions[i] = &execution{
+			ready: make(chan struct{}),
 		}
 	}
 
-	// Wait for all started replay operations to complete.
-	if err := replayer.Wait(); err != nil {
-		return fmt.Errorf("wait for replay: %w", err)
+	// Upload dependencies for each execution, in sequence, with limited
+	// concurrency. Use a lower concurrency limit than *jobs, because each
+	// execution potentially has many inputs.
+	//
+	// TODO: don't limit concurrency here - instead, limit the concurrency of
+	// each individual cache upload. This would likely perform better for
+	// actions that have very few inputs.
+	var uploadGroup errgroup.Group
+	uploadGroup.SetLimit(3)
+	defer uploadGroup.Wait()
+	for i := range resourceNames {
+		execution := executions[i]
+		resourceName := resourceNames[i]
+		executionMetadata := executionMetadata[resourceName.DownloadString()]
+
+		uploadGroup.Go(func() error {
+			defer close(execution.ready)
+			executeFunc, err := replayer.Prepare(rootCtx, srcCtx, targetCtx, resourceName, executionMetadata)
+			if err != nil {
+				return fmt.Errorf("prepare execution %s: %w", resourceName.DownloadString(), err)
+			}
+			execution.executeFunc = executeFunc
+			return nil
+		})
+	}
+
+	// Execute jobs in sequence, concurrently, as they are uploaded. Concurrency
+	// is limited based on the 'jobs' flag. If N>1 (i.e. replaying each action
+	// multiple times), then replay the full list of executions one time each,
+	// then go back to the beginning and repeat N-1 more times. This iteration
+	// order is likely to be more realistic than repeating each job N times
+	// back-to-back, then proceeding to the next job.
+	var executeGroup errgroup.Group
+	executeGroup.SetLimit(*jobs)
+	for i := 1; i <= *n; i++ {
+		for _, ex := range executions {
+			<-ex.ready
+			if ex.executeFunc == nil {
+				// Execution is not enabled (e.g. we're replaying to a bundle)
+				continue
+			}
+			executeGroup.Go(func() error {
+				return ex.executeFunc(i)
+			})
+		}
+	}
+	if err := executeGroup.Wait(); err != nil {
+		return fmt.Errorf("execution failed: %w", err)
 	}
 
 	// If we've got a target bundle, then at this point we will have copied all
@@ -606,8 +660,8 @@ func replayAll(rootCtx, srcCtx, targetCtx context.Context, replayer *Replayer, s
 			return fmt.Errorf("write target bundle manifest: %w", err)
 		}
 	}
-	return nil
 
+	return nil
 }
 
 func writeTargetBundleManifest(resourceNames []*digest.CASResourceName, executionMetadata map[string]*Execution) error {
@@ -658,12 +712,11 @@ func setClientIdentity(ctx context.Context, key string) (context.Context, error)
 	return ctx, nil
 }
 
+// TODO: this Replayer has evolved to not be very useful except as a holding
+// struct for all the various clients. Rename / refactor it to reflect its new
+// limited purpose.
 type Replayer struct {
 	fmb *FindMissingBatcher
-
-	replayGroup  errgroup.Group
-	uploadGroup  errgroup.Group
-	executeGroup errgroup.Group
 
 	sourceBSClient, destBSClient   bspb.ByteStreamClient
 	sourceCASClient, destCASClient repb.ContentAddressableStorageClient
@@ -675,47 +728,41 @@ type Replayer struct {
 	uploads sync.Map
 }
 
-func (r *Replayer) Start(ctx, srcCtx, targetCtx context.Context, sourceExecutionRN *digest.CASResourceName, md *Execution) error {
-	if r.fmb == nil {
-		r.fmb = NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction(), r.destCASClient, FindMissingBatcherOpts{})
-	}
+type executeFunc func(runNumber int) error
 
-	r.replayGroup.Go(func() error {
-		return r.replay(ctx, srcCtx, targetCtx, sourceExecutionRN, md)
-	})
-	return nil
-}
-
-func (r *Replayer) Wait() error {
-	return r.replayGroup.Wait()
-}
-
-func (r *Replayer) replay(ctx, srcCtx, targetCtx context.Context, sourceExecutionRN *digest.CASResourceName, md *Execution) error {
+// Upload uploads the given execution, including any overrides.
+// It returns a function that performs the execution when called.
+func (r *Replayer) Prepare(ctx, srcCtx, targetCtx context.Context, sourceExecutionRN *digest.CASResourceName, md *Execution) (executeFunc, error) {
 	// Fetch the action to ensure it exists.
 	action := &repb.Action{}
 	if err := cachetools.GetBlobAsProto(srcCtx, r.sourceBSClient, sourceExecutionRN, action); err != nil {
-		return status.WrapErrorf(err, "fetch action %s", sourceExecutionRN.DownloadString())
+		return nil, status.WrapErrorf(err, "fetch action %s", sourceExecutionRN.DownloadString())
 	}
+
 	// If remote_executor and target_executor are not the same, copy the files.
 	if inCopyMode(sourceExecutionRN.GetInstanceName()) && !*skipCopyFiles {
-		uploadErr := make(chan error, 1)
-		r.uploadGroup.Go(func() error {
-			err := r.upload(ctx, srcCtx, targetCtx, action, sourceExecutionRN)
-			uploadErr <- err
-			return err
-		})
-		if err := <-uploadErr; err != nil {
-			return status.WrapError(err, "copy execution inputs")
+		if err := r.upload(ctx, srcCtx, targetCtx, action, sourceExecutionRN); err != nil {
+			return nil, status.WrapError(err, "copy execution inputs")
 		}
 	}
 
-	// If we're just dumping action data to a target_bundle, don't actually execute
-	// anything.
+	// If we're just dumping action data to a target_bundle, don't actually
+	// execute anything.
 	if *targetBundle != "" {
-		return nil
+		return nil, nil
 	}
 
-	return r.execute(ctx, srcCtx, targetCtx, action, sourceExecutionRN, md)
+	// Apply any action overrides based on flags (may involve uploading a new
+	// action).
+	sourceExecutionRN, action, err := r.applyActionOverrides(ctx, srcCtx, targetCtx, action, sourceExecutionRN)
+	if err != nil {
+		return nil, status.WrapError(err, "apply action overrides")
+	}
+
+	// Return the prepared execution.
+	return func(runNumber int) error {
+		return execute(targetCtx, r.execClient, r.destBSClient, runNumber, sourceExecutionRN, md, action)
+	}, nil
 }
 
 func (r *Replayer) doOnce(ctx context.Context, key string, upload func(ctx context.Context) error) error {
@@ -916,14 +963,14 @@ func getImagePlatform(action *repb.Action) (gcr.Platform, error) {
 	}, nil
 }
 
-func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.Action, sourceExecutionRN *digest.CASResourceName, md *Execution) error {
+func (r *Replayer) applyActionOverrides(ctx, srcCtx, targetCtx context.Context, action *repb.Action, sourceExecutionRN *digest.CASResourceName) (*digest.CASResourceName, *repb.Action, error) {
 	// If we're overriding the command, do that now.
 	if *overrideCommand != "" {
 		// Download the command and update arguments.
 		sourceCRN := digest.NewCASResourceName(action.GetCommandDigest(), sourceExecutionRN.GetInstanceName(), sourceExecutionRN.GetDigestFunction())
 		cmd := &repb.Command{}
 		if err := cachetools.GetBlobAsProto(srcCtx, r.sourceBSClient, sourceCRN, cmd); err != nil {
-			return fmt.Errorf("get command: %s", err)
+			return nil, nil, fmt.Errorf("get command: %s", err)
 		}
 		// Set ORIGINAL_COMMAND in env to the original command, shell-quoted.
 		// This way it can be wrapped with other commands, e.g.
@@ -937,13 +984,13 @@ func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.
 		// Upload the new command and action.
 		cd, err := cachetools.UploadProto(targetCtx, r.destBSClient, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction(), cmd)
 		if err != nil {
-			return fmt.Errorf("upload new command: %s", err)
+			return nil, nil, fmt.Errorf("upload new command: %s", err)
 		}
 		action = action.CloneVT()
 		action.CommandDigest = cd
 		ad, err := cachetools.UploadProto(targetCtx, r.destBSClient, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction(), action)
 		if err != nil {
-			return status.WrapError(err, "upload new action")
+			return nil, nil, status.WrapError(err, "upload new action")
 		}
 
 		sourceExecutionRN = digest.NewCASResourceName(ad, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction())
@@ -953,9 +1000,6 @@ func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.
 	// executions. So we need to override the do_not_cache field to true in
 	// order to force execution.
 	if *n > 1 && !action.GetDoNotCache() {
-		ctx = log.EnrichContext(ctx, "original_execution", sourceExecutionRN.DownloadString())
-		targetCtx = log.EnrichContext(targetCtx, "original_execution", sourceExecutionRN.DownloadString())
-
 		// Update field
 		action = action.CloneVT()
 		action.DoNotCache = true
@@ -963,39 +1007,24 @@ func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.
 		// Upload the new action.
 		ad, err := cachetools.UploadProto(targetCtx, r.destBSClient, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction(), action)
 		if err != nil {
-			return status.WrapError(err, "upload new action")
+			return nil, nil, status.WrapError(err, "upload new action")
 		}
 
 		sourceExecutionRN = digest.NewCASResourceName(ad, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction())
 	}
 
-	execReq := &repb.ExecuteRequest{
-		InstanceName:    *targetRemoteInstanceName,
-		SkipCacheLookup: true,
-		ActionDigest:    sourceExecutionRN.GetDigest(),
-		DigestFunction:  sourceExecutionRN.GetDigestFunction(),
-	}
-	executeErr := make(chan error, *n)
-	for i := 1; i <= *n; i++ {
-		i := i
-		r.executeGroup.Go(func() error {
-			err := execute(targetCtx, r.execClient, r.destBSClient, i, sourceExecutionRN, execReq, md, action)
-			executeErr <- err
-			return err
-		})
-	}
-	var lastErr error
-	for i := 1; i <= *n; i++ {
-		if err := <-executeErr; err != nil {
-			log.CtxWarningf(ctx, "Execution %d failed: %s", i, err)
-			lastErr = err
-		}
-	}
-	return lastErr
+	return sourceExecutionRN, action, nil
 }
 
-func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, sourceExecutionID *digest.CASResourceName, req *repb.ExecuteRequest, md *Execution, action *repb.Action) error {
+func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, sourceExecutionID *digest.CASResourceName, md *Execution, action *repb.Action) error {
 	ctx = log.EnrichContext(ctx, "run", fmt.Sprintf("%d/%d", i, *n))
+
+	req := &repb.ExecuteRequest{
+		InstanceName:    *targetRemoteInstanceName,
+		SkipCacheLookup: true,
+		ActionDigest:    sourceExecutionID.GetDigest(),
+		DigestFunction:  sourceExecutionID.GetDigestFunction(),
+	}
 
 	actionId := sourceExecutionID.GetDigest().GetHash()
 	rmd := &repb.RequestMetadata{

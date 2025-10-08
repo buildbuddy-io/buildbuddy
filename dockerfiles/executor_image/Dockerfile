@@ -20,6 +20,8 @@ RUN \
     iproute2 conntrack \
     # Credential helper for custom execution images hosted on ECR.
     amazon-ecr-credential-helper \
+    # Install a JDK to get the 'jcmd' util (useful for JVM action debugging)
+    openjdk-17-jdk \
     # cgroup-aware proc mounts for OCI containers.
     lxcfs && \
     apt-get upgrade -y && \

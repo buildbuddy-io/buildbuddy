@@ -178,14 +178,14 @@ func NewLeaser(opts LeaserOpts) (*CPULeaser, error) {
 
 	cl.cpus = make([]CPUInfo, len(leaseableCPUs))
 
-	processors := make(map[int]struct{}, 0)
+	numaNodes := make(map[int]struct{}, 0)
 	for i, cpu := range leaseableCPUs {
 		cl.cpus[i] = cpu
 		cl.load[cpu.Processor] = 0
-		processors[cpu.NumaNode] = struct{}{}
+		numaNodes[cpu.NumaNode] = struct{}{}
 	}
-	cl.numaNodes = len(processors)
-	log.Debugf("NewLeaser with %d processors and %d cores", cl.numaNodes, len(cl.cpus))
+	cl.numaNodes = len(numaNodes)
+	log.Infof("Configured cpuset: %d NUMA nodes, %d processors", cl.numaNodes, len(cl.cpus))
 	return cl, nil
 }
 

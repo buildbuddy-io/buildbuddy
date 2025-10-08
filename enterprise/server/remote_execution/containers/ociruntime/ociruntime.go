@@ -53,6 +53,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
+	"github.com/docker/go-units"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
@@ -80,7 +81,9 @@ var (
 	mounts                  = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
 	devices                 = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
 	enablePersistentVolumes = flag.Bool("executor.oci.enable_persistent_volumes", false, "Enables persistent volumes that can be shared between actions within a group. Only supported for OCI isolation type.")
+	enableTini              = flag.Bool("executor.oci.enable_tini", false, "If true, run all OCI containers with tini as pid 1.")
 	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
+	minPIDsLimit            = flag.Int64("executor.oci.min_pids_limit", 0, "Min value to use for pids.max (PID limit). The scheduler may set a higher value for larger tasks. This can be used for rare cases where the scheduler does not provide a high enough limit.")
 	cgroupMemoryCushion     = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
@@ -369,10 +372,11 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		cgroupSettings:    &scpb.CgroupSettings{},
 		imageRef:          args.Props.ContainerImage,
 		networkEnabled:    args.Props.DockerNetwork != "off",
-		tiniEnabled:       args.Props.DockerInit,
+		tiniEnabled:       args.Props.DockerInit || *enableTini,
 		user:              args.Props.DockerUser,
 		forceRoot:         args.Props.DockerForceRoot,
 		persistentVolumes: args.Props.PersistentVolumes,
+		originalPool:      args.Props.OriginalPool,
 
 		milliCPU:    args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
 		memoryBytes: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(),
@@ -415,8 +419,9 @@ type ociContainer struct {
 	user           string
 	forceRoot      bool
 
-	milliCPU    int64 // milliCPU allocation from task size
-	memoryBytes int64 // memory allocation from task size in bytes
+	milliCPU     int64 // milliCPU allocation from task size
+	memoryBytes  int64 // memory allocation from task size in bytes
+	originalPool string
 }
 
 // Returns the OCI bundle directory for the container.
@@ -579,6 +584,7 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 		return commandutil.ErrorResult(status.UnavailableErrorf("generate cid: %s", err))
 	}
 	c.cid = cid
+	log.CtxInfof(ctx, "Container ID: %s", c.cid)
 
 	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.imageRef); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("pull image: %s", err))
@@ -612,6 +618,7 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 		return status.UnavailableErrorf("generate cid: %s", err)
 	}
 	c.cid = cid
+	log.CtxInfof(ctx, "Container ID: %s", c.cid)
 
 	if err := c.createNetwork(ctx); err != nil {
 		return status.UnavailableErrorf("create network: %s", err)
@@ -859,6 +866,16 @@ func (c *ociContainer) checkOOMKill(ctx context.Context, res *interfaces.Command
 		log.CtxWarningf(ctx, "Task succeeded, but cgroup reported oom_kill events.")
 		return nil
 	}
+	// If memory.max is set, include it in the error message
+	if c.cgroupSettings.MemoryLimitBytes != nil {
+		// XXX
+		return status.UnavailableErrorf(
+			"task process or child process killed by oom killer (task memory: %s, task memory limit: %s, original pool: %q)",
+			units.BytesSize(float64(c.memoryBytes)),
+			units.BytesSize(float64(c.cgroupSettings.GetMemoryLimitBytes())),
+			c.originalPool, // XXX
+		)
+	}
 	return status.UnavailableError("task process or child process killed by oom killer")
 }
 
@@ -890,6 +907,9 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	c.cgroupSettings.NumaNode = proto.Int32(int32(numaNode))
 	if *enableCgroupMemoryLimit && c.memoryBytes > 0 {
 		c.cgroupSettings.MemoryLimitBytes = proto.Int64(c.memoryBytes + int64(float64(c.memoryBytes)*(*cgroupMemoryCushion)))
+	}
+	if c.cgroupSettings.PidsMax != nil && *minPIDsLimit > 0 {
+		c.cgroupSettings.PidsMax = proto.Int64(max(c.cgroupSettings.GetPidsMax(), *minPIDsLimit))
 	}
 
 	path := c.cgroupPath()
