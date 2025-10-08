@@ -252,6 +252,7 @@ type GitHubStatusService interface {
 
 type GitHubStatusClient interface {
 	CreateStatus(ctx context.Context, ownerRepo, commitSHA string, payload *github.RepoStatus) error
+	IsStatusReportingEnabled(ctx context.Context, repoURL string) (bool, error)
 }
 
 // A Blobstore must allow for reading, writing, and deleting blobs.
