@@ -1091,9 +1091,9 @@ type Runner interface {
 
 type CacheRoutingService interface {
 	GetCacheRoutingConfig(ctx context.Context) (*ropb.CacheRoutingConfig, error)
-	GetPrimaryCASClient(ctx context.Context) (repb.ContentAddressableStorageClient, error)
-	GetPrimaryACClient(ctx context.Context) (repb.ActionCacheClient, error)
-	GetPrimaryBSClient(ctx context.Context) (bspb.ByteStreamClient, error)
+	GetCASClients(ctx context.Context) (repb.ContentAddressableStorageClient, repb.ContentAddressableStorageClient, error)
+	GetACClients(ctx context.Context) (repb.ActionCacheClient, repb.ActionCacheClient, error)
+	GetBSClients(ctx context.Context) (bspb.ByteStreamClient, bspb.ByteStreamClient, error)
 	GetPrimaryCapabilitiesClient(ctx context.Context) (repb.CapabilitiesClient, error)
 }
 

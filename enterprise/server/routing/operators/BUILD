@@ -3,17 +3,21 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
-    name = "routing_content_addressable_storage_client",
-    srcs = ["routing_content_addressable_storage_client.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_content_addressable_storage_client",
+    name = "operators",
+    srcs = ["operators.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/operators",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/batch_operator",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/remote_cache/digest",
+        "//server/util/authutil",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
-        "@org_golang_google_grpc//:grpc",
+        "//server/util/usageutil",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
