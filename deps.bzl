@@ -16,6 +16,14 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         integrity = "sha256-VL3iXrCZj9OiYrads5Ve6uHjppfc5i8mHexOrVvpOI4=",
         urls = ["https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.13/protoc-gen-protobufjs-v0.0.13.tar.gz"],
     )
+    http_archive(
+        name = "com_github_sluongng_nogo_analyzer",
+        sha256 = "a74a5e44751d292d17bd879e5aa8b40baa94b5dc2f043df1e3acbb3e23ead073",
+        strip_prefix = "nogo-analyzer-0.0.2",
+        urls = [
+            "https://github.com/sluongng/nogo-analyzer/archive/refs/tags/v0.0.2.tar.gz",
+        ],
+    )
 
     http_archive(
         name = "com_github_firecracker_microvm_firecracker",
@@ -27,7 +35,6 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         sha256 = "38ad6fb34273b2fa616956237b15ea6e064cf21336b0d990d5de347b35b9328b",
         urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.11.0/firecracker-v1.11.0-x86_64.tgz"],
     )
-
     http_archive(
         name = "com_github_firecracker_microvm_firecracker_arm64",
         build_file_content = "\n".join([
@@ -37,13 +44,6 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         ]).format(release = "v1.11.0-aarch64"),
         sha256 = "4b98f7cd669a772716fd1bef59c75188ba05a683bc0759ee4169eb351274fcb0",
         urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.11.0/firecracker-v1.11.0-aarch64.tgz"],
-    )
-
-    http_archive(
-        name = "com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64",
-        build_file_content = 'exports_files(["stargz-store"])',
-        sha256 = "56933aa04a64d3bf6991f9b1be127ac9896fe597d2fba194c67c2dd4368bbae3",
-        urls = ["https://github.com/containerd/stargz-snapshotter/releases/download/v0.11.4/stargz-snapshotter-v0.11.4-linux-amd64.tar.gz"],
     )
 
     http_file(
@@ -442,15 +442,6 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         ]),
         urls = ["https://github.com/containerd/containerd/releases/download/v2.1.1/containerd-2.1.1-linux-arm64.tar.gz"],
         sha256 = "4e3c8c0c2e61438bb393a9ea6bb94f8f56b559ec3243d7b1a2943117bca4dcb4",
-    )
-
-    http_archive(
-        name = "com_github_sluongng_nogo_analyzer",
-        sha256 = "a74a5e44751d292d17bd879e5aa8b40baa94b5dc2f043df1e3acbb3e23ead073",
-        strip_prefix = "nogo-analyzer-0.0.2",
-        urls = [
-            "https://github.com/sluongng/nogo-analyzer/archive/refs/tags/v0.0.2.tar.gz",
-        ],
     )
 
     http_archive(
