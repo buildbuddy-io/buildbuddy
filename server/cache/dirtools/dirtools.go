@@ -53,6 +53,10 @@ const (
 	// Should be big enough to feed the workers when they free up.
 	// Operations will block when the queue is full.
 	inputTreeOpsQueueSize = 4000
+	// batchReadLimitBytes controls how big an object or batch can be to use
+	// the BatchReadBlobs RPC. In experiments, 2MiB blobs are 5-10% faster to
+	// read using the bytestream.Read api.
+	batchReadLimitBytes = min(2*1024*1024, rpcutil.GRPCMaxSizeBytes)
 )
 
 func groupIDStringFromContext(ctx context.Context) string {
@@ -964,7 +968,7 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 			// fit in the batch call, so we'll have to bytestream
 			// it.
 			size := f.key.SizeBytes
-			if size > rpcutil.GRPCMaxSizeBytes || ff.env.GetContentAddressableStorageClient() == nil {
+			if size > batchReadLimitBytes || ff.env.GetContentAddressableStorageClient() == nil {
 				eg.Go(func() error {
 					if len(f.fps) == 0 {
 						return status.FailedPreconditionError("empty file pointer list for key")
@@ -982,7 +986,7 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 			// If the digest would push our current batch request
 			// size over the gRPC max, dispatch the request and
 			// start a new one.
-			if currentBatchRequestSize+size > rpcutil.GRPCMaxSizeBytes {
+			if currentBatchRequestSize+size > batchReadLimitBytes {
 				reqCopy := req
 				eg.Go(func() error {
 					return ff.batchDownloadFiles(ctx, reqCopy, opts)

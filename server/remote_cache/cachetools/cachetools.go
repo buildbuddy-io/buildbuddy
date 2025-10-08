@@ -49,6 +49,10 @@ const (
 	uploadBufSizeBytes = 128 * 1024
 	// Matches https://github.com/bazelbuild/bazel/blob/9c22032c8dc0eb2ec20d8b5a5c73d1f5f075ae37/src/main/java/com/google/devtools/build/lib/remote/options/RemoteOptions.java#L461-L464
 	minSizeBytesToCompress = 100
+	// batchUploadLimitBytes controls how big an object or batch can be in a
+	// BatchUploadBlobs RPC. In experiments, 2MiB blobs are 5-10% faster to
+	// upload using the bytestream.Write api.
+	batchUploadLimitBytes = min(2*1024*1024, rpcutil.GRPCMaxSizeBytes)
 )
 
 var (
@@ -662,7 +666,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		compressor = repb.Compressor_ZSTD
 	}
 
-	if d.GetSizeBytes() > rpcutil.GRPCMaxSizeBytes {
+	if d.GetSizeBytes() > batchUploadLimitBytes {
 		resourceName := digest.NewCASResourceName(d, ul.instanceName, ul.digestFunction)
 		resourceName.SetCompressor(compressor)
 
@@ -689,7 +693,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		b = compression.CompressZstd(nil, b)
 	}
 	additionalSize := int64(len(b))
-	if ul.unsentBatchSize+additionalSize > rpcutil.GRPCMaxSizeBytes {
+	if ul.unsentBatchSize+additionalSize > batchUploadLimitBytes {
 		ul.flushCurrentBatch()
 	}
 	ul.unsentBatchReq.Requests = append(ul.unsentBatchReq.Requests, &repb.BatchUpdateBlobsRequest_Request{
