@@ -560,36 +560,11 @@ func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName 
 	return uploadProtoToCache(ctx, cache, rspb.CacheType_CAS, instanceName, digestFunction, in)
 }
 
-func SupportsCompression(ctx context.Context, capabilitiesClient repb.CapabilitiesClient) (bool, error) {
-	rsp, err := capabilitiesClient.GetCapabilities(ctx, &repb.GetCapabilitiesRequest{})
-	if err != nil {
-		return false, err
-	}
-	supportsBytestreamCompression := false
-	for _, compressorValue := range rsp.GetCacheCapabilities().GetSupportedCompressors() {
-		if compressorValue == repb.Compressor_ZSTD {
-			supportsBytestreamCompression = true
-			break
-		}
-	}
-
-	supportsBatchUpdateCompression := false
-	for _, compressorValue := range rsp.GetCacheCapabilities().GetSupportedBatchUpdateCompressors() {
-		if compressorValue == repb.Compressor_ZSTD {
-			supportsBatchUpdateCompression = true
-			break
-		}
-	}
-	return supportsBytestreamCompression && supportsBatchUpdateCompression, nil
-}
-
 // BatchCASUploader uploads many files to CAS concurrently, batching small
 // uploads together and falling back to bytestream uploads for large files.
 type BatchCASUploader struct {
 	ctx             context.Context
 	env             environment.Env
-	once            *sync.Once
-	compress        bool
 	eg              *errgroup.Group
 	unsentBatchReq  *repb.BatchUpdateBlobsRequest
 	uploads         map[digest.Key]struct{}
@@ -606,8 +581,6 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 	return &BatchCASUploader{
 		ctx:             ctx,
 		env:             env,
-		once:            &sync.Once{},
-		compress:        false,
 		eg:              eg,
 		unsentBatchReq:  &repb.BatchUpdateBlobsRequest{InstanceName: instanceName, DigestFunction: digestFunction},
 		unsentBatchSize: 0,
@@ -615,29 +588,6 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 		digestFunction:  digestFunction,
 		uploads:         make(map[digest.Key]struct{}),
 	}
-}
-
-func (ul *BatchCASUploader) supportsCompression() bool {
-	ul.once.Do(func() {
-		if !*enableUploadCompression {
-			return
-		}
-		capabilitiesClient := ul.env.GetCapabilitiesClient()
-		if capabilitiesClient == nil {
-			log.Warningf("Upload compression was enabled but no capabilities client found. Cannot verify cache server capabilities")
-			return
-		}
-		enabled, err := SupportsCompression(ul.ctx, capabilitiesClient)
-		if err != nil {
-			log.Errorf("Error determinining if cache server supports compression: %s", err)
-		}
-		if enabled {
-			ul.compress = true
-		} else {
-			log.Debugf("Upload compression was enabled but remote server did not support compression")
-		}
-	})
-	return ul.compress
 }
 
 // Upload adds the given content to the current batch or begins a streaming
@@ -658,7 +608,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	r := io.ReadCloser(rsc)
 
 	compressor := repb.Compressor_IDENTITY
-	if ul.supportsCompression() && d.GetSizeBytes() >= minSizeBytesToCompress {
+	if *enableUploadCompression && d.GetSizeBytes() >= minSizeBytesToCompress {
 		compressor = repb.Compressor_ZSTD
 	}
 
