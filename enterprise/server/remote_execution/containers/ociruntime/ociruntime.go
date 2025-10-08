@@ -80,7 +80,9 @@ var (
 	mounts                  = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
 	devices                 = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
 	enablePersistentVolumes = flag.Bool("executor.oci.enable_persistent_volumes", false, "Enables persistent volumes that can be shared between actions within a group. Only supported for OCI isolation type.")
+	enableTini              = flag.Bool("executor.oci.enable_tini", false, "If true, run all OCI containers with tini as pid 1.")
 	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
+	minPIDsLimit            = flag.Int64("executor.oci.min_pids_limit", 0, "Min value to use for pids.max (PID limit). The scheduler may set a higher value for larger tasks. This can be used for rare cases where the scheduler does not provide a high enough limit.")
 	cgroupMemoryCushion     = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
@@ -369,7 +371,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		cgroupSettings:    &scpb.CgroupSettings{},
 		imageRef:          args.Props.ContainerImage,
 		networkEnabled:    args.Props.DockerNetwork != "off",
-		tiniEnabled:       args.Props.DockerInit,
+		tiniEnabled:       args.Props.DockerInit || *enableTini,
 		user:              args.Props.DockerUser,
 		forceRoot:         args.Props.DockerForceRoot,
 		persistentVolumes: args.Props.PersistentVolumes,
@@ -890,6 +892,9 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	c.cgroupSettings.NumaNode = proto.Int32(int32(numaNode))
 	if *enableCgroupMemoryLimit && c.memoryBytes > 0 {
 		c.cgroupSettings.MemoryLimitBytes = proto.Int64(c.memoryBytes + int64(float64(c.memoryBytes)*(*cgroupMemoryCushion)))
+	}
+	if c.cgroupSettings.PidsMax != nil && *minPIDsLimit > 0 {
+		c.cgroupSettings.PidsMax = proto.Int64(max(c.cgroupSettings.GetPidsMax(), *minPIDsLimit))
 	}
 
 	path := c.cgroupPath()
