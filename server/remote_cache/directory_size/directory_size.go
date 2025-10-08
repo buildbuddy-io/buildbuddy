@@ -103,6 +103,11 @@ func (dsc *directorySizeCounter) AddDirWithDigest(dirDigest *repb.Digest, dir *r
 
 	for _, d := range dir.GetDirectories() {
 		dsc.childCount[digestString] = dsc.childCount[digestString] + 1
+		// No extra size needs to be counted for empty directories.
+		if digest.IsEmptyHash(d.GetDigest(), dsc.digestFunction) {
+			continue
+		}
+
 		subdirDigest := d.GetDigest().GetHash()
 		// If we've already found the child directory's size, count it
 		// and move on.
