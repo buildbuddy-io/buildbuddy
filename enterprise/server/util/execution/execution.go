@@ -168,9 +168,10 @@ func OLAPExecToClientProto(in *olaptables.Execution) (*espb.Execution, error) {
 			},
 			DoNotCache: in.DoNotCache,
 		},
-		TargetLabel:    in.TargetLabel,
-		ActionMnemonic: in.ActionMnemonic,
-		CommandSnippet: in.CommandSnippet,
+		TargetLabel:       in.TargetLabel,
+		ActionMnemonic:    in.ActionMnemonic,
+		CommandSnippet:    in.CommandSnippet,
+		PrimaryOutputPath: in.OutputPath,
 	}
 
 	return out, nil
@@ -206,6 +207,7 @@ func ExecutionListingColumns() []string {
 		"cpu_nanos",
 		"peak_memory_bytes",
 		"do_not_cache",
+		"output_path",
 		"command_snippet",
 		"target_label",
 		"action_mnemonic",
