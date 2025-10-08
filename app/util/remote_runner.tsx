@@ -10,7 +10,7 @@ const DEFAULT_CONTAINER_IMAGE = "docker://gcr.io/flame-public/rbe-ubuntu24-04:la
 
 export async function supportsRemoteRun(repoUrl: string): Promise<boolean> {
   const rsp = await rpcService.service.getLinkedGitHubRepos(new github.GetLinkedReposRequest());
-  return rsp.repoUrls.filter((url) => url === repoUrl).length > 0;
+  return rsp.repos.some((repo) => repo.repoUrl === repoUrl);
 }
 
 export function triggerRemoteRun(
