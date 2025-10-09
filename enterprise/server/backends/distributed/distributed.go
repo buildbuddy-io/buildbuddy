@@ -433,15 +433,23 @@ func (c *Cache) setLookasideEntry(lookasideKey string, data []byte) {
 }
 
 var lookasideCacheLookupCount map[bool]prometheus.Counter
+var lookasideCacheLookupBytes map[bool]prometheus.Counter
 
 func init() {
 	// Calling LookasideCacheLookupCount.With is a large portion of the time
 	// spent on the lookaside cache, so just do it once.
 	lookasideCacheLookupCount = make(map[bool]prometheus.Counter, 2)
+	lookasideCacheLookupBytes = make(map[bool]prometheus.Counter, 2)
 	lookasideCacheLookupCount[true] = metrics.LookasideCacheLookupCount.With(prometheus.Labels{
 		metrics.LookasideCacheLookupStatus: metrics.HitStatusLabel,
 	})
+	lookasideCacheLookupBytes[true] = metrics.LookasideCacheLookupCount.With(prometheus.Labels{
+		metrics.LookasideCacheLookupStatus: metrics.HitStatusLabel,
+	})
 	lookasideCacheLookupCount[false] = metrics.LookasideCacheLookupCount.With(prometheus.Labels{
+		metrics.LookasideCacheLookupStatus: metrics.MissStatusLabel,
+	})
+	lookasideCacheLookupBytes[false] = metrics.LookasideCacheLookupCount.With(prometheus.Labels{
 		metrics.LookasideCacheLookupStatus: metrics.MissStatusLabel,
 	})
 }
@@ -472,6 +480,7 @@ func (c *Cache) getLookasideEntry(ctx context.Context, r *rspb.ResourceName) ([]
 	c.lookasideMu.Unlock()
 
 	lookasideCacheLookupCount[found].Inc()
+	lookasideCacheLookupBytes[found].Add(float64(r.GetDigest().GetSizeBytes()))
 	if found {
 		c.log.Debugf("Got %q from lookaside cache", k)
 		return entry.data, true
