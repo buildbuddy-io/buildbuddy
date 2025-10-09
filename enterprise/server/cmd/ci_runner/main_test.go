@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"testing"
 
@@ -65,4 +66,64 @@ func TestInvocationLogHandlesCRLF(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, len(chunk), n)
 	require.Equal(t, "line1 --remote_exec_header=<REDACTED>\r\nline2\r\n", buf.String())
+}
+
+// failingWriter simulates a writer that fails after a certain number of writes
+type failingWriter struct {
+	failAfter int
+	callCount int
+}
+
+func (fw *failingWriter) Write(p []byte) (int, error) {
+	fw.callCount++
+	if fw.callCount > fw.failAfter {
+		return 0, errors.New("write error")
+	}
+	return len(p), nil
+}
+
+func TestInvocationLogFailsFastAfterWriteError(t *testing.T) {
+	invLog := &invocationLog{}
+	invLog.writeListener = func(string) {}
+	failWriter := &failingWriter{failAfter: 1}
+	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, failWriter)
+
+	// First write should succeed
+	n, err := invLog.Write([]byte("line1\n"))
+	require.NoError(t, err)
+	require.Equal(t, 6, n)
+
+	// Second write should fail
+	n, err = invLog.Write([]byte("line2\n"))
+	require.Error(t, err)
+	require.Equal(t, 6, n)
+	require.Equal(t, "write error", err.Error())
+
+	// Third write should fail fast without attempting to write
+	n, err = invLog.Write([]byte("line3\n"))
+	require.Error(t, err)
+	require.Equal(t, 0, n)
+	require.Equal(t, "write error", err.Error())
+	require.Equal(t, 2, failWriter.callCount, "should not attempt write after error")
+}
+
+func TestInvocationLogFlushFailsFastAfterWriteError(t *testing.T) {
+	invLog := &invocationLog{}
+	invLog.writeListener = func(string) {}
+	failWriter := &failingWriter{failAfter: 1}
+	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, failWriter)
+
+	// First write should succeed
+	_, err := invLog.Write([]byte("line1\n"))
+	require.NoError(t, err)
+
+	// Second write should fail
+	_, err = invLog.Write([]byte("line2\n"))
+	require.Error(t, err)
+
+	// Flush should fail fast without attempting to write
+	err = invLog.Flush()
+	require.Error(t, err)
+	require.Equal(t, "write error", err.Error())
+	require.Equal(t, 2, failWriter.callCount, "should not attempt write after error")
 }

@@ -944,6 +944,7 @@ type invocationLog struct {
 
 	mu          sync.Mutex
 	partialLine bytes.Buffer
+	writeErr    error // First write error encountered
 }
 
 func newInvocationLog() *invocationLog {
@@ -955,6 +956,11 @@ func newInvocationLog() *invocationLog {
 func (invLog *invocationLog) Write(b []byte) (int, error) {
 	invLog.mu.Lock()
 	defer invLog.mu.Unlock()
+
+	// Fail fast if a previous write has failed
+	if invLog.writeErr != nil {
+		return 0, invLog.writeErr
+	}
 
 	if n, err := invLog.partialLine.Write(b); err != nil {
 		return n, err
@@ -986,6 +992,7 @@ func (invLog *invocationLog) Write(b []byte) (int, error) {
 		invLog.writeListener(redacted)
 		if _, err := invLog.writer.Write([]byte(redacted)); err != nil && writeErr == nil {
 			writeErr = err
+			invLog.writeErr = err
 		}
 	}
 
@@ -998,6 +1005,11 @@ func (invLog *invocationLog) Flush() error {
 	invLog.mu.Lock()
 	defer invLog.mu.Unlock()
 
+	// Fail fast if a previous write has failed
+	if invLog.writeErr != nil {
+		return invLog.writeErr
+	}
+
 	if invLog.partialLine.Len() == 0 {
 		return nil
 	}
@@ -1009,6 +1021,9 @@ func (invLog *invocationLog) Flush() error {
 
 	invLog.writeListener(redacted)
 	_, err := invLog.writer.Write([]byte(redacted))
+	if err != nil {
+		invLog.writeErr = err
+	}
 	return err
 }
 
