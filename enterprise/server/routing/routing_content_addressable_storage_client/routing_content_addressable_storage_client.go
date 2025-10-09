@@ -28,7 +28,7 @@ func New(env environment.Env) (*RoutingCASClient, error) {
 }
 
 func (r *RoutingCASClient) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest, opts ...grpc.CallOption) (*repb.FindMissingBlobsResponse, error) {
-	primaryClient, err := r.router.GetPrimaryCASClient(ctx)
+	primaryClient, _, err := r.router.GetCASClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary CAS client: %s", err)
 	}
@@ -36,7 +36,7 @@ func (r *RoutingCASClient) FindMissingBlobs(ctx context.Context, req *repb.FindM
 }
 
 func (r *RoutingCASClient) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest, opts ...grpc.CallOption) (*repb.BatchUpdateBlobsResponse, error) {
-	primaryClient, err := r.router.GetPrimaryCASClient(ctx)
+	primaryClient, _, err := r.router.GetCASClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary CAS client: %s", err)
 	}
@@ -44,7 +44,7 @@ func (r *RoutingCASClient) BatchUpdateBlobs(ctx context.Context, req *repb.Batch
 }
 
 func (r *RoutingCASClient) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest, opts ...grpc.CallOption) (*repb.BatchReadBlobsResponse, error) {
-	primaryClient, err := r.router.GetPrimaryCASClient(ctx)
+	primaryClient, _, err := r.router.GetCASClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary CAS client: %s", err)
 	}
@@ -52,7 +52,7 @@ func (r *RoutingCASClient) BatchReadBlobs(ctx context.Context, req *repb.BatchRe
 }
 
 func (r *RoutingCASClient) GetTree(ctx context.Context, req *repb.GetTreeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[repb.GetTreeResponse], error) {
-	primaryClient, err := r.router.GetPrimaryCASClient(ctx)
+	primaryClient, _, err := r.router.GetCASClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary CAS client: %s", err)
 	}
@@ -60,7 +60,7 @@ func (r *RoutingCASClient) GetTree(ctx context.Context, req *repb.GetTreeRequest
 }
 
 func (r *RoutingCASClient) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest, opts ...grpc.CallOption) (*repb.SpliceBlobResponse, error) {
-	primaryClient, err := r.router.GetPrimaryCASClient(ctx)
+	primaryClient, _, err := r.router.GetCASClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary CAS client: %s", err)
 	}
@@ -68,7 +68,7 @@ func (r *RoutingCASClient) SpliceBlob(ctx context.Context, req *repb.SpliceBlobR
 }
 
 func (r *RoutingCASClient) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest, opts ...grpc.CallOption) (*repb.SplitBlobResponse, error) {
-	primaryClient, err := r.router.GetPrimaryCASClient(ctx)
+	primaryClient, _, err := r.router.GetCASClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary CAS client: %s", err)
 	}

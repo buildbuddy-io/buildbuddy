@@ -27,7 +27,7 @@ func New(env environment.Env) (repb.ActionCacheClient, error) {
 }
 
 func (r *RoutingACClient) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
-	primaryClient, err := r.router.GetPrimaryACClient(ctx)
+	primaryClient, _, err := r.router.GetACClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary AC client: %s", err)
 	}
@@ -35,7 +35,7 @@ func (r *RoutingACClient) GetActionResult(ctx context.Context, req *repb.GetActi
 }
 
 func (r *RoutingACClient) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
-	primaryClient, err := r.router.GetPrimaryACClient(ctx)
+	primaryClient, _, err := r.router.GetACClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary AC client: %s", err)
 	}
