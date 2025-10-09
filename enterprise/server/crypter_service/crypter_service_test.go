@@ -653,7 +653,7 @@ func TestKeyCaching(t *testing.T) {
 	// Test error caching.
 	{
 		clock := clockwork.NewFakeClock()
-		keyRefreshScanFrequency := 10 * time.Second
+		keyRefreshScanFrequency := 10 * time.Hour
 		keyErrCacheTime := 10 * time.Second
 		opts := crypter_key_cache.Opts{KeyRefreshScanFrequency: keyRefreshScanFrequency, KeyErrCacheTime: keyErrCacheTime}
 		crypter, err := newWithOpts(env, clock, &opts)
