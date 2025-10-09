@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "printlog",
     srcs = ["printlog.go"],
@@ -14,5 +16,3 @@ go_library(
         "@org_golang_google_protobuf//encoding/protojson",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

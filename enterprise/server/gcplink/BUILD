@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "gcplink",
     srcs = ["gcplink.go"],
@@ -22,5 +24,3 @@ go_library(
         "@org_golang_x_oauth2//:oauth2",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

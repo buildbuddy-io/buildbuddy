@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "add",
     srcs = ["add.go"],
@@ -12,5 +14,3 @@ go_library(
         "@com_github_manifoldco_promptui//:promptui",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

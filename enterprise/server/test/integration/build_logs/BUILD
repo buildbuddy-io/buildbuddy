@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_test(
     name = "build_logs_test",
     size = "small",
@@ -17,5 +19,3 @@ go_test(
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

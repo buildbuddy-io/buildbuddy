@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "options",
     srcs = ["options.go"],
@@ -14,5 +16,3 @@ go_library(
         "//server/util/lib/set",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])
