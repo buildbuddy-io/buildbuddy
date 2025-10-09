@@ -14,6 +14,12 @@ const (
 	// The negative form of flag using its standard name; for example: "--noname"
 	NegativeName
 
+	// The form of a flag using its old name; for example: "--experimental_name"
+	OldName
+	// The negative form of a flag using its old name; for example:
+	// "--noexperimental_name"
+	NegativeOldName
+
 	// The form of a flag using its short name; for example: "-x"
 	ShortName
 

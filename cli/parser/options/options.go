@@ -78,6 +78,9 @@ type Definition struct {
 	// name is the long-form name of this flag. Example: "compilation_mode"
 	name string
 
+	// oldName is the old name for this flag, if one exists.
+	oldName string
+
 	// shortName is the short-form name of this flag, if one exists. Bazel only
 	// allows single letters for these, like "c". Note that the "=" assignment
 	// syntax cannot be used with short names. For example,
@@ -110,6 +113,10 @@ type Definition struct {
 
 func (d *Definition) Name() string {
 	return d.name
+}
+
+func (d *Definition) OldName() string {
+	return d.oldName
 }
 
 func (d *Definition) ShortName() string {
@@ -165,6 +172,9 @@ func (d *Definition) PluginID() string {
 
 type DefinitionOpt func(d *Definition)
 
+func WithOldName(oldName string) DefinitionOpt {
+	return func(d *Definition) { d.oldName = oldName }
+}
 func WithShortName(shortName string) DefinitionOpt {
 	return func(d *Definition) { d.shortName = shortName }
 }
@@ -249,6 +259,7 @@ func DefinitionFrom(info *bfpb.FlagInfo) *Definition {
 	d := &Definition{
 		name:              info.GetName(),
 		shortName:         info.GetAbbreviation(),
+		oldName:           info.GetOldName(),
 		multi:             info.GetAllowsMultiple(),
 		hasNegative:       info.GetHasNegativeFlag(),
 		requiresValue:     info.GetRequiresValue(),
@@ -276,8 +287,10 @@ type Option interface {
 	SetDefinition(*Definition)
 	UseName()
 	UseShortName()
+	UseOldName()
 	UsesName() bool
 	UsesShortName() bool
+	UsesOldName() bool
 	Normalized() Option
 
 	// Because Options wrap other Options sometimes, we cannot depend on being
@@ -304,6 +317,8 @@ func NewOptionBase(opt string, d *Definition) (*optionBase, error) {
 	switch opt {
 	case d.name:
 		form = flag_form.Name
+	case d.oldName:
+		form = flag_form.OldName
 	case d.shortName:
 		form = flag_form.ShortName
 	default:
@@ -311,6 +326,10 @@ func NewOptionBase(opt string, d *Definition) (*optionBase, error) {
 			if n, cut := strings.CutPrefix(opt, "no"); cut {
 				if n == d.name {
 					form = flag_form.NegativeName
+					break
+				}
+				if n == d.oldName {
+					form = flag_form.NegativeOldName
 					break
 				}
 			}
@@ -330,6 +349,15 @@ func (o *optionBase) UseName() {
 		return
 	}
 	o.Form = o.Form.AsNameType(flag_form.Name)
+}
+
+// Coerce this option base to use the old name for this option.
+func (o *optionBase) UseOldName() {
+	if o.OldName() == "" {
+		log.Warnf("Attempted to use old name for option %s, which lacks an old name.", o.Name())
+		return
+	}
+	o.Form = o.Form.AsNameType(flag_form.OldName)
 }
 
 // Coerce this option base to use the short name for this option. Does not
@@ -352,6 +380,12 @@ func (o *optionBase) UsesName() bool {
 	return o.Form.CompareNameType(flag_form.Name)
 }
 
+// Returns whether or not this option will be represented using the old
+// name for the option.
+func (o *optionBase) UsesOldName() bool {
+	return o.OldName() != "" && o.Form.CompareNameType(flag_form.OldName)
+}
+
 // Returns whether or not this option will be represented using the short name
 // for the option.
 func (o *optionBase) UsesShortName() bool {
@@ -365,6 +399,10 @@ func (o *optionBase) Format() string {
 		return "--" + o.Name()
 	case flag_form.NegativeName:
 		return "--" + "no" + o.Name()
+	case flag_form.OldName:
+		return "--" + o.OldName()
+	case flag_form.NegativeOldName:
+		return "--" + "no" + o.OldName()
 	case flag_form.ShortName:
 		return "-" + o.ShortName()
 	default:
