@@ -1,6 +1,7 @@
 package ioutil
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -159,6 +160,63 @@ func (b *BestEffortWriter) Write(p []byte) (int, error) {
 
 func (b *BestEffortWriter) Err() error {
 	return b.err
+}
+
+// LineWriter buffers data until a newline byte is observed, then forwards only
+// complete lines to the underlying writer. Partial lines remain buffered until
+// completed.
+type LineWriter struct {
+	w   io.Writer
+	buf []byte
+}
+
+func NewLineWriter(w io.Writer) *LineWriter {
+	return &LineWriter{w: w}
+}
+
+func (lw *LineWriter) Write(p []byte) (int, error) {
+	total := 0
+	for len(p) > 0 {
+		idx := bytes.IndexByte(p, '\n')
+		if idx == -1 {
+			lw.buf = append(lw.buf, p...)
+			total += len(p)
+			break
+		}
+
+		segment := p[:idx+1]
+		lw.buf = append(lw.buf, segment...)
+		total += len(segment)
+
+		if err := lw.flushBuffered(); err != nil {
+			return total, err
+		}
+
+		p = p[idx+1:]
+	}
+	return total, nil
+}
+
+// Flush writes any buffered data to the underlying writer, including
+// partial lines that don't end with a newline.
+func (lw *LineWriter) Flush() error {
+	return lw.flushBuffered()
+}
+
+func (lw *LineWriter) flushBuffered() error {
+	for len(lw.buf) > 0 {
+		n, err := lw.w.Write(lw.buf)
+		if n > 0 {
+			lw.buf = lw.buf[n:]
+		}
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+	}
+	return nil
 }
 
 // DoubleBufferWrite is a buffered writer inspired by graphics double buffering,

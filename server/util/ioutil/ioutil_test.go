@@ -250,3 +250,251 @@ func TestDoubleBufferWriter_WriteAfterCancel(t *testing.T) {
 	}
 	require.Equal(t, ctx.Err(), err)
 }
+
+func TestLineWriter_SingleCompleteLine(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lw := ioutil.NewLineWriter(buf)
+
+	n, err := lw.Write([]byte("hello world\n"))
+	require.NoError(t, err)
+	require.Equal(t, 12, n)
+	require.Equal(t, "hello world\n", buf.String())
+}
+
+func TestLineWriter_MultipleCompleteLines(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lw := ioutil.NewLineWriter(buf)
+
+	n, err := lw.Write([]byte("line 1\nline 2\nline 3\n"))
+	require.NoError(t, err)
+	require.Equal(t, 21, n)
+	require.Equal(t, "line 1\nline 2\nline 3\n", buf.String())
+}
+
+func TestLineWriter_PartialLine(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lw := ioutil.NewLineWriter(buf)
+
+	n, err := lw.Write([]byte("hello"))
+	require.NoError(t, err)
+	require.Equal(t, 5, n)
+	require.Empty(t, buf.String(), "partial line should not be written")
+
+	n, err = lw.Write([]byte(" world\n"))
+	require.NoError(t, err)
+	require.Equal(t, 7, n)
+	require.Equal(t, "hello world\n", buf.String())
+}
+
+func TestLineWriter_MultiplePartialWrites(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lw := ioutil.NewLineWriter(buf)
+
+	n, err := lw.Write([]byte("hel"))
+	require.NoError(t, err)
+	require.Equal(t, 3, n)
+	require.Empty(t, buf.String())
+
+	n, err = lw.Write([]byte("lo "))
+	require.NoError(t, err)
+	require.Equal(t, 3, n)
+	require.Empty(t, buf.String())
+
+	n, err = lw.Write([]byte("wor"))
+	require.NoError(t, err)
+	require.Equal(t, 3, n)
+	require.Empty(t, buf.String())
+
+	n, err = lw.Write([]byte("ld\n"))
+	require.NoError(t, err)
+	require.Equal(t, 3, n)
+	require.Equal(t, "hello world\n", buf.String())
+}
+
+func TestLineWriter_MixedCompleteAndPartialLines(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lw := ioutil.NewLineWriter(buf)
+
+	n, err := lw.Write([]byte("complete line\npartial"))
+	require.NoError(t, err)
+	require.Equal(t, 21, n)
+	require.Equal(t, "complete line\n", buf.String())
+
+	n, err = lw.Write([]byte(" line\n"))
+	require.NoError(t, err)
+	require.Equal(t, 6, n)
+	require.Equal(t, "complete line\npartial line\n", buf.String())
+}
+
+func TestLineWriter_MultipleNewlinesInOneWrite(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lw := ioutil.NewLineWriter(buf)
+
+	n, err := lw.Write([]byte("first\nsecond\nthird\npartial"))
+	require.NoError(t, err)
+	require.Equal(t, 26, n)
+	require.Equal(t, "first\nsecond\nthird\n", buf.String())
+
+	n, err = lw.Write([]byte("\n"))
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	require.Equal(t, "first\nsecond\nthird\npartial\n", buf.String())
+}
+
+func TestLineWriter_EmptyWrite(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lw := ioutil.NewLineWriter(buf)
+
+	n, err := lw.Write([]byte{})
+	require.NoError(t, err)
+	require.Equal(t, 0, n)
+	require.Empty(t, buf.String())
+}
+
+func TestLineWriter_OnlyNewline(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lw := ioutil.NewLineWriter(buf)
+
+	n, err := lw.Write([]byte("\n"))
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	require.Equal(t, "\n", buf.String())
+}
+
+func TestLineWriter_ConsecutiveNewlines(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lw := ioutil.NewLineWriter(buf)
+
+	n, err := lw.Write([]byte("\n\n\n"))
+	require.NoError(t, err)
+	require.Equal(t, 3, n)
+	require.Equal(t, "\n\n\n", buf.String())
+}
+
+func TestLineWriter_FlushWithNoData(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lw := ioutil.NewLineWriter(buf)
+
+	err := lw.Flush()
+	require.NoError(t, err)
+	require.Empty(t, buf.String())
+}
+
+func TestLineWriter_FlushWithPartialLine(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lw := ioutil.NewLineWriter(buf)
+
+	n, err := lw.Write([]byte("partial line without newline"))
+	require.NoError(t, err)
+	require.Equal(t, 28, n)
+	require.Empty(t, buf.String(), "partial line should not be written before flush")
+
+	err = lw.Flush()
+	require.NoError(t, err)
+	require.Equal(t, "partial line without newline", buf.String())
+}
+
+func TestLineWriter_FlushAfterCompleteLine(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lw := ioutil.NewLineWriter(buf)
+
+	n, err := lw.Write([]byte("complete line\n"))
+	require.NoError(t, err)
+	require.Equal(t, 14, n)
+	require.Equal(t, "complete line\n", buf.String())
+
+	err = lw.Flush()
+	require.NoError(t, err)
+	require.Equal(t, "complete line\n", buf.String())
+}
+
+type shortWriter struct {
+	buf       *bytes.Buffer
+	maxWrite  int
+	callCount int
+}
+
+func (sw *shortWriter) Write(p []byte) (int, error) {
+	sw.callCount++
+	if len(p) > sw.maxWrite {
+		n, err := sw.buf.Write(p[:sw.maxWrite])
+		return n, err
+	}
+	return sw.buf.Write(p)
+}
+
+func TestLineWriter_ShortWrites(t *testing.T) {
+	sw := &shortWriter{
+		buf:      &bytes.Buffer{},
+		maxWrite: 3,
+	}
+	lw := ioutil.NewLineWriter(sw)
+
+	// Write a line that requires multiple writes to flush
+	n, err := lw.Write([]byte("hello\n"))
+	require.NoError(t, err)
+	require.Equal(t, 6, n)
+	require.Equal(t, "hello\n", sw.buf.String())
+	require.Greater(t, sw.callCount, 1, "should have required multiple writes")
+}
+
+type errorWriter struct {
+	failAfterBytes int
+	written        int
+}
+
+func (ew *errorWriter) Write(p []byte) (int, error) {
+	if ew.written >= ew.failAfterBytes {
+		return 0, errors.New("write error")
+	}
+	toWrite := len(p)
+	if ew.written+toWrite > ew.failAfterBytes {
+		toWrite = ew.failAfterBytes - ew.written
+	}
+	ew.written += toWrite
+	return toWrite, nil
+}
+
+func TestLineWriter_WriteError(t *testing.T) {
+	ew := &errorWriter{failAfterBytes: 5}
+	lw := ioutil.NewLineWriter(ew)
+
+	// This should fail when trying to flush "hello\n"
+	n, err := lw.Write([]byte("hello\n"))
+	require.Error(t, err)
+	require.Equal(t, 6, n)
+	require.Equal(t, 5, ew.written)
+}
+
+func TestLineWriter_FlushError(t *testing.T) {
+	ew := &errorWriter{failAfterBytes: 3}
+	lw := ioutil.NewLineWriter(ew)
+
+	n, err := lw.Write([]byte("partial"))
+	require.NoError(t, err)
+	require.Equal(t, 7, n)
+
+	err = lw.Flush()
+	require.Error(t, err)
+	require.Equal(t, 3, ew.written)
+}
+
+func TestLineWriter_LargeWrite(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lw := ioutil.NewLineWriter(buf)
+
+	// Generate a large write with multiple lines
+	largeData := make([]byte, 10000)
+	for i := range largeData {
+		if i%100 == 99 {
+			largeData[i] = '\n'
+		} else {
+			largeData[i] = 'a'
+		}
+	}
+
+	n, err := lw.Write(largeData)
+	require.NoError(t, err)
+	require.Equal(t, len(largeData), n)
+	require.Equal(t, largeData, buf.Bytes())
+}
