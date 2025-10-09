@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "arg",
     srcs = ["arg.go"],
@@ -12,5 +14,3 @@ go_test(
     embed = [":arg"],
     deps = ["@com_github_stretchr_testify//assert"],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

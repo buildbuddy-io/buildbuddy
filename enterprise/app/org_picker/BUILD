@@ -1,5 +1,7 @@
 load("//rules/typescript:index.bzl", "ts_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 exports_files(glob(["*.css"]))
 
 ts_library(
@@ -15,5 +17,3 @@ ts_library(
         "//app/router",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

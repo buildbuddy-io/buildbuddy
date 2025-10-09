@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "bb_lib",
     srcs = ["bb.go"],
@@ -111,5 +113,3 @@ go_binary(
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "distributed_client",
     srcs = ["distributed_client.go"],
@@ -51,5 +53,3 @@ go_test(
         "@org_golang_google_protobuf//testing/protocmp",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

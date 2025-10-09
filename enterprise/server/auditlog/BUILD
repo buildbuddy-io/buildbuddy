@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "auditlog",
     srcs = ["auditlog.go"],
@@ -24,8 +26,6 @@ go_library(
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
     name = "auditlog_test",
