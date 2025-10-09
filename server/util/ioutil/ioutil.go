@@ -168,6 +168,7 @@ func (b *BestEffortWriter) Err() error {
 type LineWriter struct {
 	w   io.Writer
 	buf []byte
+	err error
 }
 
 func NewLineWriter(w io.Writer) *LineWriter {
@@ -175,6 +176,9 @@ func NewLineWriter(w io.Writer) *LineWriter {
 }
 
 func (lw *LineWriter) Write(p []byte) (int, error) {
+	if lw.err != nil {
+		return 0, lw.err
+	}
 	total := 0
 	for len(p) > 0 {
 		idx := bytes.IndexByte(p, '\n')
@@ -189,6 +193,7 @@ func (lw *LineWriter) Write(p []byte) (int, error) {
 		total += len(segment)
 
 		if err := lw.flushBuffered(); err != nil {
+			// total reflects bytes accepted into the buffer before the error.
 			return total, err
 		}
 
@@ -200,20 +205,28 @@ func (lw *LineWriter) Write(p []byte) (int, error) {
 // Flush writes any buffered data to the underlying writer, including
 // partial lines that don't end with a newline.
 func (lw *LineWriter) Flush() error {
+	if lw.err != nil {
+		return lw.err
+	}
 	return lw.flushBuffered()
 }
 
 func (lw *LineWriter) flushBuffered() error {
+	if lw.err != nil {
+		return lw.err
+	}
 	for len(lw.buf) > 0 {
 		n, err := lw.w.Write(lw.buf)
 		if n > 0 {
 			lw.buf = lw.buf[n:]
 		}
 		if err != nil {
+			lw.err = err
 			return err
 		}
 		if n == 0 {
-			return io.ErrShortWrite
+			lw.err = io.ErrShortWrite
+			return lw.err
 		}
 	}
 	return nil

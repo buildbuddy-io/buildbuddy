@@ -464,6 +464,15 @@ func TestLineWriter_WriteError(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, 6, n)
 	require.Equal(t, 5, ew.written)
+
+	n, err = lw.Write([]byte("ignored\n"))
+	require.Error(t, err)
+	require.Zero(t, n)
+	require.Equal(t, 5, ew.written)
+
+	err = lw.Flush()
+	require.Error(t, err)
+	require.Equal(t, 5, ew.written)
 }
 
 func TestLineWriter_FlushError(t *testing.T) {
@@ -473,6 +482,15 @@ func TestLineWriter_FlushError(t *testing.T) {
 	n, err := lw.Write([]byte("partial"))
 	require.NoError(t, err)
 	require.Equal(t, 7, n)
+
+	err = lw.Flush()
+	require.Error(t, err)
+	require.Equal(t, 3, ew.written)
+
+	n, err = lw.Write([]byte("more data\n"))
+	require.Error(t, err)
+	require.Zero(t, n)
+	require.Equal(t, 3, ew.written)
 
 	err = lw.Flush()
 	require.Error(t, err)
