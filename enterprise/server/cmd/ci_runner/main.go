@@ -953,11 +953,13 @@ func newInvocationLog() *invocationLog {
 	return invLog
 }
 
+// Write ultimately writes the given bytes to the writeListener and given writer.
+// Write will buffer bytes until encountering a newline, when it will redact secrets from the full line.
+// Callers are expected to call Flush when there will be no more Write calls.
 func (invLog *invocationLog) Write(b []byte) (int, error) {
 	invLog.mu.Lock()
 	defer invLog.mu.Unlock()
 
-	// Fail fast if a previous write has failed
 	if invLog.writeErr != nil {
 		return 0, invLog.writeErr
 	}
@@ -996,16 +998,15 @@ func (invLog *invocationLog) Write(b []byte) (int, error) {
 		}
 	}
 
-	// Return the size of the original buffer even if a redacted size was written,
-	// or clients will return a short write error
 	return len(b), writeErr
 }
 
+// Flush redacts secrets from the partialLine buffer and writes the redacted output
+// to the writeListener and underlying writer.
 func (invLog *invocationLog) Flush() error {
 	invLog.mu.Lock()
 	defer invLog.mu.Unlock()
 
-	// Fail fast if a previous write has failed
 	if invLog.writeErr != nil {
 		return invLog.writeErr
 	}
@@ -1020,11 +1021,11 @@ func (invLog *invocationLog) Flush() error {
 	redacted := redact.RedactText(line)
 
 	invLog.writeListener(redacted)
-	_, err := invLog.writer.Write([]byte(redacted))
-	if err != nil {
+	if _, err := invLog.writer.Write([]byte(redacted)); err != nil {
 		invLog.writeErr = err
+		return err
 	}
-	return err
+	return nil
 }
 
 func (invLog *invocationLog) Println(vals ...interface{}) {
