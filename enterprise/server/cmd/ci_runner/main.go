@@ -956,8 +956,8 @@ func (invLog *invocationLog) Write(b []byte) (int, error) {
 	invLog.mu.Lock()
 	defer invLog.mu.Unlock()
 
-	if _, err := invLog.partialLine.Write(b); err != nil {
-		return len(b), err
+	if n, err := invLog.partialLine.Write(b); err != nil {
+		return n, err
 	}
 
 	var writeErr error
@@ -974,23 +974,17 @@ func (invLog *invocationLog) Write(b []byte) (int, error) {
 		}
 
 		newlineLen := 1
-		newlineSuffix := data[idx : idx+newlineLen]
-
 		if data[idx] == '\r' && idx+1 < len(data) && data[idx+1] == '\n' {
 			newlineLen = 2
-			newlineSuffix = data[idx : idx+newlineLen]
 		}
 
-		lineContent := string(data[:idx])
-		newlineStr := string(newlineSuffix)
-
+		line := string(data[:idx+newlineLen])
 		invLog.partialLine.Next(idx + newlineLen)
 
-		redacted := redact.RedactText(lineContent)
-		output := redacted + newlineStr
+		redacted := redact.RedactText(line)
 
-		invLog.writeListener(output)
-		if _, err := invLog.writer.Write([]byte(output)); err != nil && writeErr == nil {
+		invLog.writeListener(redacted)
+		if _, err := invLog.writer.Write([]byte(redacted)); err != nil && writeErr == nil {
 			writeErr = err
 		}
 	}

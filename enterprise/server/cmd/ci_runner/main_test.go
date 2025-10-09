@@ -56,3 +56,13 @@ func TestInvocationLogFlushesPartialLine(t *testing.T) {
 	require.NoError(t, invLog.Flush())
 	require.Equal(t, "common --remote_exec_header=<REDACTED>", buf.String())
 }
+
+func TestInvocationLogHandlesCRLF(t *testing.T) {
+	invLog, buf := newTestInvocationLog()
+
+	chunk := "line1 --remote_exec_header=secret\r\nline2\r\n"
+	n, err := invLog.Write([]byte(chunk))
+	require.NoError(t, err)
+	require.Equal(t, len(chunk), n)
+	require.Equal(t, "line1 --remote_exec_header=<REDACTED>\r\nline2\r\n", buf.String())
+}
