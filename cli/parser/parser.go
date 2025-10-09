@@ -106,6 +106,9 @@ type Subparser struct {
 
 func (m *Subparser) ForceAdd(d *options.Definition) {
 	m.ByName[d.Name()] = d
+	if d.HasNegative() {
+		m.ByName["no"+d.Name()] = d
+	}
 	if d.ShortName() != "" {
 		m.ByShortName[d.ShortName()] = d
 	}
@@ -117,6 +120,11 @@ func (m *Subparser) Add(d *options.Definition) error {
 	}
 	if _, ok := m.ByShortName[d.ShortName()]; ok {
 		return fmt.Errorf("Naming collision adding flag with short name %s; flag already exists with that short name.", d.ShortName())
+	}
+	if d.HasNegative() {
+		if _, ok := m.ByName["no"+d.Name()]; ok {
+			return fmt.Errorf("Naming collision adding flag %s; flag has negative form %s, but a flag already exists with that name.", d.Name(), "no"+d.Name())
+		}
 	}
 	m.ForceAdd(d)
 	return nil
@@ -474,11 +482,6 @@ func (p *Subparser) parseLongNameOption(optName string) (options.Option, error) 
 	if d, ok := p.ByName[optName]; ok {
 		return options.NewOption(optName, v, d)
 	}
-	if boolOptName, ok := strings.CutPrefix(optName, "no"); ok {
-		if d, ok := p.ByName[boolOptName]; ok && d.HasNegative() {
-			return options.NewOption(optName, v, d)
-		}
-	}
 
 	for prefix := range options.StarlarkSkippedPrefixes {
 		if strings.HasPrefix(optName, prefix) {
@@ -531,7 +534,6 @@ func (p *Subparser) parseShortNameOption(optName string) (options.Option, error)
 	if err != nil {
 		return nil, err
 	}
-	o.UseShortName(true)
 	return o, err
 }
 
