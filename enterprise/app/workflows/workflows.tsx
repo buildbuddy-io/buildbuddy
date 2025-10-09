@@ -390,6 +390,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
       useDefaultWorkflowConfig: updated,
     });
 
+    alert_service.loading();
     rpcService.service
       .updateGitHubRepoSettings(request)
       .then(() => {
