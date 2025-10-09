@@ -608,15 +608,13 @@ func (c *Cache) StartListening() {
 	}
 	c.shutDownChan = make(chan struct{})
 	go c.heartbeatPeers(c.shutDownChan)
-	go func() {
-		log.Infof("Distributed cache listening on %q", c.config.ListenAddr)
-		if c.heartbeatChannel != nil {
-			c.heartbeatChannel.StartAdvertising()
-		}
-		if err := c.distributedProxy.StartListening(); err != nil {
-			log.Warningf("Unable to start cacheproxy: %s", err)
-		}
-	}()
+	log.Infof("Distributed cache listening on %q", c.config.ListenAddr)
+	if c.heartbeatChannel != nil {
+		c.heartbeatChannel.StartAdvertising()
+	}
+	if err := c.distributedProxy.StartListening(); err != nil {
+		log.Warningf("Unable to start cacheproxy: %s", err)
+	}
 	c.finishedShutdown = false
 }
 
