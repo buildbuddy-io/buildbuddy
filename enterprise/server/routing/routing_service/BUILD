@@ -15,9 +15,7 @@ go_library(
         "//server/util/alert",
         "//server/util/flag",
         "//server/util/grpc_client",
-        "//server/util/log",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_google_grpc//:grpc",
     ],
 )
