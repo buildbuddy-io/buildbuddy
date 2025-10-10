@@ -26,21 +26,17 @@ type HandlerFunc = func(stream pepb.PublishBuildEvent_PublishBuildToolEventStrea
 type TestBuildEventServer struct {
 	t testing.TB
 
-	// EventHandler can be used to override the default Ack handler.
 	EventHandler HandlerFunc
 }
 
-// NewTestBuildEventServer creates a new test BES server.
 func NewTestBuildEventServer(t testing.TB) *TestBuildEventServer {
 	return &TestBuildEventServer{t: t}
 }
 
-// PublishLifecycleEvent implements the PublishBuildEvent service.
 func (s *TestBuildEventServer) PublishLifecycleEvent(ctx context.Context, req *pepb.PublishLifecycleEventRequest) (*emptypb.Empty, error) {
 	return &emptypb.Empty{}, nil
 }
 
-// PublishBuildToolEventStream implements the PublishBuildEvent service.
 func (s *TestBuildEventServer) PublishBuildToolEventStream(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
 	var streamID *bepb.StreamId
 	for {
@@ -64,7 +60,6 @@ func (s *TestBuildEventServer) PublishBuildToolEventStream(stream pepb.PublishBu
 	}
 }
 
-// Ack sends an acknowledgement for the given event.
 func Ack(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer, streamID *bepb.StreamId, event *pepb.PublishBuildToolEventStreamRequest) error {
 	err := stream.Send(&pepb.PublishBuildToolEventStreamResponse{
 		StreamId:       streamID,
@@ -85,7 +80,6 @@ func FailWith(err error) HandlerFunc {
 
 // Run starts a test BES server and returns both the server and a client connected to it.
 // The server uses an in-memory bufconn connection and is automatically cleaned up when the test ends.
-// This approach works on all platforms including Windows.
 func Run(t testing.TB) (*TestBuildEventServer, pepb.PublishBuildEventClient) {
 	server := NewTestBuildEventServer(t)
 
