@@ -1,7 +1,6 @@
 package commandutil
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -38,6 +38,7 @@ var (
 	ErrSIGKILL = status.UnavailableErrorf("command was terminated by SIGKILL, likely due to executor shutdown or OOM")
 
 	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
+	StdOutErrMaxSize          = flag.Uint64("executor.stdouterr_max_size_bytes", 0, "The maximum size of stdout/stderr for each action, in bytes. If the size of stdout/stderr exceeds this limit, the command will fail with a RESOURCE_EXHAUSTED error. If set to 0, no limit is enforced.")
 )
 
 var (
@@ -45,7 +46,61 @@ var (
 	allDigits = regexp.MustCompile(`^\d+$`)
 )
 
-func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
+// LimitReader returns a reader that fails with RESOURCE_EXHAUSTED once
+// the specified number of bytes have been read. Unlike io.LimitReader,
+// this returns an error instead of EOF at the limit to avoid confusing
+// downstream parsers that expect complete input (e.g. JSON decoders).
+func LimitReader(r io.Reader, max uint64) io.Reader {
+	if max == 0 {
+		return r
+	}
+	return &limitReader{r: r, max: max}
+}
+
+type limitReader struct {
+	r   io.Reader
+	max uint64
+	n   uint64
+	// scratch holds a single byte buffer used to detect over-limit reads without
+	// allocating.
+	scratch [1]byte
+}
+
+func (lr *limitReader) Read(p []byte) (int, error) {
+	if lr.max == 0 {
+		return lr.r.Read(p)
+	}
+	if lr.n >= lr.max {
+		n, err := lr.r.Read(lr.scratch[:])
+		if n > 0 {
+			return 0, status.ResourceExhaustedErrorf("output size limit exceeded: %d bytes", lr.max)
+		}
+		if err == io.EOF {
+			return 0, io.EOF
+		}
+		return 0, err
+	}
+	// Do not allow underlying reader to consume more than remaining bytes.
+	remain := lr.max - lr.n
+	if uint64(len(p)) > remain {
+		p = p[:int(remain)]
+	}
+	n, err := lr.r.Read(p)
+	lr.n += uint64(n)
+	if err != nil {
+		if err == io.EOF && lr.n <= lr.max {
+			return n, io.EOF
+		}
+		return n, err
+	}
+	if lr.n > lr.max {
+		// Signal limit reached so caller can surface a clear error.
+		return n, status.ResourceExhaustedErrorf("output size limit exceeded: %d bytes", lr.max)
+	}
+	return n, nil
+}
+
+func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *ioutil.LimitBuffer, *ioutil.LimitBuffer, error) {
 	if stdio == nil {
 		stdio = &interfaces.Stdio{}
 	}
@@ -58,15 +113,44 @@ func constructExecCommand(command *repb.Command, workDir string, stdio *interfac
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	maxSize := *StdOutErrMaxSize
+	if stdio.DisableOutputLimits {
+		maxSize = 0
+	}
+	stdoutBuf := ioutil.NewLimitBuffer(maxSize, "stdout/stderr output size")
+	stderrBuf := ioutil.NewLimitBuffer(maxSize, "stdout/stderr output size")
+	stdoutWriters := make([]io.Writer, 0, 3)
+	stderrWriters := make([]io.Writer, 0, 3)
+	limitEnabled := maxSize > 0
+	if limitEnabled || stdio.Stdout == nil {
+		stdoutWriters = append(stdoutWriters, stdoutBuf)
+	}
+	if limitEnabled || stdio.Stderr == nil {
+		stderrWriters = append(stderrWriters, stderrBuf)
+	}
 	if stdio.Stdout != nil {
-		cmd.Stdout = stdio.Stdout
+		stdoutWriters = append(stdoutWriters, stdio.Stdout)
 	}
-	cmd.Stderr = &stderr
 	if stdio.Stderr != nil {
-		cmd.Stderr = stdio.Stderr
+		stderrWriters = append(stderrWriters, stdio.Stderr)
 	}
+	if *DebugStreamCommandOutputs {
+		logWriter := log.Writer(fmt.Sprintf("[%s] ", executable))
+		stdoutWriters = append(stdoutWriters, logWriter)
+		stderrWriters = append(stderrWriters, logWriter)
+	}
+	setWriters := func(writers []io.Writer) io.Writer {
+		switch len(writers) {
+		case 0:
+			return io.Discard
+		case 1:
+			return writers[0]
+		default:
+			return io.MultiWriter(writers...)
+		}
+	}
+	cmd.Stdout = setWriters(stdoutWriters)
+	cmd.Stderr = setWriters(stderrWriters)
 	// Note: We are using StdinPipe() instead of cmd.Stdin here, because the
 	// latter approach results in a bug where cmd.Wait() can hang indefinitely if
 	// the process doesn't consume its stdin. See
@@ -81,16 +165,11 @@ func constructExecCommand(command *repb.Command, workDir string, stdio *interfac
 			io.Copy(inp, stdio.Stdin)
 		}()
 	}
-	if *DebugStreamCommandOutputs {
-		logWriter := log.Writer(fmt.Sprintf("[%s] ", executable))
-		cmd.Stdout = io.MultiWriter(cmd.Stdout, logWriter)
-		cmd.Stderr = io.MultiWriter(cmd.Stderr, logWriter)
-	}
 	cmd.SysProcAttr = getDefaultSysProcAttr()
 	for _, envVar := range command.GetEnvironmentVariables() {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
-	return cmd, &stdout, &stderr, nil
+	return cmd, stdoutBuf, stderrBuf, nil
 }
 
 // RetryIfTextFileBusy runs a function, retrying "text file busy" errors up to
@@ -159,7 +238,7 @@ func RunWithOpts(ctx context.Context, command *repb.Command, opts *RunOpts) *int
 		opts = &RunOpts{}
 	}
 	var cmd *exec.Cmd
-	var stdoutBuf, stderrBuf *bytes.Buffer
+	var stdoutBuf, stderrBuf *ioutil.LimitBuffer
 	var stats *repb.UsageStats
 
 	err := RetryIfTextFileBusy(func() error {
@@ -174,11 +253,21 @@ func RunWithOpts(ctx context.Context, command *repb.Command, opts *RunOpts) *int
 	})
 
 	exitCode, err := ExitCode(ctx, cmd, err)
+	stdoutBytes := stdoutBuf.Bytes()
+	stderrBytes := stderrBuf.Bytes()
+	if opts.Stdio != nil {
+		if opts.Stdio.Stdout != nil {
+			stdoutBytes = nil
+		}
+		if opts.Stdio.Stderr != nil {
+			stderrBytes = nil
+		}
+	}
 	return &interfaces.CommandResult{
 		ExitCode:           exitCode,
 		Error:              err,
-		Stdout:             stdoutBuf.Bytes(),
-		Stderr:             stderrBuf.Bytes(),
+		Stdout:             stdoutBytes,
+		Stderr:             stderrBytes,
 		CommandDebugString: cmd.String(),
 		UsageStats:         stats,
 	}
@@ -344,6 +433,9 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 	// - https://github.com/golang/go/blob/fcb9d6b5d0ba6f5606c2b5dfc09f75e2dc5fc1e5/src/os/exec/lp_unix.go#L35
 	if notFoundErr, ok := err.(*exec.Error); ok {
 		return NoExitCode, status.NotFoundError(notFoundErr.Error())
+	}
+	if status.IsResourceExhaustedError(err) {
+		return NoExitCode, err
 	}
 
 	// If we fail to get the exit code of the process for any other reason, it might

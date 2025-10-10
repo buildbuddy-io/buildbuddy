@@ -1,7 +1,6 @@
 package vmexec_client
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -41,22 +41,42 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	var stderr, stdout bytes.Buffer
 	if stdio == nil {
 		stdio = &interfaces.Stdio{}
 	}
-	stdoutw := io.Writer(&stdout)
-	if stdio.Stdout != nil {
-		stdoutw = stdio.Stdout
+	maxSize := *commandutil.StdOutErrMaxSize
+	if stdio.DisableOutputLimits {
+		maxSize = 0
 	}
-	stderrw := io.Writer(&stderr)
-	if stdio.Stderr != nil {
-		stderrw = stdio.Stderr
+	stdoutBuf := ioutil.NewLimitBuffer(maxSize, "stdout/stderr output size")
+	stderrBuf := ioutil.NewLimitBuffer(maxSize, "stdout/stderr output size")
+	limitEnabled := maxSize > 0
+	makeWriter := func(primary io.Writer, buf *ioutil.LimitBuffer, extras ...io.Writer) io.Writer {
+		writers := make([]io.Writer, 0, 2+len(extras))
+		if limitEnabled || primary == nil {
+			writers = append(writers, buf)
+		}
+		if primary != nil {
+			writers = append(writers, primary)
+		}
+		writers = append(writers, extras...)
+		switch len(writers) {
+		case 0:
+			return io.Discard
+		case 1:
+			return writers[0]
+		default:
+			return io.MultiWriter(writers...)
+		}
 	}
+	extraStdout := []io.Writer{}
+	extraStderr := []io.Writer{}
 	if *commandutil.DebugStreamCommandOutputs {
-		stdoutw = io.MultiWriter(os.Stdout, stdoutw)
-		stderrw = io.MultiWriter(os.Stderr, stderrw)
+		extraStdout = append(extraStdout, os.Stdout)
+		extraStderr = append(extraStderr, os.Stderr)
 	}
+	stdoutw := makeWriter(stdio.Stdout, stdoutBuf, extraStdout...)
+	stderrw := makeWriter(stdio.Stderr, stderrBuf, extraStderr...)
 	req := &vmxpb.ExecRequest{
 		WorkingDirectory: workDir,
 		User:             user,
@@ -122,9 +142,15 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 				return status.UnavailableErrorf("failed to receive from stream: %s", status.Message(err))
 			}
 			if _, err := stdoutw.Write(msg.Stdout); err != nil {
+				if status.IsResourceExhaustedError(err) {
+					return status.WrapError(err, "failed to write stdout")
+				}
 				return status.UnavailableErrorf("failed to write stdout: %s", status.Message(err))
 			}
 			if _, err := stderrw.Write(msg.Stderr); err != nil {
+				if status.IsResourceExhaustedError(err) {
+					return status.WrapError(err, "failed to write stderr")
+				}
 				return status.UnavailableErrorf("failed to write stderr: %s", status.Message(err))
 			}
 			if msg.Response != nil {
@@ -144,10 +170,18 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	if res != nil {
 		exitCode = int(res.GetExitCode())
 	}
+	stdoutBytes := stdoutBuf.Bytes()
+	stderrBytes := stderrBuf.Bytes()
+	if stdio.Stdout != nil {
+		stdoutBytes = nil
+	}
+	if stdio.Stderr != nil {
+		stderrBytes = nil
+	}
 	result := &interfaces.CommandResult{
 		ExitCode:   exitCode,
-		Stderr:     stderr.Bytes(),
-		Stdout:     stdout.Bytes(),
+		Stderr:     stderrBytes,
+		Stdout:     stdoutBytes,
 		Error:      err,
 		UsageStats: stats,
 	}
