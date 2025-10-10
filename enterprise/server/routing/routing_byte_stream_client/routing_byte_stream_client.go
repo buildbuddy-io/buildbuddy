@@ -29,7 +29,7 @@ func New(env environment.Env) (bspb.ByteStreamClient, error) {
 }
 
 func (r *RoutingByteStreamClient) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest, opts ...grpc.CallOption) (*bspb.QueryWriteStatusResponse, error) {
-	primaryClient, err := r.router.GetPrimaryBSClient(ctx)
+	primaryClient, _, err := r.router.GetBSClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary AC client: %s", err)
 	}
@@ -37,7 +37,7 @@ func (r *RoutingByteStreamClient) QueryWriteStatus(ctx context.Context, req *bsp
 }
 
 func (r *RoutingByteStreamClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
-	primaryClient, err := r.router.GetPrimaryBSClient(ctx)
+	primaryClient, _, err := r.router.GetBSClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary AC client: %s", err)
 	}
@@ -45,7 +45,7 @@ func (r *RoutingByteStreamClient) Read(ctx context.Context, req *bspb.ReadReques
 }
 
 func (r *RoutingByteStreamClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
-	primaryClient, err := r.router.GetPrimaryBSClient(ctx)
+	primaryClient, _, err := r.router.GetBSClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary AC client: %s", err)
 	}
