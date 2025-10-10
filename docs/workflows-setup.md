@@ -35,10 +35,10 @@ To enable workflows, take the following steps:
 
 After you've linked a repository, there are two ways to start running Workflows:
 
-The default workflow config runs `bazel test //...` whenever a commit is pushed to your repo's default branch or a pull request branch is updated. In order to enable this, click `Enable default workflow config`
-in the three-dot dropdown for your repository on the Workflows page.
+- The default workflow config runs `bazel test //...` whenever a commit is pushed to your repo's default branch or a pull request branch is updated. In order to enable this, click `Enable default workflow config`
+  in the three-dot dropdown for your repository on the Workflows page.
 
-In order to configure more complex workflows - i.e. different trigger conditions or running different commands - you will need to add a file called `buildbuddy.yaml` to the root of your git repo. See [workflows configuration](workflows-config.md) for more details..
+- To configure more complex workflows - i.e. different trigger conditions or running different commands - you will need to add a file called `buildbuddy.yaml` to the root of your git repo. See [workflows configuration](workflows-config.md) for more details..
 
 Workflows will report commit statuses to GitHub, which you can see on the repo's home page or in pull request branches. The "Details" links in these statuses point to the BuildBuddy UI, where you can see the result of the workflow run.
 

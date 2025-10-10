@@ -186,9 +186,9 @@ message GitRepository {
   string repo_url = 1;
 
   // Whether to use the default workflow config if buildbuddy.yaml is missing.
-  // If enabled, workflows will automatically start running for a git repo when linked,
-  // even if buildbuddy.yaml is missing from the repo. If disabled, workflows will only run
-  // when buildbuddy.yaml is present in the repo.
+  // If enabled, workflows will automatically start running for a git repo when
+  // linked, even if buildbuddy.yaml is missing from the repo. If disabled,
+  // workflows will only run when buildbuddy.yaml is present in the repo.
   bool use_default_workflow_config = 2;
 }
 
@@ -199,7 +199,6 @@ message GetLinkedReposResponse {
 
   // DEPRECATED: Use repos instead.
   repeated string repo_urls = 2 [deprecated = true];
-
 }
 
 // A request to link a repo to the authenticated org.

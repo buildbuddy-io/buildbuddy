@@ -7,7 +7,7 @@ sidebar_label: Workflows configuration
 Once you've linked your repo to BuildBuddy via
 [BuildBuddy workflows](workflows-setup.md), there are two ways to start running Workflows.
 
-The default workflow config runs `bazel test //...` whenever a commit is pushed to your repo's default branch or a pull request branch is updated. In order to enable this, click `Enable default workflow config`
+The default workflow config runs `bazel test //...` whenever a commit is pushed to your repo's default branch or a pull request branch is updated. In order to enable this, click "Enable default workflow config"
 in the three-dot dropdown for your repository on the Workflows page.
 
 You may wish to configure multiple test commands with different test
