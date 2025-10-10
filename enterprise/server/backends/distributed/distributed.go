@@ -443,13 +443,13 @@ func init() {
 	lookasideCacheLookupCount[true] = metrics.LookasideCacheLookupCount.With(prometheus.Labels{
 		metrics.LookasideCacheLookupStatus: metrics.HitStatusLabel,
 	})
-	lookasideCacheLookupBytes[true] = metrics.LookasideCacheLookupCount.With(prometheus.Labels{
+	lookasideCacheLookupBytes[true] = metrics.LookasideCacheLookupBytes.With(prometheus.Labels{
 		metrics.LookasideCacheLookupStatus: metrics.HitStatusLabel,
 	})
 	lookasideCacheLookupCount[false] = metrics.LookasideCacheLookupCount.With(prometheus.Labels{
 		metrics.LookasideCacheLookupStatus: metrics.MissStatusLabel,
 	})
-	lookasideCacheLookupBytes[false] = metrics.LookasideCacheLookupCount.With(prometheus.Labels{
+	lookasideCacheLookupBytes[false] = metrics.LookasideCacheLookupBytes.With(prometheus.Labels{
 		metrics.LookasideCacheLookupStatus: metrics.MissStatusLabel,
 	})
 }
