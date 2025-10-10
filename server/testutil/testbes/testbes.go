@@ -25,6 +25,10 @@ type HandlerFunc = func(stream pepb.PublishBuildEvent_PublishBuildToolEventStrea
 //
 // Set EventHandler to override the default behavior, which is to simply ack
 // each event as soon as it is received.
+//
+// Note: Like a real BES server, events are persisted as they arrive and are ACK'd.
+// If a stream fails and the client retries, duplicate events will be stored.
+// This mirrors production behavior where failed streams don't rollback already-persisted events.
 type TestBuildEventServer struct {
 	t testing.TB
 
@@ -32,6 +36,7 @@ type TestBuildEventServer struct {
 
 	mu             sync.Mutex
 	events         []*pepb.PublishBuildToolEventStreamRequest
+	attempts       [][]*pepb.PublishBuildToolEventStreamRequest
 	streamMetadata metadata.MD
 }
 
@@ -48,6 +53,19 @@ func (s *TestBuildEventServer) GetEvents() []*pepb.PublishBuildToolEventStreamRe
 	return events
 }
 
+// GetAttempts returns the events received in each individual stream attempt.
+func (s *TestBuildEventServer) GetAttempts() [][]*pepb.PublishBuildToolEventStreamRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	attempts := make([][]*pepb.PublishBuildToolEventStreamRequest, 0, len(s.attempts))
+	for _, attempt := range s.attempts {
+		copyAttempt := make([]*pepb.PublishBuildToolEventStreamRequest, len(attempt))
+		copy(copyAttempt, attempt)
+		attempts = append(attempts, copyAttempt)
+	}
+	return attempts
+}
+
 // GetMetadata returns the metadata from the most recent stream.
 func (s *TestBuildEventServer) GetMetadata() metadata.MD {
 	s.mu.Lock()
@@ -60,6 +78,7 @@ func (s *TestBuildEventServer) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = nil
+	s.attempts = nil
 	s.streamMetadata = nil
 }
 
@@ -68,13 +87,6 @@ func (s *TestBuildEventServer) PublishLifecycleEvent(ctx context.Context, req *p
 }
 
 func (s *TestBuildEventServer) PublishBuildToolEventStream(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
-	// Clear previous events at the start of each new stream attempt.
-	// This ensures that we only keep events from successful streams,
-	// since failed streams will retry from the beginning.
-	s.mu.Lock()
-	s.events = nil
-	s.mu.Unlock()
-
 	// Capture metadata from the stream
 	if md, ok := metadata.FromIncomingContext(stream.Context()); ok {
 		s.mu.Lock()
@@ -82,20 +94,37 @@ func (s *TestBuildEventServer) PublishBuildToolEventStream(stream pepb.PublishBu
 		s.mu.Unlock()
 	}
 
+	var streamEvents []*pepb.PublishBuildToolEventStreamRequest
 	var streamID *bepb.StreamId
+	recordAttempt := func() {
+		if len(streamEvents) == 0 {
+			return
+		}
+		copyAttempt := make([]*pepb.PublishBuildToolEventStreamRequest, len(streamEvents))
+		copy(copyAttempt, streamEvents)
+		s.mu.Lock()
+		s.attempts = append(s.attempts, copyAttempt)
+		s.mu.Unlock()
+	}
 	for {
 		msg, err := stream.Recv()
 		if err == io.EOF {
+			recordAttempt()
 			return nil
 		}
 		if err != nil {
+			recordAttempt()
 			return status.UnknownErrorf("recv: %s", err)
 		}
 		if streamID == nil {
 			streamID = msg.OrderedBuildEvent.GetStreamId()
 		}
 
-		// Store the event
+		streamEvents = append(streamEvents, msg)
+
+		// Store the event immediately, like a real BES server.
+		// Events are persisted as they arrive, even if the stream later fails.
+		// This means retries will create duplicate events in the log.
 		s.mu.Lock()
 		s.events = append(s.events, msg)
 		s.mu.Unlock()
@@ -105,6 +134,9 @@ func (s *TestBuildEventServer) PublishBuildToolEventStream(stream pepb.PublishBu
 			handler = Ack
 		}
 		if err := handler(stream, streamID, msg); err != nil {
+			// Even though we're returning an error, the events we've already
+			// stored stay persisted (no rollback), matching real BES behavior.
+			recordAttempt()
 			return err
 		}
 	}

@@ -326,6 +326,13 @@ func requireStreamFinished(t testing.TB, events []*pepb.PublishBuildToolEventStr
 	assert.True(t, ok, "last event should be ComponentStreamFinished")
 }
 
+func finalAttemptEvents(t testing.TB, bes *testbes.TestBuildEventServer) []*pepb.PublishBuildToolEventStreamRequest {
+	t.Helper()
+	attempts := bes.GetAttempts()
+	require.NotEmpty(t, attempts)
+	return attempts[len(attempts)-1]
+}
+
 // Publisher tests
 
 func TestPublisher_BasicPublishAndFinish(t *testing.T) {
@@ -345,7 +352,7 @@ func TestPublisher_BasicPublishAndFinish(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify events were received
-	events := bes.GetEvents()
+	events := finalAttemptEvents(t, bes)
 	require.Len(t, events, 3) // 2 Bazel events + 1 ComponentStreamFinished
 
 	// Verify sequence numbers
@@ -365,7 +372,7 @@ func TestPublisher_EmptyStream(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should only have the ComponentStreamFinished event
-	events := bes.GetEvents()
+	events := finalAttemptEvents(t, bes)
 	require.Len(t, events, 1)
 	requireSequenceNumbers(t, events)
 	requireStreamFinished(t, events)
@@ -383,7 +390,7 @@ func TestPublisher_SingleEvent(t *testing.T) {
 	err = publisher.Finish()
 	require.NoError(t, err)
 
-	events := bes.GetEvents()
+	events := finalAttemptEvents(t, bes)
 	require.Len(t, events, 2) // 1 event + ComponentStreamFinished
 	requireSequenceNumbers(t, events)
 	requireStreamFinished(t, events)
@@ -404,10 +411,13 @@ func TestPublisher_RetriesOnTransientFailure(t *testing.T) {
 	err = publisher.Finish()
 	require.NoError(t, err)
 
-	// Should have received events despite initial failures
-	events := bes.GetEvents()
-	require.Len(t, events, 2) // 1 event + ComponentStreamFinished
-	requireSequenceNumbers(t, events)
+	attempts := bes.GetAttempts()
+	require.Len(t, attempts, 3)
+	require.Len(t, attempts[0], 1)
+	require.Len(t, attempts[1], 1)
+	require.Len(t, attempts[2], 2)
+	requireSequenceNumbers(t, attempts[2])
+	requireStreamFinished(t, attempts[2])
 }
 
 func TestPublisher_ExhaustsRetries(t *testing.T) {
@@ -445,9 +455,15 @@ func TestPublisher_RetryPreservesEventOrder(t *testing.T) {
 	err := publisher.Finish()
 	require.NoError(t, err)
 
-	events := bes.GetEvents()
-	require.Len(t, events, 6) // 5 events + ComponentStreamFinished
-	requireSequenceNumbers(t, events)
+	attempts := bes.GetAttempts()
+	require.Len(t, attempts, 2)
+	require.Len(t, attempts[0], 1)
+	requireSequenceNumbers(t, attempts[0])
+
+	final := attempts[1]
+	require.Len(t, final, 6) // 5 events + ComponentStreamFinished
+	requireSequenceNumbers(t, final)
+	requireStreamFinished(t, final)
 }
 
 func TestPublisher_ConcurrentPublish(t *testing.T) {
@@ -478,7 +494,7 @@ func TestPublisher_ConcurrentPublish(t *testing.T) {
 	err := publisher.Finish()
 	require.NoError(t, err)
 
-	events := bes.GetEvents()
+	events := finalAttemptEvents(t, bes)
 	expectedCount := numGoroutines*eventsPerGoroutine + 1 // +1 for ComponentStreamFinished
 	require.Len(t, events, expectedCount)
 
