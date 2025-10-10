@@ -4,11 +4,13 @@ import (
 	"context"
 	"io"
 	"net"
+	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -27,10 +29,38 @@ type TestBuildEventServer struct {
 	t testing.TB
 
 	EventHandler HandlerFunc
+
+	mu             sync.Mutex
+	events         []*pepb.PublishBuildToolEventStreamRequest
+	streamMetadata metadata.MD
 }
 
 func NewTestBuildEventServer(t testing.TB) *TestBuildEventServer {
 	return &TestBuildEventServer{t: t}
+}
+
+// GetEvents returns all events received by the server.
+func (s *TestBuildEventServer) GetEvents() []*pepb.PublishBuildToolEventStreamRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	events := make([]*pepb.PublishBuildToolEventStreamRequest, len(s.events))
+	copy(events, s.events)
+	return events
+}
+
+// GetMetadata returns the metadata from the most recent stream.
+func (s *TestBuildEventServer) GetMetadata() metadata.MD {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.streamMetadata.Copy()
+}
+
+// Reset clears all captured events and metadata.
+func (s *TestBuildEventServer) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = nil
+	s.streamMetadata = nil
 }
 
 func (s *TestBuildEventServer) PublishLifecycleEvent(ctx context.Context, req *pepb.PublishLifecycleEventRequest) (*emptypb.Empty, error) {
@@ -38,6 +68,20 @@ func (s *TestBuildEventServer) PublishLifecycleEvent(ctx context.Context, req *p
 }
 
 func (s *TestBuildEventServer) PublishBuildToolEventStream(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
+	// Clear previous events at the start of each new stream attempt.
+	// This ensures that we only keep events from successful streams,
+	// since failed streams will retry from the beginning.
+	s.mu.Lock()
+	s.events = nil
+	s.mu.Unlock()
+
+	// Capture metadata from the stream
+	if md, ok := metadata.FromIncomingContext(stream.Context()); ok {
+		s.mu.Lock()
+		s.streamMetadata = md
+		s.mu.Unlock()
+	}
+
 	var streamID *bepb.StreamId
 	for {
 		msg, err := stream.Recv()
@@ -50,6 +94,12 @@ func (s *TestBuildEventServer) PublishBuildToolEventStream(stream pepb.PublishBu
 		if streamID == nil {
 			streamID = msg.OrderedBuildEvent.GetStreamId()
 		}
+
+		// Store the event
+		s.mu.Lock()
+		s.events = append(s.events, msg)
+		s.mu.Unlock()
+
 		handler := s.EventHandler
 		if handler == nil {
 			handler = Ack
@@ -75,6 +125,22 @@ func Ack(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer, stream
 func FailWith(err error) HandlerFunc {
 	return func(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer, streamID *bepb.StreamId, event *pepb.PublishBuildToolEventStreamRequest) error {
 		return err
+	}
+}
+
+// FailNTimesThenSucceed returns a BES handler that fails the first N times it's called,
+// then succeeds (ACKs) for all subsequent calls.
+func FailNTimesThenSucceed(n int, err error) HandlerFunc {
+	count := 0
+	mu := &sync.Mutex{}
+	return func(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer, streamID *bepb.StreamId, event *pepb.PublishBuildToolEventStreamRequest) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if count < n {
+			count++
+			return err
+		}
+		return Ack(stream, streamID, event)
 	}
 }
 
@@ -108,4 +174,27 @@ func Run(t testing.TB) (*TestBuildEventServer, pepb.PublishBuildEventClient) {
 	client := pepb.NewPublishBuildEventClient(conn)
 
 	return server, client
+}
+
+// RunTCP starts a test BES server on a random TCP port and returns the server and its address.
+// This is useful for testing clients that need to dial a real address.
+// The returned address is prefixed with "grpc://" to indicate an insecure connection.
+func RunTCP(t testing.TB) (*TestBuildEventServer, string) {
+	server := NewTestBuildEventServer(t)
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	gs := grpc.NewServer()
+	pepb.RegisterPublishBuildEventServer(gs, server)
+
+	go func() {
+		_ = gs.Serve(lis)
+	}()
+	t.Cleanup(func() {
+		gs.Stop()
+	})
+
+	// Prefix with grpc:// to indicate insecure connection
+	return server, "grpc://" + lis.Addr().String()
 }

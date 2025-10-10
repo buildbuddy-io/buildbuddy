@@ -77,6 +77,7 @@ go_test(
         "testworkerRunfilePath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
     },
     deps = [
+        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/bare",
         "//enterprise/server/remote_execution/platform",
