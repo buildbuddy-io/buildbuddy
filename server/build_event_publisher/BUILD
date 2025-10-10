@@ -26,8 +26,8 @@ go_test(
     srcs = ["build_event_publisher_test.go"],
     deps = [
         ":build_event_publisher",
-        "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
+        "//proto:publish_build_event_go_proto",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//types/known/anypb",
