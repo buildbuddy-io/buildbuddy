@@ -83,7 +83,6 @@ func FailWith(err error) HandlerFunc {
 func Run(t testing.TB) (*TestBuildEventServer, pepb.PublishBuildEventClient) {
 	server := NewTestBuildEventServer(t)
 
-	// Use bufconn for cross-platform in-memory connection
 	lis := bufconn.Listen(1024 * 1024)
 	gs := grpc.NewServer()
 	pepb.RegisterPublishBuildEventServer(gs, server)
@@ -95,7 +94,6 @@ func Run(t testing.TB) (*TestBuildEventServer, pepb.PublishBuildEventClient) {
 		gs.Stop()
 	})
 
-	// Create custom dialer for bufconn
 	ctx := context.Background()
 	conn, err := grpc.DialContext(ctx, "bufnet",
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
