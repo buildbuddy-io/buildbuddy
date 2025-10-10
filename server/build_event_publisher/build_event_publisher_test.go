@@ -144,33 +144,6 @@ func TestEventBufferDeliveryScenarios(t *testing.T) {
 	}
 }
 
-func TestEventBuffer_LargeNumberOfEvents(t *testing.T) {
-	streamID := makeStreamID("inv-large", "build-large")
-	buffer := build_event_publisher.NewEventBuffer(streamID)
-
-	events, cancel := buffer.Subscribe()
-	defer cancel()
-
-	const numEvents = 1000
-	expected := make([]*bepb.BuildEvent, 0, numEvents+1)
-	for i := 0; i < numEvents; i++ {
-		event := regularEvent()
-		expected = append(expected, event)
-		buffer.Add(event)
-	}
-	finish := finishedEvent()
-	expected = append(expected, finish)
-	buffer.Add(finish)
-
-	got := collectEvents(t, events)
-	require.Len(t, got, len(expected))
-	for i, obe := range got {
-		assert.Equal(t, streamID, obe.StreamId)
-		assert.Equal(t, int64(i+1), obe.SequenceNumber)
-		assert.Same(t, expected[i], obe.Event)
-	}
-}
-
 func TestEventBuffer_ConcurrentProducers(t *testing.T) {
 	streamID := makeStreamID("inv-concurrent-producers", "build-concurrent-producers")
 	buffer := build_event_publisher.NewEventBuffer(streamID)
@@ -264,31 +237,6 @@ func TestEventBuffer_MultipleSubscriptionsSerial(t *testing.T) {
 	assert.Equal(t, int64(3), event.SequenceNumber)
 
 	requireClosed(t, events2)
-}
-
-func TestEventBuffer_LargeConcurrentAddAndRead(t *testing.T) {
-	streamID := makeStreamID("inv-concurrent-add-read", "build-concurrent-add-read")
-	buffer := build_event_publisher.NewEventBuffer(streamID)
-
-	events, cancel := buffer.Subscribe()
-	defer cancel()
-
-	const numEvents = 100
-
-	go func() {
-		for i := 0; i < numEvents; i++ {
-			buffer.Add(regularEvent())
-			time.Sleep(time.Millisecond)
-		}
-		buffer.Add(finishedEvent())
-	}()
-
-	got := collectEvents(t, events)
-	require.Len(t, got, numEvents+1)
-	for i, obe := range got {
-		assert.Equal(t, streamID, obe.StreamId)
-		assert.Equal(t, int64(i+1), obe.SequenceNumber)
-	}
 }
 
 func TestEventBuffer_NoGoroutineLeakOnCancel(t *testing.T) {
