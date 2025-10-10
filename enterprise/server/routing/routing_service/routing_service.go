@@ -61,7 +61,7 @@ func RegisterRoutingService(env *real_environment.RealEnv) error {
 		if _, ok := clientSets[r]; ok {
 			continue
 		}
-		conn, err := grpc_client.DialInternal(env, r, grpc.WithInsecure())
+		conn, err := grpc_client.DialInternal(env, r)
 		if err != nil {
 			// The default Dial() behavior doesn't wait for the connection, so
 			// this indicates some issue other than the server being down.
