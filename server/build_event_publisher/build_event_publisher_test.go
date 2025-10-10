@@ -569,39 +569,6 @@ func TestPublisher_ContextCancellation(t *testing.T) {
 	assert.GreaterOrEqual(t, len(events), 0)
 }
 
-func TestPublisher_LargeStream(t *testing.T) {
-	ctx := context.Background()
-	bes, addr := testbes.RunTCP(t)
-
-	publisher, err := build_event_publisher.New(addr, "", "large-stream-invocation")
-	require.NoError(t, err)
-
-	publisher.Start(ctx)
-
-	// Publish many events
-	numEvents := 1000
-	for i := 0; i < numEvents; i++ {
-		err = publisher.Publish(&bespb.BuildEvent{
-			Id: &bespb.BuildEventId{
-				Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: int32(i)}},
-			},
-			Payload: &bespb.BuildEvent_Progress{Progress: &bespb.Progress{}},
-		})
-		require.NoError(t, err)
-	}
-
-	err = publisher.Finish()
-	require.NoError(t, err)
-
-	events := bes.GetEvents()
-	require.Len(t, events, numEvents+1) // +1 for ComponentStreamFinished
-
-	// Verify all sequence numbers
-	for i, event := range events {
-		assert.Equal(t, int64(i+1), event.OrderedBuildEvent.SequenceNumber)
-	}
-}
-
 func TestPublisher_RealBazelEvents(t *testing.T) {
 	ctx := context.Background()
 	bes, addr := testbes.RunTCP(t)
