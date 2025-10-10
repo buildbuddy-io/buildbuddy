@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -1076,6 +1077,62 @@ func TestRunnerCrashedExitCodes(t *testing.T) {
 			require.NoError(t, err)
 			res := r.Run(ctx, &repb.IOStats{})
 			assert.Equal(t, tc.wantDoNotRecycle, res.DoNotRecycle)
+		})
+	}
+}
+
+func TestTransientErrorExitCodes(t *testing.T) {
+	for _, tc := range []struct {
+		name                        string
+		transientErrorExitCodesProp string
+		script                      string
+		wantExitCode                int
+		wantUnavailableError        bool
+	}{
+		{
+			name:                        "PropEmpty/Exit0/NoError",
+			transientErrorExitCodesProp: "",
+			script:                      "exit 0",
+			wantExitCode:                0,
+			wantUnavailableError:        false,
+		},
+		{
+			name:                        "PropEmpty/Exit11/NoError",
+			transientErrorExitCodesProp: "",
+			script:                      "exit 11",
+			wantExitCode:                11,
+			wantUnavailableError:        false,
+		},
+		{
+			name:                        "PropSetTo11/Exit11/UnavailableError",
+			transientErrorExitCodesProp: "11",
+			script:                      "exit 11",
+			wantExitCode:                commandutil.NoExitCode,
+			wantUnavailableError:        true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			pool := newRunnerPool(t, env, noLimitsCfg())
+			ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+			task := newTask()
+			cmd := task.ExecutionTask.Command
+			cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
+				Name:  "transient-error-exit-codes",
+				Value: tc.transientErrorExitCodesProp,
+			})
+			task.ExecutionTask.Command.Arguments = []string{
+				"sh", "-c", tc.script,
+			}
+			r, err := pool.Get(ctx, task)
+			require.NoError(t, err)
+			res := r.Run(ctx, &repb.IOStats{})
+			require.Equal(t, tc.wantExitCode, res.ExitCode)
+			if tc.wantUnavailableError {
+				require.True(t, status.IsUnavailableError(res.Error), "want Unavailable, got %+#v", res.Error)
+			} else {
+				require.Nil(t, res.Error)
+			}
 		})
 	}
 }
