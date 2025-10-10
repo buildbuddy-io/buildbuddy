@@ -91,9 +91,10 @@ const (
 	dockerReusePropertyName = "dockerReuse"
 
 	RunnerRecyclingKey                      = "runner-recycling-key"
+	RunnerRecyclingMaxWaitPropertyName      = "runner-recycling-max-wait"
+	runnerCrashedExitCodesPropertyName      = "runner-crashed-exit-codes"
 	RemoteSnapshotSavePolicyPropertyName    = "remote-snapshot-save-policy"
 	SnapshotReadPolicyPropertyName          = "snapshot-read-policy"
-	RunnerRecyclingMaxWaitPropertyName      = "runner-recycling-max-wait"
 	PreserveWorkspacePropertyName           = "preserve-workspace"
 	overlayfsWorkspacePropertyName          = "overlayfs-workspace"
 	cleanWorkspaceInputsPropertyName        = "clean-workspace-inputs"
@@ -203,8 +204,13 @@ type Properties struct {
 	DockerNetwork             string
 	RecycleRunner             bool
 	RunnerRecyclingMaxWait    time.Duration
-	EnableVFS                 bool
-	IncludeSecrets            bool
+
+	// Exit codes indicating a runner crashed and should not be recycled since
+	// it may be corrupted in some way.
+	RunnerCrashedExitCodes []int
+
+	EnableVFS      bool
+	IncludeSecrets bool
 
 	// OriginalPool can be set to inform BuildBuddy about the original pool name
 	// from another remote execution platform. This allows configuring task
@@ -487,6 +493,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		SnapshotReadPolicy:        snapshotReadPolicy,
 		RemoteSnapshotSavePolicy:  snapshotSavePolicy,
 		ContainerRegistryBypass:   boolProp(m, containerRegistryBypassPropertyName, false),
+		RunnerCrashedExitCodes:    intListProp(m, runnerCrashedExitCodesPropertyName),
 	}, nil
 }
 
@@ -810,6 +817,23 @@ func stringListProp(props map[string]string, name string) []string {
 		if item != "" {
 			vals = append(vals, item)
 		}
+	}
+	return vals
+}
+
+func intListProp(props map[string]string, name string) []int {
+	p := strings.TrimSpace(props[strings.ToLower(name)])
+	if p == "" {
+		return nil
+	}
+	vals := []int{}
+	for _, item := range strings.Split(p, ",") {
+		item := strings.TrimSpace(item)
+		i, err := strconv.Atoi(item)
+		if err != nil {
+			return nil // TODO: make this fatal
+		}
+		vals = append(vals, i)
 	}
 	return vals
 }
