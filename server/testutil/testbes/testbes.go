@@ -6,11 +6,10 @@ import (
 	"net"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
@@ -85,22 +84,31 @@ func FailWith(err error) HandlerFunc {
 }
 
 // Run starts a test BES server and returns both the server and a client connected to it.
-// The server runs on a unix socket and is automatically cleaned up when the test ends.
+// The server uses an in-memory bufconn connection and is automatically cleaned up when the test ends.
+// This approach works on all platforms including Windows.
 func Run(t testing.TB) (*TestBuildEventServer, pepb.PublishBuildEventClient) {
 	server := NewTestBuildEventServer(t)
 
-	sock := testfs.MakeSocket(t, "testbes.sock")
+	// Use bufconn for cross-platform in-memory connection
+	lis := bufconn.Listen(1024 * 1024)
 	gs := grpc.NewServer()
 	pepb.RegisterPublishBuildEventServer(gs, server)
-	lis, err := net.Listen("unix", sock)
-	require.NoError(t, err)
+
 	go func() {
 		_ = gs.Serve(lis)
 	}()
 	t.Cleanup(func() {
 		gs.Stop()
 	})
-	conn, err := grpc_client.DialSimple("unix://" + sock)
+
+	// Create custom dialer for bufconn
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithInsecure(),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = conn.Close()

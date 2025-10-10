@@ -9,11 +9,10 @@ go_library(
     deps = [
         "//proto:build_events_go_proto",
         "//proto:publish_build_event_go_proto",
-        "//server/testutil/testfs",
-        "//server/util/grpc_client",
         "//server/util/status",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//test/bufconn",
         "@org_golang_google_protobuf//types/known/emptypb",
     ],
 )
