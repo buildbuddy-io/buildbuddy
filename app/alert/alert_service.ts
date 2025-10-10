@@ -5,7 +5,7 @@ export type Alert = {
   type: AlertType;
 };
 
-export type AlertType = "error" | "success" | "warning";
+export type AlertType = "error" | "success" | "warning" | "info";
 
 export class AlertService {
   alerts = new Subject<Alert>();
@@ -26,6 +26,10 @@ export class AlertService {
 
   error(message: string) {
     this.show({ message, type: "error" });
+  }
+
+  loading() {
+    this.show({ message: "Loading...", type: "info" });
   }
 }
 

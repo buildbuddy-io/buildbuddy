@@ -236,6 +236,10 @@ message UpdateRepoSettingsRequest {
 
   string repo_url = 2;
 
+  // Whether to use the default workflow config if buildbuddy.yaml is missing.
+  // If enabled, workflows will automatically start running for a git repo when
+  // linked, even if buildbuddy.yaml is missing from the repo. If disabled,
+  // workflows will only run when buildbuddy.yaml is present in the repo.
   bool use_default_workflow_config = 3;
 }
 
