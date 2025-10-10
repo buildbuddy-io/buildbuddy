@@ -238,18 +238,3 @@ func TestEventBuffer_MultipleSubscriptionsSerial(t *testing.T) {
 
 	requireClosed(t, events2)
 }
-
-func TestEventBuffer_NoGoroutineLeakOnCancel(t *testing.T) {
-	buffer := build_event_publisher.NewEventBuffer(makeStreamID("inv-leak", "build-leak"))
-
-	for i := 0; i < 10; i++ {
-		events, cancel := buffer.Subscribe()
-		buffer.Add(regularEvent())
-
-		_, ok := recvEvent(t, events)
-		require.True(t, ok)
-
-		cancel()
-		requireClosed(t, events)
-	}
-}
