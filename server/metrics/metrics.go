@@ -964,6 +964,15 @@ var (
 		LookasideCacheLookupStatus,
 	})
 
+	LookasideCacheLookupBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "lookaside_cache_lookup_bytes",
+		Help:      "Total number bytes served from the Lookaside Cache by hit/miss status.",
+	}, []string{
+		LookasideCacheLookupStatus,
+	})
+
 	// This metric is in milliseconds because Grafana heatmaps don't display
 	// microsecond durations nicely when they can contain large durations.
 	LookasideCacheEvictionAgeMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
