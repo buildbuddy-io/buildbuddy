@@ -93,6 +93,7 @@ const (
 	RunnerRecyclingKey                      = "runner-recycling-key"
 	RunnerRecyclingMaxWaitPropertyName      = "runner-recycling-max-wait"
 	runnerCrashedExitCodesPropertyName      = "runner-crashed-exit-codes"
+	transientErrorExitCodes                 = "transient-error-exit-codes"
 	RemoteSnapshotSavePolicyPropertyName    = "remote-snapshot-save-policy"
 	SnapshotReadPolicyPropertyName          = "snapshot-read-policy"
 	PreserveWorkspacePropertyName           = "preserve-workspace"
@@ -208,6 +209,10 @@ type Properties struct {
 	// Exit codes indicating a runner crashed and should not be recycled since
 	// it may be corrupted in some way.
 	RunnerCrashedExitCodes []int
+
+	// Exit codes that should be translated to an Unavailable gRPC error so that
+	// they can be retried automatically by the client.
+	TransientErrorExitCodes []int
 
 	EnableVFS      bool
 	IncludeSecrets bool
@@ -494,6 +499,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		RemoteSnapshotSavePolicy:  snapshotSavePolicy,
 		ContainerRegistryBypass:   boolProp(m, containerRegistryBypassPropertyName, false),
 		RunnerCrashedExitCodes:    intListProp(m, runnerCrashedExitCodesPropertyName),
+		TransientErrorExitCodes:   intListProp(m, transientErrorExitCodes),
 	}, nil
 }
 

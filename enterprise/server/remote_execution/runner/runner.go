@@ -332,6 +332,12 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 			log.CtxInfof(ctx, "Exit code is in runner-crashed-exit-codes list %v - not recycling", r.PlatformProperties.RunnerCrashedExitCodes)
 			res.DoNotRecycle = true
 		}
+		if slices.Contains(r.PlatformProperties.TransientErrorExitCodes, res.ExitCode) {
+			res.Error = status.UnavailableErrorf("command exited with code %d (listed in transient-error-exit-codes)", res.ExitCode)
+			// Clear the exit code - should either return an exit code or an
+			// error but not both.
+			res.ExitCode = commandutil.NoExitCode
+		}
 
 		// Allow tasks to create a special file to skip recycling.
 		exists, err := disk.FileExists(ctx, filepath.Join(r.Workspace.Path(), doNotRecycleMarkerFile))
