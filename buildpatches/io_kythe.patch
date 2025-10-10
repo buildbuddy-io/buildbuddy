@@ -1,5 +1,5 @@
 diff --git a/WORKSPACE b/WORKSPACE
-index 009de188b..fe3622e26 100644
+index 8d5f04bd0..b0e4c19e3 100644
 --- a/WORKSPACE
 +++ b/WORKSPACE
 @@ -87,17 +87,6 @@ ruby_bundle(
@@ -324,7 +324,7 @@ index 4b3ecd2fd..1c42406a2 100644
  go_library(
      name = "table",
 diff --git a/kythe/go/storage/tools/BUILD b/kythe/go/storage/tools/BUILD
-index db7250a1e..afa648bb7 100644
+index 7fae5b786..18e92d6c3 100644
 --- a/kythe/go/storage/tools/BUILD
 +++ b/kythe/go/storage/tools/BUILD
 @@ -1,4 +1,4 @@
@@ -407,10 +407,10 @@ index e2c81cb36..9629ae56f 100644
      name = "schema_test",
      size = "small",
 diff --git a/kythe/proto/BUILD b/kythe/proto/BUILD
-index b76bccaea..7cd5b6290 100644
+index b76bccaea..3a9c1230a 100644
 --- a/kythe/proto/BUILD
 +++ b/kythe/proto/BUILD
-@@ -1,12 +1,9 @@
+@@ -1,11 +1,10 @@
  load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 +load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
  load("@rules_proto//proto:defs.bzl", "proto_library")
@@ -424,7 +424,7 @@ index b76bccaea..7cd5b6290 100644
  
  filegroup(
      name = "public",
-@@ -47,12 +45,6 @@ go_proto_library(
+@@ -47,12 +46,6 @@ go_proto_library(
      deps = [":storage_go_proto"],
  )
  
@@ -437,7 +437,7 @@ index b76bccaea..7cd5b6290 100644
  cc_proto_library(
      name = "schema_cc_proto",
      visibility = [PUBLIC_PROTO_VISIBILITY],
-@@ -79,18 +71,12 @@ go_proto_library(
+@@ -79,18 +72,12 @@ go_proto_library(
      proto = ":common_proto",
  )
  
@@ -457,7 +457,7 @@ index b76bccaea..7cd5b6290 100644
      ],
  )
  
-@@ -106,18 +92,12 @@ go_proto_library(
+@@ -106,18 +93,12 @@ go_proto_library(
      proto = ":storage_proto",
  )
  
@@ -477,7 +477,7 @@ index b76bccaea..7cd5b6290 100644
      ],
      deps = [":storage_proto"],
  )
-@@ -129,24 +109,19 @@ cc_proto_library(
+@@ -129,24 +110,19 @@ cc_proto_library(
  
  go_proto_library(
      name = "storage_service_go_proto",
@@ -504,7 +504,7 @@ index b76bccaea..7cd5b6290 100644
      ],
      deps = [
          ":storage_proto",
-@@ -171,18 +146,12 @@ go_proto_library(
+@@ -171,18 +147,12 @@ go_proto_library(
      ],
  )
  
@@ -524,7 +524,7 @@ index b76bccaea..7cd5b6290 100644
      ],
      deps = [":analysis_proto"],
  )
-@@ -194,17 +163,12 @@ cc_proto_library(
+@@ -194,17 +164,12 @@ cc_proto_library(
  
  go_proto_library(
      name = "analysis_service_go_proto",
@@ -543,7 +543,7 @@ index b76bccaea..7cd5b6290 100644
  # Public Kythe status service API
  proto_library(
      name = "status_service_proto",
-@@ -225,11 +189,6 @@ go_proto_library(
+@@ -225,11 +190,6 @@ go_proto_library(
      deps = [":common_go_proto"],
  )
  
@@ -555,7 +555,7 @@ index b76bccaea..7cd5b6290 100644
  # Context-dependent version information, for claiming.
  proto_library(
      name = "filecontext_proto",
-@@ -247,11 +206,6 @@ go_proto_library(
+@@ -247,11 +207,6 @@ go_proto_library(
      proto = ":filecontext_proto",
  )
  
@@ -567,7 +567,7 @@ index b76bccaea..7cd5b6290 100644
  # Build tool details for compilation units
  proto_library(
      name = "buildinfo_proto",
-@@ -270,11 +224,6 @@ go_proto_library(
+@@ -270,11 +225,6 @@ go_proto_library(
      proto = ":buildinfo_proto",
  )
  
@@ -579,7 +579,7 @@ index b76bccaea..7cd5b6290 100644
  # C++-specific protocol buffer definitions
  proto_library(
      name = "cxx_proto",
-@@ -292,11 +241,6 @@ go_proto_library(
+@@ -292,11 +242,6 @@ go_proto_library(
      proto = ":cxx_proto",
  )
  
@@ -591,7 +591,7 @@ index b76bccaea..7cd5b6290 100644
  # Go-specific protocol buffer definitions
  proto_library(
      name = "go_proto",
-@@ -314,11 +258,6 @@ go_proto_library(
+@@ -314,11 +259,6 @@ go_proto_library(
      proto = ":go_proto",
  )
  
@@ -603,7 +603,7 @@ index b76bccaea..7cd5b6290 100644
  # Java-specific protocol buffer definitions
  proto_library(
      name = "java_proto",
-@@ -338,11 +277,6 @@ go_proto_library(
+@@ -338,11 +278,6 @@ go_proto_library(
      deps = [":storage_go_proto"],
  )
  
@@ -615,7 +615,7 @@ index b76bccaea..7cd5b6290 100644
  # Kythe claiming message definitions
  proto_library(
      name = "claim_proto",
-@@ -362,11 +296,6 @@ go_proto_library(
+@@ -362,11 +297,6 @@ go_proto_library(
      deps = [":storage_go_proto"],
  )
  
@@ -627,7 +627,7 @@ index b76bccaea..7cd5b6290 100644
  # Public Kythe filetree service API
  proto_library(
      name = "filetree_proto",
-@@ -380,32 +309,17 @@ cc_proto_library(
+@@ -380,32 +310,17 @@ cc_proto_library(
  
  go_proto_library(
      name = "filetree_go_proto",
@@ -662,7 +662,7 @@ index b76bccaea..7cd5b6290 100644
      ],
      deps = [":common_proto"],
  )
-@@ -418,17 +332,12 @@ cc_proto_library(
+@@ -418,17 +333,12 @@ cc_proto_library(
  
  go_proto_library(
      name = "xref_go_proto",
@@ -681,7 +681,7 @@ index b76bccaea..7cd5b6290 100644
  proto_library(
      name = "identifier_proto",
      srcs = ["identifier.proto"],
-@@ -441,16 +350,11 @@ cc_proto_library(
+@@ -441,16 +351,11 @@ cc_proto_library(
  
  go_proto_library(
      name = "identifier_go_proto",
@@ -699,7 +699,7 @@ index b76bccaea..7cd5b6290 100644
  # Public Kythe graph service API
  proto_library(
      name = "graph_proto",
-@@ -460,7 +364,7 @@ proto_library(
+@@ -460,7 +365,7 @@ proto_library(
  
  go_proto_library(
      name = "graph_go_proto",
@@ -708,7 +708,7 @@ index b76bccaea..7cd5b6290 100644
      importpath = "kythe.io/kythe/proto/graph_go_proto",
      proto = ":graph_proto",
      deps = [":common_go_proto"],
-@@ -471,11 +375,6 @@ cc_proto_library(
+@@ -471,11 +376,6 @@ cc_proto_library(
      deps = [":graph_proto"],
  )
  
@@ -720,7 +720,7 @@ index b76bccaea..7cd5b6290 100644
  # Public Kythe graph exploration API
  proto_library(
      name = "explore_proto",
-@@ -489,7 +388,7 @@ proto_library(
+@@ -489,7 +389,7 @@ proto_library(
  
  go_proto_library(
      name = "explore_go_proto",
@@ -729,7 +729,7 @@ index b76bccaea..7cd5b6290 100644
      importpath = "kythe.io/kythe/proto/explore_go_proto",
      proto = ":explore_proto",
      deps = [
-@@ -504,11 +403,6 @@ cc_proto_library(
+@@ -504,11 +404,6 @@ cc_proto_library(
      deps = [":explore_proto"],
  )
  
@@ -741,7 +741,7 @@ index b76bccaea..7cd5b6290 100644
  # Protocol buffer definitions used to encode serving data
  # WARNING: These should not be exposed to clients.
  proto_library(
-@@ -535,12 +429,6 @@ go_proto_library(
+@@ -535,12 +430,6 @@ go_proto_library(
      deps = [":common_go_proto"],
  )
  
@@ -754,7 +754,7 @@ index b76bccaea..7cd5b6290 100644
  proto_library(
      name = "xref_serving_proto",
      srcs = ["xref_serving.proto"],
-@@ -598,17 +486,12 @@ cc_proto_library(
+@@ -598,17 +487,12 @@ cc_proto_library(
  
  go_proto_library(
      name = "link_go_proto",
@@ -773,7 +773,7 @@ index b76bccaea..7cd5b6290 100644
  # Protocol buffer definitions internal only to the Kythe libraries and tools.
  # WARNING: These should not be exposed to clients.
  proto_library(
-@@ -629,11 +512,6 @@ go_proto_library(
+@@ -629,11 +513,6 @@ go_proto_library(
      deps = [":serving_go_proto"],
  )
  
@@ -785,7 +785,7 @@ index b76bccaea..7cd5b6290 100644
  # Protocol buffer definitions used to record indexer outputs for storage.
  # WARNING: These should not be exposed to clients.
  proto_library(
-@@ -652,11 +530,6 @@ go_proto_library(
+@@ -652,11 +531,6 @@ go_proto_library(
      proto = ":entryset_proto",
  )
  
@@ -797,7 +797,7 @@ index b76bccaea..7cd5b6290 100644
  proto_library(
      name = "extraction_config_proto",
      srcs = ["extraction_config.proto"],
-@@ -744,16 +617,6 @@ cc_proto_library(
+@@ -744,16 +618,6 @@ cc_proto_library(
      deps = [":metadata_proto"],
  )
  
@@ -814,7 +814,7 @@ index b76bccaea..7cd5b6290 100644
  bzl_library(
      name = "go_bzl",
      srcs = ["go.bzl"],
-@@ -817,14 +680,6 @@ go_proto_library(
+@@ -817,14 +681,6 @@ go_proto_library(
      visibility = [PUBLIC_PROTO_VISIBILITY],
  )
  
@@ -829,7 +829,7 @@ index b76bccaea..7cd5b6290 100644
  cc_proto_library(
      name = "generated_message_info_cc_proto",
      visibility = [PUBLIC_PROTO_VISIBILITY],
-@@ -850,13 +705,3 @@ go_proto_library(
+@@ -850,13 +706,3 @@ go_proto_library(
      proto = ":vnames_config_proto",
      deps = [":storage_go_proto"],
  )
