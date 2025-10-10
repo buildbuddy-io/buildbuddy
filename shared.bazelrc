@@ -52,6 +52,8 @@ common --noslim_profile
 # TODO(sluongng): make Bazel writes this to output_base automatically
 common --execution_log_compact_file=bazel_compact_exec_log.binpb.zst
 
+# Disable https://github.com/aspect-build/tools_telemetry.
+common --repo_env=DO_NOT_TRACK=1
 
 #############################
 # TESTING/DEVELOPMENT FLAGS #
