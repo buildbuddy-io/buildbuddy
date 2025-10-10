@@ -79,42 +79,43 @@ const (
 	// version.
 	//
 	// This is in a different const block so as not to affect the iota below.
-	UnspecifiedKeyVersion PebbleKeyVersion = -1
+	UnspecifiedPebbleKeyVersion PebbleKeyVersion = -1
 
-	// UndefinedKeyVersion is the version of all keys in the database
+	// UndefinedPebbleKeyVersion is the version of all keys in the database
 	// that have not yet been versioned.
-	UndefinedKeyVersion PebbleKeyVersion = iota - 1
+	UndefinedPebbleKeyVersion PebbleKeyVersion = iota - 1
 
-	// Version1 is the first key version that includes a version in the
+	// PebbleKeyVersion1 is the first key version that includes a version in the
 	// key path, to disambiguate reading old keys.
-	Version1
+	PebbleKeyVersion1
 
-	// Version2 is the same as Version1, plus a change that moves the
+	// PebbleKeyVersion2 is the same as PebbleKeyVersion1, plus a change that moves the
 	// remote instance name hash to the end of the key rather than the
 	// beginning. This allows for even sampling across the keyspace,
 	// regardless of remote instance name.
-	Version2
+	PebbleKeyVersion2
 
-	// Version3 adds an optional encryption key ID for keys that refer to
+	// PebbleKeyVersion3 adds an optional encryption key ID for keys that refer to
 	// encrypted data.
-	Version3
+	PebbleKeyVersion3
 
-	// Version4 includes digest type in the hash and remaps ANON data to a
+	// PebbleKeyVersion4 includes digest type in the hash and remaps ANON data to a
 	// fixed ANON group ID in GR{20} format.
-	Version4
+	PebbleKeyVersion4
 
-	// Version5 simplifies the keyspace (to simplify eviction) by encoding
+	// PebbleKeyVersion5 simplifies the keyspace (to simplify eviction) by encoding
 	// AC keys under a synthetic digest made from their remote instance
 	// name, groupID, and digest.
-	Version5
+	PebbleKeyVersion5
 
-	// MaxKeyVersion is always 1 more than the highest defined version, which
-	// allows for tests to iterate across all versions from UndefinedKeyVersion
-	// to MaxKeyVersion and check cross compatibility.
-	MaxKeyVersion
+	// MaxPebbleKeyVersion is always 1 more than the highest defined version, which
+	// allows for tests to iterate across all versions from UndefinedPebbleKeyVersion
+	// to MaxPebbleKeyVersion and check cross compatibility.
+	MaxPebbleKeyVersion
 )
 
-type PebbleKey struct {
+// baseKey contains the common fields shared by both PebbleKey and RaftKey
+type baseKey struct {
 	partID             string
 	groupID            string
 	isolation          string
@@ -123,20 +124,62 @@ type PebbleKey struct {
 	encryptionKeyID    string
 	digestFunction     repb.DigestFunction_Value
 
-	// For Version5 keys and beyond, creating a key from the above fields is
-	// a *lossy* procedure. This means it's impossible to take a raw key and
-	// back out the groupID or other information. For that reason, when a
-	// v5+ key is parsed, the full key bytes are preserved here so that the
-	// key can be re-serialized.
+	// For versioned keys (PebbleKeyVersion5+, RaftKeyVersion1+), creating a key
+	// from the above fields is a *lossy* procedure. This means it's impossible to
+	// take a raw key and back out the groupID or other information. For that reason,
+	// when a versioned key is parsed, the full key bytes are preserved here so that
+	// the key can be re-serialized.
 	fullKey []byte
 }
 
-func (pmk PebbleKey) EncryptionKeyID() string {
-	return pmk.encryptionKeyID
+func (bk baseKey) EncryptionKeyID() string {
+	return bk.encryptionKeyID
+}
+
+func (bk baseKey) CacheType() rspb.CacheType {
+	switch bk.isolation {
+	case "ac":
+		return rspb.CacheType_AC
+	case "cas":
+		return rspb.CacheType_CAS
+	default:
+		return rspb.CacheType_UNKNOWN_CACHE_TYPE
+	}
+}
+
+func (bk baseKey) Partition() string {
+	return PartitionDirectoryPrefix + bk.partID
+}
+
+func (bk baseKey) Hash() string {
+	return bk.hash
+}
+
+// createSyntheticHash generates a synthetic hash from groupID,
+// remoteInstanceHash and digest.
+func (bk baseKey) createSyntheticHash() (string, error) {
+	hashExtra := remapANONToFixedGroupID(bk.groupID)
+	rih := bk.remoteInstanceHash
+	if rih == "" {
+		rih = "0"
+	}
+	hashExtra += "|" + rih + "|" + bk.hash
+	h, err := digest.HashForDigestType(bk.digestFunction)
+	if err != nil {
+		return "", err
+	}
+	if _, err := h.Write([]byte(hashExtra)); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+type PebbleKey struct {
+	baseKey
 }
 
 func (pmk PebbleKey) String() string {
-	fmk, err := pmk.Bytes(UndefinedKeyVersion)
+	fmk, err := pmk.Bytes(UndefinedPebbleKeyVersion)
 	if err != nil {
 		return err.Error()
 	}
@@ -145,7 +188,7 @@ func (pmk PebbleKey) String() string {
 
 func (pmk PebbleKey) LockID() string {
 	if pmk.isolation == "ac" {
-		fmk, err := pmk.Bytes(Version5)
+		fmk, err := pmk.Bytes(PebbleKeyVersion5)
 		if err != nil {
 			return err.Error()
 		}
@@ -154,14 +197,104 @@ func (pmk PebbleKey) LockID() string {
 	return filepath.Join(pmk.isolation, pmk.hash)
 }
 
-func (pmk PebbleKey) CacheType() rspb.CacheType {
-	switch pmk.isolation {
-	case "ac":
-		return rspb.CacheType_AC
-	case "cas":
-		return rspb.CacheType_CAS
+type RaftKeyVersion int
+
+const (
+	UndefinedRaftKeyVersion RaftKeyVersion = iota
+
+	RaftKeyVersion1
+
+	// MaxRaftKeyVersion is always 1 more than the highest defined version, which
+	// allows for tests to iterate across all versions from UndefinedRaftKeyVersion
+	// to MaxRaftKeyVersion and check cross compatibility.
+	MaxRaftKeyVersion
+)
+
+type RaftKey struct {
+	baseKey
+}
+
+func (rmk RaftKey) String() string {
+	partDir := PartitionDirectoryPrefix + rmk.partID
+	filePath := filepath.Join(partDir, rmk.groupID, rmk.isolation, rmk.remoteInstanceHash, rmk.hash)
+	return filePath
+}
+
+func (rmk RaftKey) Bytes(version RaftKeyVersion) ([]byte, error) {
+	switch version {
+	case RaftKeyVersion1:
+		if len(rmk.fullKey) > 0 {
+			return rmk.fullKey, nil
+		}
+		hashStr, err := rmk.createSyntheticHash()
+		if err != nil {
+			return nil, err
+		}
+		filePath := filepath.Join(hashStr, strconv.Itoa(int(rmk.digestFunction)), rmk.isolation, rmk.encryptionKeyID)
+		partDir := PartitionDirectoryPrefix + rmk.partID
+		filePath = filepath.Join(partDir, filePath, "v1")
+		return []byte(filePath), nil
 	default:
-		return rspb.CacheType_UNKNOWN_CACHE_TYPE
+		return nil, status.FailedPreconditionErrorf("Unknown raft key version: %v", version)
+	}
+}
+
+func (rmk *RaftKey) parseRaftVersion1(parts [][]byte) error {
+	digestFunctionString := ""
+	switch len(parts) {
+	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/1/cas/v1",
+	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/9/ac/v1",
+	case 5:
+		rmk.partID, rmk.hash, digestFunctionString, rmk.isolation = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
+	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/EK123/v1",
+	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/EK123/v1",
+	case 6:
+		rmk.partID, rmk.hash, digestFunctionString, rmk.isolation, rmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+	default:
+		return parseError(parts)
+	}
+
+	// Parse hash type string back into a digestFunction enum.
+	intDigestFunction, err := strconv.Atoi(digestFunctionString)
+	if err != nil || intDigestFunction == 0 {
+		// It is an error for a v1 key to have a 0 digestFunction value.
+		return parseError(parts)
+	}
+	rmk.digestFunction = repb.DigestFunction_Value(intDigestFunction)
+	rmk.partID = strings.TrimPrefix(rmk.partID, PartitionDirectoryPrefix)
+
+	slash := []byte{filepath.Separator}
+	rmk.fullKey = bytes.Join(parts, slash)
+	return nil
+}
+
+func (rmk *RaftKey) FromBytes(in []byte) (RaftKeyVersion, error) {
+	slash := []byte{filepath.Separator}
+	parts := bytes.Split(bytes.TrimPrefix(in, slash), slash)
+
+	if len(parts) == 0 {
+		return -1, status.InvalidArgumentErrorf("Unable to parse %q to raft key", in)
+	}
+
+	// Attempt to read the key version, if one is present. This allows for much
+	// simpler parsing because we can restrict the set of valid parse inputs
+	// instead of having to possibly parse any/all versions at once.
+	versionInt := parseVersionFromParts(parts)
+	version := UndefinedRaftKeyVersion
+	if versionInt >= 0 {
+		version = RaftKeyVersion(versionInt)
+	}
+
+	// Before version 1, all digests were assumed to be of type SHA256. So
+	// default to that digestFunction here and in RaftKeyVersion1 onward, it will
+	// be overwritten during parsing.
+	rmk.digestFunction = repb.DigestFunction_SHA256
+
+	switch version {
+	case RaftKeyVersion1:
+		return RaftKeyVersion1, rmk.parseRaftVersion1(parts)
+	default:
+		return -1, status.InvalidArgumentErrorf("Unable to parse %q to raft key", in)
 	}
 }
 
@@ -200,9 +333,25 @@ func trimFixedWidthGroupID(groupID string) string {
 	return GroupIDPrefix + strings.TrimLeft(groupID[2:], "0")
 }
 
+// parseVersionFromParts attempts to read the key version from the last part
+// of a split key path. Returns -1 if no version is found.
+// For example, if the last part is "v1", it returns 1.
+func parseVersionFromParts(parts [][]byte) int {
+	if len(parts) == 0 || len(parts[0]) <= 1 {
+		return -1
+	}
+	lastPart := parts[len(parts)-1]
+	if bytes.ContainsRune(lastPart[:1], 'v') {
+		if s, err := strconv.ParseUint(string(lastPart[1:]), 10, 32); err == nil {
+			return int(s)
+		}
+	}
+	return -1
+}
+
 func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 	switch version {
-	case UndefinedKeyVersion:
+	case UndefinedPebbleKeyVersion:
 		filePath := filepath.Join(pmk.isolation, pmk.remoteInstanceHash, pmk.hash)
 		if pmk.isolation == "ac" {
 			filePath = filepath.Join(pmk.groupID, filePath)
@@ -211,7 +360,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		filePath = filepath.Join(partDir, filePath)
 
 		return []byte(filePath), nil
-	case Version1:
+	case PebbleKeyVersion1:
 		filePath := filepath.Join(pmk.isolation, pmk.remoteInstanceHash, pmk.hash)
 		if pmk.isolation == "ac" {
 			filePath = filepath.Join(pmk.groupID, filePath)
@@ -219,7 +368,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		partDir := PartitionDirectoryPrefix + pmk.partID
 		filePath = filepath.Join(partDir, filePath, "v1")
 		return []byte(filePath), nil
-	case Version2:
+	case PebbleKeyVersion2:
 		filePath := filepath.Join(pmk.hash, pmk.isolation, pmk.remoteInstanceHash)
 		if pmk.isolation == "ac" {
 			filePath = filepath.Join(FixedWidthGroupID(pmk.groupID), filePath)
@@ -227,7 +376,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		partDir := PartitionDirectoryPrefix + pmk.partID
 		filePath = filepath.Join(partDir, filePath, "v2")
 		return []byte(filePath), nil
-	case Version3:
+	case PebbleKeyVersion3:
 		rih := pmk.remoteInstanceHash
 		if pmk.isolation == "ac" && rih == "" {
 			rih = "0"
@@ -239,7 +388,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		partDir := PartitionDirectoryPrefix + pmk.partID
 		filePath = filepath.Join(partDir, filePath, "v3")
 		return []byte(filePath), nil
-	case Version4:
+	case PebbleKeyVersion4:
 		rih := pmk.remoteInstanceHash
 		if pmk.isolation == "ac" && rih == "" {
 			rih = "0"
@@ -251,26 +400,17 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		partDir := PartitionDirectoryPrefix + pmk.partID
 		filePath = filepath.Join(partDir, filePath, "v4")
 		return []byte(filePath), nil
-	case Version5:
+	case PebbleKeyVersion5:
 		if len(pmk.fullKey) > 0 {
 			return pmk.fullKey, nil
 		}
 		hashStr := pmk.hash
 		if pmk.isolation == "ac" {
-			hashExtra := remapANONToFixedGroupID(pmk.groupID)
-			rih := pmk.remoteInstanceHash
-			if rih == "" {
-				rih = "0"
-			}
-			hashExtra += "|" + rih + "|" + pmk.hash
-			h, err := digest.HashForDigestType(pmk.digestFunction)
+			var err error
+			hashStr, err = pmk.createSyntheticHash()
 			if err != nil {
 				return nil, err
 			}
-			if _, err := h.Write([]byte(hashExtra)); err != nil {
-				return nil, err
-			}
-			hashStr = hex.EncodeToString(h.Sum(nil))
 		}
 
 		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)
@@ -437,7 +577,6 @@ func (pmk *PebbleKey) parseVersion5(parts [][]byte) error {
 }
 
 func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
-	version := UndefinedKeyVersion
 	slash := []byte{filepath.Separator}
 	parts := bytes.Split(bytes.TrimPrefix(in, slash), slash)
 
@@ -448,33 +587,30 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 	// Attempt to read the key version, if one is present. This allows for much
 	// simpler parsing because we can restrict the set of valid parse inputs
 	// instead of having to possibly parse any/all versions at once.
-	if len(parts[0]) > 1 {
-		lastPart := parts[len(parts)-1]
-		if bytes.ContainsRune(lastPart[:1], 'v') {
-			if s, err := strconv.ParseUint(string(lastPart[1:]), 10, 32); err == nil {
-				version = PebbleKeyVersion(s)
-			}
-		}
+	versionInt := parseVersionFromParts(parts)
+	version := UndefinedPebbleKeyVersion
+	if versionInt >= 0 {
+		version = PebbleKeyVersion(versionInt)
 	}
 
 	// Before version 4, all digests were assumed to be of type SHA256. So
-	// default to that digestFunction here and in Version4 onward, it will
+	// default to that digestFunction here and in PebbleKeyVersion4 onward, it will
 	// be overwritten during parsing.
 	pmk.digestFunction = repb.DigestFunction_SHA256
 
 	switch version {
-	case UndefinedKeyVersion:
-		return UndefinedKeyVersion, pmk.parseUndefinedVersion(parts)
-	case Version1:
-		return Version1, pmk.parseVersion1(parts)
-	case Version2:
-		return Version2, pmk.parseVersion2(parts)
-	case Version3:
-		return Version3, pmk.parseVersion3(parts)
-	case Version4:
-		return Version4, pmk.parseVersion4(parts)
-	case Version5:
-		return Version5, pmk.parseVersion5(parts)
+	case UndefinedPebbleKeyVersion:
+		return UndefinedPebbleKeyVersion, pmk.parseUndefinedVersion(parts)
+	case PebbleKeyVersion1:
+		return PebbleKeyVersion1, pmk.parseVersion1(parts)
+	case PebbleKeyVersion2:
+		return PebbleKeyVersion2, pmk.parseVersion2(parts)
+	case PebbleKeyVersion3:
+		return PebbleKeyVersion3, pmk.parseVersion3(parts)
+	case PebbleKeyVersion4:
+		return PebbleKeyVersion4, pmk.parseVersion4(parts)
+	case PebbleKeyVersion5:
+		return PebbleKeyVersion5, pmk.parseVersion5(parts)
 	default:
 		return -1, status.InvalidArgumentErrorf("Unable to parse %q to pebble key", in)
 	}
@@ -483,6 +619,7 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 type Store interface {
 	FilePath(fileDir string, f *sgpb.StorageMetadata_FileMetadata) string
 	PebbleKey(r *sgpb.FileRecord) (PebbleKey, error)
+	RaftKey(r *sgpb.FileRecord) (RaftKey, error)
 
 	NewReader(ctx context.Context, fileDir string, md *sgpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
 
@@ -623,13 +760,33 @@ func (fs *fileStorer) PebbleKey(r *sgpb.FileRecord) (PebbleKey, error) {
 		return PebbleKey{}, err
 	}
 	return PebbleKey{
-		partID:             partID,
-		groupID:            groupID,
-		isolation:          isolation,
-		remoteInstanceHash: remoteInstanceHash,
-		hash:               hash,
-		encryptionKeyID:    r.GetEncryption().GetKeyId(),
-		digestFunction:     r.GetDigestFunction(),
+		baseKey: baseKey{
+			partID:             partID,
+			groupID:            groupID,
+			isolation:          isolation,
+			remoteInstanceHash: remoteInstanceHash,
+			hash:               hash,
+			encryptionKeyID:    r.GetEncryption().GetKeyId(),
+			digestFunction:     r.GetDigestFunction(),
+		},
+	}, nil
+}
+
+func (fs *fileStorer) RaftKey(r *sgpb.FileRecord) (RaftKey, error) {
+	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
+	if err != nil {
+		return RaftKey{}, err
+	}
+	return RaftKey{
+		baseKey: baseKey{
+			partID:             partID,
+			groupID:            groupID,
+			isolation:          isolation,
+			remoteInstanceHash: remoteInstanceHash,
+			hash:               hash,
+			encryptionKeyID:    r.GetEncryption().GetKeyId(),
+			digestFunction:     r.GetDigestFunction(),
+		},
 	}, nil
 }
 

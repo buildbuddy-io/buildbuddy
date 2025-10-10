@@ -93,7 +93,7 @@ var (
 	groupSizeSampleRate       = flag.Float64("cache.pebble.group_size_sample_rate", .01, "Compute estimated size per-group in partitions by sampling at this rate.")
 	groupSizeSampleDecayRate  = flag.Float64("cache.pebble.group_size_sample_decay_rate", .95, "Constant factor used to decay away partition size estimates.")
 
-	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UnspecifiedKeyVersion), "The key version new data will be written with. If negative, will write to the highest existing version in the database, or the highest known version if a new database is created.")
+	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UnspecifiedPebbleKeyVersion), "The key version new data will be written with. If negative, will write to the highest existing version in the database, or the highest known version if a new database is created.")
 	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 50, "QPS limit for data version migration")
 
 	// Compression related flags
@@ -289,41 +289,41 @@ type keyMigrator interface {
 type v0ToV1Migrator struct{}
 
 func (m *v0ToV1Migrator) FromVersion() filestore.PebbleKeyVersion {
-	return filestore.UndefinedKeyVersion
+	return filestore.UndefinedPebbleKeyVersion
 }
-func (m *v0ToV1Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version1 }
+func (m *v0ToV1Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.PebbleKeyVersion1 }
 func (m *v0ToV1Migrator) Migrate(val []byte) []byte             { return val }
 
 type v1ToV2Migrator struct{}
 
 func (m *v1ToV2Migrator) FromVersion() filestore.PebbleKeyVersion {
-	return filestore.Version1
+	return filestore.PebbleKeyVersion1
 }
-func (m *v1ToV2Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version2 }
+func (m *v1ToV2Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.PebbleKeyVersion2 }
 func (m *v1ToV2Migrator) Migrate(val []byte) []byte             { return val }
 
 type v2ToV3Migrator struct{}
 
 func (m *v2ToV3Migrator) FromVersion() filestore.PebbleKeyVersion {
-	return filestore.Version2
+	return filestore.PebbleKeyVersion2
 }
-func (m *v2ToV3Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version3 }
+func (m *v2ToV3Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.PebbleKeyVersion3 }
 func (m *v2ToV3Migrator) Migrate(val []byte) []byte             { return val }
 
 type v3ToV4Migrator struct{}
 
 func (m *v3ToV4Migrator) FromVersion() filestore.PebbleKeyVersion {
-	return filestore.Version3
+	return filestore.PebbleKeyVersion3
 }
-func (m *v3ToV4Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version4 }
+func (m *v3ToV4Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.PebbleKeyVersion4 }
 func (m *v3ToV4Migrator) Migrate(val []byte) []byte             { return val }
 
 type v4ToV5Migrator struct{}
 
 func (m *v4ToV5Migrator) FromVersion() filestore.PebbleKeyVersion {
-	return filestore.Version4
+	return filestore.PebbleKeyVersion4
 }
-func (m *v4ToV5Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version5 }
+func (m *v4ToV5Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.PebbleKeyVersion5 }
 func (m *v4ToV5Migrator) Migrate(val []byte) []byte             { return val }
 
 // Register creates a new PebbleCache from the configured flags and sets it in
@@ -442,7 +442,7 @@ func SetOptionDefaults(opts *Options) {
 		opts.MinEvictionAge = &DefaultMinEvictionAge
 	}
 	if opts.ActiveKeyVersion == nil {
-		defaultVersion := int64(filestore.UnspecifiedKeyVersion)
+		defaultVersion := int64(filestore.UnspecifiedPebbleKeyVersion)
 		opts.ActiveKeyVersion = &defaultVersion
 	}
 	if opts.SampleBufferSize == nil {
@@ -665,7 +665,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if newlyCreated {
 		activeVersion := *opts.ActiveKeyVersion
 		if activeVersion < 0 {
-			activeVersion = int64(filestore.MaxKeyVersion) - 1
+			activeVersion = int64(filestore.MaxPebbleKeyVersion) - 1
 		}
 		versionMetadata.MinVersion = activeVersion
 		versionMetadata.MaxVersion = activeVersion
@@ -696,23 +696,23 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	// currently active version.
 	if pc.minDBVersion < pc.activeDatabaseVersion() {
 		// N.B. Migrators must be added *in order*.
-		if pc.activeDatabaseVersion() >= filestore.Version1 {
+		if pc.activeDatabaseVersion() >= filestore.PebbleKeyVersion1 {
 			// Migrate keys from 0->1.
 			pc.migrators = append(pc.migrators, &v0ToV1Migrator{})
 		}
-		if pc.activeDatabaseVersion() >= filestore.Version2 {
+		if pc.activeDatabaseVersion() >= filestore.PebbleKeyVersion2 {
 			// Migrate keys from 1->2.
 			pc.migrators = append(pc.migrators, &v1ToV2Migrator{})
 		}
-		if pc.activeDatabaseVersion() >= filestore.Version3 {
+		if pc.activeDatabaseVersion() >= filestore.PebbleKeyVersion3 {
 			// Migrate keys from 2->3.
 			pc.migrators = append(pc.migrators, &v2ToV3Migrator{})
 		}
-		if pc.activeDatabaseVersion() >= filestore.Version4 {
+		if pc.activeDatabaseVersion() >= filestore.PebbleKeyVersion4 {
 			// Migrate keys from 3->4.
 			pc.migrators = append(pc.migrators, &v3ToV4Migrator{})
 		}
-		if pc.activeDatabaseVersion() >= filestore.Version5 {
+		if pc.activeDatabaseVersion() >= filestore.PebbleKeyVersion5 {
 			// Migrate keys from 4->5.
 			pc.migrators = append(pc.migrators, &v4ToV5Migrator{})
 		}

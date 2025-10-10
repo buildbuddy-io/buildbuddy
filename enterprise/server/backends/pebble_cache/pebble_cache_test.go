@@ -1995,13 +1995,13 @@ func TestUnspecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
 
 	// Confirm that a newly-created pebble database with an unspecified key
 	// version is written at the highest available key version.
-	activeKeyVersion := int64(filestore.UnspecifiedKeyVersion)
+	activeKeyVersion := int64(filestore.UnspecifiedPebbleKeyVersion)
 	options.ActiveKeyVersion = &activeKeyVersion
 	pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
 	versionMetadata, err := pc.DatabaseVersionMetadata()
 	require.NoError(t, err)
-	require.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MinVersion)
-	require.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MaxVersion)
+	require.Equal(t, int64(filestore.MaxPebbleKeyVersion)-1, versionMetadata.MinVersion)
+	require.Equal(t, int64(filestore.MaxPebbleKeyVersion)-1, versionMetadata.MaxVersion)
 
 	require.NoError(t, pc.Stop())
 }
@@ -2016,13 +2016,13 @@ func TestUnspecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 
 	// Create a database with version 2 keys
 	{
-		activeKeyVersion := int64(filestore.Version2)
+		activeKeyVersion := int64(filestore.PebbleKeyVersion2)
 		options.ActiveKeyVersion = &activeKeyVersion
 		pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
 		require.NoError(t, err)
-		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
-		require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+		require.Equal(t, int64(filestore.PebbleKeyVersion2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.PebbleKeyVersion2), versionMetadata.MaxVersion)
 
 		require.NoError(t, pc.Stop())
 	}
@@ -2030,13 +2030,13 @@ func TestUnspecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 	// Re-open the database with an unspecified version and confirm it sets the
 	// active version to version 2.
 	{
-		activeKeyVersion := int64(filestore.UnspecifiedKeyVersion)
+		activeKeyVersion := int64(filestore.UnspecifiedPebbleKeyVersion)
 		options.ActiveKeyVersion = &activeKeyVersion
 		pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-2"})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
 		require.NoError(t, err)
-		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
-		require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+		require.Equal(t, int64(filestore.PebbleKeyVersion2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.PebbleKeyVersion2), versionMetadata.MaxVersion)
 
 		require.NoError(t, pc.Stop())
 	}
@@ -2052,13 +2052,13 @@ func TestSpecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
 
 	// Confirm that a newly-created pebble database with an specified key
 	// version is written at that key version.
-	activeKeyVersion := int64(filestore.Version2)
+	activeKeyVersion := int64(filestore.PebbleKeyVersion2)
 	options.ActiveKeyVersion = &activeKeyVersion
 	pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
 	versionMetadata, err := pc.DatabaseVersionMetadata()
 	require.NoError(t, err)
-	require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
-	require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+	require.Equal(t, int64(filestore.PebbleKeyVersion2), versionMetadata.MinVersion)
+	require.Equal(t, int64(filestore.PebbleKeyVersion2), versionMetadata.MaxVersion)
 
 	require.NoError(t, pc.Stop())
 }
@@ -2073,13 +2073,13 @@ func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 
 	// Create a database with version 2 keys
 	{
-		activeKeyVersion := int64(filestore.Version2)
+		activeKeyVersion := int64(filestore.PebbleKeyVersion2)
 		options.ActiveKeyVersion = &activeKeyVersion
 		pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
 		require.NoError(t, err)
-		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
-		require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+		require.Equal(t, int64(filestore.PebbleKeyVersion2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.PebbleKeyVersion2), versionMetadata.MaxVersion)
 
 		require.NoError(t, pc.Stop())
 	}
@@ -2087,15 +2087,15 @@ func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 	// Re-open the database with version 3 as the active key version and
 	// confirm the version metadata's max version is bumped to 3.
 	{
-		activeKeyVersion := int64(filestore.Version3)
+		activeKeyVersion := int64(filestore.PebbleKeyVersion3)
 		options.ActiveKeyVersion = &activeKeyVersion
 		pc := openPebbleCache(ctx, t, te, options, []string{})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
 		require.NoError(t, err)
 		// The migrator may run, so the minimum version may be 2 or 3.
-		require.GreaterOrEqual(t, int64(filestore.Version3), versionMetadata.MinVersion)
-		require.LessOrEqual(t, int64(filestore.Version2), versionMetadata.MinVersion)
-		require.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
+		require.GreaterOrEqual(t, int64(filestore.PebbleKeyVersion3), versionMetadata.MinVersion)
+		require.LessOrEqual(t, int64(filestore.PebbleKeyVersion2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.PebbleKeyVersion3), versionMetadata.MaxVersion)
 
 		require.NoError(t, pc.Stop())
 	}
@@ -2103,13 +2103,13 @@ func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 	// Re-open the database with version 1 as the active key version and
 	// confirm the version metadata is [1, 3].
 	{
-		activeKeyVersion := int64(filestore.Version1)
+		activeKeyVersion := int64(filestore.PebbleKeyVersion1)
 		options.ActiveKeyVersion = &activeKeyVersion
 		pc := openPebbleCache(ctx, t, te, options, []string{})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
 		require.NoError(t, err)
-		require.Equal(t, int64(filestore.Version1), versionMetadata.MinVersion)
-		require.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
+		require.Equal(t, int64(filestore.PebbleKeyVersion1), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.PebbleKeyVersion3), versionMetadata.MaxVersion)
 
 		require.NoError(t, pc.Stop())
 	}

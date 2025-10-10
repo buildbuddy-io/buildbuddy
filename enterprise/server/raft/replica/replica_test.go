@@ -105,7 +105,7 @@ func reader(t *testing.T, r *replica.Replica, h *rfpb.Header, fileRecord *sgpb.F
 
 	key, err := fs.PebbleKey(fileRecord)
 	require.NoError(t, err)
-	fileMetadataKey, err := key.Bytes(filestore.Version5)
+	fileMetadataKey, err := key.Bytes(filestore.PebbleKeyVersion5)
 	require.NoError(t, err)
 
 	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.GetRequest{
@@ -129,7 +129,7 @@ func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fi
 	fs := filestore.New()
 	key, err := fs.PebbleKey(fileRecord)
 	require.NoError(t, err)
-	fileMetadataKey, err := key.Bytes(filestore.Version5)
+	fileMetadataKey, err := key.Bytes(filestore.PebbleKeyVersion5)
 	require.NoError(t, err)
 
 	writeCloserMetadata := fs.InlineWriter(context.TODO(), fileRecord.GetDigest().GetSizeBytes())
@@ -215,7 +215,7 @@ func (wt *replicaTester) delete(fileRecord *sgpb.FileRecord) {
 	key, err := fs.PebbleKey(fileRecord)
 	require.NoError(wt.t, err)
 
-	fileMetadataKey, err := key.Bytes(filestore.Version5)
+	fileMetadataKey, err := key.Bytes(filestore.PebbleKeyVersion5)
 	require.NoError(wt.t, err)
 
 	entry := wt.em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRequest{
@@ -410,7 +410,7 @@ func TestReplicaCAS(t *testing.T) {
 	key, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
 
-	fileMetadataKey, err := key.Bytes(filestore.Version5)
+	fileMetadataKey, err := key.Bytes(filestore.PebbleKeyVersion5)
 	require.NoError(t, err)
 
 	// Do a DirectRead and verify the value was written.
@@ -1019,7 +1019,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	{
 		key, err := fs.PebbleKey(fileRecord)
 		require.NoError(t, err)
-		fileMetadataKey, err := key.Bytes(filestore.Version5)
+		fileMetadataKey, err := key.Bytes(filestore.PebbleKeyVersion5)
 		require.NoError(t, err)
 
 		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRequest{

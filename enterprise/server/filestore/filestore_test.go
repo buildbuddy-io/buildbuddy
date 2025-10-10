@@ -17,15 +17,15 @@ import (
 )
 
 // These constants are presisted, so care must be taken to not change them.
-func TestKeyVersionDefinitions(t *testing.T) {
-	assert.Equal(t, -1, int(filestore.UnspecifiedKeyVersion))
-	assert.Equal(t, 0, int(filestore.UndefinedKeyVersion))
-	assert.Equal(t, 1, int(filestore.Version1))
-	assert.Equal(t, 2, int(filestore.Version2))
-	assert.Equal(t, 3, int(filestore.Version3))
-	assert.Equal(t, 4, int(filestore.Version4))
-	assert.Equal(t, 5, int(filestore.Version5))
-	assert.Equal(t, 6, int(filestore.MaxKeyVersion))
+func TestPebbleKeyVersionDefinitions(t *testing.T) {
+	assert.Equal(t, -1, int(filestore.UnspecifiedPebbleKeyVersion))
+	assert.Equal(t, 0, int(filestore.UndefinedPebbleKeyVersion))
+	assert.Equal(t, 1, int(filestore.PebbleKeyVersion1))
+	assert.Equal(t, 2, int(filestore.PebbleKeyVersion2))
+	assert.Equal(t, 3, int(filestore.PebbleKeyVersion3))
+	assert.Equal(t, 4, int(filestore.PebbleKeyVersion4))
+	assert.Equal(t, 5, int(filestore.PebbleKeyVersion5))
+	assert.Equal(t, 6, int(filestore.MaxPebbleKeyVersion))
 }
 
 func toFileRecord(r *rspb.ResourceName) *sgpb.FileRecord {
@@ -51,16 +51,13 @@ func getRandomKeyBytes(t *testing.T, fs filestore.Store, i filestore.PebbleKeyVe
 	return keyBytes, fr
 }
 
-func verifyAtVersion(t *testing.T, fromVersion, toVersion filestore.PebbleKeyVersion, keyBytes []byte, fr *sgpb.FileRecord) {
-}
-
-func TestKeyVersionCrossCompatibility(t *testing.T) {
+func TestPebbleKeyVersionCrossCompatibility(t *testing.T) {
 	fs := filestore.New()
 
 	// What we are testing here is that for every version a key can be
 	// written at, it can also be re-read and rewritten at every *later*
 	// version.
-	for i := filestore.UndefinedKeyVersion; i < filestore.MaxKeyVersion; i++ {
+	for i := filestore.UndefinedPebbleKeyVersion; i < filestore.MaxPebbleKeyVersion; i++ {
 		for _, cacheType := range []rspb.CacheType{rspb.CacheType_AC, rspb.CacheType_CAS} {
 			r, _ := testdigest.NewRandomResourceAndBuf(t, 100, cacheType, "remote_instance_name")
 			fr := toFileRecord(r)
@@ -69,7 +66,7 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 			keyBytes, err := sourceKey.Bytes(i)
 			require.NoError(t, err)
 
-			for j := i; j < filestore.MaxKeyVersion; j++ {
+			for j := i; j < filestore.MaxPebbleKeyVersion; j++ {
 				msg := fmt.Sprintf("from v%d to v%d", i, j)
 				parsedKey := &filestore.PebbleKey{}
 				parsedVersion, err := parsedKey.FromBytes(keyBytes)
@@ -88,24 +85,24 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 	}
 }
 
-func TestKnownVersions(t *testing.T) {
+func TestPebbleKeyKnownVersions(t *testing.T) {
 	versionExemplars := map[filestore.PebbleKeyVersion][]string{
-		filestore.UndefinedKeyVersion: {
+		filestore.UndefinedPebbleKeyVersion: {
 			"PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2",
 			"PTFOO/GR7890/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309",
 			"PTdefault/GR5787812970202071253/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f",
 		},
-		filestore.Version1: {
+		filestore.PebbleKeyVersion1: {
 			"PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/v1",
 			"PTFOO/GR7890/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/v1",
 			"PTFOO/GR7890/ac/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/v1",
 		},
-		filestore.Version2: {
+		filestore.PebbleKeyVersion2: {
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/cas/v2",
 			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/ac/2364854541/v2",
 			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/ac/v2",
 		},
-		filestore.Version3: {
+		filestore.PebbleKeyVersion3: {
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/cas/v3",
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/cas/EK123/v3",
 			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/ac/2364854541/v3",
@@ -113,14 +110,14 @@ func TestKnownVersions(t *testing.T) {
 			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/ac/0/v3",
 			"PTFOO/ANON/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/ac/0/v3",
 		},
-		filestore.Version4: {
+		filestore.PebbleKeyVersion4: {
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/v4",
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/EK123/v4",
 			"PTFOO/GR74042147050500190371/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/2364854541/v4",
 			"PTFOO/GR74042147050500190371/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/2364854541/EK123/v4",
 			"PTFOO/GR74042147050500190371/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/0/v4",
 		},
-		filestore.Version5: {
+		filestore.PebbleKeyVersion5: {
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/v5",
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/EK123/v5",
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/v5",
@@ -128,7 +125,7 @@ func TestKnownVersions(t *testing.T) {
 		},
 	}
 
-	for version := filestore.UndefinedKeyVersion; version < filestore.MaxKeyVersion; version++ {
+	for version := filestore.UndefinedPebbleKeyVersion; version < filestore.MaxPebbleKeyVersion; version++ {
 		exemplars, ok := versionExemplars[version]
 		if !ok {
 			t.Fatalf("Please add test exemplars for pebble key version: %d", version)
@@ -146,44 +143,44 @@ func TestKnownVersions(t *testing.T) {
 }
 
 // Tests that keys have the expected format when being represented at different versions.
-func TestMigration(t *testing.T) {
+func TestPebbleKeyMigration(t *testing.T) {
 	cases := []map[filestore.PebbleKeyVersion]string{
 		{
-			filestore.UndefinedKeyVersion: "PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2",
-			filestore.Version1:            "PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/v1",
-			filestore.Version2:            "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/cas/v2",
-			filestore.Version3:            "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/cas/v3",
-			filestore.Version4:            "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/1/cas/v4",
-			filestore.Version5:            "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/1/cas/v5",
+			filestore.UndefinedPebbleKeyVersion: "PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2",
+			filestore.PebbleKeyVersion1:         "PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/v1",
+			filestore.PebbleKeyVersion2:         "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/cas/v2",
+			filestore.PebbleKeyVersion3:         "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/cas/v3",
+			filestore.PebbleKeyVersion4:         "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/1/cas/v4",
+			filestore.PebbleKeyVersion5:         "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/1/cas/v5",
 		},
 		{
-			filestore.UndefinedKeyVersion: "PTFOO/GR7890/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309",
-			filestore.Version1:            "PTFOO/GR7890/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/v1",
-			filestore.Version2:            "PTFOO/GR00000000000000007890/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v2",
-			filestore.Version3:            "PTFOO/GR00000000000000007890/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v3",
-			filestore.Version4:            "PTFOO/GR00000000000000007890/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/2364854541/v4",
-			filestore.Version5:            "PTFOO/8d35507f8943fa0242206a2077054c0ead9c71ba9f5d01c6b7f3578c6d4ba464/1/ac/v5",
+			filestore.UndefinedPebbleKeyVersion: "PTFOO/GR7890/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309",
+			filestore.PebbleKeyVersion1:         "PTFOO/GR7890/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/v1",
+			filestore.PebbleKeyVersion2:         "PTFOO/GR00000000000000007890/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v2",
+			filestore.PebbleKeyVersion3:         "PTFOO/GR00000000000000007890/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v3",
+			filestore.PebbleKeyVersion4:         "PTFOO/GR00000000000000007890/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/2364854541/v4",
+			filestore.PebbleKeyVersion5:         "PTFOO/8d35507f8943fa0242206a2077054c0ead9c71ba9f5d01c6b7f3578c6d4ba464/1/ac/v5",
 		},
 		{
-			filestore.UndefinedKeyVersion: "PTdefault/GR7890/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f",
-			filestore.Version1:            "PTdefault/GR7890/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/v1",
-			filestore.Version2:            "PTdefault/GR00000000000000007890/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/v2",
-			filestore.Version3:            "PTdefault/GR00000000000000007890/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/0/v3",
-			filestore.Version4:            "PTdefault/GR00000000000000007890/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/1/ac/0/v4",
-			filestore.Version5:            "PTdefault/1e664dcc33e701dc7d59472f93f110159ca128b5e52e4e849d6eefeb4bda7f72/1/ac/v5",
+			filestore.UndefinedPebbleKeyVersion: "PTdefault/GR7890/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f",
+			filestore.PebbleKeyVersion1:         "PTdefault/GR7890/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/v1",
+			filestore.PebbleKeyVersion2:         "PTdefault/GR00000000000000007890/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/v2",
+			filestore.PebbleKeyVersion3:         "PTdefault/GR00000000000000007890/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/0/v3",
+			filestore.PebbleKeyVersion4:         "PTdefault/GR00000000000000007890/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/1/ac/0/v4",
+			filestore.PebbleKeyVersion5:         "PTdefault/1e664dcc33e701dc7d59472f93f110159ca128b5e52e4e849d6eefeb4bda7f72/1/ac/v5",
 		},
 		{
-			filestore.UndefinedKeyVersion: "PTdefault/ANON/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f",
-			filestore.Version1:            "PTdefault/ANON/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/v1",
-			filestore.Version2:            "PTdefault/ANON/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/v2",
-			filestore.Version3:            "PTdefault/ANON/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/0/v3",
-			filestore.Version4:            "PTdefault/GR74042147050500190371/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/1/ac/0/v4",
-			filestore.Version5:            "PTdefault/4929cde6f4c93cd5ab0ffde947e7e5da09bdb0677057c2ae7ea75b083c67feaa/1/ac/v5",
+			filestore.UndefinedPebbleKeyVersion: "PTdefault/ANON/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f",
+			filestore.PebbleKeyVersion1:         "PTdefault/ANON/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/v1",
+			filestore.PebbleKeyVersion2:         "PTdefault/ANON/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/v2",
+			filestore.PebbleKeyVersion3:         "PTdefault/ANON/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/0/v3",
+			filestore.PebbleKeyVersion4:         "PTdefault/GR74042147050500190371/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/1/ac/0/v4",
+			filestore.PebbleKeyVersion5:         "PTdefault/4929cde6f4c93cd5ab0ffde947e7e5da09bdb0677057c2ae7ea75b083c67feaa/1/ac/v5",
 		},
 	}
 
 	for _, tc := range cases {
-		for startingVersion := filestore.UndefinedKeyVersion; startingVersion < filestore.MaxKeyVersion; startingVersion++ {
+		for startingVersion := filestore.UndefinedPebbleKeyVersion; startingVersion < filestore.MaxPebbleKeyVersion; startingVersion++ {
 			key, ok := tc[startingVersion]
 			if !ok {
 				t.Fatalf("Please add test exemplars for pebble key version: %d", startingVersion)
@@ -192,7 +189,7 @@ func TestMigration(t *testing.T) {
 			_, err := parsedKey.FromBytes([]byte(key))
 			require.NoError(t, err)
 
-			for version := startingVersion; version < filestore.MaxKeyVersion; version++ {
+			for version := startingVersion; version < filestore.MaxPebbleKeyVersion; version++ {
 				t.Run(fmt.Sprintf("from_v%d_to_v%d", startingVersion, version), func(t *testing.T) {
 					versionedKey, err := parsedKey.Bytes(version)
 					require.NoError(t, err)
@@ -208,7 +205,7 @@ func TestMigration(t *testing.T) {
 	}
 }
 
-func MustParseKey(t *testing.T, ks string) *filestore.PebbleKey {
+func MustParsePebbleKey(t *testing.T, ks string) *filestore.PebbleKey {
 	var key filestore.PebbleKey
 	_, err := key.FromBytes([]byte(ks))
 	if err != nil {
@@ -217,7 +214,7 @@ func MustParseKey(t *testing.T, ks string) *filestore.PebbleKey {
 	return &key
 }
 
-func TestLockID(t *testing.T) {
+func TestPebbleKeyLockID(t *testing.T) {
 	// All versions of a key should have the same LockID.
 	{
 		versions := []string{
@@ -225,9 +222,9 @@ func TestLockID(t *testing.T) {
 			"PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/v1",
 			"PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/cas/v2",
 		}
-		control := MustParseKey(t, versions[0]).LockID()
+		control := MustParsePebbleKey(t, versions[0]).LockID()
 		for i := 1; i < len(versions); i++ {
-			assert.Equal(t, control, MustParseKey(t, versions[i]).LockID())
+			assert.Equal(t, control, MustParsePebbleKey(t, versions[i]).LockID())
 		}
 	}
 	// Different users (with same remote instance name) should have different LockID
@@ -239,7 +236,7 @@ func TestLockID(t *testing.T) {
 		}
 		uniqueLocks := make(map[string]struct{}, 0)
 		for _, version := range versions {
-			l := MustParseKey(t, version).LockID()
+			l := MustParsePebbleKey(t, version).LockID()
 			assert.NotContains(t, uniqueLocks, l)
 			uniqueLocks[l] = struct{}{}
 		}
@@ -251,9 +248,9 @@ func TestLockID(t *testing.T) {
 			"PTFOO/GR1/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/v1",
 			"PTFOO/GR1/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v2",
 		}
-		control := MustParseKey(t, versions[0]).LockID()
+		control := MustParsePebbleKey(t, versions[0]).LockID()
 		for i := 1; i < len(versions); i++ {
-			assert.Equal(t, control, MustParseKey(t, versions[i]).LockID())
+			assert.Equal(t, control, MustParsePebbleKey(t, versions[i]).LockID())
 		}
 	}
 	// Same users (with different remote instance name) should have different LockID
@@ -265,7 +262,7 @@ func TestLockID(t *testing.T) {
 		}
 		uniqueLocks := make(map[string]struct{}, 0)
 		for _, version := range versions {
-			l := MustParseKey(t, version).LockID()
+			l := MustParsePebbleKey(t, version).LockID()
 			assert.NotContains(t, uniqueLocks, l)
 			uniqueLocks[l] = struct{}{}
 		}
@@ -281,7 +278,7 @@ func formatKey(t *testing.T, fr *sgpb.FileRecord, version filestore.PebbleKeyVer
 	return string(bs)
 }
 
-func TestVersion3(t *testing.T) {
+func TestPebbleKeyVersion3(t *testing.T) {
 	partitionID := "foo"
 	groupID := "GR123"
 	d := &repb.Digest{Hash: "647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309", SizeBytes: 123}
@@ -299,15 +296,15 @@ func TestVersion3(t *testing.T) {
 			Digest:         d,
 			DigestFunction: repb.DigestFunction_SHA256,
 		}
-		assert.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/0/v3", formatKey(t, fr, filestore.Version3))
+		assert.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/0/v3", formatKey(t, fr, filestore.PebbleKeyVersion3))
 
 		// AC w/ instance name.
 		fr.Isolation.RemoteInstanceName = "remote_instance_name"
-		assert.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v3", formatKey(t, fr, filestore.Version3))
+		assert.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v3", formatKey(t, fr, filestore.PebbleKeyVersion3))
 
 		// AC w/ instance name & encryption.
 		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
-		assert.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/EK456/v3", formatKey(t, fr, filestore.Version3))
+		assert.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/EK456/v3", formatKey(t, fr, filestore.PebbleKeyVersion3))
 	}
 
 	// CAS
@@ -322,15 +319,15 @@ func TestVersion3(t *testing.T) {
 			Digest:         d,
 			DigestFunction: repb.DigestFunction_SHA256,
 		}
-		assert.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/cas/v3", formatKey(t, fr, filestore.Version3))
+		assert.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/cas/v3", formatKey(t, fr, filestore.PebbleKeyVersion3))
 
 		// CAS w/ encryption
 		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
-		assert.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/cas/EK456/v3", formatKey(t, fr, filestore.Version3))
+		assert.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/cas/EK456/v3", formatKey(t, fr, filestore.PebbleKeyVersion3))
 	}
 }
 
-func TestVersion5(t *testing.T) {
+func TestPebbleKeyVersion5(t *testing.T) {
 	partitionID := "foo"
 	groupID := "GR123"
 	d := &repb.Digest{Hash: "647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309", SizeBytes: 123}
@@ -348,15 +345,15 @@ func TestVersion5(t *testing.T) {
 			Digest:         d,
 			DigestFunction: repb.DigestFunction_SHA256,
 		}
-		assert.Equal(t, "PTfoo/72879509a94331dd1daab801d58eb1e5a6523097150916aeaee4c584d46de5ea/1/ac/v5", formatKey(t, fr, filestore.Version5))
+		assert.Equal(t, "PTfoo/72879509a94331dd1daab801d58eb1e5a6523097150916aeaee4c584d46de5ea/1/ac/v5", formatKey(t, fr, filestore.PebbleKeyVersion5))
 
 		// AC w/ instance name.
 		fr.Isolation.RemoteInstanceName = "remote_instance_name"
-		assert.Equal(t, "PTfoo/7f9486526761dd87bc045a9fa4637d01142f13760a0b656991509baa720d0883/1/ac/v5", formatKey(t, fr, filestore.Version5))
+		assert.Equal(t, "PTfoo/7f9486526761dd87bc045a9fa4637d01142f13760a0b656991509baa720d0883/1/ac/v5", formatKey(t, fr, filestore.PebbleKeyVersion5))
 
 		// AC w/ instance name & encryption.
 		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
-		assert.Equal(t, "PTfoo/7f9486526761dd87bc045a9fa4637d01142f13760a0b656991509baa720d0883/1/ac/EK456/v5", formatKey(t, fr, filestore.Version5))
+		assert.Equal(t, "PTfoo/7f9486526761dd87bc045a9fa4637d01142f13760a0b656991509baa720d0883/1/ac/EK456/v5", formatKey(t, fr, filestore.PebbleKeyVersion5))
 	}
 
 	// CAS
@@ -371,10 +368,97 @@ func TestVersion5(t *testing.T) {
 			Digest:         d,
 			DigestFunction: repb.DigestFunction_SHA256,
 		}
-		assert.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/cas/v5", formatKey(t, fr, filestore.Version5))
+		assert.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/cas/v5", formatKey(t, fr, filestore.PebbleKeyVersion5))
 
 		// CAS w/ encryption
 		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
-		assert.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/cas/EK456/v5", formatKey(t, fr, filestore.Version5))
+		assert.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/cas/EK456/v5", formatKey(t, fr, filestore.PebbleKeyVersion5))
+	}
+}
+
+func TestRaftKeyVersionDefinitions(t *testing.T) {
+	assert.Equal(t, 0, int(filestore.UndefinedRaftKeyVersion))
+	assert.Equal(t, 1, int(filestore.RaftKeyVersion1))
+	assert.Equal(t, 2, int(filestore.MaxRaftKeyVersion))
+}
+
+func formatRaftKey(t *testing.T, fr *sgpb.FileRecord, version filestore.RaftKeyVersion) string {
+	fs := filestore.New()
+	key, err := fs.RaftKey(fr)
+	require.NoError(t, err)
+	bs, err := key.Bytes(version)
+	require.NoError(t, err)
+	return string(bs)
+}
+
+func TestRaftKeyVersion1(t *testing.T) {
+	partitionID := "foo"
+	groupID := "GR123"
+	d := &repb.Digest{Hash: "647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309", SizeBytes: 123}
+
+	// AC
+	{
+		fr := &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
+				CacheType:          rspb.CacheType_AC,
+				RemoteInstanceName: "foo/bar",
+				PartitionId:        partitionID,
+				GroupId:            groupID,
+			},
+			Digest:         d,
+			DigestFunction: repb.DigestFunction_SHA256,
+		}
+		// The synthetic hash for AC is created from groupID|remoteInstanceHash|hash
+		assert.Equal(t, "PTfoo/970ec7d54b1c59366dc32f311bf1bb279ddae96731b39c47667b1dc9d66711b7/1/ac/v1", formatRaftKey(t, fr, filestore.RaftKeyVersion1))
+
+		// AC w/ encryption
+		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
+		assert.Equal(t, "PTfoo/970ec7d54b1c59366dc32f311bf1bb279ddae96731b39c47667b1dc9d66711b7/1/ac/EK456/v1", formatRaftKey(t, fr, filestore.RaftKeyVersion1))
+	}
+
+	// CAS
+	{
+		fr := &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
+				CacheType:   rspb.CacheType_CAS,
+				PartitionId: partitionID,
+				GroupId:     groupID,
+			},
+			Digest:         d,
+			DigestFunction: repb.DigestFunction_SHA256,
+		}
+		// For RaftKeyVersion1, CAS also gets a synthetic hash (unlike PebbleKeyVersion5)
+		assert.Equal(t, "PTfoo/72879509a94331dd1daab801d58eb1e5a6523097150916aeaee4c584d46de5ea/1/cas/v1", formatRaftKey(t, fr, filestore.RaftKeyVersion1))
+
+		// CAS w/ encryption
+		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
+		assert.Equal(t, "PTfoo/72879509a94331dd1daab801d58eb1e5a6523097150916aeaee4c584d46de5ea/1/cas/EK456/v1", formatRaftKey(t, fr, filestore.RaftKeyVersion1))
+	}
+}
+
+func TestRaftKeyKnownVersions(t *testing.T) {
+	versionExemplars := map[filestore.RaftKeyVersion][]string{
+		filestore.RaftKeyVersion1: {
+			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/v5",
+			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/EK123/v5",
+			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/v5",
+			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/EK123/v5",
+		},
+	}
+
+	for version := filestore.RaftKeyVersion1; version < filestore.RaftKeyVersion1; version++ {
+		exemplars, ok := versionExemplars[version]
+		if !ok {
+			t.Fatalf("Please add test exemplars for pebble key version: %d", version)
+		}
+		for _, exemplar := range exemplars {
+			var key filestore.RaftKey
+			parsedVersion, err := key.FromBytes([]byte(exemplar))
+			assert.NoError(t, err)
+			assert.Equal(t, version, parsedVersion)
+			reSerialized, err := key.Bytes(parsedVersion)
+			assert.NoError(t, err)
+			assert.Equal(t, string(exemplar), string(reSerialized))
+		}
 	}
 }

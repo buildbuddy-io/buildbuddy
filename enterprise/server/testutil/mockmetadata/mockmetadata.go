@@ -55,7 +55,7 @@ func (rc *Server) key(r *sgpb.FileRecord) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	buf, err := pmk.Bytes(filestore.Version5)
+	buf, err := pmk.Bytes(filestore.PebbleKeyVersion5)
 	if err != nil {
 		return "", err
 	}
