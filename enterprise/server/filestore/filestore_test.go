@@ -1,6 +1,7 @@
 package filestore_test
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 
@@ -27,44 +28,62 @@ func TestKeyVersionDefinitions(t *testing.T) {
 	assert.Equal(t, 6, int(filestore.MaxKeyVersion))
 }
 
+func toFileRecord(r *rspb.ResourceName) *sgpb.FileRecord {
+	return &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
+			CacheType:          r.GetCacheType(),
+			RemoteInstanceName: r.GetInstanceName(),
+			PartitionId:        "FOO",
+			GroupId:            "GR7890",
+		},
+		Digest:         r.GetDigest(),
+		DigestFunction: r.GetDigestFunction(),
+	}
+}
+
+func getRandomKeyBytes(t *testing.T, fs filestore.Store, i filestore.PebbleKeyVersion, cacheType rspb.CacheType) ([]byte, *sgpb.FileRecord) {
+	r, _ := testdigest.NewRandomResourceAndBuf(t, 100, cacheType, "remote_instance_name")
+	fr := toFileRecord(r)
+	sourceKey, err := fs.PebbleKey(fr)
+	require.NoError(t, err)
+	keyBytes, err := sourceKey.Bytes(i)
+	require.NoError(t, err)
+	return keyBytes, fr
+}
+
+func verifyAtVersion(t *testing.T, fromVersion, toVersion filestore.PebbleKeyVersion, keyBytes []byte, fr *sgpb.FileRecord) {
+}
+
 func TestKeyVersionCrossCompatibility(t *testing.T) {
-	testGroupID := "GR7890"
-	partitionID := "FOO"
 	fs := filestore.New()
 
 	// What we are testing here is that for every version a key can be
 	// written at, it can also be re-read and rewritten at every *later*
 	// version.
 	for i := filestore.UndefinedKeyVersion; i < filestore.MaxKeyVersion; i++ {
-		r, _ := testdigest.RandomCASResourceBuf(t, 100)
-		fr := &sgpb.FileRecord{
-			Isolation: &sgpb.Isolation{
-				CacheType:          r.GetCacheType(),
-				RemoteInstanceName: "remote_instance_name",
-				PartitionId:        partitionID,
-				GroupId:            testGroupID,
-			},
-			Digest:         r.GetDigest(),
-			DigestFunction: r.GetDigestFunction(),
-		}
-		if i%2 == 0 {
-			fr.Isolation.CacheType = rspb.CacheType_CAS
-		}
-		sourceKey, err := fs.PebbleKey(fr)
-		require.NoError(t, err)
-
-		keyBytes, err := sourceKey.Bytes(i)
-		require.NoError(t, err)
-
-		for j := i; j < filestore.MaxKeyVersion; j++ {
-			parsedKey := &filestore.PebbleKey{}
-			parsedVersion, err := parsedKey.FromBytes(keyBytes)
-			assert.NoError(t, err)
-			assert.Equal(t, i, parsedVersion)
-			assert.Equal(t, sourceKey.String(), parsedKey.String())
-
-			_, err = parsedKey.Bytes(j)
+		for _, cacheType := range []rspb.CacheType{rspb.CacheType_AC, rspb.CacheType_CAS} {
+			r, _ := testdigest.NewRandomResourceAndBuf(t, 100, cacheType, "remote_instance_name")
+			fr := toFileRecord(r)
+			sourceKey, err := fs.PebbleKey(fr)
 			require.NoError(t, err)
+			keyBytes, err := sourceKey.Bytes(i)
+			require.NoError(t, err)
+
+			for j := i; j < filestore.MaxKeyVersion; j++ {
+				msg := fmt.Sprintf("from v%d to v%d", i, j)
+				parsedKey := &filestore.PebbleKey{}
+				parsedVersion, err := parsedKey.FromBytes(keyBytes)
+				assert.NoError(t, err, msg)
+				assert.Equal(t, i, parsedVersion, msg)
+
+				parsedKeyBytes, err := parsedKey.Bytes(j)
+				require.NoError(t, err, msg)
+				expectedKeyBytes, err := sourceKey.Bytes(j)
+				require.NoError(t, err, msg)
+
+				// The same file record should be parsed to same key.
+				assert.True(t, bytes.Equal(expectedKeyBytes, parsedKeyBytes))
+			}
 		}
 	}
 }
@@ -106,7 +125,6 @@ func TestKnownVersions(t *testing.T) {
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/EK123/v5",
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/v5",
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/EK123/v5",
-			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/v5",
 		},
 	}
 
