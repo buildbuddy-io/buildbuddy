@@ -254,36 +254,91 @@ func requireClosed(tb testing.TB, ch <-chan *pepb.OrderedBuildEvent) {
 	}
 }
 
+func startPublisher(t testing.TB, addr, apiKey, invocation string, ctx context.Context) *build_event_publisher.Publisher {
+	t.Helper()
+	publisher, err := build_event_publisher.New(addr, apiKey, invocation)
+	require.NoError(t, err)
+	publisher.Start(ctx)
+	return publisher
+}
+
+func startedBuildEvent(uuid string) *bespb.BuildEvent {
+	return &bespb.BuildEvent{
+		Id: &bespb.BuildEventId{
+			Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}},
+		},
+		Payload: &bespb.BuildEvent_Started{
+			Started: &bespb.BuildStarted{Uuid: uuid},
+		},
+	}
+}
+
+func finishedBuildEvent(name string, code int32) *bespb.BuildEvent {
+	return &bespb.BuildEvent{
+		Id: &bespb.BuildEventId{
+			Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}},
+		},
+		Payload: &bespb.BuildEvent_Finished{
+			Finished: &bespb.BuildFinished{
+				ExitCode: &bespb.BuildFinished_ExitCode{
+					Name: name,
+					Code: code,
+				},
+			},
+		},
+	}
+}
+
+func progressBuildEvent(i int) *bespb.BuildEvent {
+	return &bespb.BuildEvent{
+		Id: &bespb.BuildEventId{
+			Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: int32(i)}},
+		},
+		Payload: &bespb.BuildEvent_Progress{Progress: &bespb.Progress{}},
+	}
+}
+
+func targetCompletedEvent(label string) *bespb.BuildEvent {
+	return &bespb.BuildEvent{
+		Id: &bespb.BuildEventId{
+			Id: &bespb.BuildEventId_TargetCompleted{
+				TargetCompleted: &bespb.BuildEventId_TargetCompletedId{Label: label},
+			},
+		},
+		Payload: &bespb.BuildEvent_Completed{
+			Completed: &bespb.TargetComplete{Success: true},
+		},
+	}
+}
+
+func requireSequenceNumbers(t testing.TB, events []*pepb.PublishBuildToolEventStreamRequest) {
+	t.Helper()
+	for i, event := range events {
+		assert.Equal(t, int64(i+1), event.OrderedBuildEvent.SequenceNumber)
+	}
+}
+
+func requireStreamFinished(t testing.TB, events []*pepb.PublishBuildToolEventStreamRequest) {
+	t.Helper()
+	require.NotEmpty(t, events)
+	last := events[len(events)-1].OrderedBuildEvent.Event
+	_, ok := last.Event.(*bepb.BuildEvent_ComponentStreamFinished)
+	assert.True(t, ok, "last event should be ComponentStreamFinished")
+}
+
 // Publisher tests
 
 func TestPublisher_BasicPublishAndFinish(t *testing.T) {
 	ctx := context.Background()
 	bes, addr := testbes.RunTCP(t)
 
-	publisher, err := build_event_publisher.New(addr, "", "test-invocation")
-	require.NoError(t, err)
-
-	publisher.Start(ctx)
+	publisher := startPublisher(t, addr, "", "test-invocation", ctx)
 
 	// Publish a few Bazel events
-	err = publisher.Publish(&bespb.BuildEvent{
-		Id: &bespb.BuildEventId{
-			Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}},
-		},
-		Payload: &bespb.BuildEvent_Started{
-			Started: &bespb.BuildStarted{Uuid: "test-build-123"},
-		},
-	})
+	err := publisher.Publish(startedBuildEvent("test-build-123"))
 	require.NoError(t, err)
 
-	err = publisher.Publish(&bespb.BuildEvent{
-		Id: &bespb.BuildEventId{
-			Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}},
-		},
-		Payload: &bespb.BuildEvent_Finished{
-			Finished: &bespb.BuildFinished{ExitCode: &bespb.BuildFinished_ExitCode{Code: 0}},
-		},
-	})
+	err = publisher.Publish(finishedBuildEvent("SUCCESS", 0))
 	require.NoError(t, err)
 
 	err = publisher.Finish()
@@ -294,54 +349,35 @@ func TestPublisher_BasicPublishAndFinish(t *testing.T) {
 	require.Len(t, events, 3) // 2 Bazel events + 1 ComponentStreamFinished
 
 	// Verify sequence numbers
-	for i, event := range events {
-		assert.Equal(t, int64(i+1), event.OrderedBuildEvent.SequenceNumber)
-		assert.Equal(t, "test-invocation", event.OrderedBuildEvent.StreamId.InvocationId)
-	}
+	requireSequenceNumbers(t, events)
+	assert.Equal(t, "test-invocation", events[0].OrderedBuildEvent.StreamId.InvocationId)
 
-	// Verify the last event is ComponentStreamFinished
-	lastEvent := events[len(events)-1].OrderedBuildEvent.Event
-	_, ok := lastEvent.Event.(*bepb.BuildEvent_ComponentStreamFinished)
-	assert.True(t, ok, "last event should be ComponentStreamFinished")
+	requireStreamFinished(t, events)
 }
 
 func TestPublisher_EmptyStream(t *testing.T) {
 	ctx := context.Background()
 	bes, addr := testbes.RunTCP(t)
 
-	publisher, err := build_event_publisher.New(addr, "", "empty-invocation")
-	require.NoError(t, err)
+	publisher := startPublisher(t, addr, "", "empty-invocation", ctx)
 
-	publisher.Start(ctx)
-
-	err = publisher.Finish()
+	err := publisher.Finish()
 	require.NoError(t, err)
 
 	// Should only have the ComponentStreamFinished event
 	events := bes.GetEvents()
 	require.Len(t, events, 1)
-	assert.Equal(t, int64(1), events[0].OrderedBuildEvent.SequenceNumber)
-
-	lastEvent := events[0].OrderedBuildEvent.Event
-	_, ok := lastEvent.Event.(*bepb.BuildEvent_ComponentStreamFinished)
-	assert.True(t, ok)
+	requireSequenceNumbers(t, events)
+	requireStreamFinished(t, events)
 }
 
 func TestPublisher_SingleEvent(t *testing.T) {
 	ctx := context.Background()
 	bes, addr := testbes.RunTCP(t)
 
-	publisher, err := build_event_publisher.New(addr, "", "single-event-invocation")
-	require.NoError(t, err)
+	publisher := startPublisher(t, addr, "", "single-event-invocation", ctx)
 
-	publisher.Start(ctx)
-
-	err = publisher.Publish(&bespb.BuildEvent{
-		Id: &bespb.BuildEventId{
-			Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: 1}},
-		},
-		Payload: &bespb.BuildEvent_Progress{Progress: &bespb.Progress{}},
-	})
+	err := publisher.Publish(progressBuildEvent(1))
 	require.NoError(t, err)
 
 	err = publisher.Finish()
@@ -349,8 +385,8 @@ func TestPublisher_SingleEvent(t *testing.T) {
 
 	events := bes.GetEvents()
 	require.Len(t, events, 2) // 1 event + ComponentStreamFinished
-	assert.Equal(t, int64(1), events[0].OrderedBuildEvent.SequenceNumber)
-	assert.Equal(t, int64(2), events[1].OrderedBuildEvent.SequenceNumber)
+	requireSequenceNumbers(t, events)
+	requireStreamFinished(t, events)
 }
 
 func TestPublisher_RetriesOnTransientFailure(t *testing.T) {
@@ -360,17 +396,9 @@ func TestPublisher_RetriesOnTransientFailure(t *testing.T) {
 	// Fail the first 2 stream attempts
 	bes.EventHandler = testbes.FailNTimesThenSucceed(2, status.UnavailableError("temporary failure"))
 
-	publisher, err := build_event_publisher.New(addr, "", "retry-invocation")
-	require.NoError(t, err)
+	publisher := startPublisher(t, addr, "", "retry-invocation", ctx)
 
-	publisher.Start(ctx)
-
-	err = publisher.Publish(&bespb.BuildEvent{
-		Id: &bespb.BuildEventId{
-			Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}},
-		},
-		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{Uuid: "retry-test"}},
-	})
+	err := publisher.Publish(startedBuildEvent("retry-test"))
 	require.NoError(t, err)
 
 	err = publisher.Finish()
@@ -379,6 +407,7 @@ func TestPublisher_RetriesOnTransientFailure(t *testing.T) {
 	// Should have received events despite initial failures
 	events := bes.GetEvents()
 	require.Len(t, events, 2) // 1 event + ComponentStreamFinished
+	requireSequenceNumbers(t, events)
 }
 
 func TestPublisher_ExhaustsRetries(t *testing.T) {
@@ -388,17 +417,9 @@ func TestPublisher_ExhaustsRetries(t *testing.T) {
 	// Always fail
 	bes.EventHandler = testbes.FailWith(status.UnavailableError("persistent failure"))
 
-	publisher, err := build_event_publisher.New(addr, "", "exhaust-retry-invocation")
-	require.NoError(t, err)
+	publisher := startPublisher(t, addr, "", "exhaust-retry-invocation", ctx)
 
-	publisher.Start(ctx)
-
-	err = publisher.Publish(&bespb.BuildEvent{
-		Id: &bespb.BuildEventId{
-			Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}},
-		},
-		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{Uuid: "fail-test"}},
-	})
+	err := publisher.Publish(startedBuildEvent("fail-test"))
 	require.NoError(t, err)
 
 	err = publisher.Finish()
@@ -413,42 +434,27 @@ func TestPublisher_RetryPreservesEventOrder(t *testing.T) {
 	// Fail once, then succeed
 	bes.EventHandler = testbes.FailNTimesThenSucceed(1, status.UnavailableError("one-time failure"))
 
-	publisher, err := build_event_publisher.New(addr, "", "order-test-invocation")
-	require.NoError(t, err)
-
-	publisher.Start(ctx)
+	publisher := startPublisher(t, addr, "", "order-test-invocation", ctx)
 
 	// Publish multiple events
 	for i := 0; i < 5; i++ {
-		err = publisher.Publish(&bespb.BuildEvent{
-			Id: &bespb.BuildEventId{
-				Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: int32(i)}},
-			},
-			Payload: &bespb.BuildEvent_Progress{Progress: &bespb.Progress{}},
-		})
+		err := publisher.Publish(progressBuildEvent(i))
 		require.NoError(t, err)
 	}
 
-	err = publisher.Finish()
+	err := publisher.Finish()
 	require.NoError(t, err)
 
 	events := bes.GetEvents()
 	require.Len(t, events, 6) // 5 events + ComponentStreamFinished
-
-	// Verify sequence numbers are correct
-	for i, event := range events {
-		assert.Equal(t, int64(i+1), event.OrderedBuildEvent.SequenceNumber)
-	}
+	requireSequenceNumbers(t, events)
 }
 
 func TestPublisher_ConcurrentPublish(t *testing.T) {
 	ctx := context.Background()
 	bes, addr := testbes.RunTCP(t)
 
-	publisher, err := build_event_publisher.New(addr, "", "concurrent-invocation")
-	require.NoError(t, err)
-
-	publisher.Start(ctx)
+	publisher := startPublisher(t, addr, "", "concurrent-invocation", ctx)
 
 	const (
 		numGoroutines      = 10
@@ -462,19 +468,14 @@ func TestPublisher_ConcurrentPublish(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < eventsPerGoroutine; j++ {
-				err := publisher.Publish(&bespb.BuildEvent{
-					Id: &bespb.BuildEventId{
-						Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: int32(j)}},
-					},
-					Payload: &bespb.BuildEvent_Progress{Progress: &bespb.Progress{}},
-				})
+				err := publisher.Publish(progressBuildEvent(j))
 				require.NoError(t, err)
 			}
 		}()
 	}
 
 	wg.Wait()
-	err = publisher.Finish()
+	err := publisher.Finish()
 	require.NoError(t, err)
 
 	events := bes.GetEvents()
@@ -482,9 +483,7 @@ func TestPublisher_ConcurrentPublish(t *testing.T) {
 	require.Len(t, events, expectedCount)
 
 	// Verify all sequence numbers are present and in order
-	for i, event := range events {
-		assert.Equal(t, int64(i+1), event.OrderedBuildEvent.SequenceNumber)
-	}
+	requireSequenceNumbers(t, events)
 }
 
 func TestPublisher_APIKeyInMetadata(t *testing.T) {
@@ -492,17 +491,9 @@ func TestPublisher_APIKeyInMetadata(t *testing.T) {
 	bes, addr := testbes.RunTCP(t)
 
 	apiKey := "test-api-key-12345"
-	publisher, err := build_event_publisher.New(addr, apiKey, "api-key-invocation")
-	require.NoError(t, err)
+	publisher := startPublisher(t, addr, apiKey, "api-key-invocation", ctx)
 
-	publisher.Start(ctx)
-
-	err = publisher.Publish(&bespb.BuildEvent{
-		Id: &bespb.BuildEventId{
-			Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}},
-		},
-		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{Uuid: "api-test"}},
-	})
+	err := publisher.Publish(startedBuildEvent("api-test"))
 	require.NoError(t, err)
 
 	err = publisher.Finish()
@@ -519,17 +510,9 @@ func TestPublisher_NoAPIKey(t *testing.T) {
 	ctx := context.Background()
 	bes, addr := testbes.RunTCP(t)
 
-	publisher, err := build_event_publisher.New(addr, "", "no-api-key-invocation")
-	require.NoError(t, err)
+	publisher := startPublisher(t, addr, "", "no-api-key-invocation", ctx)
 
-	publisher.Start(ctx)
-
-	err = publisher.Publish(&bespb.BuildEvent{
-		Id: &bespb.BuildEventId{
-			Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}},
-		},
-		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{Uuid: "no-api-test"}},
-	})
+	err := publisher.Publish(startedBuildEvent("no-api-test"))
 	require.NoError(t, err)
 
 	err = publisher.Finish()
@@ -538,13 +521,15 @@ func TestPublisher_NoAPIKey(t *testing.T) {
 	// Should work fine without API key
 	events := bes.GetEvents()
 	require.Len(t, events, 2)
+	requireSequenceNumbers(t, events)
+	requireStreamFinished(t, events)
 }
 
 func TestPublisher_ContextCancellation(t *testing.T) {
 	bes, addr := testbes.RunTCP(t)
 
 	// Use a handler that blocks to ensure the stream is still in progress when we cancel
-	eventReceived := make(chan struct{})
+	eventReceived := make(chan struct{}, 1)
 	bes.EventHandler = func(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer, streamID *bepb.StreamId, event *pepb.PublishBuildToolEventStreamRequest) error {
 		// Signal that we received an event
 		select {
@@ -558,17 +543,9 @@ func TestPublisher_ContextCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	publisher, err := build_event_publisher.New(addr, "", "cancel-invocation")
-	require.NoError(t, err)
+	publisher := startPublisher(t, addr, "", "cancel-invocation", ctx)
 
-	publisher.Start(ctx)
-
-	err = publisher.Publish(&bespb.BuildEvent{
-		Id: &bespb.BuildEventId{
-			Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}},
-		},
-		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{Uuid: "cancel-test"}},
-	})
+	err := publisher.Publish(startedBuildEvent("cancel-test"))
 	require.NoError(t, err)
 
 	// Wait for the server to start processing the event
@@ -585,68 +562,38 @@ func TestPublisher_ContextCancellation(t *testing.T) {
 	assert.GreaterOrEqual(t, len(events), 0)
 }
 
+func TestPublisher_LargeStream(t *testing.T) {
+	ctx := context.Background()
+	bes, addr := testbes.RunTCP(t)
+
+	publisher := startPublisher(t, addr, "", "large-stream-invocation", ctx)
+
+	const numEvents = 1000
+	for i := 0; i < numEvents; i++ {
+		err := publisher.Publish(progressBuildEvent(i))
+		require.NoError(t, err)
+	}
+
+	err := publisher.Finish()
+	require.NoError(t, err)
+
+	events := bes.GetEvents()
+	require.Len(t, events, numEvents+1) // +1 for ComponentStreamFinished
+	requireSequenceNumbers(t, events)
+	requireStreamFinished(t, events)
+}
+
 func TestPublisher_RealBazelEvents(t *testing.T) {
 	ctx := context.Background()
 	bes, addr := testbes.RunTCP(t)
 
-	publisher, err := build_event_publisher.New(addr, "", "real-bazel-invocation")
-	require.NoError(t, err)
+	publisher := startPublisher(t, addr, "", "real-bazel-invocation", ctx)
 
-	publisher.Start(ctx)
+	require.NoError(t, publisher.Publish(startedBuildEvent("550e8400-e29b-41d4-a716-446655440000")))
+	require.NoError(t, publisher.Publish(targetCompletedEvent("//pkg:target")))
+	require.NoError(t, publisher.Publish(finishedBuildEvent("SUCCESS", 0)))
 
-	// BuildStarted
-	err = publisher.Publish(&bespb.BuildEvent{
-		Id: &bespb.BuildEventId{
-			Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}},
-		},
-		Children: []*bespb.BuildEventId{
-			{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
-		},
-		Payload: &bespb.BuildEvent_Started{
-			Started: &bespb.BuildStarted{
-				Uuid:             "550e8400-e29b-41d4-a716-446655440000",
-				StartTime:        timestamppb.Now(),
-				BuildToolVersion: "6.0.0",
-				Command:          "build",
-			},
-		},
-	})
-	require.NoError(t, err)
-
-	// TargetComplete
-	err = publisher.Publish(&bespb.BuildEvent{
-		Id: &bespb.BuildEventId{
-			Id: &bespb.BuildEventId_TargetCompleted{
-				TargetCompleted: &bespb.BuildEventId_TargetCompletedId{
-					Label: "//pkg:target",
-				},
-			},
-		},
-		Payload: &bespb.BuildEvent_Completed{
-			Completed: &bespb.TargetComplete{
-				Success: true,
-			},
-		},
-	})
-	require.NoError(t, err)
-
-	// BuildFinished
-	err = publisher.Publish(&bespb.BuildEvent{
-		Id: &bespb.BuildEventId{
-			Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}},
-		},
-		Payload: &bespb.BuildEvent_Finished{
-			Finished: &bespb.BuildFinished{
-				ExitCode: &bespb.BuildFinished_ExitCode{
-					Name: "SUCCESS",
-					Code: 0,
-				},
-			},
-		},
-	})
-	require.NoError(t, err)
-
-	err = publisher.Finish()
+	err := publisher.Finish()
 	require.NoError(t, err)
 
 	events := bes.GetEvents()
@@ -657,7 +604,6 @@ func TestPublisher_RealBazelEvents(t *testing.T) {
 	_, ok := event0.Event.(*bepb.BuildEvent_BazelEvent)
 	assert.True(t, ok, "first event should be BazelEvent")
 
-	lastEvent := events[len(events)-1].OrderedBuildEvent.Event
-	_, ok = lastEvent.Event.(*bepb.BuildEvent_ComponentStreamFinished)
-	assert.True(t, ok, "last event should be ComponentStreamFinished")
+	requireSequenceNumbers(t, events)
+	requireStreamFinished(t, events)
 }
