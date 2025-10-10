@@ -237,7 +237,9 @@ func Do[T any](ctx context.Context, opts *Options, fn func(ctx context.Context) 
 			return rsp, nil
 		}
 		if _, ok := err.(*nonRetryableError); ok {
-			logFailedAttempt(err, fmt.Sprintf(" (last error: %s) and could not be retried due to a non-retryable error", lastError))
+			if lastError != nil {
+				logFailedAttempt(err, fmt.Sprintf(" (last error: %v) and could not be retried due to a non-retryable error", lastError))
+			}
 			return rsp, err
 		}
 		lastError = err
