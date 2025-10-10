@@ -159,7 +159,6 @@ func (r *routingService) GetCacheRoutingConfig(ctx context.Context) (*ropb.Cache
 		}
 	}
 
-	log.Printf("primary: %s", out.PrimaryCache)
 	return out, nil
 }
 
