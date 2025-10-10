@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -325,6 +326,10 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		if ioStallDuration := time.Duration(stats.GetIoPressure().GetFull().GetTotal()) * time.Microsecond; ioStallDuration > runDuration {
 			log.CtxWarningf(ctx, "Discarding IO PSI stats: full-stall duration %s exceeds execution duration %s", ioStallDuration, runDuration)
 			stats.IoPressure = nil
+			res.DoNotRecycle = true
+		}
+		if slices.Contains(r.PlatformProperties.RunnerCrashedExitCodes, res.ExitCode) {
+			log.CtxInfof(ctx, "Exit code is in runner-crashed-exit-codes list %v - not recycling", r.PlatformProperties.RunnerCrashedExitCodes)
 			res.DoNotRecycle = true
 		}
 

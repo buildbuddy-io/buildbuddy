@@ -1032,3 +1032,50 @@ func TestUnpauseThenRecycleWithoutRun(t *testing.T) {
 
 	require.Empty(t, testmetrics.CounterValues(t, metrics.UnexpectedEvent), "unexpected events logged")
 }
+
+func TestRunnerCrashedExitCodes(t *testing.T) {
+	for _, tc := range []struct {
+		name                       string
+		runnerCrashedExitCodesProp string
+		script                     string
+		wantDoNotRecycle           bool
+	}{
+		{
+			name:                       "PropEmpty/Exit0/ShouldRecyle",
+			runnerCrashedExitCodesProp: "",
+			script:                     "exit 0",
+			wantDoNotRecycle:           false,
+		},
+		{
+			name:                       "PropEmpty/Exit11/ShouldRecyle",
+			runnerCrashedExitCodesProp: "",
+			script:                     "exit 11",
+			wantDoNotRecycle:           false,
+		},
+		{
+			name:                       "PropSetTo11/Exit11/ShouldNotRecycle",
+			runnerCrashedExitCodesProp: "11",
+			script:                     "exit 11",
+			wantDoNotRecycle:           true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			pool := newRunnerPool(t, env, noLimitsCfg())
+			ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+			task := newTask()
+			cmd := task.ExecutionTask.Command
+			cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
+				Name:  "runner-crashed-exit-codes",
+				Value: tc.runnerCrashedExitCodesProp,
+			})
+			task.ExecutionTask.Command.Arguments = []string{
+				"sh", "-c", tc.script,
+			}
+			r, err := pool.Get(ctx, task)
+			require.NoError(t, err)
+			res := r.Run(ctx, &repb.IOStats{})
+			assert.Equal(t, tc.wantDoNotRecycle, res.DoNotRecycle)
+		})
+	}
+}
