@@ -543,6 +543,19 @@ func TestPublisher_NoAPIKey(t *testing.T) {
 func TestPublisher_ContextCancellation(t *testing.T) {
 	bes, addr := testbes.RunTCP(t)
 
+	// Use a handler that blocks to ensure the stream is still in progress when we cancel
+	eventReceived := make(chan struct{})
+	bes.EventHandler = func(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer, streamID *bepb.StreamId, event *pepb.PublishBuildToolEventStreamRequest) error {
+		// Signal that we received an event
+		select {
+		case eventReceived <- struct{}{}:
+		default:
+		}
+		// Block to keep the stream alive long enough for cancellation
+		time.Sleep(100 * time.Millisecond)
+		return testbes.Ack(stream, streamID, event)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	publisher, err := build_event_publisher.New(addr, "", "cancel-invocation")
@@ -558,7 +571,10 @@ func TestPublisher_ContextCancellation(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Cancel context before finishing
+	// Wait for the server to start processing the event
+	<-eventReceived
+
+	// Cancel context while the stream is in progress
 	cancel()
 
 	err = publisher.Finish()
