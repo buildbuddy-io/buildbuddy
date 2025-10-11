@@ -205,6 +205,8 @@ service BuildBuddyService {
   rpc LinkGitHubRepo(github.LinkRepoRequest) returns (github.LinkRepoResponse);
   rpc UnlinkGitHubRepo(github.UnlinkRepoRequest)
       returns (github.UnlinkRepoResponse);
+  rpc UpdateGitHubRepoSettings(github.UpdateRepoSettingsRequest)
+      returns (github.UpdateRepoSettingsResponse);
 
   // Installation-repos API (authenticates w/ GitHub using
   // installation access token)

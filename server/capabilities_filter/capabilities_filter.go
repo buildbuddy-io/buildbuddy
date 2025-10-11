@@ -166,6 +166,7 @@ var (
 		"GetGitHubAppInstallPath",
 		"LinkGitHubRepo",
 		"UnlinkGitHubRepo",
+		"UpdateGitHubRepoSettings",
 		// Org API key management
 		"CreateApiKey",
 		"UpdateApiKey",
