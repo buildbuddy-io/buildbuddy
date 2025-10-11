@@ -346,6 +346,49 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       ),
     };
   },
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
+
+    const version = model.getBazelVersion();
+    if (!version) return null;
+    if (version.major < 7) return null;
+    if (version.major === 7 && version.minor < 1) return null;
+
+    if (model.optionsMap.has("execution_log_compact_file")) return null;
+    if (model.optionsMap.has("experimental_execution_log_compact_file")) return null;
+
+    const hasCompactExecLog = Boolean(
+      model.buildToolLogs?.log?.some((log) => {
+        const name = log.name?.toLowerCase() ?? "";
+        const uri = log.uri?.toLowerCase() ?? "";
+        return name.includes("execution_log") || uri.includes("execution_log");
+      })
+    );
+    if (hasCompactExecLog) return null;
+
+    const stableFlagSupported = version.major > 7 || (version.major === 7 && version.minor >= 4);
+    const recommendedFlagName = stableFlagSupported
+      ? "execution_log_compact_file"
+      : "experimental_execution_log_compact_file";
+    const recommendedFlag = `--${recommendedFlagName}`;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Capture detailed spawn execution data by adding the Bazel flag <BazelFlag>{recommendedFlag}</BazelFlag>. The
+          compact log is attached to Build Tool Logs for easier debugging.
+        </>
+      ),
+      reason: (
+        <>
+          Shown because this Bazel {version.major}.{version.minor} invocation did not upload an execution log and{" "}
+          <span className="inline-code">{recommendedFlag}</span> is not set.
+        </>
+      ),
+    };
+  },
   // Suggest remote.buildbuddy.io instead of cloud.buildbuddy.io
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
