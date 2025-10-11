@@ -827,21 +827,16 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label st
 }
 
 func (d *AuthDB) isGroupMember(ctx context.Context, groupID, userID string) (bool, error) {
-	q := d.env.GetDBHandle().NewQuery(ctx, "authdb_check_group_membership").Raw(`
-		SELECT *
-		FROM "UserGroups"
-		WHERE group_group_id = ?
-		AND user_user_id = ?
-		AND membership_status = ?
-	`, groupID, userID, grpb.GroupMembershipStatus_MEMBER)
-	ug := &tables.UserGroup{}
-	if err := q.Take(ug); err != nil {
-		if db.IsRecordNotFound(err) {
-			return false, nil
-		}
+	u, err := d.env.GetUserDB().GetUserByIDWithoutAuthCheck(ctx, userID)
+	if err != nil {
 		return false, err
 	}
-	return true, nil
+	for _, g := range u.Groups {
+		if g.GroupID == groupID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (d *AuthDB) getAPIKey(ctx context.Context, h interfaces.DB, apiKeyID string) (*tables.APIKey, error) {
