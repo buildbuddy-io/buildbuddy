@@ -1128,7 +1128,7 @@ func (c *FirecrackerContainer) getVMTask() *fcpb.VMMetadata_VMTask {
 
 // LoadSnapshot loads a VM snapshot from the given snapshot digest and resumes
 // the VM.
-func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
+func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) (*snaploader.Snapshot, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1145,15 +1145,15 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	c.cancelVmCtx = cancelVmCtx
 
 	if err := c.newID(ctx); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := c.setupCgroup(ctx); err != nil {
-		return status.UnavailableErrorf("setup cgroup: %s", err)
+		return nil, status.UnavailableErrorf("setup cgroup: %s", err)
 	}
 
 	if err := c.setupNetworking(ctx); err != nil {
-		return err
+		return nil, err
 	}
 
 	var netnsPath string
@@ -1165,7 +1165,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	// snapshot that is already configured.
 	jailerCfg, err := c.getJailerConfig(ctx, "" /*=kernelImagePath*/)
 	if err != nil {
-		return status.WrapError(err, "get jailer config")
+		return nil, status.WrapError(err, "get jailer config")
 	}
 	cfg := fcclient.Config{
 		SocketPath:        firecrackerSocketPath,
@@ -1181,7 +1181,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 
 	if err := c.setupVFSServer(ctx); err != nil {
-		return err
+		return nil, err
 	}
 
 	snapshotSharingEnabled := snaputil.IsChunkedSnapshotSharingEnabled()
@@ -1201,7 +1201,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	machine, err := fcclient.NewMachine(vmCtx, cfg, machineOpts...)
 	if err != nil {
-		return status.UnavailableErrorf("Failed creating machine: %s", err)
+		return nil, status.UnavailableErrorf("Failed creating machine: %s", err)
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
@@ -1210,7 +1210,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		ReadPolicy:        platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName),
 	})
 	if err != nil {
-		return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
+		return nil, error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
 	}
 
 	// Set unique per-run identifier on the vm metadata so this exact snapshot
@@ -1226,7 +1226,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	c.snapshot = snap
 
 	if err := os.MkdirAll(c.getChroot(), 0777); err != nil {
-		return status.UnavailableErrorf("make chroot dir: %s", err)
+		return nil, status.UnavailableErrorf("make chroot dir: %s", err)
 	}
 
 	// Write the workspace drive placeholder file. Firecracker will expect this
@@ -1234,16 +1234,16 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	// placeholder file just before saving the snapshot, so the snapshot will
 	// include a reference to this file.
 	if err := os.WriteFile(filepath.Join(c.getChroot(), emptyFileName), nil, 0644); err != nil {
-		return status.UnavailableErrorf("write empty file: %s", err)
+		return nil, status.UnavailableErrorf("write empty file: %s", err)
 	}
 
 	// Use vmCtx for COWs since IO may be done outside of the task ctx.
 	unpacked, err := c.loader.UnpackSnapshot(vmCtx, snap, c.getChroot())
 	if err != nil {
-		return status.WrapError(err, "failed to unpack snapshot")
+		return nil, status.WrapError(err, "failed to unpack snapshot")
 	}
 	if len(unpacked.ChunkedFiles) > 0 && !snapshotSharingEnabled {
-		return status.InternalError("copy_on_write support is disabled but snapshot contains chunked files")
+		return nil, status.InternalError("copy_on_write support is disabled but snapshot contains chunked files")
 	}
 	for name, cow := range unpacked.ChunkedFiles {
 		switch name {
@@ -1254,16 +1254,16 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		case memoryChunkDirName:
 			c.memoryStore = cow
 		default:
-			return status.InternalErrorf("snapshot contains unsupported chunked artifact %q", name)
+			return nil, status.InternalErrorf("snapshot contains unsupported chunked artifact %q", name)
 		}
 	}
 
 	if err := c.setupVBDMounts(ctx); err != nil {
-		return status.WrapError(err, "failed to init virtual block devices")
+		return nil, status.WrapError(err, "failed to init virtual block devices")
 	}
 
 	if err := c.setupUFFDHandler(ctx); err != nil {
-		return err
+		return nil, err
 	}
 
 	ctx, cancel := c.monitorVMContext(ctx)
@@ -1279,21 +1279,21 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	})()
 	if err != nil {
 		if cause := context.Cause(ctx); cause != nil {
-			return cause
+			return nil, cause
 		}
-		return status.UnavailableErrorf("start machine: %s. vmlog: %s", err, c.vmLog.Tail())
+		return nil, status.UnavailableErrorf("start machine: %s. vmlog: %s", err, c.vmLog.Tail())
 	}
 	c.machine = machine
 
 	if err := c.machine.ResumeVM(ctx); err != nil {
 		if cause := context.Cause(ctx); cause != nil {
-			return cause
+			return nil, cause
 		}
-		return status.UnavailableErrorf("error resuming VM: %s", err)
+		return nil, status.UnavailableErrorf("error resuming VM: %s", err)
 	}
 	c.createFromSnapshot = true
 
-	return nil
+	return snap, nil
 }
 
 // initScratchImage creates the empty scratch ext4 disk for the VM.
@@ -2998,8 +2998,36 @@ func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 
 	log.CtxInfof(ctx, "Unpausing VM")
 
-	// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
-	return c.LoadSnapshot(ctx)
+	var snapshot *snaploader.Snapshot
+	for range 3 {
+		var err error
+		snapshot, err = c.LoadSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		// Try connecting to the VM to make sure it's healthy.
+		_, err = c.dialVMExecServer(ctx)
+		if err == nil {
+			// If the VM is healthy, return.
+			// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
+			return nil
+		}
+		log.CtxWarningf(ctx, "Snapshot was unhealthy, retrying loading the snapshot: %s", err)
+		if err := c.Remove(ctx); err != nil {
+			return status.WrapError(err, "remove unhealthy VM during retry")
+		}
+	}
+
+	// If the VM is still unhealthy, invalidate the snapshot and start clean.
+	log.CtxInfof(ctx, "Starting clean VM since snapshot was unhealthy")
+	_, err := snaploader.NewSnapshotService(c.env).InvalidateSnapshot(ctx, snapshot.GetKey())
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to invalidate seemingly corrupted snapshot key %s", snaploader.SnapshotDebugString(ctx, c.env, snapshot))
+	}
+	c.createFromSnapshot = false
+	c.recycled = false
+	c.snapshot = nil
+	return c.create(ctx)
 }
 
 func (c *FirecrackerContainer) mountWorkspace(ctx context.Context, client vmxpb.ExecClient) error {
