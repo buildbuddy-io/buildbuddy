@@ -43,9 +43,13 @@ func Setup(t *testing.T) {
 		require.NoError(t, err, "enable IPv4 forwarding")
 	}
 
-	// Set up default hostNetAllocator
+	// Configure networking
 	err = networking.Configure(context.Background())
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := networking.Cleanup(context.Background())
+		require.NoError(t, err, "cleanup networking")
+	})
 }
 
 // PacketCapture represents a packet capture process. A packet capture can be
