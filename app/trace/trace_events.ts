@@ -274,7 +274,7 @@ export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
     }
     for (const m of currentMetadata) {
       const argVal = event.args[m.argKey];
-      if (!argVal) {
+      if (argVal === undefined) {
         continue; // Skip events that don't have the expected argKey
       }
       const timeSeries = currentSeries.get(m.argKey);
