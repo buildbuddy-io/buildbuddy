@@ -19,19 +19,27 @@ const (
 
 // Profile represents a trace profile, including all trace events.
 type Profile struct {
-	TraceEvents []*Event `json:"traceEvents,omitempty"`
+	OtherData   map[string]any `json:"otherData,omitempty"`
+	TraceEvents []*Event       `json:"traceEvents,omitempty"`
 }
 
 // Event represents a trace event.
 type Event struct {
-	Category  string         `json:"cat,omitempty"`
-	Name      string         `json:"name,omitempty"`
-	Phase     string         `json:"ph,omitempty"`
-	Timestamp int64          `json:"ts"`
-	Duration  int64          `json:"dur"`
-	ProcessID int64          `json:"pid,omitempty"`
-	ThreadID  int64          `json:"tid,omitempty"`
-	Args      map[string]any `json:"args,omitempty"`
+	Category string `json:"cat,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Phase    string `json:"ph,omitempty"`
+	// Timestamp - for bazel profiles, timestamps are in microseconds relative
+	// to the start of the invocation.
+	Timestamp int64 `json:"ts"`
+	// Duration - for bazel profiles, durations are in microseconds.
+	Duration  int64 `json:"dur"`
+	ProcessID int64 `json:"pid,omitempty"`
+	ThreadID  int64 `json:"tid,omitempty"`
+	// Output - for bazel profiles, this is the output path.
+	Output string `json:"out,omitempty"`
+	// Args - for bazel profiles, this contains "target" and "mnemonic" for
+	// events in the "action processing category."
+	Args map[string]any `json:"args,omitempty"`
 }
 
 type eventWriter struct {
