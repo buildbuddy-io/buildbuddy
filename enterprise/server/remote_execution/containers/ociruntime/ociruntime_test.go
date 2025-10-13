@@ -1510,7 +1510,8 @@ func TestPersistentWorker(t *testing.T) {
 	require.NoError(t, err)
 
 	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
+		ContainerImage:      image,
+		PersistentWorkerKey: "abc123",
 	}})
 	require.NoError(t, err)
 
@@ -1552,6 +1553,9 @@ func TestPersistentWorker(t *testing.T) {
 
 	assert.Equal(t, "test-output", string(res.Stderr))
 	assert.Equal(t, 42, res.ExitCode)
+	// Should report non-zero CPU and memory usage.
+	assert.Greater(t, res.UsageStats.GetCpuNanos(), int64(0))
+	assert.Greater(t, res.UsageStats.GetPeakMemoryBytes(), int64(0))
 
 	// Pause container and stop worker
 	err = c.Pause(ctx)
@@ -1585,7 +1589,8 @@ func TestPersistentWorker_WorkerCrashes(t *testing.T) {
 	require.NoError(t, err)
 
 	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
+		ContainerImage:      image,
+		PersistentWorkerKey: "abc123",
 	}})
 	require.NoError(t, err)
 

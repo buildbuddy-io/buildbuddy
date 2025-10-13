@@ -366,15 +366,16 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		networkPool:    p.networkPool,
 		lxcfsMount:     p.lxcfsMount,
 
-		blockDevice:       args.BlockDevice,
-		cgroupParent:      args.CgroupParent,
-		cgroupSettings:    &scpb.CgroupSettings{},
-		imageRef:          args.Props.ContainerImage,
-		networkEnabled:    args.Props.DockerNetwork != "off",
-		tiniEnabled:       args.Props.DockerInit || *enableTini,
-		user:              args.Props.DockerUser,
-		forceRoot:         args.Props.DockerForceRoot,
-		persistentVolumes: args.Props.PersistentVolumes,
+		blockDevice:        args.BlockDevice,
+		cgroupParent:       args.CgroupParent,
+		cgroupSettings:     &scpb.CgroupSettings{},
+		imageRef:           args.Props.ContainerImage,
+		networkEnabled:     args.Props.DockerNetwork != "off",
+		isPersistentWorker: args.Props.PersistentWorkerKey != "",
+		tiniEnabled:        args.Props.DockerInit || *enableTini,
+		user:               args.Props.DockerUser,
+		forceRoot:          args.Props.DockerForceRoot,
+		persistentVolumes:  args.Props.PersistentVolumes,
 
 		milliCPU:    args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
 		memoryBytes: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(),
@@ -411,6 +412,7 @@ type ociContainer struct {
 	network                *networking.ContainerNetwork
 	lxcfsMount             string
 	releaseCPUs            func()
+	isPersistentWorker     bool
 
 	imageRef       string
 	networkEnabled bool
@@ -420,6 +422,9 @@ type ociContainer struct {
 	milliCPU    int64 // milliCPU allocation from task size
 	memoryBytes int64 // memory allocation from task size in bytes
 }
+
+// Assert [*ociContainer] implements [container.StatsRecorder].
+var _ container.StatsRecorder = (*ociContainer)(nil)
 
 // Returns the OCI bundle directory for the container.
 func (c *ociContainer) bundlePath() string {
@@ -675,9 +680,26 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 	}
 	args = append(args, c.cid)
 
+	// If this Exec() is running a long-lived persistent worker, then don't
+	// start the stats polling loop. Instead, the caller is responsible for
+	// tracking stats separately by wrapping each work request with RecordStats.
+	// This way, we only record stats while work requests are in progress.
+	if c.isPersistentWorker {
+		return c.invokeRuntime(ctx, cmd, stdio, 1*time.Microsecond, args...)
+	}
 	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
 		return c.invokeRuntime(ctx, cmd, stdio, 1*time.Microsecond, args...)
 	})
+}
+
+func (c *ociContainer) RecordStats(ctx context.Context) func() (*repb.UsageStats, error) {
+	stop := c.stats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
+		return c.cgroupPaths.Stats(ctx, c.cid, c.blockDevice)
+	})
+	return func() (*repb.UsageStats, error) {
+		stop()
+		return c.stats.TaskStats(), nil
+	}
 }
 
 func (c *ociContainer) Signal(ctx context.Context, sig syscall.Signal) error {

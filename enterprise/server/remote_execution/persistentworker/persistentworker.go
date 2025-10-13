@@ -144,7 +144,21 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 	return w, nil
 }
 
-func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+func (w *Worker) Exec(ctx context.Context, command *repb.Command) (result *interfaces.CommandResult) {
+	// If supported, record stats starting from now until after we receive the
+	// work response.
+	if st, ok := w.container.(container.StatsRecorder); ok {
+		stop := st.RecordStats(ctx)
+		defer func() {
+			stats, err := stop()
+			if err != nil {
+				log.CtxWarningf(ctx, "Stats recording error: %s", err)
+			} else {
+				result.UsageStats = stats
+			}
+		}()
+	}
+
 	// Clear any stderr that might be associated with a previous request.
 	stderr := w.stderr.String()
 	w.stderr.Reset()
