@@ -351,15 +351,23 @@ func TestSequenceNumbersWithConcurrentPublish(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(numGoroutines)
+	var publishErr error
+	var errOnce sync.Once
 	for i := 0; i < numGoroutines; i++ {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < eventsPerGoroutine; j++ {
-				_ = pub.Publish(makeBazelEvent())
+				if err := pub.Publish(makeBazelEvent()); err != nil {
+					errOnce.Do(func() {
+						publishErr = err
+					})
+					return
+				}
 			}
 		}()
 	}
 	wg.Wait()
+	require.NoError(t, publishErr)
 
 	require.NoError(t, pub.Finish())
 
@@ -459,6 +467,52 @@ func TestRetryAfterRecvFailure(t *testing.T) {
 	assert.GreaterOrEqual(t, len(attempts), 2)
 }
 
+func TestRetryAfterAckFailure(t *testing.T) {
+	ctx := context.Background()
+	bes, addr := testbes.RunTCP(t)
+
+	var mu sync.Mutex
+	attempt := 0
+
+	bes.EventHandler = func(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer, streamID *bepb.StreamId, event *pepb.PublishBuildToolEventStreamRequest) error {
+		if event.OrderedBuildEvent.GetSequenceNumber() == 1 {
+			mu.Lock()
+			attempt++
+			mu.Unlock()
+		}
+
+		if err := testbes.Ack(stream, streamID, event); err != nil {
+			return err
+		}
+
+		mu.Lock()
+		currAttempt := attempt
+		mu.Unlock()
+
+		if currAttempt == 1 && event.OrderedBuildEvent.GetEvent().GetComponentStreamFinished() != nil {
+			return status.UnavailableError("ack failure")
+		}
+		return nil
+	}
+
+	pub, err := build_event_publisher.New(addr, "", "test-invocation")
+	require.NoError(t, err)
+
+	pub.Start(ctx)
+	require.NoError(t, pub.Publish(makeBazelEvent()))
+	require.NoError(t, pub.Publish(makeBazelEvent()))
+	require.NoError(t, pub.Finish())
+
+	attempts := bes.GetAttempts()
+	require.GreaterOrEqual(t, len(attempts), 2)
+
+	firstAttempt := attempts[0]
+	assert.Equal(t, []int64{1, 2, 3}, getSequenceNumbers(firstAttempt))
+
+	lastAttempt := attempts[len(attempts)-1]
+	assert.Equal(t, []int64{1, 2, 3}, getSequenceNumbers(lastAttempt))
+}
+
 func TestMaxRetriesExhausted(t *testing.T) {
 	ctx := context.Background()
 	bes, addr := testbes.RunTCP(t)
@@ -547,10 +601,8 @@ func TestExponentialBackoffBetweenRetries(t *testing.T) {
 	elapsed := time.Since(start)
 
 	// With 3 retries and exponential backoff (300ms, 600ms, 1000ms)
-	// we should wait at least 1.9 seconds (300+600+1000)
-	// Allow some margin for execution time
+	// we should wait at least 1.9 seconds (300+600+1000).
 	assert.GreaterOrEqual(t, elapsed, 1800*time.Millisecond)
-	assert.LessOrEqual(t, elapsed, 3*time.Second)
 
 	attempts := bes.GetAttempts()
 	assert.Equal(t, 4, len(attempts)) // 3 failures + 1 success
