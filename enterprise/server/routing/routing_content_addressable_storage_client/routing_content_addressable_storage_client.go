@@ -15,12 +15,12 @@ import (
 )
 
 type RoutingCASClient struct {
-	casClients map[string]repb.ContentAddressableStorageClient
-	router     interfaces.CacheRoutingService
-	copyOp     batch_operator.DigestOperator
-	readOp     batch_operator.DigestOperator
-	readVerifyOp     batch_operator.DigestOperator
-	treeOp     batch_operator.DigestOperator
+	casClients   map[string]repb.ContentAddressableStorageClient
+	router       interfaces.CacheRoutingService
+	copyOp       batch_operator.DigestOperator
+	readOp       batch_operator.DigestOperator
+	readVerifyOp batch_operator.DigestOperator
+	treeOp       batch_operator.DigestOperator
 }
 
 func New(
@@ -36,11 +36,11 @@ func New(
 	}
 
 	return &RoutingCASClient{
-		router: routingService,
-		copyOp: copyOp,
-		readOp: readOp,
+		router:       routingService,
+		copyOp:       copyOp,
+		readOp:       readOp,
 		readVerifyOp: readVerifyOp,
-		treeOp: treeOp,
+		treeOp:       treeOp,
 	}, nil
 }
 

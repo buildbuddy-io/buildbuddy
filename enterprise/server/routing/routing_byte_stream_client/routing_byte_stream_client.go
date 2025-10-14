@@ -18,11 +18,11 @@ import (
 )
 
 type RoutingByteStreamClient struct {
-	acClient map[string]bspb.ByteStreamClient
-	router   interfaces.CacheRoutingService
-	copyOp   batch_operator.DigestOperator
-	readOp   batch_operator.DigestOperator
-	readVerifyOp   batch_operator.DigestOperator
+	acClient     map[string]bspb.ByteStreamClient
+	router       interfaces.CacheRoutingService
+	copyOp       batch_operator.DigestOperator
+	readOp       batch_operator.DigestOperator
+	readVerifyOp batch_operator.DigestOperator
 }
 
 func New(env environment.Env, copyOp batch_operator.DigestOperator, readOp batch_operator.DigestOperator, readVerifyOp batch_operator.DigestOperator) (bspb.ByteStreamClient, error) {
@@ -32,9 +32,9 @@ func New(env environment.Env, copyOp batch_operator.DigestOperator, readOp batch
 	}
 
 	return &RoutingByteStreamClient{
-		router: routingService,
-		copyOp: copyOp,
-		readOp: readOp,
+		router:       routingService,
+		copyOp:       copyOp,
+		readOp:       readOp,
 		readVerifyOp: readVerifyOp,
 	}, nil
 }

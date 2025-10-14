@@ -15,9 +15,9 @@ import (
 )
 
 type RoutingACClient struct {
-	router interfaces.CacheRoutingService
-	copyOp batch_operator.DigestOperator
-	readOp batch_operator.DigestOperator
+	router       interfaces.CacheRoutingService
+	copyOp       batch_operator.DigestOperator
+	readOp       batch_operator.DigestOperator
 	readVerifyOp batch_operator.DigestOperator
 }
 
@@ -25,9 +25,9 @@ func New(env environment.Env, copyOp batch_operator.DigestOperator, readOp batch
 	routingService := env.GetCacheRoutingService()
 
 	return &RoutingACClient{
-		router: routingService,
-		copyOp: copyOp,
-		readOp: readOp,
+		router:       routingService,
+		copyOp:       copyOp,
+		readOp:       readOp,
 		readVerifyOp: readVerifyOp,
 	}, nil
 }
