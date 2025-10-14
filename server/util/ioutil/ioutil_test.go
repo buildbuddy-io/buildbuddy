@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 )
@@ -249,4 +250,65 @@ func TestDoubleBufferWriter_WriteAfterCancel(t *testing.T) {
 		_, err = dbw.Write([]byte{1, 2, 3, 4})
 	}
 	require.Equal(t, ctx.Err(), err)
+}
+
+func TestLimitBuffer(t *testing.T) {
+	cases := []struct {
+		name        string
+		limit       uint64
+		writes      []string
+		expectLens  []int
+		expectError []bool
+		expectStr   string
+	}{
+		{
+			name:        "no limit",
+			limit:       0,
+			writes:      []string{"hello world"},
+			expectLens:  []int{11},
+			expectError: []bool{false},
+			expectStr:   "hello world",
+		},
+		{
+			name:        "within limit",
+			limit:       20,
+			writes:      []string{"hello"},
+			expectLens:  []int{5},
+			expectError: []bool{false},
+			expectStr:   "hello",
+		},
+		{
+			name:        "exceeds limit",
+			limit:       10,
+			writes:      []string{"hello world"},
+			expectLens:  []int{10},
+			expectError: []bool{true},
+			expectStr:   "hello worl",
+		},
+		{
+			name:        "multiple writes",
+			limit:       12,
+			writes:      []string{"hello", " world", " extra"},
+			expectLens:  []int{5, 6, 1},
+			expectError: []bool{false, false, true},
+			expectStr:   "hello world ",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := ioutil.NewLimitBuffer(tc.limit, "stdout/stderr output size")
+			for i, s := range tc.writes {
+				n, err := buf.Write([]byte(s))
+				require.Equal(t, tc.expectLens[i], n)
+				if tc.expectError[i] {
+					require.Error(t, err)
+					require.True(t, status.IsResourceExhaustedError(err))
+				} else {
+					require.NoError(t, err)
+				}
+			}
+			require.Equal(t, tc.expectStr, buf.String())
+		})
+	}
 }

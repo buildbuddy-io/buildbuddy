@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/util/procstats",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/util/ioutil",
         "//server/util/rexec",
         "//server/util/status",
     ],

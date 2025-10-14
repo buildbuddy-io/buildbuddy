@@ -20,6 +20,7 @@ var (
 	protocol       = flag.String("protocol", "proto", "Serialization protocol: 'json' or 'proto'.")
 	responseBase64 = flag.String("response_base64", "", "Base64-encoded response to return for every request. Includes varint length prefix (for proto responses).")
 	failWithStderr = flag.String("fail_with_stderr", "", "If non-empty, the worker will crash upon receiving the first request, printing the given message to stderr.")
+	writeStderr    = flag.String("write_stderr", "", "If non-empty, the worker will write the given message to stderr but still send a response.")
 )
 
 func main() {
@@ -60,6 +61,10 @@ func main() {
 			log.Infof("[worker] --fail_with_stderr was set; failing now and exiting.")
 			os.Stderr.Write([]byte(*failWithStderr + "\n"))
 			os.Exit(1)
+		}
+
+		if *writeStderr != "" {
+			os.Stderr.Write([]byte(*writeStderr + "\n"))
 		}
 
 		log.Info("[worker] Got request! Sending response...")

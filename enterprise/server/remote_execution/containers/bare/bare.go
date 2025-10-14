@@ -1,7 +1,6 @@
 package bare
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"io"
@@ -14,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -140,13 +140,17 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 		// But setting stdout/stderr disables the default buffering behavior
 		// (into the CommandResult Stdout/Stderr fields). So we need to manually
 		// buffer stdout/stderr here.
+		limit := *commandutil.StdOutErrMaxSize
+		if stdio.DisableOutputLimits {
+			limit = 0
+		}
 		if stdio.Stdout == nil {
-			stdoutBuf := &bytes.Buffer{}
+			stdoutBuf := ioutil.NewLimitBuffer(limit, "stdout/stderr output size")
 			stdio.Stdout = stdoutBuf
 			defer func() { result.Stdout = stdoutBuf.Bytes() }()
 		}
 		if stdio.Stderr == nil {
-			stderrBuf := &bytes.Buffer{}
+			stderrBuf := ioutil.NewLimitBuffer(limit, "stdout/stderr output size")
 			stdio.Stderr = stderrBuf
 			defer func() { result.Stderr = stderrBuf.Bytes() }()
 		}

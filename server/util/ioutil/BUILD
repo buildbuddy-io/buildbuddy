@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "ioutil",
-    srcs = ["ioutil.go"],
+    srcs = [
+        "ioutil.go",
+        "limit_buffer.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/ioutil",
     visibility = ["//visibility:public"],
     deps = [
@@ -20,6 +23,7 @@ go_test(
         ":ioutil",
         "//server/testutil/testdigest",
         "//server/util/bytebufferpool",
+        "//server/util/status",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
     ],

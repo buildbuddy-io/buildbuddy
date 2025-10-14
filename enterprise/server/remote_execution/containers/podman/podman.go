@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -719,7 +720,29 @@ func runPodman(ctx context.Context, commandRunner interfaces.CommandRunner, podm
 	command = append(command, args...)
 	// Note: we don't collect stats on the podman process, and instead use
 	// cgroups for stats accounting.
-	result := commandRunner.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, stdio)
+
+	// Ensure output limits are enforced even if the underlying CommandRunner
+	// does not apply them (e.g., in tests with a custom runner). Respect
+	// DisableOutputLimits if set by the caller.
+	wrapped := stdio
+	if wrapped == nil {
+		wrapped = &interfaces.Stdio{}
+	}
+	if !wrapped.DisableOutputLimits {
+		// Copy to avoid mutating the caller's struct.
+		s := &interfaces.Stdio{Stdin: wrapped.Stdin, Stdout: wrapped.Stdout, Stderr: wrapped.Stderr, DisableOutputLimits: wrapped.DisableOutputLimits}
+		if s.Stdout != nil && *commandutil.StdOutErrMaxSize > 0 {
+			limitBuf := ioutil.NewLimitBuffer(*commandutil.StdOutErrMaxSize, "stdout/stderr output size")
+			s.Stdout = io.MultiWriter(limitBuf, s.Stdout)
+		}
+		if s.Stderr != nil && *commandutil.StdOutErrMaxSize > 0 {
+			limitBuf := ioutil.NewLimitBuffer(*commandutil.StdOutErrMaxSize, "stdout/stderr output size")
+			s.Stderr = io.MultiWriter(limitBuf, s.Stderr)
+		}
+		wrapped = s
+	}
+
+	result := commandRunner.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, wrapped)
 
 	// If the disk is under heavy load, podman may fail with "database is
 	// locked". Detect these and return a retryable error.

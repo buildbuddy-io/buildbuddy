@@ -1159,6 +1159,8 @@ type Stdio struct {
 	Stdout io.Writer
 	// Stderr is an optional stderr sink for the executed process.
 	Stderr io.Writer
+	// DisableOutputLimits prevents any output limits from being enforced.
+	DisableOutputLimits bool
 }
 
 // CommandResult captures the output and details of an executed command.
