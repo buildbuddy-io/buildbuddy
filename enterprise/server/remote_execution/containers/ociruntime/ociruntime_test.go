@@ -1564,7 +1564,68 @@ func TestPersistentWorker(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestPersistentWorker_WorkerCrashes(t *testing.T) {
+func TestPersistentWorker_WorkerCrashesBeforeReadingRequest(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	// Create workspace with testworker binary
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	ws, err := workspace.New(env, buildRoot, &workspace.Opts{Preserve: true})
+	require.NoError(t, err)
+	testworkerPath, err := runfiles.Rlocation(testworkerRlocationpath)
+	require.NoError(t, err)
+	testfs.CopyFile(t, testworkerPath, ws.Path(), "testworker")
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage:      image,
+		PersistentWorkerKey: "abc123",
+	}})
+	require.NoError(t, err)
+
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, ws.Path())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Start worker (Exec) but don't attempt to read any work requests - just
+	// crash immediately.
+	worker, err := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+		Arguments: []string{
+			// Crash immediately
+			"sh", "-c", `echo >&2 "Crashing!" && kill -KILL $$`,
+		},
+	})
+	require.NoError(t, err)
+	defer worker.Stop()
+
+	// Send work request.
+	// The command doesn't matter - the test worker always just returns a fixed
+	// response.
+	res := worker.Exec(ctx, &repb.Command{})
+
+	require.Error(t, res.Error)
+	const sigkillExitCode = 128 + int(syscall.SIGKILL)
+	require.Contains(t, res.Error.Error(), fmt.Sprintf("worker exited with code %d", sigkillExitCode))
+}
+
+func TestPersistentWorker_WorkerCrashesAfterReadingRequest(t *testing.T) {
 	setupNetworking(t)
 
 	image := busyboxImage(t)
@@ -1621,6 +1682,7 @@ func TestPersistentWorker_WorkerCrashes(t *testing.T) {
 	res := worker.Exec(ctx, &repb.Command{})
 
 	require.Error(t, res.Error)
+	require.Contains(t, res.Error.Error(), "worker exited with code 1")
 	require.Contains(t, res.Error.Error(), "test-stderr-message")
 }
 
