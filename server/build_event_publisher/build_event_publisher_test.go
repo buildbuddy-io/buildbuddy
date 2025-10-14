@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbes"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
 
@@ -125,7 +124,7 @@ func TestEventBuffer_ConcurrentProducers(t *testing.T) {
 	require.Len(t, got, expectedCount)
 	for i, obe := range got {
 		require.Empty(t, cmp.Diff(streamID, obe.StreamId, protocmp.Transform()))
-		assert.Equal(t, int64(i+1), obe.SequenceNumber)
+		require.Equal(t, int64(i+1), obe.SequenceNumber)
 		require.NotNil(t, obe.Event)
 	}
 }
@@ -164,7 +163,7 @@ func TestEventBuffer_MultipleSubscriptionsSerial(t *testing.T) {
 	buffer.Add(regularEvent())
 	event, ok := recvEvent(t, events1)
 	require.True(t, ok)
-	assert.Equal(t, int64(1), event.SequenceNumber)
+	require.Equal(t, int64(1), event.SequenceNumber)
 
 	cancel1()
 	requireClosed(t, events1)
@@ -174,17 +173,17 @@ func TestEventBuffer_MultipleSubscriptionsSerial(t *testing.T) {
 
 	event, ok = recvEvent(t, events2)
 	require.True(t, ok)
-	assert.Equal(t, int64(1), event.SequenceNumber)
+	require.Equal(t, int64(1), event.SequenceNumber)
 
 	buffer.Add(regularEvent())
 	event, ok = recvEvent(t, events2)
 	require.True(t, ok)
-	assert.Equal(t, int64(2), event.SequenceNumber)
+	require.Equal(t, int64(2), event.SequenceNumber)
 
 	buffer.Add(finishedEvent())
 	event, ok = recvEvent(t, events2)
 	require.True(t, ok)
-	assert.Equal(t, int64(3), event.SequenceNumber)
+	require.Equal(t, int64(3), event.SequenceNumber)
 
 	requireClosed(t, events2)
 }
@@ -291,7 +290,7 @@ func TestSequenceNumbersStartAtOne(t *testing.T) {
 
 	events := bes.GetEvents()
 	require.Len(t, events, 2) // 1 regular event + 1 finish event
-	assert.Equal(t, int64(1), events[0].OrderedBuildEvent.GetSequenceNumber())
+	require.Equal(t, int64(1), events[0].OrderedBuildEvent.GetSequenceNumber())
 }
 
 // TestSequenceNumbersIncremental verifies that sequence numbers increment
@@ -312,7 +311,7 @@ func TestSequenceNumbersIncremental(t *testing.T) {
 	events := bes.GetEvents()
 	seqNums := getSequenceNumbers(events)
 	expected := []int64{1, 2, 3, 4, 5, 6} // 5 events + finish
-	assert.Equal(t, expected, seqNums)
+	require.Equal(t, expected, seqNums)
 }
 
 // TestSequenceNumbersPreservedAcrossRetries verifies that events maintain their
@@ -338,11 +337,11 @@ func TestSequenceNumbersPreservedAcrossRetries(t *testing.T) {
 	// The first failed attempt should observe the full sequence of events even
 	// though the finish ACK never arrives.
 	expectedSeq := []int64{1, 2, 3}
-	assert.Equal(t, expectedSeq, getSequenceNumbers(attempts[0]))
+	require.Equal(t, expectedSeq, getSequenceNumbers(attempts[0]))
 
 	// Last successful attempt should resend the same sequence numbers.
 	lastAttempt := attempts[len(attempts)-1]
-	assert.Equal(t, expectedSeq, getSequenceNumbers(lastAttempt))
+	require.Equal(t, expectedSeq, getSequenceNumbers(lastAttempt))
 }
 
 // TestSequenceNumbersWithConcurrentPublish verifies that sequence numbers are
@@ -391,7 +390,7 @@ func TestSequenceNumbersWithConcurrentPublish(t *testing.T) {
 
 	// Verify sequence numbers are consecutive starting from 1
 	for i, seqNum := range seqNums {
-		assert.Equal(t, int64(i+1), seqNum)
+		require.Equal(t, int64(i+1), seqNum)
 	}
 }
 
@@ -416,8 +415,8 @@ func TestFinishEventHasCorrectSequenceNumber(t *testing.T) {
 
 	// Last event should be ComponentStreamFinished with sequence number 4
 	lastEvent := events[3]
-	assert.Equal(t, int64(4), lastEvent.OrderedBuildEvent.GetSequenceNumber())
-	assert.NotNil(t, lastEvent.OrderedBuildEvent.Event.GetComponentStreamFinished())
+	require.Equal(t, int64(4), lastEvent.OrderedBuildEvent.GetSequenceNumber())
+	require.NotNil(t, lastEvent.OrderedBuildEvent.Event.GetComponentStreamFinished())
 }
 
 // TestEmptyStreamSequencing verifies that calling Finish() without publishing
@@ -434,8 +433,8 @@ func TestEmptyStreamSequencing(t *testing.T) {
 
 	events := bes.GetEvents()
 	require.Len(t, events, 1)
-	assert.Equal(t, int64(1), events[0].OrderedBuildEvent.GetSequenceNumber())
-	assert.NotNil(t, events[0].OrderedBuildEvent.Event.GetComponentStreamFinished())
+	require.Equal(t, int64(1), events[0].OrderedBuildEvent.GetSequenceNumber())
+	require.NotNil(t, events[0].OrderedBuildEvent.Event.GetComponentStreamFinished())
 }
 
 // Retry and Error Handling Tests
@@ -457,7 +456,7 @@ func TestRetryAfterSendFailure(t *testing.T) {
 	require.NoError(t, pub.Finish())
 
 	attempts := bes.GetAttempts()
-	assert.GreaterOrEqual(t, len(attempts), 2, "Should have at least 2 attempts (1 failed + 1 success)")
+	require.GreaterOrEqual(t, len(attempts), 2, "Should have at least 2 attempts (1 failed + 1 success)")
 }
 
 // TestRetryAfterRecvFailure verifies that the publisher retries the stream
@@ -484,7 +483,7 @@ func TestRetryAfterRecvFailure(t *testing.T) {
 	require.NoError(t, pub.Finish())
 
 	attempts := bes.GetAttempts()
-	assert.GreaterOrEqual(t, len(attempts), 2)
+	require.GreaterOrEqual(t, len(attempts), 2)
 }
 
 // TestRetryAfterAckFailure verifies that the publisher retries when the stream
@@ -529,10 +528,10 @@ func TestRetryAfterAckFailure(t *testing.T) {
 	require.GreaterOrEqual(t, len(attempts), 2)
 
 	firstAttempt := attempts[0]
-	assert.Equal(t, []int64{1, 2, 3}, getSequenceNumbers(firstAttempt))
+	require.Equal(t, []int64{1, 2, 3}, getSequenceNumbers(firstAttempt))
 
 	lastAttempt := attempts[len(attempts)-1]
-	assert.Equal(t, []int64{1, 2, 3}, getSequenceNumbers(lastAttempt))
+	require.Equal(t, []int64{1, 2, 3}, getSequenceNumbers(lastAttempt))
 }
 
 // TestMaxRetriesExhausted verifies that the publisher returns an error after
@@ -551,12 +550,12 @@ func TestMaxRetriesExhausted(t *testing.T) {
 	require.NoError(t, pub.Publish(makeBazelEvent()))
 	err = pub.Finish()
 
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to publish build event stream")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to publish build event stream")
 
 	// Should have tried 6 times (initial + 5 retries)
 	attempts := bes.GetAttempts()
-	assert.Equal(t, 6, len(attempts))
+	require.Equal(t, 6, len(attempts))
 }
 
 // TestPartialStreamRetry verifies that when a stream fails after transmitting
@@ -589,11 +588,11 @@ func TestPartialStreamRetry(t *testing.T) {
 	require.GreaterOrEqual(t, len(attempts), 2)
 
 	// First attempt should have failed after 3 events
-	assert.Len(t, attempts[0], 3)
+	require.Len(t, attempts[0], 3)
 
 	// Last attempt should have all 6 events (5 + finish)
 	lastAttempt := attempts[len(attempts)-1]
-	assert.Len(t, lastAttempt, 6)
+	require.Len(t, lastAttempt, 6)
 }
 
 // TestNoRetryOnSuccess verifies that the publisher makes exactly one attempt
@@ -610,7 +609,7 @@ func TestNoRetryOnSuccess(t *testing.T) {
 	require.NoError(t, pub.Finish())
 
 	attempts := bes.GetAttempts()
-	assert.Equal(t, 1, len(attempts), "Should have exactly 1 attempt when successful")
+	require.Equal(t, 1, len(attempts), "Should have exactly 1 attempt when successful")
 }
 
 // TestExponentialBackoffBetweenRetries verifies that the publisher waits with
@@ -633,10 +632,10 @@ func TestExponentialBackoffBetweenRetries(t *testing.T) {
 
 	// With 3 retries and exponential backoff (300ms, 600ms, 1000ms)
 	// we should wait at least 1.9 seconds (300+600+1000).
-	assert.GreaterOrEqual(t, elapsed, 1800*time.Millisecond)
+	require.GreaterOrEqual(t, elapsed, 1800*time.Millisecond)
 
 	attempts := bes.GetAttempts()
-	assert.Equal(t, 4, len(attempts)) // 3 failures + 1 success
+	require.Equal(t, 4, len(attempts)) // 3 failures + 1 success
 }
 
 // Event Buffering and Transmission Tests
@@ -664,8 +663,8 @@ func TestAllBufferedEventsResentOnRetry(t *testing.T) {
 
 	// Each attempt should have all 4 events (3 + finish)
 	for i, attempt := range attempts {
-		assert.Len(t, attempt, 4, "Attempt %d should have all 4 events", i)
-		assert.Equal(t, []int64{1, 2, 3, 4}, getSequenceNumbers(attempt))
+		require.Len(t, attempt, 4, "Attempt %d should have all 4 events", i)
+		require.Equal(t, []int64{1, 2, 3, 4}, getSequenceNumbers(attempt))
 	}
 }
 
@@ -705,7 +704,7 @@ func TestEventsPublishedDuringRetry(t *testing.T) {
 
 	// Last attempt should include events published during retry
 	lastAttempt := attempts[len(attempts)-1]
-	assert.Len(t, lastAttempt, 3) // 2 events + finish
+	require.Len(t, lastAttempt, 3) // 2 events + finish
 }
 
 // TestSubscriberReceivesAllEvents verifies that the event buffer subscriber
@@ -723,7 +722,7 @@ func TestSubscriberReceivesAllEvents(t *testing.T) {
 	require.NoError(t, pub.Finish())
 
 	events := bes.GetEvents()
-	assert.Len(t, events, 3)
+	require.Len(t, events, 3)
 }
 
 // TestMultipleRetriesReceiveSameEvents verifies that each retry attempt receives
@@ -749,7 +748,7 @@ func TestMultipleRetriesReceiveSameEvents(t *testing.T) {
 	// All attempts should have the same sequence numbers
 	expectedSeqNums := []int64{1, 2, 3}
 	for i, attempt := range attempts {
-		assert.Equal(t, expectedSeqNums, getSequenceNumbers(attempt), "Attempt %d", i)
+		require.Equal(t, expectedSeqNums, getSequenceNumbers(attempt), "Attempt %d", i)
 	}
 }
 
@@ -766,11 +765,11 @@ func TestFinishEventEndsStream(t *testing.T) {
 	buffer.Add(finishedEvent())
 
 	collected := collectEvents(t, events)
-	assert.Len(t, collected, 2)
+	require.Len(t, collected, 2)
 
 	// Channel should be closed after finish event
 	_, ok := <-events
-	assert.False(t, ok, "Channel should be closed after finish event")
+	require.False(t, ok, "Channel should be closed after finish event")
 }
 
 // Stream Lifecycle Tests
@@ -793,10 +792,10 @@ func TestFinishWaitsForCompletion(t *testing.T) {
 	elapsed := time.Since(start)
 
 	// Should complete relatively quickly on success
-	assert.Less(t, elapsed, time.Second)
+	require.Less(t, elapsed, time.Second)
 
 	events := bes.GetEvents()
-	assert.Len(t, events, 2)
+	require.Len(t, events, 2)
 }
 
 // TestFinishAfterStreamFailure verifies that Finish() returns an error when
@@ -815,8 +814,8 @@ func TestFinishAfterStreamFailure(t *testing.T) {
 	require.NoError(t, pub.Publish(makeBazelEvent()))
 
 	err = pub.Finish()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to publish")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to publish")
 }
 
 // TestPublishAfterFinish verifies that events published after Finish() is called
@@ -837,7 +836,7 @@ func TestPublishAfterFinish(t *testing.T) {
 
 	events := bes.GetEvents()
 	// Should only have the 2 events from before Finish
-	assert.Len(t, events, 2)
+	require.Len(t, events, 2)
 }
 
 // TestContextCancellationStopsRetries verifies that cancelling the context
@@ -862,11 +861,11 @@ func TestContextCancellationStopsRetries(t *testing.T) {
 	}()
 
 	err = pub.Finish()
-	assert.Error(t, err)
+	require.Error(t, err)
 
 	// Should have fewer than max retries due to cancellation
 	attempts := bes.GetAttempts()
-	assert.Less(t, len(attempts), 6)
+	require.Less(t, len(attempts), 6)
 }
 
 // Edge Cases
@@ -898,7 +897,7 @@ func TestServerDisconnectsDuringEventStream(t *testing.T) {
 
 	// Should retry and eventually succeed
 	attempts := bes.GetAttempts()
-	assert.GreaterOrEqual(t, len(attempts), 2)
+	require.GreaterOrEqual(t, len(attempts), 2)
 }
 
 // TestServerNeverSendsACKs verifies that the publisher completes successfully
@@ -922,7 +921,7 @@ func TestServerNeverSendsACKs(t *testing.T) {
 
 	// Should complete successfully since publisher doesn't validate ACKs
 	events := bes.GetEvents()
-	assert.Len(t, events, 2)
+	require.Len(t, events, 2)
 }
 
 // TestZeroEventsPublished verifies that a stream with only a finish event
@@ -938,8 +937,8 @@ func TestZeroEventsPublished(t *testing.T) {
 	require.NoError(t, pub.Finish())
 
 	events := bes.GetEvents()
-	assert.Len(t, events, 1)
-	assert.NotNil(t, events[0].OrderedBuildEvent.Event.GetComponentStreamFinished())
+	require.Len(t, events, 1)
+	require.NotNil(t, events[0].OrderedBuildEvent.Event.GetComponentStreamFinished())
 }
 
 // TestStreamIDConsistentAcrossRetries verifies that the same StreamId
@@ -966,9 +965,9 @@ func TestStreamIDConsistentAcrossRetries(t *testing.T) {
 	for i, attempt := range attempts {
 		for j, event := range attempt {
 			streamID := event.OrderedBuildEvent.GetStreamId()
-			assert.Equal(t, firstStreamID.GetInvocationId(), streamID.GetInvocationId(),
+			require.Equal(t, firstStreamID.GetInvocationId(), streamID.GetInvocationId(),
 				"Attempt %d Event %d has different invocation ID", i, j)
-			assert.Equal(t, firstStreamID.GetBuildId(), streamID.GetBuildId(),
+			require.Equal(t, firstStreamID.GetBuildId(), streamID.GetBuildId(),
 				"Attempt %d Event %d has different build ID", i, j)
 		}
 	}
@@ -991,5 +990,5 @@ func TestAPIKeyIncludedInMetadata(t *testing.T) {
 	md := bes.GetMetadata()
 	apiKeys := md.Get("x-buildbuddy-api-key")
 	require.Len(t, apiKeys, 1)
-	assert.Equal(t, apiKey, apiKeys[0])
+	require.Equal(t, apiKey, apiKeys[0])
 }
