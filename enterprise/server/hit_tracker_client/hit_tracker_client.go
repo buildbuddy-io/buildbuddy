@@ -141,12 +141,11 @@ type HitTrackerFactory struct {
 }
 
 func (h *HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
-	// XXX: TBD
-	/*if !proxy_util.SkipRemote(ctx) {
+	if !proxy_util.SkipRemote(ctx) {
 		// For Action Cache hit-tracking hitting the remote cache, the
 		// authoritative cache should always take care of hit-tracking.
 		alert.UnexpectedEvent("Unexpected call to NewACHitTracker in the proxy")
-	}*/
+	}
 
 	// Use a hit-tracker that sends information
 	// about local cache hits to the RPC service at the configured backend.
@@ -213,8 +212,7 @@ func (h *HitTrackerClient) SetExecutedActionMetadata(md *repb.ExecutedActionMeta
 		return
 	}
 	// By default, AC hit tracking should be handled by the remote cache.
-	// XXX: TBD
-	// alert.UnexpectedEvent("Unexpected call to SetExecutedActionMetadata")
+	alert.UnexpectedEvent("Unexpected call to SetExecutedActionMetadata")
 }
 
 // TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/4875) Implement
