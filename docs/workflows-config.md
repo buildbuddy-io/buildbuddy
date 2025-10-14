@@ -5,11 +5,12 @@ sidebar_label: Workflows configuration
 ---
 
 Once you've linked your repo to BuildBuddy via
-[BuildBuddy workflows](workflows-setup.md), BuildBuddy will automatically
-run `bazel test //...` on each push to your repo, reporting results to the
-BuildBuddy UI.
+[BuildBuddy workflows](workflows-setup.md), there are two ways to start running Workflows.
 
-But you may wish to configure multiple test commands with different test
+The default workflow config runs `bazel test //...` whenever a commit is pushed to your repo's default branch or a pull request branch is updated. In order to enable this, click "Enable default workflow config"
+in the three-dot dropdown for your repository on the Workflows page.
+
+You may wish to configure multiple test commands with different test
 tag filters, or run the same tests on multiple different platform
 configurations (running some tests on Linux, and some on macOS, for
 example).
