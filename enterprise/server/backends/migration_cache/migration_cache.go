@@ -350,9 +350,6 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 						metrics.CacheRequestType: "metadata",
 						metrics.GroupID:          groupID(ctx),
 					}).Inc()
-					mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
-				} else {
-					mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 				}
 				if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
 					log.CtxWarningf(ctx, "Migration dest %v metadata failed: %s", r.GetDigest(), dstErr)

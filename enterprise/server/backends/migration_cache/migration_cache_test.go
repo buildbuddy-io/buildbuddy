@@ -882,8 +882,6 @@ func TestMetadata(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(100), md.StoredSizeBytes)
 
-	waitForCopy(t, ctx, destCache, r)
-
 	notWrittenResource, _ := testdigest.RandomCASResourceBuf(t, 100)
 	md, err = mc.Metadata(ctx, notWrittenResource)
 	require.True(t, status.IsNotFoundError(err))
