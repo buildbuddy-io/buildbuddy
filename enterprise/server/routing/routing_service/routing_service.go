@@ -10,9 +10,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -59,7 +61,7 @@ func RegisterRoutingService(env *real_environment.RealEnv) error {
 		if _, ok := clientSets[r]; ok {
 			continue
 		}
-		conn, err := grpc_client.DialInternal(env, r)
+		conn, err := grpc_client.DialInternal(env, r, grpc.WithInsecure())
 		if err != nil {
 			// The default Dial() behavior doesn't wait for the connection, so
 			// this indicates some issue other than the server being down.
