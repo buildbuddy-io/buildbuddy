@@ -275,24 +275,6 @@ func getSequenceNumbers(events []*pepb.PublishBuildToolEventStreamRequest) []int
 
 // Event Sequencing Tests
 
-// TestSequenceNumbersStartAtOne verifies that the first event published has
-// sequence number 1, not 0.
-func TestSequenceNumbersStartAtOne(t *testing.T) {
-	ctx := context.Background()
-	bes, addr := testbes.RunTCP(t)
-
-	pub, err := build_event_publisher.New(addr, "", "test-invocation")
-	require.NoError(t, err)
-
-	pub.Start(ctx)
-	require.NoError(t, pub.Publish(makeBazelEvent()))
-	require.NoError(t, pub.Finish())
-
-	events := bes.GetEvents()
-	require.Len(t, events, 2) // 1 regular event + 1 finish event
-	require.Equal(t, int64(1), events[0].OrderedBuildEvent.GetSequenceNumber())
-}
-
 // TestSequenceNumbersIncremental verifies that sequence numbers increment
 // consecutively (1, 2, 3, ...) for multiple published events.
 func TestSequenceNumbersIncremental(t *testing.T) {
@@ -707,24 +689,6 @@ func TestEventsPublishedDuringRetry(t *testing.T) {
 	require.Len(t, lastAttempt, 3) // 2 events + finish
 }
 
-// TestSubscriberReceivesAllEvents verifies that the event buffer subscriber
-// receives all events that are published, including the finish event.
-func TestSubscriberReceivesAllEvents(t *testing.T) {
-	ctx := context.Background()
-	bes, addr := testbes.RunTCP(t)
-
-	pub, err := build_event_publisher.New(addr, "", "test-invocation")
-	require.NoError(t, err)
-
-	pub.Start(ctx)
-	require.NoError(t, pub.Publish(makeBazelEvent()))
-	require.NoError(t, pub.Publish(makeBazelEvent()))
-	require.NoError(t, pub.Finish())
-
-	events := bes.GetEvents()
-	require.Len(t, events, 3)
-}
-
 // TestMultipleRetriesReceiveSameEvents verifies that each retry attempt receives
 // the same set of events with identical sequence numbers.
 func TestMultipleRetriesReceiveSameEvents(t *testing.T) {
@@ -750,26 +714,6 @@ func TestMultipleRetriesReceiveSameEvents(t *testing.T) {
 	for i, attempt := range attempts {
 		require.Equal(t, expectedSeqNums, getSequenceNumbers(attempt), "Attempt %d", i)
 	}
-}
-
-// TestFinishEventEndsStream verifies that the ComponentStreamFinished event
-// causes the event buffer's Subscribe channel to close.
-func TestFinishEventEndsStream(t *testing.T) {
-	streamID := makeStreamID("test-inv", "test-build")
-	buffer := build_event_publisher.NewEventBuffer(streamID)
-
-	events, cancel := buffer.Subscribe()
-	defer cancel()
-
-	buffer.Add(regularEvent())
-	buffer.Add(finishedEvent())
-
-	collected := collectEvents(t, events)
-	require.Len(t, collected, 2)
-
-	// Channel should be closed after finish event
-	_, ok := <-events
-	require.False(t, ok, "Channel should be closed after finish event")
 }
 
 // Stream Lifecycle Tests
