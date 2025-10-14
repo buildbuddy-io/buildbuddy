@@ -329,12 +329,14 @@ func TestSequenceNumbersPreservedAcrossRetries(t *testing.T) {
 	attempts := bes.GetAttempts()
 	require.GreaterOrEqual(t, len(attempts), 2)
 
-	// First attempt should have events 1, 2
-	assert.Equal(t, []int64{1, 2}, getSequenceNumbers(attempts[0]))
+	// The first failed attempt should observe the full sequence of events even
+	// though the finish ACK never arrives.
+	expectedSeq := []int64{1, 2, 3}
+	assert.Equal(t, expectedSeq, getSequenceNumbers(attempts[0]))
 
-	// Last successful attempt should also have 1, 2, 3 (resent + finish)
+	// Last successful attempt should resend the same sequence numbers.
 	lastAttempt := attempts[len(attempts)-1]
-	assert.Equal(t, []int64{1, 2, 3}, getSequenceNumbers(lastAttempt))
+	assert.Equal(t, expectedSeq, getSequenceNumbers(lastAttempt))
 }
 
 func TestSequenceNumbersWithConcurrentPublish(t *testing.T) {

@@ -160,16 +160,23 @@ func FailWith(err error) HandlerFunc {
 	}
 }
 
-// FailNTimesThenSucceed returns a BES handler that fails the first N times it's called,
-// then succeeds (ACKs) for all subsequent calls.
+// FailNTimesThenSucceed returns a BES handler that fails the first N stream attempts,
+// then succeeds (ACKs) for all subsequent attempts. For failed attempts, the
+// handler processes all non-finish events but closes the stream when the finish
+// event is received, before acknowledging it. This mimics a BES that disconnects
+// as the stream is finalized.
 func FailNTimesThenSucceed(n int, err error) HandlerFunc {
-	count := 0
+	streamAttempt := 0
 	mu := &sync.Mutex{}
 	return func(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer, streamID *bepb.StreamId, event *pepb.PublishBuildToolEventStreamRequest) error {
 		mu.Lock()
 		defer mu.Unlock()
-		if count < n {
-			count++
+
+		if event.GetOrderedBuildEvent().GetSequenceNumber() == 1 {
+			streamAttempt++
+		}
+		shouldFail := streamAttempt <= n
+		if shouldFail && event.GetOrderedBuildEvent().GetEvent().GetComponentStreamFinished() != nil {
 			return err
 		}
 		return Ack(stream, streamID, event)
