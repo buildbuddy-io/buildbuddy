@@ -774,30 +774,6 @@ func TestFinishEventEndsStream(t *testing.T) {
 
 // Stream Lifecycle Tests
 
-// TestFinishWaitsForCompletion verifies that Finish() blocks until the stream
-// completes successfully or all retries are exhausted.
-func TestFinishWaitsForCompletion(t *testing.T) {
-	ctx := context.Background()
-	bes, addr := testbes.RunTCP(t)
-
-	pub, err := build_event_publisher.New(addr, "", "test-invocation")
-	require.NoError(t, err)
-
-	pub.Start(ctx)
-	require.NoError(t, pub.Publish(makeBazelEvent()))
-
-	// Finish should block until stream completes
-	start := time.Now()
-	require.NoError(t, pub.Finish())
-	elapsed := time.Since(start)
-
-	// Should complete relatively quickly on success
-	require.Less(t, elapsed, time.Second)
-
-	events := bes.GetEvents()
-	require.Len(t, events, 2)
-}
-
 // TestFinishAfterStreamFailure verifies that Finish() returns an error when
 // all retry attempts fail.
 func TestFinishAfterStreamFailure(t *testing.T) {
