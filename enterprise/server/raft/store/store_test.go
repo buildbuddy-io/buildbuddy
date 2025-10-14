@@ -1423,9 +1423,9 @@ func writeRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, g
 
 func metadataKey(t *testing.T, fr *sgpb.FileRecord) []byte {
 	fs := filestore.New()
-	pebbleKey, err := fs.PebbleKey(fr)
+	pebbleKey, err := fs.RaftKey(fr)
 	require.NoError(t, err)
-	keyBytes, err := pebbleKey.Bytes(filestore.PebbleKeyVersion5)
+	keyBytes, err := pebbleKey.Bytes(filestore.RaftKeyVersion1)
 	require.NoError(t, err)
 	return keyBytes
 }

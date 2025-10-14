@@ -331,11 +331,11 @@ func (rc *Server) Stop(ctx context.Context) error {
 }
 
 func (rc *Server) fileMetadataKey(fr *sgpb.FileRecord) ([]byte, error) {
-	pebbleKey, err := rc.fileStorer.PebbleKey(fr)
+	pebbleKey, err := rc.fileStorer.RaftKey(fr)
 	if err != nil {
 		return nil, err
 	}
-	return pebbleKey.Bytes(filestore.PebbleKeyVersion5)
+	return pebbleKey.Bytes(filestore.RaftKeyVersion1)
 }
 
 func (rc *Server) fileRecordsToKeyMetas(fileRecords []*sgpb.FileRecord) ([]*sender.KeyMeta, error) {

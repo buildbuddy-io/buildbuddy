@@ -135,7 +135,7 @@ func sizeOf(key []byte, val []byte) (int64, error) {
 }
 
 func isFileRecordKey(keyBytes []byte) bool {
-	key := &filestore.PebbleKey{}
+	key := &filestore.RaftKey{}
 	if _, err := key.FromBytes(keyBytes); err == nil {
 		return true
 	}
@@ -970,8 +970,8 @@ func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResp
 }
 
 func (sm *Replica) get(db ReplicaReader, req *rfpb.GetRequest) (*rfpb.GetResponse, error) {
-	// Check that key is a valid PebbleKey.
-	var pk filestore.PebbleKey
+	// Check that key is a valid RaftKey.
+	var pk filestore.RaftKey
 	if _, err := pk.FromBytes(req.GetKey()); err != nil {
 		return nil, err
 	}
@@ -992,8 +992,8 @@ func (sm *Replica) get(db ReplicaReader, req *rfpb.GetRequest) (*rfpb.GetRespons
 }
 
 func (sm *Replica) set(wb pebble.Batch, req *rfpb.SetRequest) (*rfpb.SetResponse, error) {
-	// Check that key is a valid PebbleKey.
-	var pk filestore.PebbleKey
+	// Check that key is a valid RaftKey.
+	var pk filestore.RaftKey
 	if _, err := pk.FromBytes(req.GetKey()); err != nil {
 		return nil, err
 	}
@@ -1012,8 +1012,8 @@ func (sm *Replica) set(wb pebble.Batch, req *rfpb.SetRequest) (*rfpb.SetResponse
 }
 
 func (sm *Replica) delete(wb pebble.Batch, req *rfpb.DeleteRequest) (*rfpb.DeleteResponse, error) {
-	// Check that key is a valid PebbleKey.
-	var pk filestore.PebbleKey
+	// Check that key is a valid RaftKey.
+	var pk filestore.RaftKey
 	if _, err := pk.FromBytes(req.GetKey()); err != nil {
 		return nil, err
 	}
@@ -1043,8 +1043,8 @@ func (sm *Replica) delete(wb pebble.Batch, req *rfpb.DeleteRequest) (*rfpb.Delet
 }
 
 func (sm *Replica) find(db ReplicaReader, req *rfpb.FindRequest) (*rfpb.FindResponse, error) {
-	// Check that key is a valid PebbleKey.
-	var pk filestore.PebbleKey
+	// Check that key is a valid RaftKey.
+	var pk filestore.RaftKey
 	if _, err := pk.FromBytes(req.GetKey()); err != nil {
 		return nil, err
 	}
@@ -1065,8 +1065,8 @@ func (sm *Replica) find(db ReplicaReader, req *rfpb.FindRequest) (*rfpb.FindResp
 }
 
 func (sm *Replica) updateAtime(wb pebble.Batch, req *rfpb.UpdateAtimeRequest) (*rfpb.UpdateAtimeResponse, error) {
-	// Check that key is a valid PebbleKey.
-	var pk filestore.PebbleKey
+	// Check that key is a valid RaftKey.
+	var pk filestore.RaftKey
 	if _, err := pk.FromBytes(req.GetKey()); err != nil {
 		return nil, err
 	}

@@ -385,7 +385,7 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 				continue
 			}
 		}
-		var key filestore.PebbleKey
+		var key filestore.RaftKey
 		if _, err := key.FromBytes(iter.Key()); err != nil {
 			log.Warningf("cannot generate sample for eviction, skipping: failed to read key: %s", err)
 			continue
