@@ -50,19 +50,6 @@ archive_override(
     ],
 )
 
-# BuildBuddy Toolchain
-# Keep up-to-date with
-# - docs/rbe-setup.md
-# - docs/rbe-github-actions.md
-# - tools/dev_qa.py
-bazel_dep(name = "toolchains_buildbuddy")
-archive_override(
-    module_name = "toolchains_buildbuddy",
-    integrity = "sha256-4IfXpost4VijKRq3wRWXNTpNO4Qh/C5iKooLCMU+o6Q=",
-    strip_prefix = "buildbuddy-toolchain-295ee8105da91bd273886649cdec7c96abd000f6",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/295ee8105da91bd273886649cdec7c96abd000f6.tar.gz"],
-)
-
 bazel_dep(name = "rules_docker", repo_name = "io_bazel_rules_docker")
 archive_override(
     module_name = "rules_docker",
@@ -100,6 +87,12 @@ bazel_dep(name = "rules_oci", version = "2.0.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")
+# BuildBuddy Toolchain
+# Keep up-to-date with
+# - docs/rbe-setup.md
+# - docs/rbe-github-actions.md
+# - tools/dev_qa.py
+bazel_dep(name = "toolchains_buildbuddy", version = "0.0.2")
 bazel_dep(name = "toolchains_musl", version = "0.1.27")
 bazel_dep(name = "zlib", version = "1.3.1.bcr.5")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
