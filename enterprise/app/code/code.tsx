@@ -1397,21 +1397,29 @@ export default class CodeComponent extends React.Component<Props, State> {
                   if (zip) {
                     rpcService.downloadBytestreamZipFile(filename, bsUrl, zip, invocationId);
                   } else {
-                    rpcService.downloadBytestreamFile(this.props.search.get("filename") || "", bsUrl, invocationId);
-                    let compareUrl = this.props.search.get("compare_bytestream_url");
-                    let compareInvocationID = this.props.search.get("compare_invocation_id");
-                    let compareFilename = this.props.search.get("compare_filename") || "";
-                    if (compareUrl) {
-                      rpcService.downloadBytestreamFile(
-                        filename == compareFilename ? filename + ".modified" : compareFilename,
-                        compareUrl,
-                        compareInvocationID || invocationId
-                      );
-                    }
+                    rpcService.downloadBytestreamFile(filename, bsUrl, invocationId);
                   }
                 }}>
-                <Download /> Download File{this.props.search.get("compare_filename") ? "s" : ""}
+                <Download /> Download File {this.props.search.get("compare_filename") ? "A" : ""}
               </OutlinedButton>
+              {this.props.search.get("compare_bytestream_url") && (
+                <OutlinedButton
+                  className="code-menu-download-button"
+                  onClick={() => {
+                    const filename = this.props.search.get("filename") || "";
+                    const invocationId = this.props.search.get("invocation_id") || "";
+                    const compareUrl = this.props.search.get("compare_bytestream_url") || "";
+                    const compareInvocationID = this.props.search.get("compare_invocation_id");
+                    const compareFilename = this.props.search.get("compare_filename") || "";
+                    rpcService.downloadBytestreamFile(
+                      filename == compareFilename ? filename + ".modified" : compareFilename,
+                      compareUrl,
+                      compareInvocationID || invocationId
+                    );
+                  }}>
+                  <Download /> Download File B
+                </OutlinedButton>
+              )}
             </div>
           )}
           {Boolean(this.getQuery()) && (
