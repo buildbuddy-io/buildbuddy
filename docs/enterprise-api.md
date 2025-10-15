@@ -609,6 +609,10 @@ message ActionSelector {
   // Optional: The Action ID.
   // If set, only the action with this action id will be returned.
   string action_id = 4;
+
+  // Optional: The Target label.
+  // If set, only the action with this target label will be returned.
+  string target_label = 5;
 }
 ```
 
@@ -638,6 +642,21 @@ message Action {
 
   // A list of file references for action level files.
   repeated File file = 2;
+
+  // The label of the target that generated this action.
+  string target_label = 3;
+
+  // The test shard this action represents.
+  // Only populated for test actions.
+  int64 shard = 4;
+
+  // The test run this action represents.
+  // Only populated for test actions.
+  int64 run = 5;
+
+  // The test attempt this action represents.
+  // Only populated for test actions.
+  int64 attempt = 6;
 }
 ```
 
