@@ -389,7 +389,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     this.roundEndDateAndAddZoomFiltersToQuery(request.query!);
 
     this.pendingEventsRequest?.cancel();
-    const promise = rpcService.service.searchInvocation(request);
+    const promise = rpcService.service
+      .searchInvocation(request)
+      .then((response) => this.setState({ eventData: { invocations: response.invocation } }))
+      .catch(() => this.setState({ eventsFailed: true, eventData: undefined }))
+      .finally(() => this.setState({ loadingEvents: false }));
     this.pendingEventsRequest = promise;
 
     this.setState({
@@ -397,10 +401,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       eventsFailed: false,
       eventData: undefined,
     });
-    promise
-      .then((response) => this.setState({ eventData: { invocations: response.invocation } }))
-      .catch(() => this.setState({ eventsFailed: true, eventData: undefined }))
-      .finally(() => this.setState({ loadingEvents: false }));
   }
 
   fetchEventList() {
