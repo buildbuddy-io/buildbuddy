@@ -129,7 +129,7 @@ func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUp
 
 	_, err := s.local.BatchUpdateBlobs(ctx, req)
 	if err != nil {
-		log.Warningf("Local BatchUpdateBlobs error: %s", err)
+		log.CtxWarningf(ctx, "Local BatchUpdateBlobs error: %s", err)
 	}
 	return s.remote.BatchUpdateBlobs(ctx, req)
 }
@@ -238,7 +238,7 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	for _, response := range remoteResp.Responses {
 		c, ok := cardinality[digest.NewKey(response.Digest)]
 		if !ok {
-			log.Warningf("Received unexpected digest from remote CAS.BatchReadBlobs: %s/%d", response.Digest.Hash, response.Digest.SizeBytes)
+			log.CtxWarningf(ctx, "Received unexpected digest from remote CAS.BatchReadBlobs: %s/%d", response.Digest.Hash, response.Digest.SizeBytes)
 		}
 		for i := 0; i < c; i++ {
 			mergedResp.Responses = append(mergedResp.Responses, response)
@@ -292,7 +292,7 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 	}
 	if !authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption {
 		if _, err := s.local.BatchUpdateBlobs(ctx, &updateReq); err != nil {
-			log.Warningf("Error locally updating blobs: %s", err)
+			log.CtxWarningf(ctx, "Error locally updating blobs: %s", err)
 		}
 	}
 	return readResp, nil
