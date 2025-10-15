@@ -976,7 +976,7 @@ func TestSignal(t *testing.T) {
 	assert.Empty(t, string(res.Stderr))
 }
 
-func TestNetwork_Enabled(t *testing.T) {
+func TestNetworking(t *testing.T) {
 	setupNetworking(t)
 
 	// Note: busybox has ping, but it fails with 'permission denied (are you
@@ -987,102 +987,92 @@ func TestNetwork_Enabled(t *testing.T) {
 	// (Note that podman has this same issue.)
 	image := netToolsImage(t)
 
-	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	for _, tc := range []struct {
+		name                       string
+		defaultNetworkFlag         string
+		dockerNetworkProp          string
+		expectExternalConnectivity bool
+	}{
+		{
+			name:                       "default enabled",
+			expectExternalConnectivity: true,
+		},
+		{
+			name:                       "enabled explicitly via prop",
+			dockerNetworkProp:          "bridge",
+			expectExternalConnectivity: true,
+		},
+		{
+			name:                       "disabled via flag",
+			defaultNetworkFlag:         "off",
+			expectExternalConnectivity: false,
+		},
+		{
+			name:                       "disabled via flag but overridden via prop",
+			defaultNetworkFlag:         "off",
+			dockerNetworkProp:          "bridge",
+			expectExternalConnectivity: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := testenv.GetTestEnv(t)
+			installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-	flags.Set(t, "executor.network_stats_enabled", true)
+			runtimeRoot := testfs.MakeTempDir(t)
+			flags.Set(t, "executor.network_stats_enabled", true)
+			flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+			if tc.defaultNetworkFlag != "" {
+				flags.Set(t, "executor.oci.default_network_mode", tc.defaultNetworkFlag)
+			}
 
-	buildRoot := testfs.MakeTempDir(t)
-	cacheRoot := testfs.MakeTempDir(t)
+			buildRoot := testfs.MakeTempDir(t)
+			cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
-	require.NoError(t, err)
-	wd := testfs.MakeDirAll(t, buildRoot, "work")
+			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+			require.NoError(t, err)
+			wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		err := c.Remove(ctx)
-		require.NoError(t, err)
-	})
+			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+				ContainerImage: image,
+				DockerNetwork:  tc.dockerNetworkProp,
+			}})
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				err := c.Remove(ctx)
+				require.NoError(t, err)
+			})
 
-	// Run
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-ec", `
-			ping -c1 -W1 $(hostname)
-			ping -c1 -W2 8.8.8.8
-			ping -c1 -W2 google.com
-		`},
+			// Run
+			cmd := &repb.Command{
+				Arguments: []string{"sh", "-c", `
+					# Should still have a loopback device available.
+					if ping -c1 -W1 $(hostname) >&2 ; then
+						echo PING_LOOPBACK_OK=true
+					else
+						echo PING_LOOPBACK_OK=false
+					fi
+					if ping -c1 -W2 8.8.8.8 >&2 ; then
+						echo PING_EXTERNAL_OK=true
+					else
+						echo PING_EXTERNAL_OK=false
+					fi
+				`},
+			}
+			res := c.Run(ctx, cmd, wd, oci.Credentials{})
+			require.NoError(t, res.Error)
+			t.Logf("stderr: %s", string(res.Stderr))
+			if tc.expectExternalConnectivity {
+				assert.Equal(t, "PING_LOOPBACK_OK=true\nPING_EXTERNAL_OK=true\n", string(res.Stdout))
+				assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+				assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
+			} else {
+				assert.Equal(t, "PING_LOOPBACK_OK=true\nPING_EXTERNAL_OK=false\n", string(res.Stdout))
+				assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesSent())
+				assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesReceived())
+			}
+		})
 	}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{})
-	require.NoError(t, res.Error)
-	t.Logf("stdout: %s", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
-	assert.Equal(t, 0, res.ExitCode)
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
-}
-
-func TestNetwork_Disabled(t *testing.T) {
-	setupNetworking(t)
-
-	// Note: busybox has ping, but it fails with 'permission denied (are you
-	// root?)' This is fixed by adding CAP_NET_RAW but we don't want to do this.
-	// So just use the net-tools image which doesn't have this issue for
-	// whatever reason (presumably it's some difference in the ping
-	// implementation) - it's enough to just set `net.ipv4.ping_group_range`.
-	// (Note that podman has this same issue.)
-	image := netToolsImage(t)
-
-	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
-
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-	flags.Set(t, "executor.network_stats_enabled", true)
-
-	buildRoot := testfs.MakeTempDir(t)
-	cacheRoot := testfs.MakeTempDir(t)
-
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
-	require.NoError(t, err)
-	wd := testfs.MakeDirAll(t, buildRoot, "work")
-
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-		DockerNetwork:  "off",
-	}})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		err := c.Remove(ctx)
-		require.NoError(t, err)
-	})
-
-	// Run
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-ec", `
-			# Should still have a loopback device available.
-			ping -c1 -W1 $(hostname)
-
-			if ping -c1 -W2 8.8.8.8 2>/dev/null; then
-				echo >&2 'Should not be able to ping external network'
-				exit 1
-			fi
-		`},
-	}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{})
-	require.NoError(t, res.Error)
-	t.Logf("stdout: %s", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
-	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesSent())
-	assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesReceived())
 }
 
 func TestUser(t *testing.T) {

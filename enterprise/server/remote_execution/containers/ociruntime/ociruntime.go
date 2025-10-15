@@ -75,6 +75,7 @@ var (
 	runtimeRoot             = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
 	dns                     = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
 	netPoolSize             = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	defaultNetworkMode      = flag.String("executor.oci.default_network_mode", "", "Default network mode: either 'bridge' or 'off'. Can be overridden per-action with the 'dockerNetwork' platform property.")
 	enableLxcfs             = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
 	capAdd                  = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
 	mounts                  = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
@@ -219,6 +220,10 @@ type provider struct {
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, error) {
+	if !slices.Contains([]string{"", "bridge", "off"}, *defaultNetworkMode) {
+		return nil, fmt.Errorf("unsupported 'executor.oci.default_network_mode' setting %q", *defaultNetworkMode)
+	}
+
 	// Enable masquerading on the host if it isn't enabled already.
 	if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
 		return nil, status.WrapError(err, "enable masquerading")
@@ -355,6 +360,11 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 }
 
 func (p *provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	networkMode := args.Props.DockerNetwork
+	if networkMode == "" {
+		networkMode = *defaultNetworkMode
+	}
+
 	container := &ociContainer{
 		env:            p.env,
 		runtime:        p.runtime,
@@ -370,7 +380,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		cgroupParent:       args.CgroupParent,
 		cgroupSettings:     &scpb.CgroupSettings{},
 		imageRef:           args.Props.ContainerImage,
-		networkEnabled:     args.Props.DockerNetwork != "off",
+		networkEnabled:     networkMode != "off",
 		isPersistentWorker: args.Props.PersistentWorkerKey != "",
 		tiniEnabled:        args.Props.DockerInit || *enableTini,
 		user:               args.Props.DockerUser,
