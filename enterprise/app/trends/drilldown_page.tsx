@@ -445,6 +445,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     this.roundEndDateAndAddZoomFiltersToQuery(heatmapRequest.query);
 
     this.pendingHeatmapRequest?.cancel();
+    this.pendingEventsRequest?.cancel();
+    this.pendingDrilldownRequest?.cancel();
     const promise = rpcService.service.getStatHeatmap(heatmapRequest);
     this.pendingHeatmapRequest = promise;
 
