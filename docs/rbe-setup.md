@@ -207,7 +207,7 @@ This determines the maximum time Bazel will spend on any single remote call, inc
 
 ### --remote_download_minimal
 
-By default, bazel will download intermediate results of remote executions - so in case an artifact isn't found in the remote cache, it can be re-uploaded. This can slow down builds in networks constrained environments.
+By default, bazel will download intermediate results of remote executions - so in case an artifact isn't found in the remote cache, it can be re-uploaded. This can slow down builds in network-constrained environments.
 
 This can be turned off with the flag:
 
@@ -215,7 +215,7 @@ This can be turned off with the flag:
 --remote_download_minimal
 ```
 
-While this flag can speed up your build, it makes them more sensitive to caching issues - and likely shouldn't be used in production yet.
+This flag can speed up your build and reduce your cache transfer. It's recommended as long you're using Bazel version 7.0 or higher.
 
 [Bazel docs](https://bazel.build/reference/command-line-reference#build-flag--remote_download_minimal)
 
