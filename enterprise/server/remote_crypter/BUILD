@@ -26,8 +26,8 @@ go_library(
 go_test(
     name = "remote_crypter_test",
     srcs = ["remote_crypter_test.go"],
-    embed = [":remote_crypter"],
     deps = [
+        ":remote_crypter",
         "//proto:encryption_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",

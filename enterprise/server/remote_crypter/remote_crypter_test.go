@@ -1,4 +1,4 @@
-package remote_crypter
+package remote_crypter_test
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdata"
@@ -156,7 +157,7 @@ func setup(t *testing.T) (*testauth.TestAuthenticator, interfaces.Crypter, clock
 	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
 	require.NoError(t, err)
 	clock := clockwork.NewFakeClock()
-	crypter := new(te, clock, conn)
+	crypter := remote_crypter.New(te, clock, conn)
 	return authenticator, crypter, clock, encryptionService
 }
 
