@@ -230,3 +230,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
         run: |
           gh release edit ${{ needs.push-tag.outputs.version }} --draft=false --repo=buildbuddy-io/bazel
+
+      - name: Slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: all
+        env:
+          GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_AUTO_RELEASE_WEBHOOK_URL }}
+        if: always()
