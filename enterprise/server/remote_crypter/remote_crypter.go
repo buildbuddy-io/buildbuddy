@@ -39,12 +39,12 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		return err
 	}
-	crypter := New(env, env.GetClock(), conn)
+	crypter := New(env, env.GetAuthenticator(), env.GetClock(), conn)
 	env.SetCrypter(crypter)
 	return nil
 }
 
-func New(env environment.Env, clock clockwork.Clock, conn grpc.ClientConnInterface) *RemoteCrypter {
+func New(env environment.Env, authenticator interfaces.Authenticator, clock clockwork.Clock, conn grpc.ClientConnInterface) *RemoteCrypter {
 	client := enpb.NewEncryptionServiceClient(conn)
 	refreshFn := func(ctx context.Context, ck crypter_key_cache.CacheKey) ([]byte, *sgpb.EncryptionMetadata, error) {
 		return refreshKey(ctx, ck, client)
@@ -60,7 +60,7 @@ func New(env environment.Env, clock clockwork.Clock, conn grpc.ClientConnInterfa
 	})
 
 	return &RemoteCrypter{
-		authenticator: env.GetAuthenticator(),
+		authenticator: authenticator,
 		client:        client,
 		cache:         cache,
 	}

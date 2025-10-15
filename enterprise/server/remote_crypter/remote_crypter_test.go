@@ -157,7 +157,7 @@ func setup(t *testing.T) (*testauth.TestAuthenticator, interfaces.Crypter, clock
 	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
 	require.NoError(t, err)
 	clock := clockwork.NewFakeClock()
-	crypter := remote_crypter.New(te, clock, conn)
+	crypter := remote_crypter.New(te, authenticator, clock, conn)
 	return authenticator, crypter, clock, encryptionService
 }
 
