@@ -1407,8 +1407,8 @@ export default class CodeComponent extends React.Component<Props, State> {
                   className="code-menu-download-button"
                   onClick={() => {
                     const filename = this.props.search.get("filename") || "";
-                    const invocationId = this.props.search.get("invocation_id");
-                    const compareUrl = this.props.search.get("compare_bytestream_url");
+                    const invocationId = this.props.search.get("invocation_id") || "";
+                    const compareUrl = this.props.search.get("compare_bytestream_url") || "";
                     const compareInvocationID = this.props.search.get("compare_invocation_id");
                     const compareFilename = this.props.search.get("compare_filename") || "";
                     rpcService.downloadBytestreamFile(
