@@ -298,15 +298,14 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     drilldownRequest.drilldownMetric = this.selectedMetric.metric;
 
     this.pendingDrilldownRequest?.cancel();
-    const promise = rpcService.service.getStatDrilldown(drilldownRequest);
-    this.pendingDrilldownRequest = promise;
-
-    this.setState({ loadingDrilldowns: true, drilldownsFailed: false, drilldownData: undefined });
-
-    promise
+    const promise = rpcService.service
+      .getStatDrilldown(drilldownRequest)
       .then((response) => this.setState({ drilldownData: response }))
       .catch(() => this.setState({ drilldownsFailed: true, drilldownData: undefined }))
       .finally(() => this.setState({ loadingDrilldowns: false }));
+    this.pendingDrilldownRequest = promise;
+
+    this.setState({ loadingDrilldowns: true, drilldownsFailed: false, drilldownData: undefined });
   }
 
   fetchExecutionList(heatmapSelection?: HeatmapSelection) {
@@ -339,16 +338,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     this.roundEndDateAndAddZoomFiltersToQuery(request.query!);
 
     this.pendingEventsRequest?.cancel();
-    const promise = rpcService.service.searchExecution(request);
-    this.pendingEventsRequest = promise;
-
-    this.setState({
-      loadingEvents: true,
-      eventsFailed: false,
-      eventData: undefined,
-    });
-
-    promise
+    const promise = rpcService.service
+      .searchExecution(request)
       .then((response) => {
         console.log(response);
         this.setState({
@@ -360,6 +351,13 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         this.setState({ eventsFailed: true, eventData: undefined });
       })
       .finally(() => this.setState({ loadingEvents: false }));
+    this.pendingEventsRequest = promise;
+
+    this.setState({
+      loadingEvents: true,
+      eventsFailed: false,
+      eventData: undefined,
+    });
   }
 
   fetchInvocationList(groupId: string, heatmapSelection?: HeatmapSelection) {
@@ -445,9 +443,14 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     this.roundEndDateAndAddZoomFiltersToQuery(heatmapRequest.query);
 
     this.pendingHeatmapRequest?.cancel();
-    this.pendingEventsRequest?.cancel();
-    this.pendingDrilldownRequest?.cancel();
-    const promise = rpcService.service.getStatHeatmap(heatmapRequest);
+    const promise = rpcService.service
+      .getStatHeatmap(heatmapRequest)
+      .then((response) =>
+        this.setState({
+          heatmapData: response,
+        })
+      )
+      .finally(() => this.setState({ loadingHeatmap: false }));
     this.pendingHeatmapRequest = promise;
 
     this.setState({
@@ -456,14 +459,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       drilldownData: undefined,
       eventData: undefined,
     });
-
-    promise
-      .then((response) =>
-        this.setState({
-          heatmapData: response,
-        })
-      )
-      .finally(() => this.setState({ loadingHeatmap: false }));
   }
 
   componentDidMount() {
