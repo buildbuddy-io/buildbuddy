@@ -74,11 +74,14 @@ message GetInvocationRequest {
   // If true, includes additional build metadata.
   bool include_metadata = 2;
 
-  // The next_page_token value returned from a previous request, if any.
-  string page_token = 3;
-
   // If true, include artifacts attached to the invocation.
   bool include_artifacts = 4;
+
+  // If true, include child invocations (if this invocation was a workflow).
+  bool include_child_invocations = 5;
+
+  // The next_page_token value returned from a previous request, if any.
+  string page_token = 3;
 }
 ```
 
@@ -197,6 +200,10 @@ message Invocation {
 
   // The state of the build event stream for the invocation.
   InvocationStatus invocationStatus = 25;
+
+  // Any invocations spawned during this invocation. Only included if
+  // include_child_invocations = true.
+  repeated Id child_invocations = 26;
 }
 
 // Key value pair containing invocation metadata.
@@ -871,6 +878,10 @@ message ExecuteWorkflowRequest {
   // overrides will take precedence. Otherwise all env vars set in
   // buildbuddy.yaml will still apply.
   map<string, string> env = 7;
+
+  // By default, the scheduler will automatically retry transient errors.
+  // For non-idempotent workloads, set to true to disable this behavior.
+  bool disable_retry = 10;
 }
 ```
 
@@ -943,6 +954,14 @@ message RunRequest {
   string branch = 2;
   string commit_sha = 3;
 
+  // Any local patches that should be applied to the repo before
+  // running the command.
+  // Patches will be applied using "git apply" in the root directory of the
+  // repository.
+  // In JSON requests (e.g. curl request body), this field should be specified
+  // as a list of base64-encoded strings.
+  repeated bytes patches = 11;
+
   // Bash commands to run, in order.
   // If a step fails, subsequent steps are not run.
   // Ex. [{"run": "bazel build :server"}, {"run": "echo \"Hello World\""}]
@@ -955,13 +974,21 @@ message RunRequest {
   // Ex. {"OSFamily":"linux", "Arch":"amd64"}
   map<string, string> platform_properties = 6;
 
+  // Remote headers to be applied to the execution request for the remote
+  // runner.
+  //
+  // Can be used to set platform properties containing secrets.
+  // Ex. --remote_headers=x-buildbuddy-platform.SECRET_NAME=SECRET_VALUE
+  repeated string remote_headers = 10;
+
   // Max time before run should be canceled.
   // Ex. "15s", "2h"
   string timeout = 7;
 
-  // If true, start the runner but do not wait for the action to be scheduled
-  // before returning a response.
-  bool async = 8;
+  // Specifies what to wait until before returning a RunResponse.
+  // Default is value is STARTED which waits for the invocation to
+  // be started but not necessarily completed.
+  WaitCondition wait_until = 13;
 
   // Whether to use github credentials configured on the executor.
   //
@@ -972,10 +999,27 @@ message RunRequest {
   //
   // This is only supported for bare runners.
   bool use_system_git_credentials = 9;
+
+  // Whether to skip the automatic GitHub setup steps on the remote runner.
+  bool skip_auto_checkout = 12;
 }
 
 message Step {
   string run = 1;
+}
+
+enum WaitCondition {
+  // Unknown wait condition.
+  UNKNOWN_CONDITION = 0;
+
+  // Wait for the run request to be queued.
+  QUEUED = 1;
+
+  // Wait until the invocation has started.
+  STARTED = 2;
+
+  // Wait for the invocation to complete.
+  COMPLETED = 3;
 }
 ```
 
