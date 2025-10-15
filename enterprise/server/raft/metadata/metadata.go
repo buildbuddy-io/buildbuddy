@@ -335,7 +335,7 @@ func (rc *Server) fileMetadataKey(fr *sgpb.FileRecord) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pebbleKey.Bytes(filestore.Version5)
+	return pebbleKey.Bytes(filestore.Version6)
 }
 
 func (rc *Server) fileRecordsToKeyMetas(fileRecords []*sgpb.FileRecord) ([]*sender.KeyMeta, error) {

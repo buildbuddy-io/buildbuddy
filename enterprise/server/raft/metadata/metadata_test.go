@@ -261,15 +261,16 @@ func TestGetAndSet(t *testing.T) {
 		require.Error(t, err)
 		require.True(t, status.IsUnauthenticatedError(err), "is unauthenticated")
 
-		// User 2 can get a record with their group ids.
+		// User 2 should not be able to fetch User 1's record even when setting to
+		// its own group id.
 		fr2 := md.GetFileRecord().CloneVT()
 		fr2.GetIsolation().GroupId = "group2"
 		getRsp, err = rc1.Get(ctxUser2, &mdpb.GetRequest{
 			FileRecords: []*sgpb.FileRecord{fr2},
 		})
-		require.NoError(t, err, i)
+		require.NoError(t, err)
 		require.Equal(t, 1, len(getRsp.GetFileMetadatas()))
-		assert.True(t, proto.Equal(md, getRsp.GetFileMetadatas()[0]))
+		require.Nil(t, nil, getRsp.GetFileMetadatas()[0])
 
 		// User 1 should be able to lookup (check existance) of the record.
 		findRsp, err := rc1.Find(ctxUser1, &mdpb.FindRequest{
@@ -286,13 +287,13 @@ func TestGetAndSet(t *testing.T) {
 		require.Error(t, err)
 		require.True(t, status.IsUnauthenticatedError(err), "is unauthenticated")
 
-		// User 2 should be able to look up the record if the group id is set to theirs.
+		// User 2 should be able to check existance; but should not find it.
 		findRsp, err = rc1.Find(ctxUser2, &mdpb.FindRequest{
 			FileRecords: []*sgpb.FileRecord{fr2},
 		})
 		require.NoError(t, err, i)
 		require.Equal(t, 1, len(findRsp.GetFindResponses()))
-		assert.True(t, findRsp.GetFindResponses()[0].GetPresent())
+		assert.False(t, findRsp.GetFindResponses()[0].GetPresent())
 
 		// User 2 should not be able to delete the record.
 		_, err = rc1.Delete(ctxUser2, &mdpb.DeleteRequest{
