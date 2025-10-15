@@ -244,7 +244,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 			log.Fatalf("Error initializing routing service: %s", err.Error())
 		}
 
-		ac, err := routing_action_cache_client.New(env)
+		ac, err := routing_action_cache_client.New(env, nil, nil, nil)
 		if err != nil {
 			log.Fatalf("Error initializing routing action cache client: %s", err.Error())
 		}
@@ -256,13 +256,13 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 		}
 		env.SetCapabilitiesClient(cap)
 
-		bs, err := routing_byte_stream_client.New(env)
+		bs, err := routing_byte_stream_client.New(env, nil, nil, nil)
 		if err != nil {
 			log.Fatalf("Error initializing routing bytestream client: %s", err.Error())
 		}
 		env.SetByteStreamClient(bs)
 
-		cas, err := routing_content_addressable_storage_client.New(env)
+		cas, err := routing_content_addressable_storage_client.New(env, nil, nil, nil, nil)
 		if err != nil {
 			log.Fatalf("Error initializing routing CAS client: %s", err.Error())
 		}

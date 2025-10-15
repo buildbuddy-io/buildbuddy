@@ -114,7 +114,7 @@ type enqueuedDigests struct {
 	digestFunction repb.DigestFunction_Value
 }
 
-type BatchDigestOperator interface {
+type DigestOperator interface {
 	// Enqueues digests for the provided instanceName, digestFunction,
 	// and set of digests provided. Returns true if the digests were
 	// successfully enqueued, false if not.
@@ -123,6 +123,10 @@ type BatchDigestOperator interface {
 	// Enqueues the digest for the provided resource name. Returns true if
 	// the digest was successfully enqueued, false if not.
 	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool
+}
+
+type BatchDigestOperator interface {
+	DigestOperator
 
 	Start(hc interfaces.HealthChecker)
 
