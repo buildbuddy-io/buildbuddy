@@ -280,3 +280,12 @@ ts_library(
     name = "url",
     srcs = ["url.ts"],
 )
+
+ts_library(
+    name = "sort",
+    srcs = ["sort.ts"],
+    deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/long",
+    ],
+)

@@ -82,3 +82,10 @@ export function nextAnimationFrame(): Promise<void> {
     requestAnimationFrame(() => setTimeout(resolve, 0));
   });
 }
+
+/**
+ * Returns the type of the value that the promise resolves to.
+ *
+ * Example: `PromiseType<Promise<string>>` returns `string`.
+ */
+export type PromiseType<T extends Promise<any>> = T extends Promise<infer U> ? U : never;
