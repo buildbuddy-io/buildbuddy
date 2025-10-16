@@ -211,3 +211,12 @@ ts_jasmine_node_test(
     srcs = ["shlex_test.ts"],
     deps = ["//app/util:shlex"],
 )
+
+ts_library(
+    name = "sort",
+    srcs = ["sort.ts"],
+    deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/long",
+    ],
+)
