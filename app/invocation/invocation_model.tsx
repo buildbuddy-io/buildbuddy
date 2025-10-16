@@ -2,6 +2,7 @@ import { CheckCircle, Circle, HelpCircle, PlayCircle, XCircle } from "lucide-rea
 import moment from "moment";
 import React from "react";
 import { Subject } from "rxjs";
+import * as varint from "varint";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { cache } from "../../proto/cache_ts_proto";
@@ -12,6 +13,7 @@ import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
+import { tools } from "../../proto/spawn_ts_proto";
 import { suggestion } from "../../proto/suggestion_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import { IconType } from "../favicon/favicon";
@@ -74,6 +76,8 @@ export default class InvocationModel {
   testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
   actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
   rootCauseTargetLabels: Set<String> = new Set<String>();
+
+  execLogEntryPromise: Promise<tools.protos.ExecLogEntry[]> | undefined;
 
   private fileSetIDToFilesMap: Map<string, build_event_stream.File[]> = new Map();
 
@@ -941,5 +945,64 @@ export default class InvocationModel {
     if (segments.length < 2) return null;
     if (segments.slice(0, 2).some(isNaN)) return null;
     return { major: segments[0], minor: segments[1] };
+  }
+
+  hasExecutionLog(): boolean {
+    return Boolean(this.getExecutionLogFileUri());
+  }
+
+  getExecutionLogFileUri(): string | undefined {
+    return this.buildToolLogs?.log.find(
+      (log: build_event_stream.File) =>
+        (log.name == "execution.log" || log.name == "execution_log.binpb.zst") &&
+        log.uri &&
+        Boolean(log.uri.startsWith("bytestream://"))
+    )?.uri;
+  }
+
+  getExecutionLog() {
+    if (this.execLogEntryPromise) {
+      return this.execLogEntryPromise;
+    }
+
+    let logFileUri = this.getExecutionLogFileUri();
+    if (!logFileUri) throw new Error("Execution log file not found");
+
+    const init = {
+      // Set the stored encoding header to prevent the server from double-compressing.
+      headers: { "X-Stored-Encoding-Hint": "zstd" },
+    };
+
+    this.execLogEntryPromise = rpcService
+      .fetchBytestreamFile(logFileUri, this.getInvocationId(), "arraybuffer", { init })
+      .then(async (body) => {
+        if (body === null) throw new Error("response body is null");
+        let entries: tools.protos.ExecLogEntry[] = [];
+        let byteArray = new Uint8Array(body);
+        for (var offset = 0; offset < body.byteLength; ) {
+          let length = varint.decode(byteArray, offset);
+          let bytes = varint.decode.bytes || 0;
+          offset += bytes;
+          entries.push(tools.protos.ExecLogEntry.decode(byteArray.subarray(offset, offset + length)));
+          offset += length;
+        }
+        console.log(entries);
+        return entries;
+      });
+
+    return this.execLogEntryPromise;
+  }
+
+  downloadExecutionLog() {
+    let profileFileUri = this.getExecutionLogFileUri();
+    if (!profileFileUri) {
+      return;
+    }
+  
+    try {
+      rpcService.downloadBytestreamFile("execution_log.binpb.zst", profileFileUri, this.getInvocationId());
+    } catch {
+      console.error("Error downloading execution log");
+    }
   }
 }
