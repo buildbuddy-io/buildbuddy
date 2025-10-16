@@ -300,6 +300,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			WriteOffset:  bytesUploaded,
 			FinishWrite:  readDone,
 		}
+		resourceName = "" // Only set resource name on first request
 
 		err = sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
 		if err != nil {
