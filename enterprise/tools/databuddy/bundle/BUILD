@@ -19,27 +19,21 @@ genrule(
 
 esbuild(
     name = "monaco_editor_worker_bundle",
-    entry_point = "$(location //:node_modules/monaco-editor/dir)/esm/vs/editor/editor.worker.js",
+    bazel_sandbox_plugin = False,
+    entry_point = "monaco_editor_worker.js",
     metafile = False,
     minify = select({
         "//:fastbuild": False,
         "//conditions:default": True,
     }),
-    deps = ["//:node_modules/monaco-editor/dir"],
-)
-
-genrule(
-    name = "monaco_editor_worker_js",
-    srcs = [":monaco_editor_worker_bundle"],
-    outs = ["monaco_editor.worker.js"],
-    cmd_bash = "cp $(SRCS)/editor.worker.js $@",
+    deps = ["//:node_modules/monaco-editor"],
 )
 
 genrule(
     name = "uplot_css",
-    srcs = ["//:node_modules/uplot/dist/uPlot.min.css"],
+    srcs = ["//:node_modules/uplot/dir"],
     outs = ["uPlot.min.css"],
-    cmd_bash = "cp $(SRCS) $@",
+    cmd_bash = "cp $(SRCS)/dist/uPlot.min.css $@",
 )
 
 go_library(
@@ -48,7 +42,6 @@ go_library(
     embedsrcs = [
         "index.js",
         "monaco_editor.main.css",
-        "monaco_editor.worker.js",
         "uPlot.min.css",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/databuddy/bundle",

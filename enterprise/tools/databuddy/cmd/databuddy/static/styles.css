@@ -93,6 +93,19 @@ h2 {
   }
 }
 
+.spinner-icon {
+  --size: 24px;
+  width: var(--size);
+  height: var(--size);
+  animation: rotate 2s linear infinite;
+}
+
+@keyframes rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .toast {
   position: fixed;
   bottom: 0;

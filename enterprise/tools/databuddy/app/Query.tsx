@@ -1,6 +1,6 @@
 import { stringify as csvStringify } from "csv-stringify/browser/esm";
 import Long from "long";
-import { ArrowDownToLine, ChartLine, CircleHelp, Code, Copy, PlayCircle, Save, Sheet } from "lucide-react";
+import { ArrowDownToLine, ChartLine, Code, Copy, PlayCircle, Save, Sheet } from "lucide-react";
 import React from "react";
 import { useRoute } from "react-router5";
 import { v4 as uuidv4 } from "uuid";

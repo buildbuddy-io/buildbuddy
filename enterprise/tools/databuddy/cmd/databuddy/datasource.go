@@ -138,6 +138,10 @@ func getColumnData(scanType string, columnData []any) (*dbpb.ColumnData, error) 
 			d.Int64Values = append(d.Int64Values, v.(int64))
 		case "uint8":
 			d.Uint32Values = append(d.Uint32Values, uint32(v.(uint8)))
+		case "uint32":
+			d.Uint32Values = append(d.Uint32Values, v.(uint32))
+		case "uint64":
+			d.Uint64Values = append(d.Uint64Values, v.(uint64))
 		case "float64":
 			d.DoubleValues = append(d.DoubleValues, v.(float64))
 		case "time.Time":

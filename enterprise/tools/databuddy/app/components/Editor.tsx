@@ -36,6 +36,7 @@ export default function Editor(props: EditorProps) {
       value: propsRef.current!.content,
       theme: "vs",
       language: propsRef.current!.language,
+      tabSize: 2,
       minimap: { enabled: false },
       automaticLayout: true,
       readOnly: propsRef.current!.readonly,
