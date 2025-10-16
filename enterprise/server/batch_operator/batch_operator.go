@@ -149,6 +149,59 @@ type BatchDigestOperator interface {
 	ForceShutdownForTesting()
 }
 
+func NewImmediateDigestOperator(env environment.Env, name string, f OperatorFunc, timeout time.Duration) (DigestOperator, error) {
+	return &immediateDigestOperator{
+		name:          name,
+		op:            f,
+		timeout:       timeout,
+		authenticator: env.GetAuthenticator(),
+	}, nil
+}
+
+type immediateDigestOperator struct {
+	name          string
+	op            OperatorFunc
+	timeout       time.Duration
+	authenticator interfaces.Authenticator
+}
+
+func (o *immediateDigestOperator) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool {
+	groupID := groupID(ctx, o.authenticator)
+	authHeaders := authutil.GetAuthHeaders(ctx)
+	if len(authHeaders) == 0 {
+		log.Infof("[%s] Dropping op due to missing auth headers in context", o.name)
+		return false
+	}
+	dispatchCtx := authutil.AddAuthHeadersToContext(context.Background(), authHeaders, o.authenticator)
+	dispatchCtx, cancel := context.WithTimeout(dispatchCtx, o.timeout)
+
+	metrics.BatchOperatorEnqueuedDigests.WithLabelValues(
+		o.name,
+		groupID,
+		"enqueued",
+	).Add(float64(len(digests)))
+
+	go func() {
+		defer cancel()
+		err := o.op(dispatchCtx, groupID, &DigestBatch{
+			InstanceName:   instanceName,
+			Digests:        digests,
+			DigestFunction: digestFunction,
+		})
+		metrics.BatchOperatorFlushedDigests.WithLabelValues(
+			o.name,
+			groupID,
+			gstatus.Code(err).String(),
+		).Add(float64(len(digests)))
+	}()
+
+	return true
+}
+
+func (o *immediateDigestOperator) EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool {
+	return o.Enqueue(ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
+}
+
 type BatchDigestOperatorConfig struct {
 	// The maximum number of pending digests passed into the BatchDigestOperator
 	// that haven't been processed.  Enqueueing digests is a non-blocking call--
@@ -264,8 +317,8 @@ func New(env environment.Env, name string, f OperatorFunc, c BatchDigestOperator
 	return &operator, nil
 }
 
-func (u *batchOperator) groupID(ctx context.Context) string {
-	user, err := u.authenticator.AuthenticatedUser(ctx)
+func groupID(ctx context.Context, authenticator interfaces.Authenticator) string {
+	user, err := authenticator.AuthenticatedUser(ctx)
 	if err != nil {
 		return interfaces.AuthAnonymousUser
 	}
@@ -277,7 +330,7 @@ func (u *batchOperator) Enqueue(ctx context.Context, instanceName string, digest
 		return true
 	}
 
-	groupID := u.groupID(ctx)
+	groupID := groupID(ctx, u.authenticator)
 	authHeaders := authutil.GetAuthHeaders(ctx)
 	if len(authHeaders) == 0 {
 		log.Infof("[%s] Dropping batch op due to missing auth headers in context", u.name)
