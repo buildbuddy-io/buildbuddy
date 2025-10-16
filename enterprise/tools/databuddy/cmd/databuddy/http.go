@@ -1,55 +1,22 @@
 package main
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"strings"
 )
 
-func computeSHA256(r io.Reader) (string, error) {
-	h := sha256.New()
-	if _, err := io.Copy(h, r); err != nil {
-		return "", fmt.Errorf("read: %w", err)
-	}
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
-}
-
-func ServeContentWithETagCaching(rs io.ReadSeeker) http.Handler {
-	var precomputedHash string
-	if br, ok := rs.(*bytes.Reader); ok {
-		br.Seek(0, io.SeekStart)
-		precomputedHash, _ = computeSHA256(br)
-	}
-
+func ServeBytesWithETagCaching(b []byte) http.Handler {
+	etag := `"` + fmt.Sprintf("%x", sha256.Sum256(b)) + `"`
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, err := rs.Seek(0, io.SeekStart); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		hash := precomputedHash
-		if hash == "" {
-			h, err := computeSHA256(rs)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			hash = h
-		}
-		etag := `"` + hash + `"`
 		w.Header().Set("ETag", etag)
 		if r.Header.Get("If-None-Match") == etag {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
-		if _, err := rs.Seek(0, io.SeekStart); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		io.Copy(w, rs)
+		w.Write(b)
 	})
 }
 

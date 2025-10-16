@@ -16,7 +16,7 @@ go_library(
     ],
     embedsrcs = [
         "static/index.html",
-        "static/styles.css",
+        "styles.css",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/databuddy/cmd/databuddy",
     visibility = ["//visibility:private"],
@@ -50,4 +50,13 @@ go_binary(
     name = "databuddy",
     embed = [":databuddy_lib"],
     visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "styles_css",
+    srcs = [
+        ":static/styles.css",
+    ],
+    outs = ["styles.css"],
+    cmd_bash = "cat $(SRCS) > $@",
 )

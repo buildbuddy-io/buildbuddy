@@ -5,12 +5,17 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 esbuild(
     name = "app_bundle",
+    # Causes splitting to be very slow and fail on unused references to "crypto" and "fs".
+    # https://github.com/aspect-build/rules_esbuild/issues/190
+    bazel_sandbox_plugin = False,
     bundle = True,
-    entry_points = ["index.tsx"],
-    loader = {
-        ".ttf": "binary",
-        ".css": "binary",
+    config = {
+        "loader": {
+            ".ttf": "binary",
+            ".css": "binary",
+        },
     },
+    entry_points = ["index.tsx"],
     metafile = False,
     minify = select({
         "//:fastbuild": False,
@@ -132,6 +137,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
+        "//enterprise/tools/databuddy/app/components:Spinner",
     ],
 )
 

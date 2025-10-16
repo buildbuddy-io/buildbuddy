@@ -45,3 +45,13 @@ ts_library(
         "//:node_modules/uplot",
     ],
 )
+
+ts_library(
+    name = "Spinner",
+    srcs = ["Spinner.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+    ],
+)

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -40,7 +39,7 @@ var (
 //go:embed static/index.html
 var indexHTML []byte
 
-//go:embed static/styles.css
+//go:embed styles.css
 var stylesCSS []byte
 
 func main() {
@@ -109,11 +108,11 @@ func run() error {
 		return fmt.Errorf("init blobstore from configuration: %w", err)
 	}
 
-	gs, err := NewGroupSlugPlugin(datasources)
-	if err != nil {
-		return fmt.Errorf("init group slug plugin: %w", err)
-	}
-	plugins := []Plugin{gs}
+	// gs, err := NewGroupSlugPlugin(datasources)
+	// if err != nil {
+	// 	return fmt.Errorf("init group slug plugin: %w", err)
+	// }
+	var plugins []Plugin
 
 	server := &Server{
 		db:          queryDB,
@@ -133,11 +132,11 @@ func run() error {
 
 	mux := http.NewServeMux()
 
-	mux.Handle("/styles.css", SetContentType(ServeContentWithETagCaching(bytes.NewReader(stylesCSS)), "text/css"))
-	mux.Handle("/index.js", SetContentType(ServeContentWithETagCaching(bytes.NewReader(bundle.IndexJS)), "application/javascript"))
-	mux.Handle("/monaco/vs-theme.css", SetContentType(ServeContentWithETagCaching(bytes.NewReader(bundle.MonacoCSS)), "text/css"))
-	mux.Handle("/monaco/editor.worker.js", SetContentType(ServeContentWithETagCaching(bytes.NewReader(bundle.MonacoWorkerJS)), "application/javascript"))
-	mux.Handle("/uplot/uplot.min.css", SetContentType(ServeContentWithETagCaching(bytes.NewReader(bundle.UPlotCSS)), "text/css"))
+	mux.Handle("/styles.css", SetContentType(ServeBytesWithETagCaching(stylesCSS), "text/css"))
+	mux.Handle("/index.js", SetContentType(ServeBytesWithETagCaching(bundle.IndexJS), "application/javascript"))
+	mux.Handle("/monaco/vs-theme.css", SetContentType(ServeBytesWithETagCaching(bundle.MonacoCSS), "text/css"))
+	mux.Handle("/monaco/editor.worker.js", SetContentType(ServeBytesWithETagCaching(bundle.MonacoWorkerJS), "application/javascript"))
+	mux.Handle("/uplot/uplot.min.css", SetContentType(ServeBytesWithETagCaching(bundle.UPlotCSS), "text/css"))
 
 	mux.Handle("/", WithVouchAuth(http.HandlerFunc(server.ServeIndex)))
 	mux.Handle("/rpc/io.buildbuddy.databuddy.Queries/", WithVouchAuth(rpcHandler.BodyParserMiddleware(rpcHandler.RequestHandler)))

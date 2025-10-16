@@ -9,6 +9,22 @@ packageExtensionsChecksum: sha256-99RF8UZcm7L65tRpfId34rAHoGe/kH6+/Ef0s8QJpRY=
 importers:
 
   .:
+    dependencies:
+      csv-stringify:
+        specifier: ^6.6.0
+        version: 6.6.0
+      react-router5:
+        specifier: ^8.0.1
+        version: 8.0.1(react@18.3.1)(router5@8.0.1)
+      router5:
+        specifier: ^8.0.1
+        version: 8.0.1
+      router5-plugin-browser:
+        specifier: ^8.0.1
+        version: 8.0.1(router5@8.0.1)
+      uplot:
+        specifier: ^1.6.32
+        version: 1.6.32
     devDependencies:
       '@types/d3-scale':
         specifier: ^3.3.5
@@ -98,8 +114,8 @@ importers:
         specifier: ^4.0.0
         version: 4.0.0
       lucide-react:
-        specifier: ^0.241.0
-        version: 0.241.0(react@18.3.1)
+        specifier: ^0.545.0
+        version: 0.545.0(react@18.3.1)
       memoize-one:
         specifier: ^6.0.0
         version: 6.0.0
@@ -328,6 +344,9 @@ packages:
   csstype@3.1.3:
     resolution: {integrity: sha512-M1uQkMl8rQK/szD0LNhtqxIPLpimGm8sOBwU7lLnCpSbTyY3yeU1Vc7l4KT5zT4s/yOxHH5O7tIuuLOCnLADRw==}
 
+  csv-stringify@6.6.0:
+    resolution: {integrity: sha512-YW32lKOmIBgbxtu3g5SaiqWNwa/9ISQt2EcgOq0+RAIFufFp9is6tqNnKahqE5kuKvrnYAzs28r+s6pXJR8Vcw==}
+
   d3-array@3.2.4:
     resolution: {integrity: sha512-tdQAmyA18i4J7wprpYq8ClcxZy3SC31QMeByyCFyRt7BVHdREQZ5lpzoe5mFEYZUWe+oq8HBvk9JjpibyEV4Jg==}
     engines: {node: '>=12'}
@@ -461,10 +480,10 @@ packages:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
     hasBin: true
 
-  lucide-react@0.241.0:
-    resolution: {integrity: sha512-g22ci6iHuNc2hUwjiFz0D3jQQfQYrZBZesXG6+AX5rOV68Epttkt/nF6dMdz6reKJjtpoNzu+LKeKHGu/qjOgQ==}
+  lucide-react@0.545.0:
+    resolution: {integrity: sha512-7r1/yUuflQDSt4f1bpn5ZAocyIxcTyVyBBChSVtBKn5M+392cPmI5YJMWOJKk/HUWGm5wg83chlAZtCcGbEZtw==}
     peerDependencies:
-      react: ^16.5.1 || ^17.0.0 || ^18.0.0
+      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   memoize-one@5.2.1:
     resolution: {integrity: sha512-zYiwtZUcYyXKo/np96AGZAckk+FWWsUdJ3cHGGmld7+AhvcWmQyGCYUh1hc4Q/pkOhb65dQR/pqCyK0cOaHz4Q==}
@@ -499,6 +518,9 @@ packages:
   path-is-absolute@1.0.1:
     resolution: {integrity: sha512-AVbw3UJ2e9bq64vSaS9Am0fje1Pa8pbGqTTsmXfaIiMpnr5DlDhfJOuLj9Sf95ZPVDAUerDfEk88MPmPe7UCQg==}
     engines: {node: '>=0.10.0'}
+
+  path-parser@6.1.0:
+    resolution: {integrity: sha512-nAB6J73z2rFcQP+870OHhpkHFj5kO4rPLc2Ol4Y3Ale7F6Hk1/cPKp7cQ8RznKF8FOSvu+YR9Xc6Gafk7DlpYA==}
 
   prettier-plugin-organize-imports@4.1.0:
     resolution: {integrity: sha512-5aWRdCgv645xaa58X8lOxzZoiHAldAPChljr/MT0crXVOWTZ+Svl4hIWlz+niYSlO6ikE5UXkN1JrRvIP2ut0A==}
@@ -559,6 +581,12 @@ packages:
       react: ^18.0.0
       react-dom: ^18.0.0
 
+  react-router5@8.0.1:
+    resolution: {integrity: sha512-jdkhOql49DOjeF+O77mSfnyOyrXPpQKpSi/TdrDkS9lGrzeJWtgxpUEglHLaIhzrMOGhmqr6vosoh4dtExkzMQ==}
+    peerDependencies:
+      react: '>=16.3.0'
+      router5: ^8.0.0
+
   react-slider@2.0.6:
     resolution: {integrity: sha512-gJxG1HwmuMTJ+oWIRCmVWvgwotNCbByTwRkFZC6U4MBsHqJBmxwbYRJUmxy4Tke1ef8r9jfXjgkmY/uHOCEvbA==}
     peerDependencies:
@@ -606,6 +634,22 @@ packages:
   regenerator-runtime@0.14.1:
     resolution: {integrity: sha512-dYnhHh0nJoMfnkZs6GmmhFknAGRrLznOu5nc9ML+EJxGvrx6H7teuevqVqCuPcPK//3eDrrjQhehXVx9cnkGdw==}
 
+  route-node@4.1.1:
+    resolution: {integrity: sha512-bJVDVEQvXYqTC/LQ/2ohNZ2gPRO4+3ZvHeafuCyRZAd63qH17yspVfxOBzasE/t7SmSO30sT/yPSEMuPDGHhSQ==}
+
+  router5-plugin-browser@8.0.1:
+    resolution: {integrity: sha512-RuArnalkREtQj0ROD1RnITWwL+Fl8rbkFspDxRTt3aFG9k5bPOE0HfJRvGsd4TY9Je/kW3hvntvFXSx8Bl745w==}
+    peerDependencies:
+      router5: ^8.0.0
+
+  router5-transition-path@8.0.1:
+    resolution: {integrity: sha512-l7MFEUmasEhe1emrO79t7BkCqQQRZdenz4c3qJmZpe8V6BCerZQR+SYbZL5zmQ3hazY7nR264jCWuNed+cMD2A==}
+    peerDependencies:
+      router5: ^8.0.0
+
+  router5@8.0.1:
+    resolution: {integrity: sha512-LBLQAYd2ZI1FiiBqGf82oC+LRD0PUABrZqTzd6OmyK+t5N8wRs3hbIxeiy/9Zy+xI8Fdf/0WM68P41W6MH8pdQ==}
+
   rxjs@6.6.7:
     resolution: {integrity: sha512-hTdwr+7yYNIT5n4AMYp85KA6yw2Va0FLa3Rguvbpa4W3I5xynaBZo41cM3XM+4Q6fRMj3sBYIR1VAmZMXYJvRQ==}
     engines: {npm: '>=2.0.0'}
@@ -613,8 +657,15 @@ packages:
   scheduler@0.23.2:
     resolution: {integrity: sha512-UOShsPwz7NrMUqhR6t0hWjFduvOzbtv7toDH1/hIrfRNIDBnnBWd0CwJTGvTpngVlmwGCdP9/Zl/tVrDqcuYzQ==}
 
+  search-params@3.0.0:
+    resolution: {integrity: sha512-8CYNl/bjkEhXWbDTU/K7c2jQtrnqEffIPyOLMqygW/7/b+ym8UtQumcAZjOfMLjZKR6AxK5tOr9fChbQZCzPqg==}
+
   shallow-equal@1.2.1:
     resolution: {integrity: sha512-S4vJDjHHMBaiZuT9NPb616CSmLf618jawtv3sufLl6ivK8WocjAo58cXwbRV1cgqxH0Qbv+iUt6m05eqEa2IRA==}
+
+  symbol-observable@1.2.0:
+    resolution: {integrity: sha512-e900nM8RRtGhlV36KGEU9k65K3mPb1WV70OdjfxlG2EAuM1noi/E/BaW/uMhL7bPEssK8QV57vN3esixjUvcXQ==}
+    engines: {node: '>=0.10.0'}
 
   tiny-invariant@1.3.3:
     resolution: {integrity: sha512-+FbBPE1o9QAYvviau/qC5SE3caw21q3xkvWKBtja5vgqOWIHHJ3ioaq1VPfn/Szqctz2bU/oYeKd9/z5BL+PVg==}
@@ -632,6 +683,9 @@ packages:
 
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
+
+  uplot@1.6.32:
+    resolution: {integrity: sha512-KIMVnG68zvu5XXUbC4LQEPnhwOxBuLyW1AHtpm6IKTXImkbLgkMy+jabjLgSLMasNuGGzQm/ep3tOkyTxpiQIw==}
 
   uuid@8.3.2:
     resolution: {integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==}
@@ -798,6 +852,8 @@ snapshots:
 
   csstype@3.1.3: {}
 
+  csv-stringify@6.6.0: {}
+
   d3-array@3.2.4:
     dependencies:
       internmap: 2.0.3
@@ -916,7 +972,7 @@ snapshots:
     dependencies:
       js-tokens: 4.0.0
 
-  lucide-react@0.241.0(react@18.3.1):
+  lucide-react@0.545.0(react@18.3.1):
     dependencies:
       react: 18.3.1
 
@@ -943,6 +999,11 @@ snapshots:
   path-browserify@1.0.1: {}
 
   path-is-absolute@1.0.1: {}
+
+  path-parser@6.1.0:
+    dependencies:
+      search-params: 3.0.0
+      tslib: 1.14.1
 
   prettier-plugin-organize-imports@4.1.0(prettier@3.3.3)(typescript@5.8.2):
     dependencies:
@@ -1012,6 +1073,12 @@ snapshots:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
 
+  react-router5@8.0.1(react@18.3.1)(router5@8.0.1):
+    dependencies:
+      react: 18.3.1
+      router5: 8.0.1
+      router5-transition-path: 8.0.1(router5@8.0.1)
+
   react-slider@2.0.6(react@18.3.1):
     dependencies:
       '@babel/runtime': 7.26.10
@@ -1070,6 +1137,26 @@ snapshots:
 
   regenerator-runtime@0.14.1: {}
 
+  route-node@4.1.1:
+    dependencies:
+      path-parser: 6.1.0
+      search-params: 3.0.0
+      tslib: 1.14.1
+
+  router5-plugin-browser@8.0.1(router5@8.0.1):
+    dependencies:
+      router5: 8.0.1
+
+  router5-transition-path@8.0.1(router5@8.0.1):
+    dependencies:
+      router5: 8.0.1
+
+  router5@8.0.1:
+    dependencies:
+      route-node: 4.1.1
+      router5-transition-path: 8.0.1(router5@8.0.1)
+      symbol-observable: 1.2.0
+
   rxjs@6.6.7:
     dependencies:
       tslib: 1.14.1
@@ -1078,7 +1165,11 @@ snapshots:
     dependencies:
       loose-envify: 1.4.0
 
+  search-params@3.0.0: {}
+
   shallow-equal@1.2.1: {}
+
+  symbol-observable@1.2.0: {}
 
   tiny-invariant@1.3.3: {}
 
@@ -1089,6 +1180,8 @@ snapshots:
   typescript@5.8.2: {}
 
   undici-types@6.21.0: {}
+
+  uplot@1.6.32: {}
 
   uuid@8.3.2: {}
 

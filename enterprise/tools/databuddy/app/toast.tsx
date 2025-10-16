@@ -1,6 +1,7 @@
 import React from "react";
-import { CheckCircle, Ellipsis, XCircle } from "lucide-react";
+import { CheckCircle, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
+import Spinner from "./components/Spinner";
 
 export type Status = "ok" | "loading" | "error";
 
@@ -76,7 +77,7 @@ function StatusIcon({ status }: StatusIconProps) {
     case "ok":
       return <CheckCircle className="icon-green" />;
     case "loading":
-      return <Ellipsis className="icon-blue" />;
+      return <Spinner />;
     case "error":
       return <XCircle className="icon-red" />;
     default:
