@@ -65,6 +65,18 @@ type claims struct {
 	interfaces.ClientIdentity
 }
 
+// Clears the client-identity from the outgoing gRPC context.
+func ClearIdentity(ctx context.Context) context.Context {
+	ctx = context.WithValue(ctx, validatedIdentityContextKey, nil)
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if ok {
+		md = md.Copy()
+		delete(md, authutil.ClientIdentityHeaderName)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
+	return ctx
+}
+
 func (s *Service) IdentityHeader(si *interfaces.ClientIdentity, expiration time.Duration) (string, error) {
 	expirationTime := s.clock.Now().Add(expiration)
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, &claims{

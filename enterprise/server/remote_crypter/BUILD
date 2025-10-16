@@ -7,6 +7,7 @@ go_library(
     srcs = ["remote_crypter.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter",
     deps = [
+        "//enterprise/server/clientidentity",
         "//enterprise/server/crypter",
         "//enterprise/server/crypter_key_cache",
         "//proto:encryption_go_proto",
@@ -28,6 +29,7 @@ go_test(
     srcs = ["remote_crypter_test.go"],
     deps = [
         ":remote_crypter",
+        "//enterprise/server/clientidentity",
         "//proto:encryption_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
@@ -36,6 +38,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/ioutil",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
     ],

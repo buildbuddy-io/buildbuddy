@@ -9,7 +9,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -17,11 +19,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+const (
+	permittedClient = "permitted-client"
 )
 
 var (
@@ -41,10 +48,11 @@ type groupID string
 type keyID string
 
 type fakeEncryptionService struct {
-	requests      atomic.Int32
-	authenticator interfaces.Authenticator
-	seq           int // internal ordering, a la time.Now()
-	keys          map[groupID]map[keyID][]*fakeKey
+	requests              atomic.Int32
+	authenticator         interfaces.Authenticator
+	clientIdentityService interfaces.ClientIdentityService
+	seq                   int // internal ordering, a la time.Now()
+	keys                  map[groupID]map[keyID][]*fakeKey
 }
 
 type fakeKey struct {
@@ -54,10 +62,11 @@ type fakeKey struct {
 	key     []byte
 }
 
-func newFakeEncryptionService(authenticator interfaces.Authenticator) *fakeEncryptionService {
+func newFakeEncryptionService(authenticator interfaces.Authenticator, clientIdentityService interfaces.ClientIdentityService) *fakeEncryptionService {
 	return &fakeEncryptionService{
-		authenticator: authenticator,
-		keys:          make(map[groupID]map[keyID][]*fakeKey),
+		authenticator:         authenticator,
+		clientIdentityService: clientIdentityService,
+		keys:                  make(map[groupID]map[keyID][]*fakeKey),
 	}
 }
 
@@ -81,6 +90,17 @@ func (f *fakeEncryptionService) add(t *testing.T, group string, newKey *fakeKey)
 
 func (f *fakeEncryptionService) GetEncryptionKey(ctx context.Context, req *enpb.GetEncryptionKeyRequest) (*enpb.GetEncryptionKeyResponse, error) {
 	f.requests.Add(1)
+	ctx, err := f.clientIdentityService.ValidateIncomingIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	identity, err := f.clientIdentityService.IdentityFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if identity.Client != permittedClient {
+		return nil, status.InvalidArgumentErrorf("Client %s may not access EncryptionService", identity.Client)
+	}
 	userInfo, err := f.authenticator.AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -147,17 +167,26 @@ func (f *fakeEncryptionService) GetEncryptionKey(ctx context.Context, req *enpb.
 }
 
 func setup(t *testing.T) (*testauth.TestAuthenticator, interfaces.Crypter, clockwork.FakeClock, *fakeEncryptionService) {
+	return setupWithIdentity(t, permittedClient)
+}
+
+func setupWithIdentity(t *testing.T, identity string) (*testauth.TestAuthenticator, interfaces.Crypter, clockwork.FakeClock, *fakeEncryptionService) {
 	te := testenv.GetTestEnv(t)
 	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2, user3, group3))
 	te.SetAuthenticator(authenticator)
-	encryptionService := newFakeEncryptionService(authenticator)
+	clock := clockwork.NewFakeClock()
+	flags.Set(t, "app.client_identity.key", "key")
+	flags.Set(t, "app.client_identity.client", identity)
+	flags.Set(t, "app.client_identity.origin", "origin")
+	clientIdentityService, err := clientidentity.New(clock)
+	require.NoError(t, err)
+	encryptionService := newFakeEncryptionService(authenticator, clientIdentityService)
 	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	enpb.RegisterEncryptionServiceServer(grpcServer, encryptionService)
 	go runServer()
 	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
 	require.NoError(t, err)
-	clock := clockwork.NewFakeClock()
-	crypter := remote_crypter.New(te, authenticator, clock, conn)
+	crypter := remote_crypter.New(te, authenticator, clientIdentityService, clock, conn)
 	return authenticator, crypter, clock, encryptionService
 }
 
@@ -299,4 +328,29 @@ func TestActiveKey(t *testing.T) {
 
 	_, err = crypter.ActiveKey(user2Ctx)
 	require.True(t, status.IsNotFoundError(err))
+}
+
+func TestUnauthorizedIdentity(t *testing.T) {
+	authenticator, crypter, clock, service := setupWithIdentity(t, "some-other-client")
+	group1Key := "group1key"
+	service.add(t, group1, &fakeKey{id: keyID(group1Key), version: 1, key: []byte(strings.Repeat("1", 32))})
+	user1Ctx, err := authenticator.WithAuthenticatedUser(context.Background(), user1)
+	require.NoError(t, err)
+
+	// Advance the clock to use up retries.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case <-time.After(time.Millisecond):
+				clock.Advance(1 * time.Second)
+			}
+		}
+	}()
+
+	_, err = crypter.ActiveKey(user1Ctx)
+	require.Error(t, err)
 }

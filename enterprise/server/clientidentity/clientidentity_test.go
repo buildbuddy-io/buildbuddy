@@ -136,6 +136,27 @@ func TestRequired(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestClearIdentity(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	sis := newService(t, clock)
+
+	headerValue, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+		Origin: "origin",
+		Client: "client",
+	}, clientidentity.DefaultExpiration)
+	require.NoError(t, err)
+
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
+	ctx, err = sis.ValidateIncomingIdentity(ctx)
+	require.NoError(t, err)
+	_, err = sis.IdentityFromContext(ctx)
+	require.NoError(t, err)
+
+	ctx = clientidentity.ClearIdentity(ctx)
+	_, err = sis.IdentityFromContext(ctx)
+	require.Error(t, err)
+}
+
 func BenchmarkAddIdentityToContext(b *testing.B) {
 	sis := newService(b, clockwork.NewRealClock())
 
