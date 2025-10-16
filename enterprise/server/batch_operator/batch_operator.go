@@ -125,6 +125,20 @@ type DigestOperator interface {
 	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool
 }
 
+type noopDigestOperator struct{}
+
+func (n *noopDigestOperator) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool {
+	return true
+}
+
+func (n *noopDigestOperator) EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool {
+	return true
+}
+
+func NewNoopDigestOperator() DigestOperator {
+	return &noopDigestOperator{}
+}
+
 type BatchDigestOperator interface {
 	DigestOperator
 

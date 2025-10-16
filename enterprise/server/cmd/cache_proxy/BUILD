@@ -16,6 +16,7 @@ go_library(
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/pebble_cache",
+        "//enterprise/server/batch_operator",
         "//enterprise/server/byte_stream_server_proxy",
         "//enterprise/server/capabilities_server_proxy",
         "//enterprise/server/content_addressable_storage_server_proxy",
