@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_action_cache_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_byte_stream_client"
@@ -101,6 +102,9 @@ func main() {
 	env.SetAuthenticator(authenticator)
 
 	hit_tracker_client.Register(env)
+	if err := remote_crypter.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	// Configure a local cache.
 	if err := pebble_cache.Register(env); err != nil {
