@@ -36,7 +36,7 @@ type Service struct {
 
 	clock clockwork.Clock
 
-	mu               sync.Mutex
+	mu               sync.RWMutex
 	cachedHeader     string
 	cachedHeaderTime time.Time
 }
@@ -74,21 +74,37 @@ func (s *Service) IdentityHeader(si *interfaces.ClientIdentity, expiration time.
 	return t.SignedString(s.signingKey)
 }
 
-func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, error) {
+func (s *Service) getCachedHeader() (string, error) {
+	s.mu.RLock()
+	headerTime := s.cachedHeaderTime
+	header := s.cachedHeader
+	s.mu.RUnlock()
+	if s.clock.Since(headerTime) < cachedHeaderExpiration {
+		return header, nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Check again in case it was updated while we were waiting for the lock.
 	if s.clock.Since(s.cachedHeaderTime) < cachedHeaderExpiration {
-		return metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, s.cachedHeader), nil
+		return s.cachedHeader, nil
 	}
 	header, err := s.IdentityHeader(&interfaces.ClientIdentity{
 		Origin: *origin,
 		Client: *client,
 	}, *expiration)
 	if err != nil {
-		return ctx, err
+		return "", err
 	}
 	s.cachedHeader = header
 	s.cachedHeaderTime = s.clock.Now()
+	return header, nil
+}
+
+func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, error) {
+	header, err := s.getCachedHeader()
+	if err != nil {
+		return ctx, err
+	}
 	return metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, header), nil
 }
 
