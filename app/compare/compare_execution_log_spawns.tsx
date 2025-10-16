@@ -1,14 +1,11 @@
 import { ArrowRight, Circle, CircleDot, MinusCircle, PlusCircle } from "lucide-react";
 import React from "react";
-import * as varint from "varint";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { tools } from "../../proto/spawn_ts_proto";
 import { OutlinedButton } from "../components/button/button";
 import DigestComponent from "../components/digest/digest";
 import Link from "../components/link/link";
 import error_service from "../errors/error_service";
 import InvocationModel from "../invocation/invocation_model";
-import rpcService from "../service/rpc_service";
 import { digestToString } from "../util/cache";
 
 interface Props {
@@ -21,8 +18,8 @@ interface Props {
 interface State {
   loading: boolean;
   limit: Map<string, number>;
-  logA: tools.protos.ExecLogEntry[] | undefined;
-  logB: tools.protos.ExecLogEntry[] | undefined;
+  logA: tools.protos.ExecLogEntry[] | undefined | void;
+  logB: tools.protos.ExecLogEntry[] | undefined | void;
 
   changed: SpawnComparison[];
   added: SpawnComparison[];
@@ -79,7 +76,8 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
     }
 
     this.setState({ loading: true });
-    return model.getExecutionLog()
+    return model
+      .getExecutionLog()
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ loading: false }));
   }

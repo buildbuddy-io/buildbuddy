@@ -1,7 +1,5 @@
 import { ArrowRight, File, FileSymlink } from "lucide-react";
 import React from "react";
-import * as varint from "varint";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { tools } from "../../proto/spawn_ts_proto";
 import { OutlinedButton } from "../components/button/button";
 import DigestComponent from "../components/digest/digest";
@@ -10,7 +8,6 @@ import Select, { Option } from "../components/select/select";
 import error_service from "../errors/error_service";
 import format from "../format/format";
 import InvocationModel from "../invocation/invocation_model";
-import rpcService from "../service/rpc_service";
 
 interface Props {
   modelA: InvocationModel;
@@ -24,8 +21,8 @@ interface State {
   sort: string;
   direction: "asc" | "desc";
   limit: number;
-  logA: tools.protos.ExecLogEntry[] | undefined;
-  logB: tools.protos.ExecLogEntry[] | undefined;
+  logA: tools.protos.ExecLogEntry[] | undefined | void;
+  logB: tools.protos.ExecLogEntry[] | undefined | void;
 }
 
 export default class CompareExecutionLogFilesComponent extends React.Component<Props, State> {
@@ -71,7 +68,8 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
     }
 
     this.setState({ loading: true });
-    return model.getExecutionLog()
+    return model
+      .getExecutionLog()
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ loading: false }));
   }

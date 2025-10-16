@@ -8,7 +8,6 @@ import Link from "../components/link/link";
 import Select, { Option } from "../components/select/select";
 import error_service from "../errors/error_service";
 import format from "../format/format";
-import rpcService from "../service/rpc_service";
 import { digestToString } from "../util/cache";
 import ActionCompareButtonComponent from "./action_compare_button";
 import InvocationModel from "./invocation_model";

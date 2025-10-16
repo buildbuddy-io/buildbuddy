@@ -998,7 +998,7 @@ export default class InvocationModel {
     if (!profileFileUri) {
       return;
     }
-  
+
     try {
       rpcService.downloadBytestreamFile("execution_log.binpb.zst", profileFileUri, this.getInvocationId());
     } catch {

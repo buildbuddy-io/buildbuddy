@@ -1,7 +1,6 @@
 import Long from "long";
 import { Download, FileIcon, FileSymlink, Folder, FolderOpen } from "lucide-react";
 import React from "react";
-import * as varint from "varint";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { tools } from "../../proto/spawn_ts_proto";
 import { OutlinedButton } from "../components/button/button";
@@ -10,7 +9,6 @@ import Link from "../components/link/link";
 import Select, { Option } from "../components/select/select";
 import error_service from "../errors/error_service";
 import format from "../format/format";
-import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 
 interface Props {
@@ -88,7 +86,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
   downloadLog() {
     this.props.model.downloadExecutionLog();
   }
-  
+
   compareFiles(a: tools.protos.ExecLogEntry, b: tools.protos.ExecLogEntry): number {
     let first = this.state.direction == "asc" ? a : b;
     let second = this.state.direction == "asc" ? b : a;
