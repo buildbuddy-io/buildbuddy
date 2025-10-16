@@ -40,8 +40,6 @@ var (
 )
 
 const (
-	plainTextChunkSize = 1024 * 1024 // 1 MiB
-
 	// How often to check for keys needing re-encryption.
 	keyReencryptCheckInterval = 15 * time.Minute
 	// Timeout for querying keys to re-encrypt.
@@ -204,7 +202,7 @@ func (c *Crypter) NewEncryptor(ctx context.Context, digest *repb.Digest, w inter
 	if err != nil {
 		return nil, err
 	}
-	return c.newEncryptorWithChunkSize(ctx, digest, w, u.GetGroupID(), plainTextChunkSize)
+	return c.newEncryptorWithChunkSize(ctx, digest, w, u.GetGroupID(), crypter.PlainTextChunkSize)
 }
 
 func (c *Crypter) newDecryptorWithChunkSize(ctx context.Context, digest *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata, groupID string, chunkSize int) (*crypter.Decryptor, error) {
@@ -220,7 +218,7 @@ func (c *Crypter) NewDecryptor(ctx context.Context, digest *repb.Digest, r io.Re
 	if err != nil {
 		return nil, err
 	}
-	return c.newDecryptorWithChunkSize(ctx, digest, r, em, u.GetGroupID(), plainTextChunkSize)
+	return c.newDecryptorWithChunkSize(ctx, digest, r, em, u.GetGroupID(), crypter.PlainTextChunkSize)
 }
 
 type encryptionKeyVersionWithGroupID struct {

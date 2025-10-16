@@ -43,7 +43,7 @@ func TestEncryptionKey(t *testing.T) {
 		refreshCount++
 		require.Equal(t, "group1", ck.GroupID)
 		require.Equal(t, "", ck.KeyID)
-		require.Equal(t, 0, ck.Version)
+		require.EqualValues(t, 0, ck.Version)
 		return expectedKey, expectedMetadata, nil
 	}
 
@@ -80,7 +80,7 @@ func TestDecryptionKey(t *testing.T) {
 		refreshCount++
 		require.Equal(t, "group1", ck.GroupID)
 		require.Equal(t, "key123", ck.KeyID)
-		require.Equal(t, 2, ck.Version)
+		require.EqualValues(t, 2, ck.Version)
 		return expectedKey, inputMetadata, nil
 	}
 
