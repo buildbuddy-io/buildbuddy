@@ -6,7 +6,19 @@
 export const MODEL_X_PER_SECOND = 1_000_000;
 
 export const EVENTS_PANEL_HEIGHT = 540;
-export const LINE_PLOTS_PANEL_HEIGHT = 400;
+
+// As of Bazel 8, there are 9 plots included:
+// - Action Count
+// - Local action cache hits
+// - Cpu Usage (Bazel)
+// - Memory Usage (Bazel)
+// - Cpu Usage (System)
+// - Memory Usage (System)
+// - Load Avg (System)
+// - Network Up
+// - Network Down
+// Each takes 50px.
+export const LINE_PLOTS_PANEL_HEIGHT = 450;
 
 export const TIMESTAMP_HEADER_SIZE = 16;
 export const TIMESTAMP_HEADER_COLOR = "rgba(236, 239, 241, 0.9)"; // "#ECEFF1" with alpha
