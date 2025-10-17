@@ -635,3 +635,72 @@ func BenchmarkEnqueue(b *testing.B) {
 		wg.Wait()
 	}
 }
+
+type opArgs struct {
+	clientIdentity []string
+	groupID        string
+	batch          *batch_operator.DigestBatch
+}
+
+func TestImmediateOperator(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
+	env.SetAuthenticator(authenticator)
+
+	updateChan := make(chan *opArgs)
+	testOp := func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
+		updateChan <- &opArgs{
+			clientIdentity: authutil.GetAuthHeaders(ctx)[authutil.ClientIdentityHeaderName],
+			groupID:        groupID,
+			batch:          b,
+		}
+		return nil
+	}
+
+	operator, _ := batch_operator.NewImmediateDigestOperator(env, "el-barto", testOp, time.Second)
+
+	// No auth, no updates
+	ctx := t.Context()
+	require.False(t, operator.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	require.Empty(t, updateChan)
+
+	// Anon updates with client-identity header
+	ctx = authenticatedContext(t.Context(), "", authenticator)
+	require.True(t, operator.Enqueue(ctx, "instance-2", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	update := <-updateChan
+	require.Equal(t, "instance-2", update.batch.InstanceName)
+	require.Equal(t, 1, len(update.batch.Digests))
+	require.Equal(t, digest0.Hash, update.batch.Digests[0].Hash)
+	require.Equal(t, digest0.SizeBytes, update.batch.Digests[0].SizeBytes)
+	require.Equal(t, repb.DigestFunction_SHA256, update.batch.DigestFunction)
+	require.Equal(t, interfaces.AuthAnonymousUser, update.groupID)
+	require.Equal(t, []string{"fakeheader"}, update.clientIdentity)
+	require.Empty(t, updateChan)
+
+	// A single update, flushed right away, for a group ID.
+	group1Ctx := authenticatedContext(t.Context(), user1, authenticator)
+	require.True(t, operator.Enqueue(group1Ctx, "instance-3", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	update = <-updateChan
+	require.Equal(t, "instance-3", update.batch.InstanceName)
+	require.Equal(t, 1, len(update.batch.Digests))
+	require.Equal(t, digest0.Hash, update.batch.Digests[0].Hash)
+	require.Equal(t, digest0.SizeBytes, update.batch.Digests[0].SizeBytes)
+	require.Equal(t, repb.DigestFunction_SHA256, update.batch.DigestFunction)
+	require.Equal(t, group1, update.groupID)
+	require.Equal(t, []string{"fakeheader"}, update.clientIdentity)
+	require.Empty(t, updateChan)
+
+	// Try another group with a resource name for good measure.
+	group2Ctx := authenticatedContext(t.Context(), user2, authenticator)
+	rn := digest.NewCASResourceName(digest1, "instance-4", repb.DigestFunction_SHA256)
+	require.True(t, operator.EnqueueByResourceName(group2Ctx, rn))
+	update = <-updateChan
+	require.Equal(t, "instance-4", update.batch.InstanceName)
+	require.Equal(t, 1, len(update.batch.Digests))
+	require.Equal(t, digest1.Hash, update.batch.Digests[0].Hash)
+	require.Equal(t, digest1.SizeBytes, update.batch.Digests[0].SizeBytes)
+	require.Equal(t, repb.DigestFunction_SHA256, update.batch.DigestFunction)
+	require.Equal(t, group2, update.groupID)
+	require.Equal(t, []string{"fakeheader"}, update.clientIdentity)
+	require.Empty(t, updateChan)
+}
