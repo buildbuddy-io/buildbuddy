@@ -64,6 +64,8 @@ var (
 	warmupWorkflowImages   = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
 	warmupAdditionalImages = flag.Slice[string]("executor.warmup_additional_images", []string{}, "List of container images to warm up alongside the executor default images on executor start up.")
 	maxRunnerCount         = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
+
+	runnerPoolMaxTotalMemoryUsage = flag.Int64("executor.runner_pool.max_total_memory_usage_bytes", 0, "Max total memory usage for pooled runners.")
 	// How big a runner's workspace is allowed to get before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerDiskSizeBytes    = flag.Int64("executor.runner_pool.max_runner_disk_size_bytes", 16e9, "Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB.")
@@ -582,9 +584,10 @@ type pool struct {
 	overrideProvider   container.Provider
 	containerProviders map[platform.ContainerType]container.Provider
 
-	maxRunnerCount            int
-	maxRunnerMemoryUsageBytes int64
-	maxRunnerDiskUsageBytes   int64
+	maxRunnerCount                 int
+	maxTotalRunnerMemoryUsageBytes int64
+	maxRunnerMemoryUsageBytes      int64
+	maxRunnerDiskUsageBytes        int64
 
 	// pendingRemovals keeps track of which runners are pending removal.
 	pendingRemovals sync.WaitGroup
@@ -766,7 +769,21 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 		}
 	}
 
-	for p.pausedRunnerCount() >= p.maxRunnerCount {
+	shouldEvict := func() bool {
+		// If pooling this runner would put us over the max number of pooled
+		// runners, we need to evict a runner.
+		if p.maxRunnerCount > 0 && p.pausedRunnerCount()+1 > p.maxRunnerCount {
+			return true
+		}
+		// If pooling this runner would put us over the total memory limit,
+		// we need to evict a runner.
+		if p.maxTotalRunnerMemoryUsageBytes > 0 && p.pausedRunnerMemoryUsageBytes()+stats.MemoryBytes > p.maxTotalRunnerMemoryUsageBytes {
+			return true
+		}
+		// Otherwise, we don't need to evict.
+		return false
+	}
+	for shouldEvict() {
 		// Evict the oldest (first) paused runner to make room for the new one.
 		evictIndex := -1
 		for i, r := range p.runners {
@@ -1502,6 +1519,7 @@ func (p *pool) setLimits() {
 	}
 
 	p.maxRunnerCount = count
+	p.maxTotalRunnerMemoryUsageBytes = *runnerPoolMaxTotalMemoryUsage
 	p.maxRunnerMemoryUsageBytes = mem
 	p.maxRunnerDiskUsageBytes = disk
 	log.Infof(
