@@ -1,7 +1,5 @@
 import { ArrowRight, File, FileSymlink } from "lucide-react";
 import React from "react";
-import * as varint from "varint";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { tools } from "../../proto/spawn_ts_proto";
 import { OutlinedButton } from "../components/button/button";
 import DigestComponent from "../components/digest/digest";
@@ -10,7 +8,6 @@ import Select, { Option } from "../components/select/select";
 import error_service from "../errors/error_service";
 import format from "../format/format";
 import InvocationModel from "../invocation/invocation_model";
-import rpcService from "../service/rpc_service";
 
 interface Props {
   modelA: InvocationModel;
@@ -48,15 +45,6 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
     }
   }
 
-  getExecutionLogFile(model: InvocationModel): build_event_stream.File | undefined {
-    return model.buildToolLogs?.log.find(
-      (log: build_event_stream.File) =>
-        (log.name == "execution.log" || log.name == "execution_log.binpb.zst") &&
-        log.uri &&
-        Boolean(log.uri.startsWith("bytestream://"))
-    );
-  }
-
   fetchLogs() {
     if (!this.state.logA) {
       this.fetchLog(this.props.modelA)
@@ -75,33 +63,12 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
   fetchLog(model?: InvocationModel) {
     if (!model) return Promise.resolve(undefined);
 
-    if (!this.getExecutionLogFile(model)) {
+    if (!model.hasExecutionLog()) {
       this.setState({ loading: false });
     }
 
-    let logFile = this.getExecutionLogFile(model);
-    if (!logFile?.uri) return Promise.resolve(undefined);
-
-    const init = {
-      // Set the stored encoding header to prevent the server from double-compressing.
-      headers: { "X-Stored-Encoding-Hint": "zstd" },
-    };
-
     this.setState({ loading: true });
-    return rpcService
-      .fetchBytestreamFile(logFile.uri, model.getInvocationId(), "arraybuffer", { init })
-      .then(async (body) => {
-        let entries: tools.protos.ExecLogEntry[] = [];
-        let byteArray = new Uint8Array(body);
-        for (var offset = 0; offset < body.byteLength; ) {
-          let length = varint.decode(byteArray, offset);
-          let bytes = varint.decode.bytes || 0;
-          offset += bytes;
-          entries.push(tools.protos.ExecLogEntry.decode(byteArray.subarray(offset, offset + length)));
-          offset += length;
-        }
-        return entries;
-      });
+    return model.getExecutionLog();
   }
 
   sort(
