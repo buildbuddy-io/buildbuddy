@@ -78,13 +78,10 @@ func New(env environment.Env, authenticator interfaces.Authenticator, clientIden
 }
 
 func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, client enpb.EncryptionServiceClient, clientIdentityService interfaces.ClientIdentityService) ([]byte, *sgpb.EncryptionMetadata, error) {
-	var err error
-	if clientIdentityService != nil {
-		ctx = clientidentity.ClearIdentity(ctx)
-		ctx, err = clientIdentityService.AddIdentityToContext(ctx)
-		if err != nil {
-			return nil, nil, err
-		}
+	ctx = clientidentity.ClearIdentity(ctx)
+	ctx, err := clientIdentityService.AddIdentityToContext(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	req := &enpb.GetEncryptionKeyRequest{}
