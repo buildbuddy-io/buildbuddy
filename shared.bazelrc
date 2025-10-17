@@ -365,4 +365,6 @@ common:mac-workflows --build_metadata=TAGS=mac-workflow
 
 # Build fully static binaries linked against musl on Linux.
 common:static --platforms=//platforms:linux_x86_64_musl
+common:static --extra_toolchains=@musl_toolchains_hub//:musl-1_2_3-platform-x86_64-unknown-linux-gnu-target-x86_64-linux-musl
 common:static-arm64 --platforms=//platforms:linux_arm64_musl
+common:static --extra_toolchains=@musl_toolchains_hub//:musl-1_2_3-platform-aarch64-unknown-linux-gnu-target-aarch64-linux-musl
