@@ -283,7 +283,6 @@ type PebbleCache struct {
 type keyMigrator interface {
 	FromVersion() filestore.PebbleKeyVersion
 	ToVersion() filestore.PebbleKeyVersion
-	Migrate(val []byte) []byte
 }
 
 type v0ToV1Migrator struct{}
@@ -292,7 +291,6 @@ func (m *v0ToV1Migrator) FromVersion() filestore.PebbleKeyVersion {
 	return filestore.UndefinedKeyVersion
 }
 func (m *v0ToV1Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version1 }
-func (m *v0ToV1Migrator) Migrate(val []byte) []byte             { return val }
 
 type v1ToV2Migrator struct{}
 
@@ -300,7 +298,6 @@ func (m *v1ToV2Migrator) FromVersion() filestore.PebbleKeyVersion {
 	return filestore.Version1
 }
 func (m *v1ToV2Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version2 }
-func (m *v1ToV2Migrator) Migrate(val []byte) []byte             { return val }
 
 type v2ToV3Migrator struct{}
 
@@ -308,7 +305,6 @@ func (m *v2ToV3Migrator) FromVersion() filestore.PebbleKeyVersion {
 	return filestore.Version2
 }
 func (m *v2ToV3Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version3 }
-func (m *v2ToV3Migrator) Migrate(val []byte) []byte             { return val }
 
 type v3ToV4Migrator struct{}
 
@@ -316,7 +312,6 @@ func (m *v3ToV4Migrator) FromVersion() filestore.PebbleKeyVersion {
 	return filestore.Version3
 }
 func (m *v3ToV4Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version4 }
-func (m *v3ToV4Migrator) Migrate(val []byte) []byte             { return val }
 
 type v4ToV5Migrator struct{}
 
@@ -324,7 +319,13 @@ func (m *v4ToV5Migrator) FromVersion() filestore.PebbleKeyVersion {
 	return filestore.Version4
 }
 func (m *v4ToV5Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version5 }
-func (m *v4ToV5Migrator) Migrate(val []byte) []byte             { return val }
+
+type v5ToV6Migrator struct{}
+
+func (m *v5ToV6Migrator) FromVersion() filestore.PebbleKeyVersion {
+	return filestore.Version5
+}
+func (m *v5ToV6Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version6 }
 
 // Register creates a new PebbleCache from the configured flags and sets it in
 // the provided env.
@@ -665,7 +666,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if newlyCreated {
 		activeVersion := *opts.ActiveKeyVersion
 		if activeVersion < 0 {
-			activeVersion = int64(filestore.MaxKeyVersion) - 1
+			// Version5 is the maximum version for key used in pebble cache.
+			activeVersion = int64(filestore.Version5)
 		}
 		versionMetadata.MinVersion = activeVersion
 		versionMetadata.MaxVersion = activeVersion
@@ -715,6 +717,10 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		if pc.activeDatabaseVersion() >= filestore.Version5 {
 			// Migrate keys from 4->5.
 			pc.migrators = append(pc.migrators, &v4ToV5Migrator{})
+		}
+		if pc.activeDatabaseVersion() >= filestore.Version6 {
+			// Migrate keys from 5->6.
+			pc.migrators = append(pc.migrators, &v5ToV6Migrator{})
 		}
 	}
 
@@ -965,6 +971,9 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 	keysMigrated := 0
 	lastStatusUpdate := time.Now()
 
+	fileMetadata := sgpb.FileMetadataFromVTPool()
+	defer fileMetadata.ReturnToVTPool()
+
 	for iter.First(); iter.Valid(); iter.Next() {
 		if bytes.HasPrefix(iter.Key(), SystemKeyPrefix) {
 			continue
@@ -1003,7 +1012,6 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 				return status.FailedPreconditionErrorf("Migrator %+v cannot migrate key from version %d", migrator, version)
 			}
 
-			valBytes = migrator.Migrate(valBytes)
 			version = migrator.ToVersion()
 		}
 		if version == oldVersion {
@@ -1021,7 +1029,21 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 		moveKey := func() error {
 			keyBytes, err := key.Bytes(version)
 			if err != nil {
-				return err
+				if !errors.Is(err, filestore.ErrMissingKeyInfo) {
+					return err
+				}
+				if err := proto.Unmarshal(valBytes, fileMetadata); err != nil {
+					return err
+				}
+				fr := fileMetadata.GetFileRecord()
+				newKey, err := p.fileStorer.PebbleKey(fr)
+				if err != nil {
+					return err
+				}
+				keyBytes, err = newKey.Bytes(version)
+				if err != nil {
+					return err
+				}
 			}
 			// Don't do anything if the key is already gone, it could have been
 			// already deleted by eviction.
@@ -2983,7 +3005,7 @@ func (e *partitionEvictor) randomKey(buf []byte) ([]byte, error) {
 		Isolation: &sgpb.Isolation{
 			CacheType:   rspb.CacheType_CAS,
 			PartitionId: e.part.ID,
-			// Empty GroupID
+			GroupId:     interfaces.AuthAnonymousUser,
 		},
 		Digest: &repb.Digest{
 			Hash: string(buf),

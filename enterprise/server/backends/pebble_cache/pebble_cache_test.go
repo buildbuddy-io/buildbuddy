@@ -1994,14 +1994,14 @@ func TestUnspecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
 	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
 
 	// Confirm that a newly-created pebble database with an unspecified key
-	// version is written at the highest available key version.
+	// version is written at version 5.
 	activeKeyVersion := int64(filestore.UnspecifiedKeyVersion)
 	options.ActiveKeyVersion = &activeKeyVersion
 	pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
 	versionMetadata, err := pc.DatabaseVersionMetadata()
 	require.NoError(t, err)
-	require.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MinVersion)
-	require.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MaxVersion)
+	require.Equal(t, int64(filestore.Version5), versionMetadata.MinVersion)
+	require.Equal(t, int64(filestore.Version5), versionMetadata.MaxVersion)
 
 	require.NoError(t, pc.Stop())
 }
@@ -2133,7 +2133,6 @@ func TestMigrateVersions(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
-
 	digests := make([]*repb.Digest, 0)
 	{
 		// Set the active key version to 0 and write some data at this
@@ -2159,18 +2158,18 @@ func TestMigrateVersions(t *testing.T) {
 		pc.Stop()
 	}
 
-	{
+	for i := 1; i < int(filestore.MaxKeyVersion); i++ {
+		log.Infof("=====test key migration to v%d", i)
 		// Now set the active key version to 1 (to trigger a migration)
 		// and set the migration QPS low enough to ensure that
 		// migrations are happening during our reads.
 		flags.Set(t, "cache.pebble.migration_qps_limit", 1000)
-		activeKeyVersion := int64(1)
+		activeKeyVersion := int64(i)
 		options.ActiveKeyVersion = &activeKeyVersion
 		pc2, err := pebble_cache.NewPebbleCache(te, options)
 		require.NoError(t, err)
 
 		pc2.Start()
-		defer pc2.Stop()
 		startTime := time.Now()
 		j := 0
 		for {
@@ -2196,9 +2195,11 @@ func TestMigrateVersions(t *testing.T) {
 			d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
 			require.NoError(t, err)
 			if d.GetHash() != d2.GetHash() {
-				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+				require.Failf(t, "Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 			}
 		}
+		pc2.Stop()
+
 	}
 }
 
