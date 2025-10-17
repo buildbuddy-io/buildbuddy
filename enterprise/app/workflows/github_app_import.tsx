@@ -164,7 +164,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
       .finally(() => this.setState({ linkRequest: null, linkLoading: false }));
   }
   private getLinkedRepoUrls(): Set<string> {
-    return new Set(this.state.linkedReposResponse?.repoUrls || []);
+    return new Set(this.state.linkedReposResponse?.repos?.map((repo) => repo.repoUrl) || []);
   }
 
   private onClickInstallApp() {
