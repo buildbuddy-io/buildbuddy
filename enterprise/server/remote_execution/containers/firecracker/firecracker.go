@@ -2355,8 +2355,8 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		logTail = strings.ReplaceAll(logTail, "\r\n", "\n")
 
 		if result.Error != nil {
-			if !status.IsDeadlineExceededError(result.Error) {
-				log.CtxWarningf(ctx, "Execution error occurred. VM logs: %s", string(c.vmLog.Tail()))
+			if !status.IsDeadlineExceededError(result.Error) && !status.IsCanceledError(result.Error) {
+				log.CtxWarningf(ctx, "Execution error occurred: %s. VM logs: %s", result.Error, string(c.vmLog.Tail()))
 			}
 		} else if err := c.parseOOMError(logTail); err != nil {
 			// TODO(bduffany): maybe fail the whole command if we see an OOM
