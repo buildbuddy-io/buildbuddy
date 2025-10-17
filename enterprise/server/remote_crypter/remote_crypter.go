@@ -78,6 +78,10 @@ func New(env environment.Env, authenticator interfaces.Authenticator, clientIden
 }
 
 func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, client enpb.EncryptionServiceClient, clientIdentityService interfaces.ClientIdentityService) ([]byte, *sgpb.EncryptionMetadata, error) {
+	// The GetEncryptionKey RPC is only permitted for certain clients, so we
+	// don't want to use the callers identity (or lack thereof) for this RPC.
+	// Clear it here and set this server's identity, if present, because there
+	// can only be one client identity per RPC.
 	ctx = clientidentity.ClearIdentity(ctx)
 	ctx, err := clientIdentityService.AddIdentityToContext(ctx)
 	if err != nil {
