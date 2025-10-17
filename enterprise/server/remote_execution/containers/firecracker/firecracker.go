@@ -766,7 +766,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		if err != nil {
 			return nil, err
 		}
-		log.Infof("Computed SHA256 %s for VMConfiguration: %+v", cd.GetHash(), c.vmConfig)
+		log.CtxInfof(ctx, "Computed SHA256 %s for VMConfiguration: %+v", cd.GetHash(), c.vmConfig)
 
 		runnerID := c.id
 		if snaputil.IsChunkedSnapshotSharingEnabled() {
