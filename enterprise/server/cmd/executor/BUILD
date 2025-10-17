@@ -254,6 +254,26 @@ container_image(
     visibility = ["//visibility:public"],
 )
 
+container_image(
+    name = "base_image_rhel7",
+    base = "@executor_image_rhel7//image:dockerfile_image.tar",
+    layers = [
+        ":tini_layer",
+        ":docker_credential_gcr_layer",
+        ":docker_credential_gcr_docker_config_layer",
+        ":containerd_layer",
+        ":runc_layer",
+        ":rootlesskit_layer",
+        ":executor_tools_layer",
+        ":podman_static_layer",
+    ],
+    symlinks = {
+        "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/%s/enterprise/config/executor.release.yaml" % runfiles_directory(),
+    },
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
 # Build a docker image similar to the go_binary above, but use the "go_image"
 # rule from @io_bazel_rules_docker instead, which creates a docker image.
 #
@@ -265,9 +285,27 @@ go_image(
     tags = ["manual"],
 )
 
+go_image(
+    name = "executor_go_image_rhel7",
+    base = ":base_image_rhel7",
+    binary = ":executor",
+    tags = ["manual"],
+)
+
 container_image(
     name = "executor_image",
     base = ":executor_go_image",
+    entrypoint = [
+        "/tini",
+        "--",
+        "/app/enterprise/server/cmd/executor/executor",
+    ],
+    tags = ["manual"],
+)
+
+container_image(
+    name = "executor_image_rhel7",
+    base = ":executor_go_image_rhel7",
     entrypoint = [
         "/tini",
         "--",
