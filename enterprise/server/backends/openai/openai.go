@@ -13,7 +13,7 @@ import (
 
 var endpoint = flag.String("openai.endpoint", "https://api.openai.com/v1/chat/completions", "OpenAI endpoint")
 var apiKey = flag.String("openai.api_key", "", "OpenAI API key", flag.Secret)
-var Model = flag.String("openai.model", "gpt-4o", "OpenAI model name to use. Find them here: https://platform.openai.com/docs/models")
+var Model = flag.String("openai.model", "gpt-5", "OpenAI model name to use. Find them here: https://platform.openai.com/docs/models")
 
 func IsConfigured() bool {
 	return *apiKey != ""
