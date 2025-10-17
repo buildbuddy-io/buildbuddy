@@ -83,6 +83,7 @@ type fakeContainer struct {
 	Isolation                  string // Fake isolation type name
 	ImageCached                bool   // Return value for IsImageCached
 	BlockPull                  bool   // PullImage blocks forever if true.
+	FakeStats                  *repb.UsageStats
 }
 
 func NewFakeContainer() *fakeContainer {
@@ -123,8 +124,19 @@ func (c *fakeContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inte
 	return c.Result
 }
 
+func (c *fakeContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
+	return c.FakeStats, nil
+}
+
 func (c *fakeContainer) Remove(ctx context.Context) error {
 	close(c.Removed)
+	return nil
+}
+
+func (c *fakeContainer) Pause(ctx context.Context) error {
+	return nil
+}
+func (c *fakeContainer) Unpause(ctx context.Context) error {
 	return nil
 }
 
@@ -144,9 +156,10 @@ func (*fakeFirecrackerContainer) Stats(context.Context) (*repb.UsageStats, error
 
 type RunnerPoolOptions struct {
 	*PoolOptions
-	MaxRunnerCount            int
-	MaxRunnerDiskSizeBytes    int64
-	MaxRunnerMemoryUsageBytes int64
+	MaxRunnerCount                 int
+	MaxTotalRunnerMemoryUsageBytes int64
+	MaxRunnerDiskSizeBytes         int64
+	MaxRunnerMemoryUsageBytes      int64
 }
 
 func newTask() *repb.ScheduledTask {
@@ -224,6 +237,7 @@ func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *RunnerPoolOptions) *
 	flags.Set(t, "executor.runner_pool.max_runner_count", cfg.MaxRunnerCount)
 	flags.Set(t, "executor.runner_pool.max_runner_disk_size_bytes", cfg.MaxRunnerDiskSizeBytes)
 	flags.Set(t, "executor.runner_pool.max_runner_memory_usage_bytes", cfg.MaxRunnerMemoryUsageBytes)
+	flags.Set(t, "executor.runner_pool.max_total_memory_usage_bytes", cfg.MaxTotalRunnerMemoryUsageBytes)
 	if cfg.PoolOptions == nil {
 		cfg.PoolOptions = &PoolOptions{}
 	}
@@ -591,6 +605,43 @@ func TestRunnerPool_ExceedMaxRunnerCount_OldestRunnerEvicted(t *testing.T) {
 	mustGetPausedRunner(t, ctxUser1, pool, newTask())
 	mustGetPausedRunner(t, ctxUser3, pool, newTask())
 	mustGetNewRunner(t, ctxUser2, pool, newTask())
+}
+
+func TestRunnerPool_ExceedMaxRunnerPoolTotalMemoryUsage_OldestRunnerEvicted(t *testing.T) {
+	env := newTestEnv(t)
+	// Set up a container provider that lets us fake memory usage
+	var nextProvidedContainer container.CommandContainer
+	provider := providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		return nextProvidedContainer, nil
+	})
+	// Set up a pool with the fake provider and a 4GiB total memory limit
+	pool := newRunnerPool(t, env, &RunnerPoolOptions{
+		PoolOptions: &PoolOptions{
+			ContainerProvider: provider,
+		},
+		MaxRunnerCount:                 1_000_000,              // ~unlimited
+		MaxTotalRunnerMemoryUsageBytes: 4 * 1024 * 1024 * 1024, // 4GiB
+		MaxRunnerDiskSizeBytes:         unlimited,
+		MaxRunnerMemoryUsageBytes:      unlimited,
+	})
+	ctxUser1 := withAuthenticatedUser(t, context.Background(), env, "US1")
+	ctxUser2 := withAuthenticatedUser(t, context.Background(), env, "US2")
+
+	c1 := NewFakeContainer()
+	nextProvidedContainer = c1
+	r1 := mustGetNewRunner(t, ctxUser1, pool, newTask())
+
+	c2 := NewFakeContainer()
+	nextProvidedContainer = c2
+	r2 := mustGetNewRunner(t, ctxUser2, pool, newTask())
+
+	// Add c1 (should take up the entire 4GiB limit)
+	c1.FakeStats = &repb.UsageStats{MemoryBytes: 4 * 1024 * 1024 * 1024} // 4Gi
+	mustAddWithoutEviction(t, ctxUser1, pool, r1)
+
+	// Add c2 (should evict c1 even though it only takes up 1 byte of memory)
+	c2.FakeStats = &repb.UsageStats{MemoryBytes: 1}
+	mustAddWithEviction(t, ctxUser2, pool, r2)
 }
 
 func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
