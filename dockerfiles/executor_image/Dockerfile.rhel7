@@ -1,0 +1,81 @@
+# NOTE: This variant targets executor deployments that require glibc
+# compatibility with RHEL 7 systems. The base image is UBI7 (RHEL 7),
+# so package installation relies on yum rather than apt. Default to an
+# amd64 base so Apple Silicon builders still resolve a valid manifest;
+# override EXECUTOR_BASE_PLATFORM if you need something else.
+ARG EXECUTOR_BASE_PLATFORM=linux/amd64
+FROM --platform=${EXECUTOR_BASE_PLATFORM} registry.access.redhat.com/ubi7/ubi@sha256:046e525722f14702c360dc6092324af7c21656e76b0c254b067871f1d4d3df68
+
+ENV DOCKER_CHANNEL=stable \
+    ECR_HELPER_VERSION=0.8.0 \
+    ECR_HELPER_RELEASE_ROOT=https://amazon-ecr-credential-helper-releases.s3.us-east-2.amazonaws.com
+
+ARG LIBSECCOMP_RPM_X86_64=https://vault.centos.org/7.9.2009/os/x86_64/Packages/libseccomp-2.3.1-4.el7.x86_64.rpm
+ARG CONTAINER_SELINUX_RPM_X86_64=https://vault.centos.org/7.9.2009/extras/x86_64/Packages/container-selinux-2.119.2-1.911c772.el7_8.noarch.rpm
+ARG SLIRP4NETNS_RPM_X86_64=https://vault.centos.org/7.9.2009/extras/x86_64/Packages/slirp4netns-0.4.3-4.el7_8.x86_64.rpm
+ARG FUSE_OVERLAYFS_RPM_X86_64=https://vault.centos.org/7.9.2009/extras/x86_64/Packages/fuse-overlayfs-0.7.2-6.el7_8.x86_64.rpm
+ARG FUSE3_RPM_X86_64=https://vault.centos.org/7.9.2009/extras/x86_64/Packages/fuse3-3.6.1-4.el7.x86_64.rpm
+ARG FUSE3_LIBS_RPM_X86_64=https://vault.centos.org/7.9.2009/extras/x86_64/Packages/fuse3-libs-3.6.1-4.el7.x86_64.rpm
+ARG FUSE_RPM_X86_64=https://vault.centos.org/7.9.2009/os/x86_64/Packages/fuse-2.9.2-11.el7.x86_64.rpm
+ARG FUSE_LIBS_RPM_X86_64=https://vault.centos.org/7.9.2009/os/x86_64/Packages/fuse-libs-2.9.2-11.el7.x86_64.rpm
+ARG LXCFS_RPM_X86_64=
+
+RUN set -euxo pipefail && \
+    yum update -y && \
+    yum install -y \
+        curl \
+        ca-certificates \
+        device-mapper-persistent-data \
+        gzip \
+        iproute \
+        conntrack-tools \
+        lvm2 \
+        shadow-utils \
+        tar \
+        which \
+        yum-utils && \
+    yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && \
+    arch="$(uname -m)" && \
+    if [ "${arch}" != "x86_64" ]; then \
+      echo "dockerfiles/executor_image/Dockerfile.rhel7 currently supports only linux/amd64 builds (detected ${arch})." >&2; \
+      exit 1; \
+    fi && \
+    yum install -y \
+        "${LIBSECCOMP_RPM_X86_64}" \
+        "${CONTAINER_SELINUX_RPM_X86_64}" \
+        "${SLIRP4NETNS_RPM_X86_64}" \
+        "${FUSE_RPM_X86_64}" \
+        "${FUSE_LIBS_RPM_X86_64}" \
+        "${FUSE3_RPM_X86_64}" \
+        "${FUSE3_LIBS_RPM_X86_64}" \
+        "${FUSE_OVERLAYFS_RPM_X86_64}" && \
+    yum install -y \
+        docker-ce \
+        docker-ce-cli \
+        docker-ce-rootless-extras \
+        docker-buildx-plugin \
+        docker-compose-plugin \
+        containerd.io && \
+    if [ -n "${LXCFS_RPM_X86_64}" ]; then \
+      yum install -y "${LXCFS_RPM_X86_64}"; \
+    else \
+      echo "Skipping lxcfs install; provide LXCFS_RPM_X86_64 build arg pointing to an x86_64 rpm if lxcfs is required." >&2; \
+    fi && \
+    case "${arch}" in \
+      x86_64) ecr_arch=amd64 ;; \
+      aarch64) ecr_arch=arm64 ;; \
+      *) echo "Unsupported architecture: ${arch}" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL "${ECR_HELPER_RELEASE_ROOT}/${ECR_HELPER_VERSION}/linux-${ecr_arch}/docker-credential-ecr-login" \
+      -o /usr/local/bin/docker-credential-ecr-login && \
+    install -m 0755 /usr/local/bin/docker-credential-ecr-login /usr/bin/docker-credential-ecr-login && \
+    yum clean all && \
+    rm -rf /var/cache/yum && \
+    rm -f \
+        /usr/bin/containerd \
+        /usr/bin/containerd-shim \
+        /usr/bin/containerd-shim-runc-v1 \
+        /usr/bin/containerd-shim-runc-v2 \
+        /usr/bin/ctr \
+        /usr/bin/rootlesskit \
+        /usr/bin/runc

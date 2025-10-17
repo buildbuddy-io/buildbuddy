@@ -29,6 +29,12 @@ dockerfile_image(
 )
 
 dockerfile_image(
+    name = "executor_image_rhel7",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/executor_image:Dockerfile.rhel7",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
     name = "nonroot_user_image",
     dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/test_images/nonroot_user_image:Dockerfile",
     visibility = ["//visibility:public"],
