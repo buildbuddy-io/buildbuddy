@@ -18,8 +18,8 @@ interface Props {
 interface State {
   loading: boolean;
   limit: Map<string, number>;
-  logA: tools.protos.ExecLogEntry[] | undefined | void;
-  logB: tools.protos.ExecLogEntry[] | undefined | void;
+  logA: tools.protos.ExecLogEntry[] | undefined;
+  logB: tools.protos.ExecLogEntry[] | undefined;
 
   changed: SpawnComparison[];
   added: SpawnComparison[];
@@ -76,10 +76,7 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
     }
 
     this.setState({ loading: true });
-    return model
-      .getExecutionLog()
-      .catch((e) => error_service.handleError(e))
-      .finally(() => this.setState({ loading: false }));
+    return model.getExecutionLog();
   }
 
   getSpawnKey(spawn?: tools.protos.ExecLogEntry.Spawn | null): string {

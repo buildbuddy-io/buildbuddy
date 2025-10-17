@@ -21,8 +21,8 @@ interface State {
   sort: string;
   direction: "asc" | "desc";
   limit: number;
-  logA: tools.protos.ExecLogEntry[] | undefined | void;
-  logB: tools.protos.ExecLogEntry[] | undefined | void;
+  logA: tools.protos.ExecLogEntry[] | undefined;
+  logB: tools.protos.ExecLogEntry[] | undefined;
 }
 
 export default class CompareExecutionLogFilesComponent extends React.Component<Props, State> {
@@ -68,10 +68,7 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
     }
 
     this.setState({ loading: true });
-    return model
-      .getExecutionLog()
-      .catch((e) => error_service.handleError(e))
-      .finally(() => this.setState({ loading: false }));
+    return model.getExecutionLog();
   }
 
   sort(
