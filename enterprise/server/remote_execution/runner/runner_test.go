@@ -655,9 +655,10 @@ func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	r := mustGetNewRunner(t, ctx, pool, newTask())
+	err := os.WriteFile(path.Join(r.Workspace.Path(), "disk-usage"), []byte("disk limit"), 0o600)
+	require.NoError(t, err)
 
-	err := pool.Add(context.Background(), r)
-
+	err = pool.Add(context.Background(), r)
 	assert.True(t, status.IsResourceExhaustedError(err), "should exceed disk limit")
 	assert.Equal(t, 0, pool.PausedRunnerCount())
 }
