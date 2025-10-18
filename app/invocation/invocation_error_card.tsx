@@ -114,6 +114,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
               [
                 error.aborted.id?.configuredLabel?.label ?? "",
                 error.aborted.id?.targetConfigured?.label ?? "",
+                error.aborted.id?.targetCompleted?.label ?? "",
                 naiveFormatEnum(build_event_stream.Aborted.AbortReason[error.aborted?.aborted?.reason] ?? ""),
                 error.aborted?.aborted?.description,
               ],
@@ -176,6 +177,7 @@ function getModel(props: Props): CardModel {
   if (props.model.failedAction?.action?.failureDetail?.message) {
     model.errors.push({ action: props.model.failedAction.action });
   }
+  let hasUserAbortedEvent = false;
   for (const event of props.model.aborted) {
     if (event.aborted) {
       if (
@@ -185,6 +187,14 @@ function getModel(props: Props): CardModel {
         event.aborted.reason === build_event_stream.Aborted.AbortReason.NO_ANALYZE
       ) {
         continue;
+      }
+      if (event.aborted.reason === build_event_stream.Aborted.AbortReason.USER_INTERRUPTED) {
+        // Capture the very first USER_INTERRUPTED aborted event and
+        // ignore other USER_INTERRUPTED events to reduce noise in the UI.
+        if (hasUserAbortedEvent) {
+          continue;
+        }
+        hasUserAbortedEvent = true;
       }
       model.errors.push({ aborted: event });
     }
