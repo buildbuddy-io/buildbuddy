@@ -6,6 +6,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
@@ -14,10 +15,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 )
 
 // Executor host IDs for use in test cases.
@@ -449,6 +453,113 @@ func TestTaskRouter_WorkflowGitRefRouting_DefaultRef(t *testing.T) {
 	// executor that last ran the pr branch, not the one that last ran the default branch.
 	ranked = router.RankNodes(ctx, nil, prBranchCmd, instanceName, nodes)
 	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+}
+
+func TestTaskRouter_PersistentWorkerRouterDisabled(t *testing.T) {
+	env := newTestEnv(t)
+
+	testProvider := openfeatureTesting.NewTestProvider()
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"remote_execution.persistent_worker_router_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "disabled",
+			Variants: map[string]any{
+				"enabled":  true,
+				"disabled": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	defer testProvider.Cleanup()
+	fp, err := experiments.NewFlagProvider("test" /*=client*/)
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	nodes := sequentiallyNumberedNodes(100)
+
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	instanceName := "test-instance"
+	cmd := &repb.Command{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "persistentWorkerKey", Value: "PW123"},
+		}},
+	}
+	// Initially, node 0 should not always be ranked first.
+	requireNotAlwaysRanked(0, nodes[0].GetExecutorHostId(), t, router, ctx, cmd, instanceName)
+
+	// Mark node 0 as having executed a task with the persistent worker key.
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, nodes[0].GetExecutorHostId())
+
+	// Node 0 should not always be ranked first since the persistent worker
+	// router is disabled, and no other routers should be applicable either. In
+	// particular, the affinity router should not be active since there are no
+	// declared output paths.
+	requireNotAlwaysRanked(0, nodes[0].GetExecutorHostId(), t, router, ctx, cmd, instanceName)
+}
+
+func TestTaskRouter_PersistentWorkerRouterEnabled(t *testing.T) {
+	env := newTestEnv(t)
+
+	testProvider := openfeatureTesting.NewTestProvider()
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"remote_execution.persistent_worker_router_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "enabled",
+			Variants: map[string]any{
+				"enabled":  true,
+				"disabled": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	defer testProvider.Cleanup()
+	fp, err := experiments.NewFlagProvider("test" /*=client*/)
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	nodes := sequentiallyNumberedNodes(100)
+
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	instanceName := "test-instance"
+	cmd := &repb.Command{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "persistentWorkerKey", Value: "PW123"},
+		}},
+		OutputPaths: []string{"/bazel-out/foo.a"},
+	}
+	// Initially, node 0 should not always be ranked first.
+	requireNotAlwaysRanked(0, nodes[0].GetExecutorHostId(), t, router, ctx, cmd, instanceName)
+
+	// Mark node 0 as having executed a task with the persistent worker key.
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, nodes[0].GetExecutorHostId())
+
+	// Node 0 should now be ranked first.
+	ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
+	require.Equal(t, nodes[0].GetExecutorHostId(), ranked[0].GetExecutionNode().GetExecutorHostId())
+
+	// Since node 0 is now presumed to be executing the task, it no longer
+	// should be ranked first.
+	requireNotAlwaysRanked(0, nodes[0].GetExecutorHostId(), t, router, ctx, cmd, instanceName)
+
+	// Mark the task executed by the first 10 nodes.
+	for i := 0; i < 10; i++ {
+		router.MarkSucceeded(ctx, nil, cmd, instanceName, nodes[i].GetExecutorHostId())
+	}
+
+	// The first 10 nodes should now be preferred (but in reverse order, since
+	// the most recent should be preferred first).
+	var expectedPreferredNodes []string
+	for i := 0; i < 10; i++ {
+		expectedPreferredNodes = append(expectedPreferredNodes, nodes[i].GetExecutorHostId())
+	}
+	slices.Reverse(expectedPreferredNodes)
+	ranked = router.RankNodes(ctx, nil, cmd, instanceName, nodes)
+	for i := 0; i < 10; i++ {
+		require.Equal(t, expectedPreferredNodes[i], ranked[i].GetExecutionNode().GetExecutorHostId())
+	}
+	requireNonSequential(t, ranked[10:])
 }
 
 func requireNonePreferred(t *testing.T, rankedNodes []interfaces.RankedExecutionNode) {
