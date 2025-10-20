@@ -24,6 +24,9 @@ func ByteStreamCopy(ctx context.Context, router interfaces.CacheRoutingService, 
 	}
 
 	for _, d := range b.Digests {
+		if d.SizeBytes == 0 {
+			continue;
+		}
 		// TODO(jdhollen): This should be using compression, when available.
 		r := digest.NewCASResourceName(d, b.InstanceName, b.DigestFunction)
 		readStream, err := primary.Read(ctx, &bspb.ReadRequest{ResourceName: r.DownloadString()})
