@@ -15,6 +15,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
     deps = [
         "//enterprise/server/bes_artifacts",
+        "//enterprise/server/util/invocationlog",
         "//enterprise/server/workflow/config",
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
@@ -32,9 +33,7 @@ go_library(
         "//server/util/git",
         "//server/util/grpc_client",
         "//server/util/healthcheck",
-        "//server/util/lockingbuffer",
         "//server/util/log",
-        "//server/util/redact",
         "//server/util/status",
         "//server/util/usageutil",
         "@com_github_creack_pty//:pty",
