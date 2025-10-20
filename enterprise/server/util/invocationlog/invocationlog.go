@@ -22,33 +22,21 @@ type InvocationLog struct {
 	writeListener func(string)
 }
 
-// New creates a new InvocationLog that writes to the given writer.
-// The writeListener function is called with each redacted string before
-// it is written to the underlying writer. If writeListener is nil, a no-op
-// function is used.
-//
-// The internal LockingBuffer is always written to alongside the provided writer,
-// so methods like String(), ReadAll(), and Len() will contain the full log history.
-func New(writer io.Writer, writeListener func(string)) *InvocationLog {
-	if writeListener == nil {
-		writeListener = func(s string) {}
-	}
-	invLog := &InvocationLog{
-		writeListener: writeListener,
-	}
-	// Always tee into the LockingBuffer so embedded methods work correctly
-	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, writer)
-	return invLog
-}
-
-// NewDefault creates a new InvocationLog with default behavior:
+// New creates a new InvocationLog with default behavior:
 // - Writes to both an internal LockingBuffer (for later retrieval) and os.Stderr
-// - Uses a no-op writeListener
+// - Uses a no-op writeListener (can be customized via SetWriteListener)
 //
-// The internal LockingBuffer can be accessed via the embedded methods
+// The internal LockingBuffer can be accessed via embedded methods
 // (e.g., ReadAll(), String(), Len()).
-func NewDefault() *InvocationLog {
-	invLog := &InvocationLog{writeListener: func(s string) {}}
+//
+// Customize behavior using setters:
+// - SetWriteListener(func) to react to log output
+// - SetWriter(io.Writer) to change the output destination
+func New() *InvocationLog {
+	invLog := &InvocationLog{
+		writeListener: func(s string) {},
+	}
+	// Default: write to both LockingBuffer and os.Stderr
 	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
 	return invLog
 }
@@ -92,4 +80,14 @@ func (invLog *InvocationLog) SetWriteListener(listener func(string)) {
 		listener = func(s string) {}
 	}
 	invLog.writeListener = listener
+}
+
+// SetWriter changes the output destination for the log. The internal
+// LockingBuffer will always receive writes in addition to the provided writer.
+// This allows you to customize where logs are written (e.g., a file, network
+// socket) while still maintaining the ability to retrieve log history via
+// String(), ReadAll(), etc.
+func (invLog *InvocationLog) SetWriter(w io.Writer) {
+	// Always tee into the LockingBuffer alongside the custom writer
+	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, w)
 }

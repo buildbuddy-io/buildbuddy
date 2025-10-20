@@ -19,12 +19,13 @@ func TestWrite_APIKeySplitAcrossWrites(t *testing.T) {
 		"Unskip this test when implementing line-buffered redaction to ensure the fix works.")
 
 	var output bytes.Buffer
-	log := New(&output, nil)
+	log := New()
+	log.SetWriter(&output)
 
 	// BuildBuddy API keys are exactly 20 alphanumeric characters
 	// The pattern "grpc://APIKEY@host" should be redacted
 	// Split the URL so the API key spans across two Write() calls
-	part1 := "grpc://US6cW4mS4WBk"     // First 12 chars of API key
+	part1 := "grpc://US6cW4mS4WBk"        // First 12 chars of API key
 	part2 := "3WXdvfkh@app.buildbuddy.io" // Last 8 chars + rest
 
 	_, err := log.Write([]byte(part1))
@@ -52,7 +53,8 @@ func TestWrite_URLPasswordSplitAcrossWrites(t *testing.T) {
 		"Unskip this test when implementing line-buffered redaction to ensure the fix works.")
 
 	var output bytes.Buffer
-	log := New(&output, nil)
+	log := New()
+	log.SetWriter(&output)
 
 	// URL with password that should be redacted
 	// Split in the middle of the password
@@ -84,7 +86,8 @@ func TestWrite_EnvVarSplitAcrossWrites(t *testing.T) {
 		"Unskip this test when implementing line-buffered redaction to ensure the fix works.")
 
 	var output bytes.Buffer
-	log := New(&output, nil)
+	log := New()
+	log.SetWriter(&output)
 
 	// Environment variable with secret value
 	// Split in the middle
@@ -116,7 +119,8 @@ func TestWrite_APIKeyHeaderSplitAcrossWrites(t *testing.T) {
 		"Unskip this test when implementing line-buffered redaction to ensure the fix works.")
 
 	var output bytes.Buffer
-	log := New(&output, nil)
+	log := New()
+	log.SetWriter(&output)
 
 	// API key in header format
 	// Split the API key value across writes
@@ -149,7 +153,8 @@ func TestWrite_SecretInMultilineOutput(t *testing.T) {
 		"Unskip this test when implementing line-buffered redaction to ensure the fix works.")
 
 	var output bytes.Buffer
-	log := New(&output, nil)
+	log := New()
+	log.SetWriter(&output)
 
 	// Simulate command output with a secret URL on the second line
 	fullOutput := "Running git clone...\n" +
@@ -183,7 +188,8 @@ func TestWrite_SecretInMultilineOutput(t *testing.T) {
 // This test should PASS even with the buggy implementation.
 func TestWrite_CompleteLineRedactsCorrectly(t *testing.T) {
 	var output bytes.Buffer
-	log := New(&output, nil)
+	log := New()
+	log.SetWriter(&output)
 
 	// Write a complete secret in a single Write() call
 	secretURL := "grpc://US6cW4mS4WBk3WXdvfkh@app.buildbuddy.io\n"
@@ -206,7 +212,8 @@ func TestWrite_CompleteLineRedactsCorrectly(t *testing.T) {
 // in a single write are all redacted.
 func TestWrite_MultipleSecretsInSingleWrite(t *testing.T) {
 	var output bytes.Buffer
-	log := New(&output, nil)
+	log := New()
+	log.SetWriter(&output)
 
 	// Multiple secrets in one write
 	text := "First secret: https://user:pass1@host1.com\n" +
@@ -231,7 +238,9 @@ func TestWrite_WriteListenerCalled(t *testing.T) {
 	var output bytes.Buffer
 	var listenerOutput strings.Builder
 
-	log := New(&output, func(s string) {
+	log := New()
+	log.SetWriter(&output)
+	log.SetWriteListener(func(s string) {
 		listenerOutput.WriteString(s)
 	})
 
@@ -252,7 +261,8 @@ func TestWrite_WriteListenerCalled(t *testing.T) {
 // properly redacts secrets.
 func TestPrintln_RedactsSecrets(t *testing.T) {
 	var output bytes.Buffer
-	log := New(&output, nil)
+	log := New()
+	log.SetWriter(&output)
 
 	log.Println("Connecting to", "grpc://US6cW4mS4WBk3WXdvfkh@app.buildbuddy.io")
 
@@ -269,7 +279,8 @@ func TestPrintln_RedactsSecrets(t *testing.T) {
 // properly redacts secrets.
 func TestPrintf_RedactsSecrets(t *testing.T) {
 	var output bytes.Buffer
-	log := New(&output, nil)
+	log := New()
+	log.SetWriter(&output)
 
 	log.Printf("Connecting to %s", "https://user:password@github.com/repo")
 
@@ -286,7 +297,8 @@ func TestPrintf_RedactsSecrets(t *testing.T) {
 // receives data even when using a custom writer.
 func TestNew_LockingBufferIsPopulated(t *testing.T) {
 	var output bytes.Buffer
-	log := New(&output, nil)
+	log := New()
+	log.SetWriter(&output)
 
 	testData := "Test log entry with https://user:secret@host.com\n"
 	_, err := log.Write([]byte(testData))
@@ -312,7 +324,8 @@ func TestNew_LockingBufferIsPopulated(t *testing.T) {
 // TestNew_LockingBufferMethods verifies that all LockingBuffer methods work correctly.
 func TestNew_LockingBufferMethods(t *testing.T) {
 	var output bytes.Buffer
-	log := New(&output, nil)
+	log := New()
+	log.SetWriter(&output)
 
 	// Write some data
 	log.Println("Line 1")
@@ -334,4 +347,49 @@ func TestNew_LockingBufferMethods(t *testing.T) {
 
 	// After ReadAll(), the buffer should be empty
 	assert.Equal(t, 0, log.Len(), "Len() should be 0 after ReadAll()")
+}
+
+// TestNew_DefaultBehavior verifies that New() works with default settings
+// (writing to os.Stderr and LockingBuffer).
+func TestNew_DefaultBehavior(t *testing.T) {
+	log := New()
+
+	// Write some data (will go to stderr by default, but we can still check LockingBuffer)
+	log.Println("Test message")
+
+	// The LockingBuffer should have received the data
+	assert.Greater(t, log.Len(), 0, "LockingBuffer should contain data")
+	assert.Contains(t, log.String(), "Test message", "LockingBuffer should contain the message")
+}
+
+// TestSetWriter_ReplacesDestination verifies that SetWriter properly changes
+// the output destination while keeping LockingBuffer populated.
+func TestSetWriter_ReplacesDestination(t *testing.T) {
+	var firstWriter bytes.Buffer
+	var secondWriter bytes.Buffer
+
+	log := New()
+	log.SetWriter(&firstWriter)
+
+	// Write to first writer
+	log.Println("Message 1")
+
+	// Switch to second writer
+	log.SetWriter(&secondWriter)
+
+	// Write to second writer
+	log.Println("Message 2")
+
+	// First writer should only have Message 1
+	assert.Contains(t, firstWriter.String(), "Message 1")
+	assert.NotContains(t, firstWriter.String(), "Message 2")
+
+	// Second writer should only have Message 2
+	assert.NotContains(t, secondWriter.String(), "Message 1")
+	assert.Contains(t, secondWriter.String(), "Message 2")
+
+	// LockingBuffer should have both messages
+	lockingBufferContent := log.String()
+	assert.Contains(t, lockingBufferContent, "Message 1")
+	assert.Contains(t, lockingBufferContent, "Message 2")
 }
