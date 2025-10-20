@@ -100,7 +100,7 @@ const (
 	overlayfsWorkspacePropertyName          = "overlayfs-workspace"
 	cleanWorkspaceInputsPropertyName        = "clean-workspace-inputs"
 	persistentWorkerPropertyName            = "persistent-workers"
-	persistentWorkerKeyPropertyName         = "persistentWorkerKey"
+	PersistentWorkerKeyPropertyName         = "persistentWorkerKey"
 	persistentWorkerProtocolPropertyName    = "persistentWorkerProtocol"
 	WorkflowIDPropertyName                  = "workflow-id"
 	WorkloadIsolationPropertyName           = "workload-isolation-type"
@@ -367,7 +367,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	//   runner recycling)
 	recycleRunner := boolProp(m, recycleRunnerPropertyName, false) ||
 		boolProp(m, dockerReusePropertyName, false) ||
-		stringProp(m, persistentWorkerKeyPropertyName, "") != ""
+		stringProp(m, PersistentWorkerKeyPropertyName, "") != ""
 	isolationType := stringProp(m, WorkloadIsolationPropertyName, "")
 
 	// Only Enable VFS if it is also enabled via flags.
@@ -484,7 +484,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		OverlayfsWorkspace:        boolProp(m, overlayfsWorkspacePropertyName, false),
 		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
 		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
-		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
+		PersistentWorkerKey:       stringProp(m, PersistentWorkerKeyPropertyName, ""),
 		PersistentWorkerProtocol:  stringProp(m, persistentWorkerProtocolPropertyName, ""),
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
 		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
