@@ -33,10 +33,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/invocationlog"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
-	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/creack/pty"
@@ -298,7 +297,7 @@ type buildEventReporter struct {
 	apiKey     string
 	bep        *build_event_publisher.Publisher
 	uploader   *bes_artifacts.Uploader
-	log        *invocationLog
+	log        *invocationlog.InvocationLog
 
 	invocationID          string
 	startTime             time.Time
@@ -336,7 +335,7 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow, childInvocations: []string{}}, nil
+	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: invocationlog.NewDefault(), invocationID: iid, isWorkflow: isWorkflow, childInvocations: []string{}}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -451,13 +450,13 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		return err
 	}
 
-	r.log.writeListener = func(s string) {
+	r.log.SetWriteListener(func(s string) {
 		r.emitBuildEventsForBazelCommands(s)
 		// Flush whenever the log buffer fills past a certain threshold.
 		if size := r.log.Len(); size >= progressFlushThresholdBytes {
 			r.FlushProgress() // ignore error; it will surface in `bep.Finish()`
 		}
-	}
+	})
 
 	stopFlushingProgress := r.startBackgroundProgressFlush()
 	r.cancelBackgroundFlush = stopFlushingProgress
@@ -932,38 +931,6 @@ func (r *buildEventReporter) Println(vals ...interface{}) {
 }
 func (r *buildEventReporter) Printf(format string, vals ...interface{}) {
 	r.log.Printf(format, vals...)
-}
-
-type invocationLog struct {
-	lockingbuffer.LockingBuffer
-	writer        io.Writer
-	writeListener func(s string)
-}
-
-func newInvocationLog() *invocationLog {
-	invLog := &invocationLog{writeListener: func(s string) {}}
-	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
-	return invLog
-}
-
-func (invLog *invocationLog) Write(b []byte) (int, error) {
-	output := string(b)
-
-	redacted := redact.RedactText(output)
-
-	invLog.writeListener(redacted)
-	_, err := invLog.writer.Write([]byte(redacted))
-
-	// Return the size of the original buffer even if a redacted size was written,
-	// or clients will return a short write error
-	return len(b), err
-}
-
-func (invLog *invocationLog) Println(vals ...interface{}) {
-	invLog.Write([]byte(fmt.Sprintln(vals...)))
-}
-func (invLog *invocationLog) Printf(format string, vals ...interface{}) {
-	invLog.Write([]byte(fmt.Sprintf(format+"\n", vals...)))
 }
 
 // actionRunner runs a single action in the BuildBuddy config.

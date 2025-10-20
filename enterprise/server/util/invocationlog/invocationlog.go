@@ -3,6 +3,7 @@ package invocationlog
 import (
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
@@ -25,14 +26,30 @@ type InvocationLog struct {
 // The writeListener function is called with each redacted string before
 // it is written to the underlying writer. If writeListener is nil, a no-op
 // function is used.
+//
+// The internal LockingBuffer is always written to alongside the provided writer,
+// so methods like String(), ReadAll(), and Len() will contain the full log history.
 func New(writer io.Writer, writeListener func(string)) *InvocationLog {
 	if writeListener == nil {
 		writeListener = func(s string) {}
 	}
 	invLog := &InvocationLog{
-		writer:        writer,
 		writeListener: writeListener,
 	}
+	// Always tee into the LockingBuffer so embedded methods work correctly
+	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, writer)
+	return invLog
+}
+
+// NewDefault creates a new InvocationLog with default behavior:
+// - Writes to both an internal LockingBuffer (for later retrieval) and os.Stderr
+// - Uses a no-op writeListener
+//
+// The internal LockingBuffer can be accessed via the embedded methods
+// (e.g., ReadAll(), String(), Len()).
+func NewDefault() *InvocationLog {
+	invLog := &InvocationLog{writeListener: func(s string) {}}
+	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
 	return invLog
 }
 
@@ -65,4 +82,14 @@ func (invLog *InvocationLog) Println(vals ...interface{}) {
 // log. A newline is appended to the format string.
 func (invLog *InvocationLog) Printf(format string, vals ...interface{}) {
 	invLog.Write([]byte(fmt.Sprintf(format+"\n", vals...)))
+}
+
+// SetWriteListener sets the function that will be called with each redacted
+// string before it is written to the underlying writer. This allows callers
+// to react to log output (e.g., trigger buffer flushes, emit events).
+func (invLog *InvocationLog) SetWriteListener(listener func(string)) {
+	if listener == nil {
+		listener = func(s string) {}
+	}
+	invLog.writeListener = listener
 }

@@ -261,3 +261,57 @@ func TestPrintf_RedactsSecrets(t *testing.T) {
 	assert.Contains(t, result, "<REDACTED>",
 		"Output should contain redaction placeholder")
 }
+
+// TestNew_LockingBufferIsPopulated verifies that the embedded LockingBuffer
+// receives data even when using a custom writer.
+func TestNew_LockingBufferIsPopulated(t *testing.T) {
+	var output bytes.Buffer
+	log := New(&output, nil)
+
+	testData := "Test log entry with https://user:secret@host.com\n"
+	_, err := log.Write([]byte(testData))
+	require.NoError(t, err)
+
+	// The custom writer should receive redacted data
+	customWriterOutput := output.String()
+	assert.NotContains(t, customWriterOutput, "secret",
+		"Custom writer should receive redacted output")
+
+	// The embedded LockingBuffer should also receive redacted data
+	lockingBufferOutput := log.String()
+	assert.NotContains(t, lockingBufferOutput, "secret",
+		"LockingBuffer should receive redacted output")
+	assert.Contains(t, lockingBufferOutput, "<REDACTED>",
+		"LockingBuffer should contain redacted output")
+
+	// Both outputs should be identical
+	assert.Equal(t, customWriterOutput, lockingBufferOutput,
+		"Both custom writer and LockingBuffer should have the same content")
+}
+
+// TestNew_LockingBufferMethods verifies that all LockingBuffer methods work correctly.
+func TestNew_LockingBufferMethods(t *testing.T) {
+	var output bytes.Buffer
+	log := New(&output, nil)
+
+	// Write some data
+	log.Println("Line 1")
+	log.Println("Line 2")
+
+	// Test Len()
+	assert.Greater(t, log.Len(), 0, "Len() should return non-zero")
+
+	// Test String()
+	str := log.String()
+	assert.Contains(t, str, "Line 1", "String() should contain written data")
+	assert.Contains(t, str, "Line 2", "String() should contain written data")
+
+	// Test ReadAll()
+	data, err := log.ReadAll()
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "Line 1", "ReadAll() should return written data")
+	assert.Contains(t, string(data), "Line 2", "ReadAll() should return written data")
+
+	// After ReadAll(), the buffer should be empty
+	assert.Equal(t, 0, log.Len(), "Len() should be 0 after ReadAll()")
+}
