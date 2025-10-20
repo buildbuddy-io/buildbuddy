@@ -7,6 +7,7 @@ go_library(
     srcs = ["task_router.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router",
     deps = [
+        "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/platform",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -25,6 +26,7 @@ go_test(
     srcs = ["task_router_test.go"],
     deps = [
         ":task_router",
+        "//enterprise/server/experiments",
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/testutil/testredis",
         "//proto:remote_execution_go_proto",
@@ -33,6 +35,9 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/testing/flags",
+        "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk//openfeature/memprovider",
+        "@com_github_open_feature_go_sdk//openfeature/testing",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_exp//slices",
     ],

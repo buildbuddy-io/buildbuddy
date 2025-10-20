@@ -43,6 +43,9 @@ const (
 	// set less than the number of probes so that we can autoscale the workflow
 	// executor pool effectively.
 	ciRunnerPreferredNodeLimit = 1
+
+	// Preferred node limit for tasks using [persistentWorkerRouter].
+	persistentWorkerRouterPreferredNodeLimit = 128
 )
 
 type taskRouter struct {
@@ -73,7 +76,13 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 	if rdb == nil {
 		return nil, status.FailedPreconditionError("Redis is required for task router")
 	}
-	strategies := []Router{ciRunnerRouter{}, affinityRouter{}}
+	// Define the available routing strategies (note: strategies earlier in the
+	// list have higher precedence)
+	strategies := []Router{
+		ciRunnerRouter{},
+		&persistentWorkerRouter{env: env, rdb: rdb},
+		affinityRouter{},
+	}
 	return &taskRouter{
 		env:        env,
 		rdb:        rdb,
@@ -212,10 +221,21 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 			break
 		}
 
-		preferredHostIDs, err := tr.rdb.LRange(ctx, routingKey, 0, -1).Result()
-		if err != nil {
-			log.Errorf("Failed to rank nodes: redis LRANGE failed: %s", err)
-			return nodesAsRanked(nodes)
+		var preferredHostIDs []string
+		if strategy, ok := strategy.(PreferredHostIDGetter); ok {
+			h, err := strategy.GetPreferredHostIDs(ctx, routingKey)
+			if err != nil {
+				log.Errorf("Failed to rank nodes: failed to get preferred host IDs: %s", err)
+				return nodesAsRanked(nodes)
+			}
+			preferredHostIDs = h
+		} else {
+			h, err := tr.rdb.LRange(ctx, routingKey, 0, -1).Result()
+			if err != nil {
+				log.Errorf("Failed to rank nodes: redis LRANGE failed: %s", err)
+				return nodesAsRanked(nodes)
+			}
+			preferredHostIDs = h
 		}
 
 		log.Debugf("Preferred executor host IDs for %q: %v", routingKey, preferredHostIDs)
@@ -369,6 +389,12 @@ type Router interface {
 	RoutingInfo(params routingParams) (int, []string, error)
 }
 
+// Hook that allows overriding the redis read for getting the preferred host
+// IDs.
+type PreferredHostIDGetter interface {
+	GetPreferredHostIDs(ctx context.Context, key string) ([]string, error)
+}
+
 // The ciRunnerRouter routes ci_runner tasks according to git branch
 // information.
 type ciRunnerRouter struct{}
@@ -494,4 +520,87 @@ func getFirstOutput(cmd *repb.Command) string {
 		return cmd.OutputDirectories[0]
 	}
 	return ""
+}
+
+// persistentWorkerRouter routes tasks in a way that attempts to maximize
+// persistent worker hit rate.
+//
+// It generates routing keys based on:
+//
+//   - remoteInstanceName
+//   - groupID
+//   - platform properties (including the persistent worker key)
+//
+// Compared to the affinity router (which attempts to maximize filecache hit
+// rate):
+//   - It uses a larger preferred node limit, storing a longer "history" of
+//     which nodes have executed tasks with a given persistent worker key. This
+//     lets us roughly approximate the state of the runner pools on each
+//     executor without actually having to communicate this state explicitly
+//     (which would be fairly complex and introduce its own problems).
+//   - When the routing keys are queried, the first preferred node is popped
+//     from the head of the list, which roughly models the fact that this node
+//     is most likely to receive the task (compared to the nodes behind it) and
+//     that it no longer makes sense for this node to be preferred, since
+//     the pooled runner will be in use while the task is executing. Without
+//     this change, we'd wind up creating hotspots when there are bursts of
+//     tasks with the same persistent worker keys (workloads can be very bursty
+//     so this situation is pretty common).
+type persistentWorkerRouter struct {
+	env environment.Env
+	rdb redis.UniversalClient
+}
+
+func (h *persistentWorkerRouter) Applies(ctx context.Context, params routingParams) bool {
+	fp := h.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false
+	}
+	persistentWorkerKey := platform.FindValue(params.platform, platform.PersistentWorkerKeyPropertyName)
+	if persistentWorkerKey == "" {
+		return false
+	}
+	val := fp.Boolean(ctx, "remote_execution.persistent_worker_router_enabled", false)
+	return val
+}
+
+func (h *persistentWorkerRouter) RoutingInfo(params routingParams) (int, []string, error) {
+	keys, err := h.routingKeys(params)
+	return persistentWorkerRouterPreferredNodeLimit, keys, err
+}
+
+func (h *persistentWorkerRouter) routingKeys(params routingParams) ([]string, error) {
+	parts := []string{"task_route", params.groupID}
+	if params.remoteInstanceName != "" {
+		parts = append(parts, params.remoteInstanceName)
+	}
+	b, err := proto.Marshal(params.platform)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to marshal Command: %s", err)
+	}
+	parts = append(parts, hash.Bytes(b))
+	key := strings.Join(parts, "/")
+	return []string{key}, nil
+}
+
+// Compile-time assertion that [*persistentWorkerRouter] implements [PreferredHostIDGetter]
+var _ PreferredHostIDGetter = (*persistentWorkerRouter)(nil)
+
+// GetPreferredHostIDs overrides the routing key query to also pop from the list
+// in addition to just reading from it. This models the fact that the first
+// returned node is most likely to be the one that receives the task, and that
+// the persistent worker on that node will be "in use" once the task gets
+// scheduled.
+//
+// Note that the node will later be added back to the list once the node
+// completes the task.
+func (h *persistentWorkerRouter) GetPreferredHostIDs(ctx context.Context, key string) ([]string, error) {
+	pipe := h.rdb.TxPipeline()
+	lrangeCmd := pipe.LRange(ctx, key, 0, -1)
+	pipe.LPop(ctx, key)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return nil, status.InternalErrorf("exec pipeline: %s", err)
+	}
+	preferredHostIDs := lrangeCmd.Val()
+	return preferredHostIDs, nil
 }
