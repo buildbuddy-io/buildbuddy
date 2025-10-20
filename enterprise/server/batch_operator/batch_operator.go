@@ -149,13 +149,13 @@ type BatchDigestOperator interface {
 	ForceShutdownForTesting()
 }
 
-func NewImmediateDigestOperator(env environment.Env, name string, f OperatorFunc, timeout time.Duration) (DigestOperator, error) {
+func NewImmediateDigestOperator(authenticator interfaces.Authenticator, name string, f OperatorFunc, timeout time.Duration) DigestOperator {
 	return &immediateDigestOperator{
 		name:          name,
 		op:            f,
 		timeout:       timeout,
-		authenticator: env.GetAuthenticator(),
-	}, nil
+		authenticator: authenticator,
+	}
 }
 
 type immediateDigestOperator struct {

@@ -263,7 +263,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 		}
 		env.SetCapabilitiesClient(cap)
 
-		bs, err := routing_byte_stream_client.New(env, noopRouter, noopRouter, noopRouter)
+		bs, err := routing_byte_stream_client.New(env)
 		if err != nil {
 			log.Fatalf("Error initializing routing bytestream client: %s", err.Error())
 		}
