@@ -9,6 +9,7 @@ go_test(
         "//server/util/uuid",
         "//server/util/wrand",
         "@com_github_cespare_xxhash_v2//:xxhash",
+        "@com_github_docker_go_units//:go-units",
         "@com_github_stretchr_testify//require",
     ],
 )

@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"cmp"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -28,17 +30,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/server/util/wrand"
 	"github.com/cespare/xxhash/v2"
+	"github.com/docker/go-units"
 	"github.com/stretchr/testify/require"
 )
 
 var (
 	executionsPath = flag.String("executions_path", "/tmp/executions.jsonl", "Path to the executions.jsonl file. Contains Execution rows from ClickHouse with the executions to replay - one JSON object per line.")
 
-	numExecutors            = flag.Int("num_executors", 128, "Number of executors to simulate")
-	executorMilliCPU        = flag.Int64("executor_milli_cpu", 15_000, "Assignable millicpu for each executor.")
-	executorMemoryBytes     = flag.Int64("executor_memory_bytes", 56*1024*1024*1024, "Assignable memory for each executor.")
-	excessCapacityThreshold = flag.Float64("executor_excess_capacity_threshold", 0.40, "Fraction of resources used where the executor will proactively request more work from the scheduler.")
-	runnerPoolMaxCount      = flag.Int("executor_runner_pool_max_count", 5, "Maximum number of runners in the pool.")
+	numExecutors                    = flag.Int("num_executors", 452, "Number of executors to simulate")
+	executorMilliCPU                = flag.Int64("executor_milli_cpu", 21_000, "Assignable millicpu for each executor.")
+	executorMemoryBytes             = flag.Int64("executor_memory_bytes", 55*(1024*1024*1024), "Assignable memory for each executor.")
+	excessCapacityThreshold         = flag.Float64("executor_excess_capacity_threshold", -1, "Fraction of resources used where the executor will proactively request more work from the scheduler. If 0, only request work when completely idle. If < 0, never request work.")
+	runnerPoolMaxCount              = flag.Int("executor_runner_pool_max_count", 100, "Maximum number of runners in the pool.")
+	runnerPoolTotalMemoryLimitBytes = flag.Int64("executor_runner_pool_total_memory_limit_bytes", 40*1024*1024*1024, "Maximum total memory usage allowed for pooled runners.")
+	maxRunnerMemoryUsageBytes       = flag.Int64("executor_runner_pool_max_runner_memory_usage_bytes", 6*1024*1024*1024, "Don't recycle runners if they exceed this size")
 )
 
 var (
@@ -46,76 +51,83 @@ var (
 )
 
 const (
+	defaultProbesPerTask = 3
+
 	// Number of tasks to sample when pulling work from the scheduler.
 	tasksToSample = 20
 
-	// TODO: set more realistically
-	executorSchedulerRTT = 50 * time.Microsecond
+	// TODO: actually use this
+	executorRedisRTT = 200 * time.Microsecond
+
+	// TODO: double-check this
+	executorSchedulerRTT = 35 * time.Millisecond
 
 	// When using weight-based strategies, this is the weight added to each
 	// executor when it executes a task. The value is large to support decaying
 	// weights over time; the weighted random shuffle algorithm requires integer
 	// weights.
 	executorWeightIncrement = int64(1e12)
+
+	// idleExecutorMoreWorkTimeout is how long the executor will wait, when
+	// idle, before requesting more work from the scheduler. The scheduler
+	// itself controls how long the executor will backoff after requesting
+	// more work, so this timeout is only used on the initial call.
+	idleExecutorMoreWorkTimeout = 5 * time.Second
 )
 
-/*
-Query (populate group_id then run with clickhouse outputformat JSONEachRow)
-
+// ClickHouse query (set params in WITH clause then run with clickhouse client,
+// writing results to /tmp/executions.jsonl)
+var _ = `
+WITH
+	toUnixTimestamp64Micro(toDateTime64(
+		'2025-10-15 16:30:00',
+		6, 'America/New_York'
+	)) AS start_usec,
+	'GRXXXXXX' AS target_group_id
 SELECT
-
 	output_path,
 	action_mnemonic,
 	target_label,
 	queued_timestamp_usec,
+	execution_start_timestamp_usec,
+	execution_completed_timestamp_usec,
 	worker_start_timestamp_usec,
 	worker_completed_timestamp_usec,
+	peak_memory_bytes,
 	platform_hash,
 	persistent_worker_key,
 	runner_task_number,
-	requested_compute_units,
-	requested_memory_bytes,
-	requested_milli_cpu
-
+	estimated_memory_bytes,
+	estimated_milli_cpu
 FROM
-
 	buildbuddy_prod.Executions
-
 WHERE
-
-	group_id = GROUP_ID_HERE
-	AND updated_at_usec > 1759009564281740
+	group_id = target_group_id
+	AND updated_at_usec > start_usec
 	AND exit_code = 0
 	AND status_code = 0
 	AND runner_task_number > 0
-
 ORDER BY
-
 	updated_at_usec DESC
+LIMIT 1500000
+FORMAT JSONEachRow
+`
 
-LIMIT 1000000
-*/
 type ExecutionRowJSON struct {
-	OutputPath                   string  `json:"output_path"`
-	ActionMnemonic               string  `json:"action_mnemonic"`
-	TargetLabel                  string  `json:"target_label"`
-	QueuedTimestampUsec          string  `json:"queued_timestamp_usec"`
-	WorkerStartTimestampUsec     string  `json:"worker_start_timestamp_usec"`
-	WorkerCompletedTimestampUsec string  `json:"worker_completed_timestamp_usec"`
-	PlatformHash                 string  `json:"platform_hash"`
-	PersistentWorkerKey          string  `json:"persistent_worker_key"`
-	RunnerTaskNumber             string  `json:"runner_task_number"`
-	RequestedComputeUnits        float64 `json:"requested_compute_units"`
-	RequestedMemoryBytes         string  `json:"requested_memory_bytes"`
-	RequestedMilliCPU            string  `json:"requested_milli_cpu"`
-}
-
-func mustAtoi(s string) int64 {
-	i, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		panic(err)
-	}
-	return i
+	OutputPath                      string `json:"output_path"`
+	ActionMnemonic                  string `json:"action_mnemonic"`
+	TargetLabel                     string `json:"target_label"`
+	QueuedTimestampUsec             string `json:"queued_timestamp_usec"`
+	ExecutionStartTimestampUsec     string `json:"execution_start_timestamp_usec"`
+	ExecutionCompletedTimestampUsec string `json:"execution_completed_timestamp_usec"`
+	WorkerStartTimestampUsec        string `json:"worker_start_timestamp_usec"`
+	WorkerCompletedTimestampUsec    string `json:"worker_completed_timestamp_usec"`
+	PeakMemoryBytes                 string `json:"peak_memory_bytes"`
+	PlatformHash                    string `json:"platform_hash"`
+	PersistentWorkerKey             string `json:"persistent_worker_key"`
+	RunnerTaskNumber                string `json:"runner_task_number"`
+	EstimatedMilliCPU               string `json:"estimated_milli_cpu"`
+	EstimatedMemoryBytes            string `json:"estimated_memory_bytes"`
 }
 
 func debugln(args ...any) {
@@ -131,8 +143,8 @@ func TestSimulation(t *testing.T) {
 	// Sort by queued timestamp, so we replay from oldest => newest
 	t.Logf("Sorting executions...")
 	slices.SortFunc(executions, func(a, b *ExecutionRowJSON) int {
-		ai := mustAtoi(a.QueuedTimestampUsec)
-		bi := mustAtoi(b.QueuedTimestampUsec)
+		ai := mustParseInt(a.QueuedTimestampUsec)
+		bi := mustParseInt(b.QueuedTimestampUsec)
 		switch {
 		case ai < bi:
 			return -1
@@ -145,29 +157,38 @@ func TestSimulation(t *testing.T) {
 	t.Logf("Sample execution: %+#v\n", executions[0])
 
 	// Compute persistent worker hit rate. As a sanity check, this should
-	// roughly match the hit rate we get if we use the
-	// "persistent_worker_router" strategy below when we run real prod
-	// executions through the tool.
+	// roughly match the hit rate we get if we use the "affinity_router"
+	// strategy below when we run real prod executions through the tool, since
+	// the affinity router is what we're using now.
 	var pwHits, pwTotal int64
 	for _, e := range executions {
 		if e.PersistentWorkerKey != "" {
 			pwTotal++
-			if mustAtoi(e.RunnerTaskNumber) > 1 {
+			if mustParseInt(e.RunnerTaskNumber) > 1 {
 				pwHits++
 			}
 		}
 	}
 	t.Logf("Persistent worker hit rate (from data set): %.3f", float64(pwHits)/float64(pwTotal))
-	pwKeyFreq := map[string]int64{}
-	pwKeyMnemonics := map[string][]string{}
+	runnerKeyFreq := map[RunnerKey]int64{}
+	runnerKeyMnemonics := map[RunnerKey][]string{}
+	runnerKeyMemSizes := map[RunnerKey][]string{}
 	outputPathFreq := map[string]int64{}
 	numPersistentWorkerActions := 0
 	for _, e := range executions {
 		if e.PersistentWorkerKey != "" {
-			pwKeyFreq[e.PersistentWorkerKey]++
+			k := RunnerKey{
+				PlatformHash:        e.PlatformHash,
+				PersistentWorkerKey: e.PersistentWorkerKey,
+			}
+			runnerKeyFreq[k]++
 			numPersistentWorkerActions++
-			if !slices.Contains(pwKeyMnemonics[e.PersistentWorkerKey], e.ActionMnemonic) {
-				pwKeyMnemonics[e.PersistentWorkerKey] = append(pwKeyMnemonics[e.PersistentWorkerKey], e.ActionMnemonic)
+			if !slices.Contains(runnerKeyMnemonics[k], e.ActionMnemonic) {
+				runnerKeyMnemonics[k] = append(runnerKeyMnemonics[k], e.ActionMnemonic)
+			}
+			memorySize := units.BytesSize(float64(mustParseInt(e.EstimatedMemoryBytes)))
+			if !slices.Contains(runnerKeyMemSizes[k], memorySize) {
+				runnerKeyMemSizes[k] = append(runnerKeyMemSizes[k], memorySize)
 			}
 		}
 		if e.OutputPath != "" {
@@ -176,20 +197,20 @@ func TestSimulation(t *testing.T) {
 	}
 	t.Logf("Unique output_path (used as stable action IDs): %d", len(outputPathFreq))
 	t.Logf("Persistent worker actions: %d (%.3f%% of total)", numPersistentWorkerActions, float64(numPersistentWorkerActions)/float64(len(executions))*100)
-	t.Logf("Persistent worker unique keys: %d", len(pwKeyFreq))
-	persistentWorkerKeys := slices.Collect(maps.Keys(pwKeyFreq))
-	slices.SortFunc(persistentWorkerKeys, func(a, b string) int {
-		return -cmp.Compare(pwKeyFreq[a], pwKeyFreq[b])
+	t.Logf("Persistent worker unique keys: %d", len(runnerKeyFreq))
+	persistentWorkerKeys := slices.Collect(maps.Keys(runnerKeyFreq))
+	slices.SortFunc(persistentWorkerKeys, func(a, b RunnerKey) int {
+		return -cmp.Compare(runnerKeyFreq[a], runnerKeyFreq[b])
 	})
 	t.Logf("Top 10 persistent worker key frequencies:")
 	for _, k := range persistentWorkerKeys[:min(10, len(persistentWorkerKeys))] {
-		t.Logf("%s %v: %d", k, pwKeyMnemonics[k], pwKeyFreq[k])
+		t.Logf("%s %v %v: %d", k.ShortString(), runnerKeyMnemonics[k], runnerKeyMemSizes[k], runnerKeyFreq[k])
 	}
 	t.Logf("Bottom 10 persistent worker key frequencies:")
 	for _, k := range persistentWorkerKeys[max(0, len(persistentWorkerKeys)-10):] {
-		t.Logf("%s %v: %d", k, pwKeyMnemonics[k], pwKeyFreq[k])
+		t.Logf("%s %v %v: %d", k.ShortString(), runnerKeyMnemonics[k], runnerKeyMemSizes[k], runnerKeyFreq[k])
 	}
-	frequencies := slices.Collect(maps.Values(pwKeyFreq))
+	frequencies := slices.Collect(maps.Values(runnerKeyFreq))
 	slices.Sort(frequencies)
 	var frequencyQuantileStrs []string
 	for _, q := range []float64{0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999} {
@@ -205,14 +226,35 @@ func TestSimulation(t *testing.T) {
 		// 	name:            "Random",
 		// 	routingStrategy: "random",
 		// },
+		// {
+		// 	name:                        "Random/runnerPoolMinRequestsForAdd=2",
+		// 	routingStrategy:             "random",
+		// 	runnerPoolMinRequestsForAdd: 2,
+		// },
 
 		// Affinity router: this is what we had before adding the persistent
 		// worker router. The routing key is based on platform props and first
 		// action output, and we'd route only to the most recent executor that
 		// executed the action.
+		{
+			name:            "AffinityRouter",
+			routingStrategy: "affinity_router",
+		},
 		// {
-		// 	name:            "AffinityRouter",
-		// 	routingStrategy: "affinity_router",
+		// 	name:                   "AffinityRouter/probeCount=15,warmRunnerWaitFraction=1.0",
+		// 	routingStrategy:        "affinity_router",
+		// 	probesPerTask:          15,
+		// 	warmRunnerWaitFraction: 1.0,
+		// },
+		// {
+		// 	name:                   "AffinityRouter/warmRunnerWaitFraction=1.0",
+		// 	routingStrategy:        "affinity_router",
+		// 	warmRunnerWaitFraction: 1.0,
+		// },
+		// {
+		// 	name:                            "AffinityRouter/memoryBasedPoolCapacity",
+		// 	routingStrategy:                 "affinity_router",
+		// 	runnerPoolTotalMemoryLimitBytes: 1_000_000_000 * 1024 * 1024 * 1024,
 		// },
 
 		// Persistent worker router: this is what we do today. We hash each task
@@ -291,15 +333,42 @@ func TestSimulation(t *testing.T) {
 		// 	historySize:     32,
 		// },
 		// {
+		// 	name:            "HistoryBased/historySize=64",
+		// 	routingStrategy: "history_based",
+		// 	historySize:     64,
+		// },
+		// {
 		// 	name:            "HistoryBased/historySize=128",
 		// 	routingStrategy: "history_based",
 		// 	historySize:     128,
 		// },
 		// {
-		// 	name:            "HistoryBased/historySize=256",
-		// 	routingStrategy: "history_based",
-		// 	historySize:     256,
+		// 	name:                            "HistoryBased/historySize=128,memoryBasedMaxRunnerPoolSize",
+		// 	routingStrategy:                 "history_based",
+		// 	historySize:                     128,
+		// 	runnerPoolTotalMemoryLimitBytes: 40 * 1024 * 1024 * 1024,
 		// },
+
+		// {
+		// 	name:                   "HistoryBased/historySize=128,warmRunnerMaxWait=100%",
+		// 	routingStrategy:        "history_based",
+		// 	historySize:            128,
+		// 	warmRunnerWaitFraction: 1.0,
+		// },
+		{
+			name:            "HistoryBased/historySize=128",
+			routingStrategy: "history_based",
+			historySize:     128,
+		},
+
+		// {
+		// 	name:            "PoolTracking",
+		// 	routingStrategy: "pool_tracking",
+		// },
+
+		// "RunnerReservations" uses explicit runner pool tracking and the
+		// scheduler is responsible for assigning tasks to runners. Tasks can
+		// only be matched to runners if the scheduler says so.
 
 		// "FrequencyWeighted" uses a map of taskKey => executorID => weight.
 		// Weights are roughly based on frequency of task execution but decay
@@ -350,11 +419,16 @@ func TestSimulation(t *testing.T) {
 		// 	routingStrategy: "adaptive_subpools",
 		// 	weightHalfLife:  1 * time.Hour,
 		// },
-		{
-			name:            "AdaptiveSubpools/halfLife=3h",
-			routingStrategy: "adaptive_subpools",
-			weightHalfLife:  3 * time.Hour,
-		},
+		// {
+		// 	name:            "AdaptiveSubpools/halfLife=3h",
+		// 	routingStrategy: "adaptive_subpools",
+		// 	weightHalfLife:  3 * time.Hour,
+		// },
+		// {
+		// 	name:            "AdaptiveSubpools/halfLife=6h",
+		// 	routingStrategy: "adaptive_subpools",
+		// 	weightHalfLife:  3 * time.Hour,
+		// },
 	} {
 		t.Run(sim.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -365,8 +439,16 @@ func TestSimulation(t *testing.T) {
 				// Set virtual clock to the first execution's queued timestamp
 				// (executions are expected to be sorted in order of queued
 				// timestamp at this point)
-				time.Sleep(time.Until(time.UnixMicro(mustAtoi(executions[0].QueuedTimestampUsec))))
+				time.Sleep(time.Until(time.UnixMicro(mustParseInt(executions[0].QueuedTimestampUsec))))
 				startTime := time.Now()
+
+				// Init defaults
+				if sim.runnerPoolTotalMemoryLimitBytes == 0 {
+					sim.runnerPoolTotalMemoryLimitBytes = *runnerPoolTotalMemoryLimitBytes
+				}
+				if sim.probesPerTask == 0 {
+					sim.probesPerTask = defaultProbesPerTask
+				}
 
 				// Run simulation
 				runSimulation(t, sim, executions)
@@ -381,6 +463,7 @@ func TestSimulation(t *testing.T) {
 				t.Logf("Total queued    duration: %s", time.Duration(sim.totalQueueDurationNanos.Load()))
 				t.Logf("Total worker    duration: %s", time.Duration(sim.totalWorkerDurationNanos.Load()))
 				t.Logf("Total e2e (q+w) duration: %s", time.Duration(sim.totalQueueDurationNanos.Load()+sim.totalWorkerDurationNanos.Load()))
+				t.Logf("Ideal e2e       duration: %s", time.Duration(sim.theoreticalMinimumWorkerDurationNanos.Load()))
 				t.Logf("Total cold runner worker duration overhead: %s", time.Duration(sim.coldRunnerOverheadNanos.Load()))
 				t.Logf("Runner hit rate: %.3f", float64(sim.runnerHitCount.Load())/float64(sim.runnerRequestCount.Load()))
 				t.Logf("Runners evicted: %d", sim.runnersEvicted.Load())
@@ -393,26 +476,43 @@ func runSimulation(t *testing.T, sim *Simulation, executions []*ExecutionRowJSON
 	ctx := t.Context()
 
 	// Compute stats about tasks (by stable output_path identifier)
-	warmDurations := make(map[string][]time.Duration)
-	coldDurations := make(map[string][]time.Duration)
+	preExecDurations := make(map[string][]time.Duration)
+	warmExecDurations := make(map[string][]time.Duration)
+	coldExecDurations := make(map[string][]time.Duration)
+	postExecDurations := make(map[string][]time.Duration)
 	for _, execution := range executions {
-		workerDuration := time.Duration(mustAtoi(execution.WorkerCompletedTimestampUsec)-mustAtoi(execution.WorkerStartTimestampUsec)) * time.Microsecond
-		if mustAtoi(execution.RunnerTaskNumber) > 1 {
-			warmDurations[execution.OutputPath] = append(warmDurations[execution.OutputPath], workerDuration)
+		preExecDuration := time.Duration(mustParseInt(execution.ExecutionStartTimestampUsec) - mustParseInt(execution.WorkerStartTimestampUsec))
+		execDuration := time.Duration(mustParseInt(execution.ExecutionCompletedTimestampUsec)-mustParseInt(execution.ExecutionStartTimestampUsec)) * time.Microsecond
+		postExecDuration := time.Duration(mustParseInt(execution.WorkerCompletedTimestampUsec) - mustParseInt(execution.ExecutionCompletedTimestampUsec))
+
+		preExecDurations[execution.OutputPath] = append(preExecDurations[execution.OutputPath], preExecDuration)
+		if mustParseInt(execution.RunnerTaskNumber) > 1 {
+			warmExecDurations[execution.OutputPath] = append(warmExecDurations[execution.OutputPath], execDuration)
 		} else {
-			coldDurations[execution.OutputPath] = append(coldDurations[execution.OutputPath], workerDuration)
+			coldExecDurations[execution.OutputPath] = append(coldExecDurations[execution.OutputPath], execDuration)
 		}
+		postExecDurations[execution.OutputPath] = append(postExecDurations[execution.OutputPath], postExecDuration)
 	}
 	// Compute p50 durations
-	warmP50 := make(map[string]time.Duration)
-	coldP50 := make(map[string]time.Duration)
-	for outputPath, durations := range warmDurations {
+	preExecP50 := make(map[string]time.Duration)
+	warmExecP50 := make(map[string]time.Duration)
+	coldExecP50 := make(map[string]time.Duration)
+	postExecP50 := make(map[string]time.Duration)
+	for outputPath, durations := range preExecDurations {
 		slices.Sort(durations)
-		warmP50[outputPath] = durations[len(durations)/2]
+		preExecP50[outputPath] = durations[len(durations)/2]
 	}
-	for outputPath, durations := range coldDurations {
+	for outputPath, durations := range warmExecDurations {
 		slices.Sort(durations)
-		coldP50[outputPath] = durations[len(durations)/2]
+		warmExecP50[outputPath] = durations[len(durations)/2]
+	}
+	for outputPath, durations := range coldExecDurations {
+		slices.Sort(durations)
+		coldExecP50[outputPath] = durations[len(durations)/2]
+	}
+	for outputPath, durations := range postExecDurations {
+		slices.Sort(durations)
+		postExecP50[outputPath] = durations[len(durations)/2]
 	}
 
 	// Create scheduler
@@ -455,25 +555,16 @@ func runSimulation(t *testing.T, sim *Simulation, executions []*ExecutionRowJSON
 		// in which all tasks are enqueued at the same time, even if we're
 		// simulating executions that would normally have occurred during a span
 		// of several days.
-		time.Sleep(time.Until(time.UnixMicro(mustAtoi(execution.QueuedTimestampUsec))))
+		time.Sleep(time.Until(time.UnixMicro(mustParseInt(execution.QueuedTimestampUsec))))
 
 		taskID := uuid.New()
-		hasWarmDuration := warmP50[execution.OutputPath] != 0
+		hasWarmDuration := warmExecP50[execution.OutputPath] != 0
 
-		computeUnits := execution.RequestedComputeUnits
-		if computeUnits == 0 {
-			t.Fatalf("compute units is 0 - unexpected. Execution: %+#v", execution)
-		}
-		taskMilliCPU := int64(computeUnits) * 1000
-		taskMemoryBytes := int64(computeUnits * 2.5e9)
-		requestedMilliCPU := mustAtoi(execution.RequestedMilliCPU)
-		requestedMemoryBytes := mustAtoi(execution.RequestedMemoryBytes)
-		if requestedMilliCPU != 0 {
-			taskMilliCPU = requestedMilliCPU
-		}
-		if requestedMemoryBytes != 0 {
-			taskMemoryBytes = requestedMemoryBytes
-		}
+		taskMilliCPU := mustParseInt(execution.EstimatedMilliCPU)
+		taskMemoryBytes := mustParseInt(execution.EstimatedMemoryBytes)
+
+		expectedColdRunnerDurationPenalty := coldExecP50[execution.OutputPath] - warmExecP50[execution.OutputPath]
+		warmRunnerMaxWait := max(0, time.Duration(float64(expectedColdRunnerDurationPenalty)*sim.warmRunnerWaitFraction))
 
 		task := &Task{
 			QueuedAt: time.Now(),
@@ -489,21 +580,27 @@ func runSimulation(t *testing.T, sim *Simulation, executions []*ExecutionRowJSON
 			PlatformHash:        execution.PlatformHash,
 			PersistentWorkerKey: execution.PersistentWorkerKey,
 
-			ColdDuration: coldP50[execution.OutputPath],
-			WarmDuration: warmP50[execution.OutputPath],
+			WarmRunnerMaxWait: warmRunnerMaxWait,
+
+			P50PreExecDuration:  preExecP50[execution.OutputPath],
+			P50ColdExecDuration: coldExecP50[execution.OutputPath],
+			P50WarmExecDuration: warmExecP50[execution.OutputPath],
+			P50PostExecDuration: postExecP50[execution.OutputPath],
+
+			PeakMemoryBytes: mustParseInt(execution.PeakMemoryBytes),
 
 			Done: make(chan struct{}),
 		}
 		// Make sure both cold/warm durations are set if applicable.
-		if task.ColdDuration == 0 {
+		if task.P50ColdExecDuration == 0 {
 			// TODO: this probably skews results; maybe report metrics here on
 			// how often this happens.
-			task.ColdDuration = task.WarmDuration
+			task.P50ColdExecDuration = task.P50WarmExecDuration
 		}
-		if task.RecycleRunner && task.WarmDuration == 0 {
-			task.WarmDuration = task.ColdDuration
+		if task.RecycleRunner && task.P50WarmExecDuration == 0 {
+			task.P50WarmExecDuration = task.P50ColdExecDuration
 		}
-		if task.ColdDuration == 0 && task.WarmDuration == 0 {
+		if task.P50ColdExecDuration == 0 && task.P50WarmExecDuration == 0 {
 			panic("cold and warm durations are both 0 - should not happen")
 		}
 
@@ -535,26 +632,54 @@ func readExecutionRows(t *testing.T) []*ExecutionRowJSON {
 	f, err := os.Open(*executionsPath)
 	require.NoError(t, err)
 	defer f.Close()
-	s := bufio.NewScanner(f)
+
+	// Unmarshaler goroutine
 	var executions []*ExecutionRowJSON
+	lines := make(chan []byte, 4096)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for b := range lines {
+			var row ExecutionRowJSON
+			err := json.Unmarshal(b, &row)
+			require.NoError(t, err)
+			executions = append(executions, &row)
+		}
+	}()
+
+	// Scanner goroutine
+	s := bufio.NewScanner(f)
 	for s.Scan() {
-		var row ExecutionRowJSON
-		err := json.Unmarshal(s.Bytes(), &row)
-		require.NoError(t, err)
-		executions = append(executions, &row)
+		lines <- bytes.Clone(s.Bytes())
 	}
 	require.NoError(t, s.Err())
+	close(lines)
+
+	<-done
 	return executions
 }
 
 type Simulation struct {
 	name string
 
+	probesPerTask int
+
+	// Limit runner pool based on total memory usage instead
+	// of using a count-based approach.
+	runnerPoolTotalMemoryLimitBytes int64
+
 	routingStrategy string
 
 	runnerPoolEvictionStrategy string
 	// Used by probabilistic_fixed runner pool eviction strategy
 	evictionProbability float64
+
+	// Wait for a warm runner for up to this fraction of the expected cold
+	// overhead (p50 cold - p50 warm duration).
+	warmRunnerWaitFraction float64
+
+	// runnerPoolAddStrategy       string
+	runnerPoolMinRequestsForAdd int
 
 	// Routing strategy params. Not all params apply to all strategies.
 
@@ -571,18 +696,33 @@ type Simulation struct {
 	// to account for the fact that one runner on the executor will be occupied.
 	subtractWeightOnProbe bool
 
+	// Idle work request params.
+	// workRequest
+
 	// Metrics.
 
-	tasksCompleted           atomic.Int64
-	idleExecutorTasksPulled  atomic.Int64
-	totalQueueDurationNanos  atomic.Int64
-	totalWorkerDurationNanos atomic.Int64
-	coldRunnerOverheadNanos  atomic.Int64
-	runnersEvicted           atomic.Int64
-	runnerHitCount           atomic.Int64
-	runnerRequestCount       atomic.Int64
+	tasksCompleted                        atomic.Int64
+	idleExecutorTasksPulled               atomic.Int64
+	totalQueueDurationNanos               atomic.Int64
+	totalWorkerDurationNanos              atomic.Int64
+	theoreticalMinimumWorkerDurationNanos atomic.Int64
+	coldRunnerOverheadNanos               atomic.Int64
+	runnersEvicted                        atomic.Int64
+	runnerHitCount                        atomic.Int64
+	runnerRequestCount                    atomic.Int64
 
 	scheduler *Scheduler
+}
+
+const vnodeFactor = 8
+
+// Rebuild subpools if any task key frequency changes by this fraction
+const rebuildThreshold = 0.02
+
+// virtualNode represents a point on the consistent hash ring.
+type virtualNode struct {
+	hash uint64
+	key  string
 }
 
 type Scheduler struct {
@@ -600,8 +740,11 @@ type Scheduler struct {
 	recentWorkersByAffinityKey map[string][]*Executor
 
 	// Only used by adaptive consistent hash strategy:
-	taskFrequencyByAffinityKey            map[string]float64
-	taskFrequencyByAffinityKeyLastUpdated time.Time
+	taskCountByAffinityKey            map[string]float64
+	taskCountByAffinityKeyLastUpdated time.Time
+	subpools                          map[string][]*Executor
+	taskAffinityKeyRing               []virtualNode
+	lastUsedFrequencies               map[string]float64
 
 	// Only used by frequency weighting strategy:
 	// taskKey -> executorHostID -> weight
@@ -620,7 +763,7 @@ func NewScheduler(sim *Simulation) *Scheduler {
 		executorWeightsByAffinityKey:            make(map[string]map[string]int64),
 		executorWeightsLastUpdatedByAffinityKey: make(map[string]time.Time),
 		// adaptive_subpools
-		taskFrequencyByAffinityKey: make(map[string]float64),
+		taskCountByAffinityKey: make(map[string]float64),
 	}
 }
 
@@ -646,9 +789,12 @@ func (s *Scheduler) Enqueue(ctx context.Context, task *Task) error {
 	s.mu.Unlock()
 
 	executors := s.route(task)
-	for _, executor := range executors {
+	if len(executors) != s.sim.probesPerTask {
+		panic(fmt.Sprintf("expected %d probes, got %d", s.sim.probesPerTask, len(executors)))
+	}
+	for _, rankedNode := range executors {
 		err := simulateRPCRoundTrip(ctx, executorSchedulerRTT, func() {
-			executor.Enqueue(task)
+			rankedNode.Executor.Enqueue(task)
 		})
 		if err != nil {
 			return err // context cancelled
@@ -657,9 +803,26 @@ func (s *Scheduler) Enqueue(ctx context.Context, task *Task) error {
 	return nil
 }
 
+type RankedNode struct {
+	Executor  *Executor
+	Preferred bool
+}
+
+// Returns all nodes with equal (unpreferred) preference.
+func toRankedNodes(executors []*Executor) []*RankedNode {
+	var out []*RankedNode
+	for _, e := range executors {
+		out = append(out, &RankedNode{
+			Executor:  e,
+			Preferred: false,
+		})
+	}
+	return out
+}
+
 // Returns 3 probes for routing the task
 // TODO: simulate redis RTT for both read + update
-func (s *Scheduler) route(task *Task) []*Executor {
+func (s *Scheduler) route(task *Task) []*RankedNode {
 	executors := slices.Clone(s.executors)
 
 	switch s.sim.routingStrategy {
@@ -676,7 +839,7 @@ func (s *Scheduler) route(task *Task) []*Executor {
 		}
 		affinityNode := recent[0]
 		s.mu.RUnlock()
-		// Shuffle remaining nodes then return the first 2 after the
+		// Shuffle remaining nodes then return the first (probesPerTask-1) after the
 		// affinity node
 		executors = slices.DeleteFunc(executors, func(e *Executor) bool {
 			return e == affinityNode
@@ -684,7 +847,7 @@ func (s *Scheduler) route(task *Task) []*Executor {
 		rand.Shuffle(len(executors), func(i, j int) {
 			executors[i], executors[j] = executors[j], executors[i]
 		})
-		return append([]*Executor{affinityNode}, executors[:min(2, len(executors))]...)
+		return toRankedNodes(append([]*Executor{affinityNode}, executors[:min(s.sim.probesPerTask-1, len(executors))]...))
 
 	case "persistent_worker_router":
 		// Note: no locking required
@@ -695,7 +858,7 @@ func (s *Scheduler) route(task *Task) []*Executor {
 		sort.Slice(executors, func(i, j int) bool {
 			return hash.MemHashString(key+executors[i].HostID) < hash.MemHashString(key+executors[j].HostID)
 		})
-		return executors[:min(3, len(executors))]
+		return toRankedNodes(executors[:min(s.sim.probesPerTask, len(executors))])
 
 	case "history_based":
 		taskAffinityKey := getTaskAffinityKey(task)
@@ -708,7 +871,7 @@ func (s *Scheduler) route(task *Task) []*Executor {
 		var probes []*Executor
 		s.mu.Lock()
 		recent := s.recentWorkersByAffinityKey[taskAffinityKey]
-		for len(recent) > 0 && len(probes) < 3 {
+		for len(recent) > 0 && len(probes) < s.sim.probesPerTask {
 			// Pop
 			r0 := recent[0]
 			recent = recent[1:]
@@ -728,7 +891,7 @@ func (s *Scheduler) route(task *Task) []*Executor {
 		s.mu.Unlock()
 		// If we need more probes to reach the minimum of 3 probes, then shuffle
 		// the remaining executors and route randomly.
-		if need := 3 - len(probes); need > 0 {
+		if need := s.sim.probesPerTask - len(probes); need > 0 {
 			executors = slices.DeleteFunc(executors, func(e *Executor) bool {
 				return slices.Contains(probes, e)
 			})
@@ -737,7 +900,7 @@ func (s *Scheduler) route(task *Task) []*Executor {
 			})
 			probes = append(probes, executors[:min(len(executors), need)]...)
 		}
-		return probes
+		return toRankedNodes(probes)
 
 	case "frequency_weighted":
 		taskAffinityKey := getTaskAffinityKey(task)
@@ -755,13 +918,13 @@ func (s *Scheduler) route(task *Task) []*Executor {
 		// Decay weights according to how much time has elapsed. Note that this
 		// doesn't affect the weighted random shuffle since we're scaling all
 		// weights by the same factor.
-		decayWeights(executorWeights, s.executorWeightsLastUpdatedByAffinityKey[taskAffinityKey], s.sim.weightHalfLife)
+		decayValues(executorWeights, s.executorWeightsLastUpdatedByAffinityKey[taskAffinityKey], s.sim.weightHalfLife)
 
 		weightFn := func(executor *Executor) int64 {
 			return int64(executorWeights[executor.HostID])
 		}
 		executors = wrand.Shuffle(executors, weightFn)
-		probes := executors[:min(3, len(executors))]
+		probes := executors[:min(s.sim.probesPerTask, len(executors))]
 
 		// Ideally we'd decrement the weight of whichever executor gets the
 		// task. We don't know which one will get the task at this point, so
@@ -781,71 +944,82 @@ func (s *Scheduler) route(task *Task) []*Executor {
 			}
 		}
 		s.executorWeightsLastUpdatedByAffinityKey[taskAffinityKey] = time.Now()
-		return probes
+		return toRankedNodes(probes)
 
 	case "adaptive_subpools":
 		taskAffinityKey := getTaskAffinityKey(task)
-		if taskAffinityKey == "" {
-			return s.routeRandomly(task)
-		}
+
+		// NOTE: lack of affinity key acts essentially as a "misc" key for
+		// actions that don't care where they schedule. Ideally, we want to
+		// schedule these actions on different nodes than the actions that
+		// really need those nodes for their persistent workers.
+
+		// TODO: try going even finer-grained, with action mnemonics etc.
+
+		// Update weights *before* sending probes. In the worst case, the
+		// weights are stale and we get a burst of incoming tasks with the same
+		// affinity key. We want to be able to adapt in this case *as the tasks
+		// are coming in* and not have to wait until they are completed in order
+		// for the pool to be rebalanced.
 
 		s.mu.Lock()
-		defer s.mu.Unlock()
 
-		// Compute relative frequency of the task key.
-		var keyFreq, totalFreq float64
-		for k, v := range s.taskFrequencyByAffinityKey {
-			totalFreq += v
-			if k == taskAffinityKey {
-				keyFreq = v
-			}
-		}
-		if keyFreq == 0 || totalFreq == 0 {
+		// Decay weights _then_ increment the frequency.
+		decayValues(s.taskCountByAffinityKey, s.taskCountByAffinityKeyLastUpdated, s.sim.weightHalfLife)
+		s.taskCountByAffinityKey[taskAffinityKey] += 1
+		s.taskCountByAffinityKeyLastUpdated = time.Now()
+		s.rebuildSubpools()
+
+		subpool, ok := s.subpools[taskAffinityKey]
+		if !ok || len(subpool) == 0 {
+			s.mu.Unlock()
 			return s.routeRandomly(task)
 		}
-		keyRelativeFreq := keyFreq / totalFreq
-		// Total number of tickets available to all task keys; i.e. the max
-		// number of times the consistent hash ring can be queried per task.
-		// This also determines the max "subpool" size.
-		const availableTickets = 1024
-		// Each key gets assigned a number of tickets based on how frequent
-		// they are. More frequent tasks can probe the ring more times.
-		keyTickets := int(keyRelativeFreq * float64(availableTickets))
-		// Allow at least one affinity probe, in case the key is dwarfed by
-		// other keys.
-		keyTickets = max(1, keyTickets)
-		var probes []*Executor
-		// Query the consistent hash `keyTickets` times, hashing the task key
-		// with the ticket number so that each ticket queries a different spot
-		// on the ring and has a chance to be matched with a different executor.
-		for i := range keyTickets {
-			executorHostID := s.executorCH.Get(hash.Strings(strconv.Itoa(i), taskAffinityKey))
-			executor := s.executorsByHostID[executorHostID]
-			if !slices.Contains(probes, executor) {
-				probes = append(probes, executor)
-				if len(probes) == 3 {
-					break
-				}
-			}
+		subpool = slices.Clone(subpool)
+		defer s.mu.Unlock()
+
+		// Shuffle the subpool and select up to probesPerTask probes
+		rand.Shuffle(len(subpool), func(i, j int) {
+			subpool[i], subpool[j] = subpool[j], subpool[i]
+		})
+		probes := subpool[:min(s.sim.probesPerTask, len(subpool))]
+
+		// If we don't have any probes, there is no subpool assigned due to the
+		// task being very low frequency. Reserve one probe for consistently
+		// routing the task to the same executor based on the affinity key.
+		if len(probes) == 0 {
+			sort.Slice(executors, func(i, j int) bool {
+				return hash.MemHashString(taskAffinityKey+executors[i].HostID) < hash.MemHashString(taskAffinityKey+executors[j].HostID)
+			})
+			probes = append(probes, executors[0])
+			executors = executors[1:]
 		}
-		// If we didn't get 3 probes, assign the remaining ones randomly.
-		if len(probes) < 3 {
+
+		// If we still don't have 3 probes, assign the remaining ones as
+		// follows:
+		if len(probes) < s.sim.probesPerTask {
 			executors = slices.DeleteFunc(executors, func(e *Executor) bool {
 				return slices.Contains(probes, e)
 			})
 			rand.Shuffle(len(executors), func(i, j int) {
 				executors[i], executors[j] = executors[j], executors[i]
 			})
-			probes = append(probes, executors[:min(len(executors), 3-len(probes))]...)
+			probes = append(probes, executors[:min(len(executors), s.sim.probesPerTask-len(probes))]...)
 		}
-		return probes
+
+		return toRankedNodes(probes)
 
 	default:
 		panic("invalid routing strategy: " + s.sim.routingStrategy)
 	}
 }
 
-func (s *Scheduler) updateRouter(executor *Executor, task *Task) {
+type RunnerPoolState struct {
+	ActiveRunnerCountByKey map[RunnerKey]int
+	PausedRunnerCountByKey map[RunnerKey]int
+}
+
+func (s *Scheduler) updateRouter(executor *Executor, task *Task, runnerPoolState *RunnerPoolState) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -857,11 +1031,17 @@ func (s *Scheduler) updateRouter(executor *Executor, task *Task) {
 		}
 		s.recentWorkersByAffinityKey[taskAffinityKey] = []*Executor{executor}
 
+	// case "pool_tracking":
+
 	case "history_based":
 		taskAffinityKey := getTaskAffinityKey(task)
-		if taskAffinityKey == "" {
-			return
-		}
+		// Track which executors are executing tasks *without* persistent worker
+		// preferences as well, so we don't overload the executors with valuable
+		// persistent workers.
+
+		// if taskAffinityKey == "" {
+		//  return
+		// }
 		s.recentWorkersByAffinityKey[taskAffinityKey] = append(
 			[]*Executor{executor},
 			s.recentWorkersByAffinityKey[taskAffinityKey]...,
@@ -881,27 +1061,114 @@ func (s *Scheduler) updateRouter(executor *Executor, task *Task) {
 			s.executorWeightsByAffinityKey[taskAffinityKey] = executorWeights
 		}
 
-		decayWeights(executorWeights, s.executorWeightsLastUpdatedByAffinityKey[taskAffinityKey], s.sim.weightHalfLife)
+		decayValues(executorWeights, s.executorWeightsLastUpdatedByAffinityKey[taskAffinityKey], s.sim.weightHalfLife)
 		executorWeights[executor.HostID] += executorWeightIncrement
 		s.executorWeightsLastUpdatedByAffinityKey[taskAffinityKey] = time.Now()
 
 	case "adaptive_subpools":
-		taskAffinityKey := getTaskAffinityKey(task)
-		if taskAffinityKey == "" {
-			return
-		}
-		// Decay weights _then_ increment the frequency.
-		decayWeights(s.taskFrequencyByAffinityKey, s.taskFrequencyByAffinityKeyLastUpdated, s.sim.weightHalfLife)
-		s.taskFrequencyByAffinityKey[taskAffinityKey] += 1
-		s.taskFrequencyByAffinityKeyLastUpdated = time.Now()
+		/*
+			taskAffinityKey := getTaskAffinityKey(task)
+			// if taskAffinityKey == "" {
+			// 	return
+			// }
+			// Decay weights _then_ increment the frequency.
+			decayValues(s.taskCountByAffinityKey, s.taskCountByAffinityKeyLastUpdated, s.sim.weightHalfLife)
+			s.taskCountByAffinityKey[taskAffinityKey] += 1
+			// XXX
+			// s.taskCountByAffinityKey[taskAffinityKey] += float64(task.Resources[ResourceCPU])
+			s.taskCountByAffinityKeyLastUpdated = time.Now()
+			s.rebuildSubpools()
+		*/
 	}
+}
+
+func (s *Scheduler) rebuildSubpools() {
+	// Compute frequencies
+	var totalCount float64
+	for _, count := range s.taskCountByAffinityKey {
+		totalCount += count
+	}
+	if totalCount == 0 {
+		return
+	}
+	currentFrequencies := make(map[string]float64)
+	for key, count := range s.taskCountByAffinityKey {
+		currentFrequencies[key] = count / totalCount
+	}
+
+	// Check if the change between current and last-used frequencies exceeds the threshold.
+	needsRebuild := false
+	// Force a rebuild on the very first run.
+	if len(s.lastUsedFrequencies) == 0 {
+		needsRebuild = true
+	} else {
+		// Check for significant changes.
+		for key, currentFreq := range currentFrequencies {
+			if math.Abs(currentFreq-s.lastUsedFrequencies[key]) > rebuildThreshold {
+				needsRebuild = true
+				break
+			}
+		}
+		// Also check for keys that might have disappeared.
+		if !needsRebuild {
+			for key := range s.lastUsedFrequencies {
+				if _, ok := currentFrequencies[key]; !ok {
+					needsRebuild = true
+					break
+				}
+			}
+		}
+	}
+
+	// If necessary, trigger the expensive rebuild.
+	if needsRebuild {
+		debugln("Rebuilding subpools @", time.Now())
+		s.rebuildPoolsInternal(s.executors, currentFrequencies)
+		s.lastUsedFrequencies = currentFrequencies
+	}
+}
+func (s *Scheduler) rebuildPoolsInternal(executors []*Executor, frequencies map[string]float64) {
+	numKeys := len(frequencies)
+	totalVNodes := numKeys * vnodeFactor
+	vnodes := make([]virtualNode, 0, totalVNodes)
+	hasher := xxhash.New()
+	var hashBytes [8]byte
+	for key, frequency := range frequencies {
+		numVNodesForKey := int(math.Ceil(frequency * float64(totalVNodes)))
+		for i := range numVNodesForKey {
+			hasher.Reset()
+			hasher.WriteString(key)
+			binary.BigEndian.PutUint64(hashBytes[:], uint64(i))
+			hasher.Write(hashBytes[:])
+			vnodes = append(vnodes, virtualNode{hash: hasher.Sum64(), key: key})
+		}
+	}
+	sort.Slice(vnodes, func(i, j int) bool { return vnodes[i].hash < vnodes[j].hash })
+	s.taskAffinityKeyRing = vnodes
+	pools := make(map[string][]*Executor)
+	if len(s.taskAffinityKeyRing) == 0 {
+		s.subpools = pools
+		return
+	}
+
+	for _, ex := range executors {
+		executorHash := xxhash.Sum64String(ex.HostID)
+		idx := sort.Search(len(s.taskAffinityKeyRing), func(i int) bool { return s.taskAffinityKeyRing[i].hash >= executorHash })
+		if idx == len(s.taskAffinityKeyRing) {
+			idx = 0
+		}
+		winningKey := s.taskAffinityKeyRing[idx].key
+		pools[winningKey] = append(pools[winningKey], ex)
+	}
+
+	s.subpools = pools
 }
 
 func getAffinityRouterKey(task *Task) string {
 	return hash.Strings(task.PlatformHash, task.OutputPath)
 }
 
-func decayWeights[T ~int64 | ~float64](m map[string]T, lastUpdated time.Time, halfLife time.Duration) {
+func decayValues[T ~int64 | ~float64](m map[string]T, lastUpdated time.Time, halfLife time.Duration) {
 	if halfLife <= 0 || lastUpdated.IsZero() {
 		return
 	}
@@ -912,29 +1179,28 @@ func decayWeights[T ~int64 | ~float64](m map[string]T, lastUpdated time.Time, ha
 	// TODO: delete entries for very small weights
 }
 
-func sumValues[K comparable, V ~int64 | ~float64](m map[K]V) V {
-	var sum V
-	for _, value := range m {
-		sum += value
-	}
-	return sum
-}
-
 func getTaskAffinityKey(task *Task) string {
 	// TODO: simulate cache so that we can evaluate cache affinity benefits
 	// even if there is no recycling key set.
 	if !task.RecycleRunner {
 		return ""
 	}
-	return task.RunnerKey()
+	return task.RunnerKey().String()
 }
 
-func (s *Scheduler) routeRandomly(task *Task) []*Executor {
+func (s *Scheduler) routeRandomly(task *Task) []*RankedNode {
 	executors := slices.Clone(s.executors)
 	rand.Shuffle(len(executors), func(i, j int) {
 		executors[i], executors[j] = executors[j], executors[i]
 	})
-	return executors[:min(3, len(executors))]
+	var out []*RankedNode
+	for _, e := range executors[:min(s.sim.probesPerTask, len(executors))] {
+		out = append(out, &RankedNode{
+			Executor:  e,
+			Preferred: false,
+		})
+	}
+	return out
 }
 
 func (e *Scheduler) SampleUnclaimedTasks() []*Task {
@@ -945,7 +1211,6 @@ func (e *Scheduler) SampleUnclaimedTasks() []*Task {
 	taskIDs := slices.Collect(maps.Keys(e.tasks))
 
 	// Filter out leased tasks
-
 	{
 		var unclaimed []string
 		for _, taskID := range taskIDs {
@@ -1033,38 +1298,47 @@ func NewExecutor(sim *Simulation, scheduler *Scheduler) *Executor {
 func (e *Executor) Run(ctx context.Context) {
 	// Every second, if we're idle, increment the idle ticker, otherwise reset
 	// the idle ticker.
-	idleTicker := time.NewTicker(1 * time.Second)
-	defer idleTicker.Stop()
+	var idleTickerChan <-chan time.Time
+	var requestMoreWorkChan <-chan time.Time
+	var requestMoreWorkTicker *time.Ticker
+	if *excessCapacityThreshold >= 0 {
+		idleTicker := time.NewTicker(1 * time.Second)
+		defer idleTicker.Stop()
+		idleTickerChan = idleTicker.C
+
+		// Every so often, check if we're idle, and if so, request more work.
+		// Start at 5s, but if we don't get any work then we'll back off below.
+		const initialRequestWorkDelay = 5 * time.Second
+		requestWorkDelay := initialRequestWorkDelay
+		requestMoreWorkTicker = time.NewTicker(requestWorkDelay)
+		defer requestMoreWorkTicker.Stop()
+		requestMoreWorkChan = requestMoreWorkTicker.C
+	}
 	idleSeconds := 0
-
-	// Every so often, check if we're idle, and if so, request more work.
-	// Start at 5s, but if we don't get any work then we'll back off below.
-	const initialRequestWorkDelay = 5 * time.Second
-	requestWorkDelay := initialRequestWorkDelay
-	requestWorkTicker := time.NewTicker(requestWorkDelay)
-	defer requestWorkTicker.Stop()
-
 	var lastWorkTime time.Time
 
 	for {
 		select {
 		case <-ctx.Done():
-			debugln("ctx Done")
 			return
 
 		// If enqueueCh receives a task, add it to the queue and try to schedule
 		// it.
 		case task := <-e.enqueueCh:
+			if *excessCapacityThreshold >= 0 {
+				requestMoreWorkTicker.Reset(idleExecutorMoreWorkTimeout)
+			}
+
 			e.mu.Lock()
 			e.queue = append(e.queue, task)
 			// l := len(e.queue)
 			e.mu.Unlock()
 			// if l >= 100 && l%50 == 0 {
-			// 	fmt.Printf("qlen=%d (host=%s)\n", l, e.HostID)
+			// 	fmt.Printf("Queueing! %d @ %s\n", l, e.HostID[:8])
 			// }
 
-			// Simulate EnqueueTaskReservationResponse resetting the idle work
-			// request backoff
+			// Simulate scheduler_server.go - EnqueueTaskReservationResponse
+			// resets the idle work request backoff
 			lastWorkTime = time.Time{}
 			e.trySchedule(ctx)
 		// If resources are freed due to a completed execution, try to schedule
@@ -1073,17 +1347,16 @@ func (e *Executor) Run(ctx context.Context) {
 			e.trySchedule(ctx)
 
 		// Every second, check whether we're idle.
-		case <-idleTicker.C:
+		case <-idleTickerChan:
 			if e.HasExcessCapacity() {
 				idleSeconds++
 			} else {
 				idleSeconds = 0
 			}
-
-		case <-requestWorkTicker.C:
-			// Don't request more work unless we've gone at least 5 seconds of
-			// being idle.
+		case <-requestMoreWorkChan:
+			// Don't request more work unless we've been idle for a bit.
 			if idleSeconds < 5 {
+				requestMoreWorkTicker.Reset(idleExecutorMoreWorkTimeout)
 				continue
 			}
 			// Simulate scheduler
@@ -1097,7 +1370,9 @@ func (e *Executor) Run(ctx context.Context) {
 			if len(tasks) == 0 {
 				// No unclaimed tasks are available - back off.
 				newDelay := clamp(timeSinceLastWork*2, 5*time.Second, time.Minute)
-				requestWorkTicker.Reset(newDelay)
+				// XXX
+				// newDelay := clamp(timeSinceLastWork*2, 100*time.Millisecond, 5*time.Second)
+				requestMoreWorkTicker.Reset(newDelay)
 				continue
 			}
 			for _, task := range tasks {
@@ -1108,12 +1383,54 @@ func (e *Executor) Run(ctx context.Context) {
 	}
 }
 
+func (e *Executor) shouldWaitForRunner(task *Task, pool *RunnerPoolState) bool {
+	if !task.Recyclable() || task.WarmRunnerMaxWait == 0 {
+		return false
+	}
+
+	key := task.RunnerKey()
+	if pool.PausedRunnerCountByKey[key] > 0 {
+		// No need to wait - there's a paused runner ready to run the task.
+		return false
+	}
+	if pool.ActiveRunnerCountByKey[key] == 0 {
+		// Waiting won't help, since there are no active runners.
+		// TODO: maybe wait anyway to allow another executor to claim the task
+		// first
+		return false
+	}
+	if time.Now().Before(task.QueuedAt.Add(task.WarmRunnerMaxWait)) {
+		// Still waiting for a warm runner
+		return true
+	}
+	return false
+}
+
 func (e *Executor) trySchedule(ctx context.Context) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	runnerPoolState := e.runnerPool.State()
+
+	var skipped []*Task
+	defer func() {
+		e.queue = append(skipped, e.queue...)
+	}()
+
 	for len(e.queue) > 0 {
 		task := e.queue[0]
+
+		// Skip tasks if all of the following are true: (1) persistent workers
+		// are enabled for the task; (2) there are no paused persistent workers
+		// in the pool; (3) there is at least one active persistent worker that
+		// the task could be matched to; (4) the task's wait delay period hasn't
+		// yet expired.
+		if e.shouldWaitForRunner(task, runnerPoolState) {
+			skipped = append(skipped, task)
+			e.queue = e.queue[1:]
+			continue
+		}
+
 		if !e.canFit(task) {
 			// Stop trying to schedule.
 			break
@@ -1156,7 +1473,7 @@ func (e *Executor) trySchedule(ctx context.Context) {
 			defer func() {
 				simulateRPCRoundTrip(ctx, executorSchedulerRTT, func() {
 					closeLease()
-					e.scheduler.updateRouter(e, task)
+					e.scheduler.updateRouter(e, task, runnerPoolState)
 				})
 			}()
 
@@ -1168,6 +1485,11 @@ func (e *Executor) trySchedule(ctx context.Context) {
 			e.execute(task)
 			task.CompletedAt = time.Now()
 			close(task.Done)
+			idealWorkerDur := task.P50WarmExecDuration
+			if task.P50WarmExecDuration == 0 || (task.P50ColdExecDuration != 0 && task.P50ColdExecDuration < idealWorkerDur) {
+				idealWorkerDur = task.P50ColdExecDuration
+			}
+			e.sim.theoreticalMinimumWorkerDurationNanos.Add(idealWorkerDur.Nanoseconds())
 			e.sim.totalWorkerDurationNanos.Add(time.Since(start).Nanoseconds())
 			e.sim.tasksCompleted.Add(1)
 		}()
@@ -1176,29 +1498,57 @@ func (e *Executor) trySchedule(ctx context.Context) {
 
 func (e *Executor) execute(task *Task) {
 	// Get runner from pool
-	r := e.runnerPool.getRunner(task)
-	defer e.runnerPool.returnRunner(r)
+	r := e.runnerPool.Get(task)
+	defer e.runnerPool.TryRecycle(r)
 
-	// Simulate running the task by sleeping for cold duration or warm duration
-	// depending on whether the runner is cold or warm.
-	var sleep time.Duration
+	// Simulate input fetch / unpause runner / image pull duration
+	time.Sleep(task.P50PreExecDuration)
+
+	// Simulate execution: sleep for p50 cold if the simulated runner is cold,
+	// or p50 warm if the simulated runner is warm.
 	if r.TaskNumber > 1 {
-		sleep = task.WarmDuration
+		time.Sleep(task.P50WarmExecDuration)
 	} else {
-		sleep = task.ColdDuration
-		e.sim.coldRunnerOverheadNanos.Add(int64(task.ColdDuration - task.WarmDuration))
+		e.sim.coldRunnerOverheadNanos.Add(int64(task.P50ColdExecDuration - task.P50WarmExecDuration))
+		time.Sleep(task.P50ColdExecDuration)
 	}
-	time.Sleep(sleep)
+
+	// Simulate output upload duration
+	time.Sleep(task.P50PostExecDuration)
+
+	// Set peak memory usage based on actual peak memory usage
+	// from the original execution
+	r.PeakMemoryBytes = task.PeakMemoryBytes
 }
 
 type RunnerPool struct {
 	sim *Simulation
 
+	recentAddRequests []string
+
 	mu      sync.RWMutex
 	runners []*Runner
 }
 
-func (p *RunnerPool) getRunner(task *Task) *Runner {
+func (p *RunnerPool) State() *RunnerPoolState {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	pausedCounts := map[RunnerKey]int{}
+	activeCounts := map[RunnerKey]int{}
+	for _, r := range p.runners {
+		if r.Active {
+			activeCounts[r.Key]++
+		} else {
+			pausedCounts[r.Key]++
+		}
+	}
+	return &RunnerPoolState{
+		PausedRunnerCountByKey: pausedCounts,
+		ActiveRunnerCountByKey: activeCounts,
+	}
+}
+
+func (p *RunnerPool) Get(task *Task) *Runner {
 	if !task.Recyclable() {
 		return &Runner{
 			TaskNumber: 1,
@@ -1216,7 +1566,8 @@ func (p *RunnerPool) getRunner(task *Task) *Runner {
 			// Runner is in use, or doesn't match the task
 			continue
 		}
-		// Update runner state and return it
+		// Runner is available and matches the runner key - update runner state
+		// and return the runner from the pool
 		r.Active = true
 		r.TaskNumber++
 		p.sim.runnerHitCount.Add(1)
@@ -1233,19 +1584,71 @@ func (p *RunnerPool) getRunner(task *Task) *Runner {
 	return r
 }
 
-func (p *RunnerPool) returnRunner(r *Runner) {
+func (p *RunnerPool) totalPausedRunnerMemoryBytes() int64 {
+	var total int64
+	for _, r := range p.runners {
+		if !r.Active {
+			total += r.PeakMemoryBytes
+		}
+	}
+	return total
+}
+
+func (p *RunnerPool) TryRecycle(r *Runner) {
 	if !r.Recyclable {
 		return
 	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	if r.PeakMemoryBytes > *maxRunnerMemoryUsageBytes {
+		// Do not recycle - delete the active runner from the pool
+		p.runners = slices.DeleteFunc(p.runners, func(sr *Runner) bool {
+			return sr == r
+		})
+		return
+	}
+
+	// Check whether there is sufficient demand for this runner before we pool
+	// it, since (A) there is a relatively high memory cost to having a runner
+	// pooled if it's going to be unused, and (B) there is a potentially high
+	// cost to evicting a runner that is utilized much more frequently.
+
+	// p.recentAddRequests = append(p.recentAddRequests, r.Key)
+	// if len(p.recentAddRequests) > 512 {
+	// 	p.recentAddRequests = p.recentAddRequests[1:]
+	// }
+	// n := 0
+	// for _, key := range p.recentAddRequests {
+	// 	if key == r.Key {
+	// 		n++
+	// 	}
+	// }
+	// if n < p.sim.runnerPoolMinRequestsForAdd && p.pausedRunnerCount() >= *runnerPoolMaxCount {
+	// 	return // (in reality, we'd remove the runner)
+	// }
+
+	// Set eviction predicate based on whether we're trying a memory based
+	// approach or count-based.
+	shouldEvict := func() bool {
+		// Note: we don't store the last recorded memory usage in the DB,
+		// so just use peak here.
+		if p.totalPausedRunnerMemoryBytes()+r.PeakMemoryBytes > p.sim.runnerPoolTotalMemoryLimitBytes {
+			return true
+		}
+		if p.pausedRunnerCount()+1 > *runnerPoolMaxCount {
+			return true
+		}
+		return false
+	}
 	// If slice is too large, remove a paused runner according to the eviction
 	// strategy:
 	// - default: LRU (first) runner
 	// - random: random runner. Higher frequency keys are more likely to be
 	//   targeted for eviction.
-	if p.pausedRunnerCount() > *runnerPoolMaxCount {
+
+	for shouldEvict() {
 		evictIndex := -1
 		switch p.sim.runnerPoolEvictionStrategy {
 		case "", "default":
@@ -1274,7 +1677,7 @@ func (p *RunnerPool) returnRunner(r *Runner) {
 			// representation of its runner key in the pool), tie-breaking by
 			// LRU
 			var maxFreq int64
-			freq := map[string]int64{}
+			freq := map[RunnerKey]int64{}
 			for _, rr := range p.runners {
 				if !rr.Active {
 					freq[rr.Key]++
@@ -1361,7 +1764,9 @@ type Runner struct {
 	TaskNumber int64
 	Recyclable bool
 	Active     bool
-	Key        string
+	Key        RunnerKey
+
+	PeakMemoryBytes int64
 }
 
 const (
@@ -1381,12 +1786,19 @@ type Task struct {
 	TargetLabel    string
 	OutputPath     string
 
+	WarmRunnerMaxWait time.Duration
+
 	RecycleRunner       bool
 	PlatformHash        string
 	PersistentWorkerKey string
 
-	ColdDuration time.Duration
-	WarmDuration time.Duration
+	P50PreExecDuration  time.Duration
+	P50ColdExecDuration time.Duration
+	P50WarmExecDuration time.Duration
+	P50PostExecDuration time.Duration
+
+	// Peak memory observed from the original execution
+	PeakMemoryBytes int64
 
 	Done chan struct{}
 }
@@ -1394,8 +1806,32 @@ type Task struct {
 func (t *Task) Recyclable() bool {
 	return t.RecycleRunner || t.PersistentWorkerKey != ""
 }
-func (t *Task) RunnerKey() string {
-	return t.PlatformHash + "|" + t.PersistentWorkerKey
+func (t *Task) RunnerKey() RunnerKey {
+	return RunnerKey{
+		PlatformHash:        t.PlatformHash,
+		PersistentWorkerKey: t.PersistentWorkerKey,
+	}
+}
+
+type RunnerKey struct {
+	PlatformHash        string
+	PersistentWorkerKey string
+}
+
+func (k RunnerKey) ShortString() string {
+	pwk := k.PersistentWorkerKey
+	if len(pwk) > 8 {
+		pwk = pwk[:8] + "…"
+	}
+	ph := k.PlatformHash
+	if len(ph) > 8 {
+		ph = ph[:8] + "…"
+	}
+	return "pwk=" + pwk + ",ph=" + ph
+}
+
+func (k RunnerKey) String() string {
+	return "pwk=" + k.PersistentWorkerKey + ",ph=" + k.PlatformHash
 }
 
 func clamp[T cmp.Ordered](d, lower, upper T) T {
@@ -1423,7 +1859,6 @@ func sleep(ctx context.Context, d time.Duration) error {
 }
 
 // hashToFloat computes a hash and normalizes its value to the range (0.0, 1.0].
-// We use xxhash for its excellent speed and distribution.
 func hashToFloat(executorID, key string) float64 {
 	h := xxhash.New()
 	// Write both executor and key to the hasher to get a unique score for the pair.
@@ -1437,7 +1872,23 @@ func hashToFloat(executorID, key string) float64 {
 	return float64(hashVal+1) / float64(math.MaxUint64+1)
 }
 
-// hashToUint64 is a simple helper for getting a hash value.
+// hashToUint64 gets an evenly distributed uint64 hash value from a string.
 func hashToUint64(s string) uint64 {
 	return xxhash.Sum64String(s)
+}
+
+func mustParseInt(s string) int64 {
+	i, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		panic(err)
+	}
+	return i
+}
+
+func sumValues[K comparable, V ~int64 | ~float64](m map[K]V) V {
+	var sum V
+	for _, value := range m {
+		sum += value
+	}
+	return sum
 }
