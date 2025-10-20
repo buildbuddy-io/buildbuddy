@@ -1029,6 +1029,9 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 		moveKey := func() error {
 			keyBytes, err := key.Bytes(version)
 			if err != nil {
+				// When we cannot migrate the key to the new version by just
+				// looking at the key, e.g. CAS keys from v5 to v6, we can
+				// construct the key from the metadata in the value.
 				if !errors.Is(err, filestore.ErrMissingKeyInfo) {
 					return err
 				}
@@ -3005,7 +3008,9 @@ func (e *partitionEvictor) randomKey(buf []byte) ([]byte, error) {
 		Isolation: &sgpb.Isolation{
 			CacheType:   rspb.CacheType_CAS,
 			PartitionId: e.part.ID,
-			GroupId:     interfaces.AuthAnonymousUser,
+			// GroupID needs to be set in order to create a synthetic hash in V6
+			// keys. For earlier versions of CAS keys, GroupId will be ignored.
+			GroupId: interfaces.AuthAnonymousUser,
 		},
 		Digest: &repb.Digest{
 			Hash: string(buf),

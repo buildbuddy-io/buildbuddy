@@ -113,7 +113,8 @@ const (
 	// name, groupID, and digest.
 	Version5
 
-	// Version6 adds group ID for CAS keys. This is intended to be used in raft.
+	// Version6 encodes both AC and CAS keys under a synthetic digest made from
+	// their remote isntance name, groupID, and digest.
 	Version6
 
 	// MaxKeyVersion is always 1 more than the highest defined version, which
@@ -130,13 +131,6 @@ type PebbleKey struct {
 	hash               string
 	encryptionKeyID    string
 	digestFunction     repb.DigestFunction_Value
-
-	// For Version5 keys and beyond, creating a key from the above fields is
-	// a *lossy* procedure. This means it's impossible to take a raw key and
-	// back out the groupID or other information. For that reason, when a
-	// v5+ key is parsed, the full key bytes are preserved here so that the
-	// key can be re-serialized.
-	fullKey []byte
 
 	// For Version5 keys and beyond, we create a synthetic hash from the above
 	// fields as part of the keys. This is a *lossy* procedure. This means it's
@@ -292,6 +286,8 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		hashStr := ""
 		if pmk.syntheticHash != "" {
 			if pmk.syntheticHashVersion == Version5 {
+				// syntheticHash is only set with AC entries in V5; therefore,
+				// we don't need to check the cache type.
 				hashStr = pmk.syntheticHash
 			} else {
 				return nil, status.FailedPreconditionErrorf("unexpected syntehtic hash version %d", pmk.syntheticHashVersion)
@@ -313,12 +309,8 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 	case Version6:
 		hashStr := ""
 		if pmk.syntheticHash != "" {
-			if pmk.syntheticHashVersion == Version6 {
+			if pmk.syntheticHashVersion == Version6 || pmk.syntheticHashVersion == Version5 {
 				hashStr = pmk.syntheticHash
-			} else if pmk.syntheticHashVersion == Version5 {
-				if pmk.CacheType() == rspb.CacheType_AC {
-					hashStr = pmk.syntheticHash
-				}
 			} else {
 				return nil, status.FailedPreconditionErrorf("unexpected synthetic hash version %d", pmk.syntheticHashVersion)
 			}

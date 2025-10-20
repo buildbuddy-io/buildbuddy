@@ -2159,47 +2159,47 @@ func TestMigrateVersions(t *testing.T) {
 	}
 
 	for i := 1; i < int(filestore.MaxKeyVersion); i++ {
-		log.Infof("=====test key migration to v%d", i)
-		// Now set the active key version to 1 (to trigger a migration)
-		// and set the migration QPS low enough to ensure that
-		// migrations are happening during our reads.
-		flags.Set(t, "cache.pebble.migration_qps_limit", 1000)
-		activeKeyVersion := int64(i)
-		options.ActiveKeyVersion = &activeKeyVersion
-		pc2, err := pebble_cache.NewPebbleCache(te, options)
-		require.NoError(t, err)
+		t.Run(fmt.Sprintf("key_migration_to_v%d", i), func(t *testing.T) {
+			// Now set the active key version to i (to trigger a migration)
+			// and set the migration QPS low enough to ensure that
+			// migrations are happening during our reads.
+			flags.Set(t, "cache.pebble.migration_qps_limit", 1000)
+			activeKeyVersion := int64(i)
+			options.ActiveKeyVersion = &activeKeyVersion
+			pc2, err := pebble_cache.NewPebbleCache(te, options)
+			require.NoError(t, err)
 
-		pc2.Start()
-		startTime := time.Now()
-		j := 0
-		for {
-			if time.Since(startTime) > 2*time.Second {
-				break
+			pc2.Start()
+			defer pc2.Stop()
+			startTime := time.Now()
+			j := 0
+			for {
+				if time.Since(startTime) > 2*time.Second {
+					break
+				}
+
+				i := j % len(digests)
+				d := digests[i]
+				j += 1
+
+				remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
+				resourceName := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+
+				exists, err := pc2.Contains(ctx, resourceName)
+				require.NoError(t, err)
+				require.True(t, exists)
+
+				rbuf, err := pc2.Get(ctx, resourceName)
+				require.NoError(t, err)
+
+				// Compute a digest for the bytes returned.
+				d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+				require.NoError(t, err)
+				if d.GetHash() != d2.GetHash() {
+					require.Failf(t, "Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+				}
 			}
-
-			i := j % len(digests)
-			d := digests[i]
-			j += 1
-
-			remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
-			resourceName := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
-
-			exists, err := pc2.Contains(ctx, resourceName)
-			require.NoError(t, err)
-			require.True(t, exists)
-
-			rbuf, err := pc2.Get(ctx, resourceName)
-			require.NoError(t, err)
-
-			// Compute a digest for the bytes returned.
-			d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
-			require.NoError(t, err)
-			if d.GetHash() != d2.GetHash() {
-				require.Failf(t, "Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
-			}
-		}
-		pc2.Stop()
-
+		})
 	}
 }
 
