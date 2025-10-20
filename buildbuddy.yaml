@@ -1,4 +1,11 @@
 actions:
+  - name: Maggie
+    container_image: ubuntu-22.04
+    resource_requests:
+      disk: 27GB
+    triggers:
+    steps:
+      - run: "bazel clean --expunge && bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-bare"
   - name: Test
     container_image: ubuntu-22.04
     resource_requests:
