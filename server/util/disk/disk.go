@@ -319,17 +319,21 @@ func (w *writeMover) Commit() error {
 }
 
 func (w *writeMover) Close() error {
+	defer func() {
+		if !w.tmpFileIsClosed {
+			w.File.Close()
+		}
+		if err := RemoveIfExists(w.File.Name()); err != nil {
+			log.Warningf("Failed to delete %s: %s", w.File.Name(), err)
+		}
+	}()
+	// Try to reserve quota for the temp file close and delete, but we will
+	// do both in the above defer either way. Otherwise we would leak temp files.
 	releaseQuota, err := reserveFileWriterQuota(w.ctx)
 	if err != nil {
 		return err
 	}
 	defer releaseQuota()
-	if !w.tmpFileIsClosed {
-		w.File.Close()
-	}
-	if err := RemoveIfExists(w.File.Name()); err != nil {
-		log.Warningf("Failed to delete %s: %s", w.File.Name(), err)
-	}
 	return nil
 }
 
