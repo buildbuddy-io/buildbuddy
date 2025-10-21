@@ -84,7 +84,11 @@ func runGazelle(repoRoot, baseFile string) error {
 
 func runRepoGazelle() error {
 	log.Debugf("Running %s", gazelleTarget)
-	_, err := bazelisk.Run([]string{"run", gazelleTarget}, &bazelisk.RunOpts{})
+	args := []string{"run", "--", gazelleTarget}
+	if *diff {
+		args = append(args, "-mode=diff")
+	}
+	_, err := bazelisk.Run(args, &bazelisk.RunOpts{})
 	return err
 }
 
