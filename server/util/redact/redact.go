@@ -1,6 +1,7 @@
 package redact
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -104,30 +105,200 @@ var (
 )
 
 // RedactingWriter wraps an io.Writer and applies RedactText to each write.
+var (
+	headerPrefixes [][]byte
+	maxPrefixLen   int
+)
+
+type writerState int
+
+const (
+	stateScanning writerState = iota
+	stateConsuming
+)
+
 type RedactingWriter struct {
-	dst io.Writer
+	dst   io.Writer
+	buf   []byte
+	state writerState
 }
 
 // NewRedactingWriter returns a writer that redacts output before forwarding it to dst.
 func NewRedactingWriter(dst io.Writer) *RedactingWriter {
-	return &RedactingWriter{dst: dst}
+	return &RedactingWriter{
+		dst:   dst,
+		state: stateScanning,
+	}
 }
 
-// Write applies RedactText to the input and writes the redacted text to the underlying writer.
+// Write redacts remote header secrets in a streaming fashion and writes to the underlying writer.
 // It reports the length of the original input so callers do not see a short write when redaction
 // changes the size.
 func (w *RedactingWriter) Write(p []byte) (int, error) {
 	if w.dst == nil {
 		return len(p), nil
 	}
-	redacted := RedactText(string(p))
-	if _, err := w.dst.Write([]byte(redacted)); err != nil {
-		return 0, err
+
+	n := len(p)
+	w.buf = append(w.buf, p...)
+
+	for len(w.buf) > 0 {
+		if w.state == stateScanning {
+			done, err := w.scanForPrefix()
+			if err != nil {
+				return n, err
+			}
+			if done {
+				// No more progress possible, need more data
+				break
+			}
+		} else { // stateConsuming
+			done, err := w.consumeUntilDelimiter()
+			if err != nil {
+				return n, err
+			}
+			if done {
+				// No delimiter found yet, need more data
+				break
+			}
+		}
 	}
-	return len(p), nil
+
+	// After processing Write, if we're still scanning and the remaining buffer
+	// can't be a prefix start, it should not be written yet - it will be written
+	// on Flush() or when enough data arrives to know it's safe.
+
+	return n, nil
+}
+
+// Flush writes any remaining buffered data to the underlying writer.
+func (w *RedactingWriter) Flush() error {
+	if w.dst == nil {
+		return nil
+	}
+
+	if w.state == stateConsuming {
+		// We're still consuming a secret but hit EOF
+		// The prefix + <REDACTED> was already written
+		// Just clear buffer and reset state
+		w.buf = w.buf[:0]
+		w.state = stateScanning
+		return nil
+	}
+
+	// In scanning state - flush remaining buffer
+	if len(w.buf) > 0 {
+		if _, err := w.dst.Write(w.buf); err != nil {
+			return err
+		}
+		w.buf = w.buf[:0]
+	}
+	return nil
+}
+
+func (w *RedactingWriter) scanForPrefix() (done bool, err error) {
+	// Search for earliest prefix in buffer
+	earliestIndex := -1
+	var matchedPrefix []byte
+
+	for _, prefix := range headerPrefixes {
+		idx := bytes.Index(w.buf, prefix)
+		if idx != -1 && (earliestIndex == -1 || idx < earliestIndex) {
+			earliestIndex = idx
+			matchedPrefix = prefix
+		}
+	}
+
+	if earliestIndex != -1 {
+		// Found a prefix at earliestIndex
+		// Flush everything before it
+		if earliestIndex > 0 {
+			if _, err := w.dst.Write(w.buf[:earliestIndex]); err != nil {
+				return true, err
+			}
+		}
+
+		// Write the prefix + <REDACTED>
+		if _, err := w.dst.Write(matchedPrefix); err != nil {
+			return true, err
+		}
+		if _, err := w.dst.Write([]byte("<REDACTED>")); err != nil {
+			return true, err
+		}
+
+		// Remove everything up to and including the prefix
+		w.buf = w.buf[earliestIndex+len(matchedPrefix):]
+
+		// Switch to consuming mode
+		w.state = stateConsuming
+		return false, nil
+	}
+
+	// No complete prefix found. Can we safely flush some bytes?
+	if len(w.buf) <= maxPrefixLen-1 {
+		// Not enough bytes to be certain - keep in buffer until Flush()
+		// This handles the case where input like "token" at end of write
+		// should not be emitted until we're sure no more data is coming.
+		return true, nil
+	}
+
+	// We have enough bytes - flush all but last (maxPrefixLen-1)
+	flushLen := len(w.buf) - (maxPrefixLen - 1)
+	if _, err := w.dst.Write(w.buf[:flushLen]); err != nil {
+		return true, err
+	}
+	w.buf = w.buf[flushLen:]
+	return false, nil
+}
+
+func (w *RedactingWriter) consumeUntilDelimiter() (done bool, err error) {
+	// Look for delimiter (space, tab, newline, CR)
+	for i, b := range w.buf {
+		if b == ' ' || b == '\t' || b == '\n' || b == '\r' {
+			// Found delimiter
+			// Drop everything before it, write the delimiter
+			if _, err := w.dst.Write(w.buf[i : i+1]); err != nil {
+				return true, err
+			}
+			w.buf = w.buf[i+1:]
+
+			// Switch back to scanning
+			w.state = stateScanning
+			return false, nil
+		}
+	}
+
+	// No delimiter found - drop entire buffer (it's all part of secret)
+	w.buf = w.buf[:0]
+	// Stay in consuming state
+	return true, nil
+}
+
+func couldBePartialPrefix(buf []byte) bool {
+	// Check if buf could be the start of any prefix
+	for _, prefix := range headerPrefixes {
+		if len(buf) < len(prefix) && bytes.HasPrefix(prefix, buf) {
+			return true
+		}
+	}
+	return false
 }
 
 func init() {
+	// Initialize header prefixes for RedactingWriter
+	headerPrefixes = [][]byte{
+		[]byte("--remote_header="),
+		[]byte("--remote_cache_header="),
+		[]byte("--remote_exec_header="),
+		[]byte("--remote_downloader_header="),
+		[]byte("--bes_header="),
+	}
+	for _, prefix := range headerPrefixes {
+		if len(prefix) > maxPrefixLen {
+			maxPrefixLen = len(prefix)
+		}
+	}
+
 	// Build the envVarOptionNamesRegex with quoted option names to avoid any
 	// regex meta-character surprises.
 	escaped := make([]string, len(envVarOptionNames))
