@@ -182,14 +182,12 @@ Here are the recommended platform properties for most CI use cases. They balance
 cost considerations and maintain good performance:
 
 - `remote-snapshot-save-policy=none-available`
-- `local-snapshot-save-policy=first-non-default-ref`
 
 For performance-sensitive or interactive workloads (like if you're using the Remote
 Bazel CLI to build interactively), we recommend the following platform properties.
 They will result in higher cache upload and download and associated costs:
 
 - `remote-snapshot-save-policy=always`
-- `local-snapshot-save-policy=always`
 
 For Workflows, you can set platform properties using the `platform_properties` field.
 

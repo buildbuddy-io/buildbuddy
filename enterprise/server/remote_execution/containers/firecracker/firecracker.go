@@ -1022,10 +1022,9 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 
 	// We always use a local manifest if it exists, so only write one if
 	// we don't want to prioritize reading a remote manifest.
-	// TODO: Make sure this logic is still right
 	readPolicy := platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName)
-	writeManifestLocally := !snapshotDetails.saveRemoteSnapshot ||
-		!(readPolicy == "" || readPolicy == snaputil.AlwaysReadNewestSnapshot)
+	writeManifestLocally := snapshotDetails.saveLocalSnapshot && (!snapshotDetails.saveRemoteSnapshot ||
+		!(readPolicy == "" || readPolicy == snaputil.AlwaysReadNewestSnapshot))
 
 	opts := &snaploader.CacheSnapshotOptions{
 		VMMetadata:            vmd,
@@ -1091,7 +1090,7 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 		return false
 	}
 
-	remoteSavePolicy := platform.FindEffectiveValue(c.task, platform.RemoteSnapshotSavePolicyPropertyName)
+	remoteSavePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
 	if remoteSavePolicy == snaputil.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
 		// We want to always save the default snapshot, because it is used as a fallback for
 		// runs on other branches, so we want it to stay up-to-date.
@@ -1107,7 +1106,6 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 	return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
 }
 
-// TODO: Reuse the remote platform property
 func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool {
 	if !*snaputil.EnableLocalSnapshotSharing || !c.recyclingEnabled {
 		return false
@@ -1116,8 +1114,11 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 	if c.createFromSnapshot && !platform.IsCICommand(c.task.GetCommand(), platform.GetProto(c.task.GetAction(), c.task.GetCommand())) {
 		return false
 	}
-	localSavePolicy := platform.FindEffectiveValue(c.task, platform.LocalSnapshotSavePolicyPropertyName)
-	if localSavePolicy == snaputil.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
+
+	// We don't have a separate platform property for local snapshot save policy, so we use the remote snapshot save policy,
+	// as it should be a good proxy for the user's intent on snapshot behavior.
+	savePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
+	if savePolicy == snaputil.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
 		// We want to always save the default snapshot, because it is used as a fallback for
 		// runs on other branches, so we want it to stay up-to-date.
 		return true
@@ -2923,11 +2924,12 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) *snapshotDet
 	saveRemoteSnapshot := c.shouldSaveRemoteSnapshot(ctx)
 	saveLocalSnapshot := c.shouldSaveLocalSnapshot(ctx)
 
-	if !saveRemoteSnapshot {
-		log.CtxInfof(ctx, "Not saving remote snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.RemoteSnapshotSavePolicyPropertyName))
+	// TODO: Check that it's a ci_runner command, so we minimize noise.
+	if c.supportsRemoteSnapshots && !saveRemoteSnapshot {
+		log.CtxInfof(ctx, "Not saving remote snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName))
 	}
 	if !saveLocalSnapshot {
-		log.CtxInfof(ctx, "Not saving local snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.LocalSnapshotSavePolicyPropertyName))
+		log.CtxInfof(ctx, "Not saving local snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName))
 	}
 
 	if c.recycled {

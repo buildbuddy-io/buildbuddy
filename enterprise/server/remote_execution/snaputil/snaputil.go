@@ -64,7 +64,7 @@ const (
 	ChunkSourceRemoteCache
 )
 
-// Values for platform.RemoteSnapshotSavePolicyPropertyName and platform.LocalSnapshotSavePolicyPropertyName:
+// Values for platform.SnapshotSavePolicyPropertyName
 const (
 	// Every run will save a snapshot.
 	AlwaysSaveSnapshot = "always"

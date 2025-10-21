@@ -94,8 +94,7 @@ const (
 	RunnerRecyclingMaxWaitPropertyName   = "runner-recycling-max-wait"
 	runnerCrashedExitCodesPropertyName   = "runner-crashed-exit-codes"
 	transientErrorExitCodes              = "transient-error-exit-codes"
-	RemoteSnapshotSavePolicyPropertyName = "remote-snapshot-save-policy"
-	LocalSnapshotSavePolicyPropertyName  = "local-snapshot-save-policy"
+	SnapshotSavePolicyPropertyName       = "remote-snapshot-save-policy"
 	SnapshotReadPolicyPropertyName       = "snapshot-read-policy"
 	PreserveWorkspacePropertyName        = "preserve-workspace"
 	overlayfsWorkspacePropertyName       = "overlayfs-workspace"
@@ -439,7 +438,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		return nil, err
 	}
 
-	snapshotSavePolicy := stringProp(m, RemoteSnapshotSavePolicyPropertyName, "")
+	snapshotSavePolicy := stringProp(m, SnapshotSavePolicyPropertyName, "")
 	switch snapshotSavePolicy {
 	case snaputil.AlwaysSaveSnapshot, snaputil.OnlySaveFirstNonDefaultSnapshot, snaputil.OnlySaveNonDefaultSnapshotIfNoneAvailable, "":
 	default:
