@@ -382,6 +382,9 @@ func routeLabel(r *http.Request) string {
 	if path == "" || path == "/" {
 		return "/"
 	}
+	if path == "/readyz" || path == "/healthz" {
+		return path
+	}
 	if strings.HasPrefix(path, "/image/") {
 		return "/image/[...]"
 	}
@@ -396,6 +399,8 @@ func routeLabel(r *http.Request) string {
 	}
 	if path == "/api/v1/metrics" {
 		return "/api/v1/metrics"
+	} else if strings.HasPrefix(path, "/api/v1/") {
+		return "/api/v1/[...]"
 	}
 	// OCI registry
 	if strings.HasPrefix(path, "/v2/") {
