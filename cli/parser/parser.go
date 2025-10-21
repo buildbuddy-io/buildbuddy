@@ -74,7 +74,7 @@ var (
 			parser, err := GenerateParser(flagCollection)
 			for name, d := range nativeDefinitions {
 				if err := parser.AddOptionDefinition(d); err != nil {
-					log.Warnf("Error initializing command-line parser when adding bb-specific definiton for '%s': %s", name, err)
+					log.Warnf("Error initializing command-line parser when adding bb-specific definition for '%s': %s", name, err)
 				}
 			}
 			parser.StartupOptionParser.Aliases = shortcuts.Shortcuts

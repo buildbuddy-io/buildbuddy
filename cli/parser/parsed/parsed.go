@@ -60,7 +60,7 @@ type Args interface {
 	// GetStartupOptions returns a slice of all the command options Args contains.
 	GetCommandOptions() []options.Option
 
-	// GetTargets returns a slice of all the bazel tagets Args contains.
+	// GetTargets returns a slice of all the bazel targets Args contains.
 	GetTargets() []*arguments.PositionalArgument
 
 	// GetExecArgs returns a slice of all the arguments bazel will forward to the
@@ -528,7 +528,7 @@ func (a *OrderedArgs) appendPositionalArgument(arg *arguments.PositionalArgument
 			a.Args = append(a.Args, &arguments.DoubleDash{})
 		} else {
 			// If there's no double dash, commandOptionInsertIndex needs to be
-			// incremented to still be len(p.Args) afer we append the argument for
+			// incremented to still be len(p.Args) after we append the argument for
 			// when we return.
 			commandOptionInsertIndex += 1
 		}
