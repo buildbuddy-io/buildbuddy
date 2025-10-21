@@ -739,7 +739,6 @@ func redactingWriterRun(t *testing.T, writes [][]byte) string {
 }
 
 func TestRedactingWriterURLSecretsCases(t *testing.T) {
-	t.Skip("RedactingWriter currently only handles remote header flags")
 	testCases := []struct {
 		name   string
 		writes [][]byte
@@ -1008,7 +1007,6 @@ func TestRedactingWriterNilDestination(t *testing.T) {
 	require.Equal(t, len(payload), n)
 }
 func TestRedactingWriterRedactsURLSecrets(t *testing.T) {
-	t.Skip("RedactingWriter currently only handles remote header flags")
 	var buf bytes.Buffer
 	w := redact.NewRedactingWriter(&buf)
 
@@ -1072,7 +1070,6 @@ func TestRedactingWriterRedactsEnvVars(t *testing.T) {
 // Comprehensive RedactingWriter tests covering boundary cases
 
 func TestRedactingWriter_URLSecrets_Basic(t *testing.T) {
-	t.Skip("RedactingWriter currently only handles remote header flags")
 	tests := []struct {
 		name  string
 		input string
@@ -1128,7 +1125,6 @@ func TestRedactingWriter_URLSecrets_Basic(t *testing.T) {
 }
 
 func TestRedactingWriter_URLSecrets_SplitAcrossWrites(t *testing.T) {
-	t.Skip("RedactingWriter currently only handles remote header flags")
 	tests := []struct {
 		name   string
 		writes []string
@@ -1662,7 +1658,6 @@ func TestRedactingWriter_CrossPattern(t *testing.T) {
 }
 
 func TestRedactingWriter_EdgeCases(t *testing.T) {
-	t.Skip("RedactingWriter currently only handles remote header flags")
 	tests := []struct {
 		name   string
 		writes []string
@@ -1705,7 +1700,6 @@ func TestRedactingWriter_EdgeCases(t *testing.T) {
 }
 
 func TestRedactingWriter_NewlineHandling(t *testing.T) {
-	t.Skip("RedactingWriter currently only handles remote header flags")
 	tests := []struct {
 		name   string
 		writes []string
