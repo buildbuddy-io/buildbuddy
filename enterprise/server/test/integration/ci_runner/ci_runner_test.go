@@ -1894,3 +1894,57 @@ actions:
 	expectedStr := "--remote_header=<REDACTED> hello okay uri://username:<REDACTED>@uri fine"
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, expectedStr)
 }
+
+func TestInvokeCLICommandViaBazelisk(t *testing.T) {
+	tmp := testfs.MakeTempDir(t)
+
+	// Create a fake CLI that supports a single command called
+	// "fake-cli-command" and fails if any other arguments are passed to it.
+	fakeCLI := testfs.WriteFile(t, tmp, "script.sh", `#!/usr/bin/env bash
+
+for arg in "$@"; do
+	if [[ "$arg" == "fake-cli-command" ]]; then
+		# When running the fake-cli-command, no other bazel-specific args
+		# should be passed.
+		if [[ "$*" != "fake-cli-command" ]]; then
+			echo >&2 "Got unexpected arguments: ${@@Q}"
+			exit 1
+		fi
+		echo "fake-cli-command: OK"
+		exit 0
+	fi
+done
+
+# For other bazel commands, do nothing.
+`)
+	testfs.MakeExecutable(t, tmp, "script.sh")
+
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, _ := makeGitRepo(t, map[string]string{
+		".bazelversion": fakeCLI,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    steps:
+      - run: "bazelisk fake-cli-command"
+`,
+	})
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+		// Unset bazel_command so that we use the real bazelisk.
+		"--bazel_command=",
+		"--bazel_startup_flags=",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+	checkRunnerResult(t, result)
+	require.Contains(t, result.Output, "fake-cli-command: OK")
+}
