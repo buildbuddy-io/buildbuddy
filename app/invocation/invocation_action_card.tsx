@@ -1236,11 +1236,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 {vmMetadata.snapshotId && (
                                   <div className="snapshot-id-container">
                                     <div className="snapshot-id-details">
-                                      <div className="metadata-title">Saved to snapshot ID</div>
-                                      <div className="metadata-detail">{vmMetadata.snapshotId}</div>
+                                      {vmMetadata.savedLocalSnapshot || vmMetadata.savedRemoteSnapshot ? (
+                                        <>
+                                          <div className="metadata-title">Saved to snapshot ID</div>
+                                          <div className="metadata-detail">{vmMetadata.snapshotId}</div>
+                                        </>
+                                      ) : (
+                                        <div className="metadata-title">No snapshot saved for this run</div>
+                                      )}
                                     </div>
                                     <div>
-                                      {vmMetadata.snapshotKey && (
+                                      {vmMetadata.snapshotKey && (vmMetadata.savedLocalSnapshot || vmMetadata.savedRemoteSnapshot ) && (
                                         <div className="invocation-menu-container">
                                           <a
                                             className="invalidate-button"

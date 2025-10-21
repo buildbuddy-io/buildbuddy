@@ -1104,7 +1104,7 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 	// savePolicy=OnlySaveFirstNonDefaultRemoteSnapshot,
 	// only save a remote snapshot if a remote snapshot for the primary git branch key
 	// doesn't already exist.
-	return c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
+	return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
 }
 
 // TODO: Reuse the remote platform property
