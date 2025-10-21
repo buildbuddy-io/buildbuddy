@@ -1,6 +1,7 @@
 package redact_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"testing"
@@ -720,5 +721,65 @@ func TestRedactAPIKeys(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, event.GetProgress().GetStdout())
 		})
+	}
+}
+
+func TestRedactingWriterRedactsURLSecrets(t *testing.T) {
+	var buf bytes.Buffer
+	w := redact.NewRedactingWriter(&buf)
+
+	const input = "https://user:supersecret@example.com"
+	const want = "https://user:<REDACTED>@example.com"
+
+	if _, err := w.Write([]byte(input)); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if got := buf.String(); got != want {
+		t.Fatalf("Write() = %q, want %q", got, want)
+	}
+}
+
+func TestRedactingWriterRedactsRemoteHeaders(t *testing.T) {
+	var buf bytes.Buffer
+	w := redact.NewRedactingWriter(&buf)
+
+	const input = "--remote_header=x-buildbuddy-api-key=foo"
+	const want = "--remote_header=<REDACTED>"
+
+	if _, err := w.Write([]byte(input)); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if got := buf.String(); got != want {
+		t.Fatalf("Write() = %q, want %q", got, want)
+	}
+}
+
+func TestRedactingWriterRedactsBuildBuddyAPIKeys(t *testing.T) {
+	var buf bytes.Buffer
+	w := redact.NewRedactingWriter(&buf)
+
+	const input = "x-buildbuddy-api-key=ABCDEFGHIJKLMNOPQRST"
+	const want = "x-buildbuddy-api-key=<REDACTED>"
+
+	if _, err := w.Write([]byte(input)); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if got := buf.String(); got != want {
+		t.Fatalf("Write() = %q, want %q", got, want)
+	}
+}
+
+func TestRedactingWriterRedactsEnvVars(t *testing.T) {
+	var buf bytes.Buffer
+	w := redact.NewRedactingWriter(&buf)
+
+	const input = "--action_env=TOKEN=foo"
+	const want = "--action_env=TOKEN=<REDACTED>"
+
+	if _, err := w.Write([]byte(input)); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if got := buf.String(); got != want {
+		t.Fatalf("Write() = %q, want %q", got, want)
 	}
 }

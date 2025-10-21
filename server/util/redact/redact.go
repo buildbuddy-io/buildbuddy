@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"reflect"
 	"regexp"
 	"slices"
@@ -101,6 +102,30 @@ var (
 		"bes_header",
 	}
 )
+
+// RedactingWriter wraps an io.Writer and applies RedactText to each write.
+type RedactingWriter struct {
+	dst io.Writer
+}
+
+// NewRedactingWriter returns a writer that redacts output before forwarding it to dst.
+func NewRedactingWriter(dst io.Writer) *RedactingWriter {
+	return &RedactingWriter{dst: dst}
+}
+
+// Write applies RedactText to the input and writes the redacted text to the underlying writer.
+// It reports the length of the original input so callers do not see a short write when redaction
+// changes the size.
+func (w *RedactingWriter) Write(p []byte) (int, error) {
+	if w.dst == nil {
+		return len(p), nil
+	}
+	redacted := RedactText(string(p))
+	if _, err := w.dst.Write([]byte(redacted)); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
 
 func init() {
 	// Build the envVarOptionNamesRegex with quoted option names to avoid any
