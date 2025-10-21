@@ -1974,7 +1974,7 @@ var (
 	// #### Examples
 	//
 	// ```promql
-	// # Median request duration for successfuly processed (2xx) requests.
+	// # Median request duration for successfully processed (2xx) requests.
 	// # Other status codes may be associated with early-exits and are
 	// # likely to add too much noise.
 	// histogram_quantile(
