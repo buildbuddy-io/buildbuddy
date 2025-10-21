@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/batch_operator"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/migration_operators"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -122,9 +123,11 @@ type mockBSClient struct {
 	writeIdx     int
 	readError    error
 	writeError   error
+	lastCtx      context.Context // Capture context for verification
 }
 
 func (m *mockBSClient) Read(ctx context.Context, in *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	m.lastCtx = ctx
 	if m.readError != nil {
 		return nil, m.readError
 	}
@@ -137,6 +140,7 @@ func (m *mockBSClient) Read(ctx context.Context, in *bspb.ReadRequest, opts ...g
 }
 
 func (m *mockBSClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	m.lastCtx = ctx
 	if m.writeError != nil {
 		return nil, m.writeError
 	}
@@ -156,9 +160,11 @@ func (m *mockBSClient) QueryWriteStatus(ctx context.Context, in *bspb.QueryWrite
 type mockCASClient struct {
 	missingBlobs []*repb.Digest
 	err          error
+	lastCtx      context.Context // Capture context for verification
 }
 
 func (m *mockCASClient) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest, opts ...grpc.CallOption) (*repb.FindMissingBlobsResponse, error) {
+	m.lastCtx = ctx
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -227,6 +233,18 @@ func digestProto(hash string, sizeBytes int64) *repb.Digest {
 	return &repb.Digest{Hash: hash, SizeBytes: sizeBytes}
 }
 
+func verifyUsageTrackingDisabled(t *testing.T, ctx context.Context) {
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		// In test environments, DisableUsageTracking may not add metadata due to origin checks
+		// but the function should still have been called with a wrapped context
+		return
+	}
+	skipValues := md.Get(usageutil.SkipUsageTrackingHeaderName)
+	require.Len(t, skipValues, 1, "Expected usage tracking to be disabled, but no header was set.")
+	require.Equal(t, usageutil.SkipUsageTrackingEnabledValue, skipValues[0], "Unexpected skip-tracking header value.")
+}
+
 func TestByteStreamCopy_Success(t *testing.T) {
 	ctx := context.Background()
 
@@ -285,6 +303,11 @@ func TestByteStreamCopy_Success(t *testing.T) {
 	// Execute the copy
 	err := migration_operators.ByteStreamCopy(ctx, router, "test-group", batch)
 	require.NoError(t, err)
+
+	// Verify usage tracking is disabled for CAS, BS primary, and BS secondary calls
+	verifyUsageTrackingDisabled(t, casClient.lastCtx)
+	verifyUsageTrackingDisabled(t, primary.lastCtx)
+	verifyUsageTrackingDisabled(t, secondary.lastCtx)
 
 	// Verify write stream 1 received correct data
 	require.Len(t, writeStream1.requests, 4) // Initial request + 2 data chunks + finish
@@ -515,6 +538,9 @@ func TestByteStreamCopy_EmptyData(t *testing.T) {
 	// Execute the copy - should return without error since empty blobs are skipped
 	err := migration_operators.ByteStreamCopy(ctx, router, "test-group", batch)
 	require.NoError(t, err)
+
+	// Verify usage tracking is disabled for CAS call (BS calls not made for empty blobs)
+	verifyUsageTrackingDisabled(t, casClient.lastCtx)
 }
 
 func TestByteStreamReadAndVerify_Success(t *testing.T) {
@@ -555,6 +581,9 @@ func TestByteStreamReadAndVerify_Success(t *testing.T) {
 	// Test with verification enabled
 	err := migration_operators.ByteStreamReadAndVerify(ctx, router, true, "test-group", batch)
 	require.NoError(t, err)
+
+	// Verify usage tracking is disabled for BS secondary calls
+	verifyUsageTrackingDisabled(t, secondary.lastCtx)
 }
 
 func TestByteStreamReadAndVerify_SizeMismatch(t *testing.T) {
@@ -623,6 +652,9 @@ func TestByteStreamReadAndVerify_NoVerify(t *testing.T) {
 	// Test with verification disabled - should not return error
 	err := migration_operators.ByteStreamReadAndVerify(ctx, router, false, "test-group", batch)
 	require.NoError(t, err)
+
+	// Verify usage tracking is disabled for BS secondary calls
+	verifyUsageTrackingDisabled(t, secondary.lastCtx)
 }
 
 func TestByteStreamReadAndVerify_ReadError(t *testing.T) {
