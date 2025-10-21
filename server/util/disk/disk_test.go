@@ -29,12 +29,19 @@ func TestWriteMover_CloseCleansUp(t *testing.T) {
 		t.Run(fmt.Sprintf("cancel=%v", shouldCancel), func(t *testing.T) {
 			dir := testfs.MakeTempDir(t)
 			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 			path := filepath.Join(dir, "testfile")
 			w, err := disk.FileWriter(ctx, path)
 			require.NoError(t, err)
 			_, err = w.Write([]byte("hello"))
 			require.NoError(t, err)
-			cancel()
+
+			if shouldCancel {
+				// Cancel the context to simulate a timeout or RPC cancellation.
+				// This should cause w.Close to fail to get writer quota, but it
+				// shoud still clean up the temp file.
+				cancel()
+			}
 			w.Close()
 			entries, err := os.ReadDir(dir)
 			require.NoError(t, err)
