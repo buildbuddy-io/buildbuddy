@@ -5,27 +5,45 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/batch_operator"
-	"github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 func ByteStreamCopy(ctx context.Context, router interfaces.CacheRoutingService, groupID string, b *batch_operator.DigestBatch) error {
 	ctx, cancel := context.WithCancel(usageutil.DisableUsageTracking(ctx))
 	defer cancel()
+
+	_, cas, err := router.GetCASClients(ctx)
+	if err != nil {
+		return err
+	}
+	res, err := cas.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		InstanceName:   b.InstanceName,
+		DigestFunction: b.DigestFunction,
+		BlobDigests:    b.Digests,
+	})
+	if err != nil {
+		return err
+	}
+	if len(res.MissingBlobDigests) == 0 {
+		// Nothing to copy!
+		return nil
+	}
+
 	primary, secondary, err := router.GetBSClients(ctx)
 	if err != nil {
 		return err
 	}
 
-	for _, d := range b.Digests {
+	for _, d := range res.MissingBlobDigests {
 		if d.SizeBytes == 0 {
-			continue;
+			continue
 		}
 		// TODO(jdhollen): This should be using compression, when available.
 		r := digest.NewCASResourceName(d, b.InstanceName, b.DigestFunction)
@@ -92,7 +110,7 @@ func ByteStreamReadAndVerify(ctx context.Context, router interfaces.CacheRouting
 		r := digest.NewCASResourceName(d, b.InstanceName, b.DigestFunction)
 		// TODO(jdhollen): Should we decompress client-side? we never intend to do this much regardless.
 		if !verify {
-			r.SetCompressor(remote_execution.Compressor_ZSTD)
+			r.SetCompressor(repb.Compressor_ZSTD)
 		}
 		readStream, err := secondary.Read(ctx, &bspb.ReadRequest{ResourceName: r.DownloadString()})
 		if err != nil {

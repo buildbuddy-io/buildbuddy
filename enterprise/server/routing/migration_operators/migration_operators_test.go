@@ -152,11 +152,48 @@ func (m *mockBSClient) QueryWriteStatus(ctx context.Context, in *bspb.QueryWrite
 	return nil, status.UnimplementedError("QueryWriteStatus not implemented")
 }
 
+// Mock CAS client
+type mockCASClient struct {
+	missingBlobs []*repb.Digest
+	err          error
+}
+
+func (m *mockCASClient) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest, opts ...grpc.CallOption) (*repb.FindMissingBlobsResponse, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &repb.FindMissingBlobsResponse{
+		MissingBlobDigests: m.missingBlobs,
+	}, nil
+}
+
+func (m *mockCASClient) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest, opts ...grpc.CallOption) (*repb.BatchUpdateBlobsResponse, error) {
+	return nil, status.UnimplementedError("BatchUpdateBlobs not implemented")
+}
+
+func (m *mockCASClient) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest, opts ...grpc.CallOption) (*repb.BatchReadBlobsResponse, error) {
+	return nil, status.UnimplementedError("BatchReadBlobs not implemented")
+}
+
+func (m *mockCASClient) GetTree(ctx context.Context, req *repb.GetTreeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[repb.GetTreeResponse], error) {
+	return nil, status.UnimplementedError("GetTree not implemented")
+}
+
+func (m *mockCASClient) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest, opts ...grpc.CallOption) (*repb.SpliceBlobResponse, error) {
+	return nil, status.UnimplementedError("SpliceBlob not implemented")
+}
+
+func (m *mockCASClient) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest, opts ...grpc.CallOption) (*repb.SplitBlobResponse, error) {
+	return nil, status.UnimplementedError("SplitBlob not implemented")
+}
+
 // Mock CacheRoutingService
 type mockRouter struct {
-	primary   bspb.ByteStreamClient
-	secondary bspb.ByteStreamClient
-	err       error
+	primary      bspb.ByteStreamClient
+	secondary    bspb.ByteStreamClient
+	casSecondary repb.ContentAddressableStorageClient
+	err          error
+	casErr       error
 }
 
 func (m *mockRouter) GetCacheRoutingConfig(ctx context.Context) (*ropb.CacheRoutingConfig, error) {
@@ -164,7 +201,10 @@ func (m *mockRouter) GetCacheRoutingConfig(ctx context.Context) (*ropb.CacheRout
 }
 
 func (m *mockRouter) GetCASClients(ctx context.Context) (repb.ContentAddressableStorageClient, repb.ContentAddressableStorageClient, error) {
-	return nil, nil, status.UnimplementedError("GetCASClients not implemented")
+	if m.casErr != nil {
+		return nil, nil, m.casErr
+	}
+	return nil, m.casSecondary, nil
 }
 
 func (m *mockRouter) GetACClients(ctx context.Context) (repb.ActionCacheClient, repb.ActionCacheClient, error) {
@@ -187,10 +227,121 @@ func digestProto(hash string, sizeBytes int64) *repb.Digest {
 	return &repb.Digest{Hash: hash, SizeBytes: sizeBytes}
 }
 
+func TestByteStreamCopy_Success(t *testing.T) {
+	ctx := context.Background()
+
+	// Create test digests
+	digest1 := digestProto(strings.Repeat("1", 64), 10)
+	digest2 := digestProto(strings.Repeat("2", 64), 20)
+
+	// Create mock CAS client that returns both digests as missing
+	casClient := &mockCASClient{
+		missingBlobs: []*repb.Digest{digest1, digest2},
+	}
+
+	// Create mock read streams
+	readStream1 := &mockReadClient{
+		responses: []*bspb.ReadResponse{
+			{Data: []byte("hello")},
+			{Data: []byte("world")},
+		},
+	}
+	readStream2 := &mockReadClient{
+		responses: []*bspb.ReadResponse{
+			{Data: []byte("test")},
+			{Data: []byte("data")},
+			{Data: []byte("more")},
+		},
+	}
+
+	// Create mock write streams
+	writeStream1 := &mockWriteClient{
+		response: &bspb.WriteResponse{CommittedSize: 10},
+	}
+	writeStream2 := &mockWriteClient{
+		response: &bspb.WriteResponse{CommittedSize: 12},
+	}
+
+	// Setup mock clients
+	primary := &mockBSClient{
+		readStreams: []*mockReadClient{readStream1, readStream2},
+	}
+	secondary := &mockBSClient{
+		writeStreams: []*mockWriteClient{writeStream1, writeStream2},
+	}
+
+	router := &mockRouter{
+		primary:      primary,
+		secondary:    secondary,
+		casSecondary: casClient,
+	}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{digest1, digest2},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	// Execute the copy
+	err := migration_operators.ByteStreamCopy(ctx, router, "test-group", batch)
+	require.NoError(t, err)
+
+	// Verify write stream 1 received correct data
+	require.Len(t, writeStream1.requests, 4) // Initial request + 2 data chunks + finish
+	require.Contains(t, writeStream1.requests[0].ResourceName, "test-instance/uploads/")
+	require.Contains(t, writeStream1.requests[0].ResourceName, "/blobs/1111111111111111111111111111111111111111111111111111111111111111/10")
+	require.Equal(t, int64(0), writeStream1.requests[0].WriteOffset)
+	require.Equal(t, []byte("hello"), writeStream1.requests[1].Data)
+	require.Equal(t, int64(0), writeStream1.requests[1].WriteOffset)
+	require.Equal(t, []byte("world"), writeStream1.requests[2].Data)
+	require.Equal(t, int64(5), writeStream1.requests[2].WriteOffset)
+	require.True(t, writeStream1.requests[3].FinishWrite)
+	require.Equal(t, int64(10), writeStream1.requests[3].WriteOffset)
+
+	// Verify write stream 2 received correct data
+	require.Len(t, writeStream2.requests, 5) // Initial request + 3 data chunks + finish
+	require.Contains(t, writeStream2.requests[0].ResourceName, "test-instance/uploads/")
+	require.Contains(t, writeStream2.requests[0].ResourceName, "/blobs/2222222222222222222222222222222222222222222222222222222222222222/20")
+	require.Equal(t, []byte("test"), writeStream2.requests[1].Data)
+	require.Equal(t, []byte("data"), writeStream2.requests[2].Data)
+	require.Equal(t, []byte("more"), writeStream2.requests[3].Data)
+	require.True(t, writeStream2.requests[4].FinishWrite)
+}
+
+func TestByteStreamCopy_NothingMissing(t *testing.T) {
+	ctx := context.Background()
+
+	digest1 := digestProto(strings.Repeat("1", 64), 10)
+
+	// Create mock CAS client that returns no missing blobs
+	casClient := &mockCASClient{
+		missingBlobs: []*repb.Digest{}, // Empty list - nothing missing
+	}
+
+	router := &mockRouter{
+		casSecondary: casClient,
+	}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{digest1},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	// Execute the copy - should return without error since nothing is missing
+	err := migration_operators.ByteStreamCopy(ctx, router, "test-group", batch)
+	require.NoError(t, err)
+}
+
 func TestByteStreamCopy_ReadError(t *testing.T) {
 	ctx := context.Background()
 
 	digest1 := digestProto(strings.Repeat("1", 64), 10)
+
+	// Create mock CAS client that returns digest as missing
+	casClient := &mockCASClient{
+		missingBlobs: []*repb.Digest{digest1},
+	}
 
 	// Create mock read stream with error
 	readStream1 := &mockReadClient{
@@ -210,8 +361,9 @@ func TestByteStreamCopy_ReadError(t *testing.T) {
 	}
 
 	router := &mockRouter{
-		primary:   primary,
-		secondary: secondary,
+		primary:      primary,
+		secondary:    secondary,
+		casSecondary: casClient,
 	}
 
 	batch := &batch_operator.DigestBatch{
@@ -229,6 +381,11 @@ func TestByteStreamCopy_WriteError(t *testing.T) {
 	ctx := context.Background()
 
 	digest1 := digestProto(strings.Repeat("1", 64), 10)
+
+	// Create mock CAS client that returns digest as missing
+	casClient := &mockCASClient{
+		missingBlobs: []*repb.Digest{digest1},
+	}
 
 	readStream1 := &mockReadClient{
 		responses: []*bspb.ReadResponse{
@@ -249,8 +406,9 @@ func TestByteStreamCopy_WriteError(t *testing.T) {
 	}
 
 	router := &mockRouter{
-		primary:   primary,
-		secondary: secondary,
+		primary:      primary,
+		secondary:    secondary,
+		casSecondary: casClient,
 	}
 
 	batch := &batch_operator.DigestBatch{
@@ -264,11 +422,11 @@ func TestByteStreamCopy_WriteError(t *testing.T) {
 	require.Contains(t, err.Error(), "write failed")
 }
 
-func TestByteStreamCopy_RouterError(t *testing.T) {
+func TestByteStreamCopy_CASError(t *testing.T) {
 	ctx := context.Background()
 
 	router := &mockRouter{
-		err: status.InternalError("router failed"),
+		casErr: status.InternalError("cas failed"),
 	}
 
 	batch := &batch_operator.DigestBatch{
@@ -279,7 +437,84 @@ func TestByteStreamCopy_RouterError(t *testing.T) {
 
 	err := migration_operators.ByteStreamCopy(ctx, router, "test-group", batch)
 	require.Error(t, err)
+	require.Contains(t, err.Error(), "cas failed")
+}
+
+func TestByteStreamCopy_FindMissingError(t *testing.T) {
+	ctx := context.Background()
+
+	digest1 := digestProto(strings.Repeat("1", 64), 10)
+
+	// Create mock CAS client that returns error on FindMissingBlobs
+	casClient := &mockCASClient{
+		err: status.InternalError("find missing failed"),
+	}
+
+	router := &mockRouter{
+		casSecondary: casClient,
+	}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{digest1},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err := migration_operators.ByteStreamCopy(ctx, router, "test-group", batch)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "find missing failed")
+}
+
+func TestByteStreamCopy_BSRouterError(t *testing.T) {
+	ctx := context.Background()
+
+	digest1 := digestProto(strings.Repeat("1", 64), 10)
+
+	// Create mock CAS client that returns digest as missing
+	casClient := &mockCASClient{
+		missingBlobs: []*repb.Digest{digest1},
+	}
+
+	router := &mockRouter{
+		casSecondary: casClient,
+		err:          status.InternalError("router failed"),
+	}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{digest1},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err := migration_operators.ByteStreamCopy(ctx, router, "test-group", batch)
+	require.Error(t, err)
 	require.Contains(t, err.Error(), "router failed")
+}
+
+func TestByteStreamCopy_EmptyData(t *testing.T) {
+	ctx := context.Background()
+
+	// Create test digest for empty data
+	digest1 := digestProto(strings.Repeat("0", 64), 0)
+
+	// Create mock CAS client that returns digest as missing
+	casClient := &mockCASClient{
+		missingBlobs: []*repb.Digest{digest1},
+	}
+
+	router := &mockRouter{
+		casSecondary: casClient,
+	}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{digest1},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	// Execute the copy - should return without error since empty blobs are skipped
+	err := migration_operators.ByteStreamCopy(ctx, router, "test-group", batch)
+	require.NoError(t, err)
 }
 
 func TestByteStreamReadAndVerify_Success(t *testing.T) {
