@@ -1,6 +1,10 @@
 package disk_test
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,4 +22,25 @@ func TestGetDirUsage(t *testing.T) {
 	require.Greater(t, usage.TotalBytes, uint64(0))
 	require.Equal(t, usage.TotalBytes, usage.UsedBytes+usage.FreeBytes)
 	require.GreaterOrEqual(t, usage.FreeBytes, usage.AvailBytes)
+}
+
+func TestWriteMover_CloseCleansUp(t *testing.T) {
+	for _, shouldCancel := range []bool{true, false} {
+		t.Run(fmt.Sprintf("cancel=%v", shouldCancel), func(t *testing.T) {
+			dir := testfs.MakeTempDir(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			path := filepath.Join(dir, "testfile")
+			w, err := disk.FileWriter(ctx, path)
+			require.NoError(t, err)
+			_, err = w.Write([]byte("hello"))
+			require.NoError(t, err)
+			cancel()
+			w.Close()
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			for _, ent := range entries {
+				t.Fatalf("Unexpected file %v", ent.Name())
+			}
+		})
+	}
 }
