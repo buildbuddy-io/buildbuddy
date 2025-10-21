@@ -81,6 +81,8 @@ func ByteStreamCopy(ctx context.Context, router interfaces.CacheRoutingService, 
 }
 
 func ByteStreamReadAndVerify(ctx context.Context, router interfaces.CacheRoutingService, verify bool, groupID string, b *batch_operator.DigestBatch) error {
+	ctx, cancel := context.WithCancel(usageutil.DisableUsageTracking(ctx))
+	defer cancel()
 	_, secondary, err := router.GetBSClients(ctx)
 	if err != nil {
 		return err
