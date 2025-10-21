@@ -45,6 +45,7 @@ var (
 	// Event source: can either be an invocation_id or build_event_json_file.
 	invocationID       = flag.String("invocation_id", "", "The invocation ID to replay.")
 	buildEventJSONFile = flag.String("build_event_json_file", "", "If set, replay from a build_event_json_file instead of from the original invocation ID.")
+	rawJSONFile        = flag.String("raw_json_file", "", "If set, replay from a json file downloaded from the Raw tab of BuildBuddy Web UI.")
 
 	besBackend    = flag.String("bes_backend", "", "The bes backend to replay events to.")
 	besResultsURL = flag.String("bes_results_url", "", "The invocation URL prefix")
@@ -96,11 +97,21 @@ func main() {
 		}
 	}
 
-	if *buildEventJSONFile == "" && *invocationID == "" {
-		log.Fatalf("Must provide either invocation_id or build_event_json_file")
+	if *buildEventJSONFile == "" && *invocationID == "" && *rawJSONFile == "" {
+		log.Fatalf("Must provide either invocation_id or build_event_json_file or raw_json_file")
 	}
-	if *buildEventJSONFile != "" && *invocationID != "" {
-		log.Fatalf("Cannot set both invocation_id and build_event_json_file")
+	sourceFlagCount := 0
+	if *buildEventJSONFile != "" {
+		sourceFlagCount++
+	}
+	if *invocationID != "" {
+		sourceFlagCount++
+	}
+	if *rawJSONFile != "" {
+		sourceFlagCount++
+	}
+	if sourceFlagCount > 1 {
+		log.Fatalf("Cannot set more than one event source flag. Pick one between invocation_id and build_event_json_file and raw_json_file")
 	}
 
 	env := real_environment.NewRealEnv(healthcheck.NewHealthChecker(""))
@@ -118,11 +129,13 @@ func main() {
 	}
 
 	var eventSource EventSource
-	if *buildEventJSONFile == "" {
+	if *invocationID != "" {
 		// Copy blobs from blobstore
 		eventSource = NewBlobstoreEventSource(bs, *invocationID, *attemptNumber)
+	} else if *buildEventJSONFile != "" {
+		eventSource = NewBuildEventJSONFileEventSource(*buildEventJSONFile, false /* isRawFile */)
 	} else {
-		eventSource = NewBuildEventJSONFileEventSource(*buildEventJSONFile)
+		eventSource = NewBuildEventJSONFileEventSource(*rawJSONFile, true /* isRawFile */)
 	}
 	conn, err := grpc_client.DialSimple(*besBackend)
 	if err != nil {
@@ -360,10 +373,12 @@ type BuildEventJSONFileEventSource struct {
 	f              *os.File
 	s              *bufio.Scanner
 	sequenceNumber int64
+
+	isRawFile bool
 }
 
-func NewBuildEventJSONFileEventSource(filename string) *BuildEventJSONFileEventSource {
-	return &BuildEventJSONFileEventSource{filename: filename}
+func NewBuildEventJSONFileEventSource(filename string, isRawFile bool) *BuildEventJSONFileEventSource {
+	return &BuildEventJSONFileEventSource{filename: filename, isRawFile: isRawFile}
 }
 
 func (e *BuildEventJSONFileEventSource) Next(ctx context.Context) (*inpb.InvocationEvent, error) {
@@ -383,6 +398,9 @@ func (e *BuildEventJSONFileEventSource) Next(ctx context.Context) (*inpb.Invocat
 		line := e.s.Text()
 		if !strings.HasPrefix(line, "{") {
 			continue
+		}
+		if e.isRawFile {
+			line = strings.TrimSuffix(line, ",")
 		}
 		var be espb.BuildEvent
 		if err := protojson.Unmarshal([]byte(line), &be); err != nil {
