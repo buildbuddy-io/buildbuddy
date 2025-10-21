@@ -1,10 +1,12 @@
 package redact
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"reflect"
 	"regexp"
 	"slices"
@@ -101,6 +103,441 @@ var (
 		"bes_header",
 	}
 )
+
+type writerState int
+
+const (
+	writerStateNormal writerState = iota
+	writerStateDropping
+	writerStateEnvKey
+	writerStateURLUser
+	writerStateURLSecret
+)
+
+var headerPrefixes = [][]byte{
+	[]byte("--remote_header="),
+	[]byte("--remote_cache_header="),
+	[]byte("--remote_exec_header="),
+	[]byte("--remote_downloader_header="),
+	[]byte("--bes_header="),
+}
+
+var envPrefixes = [][]byte{
+	[]byte("--action_env="),
+	[]byte("--client_env="),
+	[]byte("--host_action_env="),
+	[]byte("--repo_env="),
+	[]byte("--test_env="),
+}
+
+const redactingWriterLookbehind = 64
+
+var redactedMarker = []byte("<REDACTED>")
+
+// RedactingWriter wraps an io.Writer and redacts remote header style secrets while streaming.
+type RedactingWriter struct {
+	dst   io.Writer
+	buf   []byte
+	state writerState
+	match currentMatch
+}
+
+type currentMatch int
+
+const (
+	matchUnknown currentMatch = iota
+	matchHeader
+	matchEnv
+	matchURL
+)
+
+// NewRedactingWriter returns a writer that redacts output before forwarding it to dst.
+func NewRedactingWriter(dst io.Writer) *RedactingWriter {
+	return &RedactingWriter{dst: dst}
+}
+
+// Write streams data to the underlying writer, redacting remote header tokens as they appear.
+func (w *RedactingWriter) Write(p []byte) (int, error) {
+	if w.dst == nil {
+		return len(p), nil
+	}
+	w.buf = append(w.buf, p...)
+
+	for {
+		if len(w.buf) == 0 {
+			break
+		}
+
+		var progressed bool
+		var err error
+		switch w.state {
+		case writerStateNormal:
+			progressed, err = w.handleNormal()
+		case writerStateDropping:
+			progressed, err = w.handleDropping()
+		case writerStateEnvKey:
+			progressed, err = w.handleEnvKey()
+		case writerStateURLUser:
+			progressed, err = w.handleURLUser()
+		case writerStateURLSecret:
+			progressed, err = w.handleURLSecret()
+		default:
+			return len(p), status.InternalError("unknown redacting writer state")
+		}
+		if err != nil {
+			return len(p), err
+		}
+		if !progressed {
+			break
+		}
+	}
+
+	return len(p), nil
+}
+
+// Flush forces any buffered non-secret bytes to the underlying writer.
+func (w *RedactingWriter) Flush() error {
+	if w.dst == nil {
+		return nil
+	}
+	if w.state == writerStateDropping {
+		// Secret already replaced with <REDACTED>; drop any remaining bytes.
+		w.buf = w.buf[:0]
+		w.state = writerStateNormal
+		w.match = matchUnknown
+		return nil
+	}
+	if len(w.buf) == 0 {
+		return nil
+	}
+	if err := w.writeBytes(w.buf); err != nil {
+		return err
+	}
+	w.buf = w.buf[:0]
+	w.state = writerStateNormal
+	w.match = matchUnknown
+	return nil
+}
+
+func (w *RedactingWriter) handleNormal() (bool, error) {
+	if len(w.buf) == 0 {
+		return false, nil
+	}
+
+	idx, matchType, prefixLen := findEarliestMatch(w.buf)
+	if idx >= 0 {
+		if idx > 0 {
+			if err := w.writeBytes(w.buf[:idx]); err != nil {
+				return false, err
+			}
+			w.buf = w.buf[idx:]
+		}
+		if len(w.buf) < prefixLen {
+			return false, nil
+		}
+		if err := w.writeBytes(w.buf[:prefixLen]); err != nil {
+			return false, err
+		}
+		w.buf = w.buf[prefixLen:]
+		w.match = matchType
+		switch matchType {
+		case matchHeader:
+			if err := w.writeBytes(redactedMarker); err != nil {
+				return false, err
+			}
+			w.state = writerStateDropping
+		case matchEnv:
+			w.state = writerStateEnvKey
+		case matchURL:
+			w.state = writerStateURLUser
+		default:
+			return false, status.InternalError("unknown redaction match type")
+		}
+		return true, nil
+	}
+
+	safeLen := w.safeFlushLen()
+	if safeLen > 0 {
+		if err := w.writeBytes(w.buf[:safeLen]); err != nil {
+			return false, err
+		}
+		w.buf = w.buf[safeLen:]
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (w *RedactingWriter) handleDropping() (bool, error) {
+	if len(w.buf) == 0 {
+		return false, nil
+	}
+	if delimIdx := indexHeaderDelimiter(w.buf); delimIdx >= 0 {
+		w.buf = w.buf[delimIdx:]
+		if len(w.buf) == 0 {
+			w.state = writerStateNormal
+			w.match = matchUnknown
+			return true, nil
+		}
+		if err := w.writeBytes(w.buf[:1]); err != nil {
+			return false, err
+		}
+		w.buf = w.buf[1:]
+		w.state = writerStateNormal
+		w.match = matchUnknown
+		return true, nil
+	}
+	w.buf = w.buf[:0]
+	return false, nil
+}
+
+func (w *RedactingWriter) handleEnvKey() (bool, error) {
+	if len(w.buf) == 0 {
+		return false, nil
+	}
+	for i, b := range w.buf {
+		if b == '=' {
+			// Emit the env key (including '=') then redact the value.
+			if err := w.writeBytes(w.buf[:i+1]); err != nil {
+				return false, err
+			}
+			w.buf = w.buf[i+1:]
+			if err := w.writeBytes(redactedMarker); err != nil {
+				return false, err
+			}
+			w.state = writerStateDropping
+			return true, nil
+		}
+	}
+	// No '=' yet—emit everything except the last byte as part of the key.
+	if len(w.buf) > 1 {
+		flushLen := len(w.buf) - 1
+		if err := w.writeBytes(w.buf[:flushLen]); err != nil {
+			return false, err
+		}
+		w.buf = w.buf[flushLen:]
+		return true, nil
+	}
+	return false, nil
+}
+
+func (w *RedactingWriter) handleURLUser() (bool, error) {
+	if len(w.buf) == 0 {
+		return false, nil
+	}
+	for i, b := range w.buf {
+		if b == ':' {
+			if err := w.writeBytes(w.buf[:i+1]); err != nil {
+				return false, err
+			}
+			w.buf = w.buf[i+1:]
+			if err := w.writeBytes(redactedMarker); err != nil {
+				return false, err
+			}
+			w.state = writerStateURLSecret
+			return true, nil
+		}
+		if b == '@' {
+			if err := w.writeBytes(w.buf[:i+1]); err != nil {
+				return false, err
+			}
+			w.buf = w.buf[i+1:]
+			w.state = writerStateNormal
+			w.match = matchUnknown
+			return true, nil
+		}
+	}
+	if len(w.buf) > 1 {
+		flushLen := len(w.buf) - 1
+		if err := w.writeBytes(w.buf[:flushLen]); err != nil {
+			return false, err
+		}
+		w.buf = w.buf[flushLen:]
+		return true, nil
+	}
+	return false, nil
+}
+
+func (w *RedactingWriter) handleURLSecret() (bool, error) {
+	if len(w.buf) == 0 {
+		return false, nil
+	}
+	if idx := bytes.IndexByte(w.buf, '@'); idx >= 0 {
+		w.buf = w.buf[idx:]
+		if err := w.writeBytes(w.buf[:1]); err != nil {
+			return false, err
+		}
+		w.buf = w.buf[1:]
+		w.state = writerStateNormal
+		w.match = matchUnknown
+		return true, nil
+	}
+	w.buf = w.buf[:0]
+	return false, nil
+}
+
+func (w *RedactingWriter) safeFlushLen() int {
+	if len(w.buf) == 0 {
+		return 0
+	}
+	maxKeep := len(w.buf)
+	if maxKeep > redactingWriterLookbehind {
+		maxKeep = redactingWriterLookbehind
+	}
+	for keep := maxKeep; keep >= 1; keep-- {
+		suffix := w.buf[len(w.buf)-keep:]
+		if couldStartPrefix(suffix) {
+			return len(w.buf) - keep
+		}
+	}
+	if len(w.buf) > redactingWriterLookbehind {
+		return len(w.buf) - redactingWriterLookbehind
+	}
+	return len(w.buf)
+}
+
+func (w *RedactingWriter) writeBytes(b []byte) error {
+	if len(b) == 0 {
+		return nil
+	}
+	_, err := w.dst.Write(b)
+	return err
+}
+
+func findEarliestMatch(buf []byte) (int, currentMatch, int) {
+	minIdx := -1
+	matchType := matchUnknown
+	prefixLen := 0
+	update := func(idx int, kind currentMatch, length int) {
+		if idx >= 0 && (minIdx == -1 || idx < minIdx) {
+			minIdx = idx
+			matchType = kind
+			prefixLen = length
+		}
+	}
+	for _, prefix := range headerPrefixes {
+		if idx := bytes.Index(buf, prefix); idx >= 0 {
+			update(idx, matchHeader, len(prefix))
+		}
+	}
+	for _, prefix := range envPrefixes {
+		if idx := bytes.Index(buf, prefix); idx >= 0 {
+			update(idx, matchEnv, len(prefix))
+		}
+	}
+	if idx, length := findURLPrefix(buf); idx >= 0 {
+		update(idx, matchURL, length)
+	}
+	return minIdx, matchType, prefixLen
+}
+
+func couldStartPrefix(suffix []byte) bool {
+	if len(suffix) == 0 {
+		return false
+	}
+	for _, prefix := range headerPrefixes {
+		if len(suffix) <= len(prefix) && bytes.Equal(prefix[:len(suffix)], suffix) {
+			return true
+		}
+	}
+	for _, prefix := range envPrefixes {
+		if len(suffix) <= len(prefix) && bytes.Equal(prefix[:len(suffix)], suffix) {
+			return true
+		}
+	}
+	return couldStartURL(suffix)
+}
+
+func indexHeaderDelimiter(buf []byte) int {
+	for i, b := range buf {
+		switch b {
+		case ' ', '\t', '\n', '\r':
+			return i
+		}
+	}
+	return -1
+}
+
+func findURLPrefix(buf []byte) (int, int) {
+	search := 0
+	for {
+		sep := bytes.Index(buf[search:], []byte("://"))
+		if sep == -1 {
+			return -1, 0
+		}
+		sep += search
+		schemeStart := sep - 1
+		for schemeStart >= 0 && isSchemeChar(buf[schemeStart]) {
+			schemeStart--
+		}
+		schemeStart++
+		if schemeStart < sep && isLetter(buf[schemeStart]) {
+			valid := true
+			for i := schemeStart + 1; i < sep; i++ {
+				if !isSchemeChar(buf[i]) {
+					valid = false
+					break
+				}
+			}
+			if valid {
+				return schemeStart, sep + 3 - schemeStart
+			}
+		}
+		search = sep + 3
+		if search >= len(buf) {
+			return -1, 0
+		}
+	}
+}
+
+func couldStartURL(suffix []byte) bool {
+	if len(suffix) == 0 {
+		return false
+	}
+	stage := 0 // 0 scheme, 1 colon, 2 slash1, 3 slash2
+	for i, b := range suffix {
+		switch stage {
+		case 0:
+			if i == 0 {
+				if !isLetter(b) {
+					return false
+				}
+				continue
+			}
+			if b == ':' {
+				stage = 1
+				continue
+			}
+			if !isSchemeChar(b) {
+				return false
+			}
+		case 1:
+			if b == '/' {
+				stage = 2
+				continue
+			}
+			return false
+		case 2:
+			if b == '/' {
+				stage = 3
+				continue
+			}
+			return false
+		default:
+			// After "//" we allow anything; detection already succeeded.
+			return true
+		}
+	}
+	return true
+}
+
+func isSchemeChar(b byte) bool {
+	return isLetter(b) || (b >= '0' && b <= '9') || b == '+' || b == '.' || b == '-'
+}
+
+func isLetter(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
 
 func init() {
 	// Build the envVarOptionNamesRegex with quoted option names to avoid any
