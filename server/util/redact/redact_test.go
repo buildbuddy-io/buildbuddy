@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -781,5 +782,672 @@ func TestRedactingWriterRedactsEnvVars(t *testing.T) {
 	}
 	if got := buf.String(); got != want {
 		t.Fatalf("Write() = %q, want %q", got, want)
+	}
+}
+
+// Comprehensive RedactingWriter tests covering boundary cases
+
+func TestRedactingWriter_URLSecrets_Basic(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "password in middle",
+			input: "https://user:password123@github.com/repo.git",
+			want:  "https://user:<REDACTED>@github.com/repo.git",
+		},
+		{
+			name:  "password at end",
+			input: "grpc://admin:secret@app.buildbuddy.io",
+			want:  "grpc://admin:<REDACTED>@app.buildbuddy.io",
+		},
+		{
+			name:  "password with special chars",
+			input: "git clone https://token:x-oauth-basic@github.com/org/repo.git",
+			want:  "git clone https://token:<REDACTED>@github.com/org/repo.git",
+		},
+		{
+			name:  "multiple secrets in one write",
+			input: "https://u:p1@h1 https://u:p2@h2",
+			want:  "https://u:<REDACTED>@h1 https://u:<REDACTED>@h2",
+		},
+		{
+			name:  "very long password",
+			input: "https://user:" + strings.Repeat("x", 500) + "@host",
+			want:  "https://user:<REDACTED>@host",
+		},
+		{
+			name:  "special chars in password",
+			input: "https://u:p@ss!w0rd@host",
+			want:  "https://u:<REDACTED>@host",
+		},
+		{
+			name:  "no password should not redact",
+			input: "https://user@host",
+			want:  "https://user@host",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := redact.NewRedactingWriter(&buf)
+			w.Write([]byte(tt.input))
+			if got := buf.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactingWriter_URLSecrets_SplitAcrossWrites(t *testing.T) {
+	tests := []struct {
+		name   string
+		writes []string
+		want   string
+	}{
+		{
+			name:   "split in password",
+			writes: []string{"https://user:pass", "word@host.com"},
+			want:   "https://user:<REDACTED>@host.com",
+		},
+		{
+			name:   "split at boundary",
+			writes: []string{"prefix https://u:sec", "ret@host"},
+			want:   "prefix https://u:<REDACTED>@host",
+		},
+		{
+			name:   "split across newline",
+			writes: []string{"https://user:password@", "\ngithub.com"},
+			want:   "https://user:<REDACTED>@\ngithub.com",
+		},
+		{
+			name:   "split right after colon",
+			writes: []string{"https://user:", "password@host"},
+			want:   "https://user:<REDACTED>@host",
+		},
+		{
+			name:   "split right before @",
+			writes: []string{"https://user:password", "@host"},
+			want:   "https://user:<REDACTED>@host",
+		},
+		{
+			name:   "split in scheme",
+			writes: []string{"https", "://user:password@host"},
+			want:   "https://<REDACTED>@host",
+		},
+		{
+			name:   "split in username",
+			writes: []string{"https://us", "er:password@host"},
+			want:   "https://us<REDACTED>@host",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := redact.NewRedactingWriter(&buf)
+			for _, write := range tt.writes {
+				w.Write([]byte(write))
+			}
+			if got := buf.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactingWriter_APIKeyHeader_Basic(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "exactly 20 chars",
+			input: "x-buildbuddy-api-key=abcd1234efgh5678ijkl",
+			want:  "x-buildbuddy-api-key=<REDACTED>",
+		},
+		{
+			name:  "in quotes",
+			input: `curl -H "x-buildbuddy-api-key=12345678901234567890"`,
+			want:  `curl -H "x-buildbuddy-api-key=<REDACTED>"`,
+		},
+		{
+			name:  "in flag",
+			input: "--bes_header=x-buildbuddy-api-key=aaaabbbbccccddddeeee",
+			want:  "--bes_header=<REDACTED>",
+		},
+		{
+			name:  "19 chars should not match",
+			input: "x-buildbuddy-api-key=1234567890123456789",
+			want:  "x-buildbuddy-api-key=1234567890123456789",
+		},
+		{
+			name:  "21 chars should match first 20",
+			input: "x-buildbuddy-api-key=123456789012345678901",
+			want:  "x-buildbuddy-api-key=<REDACTED>1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := redact.NewRedactingWriter(&buf)
+			w.Write([]byte(tt.input))
+			if got := buf.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactingWriter_APIKeyHeader_SplitAcrossWrites(t *testing.T) {
+	tests := []struct {
+		name   string
+		writes []string
+		want   string
+	}{
+		{
+			name:   "split in middle of key",
+			writes: []string{"x-buildbuddy-api-key=abcd1234", "efgh5678ijkl"},
+			want:   "x-buildbuddy-api-key=<REDACTED>",
+		},
+		{
+			name:   "split at key boundary",
+			writes: []string{"x-buildbuddy-api-key=", "abcd1234efgh5678ijkl"},
+			want:   "x-buildbuddy-api-key=<REDACTED>",
+		},
+		{
+			name:   "multiple on one line",
+			writes: []string{"key1=x-buildbuddy-api-key=aaaabbbbccccddddeeee key2=x-buildbuddy-api-key=", "bbbbccccddddeeeeaaaa"},
+			want:   "key1=x-buildbuddy-api-key=<REDACTED> key2=x-buildbuddy-api-key=<REDACTED>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := redact.NewRedactingWriter(&buf)
+			for _, write := range tt.writes {
+				w.Write([]byte(write))
+			}
+			if got := buf.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactingWriter_APIKeyAt_Basic(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "with slash",
+			input: "grpc://abcd1234efgh5678ijkl@app.buildbuddy.io",
+			want:  "grpc://<REDACTED>@app.buildbuddy.io",
+		},
+		{
+			name:  "with equals",
+			input: "bes_backend=abcd1234efgh5678ijkl@domain.com",
+			want:  "bes_backend=<REDACTED>@domain.com",
+		},
+		{
+			name:  "at start with slash",
+			input: "/abcd1234efgh5678ijkl@host",
+			want:  "/<REDACTED>@host",
+		},
+		{
+			name:  "no delimiter before should not match",
+			input: "abcd1234efgh5678ijkl@host",
+			want:  "abcd1234efgh5678ijkl@host",
+		},
+		{
+			name:  "multiple keys",
+			input: "grpc://key1aaaaabbbbbccccc@h1 grpc://key2dddddeeeeeffffff@h2",
+			want:  "grpc://<REDACTED>@h1 grpc://<REDACTED>@h2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := redact.NewRedactingWriter(&buf)
+			w.Write([]byte(tt.input))
+			if got := buf.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactingWriter_APIKeyAt_SplitAcrossWrites(t *testing.T) {
+	tests := []struct {
+		name   string
+		writes []string
+		want   string
+	}{
+		{
+			name:   "split before @",
+			writes: []string{"grpc://abcd1234efgh5678ijkl", "@host"},
+			want:   "grpc://<REDACTED>@host",
+		},
+		{
+			name:   "split in middle of key",
+			writes: []string{"grpc://abcd1234ef", "gh5678ijkl@host"},
+			want:   "grpc://<REDACTED>@host",
+		},
+		{
+			name:   "split at delimiter",
+			writes: []string{"grpc://", "abcd1234efgh5678ijkl@host"},
+			want:   "grpc://<REDACTED>@host",
+		},
+		{
+			name:   "split at 19th character",
+			writes: []string{"grpc://abcd1234efgh5678ijk", "l@host"},
+			want:   "grpc://<REDACTED>@host",
+		},
+		{
+			name:   "split right after delimiter",
+			writes: []string{"grpc://a", "bcd1234efgh5678ijkl@host"},
+			want:   "grpc://<REDACTED>@host",
+		},
+		{
+			name:   "split with equals delimiter",
+			writes: []string{"backend=abcd1234efgh567", "8ijkl@host"},
+			want:   "backend=<REDACTED>@host",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := redact.NewRedactingWriter(&buf)
+			for _, write := range tt.writes {
+				w.Write([]byte(write))
+			}
+			if got := buf.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactingWriter_EnvVarFlags_Basic(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "action_env",
+			input: "--action_env=SECRET_TOKEN=abc123",
+			want:  "--action_env=SECRET_TOKEN=<REDACTED>",
+		},
+		{
+			name:  "client_env",
+			input: "--client_env=API_KEY=xyz789",
+			want:  "--client_env=API_KEY=<REDACTED>",
+		},
+		{
+			name:  "host_action_env",
+			input: "--host_action_env=PASSWORD=secret",
+			want:  "--host_action_env=PASSWORD=<REDACTED>",
+		},
+		{
+			name:  "repo_env",
+			input: "--repo_env=GITHUB_TOKEN=ghp_123",
+			want:  "--repo_env=GITHUB_TOKEN=<REDACTED>",
+		},
+		{
+			name:  "test_env",
+			input: "--test_env=DB_PASSWORD=pass123",
+			want:  "--test_env=DB_PASSWORD=<REDACTED>",
+		},
+		{
+			name:  "value with equals",
+			input: "--action_env=KEY=value=with=equals",
+			want:  "--action_env=KEY=<REDACTED>",
+		},
+		{
+			name:  "value ends at space",
+			input: "--action_env=KEY=value rest",
+			want:  "--action_env=KEY=<REDACTED> rest",
+		},
+		{
+			name:  "multiple flags",
+			input: "--action_env=K1=v1 --client_env=K2=v2",
+			want:  "--action_env=K1=<REDACTED> --client_env=K2=<REDACTED>",
+		},
+		{
+			name:  "similar but not matching flag",
+			input: "--my_action_env=KEY=value",
+			want:  "--my_action_env=KEY=value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := redact.NewRedactingWriter(&buf)
+			w.Write([]byte(tt.input))
+			if got := buf.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactingWriter_EnvVarFlags_SplitAcrossWrites(t *testing.T) {
+	tests := []struct {
+		name   string
+		writes []string
+		want   string
+	}{
+		{
+			name:   "split at flag name",
+			writes: []string{"--action_env=SECRET", "_TOKEN=value"},
+			want:   "--action_env=SECRET_TOKEN=<REDACTED>",
+		},
+		{
+			name:   "split at value",
+			writes: []string{"--action_env=KEY=val", "ue123"},
+			want:   "--action_env=KEY=<REDACTED>",
+		},
+		{
+			name:   "split right after second equals",
+			writes: []string{"--action_env=KEY=", "value"},
+			want:   "--action_env=KEY=<REDACTED>",
+		},
+		{
+			name:   "split in flag prefix",
+			writes: []string{"--action_", "env=KEY=value"},
+			want:   "--action_env=KEY=<REDACTED>",
+		},
+		{
+			name:   "split at first equals",
+			writes: []string{"--action_env=", "KEY=value"},
+			want:   "--action_env=KEY=<REDACTED>",
+		},
+		{
+			name:   "split in var name",
+			writes: []string{"--action_env=SEC", "RET_KEY=value"},
+			want:   "--action_env=SECRET_KEY=<REDACTED>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := redact.NewRedactingWriter(&buf)
+			for _, write := range tt.writes {
+				w.Write([]byte(write))
+			}
+			if got := buf.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactingWriter_RemoteHeaders_Basic(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "remote_header",
+			input: "--remote_header=x-api-key:secret123",
+			want:  "--remote_header=<REDACTED>",
+		},
+		{
+			name:  "remote_cache_header",
+			input: "--remote_cache_header=Authorization:Bearer token",
+			want:  "--remote_cache_header=<REDACTED>",
+		},
+		{
+			name:  "remote_exec_header",
+			input: "--remote_exec_header=x-custom:value",
+			want:  "--remote_exec_header=<REDACTED>",
+		},
+		{
+			name:  "remote_downloader_header",
+			input: "--remote_downloader_header=key:val",
+			want:  "--remote_downloader_header=<REDACTED>",
+		},
+		{
+			name:  "bes_header",
+			input: "--bes_header=x-auth:token",
+			want:  "--bes_header=<REDACTED>",
+		},
+		{
+			name:  "long value",
+			input: "--remote_header=key:" + strings.Repeat("x", 1000),
+			want:  "--remote_header=<REDACTED>",
+		},
+		{
+			name:  "value ends at whitespace",
+			input: "--remote_header=key:value more_text",
+			want:  "--remote_header=<REDACTED> more_text",
+		},
+		{
+			name:  "value with special chars",
+			input: "--remote_header=key:val!@#$%",
+			want:  "--remote_header=<REDACTED>",
+		},
+		{
+			name:  "similar flag should not match",
+			input: "--my_remote_header=key:value",
+			want:  "--my_remote_header=key:value",
+		},
+		{
+			name:  "multiple headers",
+			input: "--remote_header=k1:v1 --bes_header=k2:v2",
+			want:  "--remote_header=<REDACTED> --bes_header=<REDACTED>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := redact.NewRedactingWriter(&buf)
+			w.Write([]byte(tt.input))
+			if got := buf.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactingWriter_RemoteHeaders_SplitAcrossWrites(t *testing.T) {
+	tests := []struct {
+		name   string
+		writes []string
+		want   string
+	}{
+		{
+			name:   "split at flag",
+			writes: []string{"--remote_header=x-api", "-key:secret"},
+			want:   "--remote_header=<REDACTED>",
+		},
+		{
+			name:   "split at value",
+			writes: []string{"--remote_header=key:sec", "ret"},
+			want:   "--remote_header=<REDACTED>",
+		},
+		{
+			name:   "split right after equals",
+			writes: []string{"--remote_header=", "key:value"},
+			want:   "--remote_header=<REDACTED>",
+		},
+		{
+			name:   "split in flag name",
+			writes: []string{"--remote_hea", "der=key:value"},
+			want:   "--remote_header=<REDACTED>",
+		},
+		{
+			name:   "split at colon in value",
+			writes: []string{"--remote_header=key:", "value"},
+			want:   "--remote_header=<REDACTED>",
+		},
+		{
+			name:   "split with long value",
+			writes: []string{"--bes_header=x:", strings.Repeat("v", 500)},
+			want:   "--bes_header=<REDACTED>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := redact.NewRedactingWriter(&buf)
+			for _, write := range tt.writes {
+				w.Write([]byte(write))
+			}
+			if got := buf.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactingWriter_CrossPattern(t *testing.T) {
+	tests := []struct {
+		name   string
+		writes []string
+		want   string
+	}{
+		{
+			name:   "multiple secret types in one write",
+			writes: []string{"https://u:pass@host --action_env=K=v --remote_header=x:y"},
+			want:   "https://u:<REDACTED>@host --action_env=K=<REDACTED> --remote_header=<REDACTED>",
+		},
+		{
+			name: "multiple secret types split across writes",
+			writes: []string{
+				"https://u:pass@host --action_",
+				"env=SECRET=val x-buildbuddy-api-key=12345",
+				"678901234567890",
+			},
+			want: "https://u:<REDACTED>@host --action_env=SECRET=<REDACTED> x-buildbuddy-api-key=<REDACTED>",
+		},
+		{
+			name:   "secret at start",
+			writes: []string{"x-buildbuddy-api-key=12345678901234567890 rest of line"},
+			want:   "x-buildbuddy-api-key=<REDACTED> rest of line",
+		},
+		{
+			name:   "secret in middle",
+			writes: []string{"prefix https://u:p@host suffix"},
+			want:   "prefix https://u:<REDACTED>@host suffix",
+		},
+		{
+			name:   "secret at end",
+			writes: []string{"line ends with --remote_header=key:value"},
+			want:   "line ends with --remote_header=<REDACTED>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := redact.NewRedactingWriter(&buf)
+			for _, write := range tt.writes {
+				w.Write([]byte(write))
+			}
+			if got := buf.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactingWriter_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name   string
+		writes []string
+		want   string
+	}{
+		{
+			name:   "empty write",
+			writes: []string{""},
+			want:   "",
+		},
+		{
+			name:   "single byte writes",
+			writes: []string{"h", "t", "t", "p", "s", ":", "/", "/", "u", ":", "p", "@", "h"},
+			want:   "https://u:<REDACTED>@h",
+		},
+		{
+			name:   "no secrets in large text",
+			writes: []string{strings.Repeat("clean ", 1000)},
+			want:   strings.Repeat("clean ", 1000),
+		},
+		{
+			name:   "alternating secrets and clean text",
+			writes: []string{"clean https://u:p@h clean https://u:p@h clean"},
+			want:   "clean https://u:<REDACTED>@h clean https://u:<REDACTED>@h clean",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := redact.NewRedactingWriter(&buf)
+			for _, write := range tt.writes {
+				w.Write([]byte(write))
+			}
+			if got := buf.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactingWriter_NewlineHandling(t *testing.T) {
+	tests := []struct {
+		name   string
+		writes []string
+		want   string
+	}{
+		{
+			name:   "secret before newline",
+			writes: []string{"https://u:p@host\n"},
+			want:   "https://u:<REDACTED>@host\n",
+		},
+		{
+			name:   "secret after newline",
+			writes: []string{"\nhttps://u:p@host"},
+			want:   "\nhttps://u:<REDACTED>@host",
+		},
+		{
+			name:   "multiple newlines",
+			writes: []string{"https://u:p@h\n\n\nhttps://u:p@h"},
+			want:   "https://u:<REDACTED>@h\n\n\nhttps://u:<REDACTED>@h",
+		},
+		{
+			name:   "secret split across newline boundary",
+			writes: []string{"https://u:pass", "\n", "word@host"},
+			want:   "https://u:<REDACTED>\nword@host",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := redact.NewRedactingWriter(&buf)
+			for _, write := range tt.writes {
+				w.Write([]byte(write))
+			}
+			if got := buf.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
