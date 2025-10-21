@@ -1220,8 +1220,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 <div className="metadata-title">VM ID</div>
                                 <div className="metadata-detail">{vmMetadata.vmId}</div>
                                 {vmMetadata.lastExecutedTask && (
-                                  <>
-                                    <>
+                                  <div className="snapshot-id-container">
+                                    <div className="snapshot-id-details">
                                       <div className="metadata-title">VM resumed from invocation</div>
                                       <div className="metadata-detail">
                                         <TextLink
@@ -1232,7 +1232,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                       </div>
                                       <div className="metadata-title">VM resumed from snapshot ID</div>
                                       <div className="metadata-detail">{vmMetadata.lastExecutedTask.snapshotId}</div>
-                                    </>
+                                    </div>
                                     <>
                                       {vmMetadata.snapshotKey && (
                                         <div className="invocation-menu-container">
@@ -1288,7 +1288,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                         </div>
                                       )}
                                     </>
-                                  </>
+                                  </div>
                                 )}
                                 {vmMetadata.snapshotId && (
                                   <div className="snapshot-id-container">
