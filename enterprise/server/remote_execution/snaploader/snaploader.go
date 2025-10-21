@@ -340,17 +340,17 @@ type CacheSnapshotOptions struct {
 	// Whether the snapshot is from a recycled VM
 	Recycled bool
 
-	// Whether to save the snapshot to the remote cache (in addition to locally)
+	// Whether to save the snapshot to the remote cache
 	CacheSnapshotRemotely bool
+
+	// Whether to save the snapshot to the local cache
+	CacheSnapshotLocally bool
 
 	// Whether to save the snapshot manifest to the local cache.
 	// If true, future runs on this executor will start from the local manifest,
 	// even if there is a newer manifest for the snapshot key available in the
 	// remote cache.
 	WriteManifestLocally bool
-
-	// Whether we skipped caching remotely due to newly applied remote snapshot limits.
-	SkippedCacheRemotely bool
 }
 
 type UnpackedSnapshot struct {
@@ -717,7 +717,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 				}
 			}
 			out.Digest = d
-			if _, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.CacheSnapshotRemotely, d, key.InstanceName, filePath, fileType); err != nil {
+			if _, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.CacheSnapshotRemotely, opts.CacheSnapshotLocally, d, key.InstanceName, filePath, fileType); err != nil {
 				return err
 			}
 			return nil
@@ -787,7 +787,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		}
 	}
 
-	if !opts.WriteManifestLocally {
+	if !opts.WriteManifestLocally || !opts.CacheSnapshotLocally {
 		return nil
 	}
 
@@ -1038,7 +1038,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 				shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
 				if shouldCache {
 					path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-					bytesWritten, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.CacheSnapshotRemotely, d, remoteInstanceName, path, name)
+					bytesWritten, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.CacheSnapshotRemotely, cacheOpts.CacheSnapshotLocally, d, remoteInstanceName, path, name)
 					if err != nil {
 						return returnError(status.WrapError(err, "write chunk to cache"))
 					}
@@ -1046,7 +1046,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 				} else if *snaputil.VerboseLogging {
 					log.CtxDebugf(ctx, "Not caching snapshot artifact: dirty=%t src=%s file=%s hash=%s", dirty, chunkSrc, snaputil.StripChroot(cow.DataDir()), d.GetHash())
 				}
-
 			}
 
 			// After processing each chunk, we won't still need
@@ -1081,7 +1080,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if err != nil {
 		return nil, err
 	}
-	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.CacheSnapshotRemotely, treeDigest, remoteInstanceName, treeBytes, "snapshot_tree"); err != nil {
+	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.CacheSnapshotRemotely, cacheOpts.CacheSnapshotLocally, treeDigest, remoteInstanceName, treeBytes, "snapshot_tree"); err != nil {
 		return nil, err
 	}
 
@@ -1094,12 +1093,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	metrics.COWSnapshotEmptyChunkRatio.With(prometheus.Labels{
 		metrics.FileName: name,
 	}).Observe(float64(emptyChunkCount) / float64(len(chunks)))
-
-	if cacheOpts.SkippedCacheRemotely {
-		metrics.COWSnapshotSkippedRemoteBytes.With(prometheus.Labels{
-			metrics.FileName: name,
-		}).Add(float64(dirtyBytes))
-	}
 
 	for chunkSrc, count := range chunkSourceCounter {
 		metrics.COWSnapshotChunkSourceRatio.With(prometheus.Labels{

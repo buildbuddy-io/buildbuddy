@@ -810,22 +810,22 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 		{
 			name:               "Always save - on main",
 			branch:             "main",
-			snapshotSavePolicy: snaputil.AlwaysSaveRemoteSnapshot,
+			snapshotSavePolicy: snaputil.AlwaysSaveSnapshot,
 		},
 		{
 			name:               "Always save - on feature branch",
 			branch:             "pr-branch",
-			snapshotSavePolicy: snaputil.AlwaysSaveRemoteSnapshot,
+			snapshotSavePolicy: snaputil.AlwaysSaveSnapshot,
 		},
 		{
 			name:               "Only save first non-default snapshot - on main",
 			branch:             "main",
-			snapshotSavePolicy: snaputil.OnlySaveFirstNonDefaultRemoteSnapshot,
+			snapshotSavePolicy: snaputil.OnlySaveFirstNonDefaultSnapshot,
 		},
 		{
 			name:               "Only save first non-default snapshot - on feature branch",
 			branch:             "pr-branch",
-			snapshotSavePolicy: snaputil.OnlySaveFirstNonDefaultRemoteSnapshot,
+			snapshotSavePolicy: snaputil.OnlySaveFirstNonDefaultSnapshot,
 		},
 		{
 			name:               "Only save non-default snapshot if no snapshots available - on main",
@@ -959,10 +959,10 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 			// snapshots are gone.
 			var expectedOutput string
 			var expectedVersionNumber int64
-			if tc.branch == "main" || tc.snapshotSavePolicy == snaputil.AlwaysSaveRemoteSnapshot {
+			if tc.branch == "main" || tc.snapshotSavePolicy == snaputil.AlwaysSaveSnapshot {
 				expectedOutput = "Main\nTest Branch 1\nTest Branch 2\nTest Branch 3\nTest Branch 4\n"
 				expectedVersionNumber = 4
-			} else if tc.snapshotSavePolicy == snaputil.OnlySaveFirstNonDefaultRemoteSnapshot {
+			} else if tc.snapshotSavePolicy == snaputil.OnlySaveFirstNonDefaultSnapshot {
 				expectedOutput = "Main\nTest Branch 1\nTest Branch 4\n"
 				expectedVersionNumber = 2
 			} else if tc.snapshotSavePolicy == snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable {
@@ -1063,7 +1063,7 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 					// Note: platform must match in order to share snapshots
 					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 						{Name: "recycle-runner", Value: "true"},
-						{Name: platform.RemoteSnapshotSavePolicyPropertyName, Value: snaputil.AlwaysSaveRemoteSnapshot},
+						{Name: platform.RemoteSnapshotSavePolicyPropertyName, Value: snaputil.AlwaysSaveSnapshot},
 						{Name: platform.SnapshotReadPolicyPropertyName, Value: tc.snapshotReadPolicy},
 					}},
 					Arguments: []string{"./buildbuddy_ci_runner"},

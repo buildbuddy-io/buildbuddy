@@ -1221,25 +1221,19 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 <div className="metadata-detail">{vmMetadata.vmId}</div>
                                 {vmMetadata.lastExecutedTask && (
                                   <>
-                                    <div className="metadata-title">VM resumed from invocation</div>
-                                    <div className="metadata-detail">
-                                      <TextLink
-                                        href={this.getVMPreviousTaskHref()}
-                                        title={vmMetadata.lastExecutedTask.executionId}>
-                                        {vmMetadata.lastExecutedTask.invocationId}
-                                      </TextLink>
-                                    </div>
-                                    <div className="metadata-title">VM resumed from snapshot ID</div>
-                                    <div className="metadata-detail">{vmMetadata.lastExecutedTask.snapshotId}</div>
-                                  </>
-                                )}
-                                {vmMetadata.snapshotId && (
-                                  <div className="snapshot-id-container">
-                                    <div className="snapshot-id-details">
-                                      <div className="metadata-title">Saved to snapshot ID</div>
-                                      <div className="metadata-detail">{vmMetadata.snapshotId}</div>
-                                    </div>
-                                    <div>
+                                    <>
+                                      <div className="metadata-title">VM resumed from invocation</div>
+                                      <div className="metadata-detail">
+                                        <TextLink
+                                          href={this.getVMPreviousTaskHref()}
+                                          title={vmMetadata.lastExecutedTask.executionId}>
+                                          {vmMetadata.lastExecutedTask.invocationId}
+                                        </TextLink>
+                                      </div>
+                                      <div className="metadata-title">VM resumed from snapshot ID</div>
+                                      <div className="metadata-detail">{vmMetadata.lastExecutedTask.snapshotId}</div>
+                                    </>
+                                    <>
                                       {vmMetadata.snapshotKey && (
                                         <div className="invocation-menu-container">
                                           <a
@@ -1247,29 +1241,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                             onClick={() => this.setState({ showInvalidateSnapshotModal: true })}>
                                             Invalidate VM snapshot
                                           </a>
-                                          <OutlinedButton
-                                            title="Snapshot options"
-                                            className="snapshot-more-button"
-                                            onClick={() => this.setState({ showSnapshotMenu: true })}>
-                                            <MoreVertical />
-                                          </OutlinedButton>
-                                          <Popup
-                                            isOpen={this.state.showSnapshotMenu}
-                                            onRequestClose={() => this.setState({ showSnapshotMenu: false })}>
-                                            <Menu className="workflow-dropdown-menu">
-                                              <MenuItem onClick={this.onClickCopySnapshotKey.bind(this, vmMetadata)}>
-                                                Copy snapshot key
-                                              </MenuItem>
-                                              <MenuItem
-                                                onClick={this.onClickCopyRemoteBazelCommand.bind(
-                                                  this,
-                                                  vmMetadata,
-                                                  this.state.actionResult.executionMetadata
-                                                )}>
-                                                Copy Remote Bazel command to run commands in snapshot
-                                              </MenuItem>
-                                            </Menu>
-                                          </Popup>
                                           <Modal
                                             isOpen={this.state.showInvalidateSnapshotModal}
                                             onRequestClose={() =>
@@ -1314,6 +1285,50 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                               </DialogFooter>
                                             </Dialog>
                                           </Modal>
+                                        </div>
+                                      )}
+                                    </>
+                                  </>
+                                )}
+                                {vmMetadata.snapshotId && (
+                                  <div className="snapshot-id-container">
+                                    <div className="snapshot-id-details">
+                                      {vmMetadata.savedLocalSnapshot || vmMetadata.savedRemoteSnapshot ? (
+                                        <>
+                                          <div className="metadata-title">Saved to snapshot ID</div>
+                                          <div className="metadata-detail">{vmMetadata.snapshotId}</div>
+                                        </>
+                                      ) : (
+                                        <div className="metadata-title">No snapshot saved for this run</div>
+                                      )}
+                                    </div>
+                                    <div>
+                                      {/* TODO: Roll out UI changes a couple days late, because the vmMetadata fields won't be set yet */}
+                                      {vmMetadata.snapshotKey && (vmMetadata.savedLocalSnapshot || vmMetadata.savedRemoteSnapshot) &&(
+                                        <div className="invocation-menu-container">
+                                          <OutlinedButton
+                                            title="Snapshot options"
+                                            className="snapshot-more-button"
+                                            onClick={() => this.setState({ showSnapshotMenu: true })}>
+                                            <MoreVertical />
+                                          </OutlinedButton>
+                                          <Popup
+                                            isOpen={this.state.showSnapshotMenu}
+                                            onRequestClose={() => this.setState({ showSnapshotMenu: false })}>
+                                            <Menu className="workflow-dropdown-menu">
+                                              <MenuItem onClick={this.onClickCopySnapshotKey.bind(this, vmMetadata)}>
+                                                Copy snapshot key
+                                              </MenuItem>
+                                              <MenuItem
+                                                onClick={this.onClickCopyRemoteBazelCommand.bind(
+                                                  this,
+                                                  vmMetadata,
+                                                  this.state.actionResult.executionMetadata
+                                                )}>
+                                                Copy Remote Bazel command to run commands in snapshot
+                                              </MenuItem>
+                                            </Menu>
+                                          </Popup>
                                         </div>
                                       )}
                                     </div>
