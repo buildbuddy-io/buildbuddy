@@ -52,8 +52,10 @@ func TestWriteMover_CloseCleansUp(t *testing.T) {
 					entries, err := os.ReadDir(dir)
 					require.NoError(t, err)
 					for _, ent := range entries {
-						if !shouldCommit || ent.Name() != "testfile" {
-							t.Fatalf("Unexpected file %v", ent.Name())
+						if shouldCommit {
+							require.Equal(t, "testfile", ent.Name())
+						} else {
+							t.Errorf("Unexpected file %v", ent.Name())
 						}
 					}
 				})
