@@ -927,7 +927,6 @@ func TestRedactingWriterAPIKeyCases(t *testing.T) {
 }
 
 func TestRedactingWriterEnvVarCases(t *testing.T) {
-	t.Skip("RedactingWriter currently only handles remote header flags")
 	testCases := []struct {
 		name   string
 		writes [][]byte
@@ -1056,7 +1055,6 @@ func TestRedactingWriterRedactsBuildBuddyAPIKeys(t *testing.T) {
 }
 
 func TestRedactingWriterRedactsEnvVars(t *testing.T) {
-	t.Skip("RedactingWriter currently only handles remote header flags")
 	var buf bytes.Buffer
 	w := redact.NewRedactingWriter(&buf)
 
@@ -1371,7 +1369,6 @@ func TestRedactingWriter_APIKeyAt_SplitAcrossWrites(t *testing.T) {
 }
 
 func TestRedactingWriter_EnvVarFlags_Basic(t *testing.T) {
-	t.Skip("RedactingWriter currently only handles remote header flags")
 	tests := []struct {
 		name  string
 		input string
@@ -1437,7 +1434,6 @@ func TestRedactingWriter_EnvVarFlags_Basic(t *testing.T) {
 }
 
 func TestRedactingWriter_EnvVarFlags_SplitAcrossWrites(t *testing.T) {
-	t.Skip("RedactingWriter currently only handles remote header flags")
 	tests := []struct {
 		name   string
 		writes []string

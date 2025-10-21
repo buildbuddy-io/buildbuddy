@@ -109,15 +109,24 @@ type writerState int
 const (
 	writerStateNormal writerState = iota
 	writerStateDropping
+	writerStateEnvKey
 )
 
-var redactingWriterPrefixes = [][]byte{
+var envPrefixes = [][]byte{
+	[]byte("--action_env="),
+	[]byte("--client_env="),
+	[]byte("--host_action_env="),
+	[]byte("--repo_env="),
+	[]byte("--test_env="),
+}
+
+var redactingWriterPrefixes = append([][]byte{
 	[]byte("--remote_header="),
 	[]byte("--remote_cache_header="),
 	[]byte("--remote_exec_header="),
 	[]byte("--remote_downloader_header="),
 	[]byte("--bes_header="),
-}
+}, envPrefixes...)
 
 const redactingWriterLookbehind = len("--remote_downloader_header=") - 1
 
@@ -128,7 +137,16 @@ type RedactingWriter struct {
 	dst   io.Writer
 	buf   []byte
 	state writerState
+	match currentMatch
 }
+
+type currentMatch int
+
+const (
+	matchUnknown currentMatch = iota
+	matchHeader
+	matchEnv
+)
 
 // NewRedactingWriter returns a writer that redacts output before forwarding it to dst.
 func NewRedactingWriter(dst io.Writer) *RedactingWriter {
@@ -154,6 +172,8 @@ func (w *RedactingWriter) Write(p []byte) (int, error) {
 			progressed, err = w.handleNormal()
 		case writerStateDropping:
 			progressed, err = w.handleDropping()
+		case writerStateEnvKey:
+			progressed, err = w.handleEnvKey()
 		default:
 			return len(p), status.InternalError("unknown redacting writer state")
 		}
@@ -177,6 +197,7 @@ func (w *RedactingWriter) Flush() error {
 		// Secret already replaced with <REDACTED>; drop any remaining bytes.
 		w.buf = w.buf[:0]
 		w.state = writerStateNormal
+		w.match = matchUnknown
 		return nil
 	}
 	if len(w.buf) == 0 {
@@ -186,6 +207,8 @@ func (w *RedactingWriter) Flush() error {
 		return err
 	}
 	w.buf = w.buf[:0]
+	w.state = writerStateNormal
+	w.match = matchUnknown
 	return nil
 }
 
@@ -194,7 +217,7 @@ func (w *RedactingWriter) handleNormal() (bool, error) {
 		return false, nil
 	}
 
-	idx, prefix := findEarliestHeader(w.buf)
+	idx, matchType, prefix := findEarliestMatch(w.buf)
 	if idx >= 0 {
 		if idx > 0 {
 			if err := w.writeBytes(w.buf[:idx]); err != nil {
@@ -209,10 +232,18 @@ func (w *RedactingWriter) handleNormal() (bool, error) {
 			return false, err
 		}
 		w.buf = w.buf[len(prefix):]
-		if err := w.writeBytes(redactedMarker); err != nil {
-			return false, err
+		w.match = matchType
+		switch matchType {
+		case matchHeader:
+			if err := w.writeBytes(redactedMarker); err != nil {
+				return false, err
+			}
+			w.state = writerStateDropping
+		case matchEnv:
+			w.state = writerStateEnvKey
+		default:
+			return false, status.InternalError("unknown redaction match type")
 		}
-		w.state = writerStateDropping
 		return true, nil
 	}
 
@@ -236,6 +267,7 @@ func (w *RedactingWriter) handleDropping() (bool, error) {
 		w.buf = w.buf[delimIdx:]
 		if len(w.buf) == 0 {
 			w.state = writerStateNormal
+			w.match = matchUnknown
 			return true, nil
 		}
 		if err := w.writeBytes(w.buf[:1]); err != nil {
@@ -243,9 +275,40 @@ func (w *RedactingWriter) handleDropping() (bool, error) {
 		}
 		w.buf = w.buf[1:]
 		w.state = writerStateNormal
+		w.match = matchUnknown
 		return true, nil
 	}
 	w.buf = w.buf[:0]
+	return false, nil
+}
+
+func (w *RedactingWriter) handleEnvKey() (bool, error) {
+	if len(w.buf) == 0 {
+		return false, nil
+	}
+	for i, b := range w.buf {
+		if b == '=' {
+			// Emit the env key (including '=') then redact the value.
+			if err := w.writeBytes(w.buf[:i+1]); err != nil {
+				return false, err
+			}
+			w.buf = w.buf[i+1:]
+			if err := w.writeBytes(redactedMarker); err != nil {
+				return false, err
+			}
+			w.state = writerStateDropping
+			return true, nil
+		}
+	}
+	// No '=' yet—emit everything except the last byte as part of the key.
+	if len(w.buf) > 1 {
+		flushLen := len(w.buf) - 1
+		if err := w.writeBytes(w.buf[:flushLen]); err != nil {
+			return false, err
+		}
+		w.buf = w.buf[flushLen:]
+		return true, nil
+	}
 	return false, nil
 }
 
@@ -277,19 +340,30 @@ func (w *RedactingWriter) writeBytes(b []byte) error {
 	return err
 }
 
-func findEarliestHeader(buf []byte) (int, []byte) {
+func findEarliestMatch(buf []byte) (int, currentMatch, []byte) {
 	minIdx := -1
+	matchType := matchUnknown
 	var matched []byte
 	for _, prefix := range redactingWriterPrefixes {
 		if idx := bytes.Index(buf, prefix); idx >= 0 && (minIdx == -1 || idx < minIdx) {
 			minIdx = idx
 			matched = prefix
+			matchType = classifyPrefix(prefix)
 			if minIdx == 0 {
 				break
 			}
 		}
 	}
-	return minIdx, matched
+	return minIdx, matchType, matched
+}
+
+func classifyPrefix(prefix []byte) currentMatch {
+	for _, envPrefix := range envPrefixes {
+		if bytes.Equal(prefix, envPrefix) {
+			return matchEnv
+		}
+	}
+	return matchHeader
 }
 
 func couldStartPrefix(suffix []byte) bool {
