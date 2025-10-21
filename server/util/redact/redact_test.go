@@ -3,6 +3,7 @@ package redact_test
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"strings"
 	"testing"
@@ -725,6 +726,284 @@ func TestRedactAPIKeys(t *testing.T) {
 	}
 }
 
+func redactingWriterRun(t *testing.T, writes [][]byte) string {
+	t.Helper()
+	var buf bytes.Buffer
+	w := redact.NewRedactingWriter(&buf)
+	for i, p := range writes {
+		if _, err := w.Write(p); err != nil {
+			t.Fatalf("Write #%d returned error: %v", i, err)
+		}
+	}
+	return buf.String()
+}
+
+func TestRedactingWriterURLSecretsCases(t *testing.T) {
+	testCases := []struct {
+		name   string
+		writes [][]byte
+		want   string
+	}{
+		{
+			name:   "SingleWrite",
+			writes: [][]byte{[]byte("https://user:secret@example.com")},
+			want:   "https://user:<REDACTED>@example.com",
+		},
+		{
+			name:   "SecretInMiddleWrite",
+			writes: [][]byte{[]byte("prefix "), []byte("https://user:secret@example.com"), []byte(" suffix")},
+			want:   "prefix https://user:<REDACTED>@example.com suffix",
+		},
+		{
+			name:   "MultipleURLsSingleWrite",
+			writes: [][]byte{[]byte("one https://user:secret@example.com two ssh://name:topsecret@example.org three")},
+			want:   "one https://user:<REDACTED>@example.com two ssh://name:<REDACTED>@example.org three",
+		},
+		{
+			name:   "URLWithQueryAndFragment",
+			writes: [][]byte{[]byte("https://user:secret@example.com/path?foo=bar#frag")},
+			want:   "https://user:<REDACTED>@example.com/path?foo=bar#frag",
+		},
+		{
+			name:   "UppercaseScheme",
+			writes: [][]byte{[]byte("SFTP://user:Password123@example.com")},
+			want:   "SFTP://user:<REDACTED>@example.com",
+		},
+		{
+			name:   "URLAcrossWritesButContained",
+			writes: [][]byte{[]byte("logs:"), []byte("\nhttps://user:secret@example.com\n")},
+			want:   "logs:\nhttps://user:<REDACTED>@example.com\n",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := redactingWriterRun(t, tc.writes)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestRedactingWriterRemoteHeaderCases(t *testing.T) {
+	testCases := []struct {
+		name   string
+		writes [][]byte
+		want   string
+	}{
+		{
+			name:   "RemoteHeader",
+			writes: [][]byte{[]byte("--remote_header=x-buildbuddy-api-key=foo")},
+			want:   "--remote_header=<REDACTED>",
+		},
+		{
+			name:   "RemoteCacheHeader",
+			writes: [][]byte{[]byte("--remote_cache_header=auth=bar")},
+			want:   "--remote_cache_header=<REDACTED>",
+		},
+		{
+			name:   "RemoteExecHeader",
+			writes: [][]byte{[]byte("--remote_exec_header=token=abc")},
+			want:   "--remote_exec_header=<REDACTED>",
+		},
+		{
+			name:   "RemoteDownloaderHeader",
+			writes: [][]byte{[]byte("--remote_downloader_header=session=xyz")},
+			want:   "--remote_downloader_header=<REDACTED>",
+		},
+		{
+			name:   "BesHeader",
+			writes: [][]byte{[]byte("--bes_header=Authorization=BearerXYZ")},
+			want:   "--bes_header=<REDACTED>",
+		},
+		{
+			name: "HeadersWithContext",
+			writes: [][]byte{
+				[]byte("prefix "),
+				[]byte("--remote_header=x=y "),
+				[]byte("and "),
+				[]byte("--bes_header=abc=def"),
+			},
+			want: "prefix --remote_header=<REDACTED> and --bes_header=<REDACTED>",
+		},
+		{
+			name: "MultipleHeadersSameWrite",
+			writes: [][]byte{
+				[]byte("--remote_header=x --remote_cache_header=y --remote_exec_header=z"),
+			},
+			want: "--remote_header=<REDACTED> --remote_cache_header=<REDACTED> --remote_exec_header=<REDACTED>",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := redactingWriterRun(t, tc.writes)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestRedactingWriterAPIKeyCases(t *testing.T) {
+	const twentyChars = "ABCDEFGHIJKLMNOPQRST"
+	testCases := []struct {
+		name     string
+		writes   [][]byte
+		want     string
+		setup    func()
+		teardown func()
+	}{
+		{
+			name:   "HeaderSingleWrite",
+			writes: [][]byte{[]byte("x-buildbuddy-api-key=" + twentyChars)},
+			want:   "x-buildbuddy-api-key=<REDACTED>",
+		},
+		{
+			name: "HeaderWithPrefixAndSuffix",
+			writes: [][]byte{
+				[]byte("prefix "),
+				[]byte("x-buildbuddy-api-key=" + twentyChars),
+				[]byte(" suffix"),
+			},
+			want: "prefix x-buildbuddy-api-key=<REDACTED> suffix",
+		},
+		{
+			name: "HeaderWithNewline",
+			writes: [][]byte{
+				[]byte("info:\n"),
+				[]byte("x-buildbuddy-api-key=" + twentyChars + "\n"),
+				[]byte("done"),
+			},
+			want: "info:\nx-buildbuddy-api-key=<REDACTED>\ndone",
+		},
+		{
+			name:   "APIKeyAtPatternSlash",
+			writes: [][]byte{[]byte("grpc://" + twentyChars + "@app.buildbuddy.io")},
+			want:   "grpc://<REDACTED>@app.buildbuddy.io",
+		},
+		{
+			name:   "APIKeyAtPatternEquals",
+			writes: [][]byte{[]byte("token=" + twentyChars + "@domain")},
+			want:   "token=<REDACTED>@domain",
+		},
+		{
+			name: "APIKeyAtPatternWithPrefixChunks",
+			writes: [][]byte{
+				[]byte("connecting "),
+				[]byte("grpc://" + twentyChars + "@foo"),
+				[]byte(" done"),
+			},
+			want: "connecting grpc://<REDACTED>@foo done",
+		},
+		{
+			name: "ConfiguredAPIKey",
+			writes: [][]byte{
+				[]byte("prefix "),
+				[]byte("STATICCONFIGKEY"),
+				[]byte(" suffix"),
+			},
+			want: "prefix <REDACTED> suffix",
+			setup: func() {
+				require.NoError(t, flag.Set("api.api_key", "STATICCONFIGKEY"))
+			},
+			teardown: func() {
+				require.NoError(t, flag.Set("api.api_key", ""))
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setup != nil {
+				tc.setup()
+			}
+			if tc.teardown != nil {
+				defer tc.teardown()
+			}
+			got := redactingWriterRun(t, tc.writes)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestRedactingWriterEnvVarCases(t *testing.T) {
+	testCases := []struct {
+		name   string
+		writes [][]byte
+		want   string
+	}{
+		{
+			name:   "ActionEnv",
+			writes: [][]byte{[]byte("--action_env=TOKEN=value")},
+			want:   "--action_env=TOKEN=<REDACTED>",
+		},
+		{
+			name:   "ClientEnv",
+			writes: [][]byte{[]byte("--client_env=TOKEN=value")},
+			want:   "--client_env=TOKEN=<REDACTED>",
+		},
+		{
+			name:   "HostActionEnv",
+			writes: [][]byte{[]byte("--host_action_env=TOKEN=value")},
+			want:   "--host_action_env=TOKEN=<REDACTED>",
+		},
+		{
+			name:   "RepoEnv",
+			writes: [][]byte{[]byte("--repo_env=TOKEN=value")},
+			want:   "--repo_env=TOKEN=<REDACTED>",
+		},
+		{
+			name:   "TestEnv",
+			writes: [][]byte{[]byte("--test_env=TOKEN=value")},
+			want:   "--test_env=TOKEN=<REDACTED>",
+		},
+		{
+			name: "EnvWithContext",
+			writes: [][]byte{
+				[]byte("running with "),
+				[]byte("--action_env=TOKEN=value "),
+				[]byte("and "),
+				[]byte("--repo_env=API_KEY=another"),
+			},
+			want: "running with --action_env=TOKEN=<REDACTED> and --repo_env=API_KEY=<REDACTED>",
+		},
+		{
+			name: "MultipleEnvSameWrite",
+			writes: [][]byte{
+				[]byte("--action_env=FOO=value --client_env=BAR=value2"),
+			},
+			want: "--action_env=FOO=<REDACTED> --client_env=BAR=<REDACTED>",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := redactingWriterRun(t, tc.writes)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestRedactingWriterCombination(t *testing.T) {
+	writes := [][]byte{
+		[]byte("Starting\n"),
+		[]byte("--remote_header=x-buildbuddy-api-key=foo "),
+		[]byte("https://user:secret@example.com "),
+		[]byte("x-buildbuddy-api-key=ABCDEFGHIJKLMNOPQRST "),
+		[]byte("--action_env=TOKEN=value "),
+		[]byte("grpc://ABCDEFGHIJKLMNOPQRST@app"),
+	}
+	want := "Starting\n--remote_header=<REDACTED> https://user:<REDACTED>@example.com x-buildbuddy-api-key=<REDACTED> --action_env=TOKEN=<REDACTED> grpc://<REDACTED>@app"
+
+	got := redactingWriterRun(t, writes)
+	require.Equal(t, want, got)
+}
+
+func TestRedactingWriterNilDestination(t *testing.T) {
+	w := redact.NewRedactingWriter(nil)
+	const payload = "https://user:secret@example.com"
+	n, err := w.Write([]byte(payload))
+	require.NoError(t, err)
+	require.Equal(t, len(payload), n)
+}
 func TestRedactingWriterRedactsURLSecrets(t *testing.T) {
 	var buf bytes.Buffer
 	w := redact.NewRedactingWriter(&buf)
