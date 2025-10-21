@@ -2,6 +2,7 @@ package migration_cache
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math/rand/v2"
 	"sync"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -835,19 +837,24 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 	if err != nil {
 		return nil, err
 	}
-	if conf.dest == nil {
-		return conf.src.Writer(ctx, r)
-	}
-	if conf.asyncDestWrites {
-		// We will write to the destination cache in the background.
-		mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
-		return conf.src.Writer(ctx, r)
-	}
-
 	srcWriter, srcErr := conf.src.Writer(ctx, r)
 	if srcErr != nil {
 		return nil, srcErr
 	}
+	if conf.dest == nil {
+		return srcWriter, nil
+	}
+	if conf.asyncDestWrites {
+		w := ioutil.NewCustomCommitWriteCloser(srcWriter)
+		w.CommitFn = func(int64) error {
+			// This is only called when the source writer is successfully committed.
+			// We will force a write to the destination cache in the background.
+			mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
+			return nil
+		}
+		return w, nil
+	}
+
 	destWriter, dstErr := conf.dest.Writer(ctx, r)
 	if dstErr != nil {
 		log.CtxWarningf(ctx, "Migration failure creating dest %v writer: %s", r, dstErr)
@@ -1012,15 +1019,20 @@ func (mc *MigrationCache) copy(c *copyData) {
 	ctx, cancel := background.ExtendContextForFinalization(c.ctx, 30*time.Second)
 	c.ctx = ctx
 	defer cancel()
+	fmt.Printf("Migration starting copy to dest cache: digest %v\n", c.d)
 
-	destContains, err := c.conf.dest.Contains(c.ctx, c.d)
-	if err != nil {
-		log.CtxWarningf(ctx, "Migration copy err: Could not call contains on dest cache %v: %s", c.d, err)
-		return
-	}
-	if destContains {
-		log.CtxDebugf(ctx, "Migration already copied on dequeue, returning early: digest %v", c.d)
-		return
+	if c.d.GetCacheType() == rspb.CacheType_CAS {
+		// For CAS blobs, we can skip copying if the dest cache already has the
+		// blob. For AC blobs, we always copy since the value could have changed.
+		destContains, err := c.conf.dest.Contains(c.ctx, c.d)
+		if err != nil {
+			log.CtxWarningf(ctx, "Migration copy err: Could not call contains on dest cache %v: %s", c.d, err)
+			return
+		}
+		if destContains {
+			log.CtxDebugf(ctx, "Migration already copied on dequeue, returning early: digest %v", c.d)
+			return
+		}
 	}
 	if c.d.GetDigest().GetSizeBytes() > 100 && c.conf.src.SupportsCompressor(repb.Compressor_ZSTD) && c.conf.dest.SupportsCompressor(repb.Compressor_ZSTD) {
 		// Use compression if both caches support it. This will usually mean
@@ -1144,4 +1156,16 @@ func (mc *MigrationCache) Stop() error {
 func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return mc.defaultConfigDoNotUseDirectly.src.SupportsCompressor(compressor) &&
 		mc.defaultConfigDoNotUseDirectly.dest.SupportsCompressor(compressor)
+}
+
+// WaitForPendingCopies blocks until all pending copy operations have been processed or the context is cancelled.
+// Exported for testing only.
+func (mc *MigrationCache) WaitForPendingCopies(ctx context.Context) error {
+	for len(mc.copyChan) > 0 {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return nil
 }

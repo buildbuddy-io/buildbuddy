@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"sync"
@@ -87,6 +88,22 @@ func setDoubleReadPercentage(t *testing.T, doubleRead float64) {
 	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
 }
 
+func setAsyncWrite(t *testing.T, asyncWrite bool) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		migration_cache.MigrationCacheConfigFlag: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "singleton",
+			Variants: map[string]any{"singleton": map[string]any{
+				migration_cache.MigrationStateField:           migration_cache.SrcPrimary,
+				migration_cache.AsyncDestWriteField:           asyncWrite,
+				migration_cache.DoubleReadPercentageField:     0.0,
+				migration_cache.DecompressReadPercentageField: 0.0,
+			}},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+}
+
 func getAnonContext(t *testing.T, env environment.Env) context.Context {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err, "error ataching user prefix")
@@ -109,6 +126,23 @@ func waitForCopy(t *testing.T, ctx context.Context, destCache interfaces.Cache, 
 	}
 
 	require.FailNowf(t, "timeout", "Timed out waiting for %v to be copied to dest cache", r)
+}
+
+func waitForValue(ctx context.Context, destCache interfaces.Cache, r *rspb.ResourceName, expected []byte) error {
+	for delay := 50 * time.Millisecond; delay < 3*time.Second; delay *= 2 {
+		actual, err := destCache.Get(ctx, r)
+		if err != nil && !status.IsNotFoundError(err) {
+			return err
+		}
+
+		if bytes.Equal(actual, expected) {
+			return nil
+		}
+
+		// Data has not been copied yet... Keep waiting
+		time.Sleep(delay)
+	}
+	return fmt.Errorf("Timed out waiting for %v to be copied to dest cache", r)
 }
 
 // errorCache lets us mock errors to test error handling
@@ -305,6 +339,138 @@ func TestSet_SrcAndDestWriteErr(t *testing.T) {
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err := mc.Set(ctx, r, buf)
 	require.Error(t, err)
+}
+
+func TestAsyncWrite_ACValueChanged(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	setAsyncWrite(t, true)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+	config := &migration_cache.MigrationConfig{}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
+	require.NoError(t, mc.Start())
+	defer mc.Stop()
+
+	r, buf := testdigest.RandomACResourceBuf(t, 100)
+	err = mc.Set(ctx, r, buf)
+	require.NoError(t, err)
+
+	srcData, err := srcCache.Get(ctx, r)
+	require.NoError(t, err)
+	require.Equal(t, buf, srcData)
+
+	require.NoError(t, waitForValue(ctx, destCache, r, buf))
+
+	// Write a new value and make sure it gets copied too.
+	_, buf = testdigest.RandomACResourceBuf(t, 100)
+	err = mc.Set(ctx, r, buf)
+	require.NoError(t, err)
+
+	srcData, err = srcCache.Get(ctx, r)
+	require.NoError(t, err)
+	require.Equal(t, buf, srcData)
+
+	require.NoError(t, waitForValue(ctx, destCache, r, buf))
+}
+
+// delayedWriterCache wraps a Cache and delays commits until waitFunc returns.
+type delayedWriterCache struct {
+	interfaces.Cache
+	waitFunc func()
+}
+
+type delayedWriter struct {
+	interfaces.CommittedWriteCloser
+	waitFunc func()
+}
+
+func (dw *delayedWriter) Commit() error {
+	dw.waitFunc()
+	return dw.CommittedWriteCloser.Commit()
+}
+
+func (c *delayedWriterCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	w, err := c.Cache.Writer(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	return &delayedWriter{w, c.waitFunc}, nil
+}
+
+func TestAsyncWrite_SrcIsSlow(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	setAsyncWrite(t, true)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+	config := &migration_cache.MigrationConfig{}
+	config.SetConfigDefaults()
+	delayedSrcCache := &delayedWriterCache{srcCache, func() { time.Sleep(100 * time.Millisecond) }}
+	mc := migration_cache.NewMigrationCache(te, config, delayedSrcCache, destCache)
+	require.NoError(t, mc.Start())
+	defer mc.Stop()
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	err = mc.Set(ctx, r, buf)
+	require.NoError(t, err)
+
+	srcData, err := srcCache.Get(ctx, r)
+	require.NoError(t, err)
+	require.Equal(t, buf, srcData)
+
+	require.NoError(t, waitForValue(ctx, destCache, r, buf))
+}
+
+type failWritesCache struct {
+	interfaces.Cache
+}
+
+func (c *failWritesCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	return nil, errors.New("simulated writer failure")
+}
+
+func TestAsyncWrite_SrcFails(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	setAsyncWrite(t, true)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+	config := &migration_cache.MigrationConfig{}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(te, config, &failWritesCache{srcCache}, destCache)
+	require.NoError(t, mc.Start())
+	defer mc.Stop()
+
+	r, buf := testdigest.RandomACResourceBuf(t, 100)
+	// Write to the src cache directly to avoid the simulated write failure.
+	err = srcCache.Set(ctx, r, buf)
+	require.NoError(t, err)
+
+	// This will fail to write to src cache, and so shouldn't copy to dest cache.
+	err = mc.Set(ctx, r, buf)
+	require.Error(t, err)
+
+	require.Error(t, waitForValue(ctx, destCache, r, buf))
 }
 
 func TestGetSet(t *testing.T) {
