@@ -210,6 +210,7 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
           execution.targetLabel?.toLowerCase()?.includes(filter) ||
           execution.actionMnemonic?.toLowerCase()?.includes(filter) ||
           execution.commandSnippet?.toLowerCase()?.includes(filter) ||
+          execution.primaryOutputPath?.toLowerCase()?.includes(filter) ||
           `${execution.actionDigest?.hash ?? ""}/${execution.actionDigest?.sizeBytes ?? ""}`
             .toLowerCase()
             .includes(filter)
