@@ -1,6 +1,7 @@
 package redact
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -113,7 +114,11 @@ func init() {
 }
 
 func stripURLSecrets(input string) string {
-	return urlSecretRegex.ReplaceAllString(input, "${1}<REDACTED>${2}")
+	return string(stripURLSecretsBytes([]byte(input)))
+}
+
+func stripURLSecretsBytes(input []byte) []byte {
+	return urlSecretRegex.ReplaceAll(input, []byte("${1}<REDACTED>${2}"))
 }
 
 // Strips URL secrets from the provided flag value, if there is a value.
@@ -228,45 +233,57 @@ func redactCmdLine(tokens []string) {
 	stripNonAllowedEnvVars(tokens)
 }
 
-func RedactText(txt string) string {
-	txt = stripURLSecrets(txt)
-	txt = redactRemoteHeaders(txt)
-	txt = redactBuildBuddyAPIKeys(txt)
-	txt = redactEnvVars(txt)
-	return txt
+func RedactText(b []byte) []byte {
+	b = stripURLSecretsBytes(b)
+	b = redactRemoteHeadersBytes(b)
+	b = redactBuildBuddyAPIKeysBytes(b)
+	b = redactEnvVarsBytes(b)
+	return b
 }
 
 // redactBuildBuddyAPIKeys redacts BuildBuddy API keys in the input string.
 // It looks for HTTP headers, URL secrets, environment variables, and the configured API key.
 // This implementation depends on BuildBuddy API keys being exactly 20 alphanumeric characters.
 func redactBuildBuddyAPIKeys(txt string) string {
+	return string(redactBuildBuddyAPIKeysBytes([]byte(txt)))
+}
+
+func redactBuildBuddyAPIKeysBytes(b []byte) []byte {
 	// Replace x-buildbuddy-api-key header.
-	txt = apiKeyHeaderPattern.ReplaceAllLiteralString(txt, "x-buildbuddy-api-key=<REDACTED>")
+	b = apiKeyHeaderPattern.ReplaceAllLiteral(b, []byte("x-buildbuddy-api-key=<REDACTED>"))
 
 	// Replace sequences that look like API keys immediately followed by '@',
 	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
 	// or "bes_backend=$API_KEY@domain.com".
-	txt = apiKeyAtPattern.ReplaceAllString(txt, "$1<REDACTED>@")
+	b = apiKeyAtPattern.ReplaceAll(b, []byte("$1<REDACTED>@"))
 
 	// Replace the literal API key set up via the BuildBuddy config, which does not
 	// need to conform to the way we generate API keys.
 	if configuredKey := *apiKey; configuredKey != "" {
-		txt = strings.ReplaceAll(txt, configuredKey, "<REDACTED>")
+		b = bytes.ReplaceAll(b, []byte(configuredKey), []byte("<REDACTED>"))
 	}
 
-	return txt
+	return b
 }
 
 func redactRemoteHeaders(txt string) string {
+	return string(redactRemoteHeadersBytes([]byte(txt)))
+}
+
+func redactRemoteHeadersBytes(b []byte) []byte {
 	for _, header := range headerOptionNames {
 		regex := regexp.MustCompile(fmt.Sprintf("--%s=[^\\s]+", header))
-		txt = regex.ReplaceAllLiteralString(txt, fmt.Sprintf("--%s=<REDACTED>", header))
+		b = regex.ReplaceAllLiteral(b, []byte(fmt.Sprintf("--%s=<REDACTED>", header)))
 	}
-	return txt
+	return b
 }
 
 func redactEnvVars(txt string) string {
-	return envVarOptionNamesRegex.ReplaceAllString(txt, "${1}<REDACTED>")
+	return string(redactEnvVarsBytes([]byte(txt)))
+}
+
+func redactEnvVarsBytes(b []byte) []byte {
+	return envVarOptionNamesRegex.ReplaceAll(b, []byte("${1}<REDACTED>"))
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
@@ -428,8 +445,8 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 					if err != nil {
 						return status.WrapError(err, "decode serialized action")
 					}
-					redactedAction := RedactText(string(decodedAction))
-					option.OptionValue = base64.StdEncoding.EncodeToString([]byte(redactedAction))
+					redactedAction := RedactText(decodedAction)
+					option.OptionValue = base64.StdEncoding.EncodeToString(redactedAction)
 				}
 			}
 			continue
