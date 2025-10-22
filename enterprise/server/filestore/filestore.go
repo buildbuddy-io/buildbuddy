@@ -135,8 +135,8 @@ type PebbleKey struct {
 	// For Version5 keys and beyond, we create a synthetic hash from the above
 	// fields as part of the keys. This is a *lossy* procedure. This means it's
 	// impossible to take a raw key and back out the groupID or other
-	// information. For that reason, when a v5+ key is parsed, the full key bytes
-	// are preserved here so that the key can be re-serialized.
+	// information. For that reason, when a v5+ key is parsed, the synthetic hash
+	// and the key version are preserved here so that the key can be re-serialized.
 	syntheticHash        string
 	syntheticHashVersion PebbleKeyVersion
 }
