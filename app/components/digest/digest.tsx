@@ -1,6 +1,6 @@
-import format from "../../format/format";
-import React from "react";
 import Long from "long";
+import React from "react";
+import format from "../../format/format";
 
 export type Digest = {
   hash?: string;

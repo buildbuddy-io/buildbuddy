@@ -55,7 +55,6 @@ func GetNthPreviousFlag(flag string, n int) (string, error) {
 func GetLastBackend() (string, error) {
 	lastBackend, err := GetPreviousFlag(besBackendFlagName)
 	if lastBackend == "" || err != nil {
-		log.Printf("The previous invocation didn't have the --bes_backend= set.")
 		return "", err
 	}
 

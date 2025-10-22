@@ -60,12 +60,12 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	static_bundle "github.com/buildbuddy-io/buildbuddy/static"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -87,6 +87,7 @@ var (
 
 	// URL path prefixes that should be handled by serving the app's HTML.
 	appRoutes = []string{
+		"/action/",
 		"/compare/",
 		"/cli-login/",
 		"/docs/",
@@ -96,6 +97,7 @@ var (
 		"/org/",
 		"/settings/",
 		"/tests/",
+		"/targets/",
 		"/trends/",
 		"/usage/",
 		"/workflows/",
@@ -248,9 +250,6 @@ func startInternalGRPCServers(env *real_environment.RealEnv) error {
 }
 
 func registerInternalServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
-	if sociArtifactStoreServer := env.GetSociArtifactStoreServer(); sociArtifactStoreServer != nil {
-		socipb.RegisterSociArtifactStoreServer(grpcServer, sociArtifactStoreServer)
-	}
 	channelzservice.RegisterChannelzServiceToServer(grpcServer)
 }
 
@@ -322,15 +321,18 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	if ht := env.GetHitTrackerServiceServer(); ht != nil {
 		hitpb.RegisterHitTrackerServiceServer(grpcServer, ht)
 	}
+	if crypter := env.GetCrypter(); crypter != nil {
+		enpb.RegisterEncryptionServiceServer(grpcServer, crypter)
+	}
 }
 
 func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 	// Identify ourselves as an app client in gRPC requests to other apps.
-	usageutil.SetClientType("app")
+	usageutil.SetServerName("app")
 	byte_stream_client.RegisterPooledBytestreamClient(env)
 
 	// TODO(jdhollen): Share this pool with the cache above.  Not a huge deal for now.
-	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort()))
+	conn, err := grpc_client.DialInternalWithoutPooling(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort()))
 	if err != nil {
 		return status.InternalErrorf("Error initializing ByteStreamClient: %s", err)
 	}
@@ -367,7 +369,7 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		log.Fatalf("Error initializing static file server: %s", err)
 	}
 
-	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, "")
+	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
 	if err != nil {
 		log.Fatalf("Error initializing app server: %s", err)
 	}
@@ -530,16 +532,28 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 			Handler:   server.Handler,
 			TLSConfig: tlsConfig,
 		}
+		sslListener, err := net.Listen("tcp", sslServer.Addr)
+		if err != nil {
+			log.Fatalf("Failed to listen on SSL port %d: %s", *sslPort, err)
+		}
 		go func() {
-			sslServer.ListenAndServeTLS("", "")
+			_ = sslServer.ServeTLS(sslListener, "", "")
 		}()
+		httpListener, err := net.Listen("tcp", server.Addr)
+		if err != nil {
+			log.Fatalf("Failed to listen on port %d: %s", *port, err)
+		}
 		go func() {
-			http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
+			_ = http.Serve(httpListener, interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
 		}()
 	} else {
 		// If no SSL is enabled, we'll just serve things as-is.
+		lis, err := net.Listen("tcp", server.Addr)
+		if err != nil {
+			log.Fatalf("Failed to listen on port %d: %s", *port, err)
+		}
 		go func() {
-			server.ListenAndServe()
+			_ = server.Serve(lis)
 		}()
 	}
 

@@ -7,6 +7,7 @@ go_library(
     srcs = ["client.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client",
     deps = [
+        "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/rbuilder",
         "//proto:raft_go_proto",
@@ -28,6 +29,7 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_genproto_googleapis_rpc//status",
+        "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],
 )
@@ -42,8 +44,12 @@ go_test(
         "//enterprise/server/raft/testutil",
         "//proto:raft_go_proto",
         "//server/util/random",
+        "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
         "@org_golang_x_sync//errgroup",
     ],
 )

@@ -1,11 +1,11 @@
 import React from "react";
+import alert_service from "../../../app/alert/alert_service";
 import FilledButton from "../../../app/components/button/button";
 import TextInput from "../../../app/components/input/input";
 import { TextLink } from "../../../app/components/link/link";
 import Spinner from "../../../app/components/spinner/spinner";
 import error_service from "../../../app/errors/error_service";
 import router from "../../../app/router/router";
-import alert_service from "../../../app/alert/alert_service";
 import { encryptAndUpdate } from "./secret_util";
 
 export interface UpdateSecretProps {

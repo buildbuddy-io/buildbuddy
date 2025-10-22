@@ -56,6 +56,8 @@ write_file(
                     # Noisy and is not part of 'go vet'
                     # "fieldalignment",
                     "framepointer",
+                    "hostport",
+                    "httpmux",
                     "httpresponse",
                     "ifaceassert",
                     "loopclosure",
@@ -63,6 +65,7 @@ write_file(
                     "nilfunc",
                     "nilness",
                     "printf",
+                    "reflectvaluecompare",
                     # Everyone shadows `err`
                     # "shadow",
                     "shift",
@@ -81,6 +84,7 @@ write_file(
                     "unsafeptr",
                     "unusedresult",
                     "unusedwrite",
+                    "waitgroup",
                 ]
             },
         ),
@@ -108,6 +112,8 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/errorsas",
         # "@org_golang_x_tools//go/analysis/passes/fieldalignment",
         "@org_golang_x_tools//go/analysis/passes/framepointer",
+        "@org_golang_x_tools//go/analysis/passes/hostport",
+        "@org_golang_x_tools//go/analysis/passes/httpmux",
         "@org_golang_x_tools//go/analysis/passes/httpresponse",
         "@org_golang_x_tools//go/analysis/passes/ifaceassert",
         "@org_golang_x_tools//go/analysis/passes/loopclosure",
@@ -115,6 +121,7 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/nilfunc",
         "@org_golang_x_tools//go/analysis/passes/nilness",
         "@org_golang_x_tools//go/analysis/passes/printf",
+        "@org_golang_x_tools//go/analysis/passes/reflectvaluecompare",
         # Everyone shadows `err`
         # "@org_golang_x_tools//go/analysis/passes/shadow",
         "@org_golang_x_tools//go/analysis/passes/shift",
@@ -133,6 +140,7 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/unsafeptr",
         "@org_golang_x_tools//go/analysis/passes/unusedresult",
         "@org_golang_x_tools//go/analysis/passes/unusedwrite",
+        "@org_golang_x_tools//go/analysis/passes/waitgroup",
         "@com_github_nishanths_exhaustive//:exhaustive",
     ] + staticcheck_analyzers(ANALYZERS + [
         "-SA1019",
@@ -216,9 +224,9 @@ buildifier(
     name = "buildifier",
 )
 
-go_sdk_tool(
+alias(
     name = "go",
-    goroot_relative_path = "bin/go",
+    actual = "@io_bazel_rules_go//go",
 )
 
 # Example usage: "bazel run //:gofmt -- -w ."

@@ -42,7 +42,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"golang.org/x/sync/errgroup"
@@ -77,6 +76,7 @@ import (
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	ulpb "github.com/buildbuddy-io/buildbuddy/proto/user_list"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
@@ -317,19 +317,11 @@ func makeGroups(groupRoles []*tables.GroupRole) ([]*grpb.Group, error) {
 		if g.GithubToken != nil {
 			githubToken = *g.GithubToken
 		}
-		r, err := role.ToProto(role.Role(gr.Role))
-		if err != nil {
-			return nil, err
-		}
-		userGroupCapabilities, err := role.ToCapabilities(role.Role(gr.Role))
-		if err != nil {
-			return nil, err
-		}
-		allowedUserAPIKeyCapabilities := capabilities.ApplyMask(userGroupCapabilities, capabilities.UserAPIKeyCapabilitiesMask)
+		allowedUserAPIKeyCapabilities := capabilities.ApplyMask(gr.Capabilities, capabilities.UserAPIKeyCapabilitiesMask)
 		groups = append(groups, &grpb.Group{
 			Id:                                g.GroupID,
 			Name:                              g.Name,
-			Role:                              r,
+			Capabilities:                      gr.Capabilities,
 			OwnedDomain:                       g.OwnedDomain,
 			GithubLinked:                      githubToken != "",
 			UrlIdentifier:                     g.URLIdentifier,
@@ -403,9 +395,9 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 	}
 
 	subdomainGroupID := ""
-	if serverAdminGID := s.env.GetAuthenticator().AdminGroupID(); serverAdminGID != "" {
+	if serverAdminGID := claims.ServerAdminGroupID(); serverAdminGID != "" {
 		for _, gr := range tu.Groups {
-			if gr.Group.GroupID == serverAdminGID && gr.Role == uint32(role.Admin) {
+			if gr.Group.GroupID == serverAdminGID && gr.HasCapability(cappb.Capability_ORG_ADMIN) {
 				gid, err := s.getGroupIDForSubdomain(ctx)
 				if err != nil && !status.IsNotFoundError(err) {
 					return nil, err
@@ -478,15 +470,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 	var group *tables.Group
 	if req.GetGroupId() != "" {
 		// Looking up by group ID is restricted to server admins.
-		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-		if err != nil {
-			return nil, err
-		}
-		adminGroupID := s.env.GetAuthenticator().AdminGroupID()
-		if adminGroupID == "" {
-			return nil, status.PermissionDeniedError("Access denied")
-		}
-		if err := authutil.AuthorizeOrgAdmin(u, adminGroupID); err != nil {
+		if err := claims.AuthorizeServerAdmin(ctx); err != nil {
 			return nil, err
 		}
 		g, err := userDB.GetGroupByID(ctx, req.GetGroupId())
@@ -674,6 +658,110 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 	return &grpb.JoinGroupResponse{}, nil
 }
 
+func (s *BuildBuddyServer) GetUserLists(ctx context.Context, request *ulpb.GetUserListsRequest) (*ulpb.GetUserListsResponse, error) {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	uls, err := udb.GetUserLists(ctx, u.GetGroupID())
+	if err != nil {
+		return nil, err
+	}
+
+	return &ulpb.GetUserListsResponse{
+		UserList: uls,
+	}, nil
+}
+
+func (s *BuildBuddyServer) GetUserList(ctx context.Context, request *ulpb.GetUserListRequest) (*ulpb.GetUserListResponse, error) {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
+	}
+
+	ul, err := udb.GetUserList(ctx, request.GetUserListId())
+	if err != nil {
+		return nil, err
+	}
+	return &ulpb.GetUserListResponse{
+		UserList: ul,
+	}, nil
+}
+
+func (s *BuildBuddyServer) CreateUserList(ctx context.Context, request *ulpb.CreateUserListRequest) (*ulpb.GetUserListsResponse, error) {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = udb.CreateUserList(ctx, &tables.UserList{
+		GroupID: u.GetGroupID(),
+		Name:    request.GetName(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ulpb.GetUserListsResponse{}, nil
+}
+
+func (s *BuildBuddyServer) DeleteUserList(ctx context.Context, request *ulpb.DeleteUserListRequest) (*ulpb.DeleteUserListResponse, error) {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
+	}
+
+	err := udb.DeleteUserList(ctx, request.GetUserListId())
+	if err != nil {
+		return nil, err
+	}
+
+	return &ulpb.DeleteUserListResponse{}, nil
+}
+
+func (s *BuildBuddyServer) UpdateUserList(ctx context.Context, request *ulpb.UpdateUserListRequest) (*ulpb.UpdateUserListResponse, error) {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = udb.UpdateUserList(ctx, &tables.UserList{
+		GroupID:    u.GetGroupID(),
+		UserListID: request.GetUserList().UserListId,
+		Name:       request.GetUserList().GetName(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ulpb.UpdateUserListResponse{}, nil
+}
+
+func (s *BuildBuddyServer) UpdateUserListMembership(ctx context.Context, request *ulpb.UpdateUserListMembershipRequest) (*ulpb.UpdateUserListMembershipResponse, error) {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
+	}
+
+	err := udb.UpdateUserListMembers(ctx, request.GetUserListId(), request.GetUpdate())
+	if err != nil {
+		return nil, err
+	}
+
+	return &ulpb.UpdateUserListMembershipResponse{}, nil
+}
+
 func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {
 	authDB := s.env.GetAuthDB()
 	if authDB == nil {
@@ -748,7 +836,7 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 	}
 	k, err := authDB.CreateAPIKey(
 		ctx, req.GetRequestContext().GetGroupId(), req.GetLabel(), req.GetCapability(),
-		req.GetVisibleToDevelopers())
+		req.GetExpiresIn().AsDuration(), req.GetVisibleToDevelopers())
 	if err != nil {
 		return nil, err
 	}
@@ -957,7 +1045,9 @@ func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.Creat
 	if userID == "" {
 		userID = u.GetUserID()
 	}
-	k, err := authDB.CreateUserAPIKey(ctx, req.GetRequestContext().GetGroupId(), userID, req.GetLabel(), req.GetCapability())
+	k, err := authDB.CreateUserAPIKey(
+		ctx, req.GetRequestContext().GetGroupId(), userID, req.GetLabel(),
+		req.GetCapability(), req.GetExpiresIn().AsDuration())
 	if err != nil {
 		return nil, err
 	}
@@ -1261,6 +1351,13 @@ func (s *BuildBuddyServer) GetStatHeatmap(ctx context.Context, req *stpb.GetStat
 func (s *BuildBuddyServer) GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error) {
 	if iss := s.env.GetInvocationStatService(); iss != nil {
 		return iss.GetStatDrilldown(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetTargetTrends(ctx context.Context, req *stpb.GetTargetTrendsRequest) (*stpb.GetTargetTrendsResponse, error) {
+	if iss := s.env.GetInvocationStatService(); iss != nil {
+		return iss.GetTargetTrends(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
@@ -1659,6 +1756,27 @@ func (s *BuildBuddyServer) UnlinkGitHubRepo(ctx context.Context, req *ghpb.Unlin
 	}
 	return rsp, nil
 }
+
+func (s *BuildBuddyServer) UpdateGitHubRepoSettings(ctx context.Context, req *ghpb.UpdateRepoSettingsRequest) (*ghpb.UpdateRepoSettingsResponse, error) {
+	gh := s.env.GetGitHubAppService()
+	if gh == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	repo, err := git.ParseGitHubRepoURL(req.GetRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+	a, err := gh.GetGitHubAppForOwner(ctx, repo.Owner)
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := a.UpdateRepoSettings(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return rsp, nil
+}
+
 func (s *BuildBuddyServer) GetGitHubAppInstallPath(ctx context.Context, req *ghpb.GetGithubAppInstallPathRequest) (*ghpb.GetGithubAppInstallPathResponse, error) {
 	gh := s.env.GetGitHubAppService()
 	if gh == nil {
@@ -2154,7 +2272,7 @@ func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *repb.CreateR
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, request.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2190,7 +2308,7 @@ func (s *BuildBuddyServer) GetGithubRepo(ctx context.Context, req *ghpb.GetGithu
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2202,7 +2320,7 @@ func (s *BuildBuddyServer) GetGithubContent(ctx context.Context, req *ghpb.GetGi
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2214,7 +2332,7 @@ func (s *BuildBuddyServer) GetGithubTree(ctx context.Context, req *ghpb.GetGithu
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2226,7 +2344,7 @@ func (s *BuildBuddyServer) CreateGithubTree(ctx context.Context, req *ghpb.Creat
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2238,7 +2356,7 @@ func (s *BuildBuddyServer) GetGithubBlob(ctx context.Context, req *ghpb.GetGithu
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2250,7 +2368,7 @@ func (s *BuildBuddyServer) CreateGithubBlob(ctx context.Context, req *ghpb.Creat
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2262,7 +2380,7 @@ func (s *BuildBuddyServer) CreateGithubPull(ctx context.Context, req *ghpb.Creat
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2274,7 +2392,7 @@ func (s *BuildBuddyServer) MergeGithubPull(ctx context.Context, req *ghpb.MergeG
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2286,7 +2404,7 @@ func (s *BuildBuddyServer) GetGithubCompare(ctx context.Context, req *ghpb.GetGi
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2298,7 +2416,7 @@ func (s *BuildBuddyServer) GetGithubForks(ctx context.Context, req *ghpb.GetGith
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2310,7 +2428,7 @@ func (s *BuildBuddyServer) CreateGithubFork(ctx context.Context, req *ghpb.Creat
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2322,7 +2440,7 @@ func (s *BuildBuddyServer) GetGithubCommits(ctx context.Context, req *ghpb.GetGi
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2334,7 +2452,7 @@ func (s *BuildBuddyServer) CreateGithubCommit(ctx context.Context, req *ghpb.Cre
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2346,7 +2464,7 @@ func (s *BuildBuddyServer) UpdateGithubRef(ctx context.Context, req *ghpb.Update
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2358,7 +2476,7 @@ func (s *BuildBuddyServer) CreateGithubRef(ctx context.Context, req *ghpb.Create
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2382,7 +2500,7 @@ func (s *BuildBuddyServer) CreateGithubPullRequestComment(ctx context.Context, r
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2418,7 +2536,7 @@ func (s *BuildBuddyServer) GetGithubPullRequestDetails(ctx context.Context, req 
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}

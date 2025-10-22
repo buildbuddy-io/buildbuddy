@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
@@ -125,12 +126,12 @@ func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t 
 
 	scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
 	scheduler.Start()
+	ctx := context.Background()
 	t.Cleanup(func() {
 		err := scheduler.Stop()
 		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
-
-	ctx := context.Background()
 
 	oneCPU := &scpb.TaskSize{
 		EstimatedMilliCpu:    1000,
@@ -185,17 +186,117 @@ func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t 
 
 	// Finish the GPU task that is currently running, which should allow the
 	// next GPU task to be scheduled.
-	var gpuExecution *FakeExecution
+	var remainingExecution *FakeExecution
 	if execution1.ScheduledTask.GetExecutionTask().GetExecutionId() == gpuTask1ID {
-		gpuExecution = execution1
+		execution1.Complete()
+		remainingExecution = execution2
 	} else {
-		gpuExecution = execution2
+		execution2.Complete()
+		remainingExecution = execution1
 	}
-	gpuExecution.Complete()
 
 	execution3 := <-executor.StartedExecutions
 	require.Equal(t, gpuTask2ID, execution3.ScheduledTask.GetExecutionTask().GetExecutionId())
 	require.Equal(t, scheduler.q.Len(), 0)
+	execution3.Complete()
+
+	// Complete remaining execution to allow smooth shutdown.
+	remainingExecution.Complete()
+}
+
+func TestPriorityTaskScheduler_QueueSkipping_LargeCustomResourceTasksNotIndefinitelyBlocked(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+
+	flags.Set(t, "executor.millicpu", 30_000)
+	flags.Set(t, "executor.memory_bytes", 64_000_000_000)
+	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+		{Name: "gpu", Value: 2.0},
+	})
+	err := resources.Configure(false /*=mmapLRUEnabled*/)
+	require.NoError(t, err)
+
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	scheduler.Start()
+	ctx := context.Background()
+	t.Cleanup(func() {
+		err := scheduler.Stop()
+		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
+	})
+
+	gpuLargeSize := &scpb.TaskSize{
+		EstimatedMilliCpu:    1000,
+		EstimatedMemoryBytes: 1000,
+		CustomResources:      []*scpb.CustomResource{{Name: "gpu", Value: 2.0}},
+	}
+	gpuSmallSize := &scpb.TaskSize{
+		EstimatedMilliCpu:    1000,
+		EstimatedMemoryBytes: 1000,
+		CustomResources:      []*scpb.CustomResource{{Name: "gpu", Value: 1.0}},
+	}
+	gpuLargeTaskID := fakeTaskID("gpu-large")
+	gpuSmall1TaskID := fakeTaskID("gpu-small-1")
+	gpuSmall2TaskID := fakeTaskID("gpu-small-2")
+
+	// Schedule one task that requires 1 GPU, then one task that requires 2
+	// GPUs, then another task that requires 1 GPU. The first GPU task should be
+	// allowed to run, and the second GPU task should be blocked waiting for the
+	// first GPU task to complete. The third task should *not* skip ahead in the
+	// queue - if we keep allowing tasks to skip ahead, then the large GPU task
+	// will spend a long time queued.
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             gpuSmall1TaskID,
+		TaskSize:           gpuSmallSize,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: gpuSmallSize},
+	})
+	require.NoError(t, err)
+	execution1 := <-executor.StartedExecutions
+	// gpu-small-1 should have started.
+	require.Equal(t, gpuSmall1TaskID, execution1.ScheduledTask.GetExecutionTask().GetExecutionId())
+
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             gpuLargeTaskID,
+		TaskSize:           gpuLargeSize,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: gpuLargeSize},
+	})
+	require.NoError(t, err)
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             gpuSmall2TaskID,
+		TaskSize:           gpuSmallSize,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: gpuSmallSize},
+	})
+	require.NoError(t, err)
+
+	// Give enough time for the scheduler to attempt to schedule more tasks.
+	// It should not have scheduled any more tasks except the first one.
+	// TODO: use testing/synctest here once we're on Go 1.25
+	select {
+	case ex := <-executor.StartedExecutions:
+		require.FailNowf(t, "no tasks should be started until first task completes", "task %q started", ex.ScheduledTask.GetExecutionTask().GetExecutionId())
+	case <-time.After(100 * time.Millisecond):
+	}
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, scheduler.q.Len(), 2)
+	// Complete the first task. The second GPU task should start.
+	execution1.Complete()
+	execution2 := <-executor.StartedExecutions
+	require.Equal(t, scheduler.q.Len(), 1)
+	execution2.Complete()
+	// Drain the queue.
+	execution3 := <-executor.StartedExecutions
+	execution3.Complete()
+	require.Equal(t, scheduler.q.Len(), 0)
+
+	startedTaskIDs := []string{
+		execution1.ScheduledTask.GetExecutionTask().GetExecutionId(),
+		execution2.ScheduledTask.GetExecutionTask().GetExecutionId(),
+	}
+	require.ElementsMatch(t, []string{gpuSmall1TaskID, gpuLargeTaskID}, startedTaskIDs)
 }
 
 func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
@@ -235,11 +336,12 @@ func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 			leaser := NewFakeTaskLeaser()
 			scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
 			scheduler.Start()
+			ctx := context.Background()
 			t.Cleanup(func() {
 				err := scheduler.Stop()
 				require.NoError(t, err)
+				assert.NoError(t, scheduler.Shutdown(ctx))
 			})
-			ctx := context.Background()
 
 			// Set up the fake execution client to inject a failure into CloseAndRecv.
 			executionClient.CloseAndRecvErr = test.streamCloseAndRecvErr
@@ -258,7 +360,12 @@ func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 			// Inspect the lease and make sure it was closed with a retry.
 			lease := <-leaser.GrantedLeases
 			retry, err := lease.WaitClosed()
-			require.Equal(t, test.expectedLeaseCloseErr, err, "unexpected lease close error")
+			if test.expectedLeaseCloseErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.Equal(t, test.expectedLeaseCloseErr.Error(), err.Error(), "unexpected lease close error")
+			}
 			require.Equal(t, test.expectedLeaseCloseRetry, retry, "unexpected lease retry value")
 		})
 	}
@@ -279,6 +386,7 @@ func TestLocalEnqueueTimestamp(t *testing.T) {
 	t.Cleanup(func() {
 		err := scheduler.Stop()
 		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
 	// Start a task.

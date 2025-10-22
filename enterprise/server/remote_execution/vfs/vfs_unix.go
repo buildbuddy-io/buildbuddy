@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfscommon"
 	"golang.org/x/sys/unix"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -132,6 +133,7 @@ type VFS struct {
 	internalTaskID string
 	rpcCtx         context.Context
 	inodeCache     *inodeCache
+	nodesByInodeID map[uint64]*fs.Inode
 	opStats        map[string]*opStats
 	perFileStats   map[string]perOpStats
 }
@@ -164,11 +166,13 @@ func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *V
 		logFUSEPerFileStats: options.LogFUSEPerFileStats,
 		rpcCtx:              rpcCtx,
 		inodeCache:          newInodeCache(),
+		nodesByInodeID:      make(map[uint64]*fs.Inode),
 		opStats:             make(map[string]*opStats),
 		perFileStats:        make(map[string]perOpStats),
 	}
 	root := &Node{vfs: vfs}
 	vfs.root = root
+	vfs.nodesByInodeID[vfscommon.RootInodeId] = &vfs.root.Inode
 	return vfs
 }
 
@@ -219,8 +223,16 @@ func (vfs *VFS) Mount() error {
 			FsName:            "bbvfs",
 			MaxWrite:          fuse.MAX_KERNEL_WRITE,
 		},
+		RootStableAttr: &fs.StableAttr{
+			Ino: vfscommon.RootInodeId,
+		},
 	}
 	nodeFS := fs.NewNodeFS(vfs.root, opts)
+	// fs.NewNodeFS initializes the node.
+	vfs.mu.Lock()
+	vfs.nodesByInodeID[vfscommon.RootInodeId] = &vfs.root.Inode
+	vfs.mu.Unlock()
+
 	server, err := fuse.NewServer(nodeFS, vfs.mountDir, &opts.MountOptions)
 	if err != nil {
 		return status.UnavailableErrorf("could not mount VFS at %q: %s", vfs.mountDir, err)
@@ -238,14 +250,81 @@ func (vfs *VFS) Mount() error {
 	return nil
 }
 
-// PrepareForTask prepares the virtual filesystem layout according to the provided `fsLayout`.
-// `ctx` is used for outgoing RPCs to the server and must stay alive as long as the filesystem is being used.
+// PrepareForTask prepares the virtual filesystem for a new task.
+//
+// `ctx` is used for outgoing RPCs to the server and must stay alive as long
+// as the filesystem is being used.
 // The passed `taskID` os only used for logging purposes.
-func (vfs *VFS) PrepareForTask(ctx context.Context, taskID string) error {
+//
+// If the layout of the filesystem has been modified w/o going though the
+// kernel then invalidatedInodeIDs is expected to contain the modified inodes
+// so that cached data in the kernel can be invalidated, if necessary.
+func (vfs *VFS) PrepareForTask(ctx context.Context, taskID string, invalidatedInodes *vfscommon.InodeInvalidations) error {
 	vfs.mu.Lock()
 	vfs.internalTaskID = taskID
 	vfs.rpcCtx = ctx
 	vfs.mu.Unlock()
+
+	// If the list of inodes to invalidate is sufficiently large, it might
+	// be more efficient to remount the filesystem? Newer kernels also have
+	// a feature that allows large invalidations via FUSE_NOTIFY_INC_EPOCH
+	// but that's not currently exposed in go-fuse.
+	start := time.Now()
+	numInvalidated := 0
+	for _, invalidatedInodeID := range invalidatedInodes.Content {
+		if vfs.verbose {
+			log.CtxDebugf(ctx, "Need to invalidate inode %d", invalidatedInodeID)
+		}
+		node, err := vfs.GetInode(invalidatedInodeID)
+		if err != nil {
+			// If the inode has not been looked up by the kernel before it
+			// won't be in the internal map so we can skip it.
+			if status.IsNotFoundError(err) {
+				if vfs.verbose {
+					log.CtxDebugf(ctx, "Skipping invalidation for inode %d, not found in inode map", invalidatedInodeID)
+				}
+				continue
+			}
+			return status.WrapErrorf(err, "could not find inode for invalidation")
+		}
+		errno := node.NotifyContent(0, -1)
+		if errno != 0 {
+			log.CtxWarningf(ctx, "Failed to notify content for inode %d for path %q: %d", invalidatedInodeID, node.Path(nil), errno)
+			return status.InternalErrorf("could not invalidate directory inode %d for path %q: %s", invalidatedInodeID, node.Path(nil), errno)
+		}
+		numInvalidated++
+	}
+	for _, invalidatedEntry := range invalidatedInodes.Entry {
+		if vfs.verbose {
+			log.CtxDebugf(ctx, "Need to invalidate %q in inode %d", invalidatedEntry.Name, invalidatedEntry.InodeID)
+		}
+		node, err := vfs.GetInode(invalidatedEntry.InodeID)
+		if err != nil {
+			// If the inode has not been looked up by the kernel before it
+			// won't be in the internal map so we can skip it.
+			if status.IsNotFoundError(err) {
+				if vfs.verbose {
+					log.CtxDebugf(ctx, "Skipping invalidation for inode %d, not found in inode map", invalidatedEntry.InodeID)
+				}
+				continue
+			}
+			return status.WrapErrorf(err, "could not find inode for invalidation")
+		}
+		errno := node.NotifyEntry(invalidatedEntry.Name)
+		if errno != 0 {
+			log.CtxWarningf(ctx, "Failed to notify entry %q for inode %d for path %q: %d", invalidatedEntry.Name, invalidatedEntry.InodeID, node.Path(nil), errno)
+			return status.InternalErrorf("could not invalidate entry %q for inode %d for path %q: %s", invalidatedEntry.Name, invalidatedEntry.InodeID, node.Path(nil), errno)
+		}
+		success, _ := node.RmChild(invalidatedEntry.Name)
+		if !success {
+			log.CtxInfof(ctx, "Could not remove child %q from inode %d for path %q (may already have been removed async via kernel notification)", invalidatedEntry.Name, invalidatedEntry.InodeID, node.Path(nil))
+		}
+		numInvalidated++
+	}
+	if numInvalidated > 0 {
+		log.CtxInfof(ctx, "Invalidated %d inodes in %s", numInvalidated, time.Since(start))
+	}
+
 	return nil
 }
 
@@ -319,7 +398,12 @@ func (vfs *VFS) Unmount() error {
 
 	vfs.logStats()
 
-	return vfs.server.Unmount()
+	err := vfs.server.Unmount()
+	if err != nil {
+		return err
+	}
+	vfs.server = nil
+	return nil
 }
 
 func (vfs *VFS) startOP(pathFn func() string, op string) {
@@ -355,6 +439,32 @@ func (vfs *VFS) getattr(inode uint64) (*vfspb.Attrs, error) {
 	}
 
 	return attrs, nil
+}
+
+func (vfs *VFS) NewInode(ctx context.Context, ops fs.InodeEmbedder, id fs.StableAttr) *fs.Inode {
+	node := vfs.root.NewInode(ctx, ops, id)
+	vfs.mu.Lock()
+	p := node.Path(nil)
+	if en, ok := vfs.nodesByInodeID[node.StableAttr().Ino]; ok {
+		log.CtxWarningf(vfs.rpcCtx, "replacing inode %d (%q) with %q", node.StableAttr().Ino, en.Path(nil), p)
+	} else {
+		if vfs.verbose {
+			log.CtxDebugf(vfs.rpcCtx, "register inode %d with path %q", node.StableAttr().Ino, p)
+		}
+	}
+	vfs.nodesByInodeID[node.StableAttr().Ino] = node
+	vfs.mu.Unlock()
+	return node
+}
+
+func (vfs *VFS) GetInode(inodeID uint64) (*fs.Inode, error) {
+	vfs.mu.Lock()
+	defer vfs.mu.Unlock()
+	inode, ok := vfs.nodesByInodeID[inodeID]
+	if !ok {
+		return nil, status.NotFoundErrorf("inode %d not found", inodeID)
+	}
+	return inode, nil
 }
 
 type Node struct {
@@ -444,11 +554,32 @@ func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (nod
 	}
 	fillFuseAttr(&out.Attr, attrs)
 
+	if en := n.GetChild(name); en != nil {
+		return en, 0
+	}
 	child := &Node{
 		vfs:           n.vfs,
 		symlinkTarget: rsp.SymlinkTarget,
 	}
-	return n.NewInode(ctx, child, fs.StableAttr{Mode: rsp.Mode, Ino: rsp.Id}), 0
+	node = n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: rsp.Mode, Ino: rsp.Id})
+	if !n.AddChild(name, node, false) {
+		log.CtxWarningf(n.vfs.getRPCContext(), "could not add child %q to %q", name, n.relativePath())
+		return nil, syscall.EIO
+	}
+	return node, 0
+}
+
+// Forget is called whenever the kernel loses knowledge about an inode, which
+// can happen because the inode is removed or because the kernel removes cached
+// data due to memory pressure. In the latter case, the kernel will send a
+// lookup request if the inode is needed again.
+func (n *Node) Forget() {
+	if n.vfs.verbose {
+		log.CtxDebugf(n.vfs.getRPCContext(), "Forget %q ino %d", n.relativePath(), n.StableAttr().Ino)
+	}
+	n.vfs.mu.Lock()
+	delete(n.vfs.nodesByInodeID, n.StableAttr().Ino)
+	n.vfs.mu.Unlock()
 }
 
 type dirHandle struct {
@@ -458,10 +589,21 @@ type dirHandle struct {
 	pos      int
 }
 
-func (d *dirHandle) Readdirent(ctx context.Context) (*fuse.DirEntry, syscall.Errno) {
+func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, errno syscall.Errno) {
 	d.node.startOP("Readdirent")
 	if d.vfs.verbose {
 		log.CtxDebugf(d.vfs.rpcCtx, "Readdirent %q", d.node.relativePath())
+		defer func() {
+			if errno == 0 {
+				if dirEntry == nil {
+					log.CtxDebugf(d.vfs.getRPCContext(), "Readdirent %q: end of directory", d.node.relativePath())
+				} else {
+					log.CtxDebugf(d.vfs.getRPCContext(), "Readdirent %q: %s ino %d mode %s", d.node.relativePath(), dirEntry.Name, dirEntry.Ino, modeDebugString(dirEntry.Mode))
+				}
+			} else {
+				log.CtxDebugf(d.vfs.getRPCContext(), "Readdirent %q: %s", d.node.relativePath(), errno)
+			}
+		}()
 	}
 	if d.pos == -1 {
 		rsp, err := d.vfs.vfsClient.GetDirectoryContents(d.vfs.rpcCtx, &vfspb.GetDirectoryContentsRequest{
@@ -495,7 +637,16 @@ func (n *Node) OpendirHandle(ctx context.Context, flags uint32) (fs.FileHandle, 
 	if n.vfs.verbose {
 		log.CtxDebugf(n.vfs.rpcCtx, "OpendirHandle %q", n.relativePath())
 	}
-	return &dirHandle{vfs: n.vfs, node: n, pos: -1}, fuse.FOPEN_CACHE_DIR, 0
+
+	// FOPEN_CACHE_DIR allows kernel to cache directory contents to avoid
+	// redundant readdir calls to the fuse filesystem.
+	// If FOPEN_KEEP_CACHE is not specified, the kernel drops cached data
+	// for the inode before performing the readdir operation.
+	// N.B. If FOPEN_CACHE_DIR is set, go-fuse implicitly enables
+	// FOPEN_KEEP_CACHE even though it's valid to want to omit it.
+	fuseFlags := uint32(fuse.FOPEN_KEEP_CACHE | fuse.FOPEN_CACHE_DIR)
+
+	return &dirHandle{vfs: n.vfs, node: n, pos: -1}, fuseFlags, 0
 }
 
 func (f *remoteFile) startOP(op string) {
@@ -754,7 +905,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	}
 	n.vfs.inodeCache.opened(rsp.GetId())
 
-	inode := n.vfs.root.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG, Ino: rsp.GetId()})
+	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG, Ino: rsp.GetId()})
 
 	rf := &remoteFile{
 		ctx:       ctx,
@@ -796,7 +947,7 @@ func (n *Node) Mknod(ctx context.Context, name string, mode uint32, dev uint32, 
 	fillFuseAttr(&out.Attr, rsp.GetAttrs())
 
 	child := &Node{vfs: n.vfs}
-	inode := n.vfs.root.NewInode(ctx, child, fs.StableAttr{Mode: mode, Ino: rsp.GetId()})
+	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: mode, Ino: rsp.GetId()})
 
 	return inode, 0
 }
@@ -1065,10 +1216,18 @@ func (n *Node) Removexattr(ctx context.Context, attr string) syscall.Errno {
 	return 0
 }
 
-func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (_ *fs.Inode, errno syscall.Errno) {
 	n.startOP("Mkdir")
 	if n.vfs.verbose {
-		log.CtxDebugf(ctx, "Mkdir %q", filepath.Join(n.relativePath(), name))
+		newPath := filepath.Join(n.relativePath(), name)
+		log.CtxDebugf(ctx, "Mkdir %q", newPath)
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Mkdir %q: %s", newPath, attrDebugString(&n.Inode, &out.Attr))
+			} else {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Mkdir %q: %s", newPath, errno)
+			}
+		}()
 	}
 
 	rsp, err := n.vfs.vfsClient.Mkdir(n.vfs.getRPCContext(), &vfspb.MkdirRequest{ParentId: n.StableAttr().Ino, Name: name, Perms: mode})
@@ -1077,7 +1236,7 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 	}
 
 	child := &Node{vfs: n.vfs}
-	inode := n.vfs.root.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR, Ino: rsp.Id})
+	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR, Ino: rsp.Id})
 	fillFuseAttr(&out.Attr, rsp.Attrs)
 	return inode, 0
 }
@@ -1153,7 +1312,7 @@ func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, o
 	n.vfs.inodeCache.removeCachedAttrs(targetNode.StableAttr().Ino)
 
 	child := &Node{vfs: n.vfs}
-	inode := n.vfs.root.NewInode(ctx, child, fs.StableAttr{
+	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{
 		Mode: fuse.S_IFREG,
 		Ino:  target.EmbeddedInode().StableAttr().Ino,
 	})
@@ -1179,7 +1338,7 @@ func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.Entry
 	}
 
 	child := &Node{vfs: n.vfs, symlinkTarget: target}
-	inode := n.vfs.root.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK, Ino: rsp.GetId()})
+	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK, Ino: rsp.GetId()})
 	return inode, 0
 }
 

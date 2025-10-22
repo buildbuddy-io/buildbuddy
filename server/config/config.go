@@ -94,6 +94,12 @@ func LoadFromFile(configFile string) error {
 func Load() error {
 	configFile := Path()
 
+	// If config_file is explicitly set to an empty string, don't attempt to
+	// load the file.
+	if configFile == "" {
+		return expandFlagValues()
+	}
+
 	log.Infof("Reading buildbuddy config from '%s'", configFile)
 
 	_, err := os.Stat(configFile)

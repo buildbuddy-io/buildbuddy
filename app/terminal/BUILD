@@ -9,7 +9,6 @@ ts_library(
     srcs = ["terminal.tsx"],
     deps = [
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-virtualized-auto-sizer",
         "//:node_modules/@types/react-window",
         "//:node_modules/lucide-react",
         "//:node_modules/memoize-one",
@@ -21,6 +20,7 @@ ts_library(
         "//app/components/input",
         "//app/components/spinner",
         "//app/router",
+        "//app/terminal:copy",
         "//app/terminal:row",
         "//app/terminal:text",
         "//app/util:math",
@@ -32,6 +32,21 @@ ts_jasmine_node_test(
     name = "text_test",
     srcs = ["text_test.ts"],
     deps = [":terminal"],
+)
+
+ts_jasmine_node_test(
+    name = "terminal_copy_test",
+    srcs = ["terminal_copy_test.ts"],
+    deps = [":copy"],
+)
+
+ts_library(
+    name = "copy",
+    srcs = ["copy.ts"],
+    deps = [
+        "//app/terminal:text",
+        "//app/util:clipboard",
+    ],
 )
 
 ts_library(

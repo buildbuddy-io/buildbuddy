@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "driver",
     srcs = ["driver.go"],
@@ -10,12 +12,14 @@ go_library(
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/header",
         "//enterprise/server/raft/replica",
+        "//enterprise/server/raft/sender",
         "//enterprise/server/raft/storemap",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//server/interfaces",
         "//server/metrics",
         "//server/util/alert",
+        "//server/util/disk",
         "//server/util/log",
         "//server/util/priority_queue",
         "//server/util/status",
@@ -24,8 +28,6 @@ go_library(
         "@org_golang_x_sync//errgroup",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
     name = "driver_test",

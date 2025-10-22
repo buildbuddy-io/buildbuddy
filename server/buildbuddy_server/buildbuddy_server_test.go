@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -61,6 +62,7 @@ func createInvocationForTesting(te environment.Env, user string) (string, error)
 	if err != nil {
 		return "", err
 	}
+	defer channel.Close()
 
 	// Send started event with api key
 	options := ""
@@ -92,7 +94,7 @@ func createInvocationForTesting(te environment.Env, user string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	return testInvocationID, err
+	return testInvocationID, nil
 }
 
 func TestGetInvocation(t *testing.T) {
@@ -292,76 +294,129 @@ func TestFileDownloadEndpoint(t *testing.T) {
 	te.SetAuthenticator(auth)
 	err := buildbuddy_server.Register(te)
 	require.NoError(t, err)
-	// Start gRPC server (for cache API)
-	grpcPort := testport.FindFree(t)
-	gs, err := grpc_server.New(te, grpcPort, false /*=ssl*/, grpc_server.GRPCServerConfig{})
-	require.NoError(t, err)
-	te.SetGRPCServer(gs.GetServer())
-	testcache.RegisterServers(t, te)
-	err = gs.Start()
-	require.NoError(t, err)
-	// Register gRPC clients
-	conn, err := grpc_client.DialSimpleWithoutPooling(fmt.Sprintf("grpc://localhost:%d", grpcPort))
-	require.NoError(t, err)
-	t.Cleanup(func() { conn.Close() })
-	testcache.RegisterClients(te, conn)
-	// Start HTTP server (for /file/download endpoint)
-	mux := http.NewServeMux()
-	mux.Handle("/file/download", interceptors.WrapAuthenticatedExternalHandler(te, te.GetBuildBuddyServer()))
-	baseURL := testhttp.StartServer(t, mux)
+	for _, tc := range []struct {
+		Name                      string
+		ClientUseLocalPort        bool
+		RestrictBytestreamDialing bool
+		ExpectError               bool
+	}{
+		{
+			Name:                      "localhost_norestrict",
+			ClientUseLocalPort:        true,
+			RestrictBytestreamDialing: false,
+		},
+		{
+			Name:                      "localhost_restrict",
+			ClientUseLocalPort:        true,
+			RestrictBytestreamDialing: true,
+		},
+		{
+			Name:                      "remote_norestrict",
+			ClientUseLocalPort:        false,
+			RestrictBytestreamDialing: false,
+		},
+		{
+			Name:                      "remote_restrict",
+			ClientUseLocalPort:        false,
+			RestrictBytestreamDialing: true,
+			ExpectError:               true,
+		},
+	} {
+		t.Run(tc.Name, func(t *testing.T) {
+			// Start gRPC server (for cache API)
+			grpcPort := testport.FindFree(t)
+			if tc.ClientUseLocalPort {
+				flags.Set(t, "grpc_port", grpcPort)
+			} else {
+				// Tell client to use the wrong port
+				flags.Set(t, "grpc_port", grpcPort+1)
+			}
+			if tc.RestrictBytestreamDialing {
+				flags.Set(t, "app.restrict_bytestream_dialing", true)
+			} else {
+				flags.Set(t, "app.restrict_bytestream_dialing", false)
+			}
+			gs, err := grpc_server.New(te, grpcPort, false /*=ssl*/, grpc_server.GRPCServerConfig{})
+			require.NoError(t, err)
+			te.SetGRPCServer(gs.GetServer())
+			testcache.RegisterServers(t, te)
+			err = gs.Start()
+			require.NoError(t, err)
+			// Register gRPC clients
+			conn, err := grpc_client.DialSimpleWithoutPooling(fmt.Sprintf("grpc://localhost:%d", grpcPort))
+			require.NoError(t, err)
+			t.Cleanup(func() { conn.Close() })
+			testcache.RegisterClients(te, conn)
+			// Start HTTP server (for /file/download endpoint)
+			mux := http.NewServeMux()
+			mux.Handle("/file/download", interceptors.WrapAuthenticatedExternalHandler(te, te.GetBuildBuddyServer()))
+			baseURL := testhttp.StartServer(t, mux)
 
-	iid, err := createInvocationForTesting(te, "" /*=user*/)
-	require.NoError(t, err)
+			iid, err := createInvocationForTesting(te, "" /*=user*/)
+			require.NoError(t, err)
 
-	{
-		// Upload CAS resource
-		rn, b := testdigest.RandomCASResourceBuf(t, 100)
-		casrn, err := digest.CASResourceNameFromProto(rn)
-		require.NoError(t, err)
-		_, _, err = cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), casrn, bytes.NewReader(b))
-		require.NoError(t, err)
+			t.Run("CAS_resource", func(t *testing.T) {
+				rn, b := testdigest.RandomCASResourceBuf(t, 100)
+				casrn, err := digest.CASResourceNameFromProto(rn)
+				require.NoError(t, err)
+				_, _, err = cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), casrn, bytes.NewReader(b))
+				require.NoError(t, err)
 
-		// Fetch it from /file/download endpoint
-		bsURL := fmt.Sprintf("bytestream://localhost:%d/blobs/%s", grpcPort, digest.String(rn.GetDigest()))
-		rsp, err := http.Get(fmt.Sprintf(
-			"%s/file/download?invocation_id=%s&bytestream_url=%s",
-			baseURL, iid, url.QueryEscape(bsURL)))
-		require.NoError(t, err)
-		defer rsp.Body.Close()
-		body, err := io.ReadAll(rsp.Body)
-		require.NoError(t, err)
-		require.Equal(t, b, body)
-	}
+				// Fetch it from /file/download endpoint
+				bsURL := fmt.Sprintf("bytestream://localhost:%d/blobs/%s", grpcPort, digest.String(rn.GetDigest()))
+				rsp, err := http.Get(fmt.Sprintf(
+					"%s/file/download?invocation_id=%s&bytestream_url=%s",
+					baseURL, iid, url.QueryEscape(bsURL)))
+				require.NoError(t, err)
+				defer rsp.Body.Close()
+				body, err := io.ReadAll(rsp.Body)
+				require.NoError(t, err)
 
-	{
-		// Upload AC resource
-		key := &repb.Digest{
-			// Note: hash here can be arbitrary.
-			Hash:      "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
-			SizeBytes: 111,
-		}
-		rn := digest.NewACResourceName(key, "", repb.DigestFunction_SHA256)
-		ar := &repb.ActionResult{
-			StdoutRaw: []byte("test-stdout"),
-			ExecutionMetadata: &repb.ExecutedActionMetadata{
-				// Set worker explicitly, otherwise AC server sets it to a uuid.
-				Worker: "test-worker",
-			},
-		}
-		err = cachetools.UploadActionResult(ctx, te.GetActionCacheClient(), rn, ar)
-		require.NoError(t, err)
+				if tc.ExpectError {
+					require.Equal(t, http.StatusInternalServerError, rsp.StatusCode)
+					require.Equal(t, "rpc error: code = Internal desc = Internal server error\n", string(body))
+				} else {
+					require.Equal(t, http.StatusOK, rsp.StatusCode)
+					require.Equal(t, b, body)
+				}
+			})
 
-		// Fetch it with /file/download endpoint
-		acURL := fmt.Sprintf("actioncache://localhost:%d/blobs/ac/%s", grpcPort, digest.String(key))
-		rsp, err := http.Get(fmt.Sprintf(
-			"%s/file/download?invocation_id=%s&bytestream_url=%s",
-			baseURL, iid, url.QueryEscape(acURL)))
-		require.NoError(t, err)
-		defer rsp.Body.Close()
-		body, err := io.ReadAll(rsp.Body)
-		require.NoError(t, err)
-		arb, err := proto.Marshal(ar)
-		require.NoError(t, err)
-		require.Equal(t, arb, body)
+			t.Run("AC_resource", func(t *testing.T) {
+				key := &repb.Digest{
+					// Note: hash here can be arbitrary.
+					Hash:      "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+					SizeBytes: 111,
+				}
+				rn := digest.NewACResourceName(key, "", repb.DigestFunction_SHA256)
+				ar := &repb.ActionResult{
+					StdoutRaw: []byte("test-stdout"),
+					ExecutionMetadata: &repb.ExecutedActionMetadata{
+						// Set worker explicitly, otherwise AC server sets it to a uuid.
+						Worker: "test-worker",
+					},
+				}
+				err = cachetools.UploadActionResult(ctx, te.GetActionCacheClient(), rn, ar)
+				require.NoError(t, err)
+				arb, err := proto.Marshal(ar)
+				require.NoError(t, err)
+
+				// Fetch it with /file/download endpoint
+				acURL := fmt.Sprintf("actioncache://localhost:%d/blobs/ac/%s", grpcPort, digest.String(key))
+				rsp, err := http.Get(fmt.Sprintf(
+					"%s/file/download?invocation_id=%s&bytestream_url=%s",
+					baseURL, iid, url.QueryEscape(acURL)))
+				require.NoError(t, err)
+				defer rsp.Body.Close()
+				body, err := io.ReadAll(rsp.Body)
+				require.NoError(t, err)
+				if tc.ExpectError {
+					require.Equal(t, http.StatusNotFound, rsp.StatusCode)
+					require.Equal(t, "rpc error: code = NotFound desc = File not found.\n", string(body))
+				} else {
+					require.Equal(t, http.StatusOK, rsp.StatusCode)
+					require.Equal(t, arb, body)
+				}
+			})
+		})
 	}
 }

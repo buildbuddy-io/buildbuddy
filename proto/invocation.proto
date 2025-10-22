@@ -403,6 +403,7 @@ message InvocationStat {
   int64 total_num_builds = 4;
 
   // The total number of invocations completed successfully by this entity.
+  // TODO: fix typo in field name (sucessful -> successful)
   int64 total_num_sucessful_builds = 8;
 
   // The total number of invocations completed unsuccessfully by this entity.

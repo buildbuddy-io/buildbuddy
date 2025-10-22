@@ -10,9 +10,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -22,6 +26,9 @@ import (
 func newWorkspace(t *testing.T, opts *workspace.Opts) *workspace.Workspace {
 	te := testenv.GetTestEnv(t)
 	root := testfs.MakeTempDir(t)
+	caseInsensitive, err := fspath.IsCaseInsensitiveFS(root)
+	require.NoError(t, err)
+	opts.CaseInsensitive = caseInsensitive
 	ws, err := workspace.New(te, root, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -120,6 +127,128 @@ func TestWorkspaceCleanup_NoPreserveWorkspace_DeletesAllFiles(t *testing.T) {
 	assert.Empty(t, actualFilePaths(t, ws))
 }
 
+func TestWorkspaceCleanup_PreserveWorkspace_CaseInsensitiveFilesystem_Files(t *testing.T) {
+	root := testfs.MakeTempDir(t)
+	caseInsensitive, err := fspath.IsCaseInsensitiveFS(testfs.MakeTempDir(t))
+	require.NoError(t, err)
+	if !caseInsensitive {
+		t.Skip("test must be run on a case-insensitive filesystem")
+	}
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	ws, err := workspace.New(te, root, &workspace.Opts{
+		Preserve:        true,
+		CleanInputs:     "**",
+		CaseInsensitive: caseInsensitive,
+	})
+	require.NoError(t, err)
+	ws.SetTask(ctx, &repb.ExecutionTask{})
+
+	digestA, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("A"))
+	require.NoError(t, err)
+	dirA := &repb.Directory{
+		Files: []*repb.FileNode{
+			{
+				Name:   "A.txt",
+				Digest: digestA,
+			},
+		},
+	}
+	dirDigestA, err := cachetools.UploadProto(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, dirA)
+	require.NoError(t, err)
+	err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
+		RemoteInstanceName: "",
+		DigestFunction:     repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{
+			Root: &repb.Directory{
+				Files: []*repb.FileNode{
+					{
+						Name:   "A.txt",
+						Digest: digestA,
+					},
+				},
+				Directories: []*repb.DirectoryNode{
+					{
+						Name:   "CHILD",
+						Digest: dirDigestA,
+					},
+				},
+			},
+			Children: []*repb.Directory{
+				dirA,
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	// Clean
+	err = ws.Clean()
+	require.NoError(t, err)
+
+	// Check inputs still present.
+	testfs.AssertExactFileContents(t, ws.Path(), map[string]string{
+		"A.txt":       "A",
+		"CHILD/A.txt": "A",
+	})
+
+	// Now run another task in this workspace, with the same input paths, except
+	// the case of the filename is different, and the file has different
+	// contents.
+	digestB, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("B"))
+	require.NoError(t, err)
+	dirB := &repb.Directory{
+		Files: []*repb.FileNode{
+			{
+				Name:   "a.txt",
+				Digest: digestB,
+			},
+		},
+	}
+	dirDigestB, err := cachetools.UploadProto(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, dirB)
+	require.NoError(t, err)
+	err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
+		RemoteInstanceName: "",
+		DigestFunction:     repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{
+			Root: &repb.Directory{
+				Files: []*repb.FileNode{
+					{
+						Name:   "a.txt",
+						Digest: digestB,
+					},
+				},
+				Directories: []*repb.DirectoryNode{
+					{
+						Name:   "child",
+						Digest: dirDigestB,
+					},
+				},
+			},
+			Children: []*repb.Directory{
+				dirB,
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	// Check inputs still present.
+	testfs.AssertExactFileContents(t, ws.Path(), map[string]string{
+		// A.txt should be deleted and overwritten with the new file name and
+		// contents, since the filesystem is case-insensitive and the file
+		// contents are different.
+		"a.txt": "B",
+		// CHILD/A.txt should be deleted and overwritten as well, since the
+		// new file is "child/a.txt".
+		// TODO: for directories, we are case-insensitive but not
+		// case-preserving. Ideally, "CHILD" should be renamed to "child".
+		"CHILD/a.txt": "B",
+	})
+}
+
 func TestWorkspaceCleanup_PreserveWorkspace_PreservesAllFilesExceptOutputs(t *testing.T) {
 	ctx := context.Background()
 	filePaths := []string{
@@ -165,17 +294,19 @@ func TestCleanInputsIfNecessary_CleanNone(t *testing.T) {
 		"foo/KEEPME",
 		"foo/bar/KEEPME",
 	}
-	ws := newWorkspace(t, &workspace.Opts{Preserve: true})
+	ws := newWorkspace(t, &workspace.Opts{
+		Preserve: true,
+	})
 	writeEmptyFiles(t, ws, filePaths)
 
 	for _, file := range filePaths {
-		ws.Inputs[file] = &repb.FileNode{}
+		ws.Inputs[fspath.NewKey(file, ws.Opts.CaseInsensitive)] = &repb.FileNode{}
 	}
 
-	keep := map[string]*repb.FileNode{
-		"KEEPME":         &repb.FileNode{},
-		"foo/KEEPME":     &repb.FileNode{},
-		"foo/bar/KEEPME": &repb.FileNode{}}
+	keep := map[fspath.Key]*repb.FileNode{
+		fspath.NewKey("KEEPME", ws.Opts.CaseInsensitive):         &repb.FileNode{},
+		fspath.NewKey("foo/KEEPME", ws.Opts.CaseInsensitive):     &repb.FileNode{},
+		fspath.NewKey("foo/bar/KEEPME", ws.Opts.CaseInsensitive): &repb.FileNode{}}
 
 	err := ws.CleanInputsIfNecessary(keep)
 	require.NoError(t, err)
@@ -200,13 +331,13 @@ func TestCleanInputsIfNecessary_CleanAll(t *testing.T) {
 	writeEmptyFiles(t, ws, filePaths)
 
 	for _, file := range filePaths {
-		ws.Inputs[file] = &repb.FileNode{}
+		ws.Inputs[fspath.NewKey(file, ws.Opts.CaseInsensitive)] = &repb.FileNode{}
 	}
 
-	keep := map[string]*repb.FileNode{
-		"KEEPME":         &repb.FileNode{},
-		"foo/KEEPME":     &repb.FileNode{},
-		"foo/bar/KEEPME": &repb.FileNode{}}
+	keep := map[fspath.Key]*repb.FileNode{
+		fspath.NewKey("KEEPME", ws.Opts.CaseInsensitive):         &repb.FileNode{},
+		fspath.NewKey("foo/KEEPME", ws.Opts.CaseInsensitive):     &repb.FileNode{},
+		fspath.NewKey("foo/bar/KEEPME", ws.Opts.CaseInsensitive): &repb.FileNode{}}
 
 	ws.CleanInputsIfNecessary(keep)
 
@@ -230,13 +361,13 @@ func TestCleanInputsIfNecessary_CleanMatching(t *testing.T) {
 	writeEmptyFiles(t, ws, filePaths)
 
 	for _, file := range filePaths {
-		ws.Inputs[file] = &repb.FileNode{}
+		ws.Inputs[fspath.NewKey(file, ws.Opts.CaseInsensitive)] = &repb.FileNode{}
 	}
 
-	keep := map[string]*repb.FileNode{
-		"KEEPME":         &repb.FileNode{},
-		"foo/KEEPME":     &repb.FileNode{},
-		"foo/bar/KEEPME": &repb.FileNode{}}
+	keep := map[fspath.Key]*repb.FileNode{
+		fspath.NewKey("KEEPME", ws.Opts.CaseInsensitive):         &repb.FileNode{},
+		fspath.NewKey("foo/KEEPME", ws.Opts.CaseInsensitive):     &repb.FileNode{},
+		fspath.NewKey("foo/bar/KEEPME", ws.Opts.CaseInsensitive): &repb.FileNode{}}
 
 	err := ws.CleanInputsIfNecessary(keep)
 	require.NoError(t, err)

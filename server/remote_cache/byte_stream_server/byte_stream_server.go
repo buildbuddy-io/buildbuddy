@@ -2,7 +2,7 @@ package byte_stream_server
 
 import (
 	"context"
-	"fmt"
+	"encoding/hex"
 	"hash"
 	"io"
 
@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/grpc/peer"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -28,8 +29,11 @@ import (
 )
 
 const (
-	// Keep under the limit of ~4MB (save 256KB).
-	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
+	// readBufSizeBytes controls the buffer size used for reading from the
+	// cache. Benchmarks show that 256KiB or 512KiB perform similarly,
+	// but experiments in dev show that 256KiB is better. Values smaller than
+	// 256KiB or larger than 1MiB are both slower and allocate more bytes.
+	readBufSizeBytes = 256 * 1024
 )
 
 var (
@@ -83,6 +87,13 @@ func checkReadPreconditions(req *bspb.ReadRequest) error {
 	return nil
 }
 
+func rpcPeerAddr(ctx context.Context) string {
+	if p, ok := peer.FromContext(ctx); ok {
+		return p.Addr.String()
+	}
+	return "unknown"
+}
+
 // `Read()` is used to retrieve the contents of a resource as a sequence
 // of bytes. The bytes are returned in a sequence of responses, and the
 // responses are delivered as the results of a server-side streaming FUNC (S *BYTESTREAMSERVER).
@@ -90,14 +101,20 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err := checkReadPreconditions(req); err != nil {
 		return err
 	}
-	r, err := digest.ParseDownloadResourceName(req.GetResourceName())
+	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
 	if err != nil {
 		return err
 	}
+	return s.ReadCASResource(stream.Context(), rn, req.GetReadOffset(), req.GetReadLimit(), stream)
+}
+
+// This version of Read accepts the parameters of a ReadRequest directly so it
+// can be called by ByteStreamServerProxy to avoid re-parsing resource names.
+func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error {
 	if !s.supportsCompressor(r.GetCompressor()) {
 		return status.UnimplementedErrorf("Unsupported compressor %s", r.GetCompressor())
 	}
-	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return err
 	}
@@ -113,11 +130,11 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	downloadTracker := ht.TrackDownload(r.GetDigest())
 
 	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
-	passthroughCompressionEnabled := s.cache.SupportsCompressor(r.GetCompressor()) && req.ReadOffset == 0 && req.ReadLimit == 0
+	passthroughCompressionEnabled := s.cache.SupportsCompressor(r.GetCompressor()) && offset == 0 && limit == 0
 	if passthroughCompressionEnabled {
 		cacheRN.SetCompressor(r.GetCompressor())
 	}
-	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), req.ReadOffset, req.ReadLimit)
+	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
 	if err != nil {
 		if err := ht.TrackMiss(r.GetDigest()); err != nil {
 			log.Debugf("ByteStream Read: hit tracker TrackMiss error: %s", err)
@@ -201,9 +218,9 @@ type writeHandler struct {
 	bytesUploadedFromClient int
 	transferTimer           interfaces.TransferTimer
 
-	decompressorCloser io.Closer
-	cacheCommitter     interfaces.Committer
-	cacheCloser        io.Closer
+	bufioCloser    io.Closer
+	cacheCommitter interfaces.Committer
+	cacheCloser    io.Closer
 
 	checksum           *Checksum
 	resourceName       *digest.CASResourceName
@@ -270,6 +287,11 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 	if s.cache.SupportsCompressor(r.GetCompressor()) {
 		casRN.SetCompressor(r.GetCompressor())
 	}
+	compressData := false
+	if casRN.GetCompressor() == repb.Compressor_IDENTITY && s.cache.SupportsCompressor(repb.Compressor_ZSTD) && r.GetDigest().GetSizeBytes() >= 100 {
+		casRN.SetCompressor(repb.Compressor_ZSTD)
+		compressData = true
+	}
 
 	if r.GetDigest().GetSizeBytes() >= *maxDirectWriteSizeBytes {
 		// The protocol says it is *optional* to allow overwriting, but does
@@ -307,18 +329,23 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		return nil, err
 	}
 	ws.checksum = NewChecksum(hasher, r.GetDigestFunction())
-	ws.writer = io.MultiWriter(ws.checksum, committedWriteCloser)
+	// Write to the cache first. This gives more time between the final cache
+	// write and the commit, reducing the amount of time that the commit has to
+	// wait to flush writes.
+	ws.writer = io.MultiWriter(committedWriteCloser, ws.checksum)
 
 	if r.GetCompressor() == repb.Compressor_ZSTD {
+		// The incoming data is compressed.
 		if s.cache.SupportsCompressor(r.GetCompressor()) {
-			// If the cache supports compression, write compressed bytes to the cache with committedWriteCloser
-			// but wrap the checksum in a decompressor to validate the decompressed data
+			// If the cache supports compression, write the already compressed
+			// bytes to the cache with committedWriteCloser but wrap the
+			// checksum in a decompressor to validate the decompressed data.
 			decompressingChecksum, err := compression.NewZstdDecompressor(ws.checksum)
 			if err != nil {
 				return nil, err
 			}
-			ws.writer = io.MultiWriter(decompressingChecksum, committedWriteCloser)
-			ws.decompressorCloser = decompressingChecksum
+			ws.writer = io.MultiWriter(committedWriteCloser, decompressingChecksum)
+			ws.bufioCloser = decompressingChecksum
 		} else {
 			// If the cache doesn't support compression, wrap both the checksum and cache writer in a decompressor
 			decompressor, err := compression.NewZstdDecompressor(ws.writer)
@@ -326,8 +353,18 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 				return nil, err
 			}
 			ws.writer = decompressor
-			ws.decompressorCloser = decompressor
+			ws.bufioCloser = decompressor
 		}
+	} else if compressData {
+		// If the cache supports compression but the request isn't compressed,
+		// wrap the cache writer in a compressor. This is faster than sending
+		// uncompressed data to the cache and letting it compress it.
+		compressor, err := compression.NewZstdCompressingWriter(committedWriteCloser, r.GetDigest().GetSizeBytes())
+		if err != nil {
+			return nil, err
+		}
+		ws.writer = io.MultiWriter(compressor, ws.checksum)
+		ws.bufioCloser = compressor
 	}
 
 	return ws, nil
@@ -344,7 +381,6 @@ func (w *writeHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error
 	}
 	w.bytesUploadedFromClient += len(req.Data)
 	w.offset += int64(n)
-
 	if req.FinishWrite {
 		if err := w.commit(); err != nil {
 			return nil, err
@@ -355,15 +391,15 @@ func (w *writeHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error
 }
 
 func (w *writeHandler) commit() error {
-	if w.decompressorCloser != nil {
+	if w.bufioCloser != nil {
 		defer func() {
-			w.decompressorCloser = nil
+			w.bufioCloser = nil
 		}()
-		// Close the decompressor, flushing any currently buffered bytes to the
-		// checksum+cache multi-writer. If this fails, don't bother computing the
-		// checksum or commiting the file to cache, since the incoming data is
-		// likely corrupt anyway.
-		if err := w.decompressorCloser.Close(); err != nil {
+		// Close the decompressor or compressor, flushing any currently buffered
+		// bytes. If this fails, don't bother computing the checksum or
+		// commiting the file to cache, since the incoming data is likely
+		// corrupt anyway.
+		if err := w.bufioCloser.Close(); err != nil {
 			log.Warning(err.Error())
 			return err
 		}
@@ -383,8 +419,8 @@ func (w *writeHandler) Close() error {
 		log.Debugf("ByteStream Write: uploadTracker.CloseWithBytesTransferred error: %s", err)
 	}
 
-	if w.decompressorCloser != nil {
-		w.decompressorCloser.Close()
+	if w.bufioCloser != nil {
+		w.bufioCloser.Close()
 	}
 	return w.cacheCloser.Close()
 }
@@ -566,7 +602,7 @@ func (s *Checksum) Write(p []byte) (int, error) {
 
 func (s *Checksum) Check(r *digest.CASResourceName) error {
 	d := r.GetDigest()
-	computedDigest := fmt.Sprintf("%x", s.hash.Sum(nil))
+	computedDigest := hex.EncodeToString(s.hash.Sum(nil))
 	if computedDigest != d.GetHash() {
 		return status.DataLossErrorf("Hash of uploaded bytes %q [%s] did not match provided digest: %q [%s].", computedDigest, s.digestFunction, d.GetHash(), r.GetDigestFunction())
 	}

@@ -1,12 +1,12 @@
-import React from "react";
-import router from "../../../app/router/router";
-import { invocation_status } from "../../../proto/invocation_status_ts_proto";
-import { workflow } from "../../../proto/workflow_ts_proto";
-import format from "../../../app/format/format";
-import { durationToMillis } from "../../../app/util/proto";
 import { GitCommit } from "lucide-react";
+import React from "react";
 import Link from "../../../app/components/link/link";
 import { MouseCoords, Tooltip, pinBottomLeftOffsetFromMouse } from "../../../app/components/tooltip/tooltip";
+import format from "../../../app/format/format";
+import router from "../../../app/router/router";
+import { durationToMillis } from "../../../app/util/proto";
+import { invocation_status } from "../../../proto/invocation_status_ts_proto";
+import { workflow } from "../../../proto/workflow_ts_proto";
 
 export type ActionListComponentProps = {
   repoUrl: string;

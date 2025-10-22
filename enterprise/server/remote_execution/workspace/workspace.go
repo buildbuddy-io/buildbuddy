@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"strings"
 	"sync"
 
 	_ "embed"
@@ -27,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -87,10 +87,11 @@ type Workspace struct {
 	// workspace-relative paths to file nodes.
 	// TODO: Make sure these files are written read-only
 	// to make sure this map accurately reflects the filesystem.
-	Inputs map[string]*repb.FileNode
+	Inputs map[fspath.Key]*repb.FileNode
 
-	mu       sync.Mutex // protects(removing)
-	removing bool
+	mu          sync.Mutex // protects(removing, treeFetcher)
+	removing    bool
+	treeFetcher *dirtools.TreeFetcher
 }
 
 type Opts struct {
@@ -98,6 +99,9 @@ type Opts struct {
 	// for output paths.
 	Preserve    bool
 	CleanInputs string
+	// CaseInsensitive specifies whether the root directory (under which the
+	// workspace directory is created) is case-insensitive.
+	CaseInsensitive bool
 	// UseOverlayfs specifies whether the workspace should use overlayfs to
 	// allow copy-on-write for workspace inputs.
 	UseOverlayfs bool
@@ -163,7 +167,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 		vfs:       vfs,
 		vfsServer: vfsServer,
 		Opts:      opts,
-		Inputs:    map[string]*repb.FileNode{},
+		Inputs:    map[fspath.Key]*repb.FileNode{},
 	}, nil
 }
 
@@ -242,62 +246,85 @@ func (ws *Workspace) CreateOutputDirs() error {
 }
 
 func (ws *Workspace) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
-	if ws.vfsServer != nil {
-		if err := ws.vfsServer.Prepare(ctx, layout); err != nil {
-			return err
-		}
+	if ws.vfs == nil {
+		return status.FailedPreconditionError("vfs cannot be null if vfsServer is set")
 	}
-	if ws.vfs != nil {
-		if err := ws.vfs.PrepareForTask(ctx, ws.task.GetExecutionId()); err != nil {
-			return err
-		}
+
+	invalidatedInodes, err := ws.vfsServer.Prepare(ctx, layout, ws.treeFetcher)
+	if err != nil {
+		return err
+	}
+	if err := ws.vfs.PrepareForTask(ctx, ws.task.GetExecutionId(), invalidatedInodes); err != nil {
+		return err
 	}
 
 	return nil
 }
 
 // DownloadInputs downloads any missing inputs for the current action.
-func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileSystemLayout) (*dirtools.TransferInfo, error) {
+func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileSystemLayout) error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
-		return nil, WorkspaceMarkedForRemovalError
+		return WorkspaceMarkedForRemovalError
 	}
 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	// Don't download inputs if the workspace is backed by FUSE, but we still
-	// need to inform it about the CAS artifacts that should appear in the
-	// filesystem.
-	if ws.vfs != nil {
-		if err := ws.prepareVFS(ctx, layout); err != nil {
-			return nil, err
-		}
-		return &dirtools.TransferInfo{}, nil
+	opts := &dirtools.DownloadTreeOpts{CaseInsensitive: ws.Opts.CaseInsensitive}
+	if ws.vfs == nil {
+		opts.RootDir = ws.inputRoot()
 	}
-
-	opts := &dirtools.DownloadTreeOpts{}
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
 	execReq := ws.task.GetExecuteRequest()
-	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, ws.inputRoot(), opts)
-	if err == nil {
-		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
-			return txInfo, err
-		}
+	tf, err := dirtools.NewTreeFetcher(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, opts)
+	if err != nil {
+		return status.WrapErrorf(err, "could not create tree fetcher")
+	}
+	ws.treeFetcher = tf
 
-		for path, node := range txInfo.Transfers {
-			ws.Inputs[path] = node
+	// Start fetching inputs.
+	inputsState, err := tf.Start()
+	if err != nil {
+		return status.WrapErrorf(err, "could not start tree fetcher")
+	}
+
+	// Inform VFS about the layout of the input tree and give it access to the
+	// running tree fetcher.
+	if ws.vfs != nil {
+		if err := ws.prepareVFS(ctx, layout); err != nil {
+			return err
+		}
+	} else {
+		// If we're not using FUSE, wait for the input tree to be fully downloaded.
+		txInfo, err := ws.treeFetcher.Wait()
+		if err != nil {
+			return status.WrapError(err, "could not fetch inputs")
 		}
 		mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
 		span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
 		span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
 		log.CtxInfof(ctx, "DownloadTree linked %d files in %s, downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.LinkCount, txInfo.LinkDuration, txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
-	return txInfo, err
+
+	// Now that the input tree is setup, remove any unwanted inputs.
+	// Don't touch any inputs specified by the current action as represented
+	// by inputsState.Exist
+	if err := ws.CleanInputsIfNecessary(inputsState.Exist); err != nil {
+		return err
+	}
+
+	// Update the input tracking map to include inputs specified by the action
+	// that were not in the workspace yet.
+	for relPath, node := range inputsState.NeedFetching {
+		ws.Inputs[fspath.NewKey(relPath, ws.Opts.CaseInsensitive)] = node
+	}
+
+	return nil
 }
 
 // AddCIRunner adds the BuildBuddy CI runner to the workspace root if it doesn't
@@ -318,18 +345,21 @@ func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	return os.WriteFile(destPath, ci_runner_bundle.CiRunnerBytes, 0o555)
 }
 
-func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) error {
+func (ws *Workspace) CleanInputsIfNecessary(keep map[fspath.Key]*repb.FileNode) error {
 	if ws.Opts.CleanInputs == "" {
 		return nil
 	}
-	inputFilesToCleanUp := make(map[string]*repb.FileNode)
+	inputFilesToCleanUp := make(map[fspath.Key]*repb.FileNode)
 	// Curly braces indicate a comma separated list of patterns: https://pkg.go.dev/github.com/gobwas/glob#Compile
 	glob, err := glob.Compile(fmt.Sprintf("{%s}", ws.Opts.CleanInputs), os.PathSeparator)
 	if err != nil {
 		return status.FailedPreconditionErrorf("Invalid glob {%s} used for input cleaning: %s", ws.Opts.CleanInputs, err.Error())
 	}
 	for path, node := range ws.Inputs {
-		if ws.Opts.CleanInputs == "*" || glob.Match(path) {
+		// NOTE: the glob is matching against the normalized path key here
+		// (which is always lowercase on case-insensitive filesystems), not the
+		// path string.
+		if ws.Opts.CleanInputs == "*" || glob.Match(path.NormalizedString()) {
 			inputFilesToCleanUp[path] = node
 		}
 	}
@@ -338,7 +368,7 @@ func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) erro
 	}
 	if len(inputFilesToCleanUp) > 0 {
 		for path := range inputFilesToCleanUp {
-			if err := os.RemoveAll(filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {
+			if err := os.RemoveAll(filepath.Join(ws.Path(), path.NormalizedString())); err != nil && !os.IsNotExist(err) {
 				return status.UnavailableErrorf("Failed to clean inputs: %s", err)
 			}
 			delete(ws.Inputs, path)
@@ -393,7 +423,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			// runner should be removed and cannot affect any files in the
 			// workspace anymore, so it is safe to rename the outputs files in
 			// upperdir here rather than copying.
-			recyclingEnabled := platform.IsTrue(platform.FindValue(platform.GetProto(ws.task.GetAction(), ws.task.GetCommand()), platform.RecycleRunnerPropertyName))
+			recyclingEnabled := platform.IsRecyclingEnabled(ws.task)
 			opts := overlayfs.ApplyOpts{AllowRename: !recyclingEnabled}
 			if err := ws.overlay.Apply(egCtx, opts); err != nil {
 				return status.WrapError(err, "apply overlay upperdir changes")
@@ -517,6 +547,23 @@ func (ws *Workspace) ComputeVFSStats() *repb.VfsStats {
 	return ws.vfsServer.ComputeStats()
 }
 
+// TaskFinished informs the workspace that task execution is done.
+// Returns the transfer stats.
+func (ws *Workspace) TaskFinished() (*dirtools.TransferInfo, error) {
+	ws.mu.Lock()
+	tf := ws.treeFetcher
+	ws.mu.Unlock()
+	if tf == nil {
+		return nil, status.FailedPreconditionError("tree fetcher not set")
+	}
+	// TODO(vadim): cancel unfinished transfers instead of waiting for them
+	txInfo, err := tf.Wait()
+	ws.mu.Lock()
+	ws.treeFetcher = nil
+	ws.mu.Unlock()
+	return txInfo, err
+}
+
 // Clean removes files and directories in the workspace which are not preserved
 // according to the workspace options.
 func (ws *Workspace) Clean() error {
@@ -542,14 +589,14 @@ func (ws *Workspace) Clean() error {
 			}
 			// If the output path was a directory, we need to delete any known
 			// input files which lived under that output directory.
-			for inputPath := range ws.Inputs {
-				if isParent(outputPath, inputPath) {
-					delete(ws.Inputs, inputPath)
+			for inputKey := range ws.Inputs {
+				if fspath.IsParent(outputPath, inputKey.NormalizedString(), ws.Opts.CaseInsensitive) {
+					delete(ws.Inputs, inputKey)
 				}
 			}
 			// In case this output path previously pointed to an input file,
 			// delete it from the inputs index (this should be pretty uncommon).
-			delete(ws.Inputs, outputPath)
+			delete(ws.Inputs, fspath.NewKey(outputPath, ws.Opts.CaseInsensitive))
 		}
 		return nil
 	}
@@ -571,8 +618,4 @@ func removeChildren(dirPath string) error {
 		}
 	}
 	return nil
-}
-
-func isParent(parent, child string) bool {
-	return strings.HasPrefix(child, parent+string(os.PathSeparator))
 }

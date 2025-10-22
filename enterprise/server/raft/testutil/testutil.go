@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
@@ -44,6 +45,9 @@ type StoreFactory struct {
 	rootDir     string
 	gossipAddrs []string
 	clock       clockwork.Clock
+	session     *client.Session
+
+	partitions []disk.Partition
 }
 
 func NewStoreFactory(t *testing.T) *StoreFactory {
@@ -58,6 +62,7 @@ func NewStoreFactoryWithClock(t *testing.T, clock clockwork.Clock) *StoreFactory
 	return &StoreFactory{
 		rootDir: rootDir,
 		clock:   clock,
+		session: client.NewSessionWithClock(clock),
 	}
 }
 
@@ -101,11 +106,14 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 
 	rc := rangecache.New()
 	s := sender.New(rc, apiClient)
-	partitions := []disk.Partition{
-		{
-			ID:           "default",
-			MaxSizeBytes: int64(1_000_000_000), // 1G
-		},
+	partitions := sf.partitions
+	if len(partitions) == 0 {
+		partitions = []disk.Partition{
+			{
+				ID:           "default",
+				MaxSizeBytes: int64(1_000_000_000), // 1G
+			},
+		}
 	}
 	mc := &pebble.MetricsCollector{}
 	db, err := pebble.Open(ts.RootDir, "raft_store", &pebble.Options{
@@ -122,6 +130,7 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 	require.NoError(t, err)
 	require.NotNil(t, store)
 	store.Start()
+	store.StartReplicaJanitor()
 	ts.Store = store
 
 	t.Cleanup(func() {
@@ -144,6 +153,10 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	}
 	sf.RecreateStore(t, ts)
 	return ts
+}
+
+func (sf *StoreFactory) SetPartitions(partitions []disk.Partition) {
+	sf.partitions = partitions
 }
 
 func MakeNodeGRPCAddressesMap(stores ...*TestingStore) map[string]string {
@@ -197,13 +210,25 @@ func (ts *TestingStore) Stop() {
 
 func (sf *StoreFactory) StartShard(t *testing.T, ctx context.Context, stores ...*TestingStore) {
 	require.Greater(t, len(stores), 0)
-	err := bringup.SendStartShardRequests(ctx, client.NewSessionWithClock(sf.clock), stores[0], MakeNodeGRPCAddressesMap(stores...))
+	err := bringup.InitializeShardsForMetaRange(ctx, sf.session, stores[0], MakeNodeGRPCAddressesMap(stores...))
+	require.NoError(t, err)
+	partition := disk.Partition{
+		ID:        constants.DefaultPartitionID,
+		NumRanges: 1,
+	}
+	err = bringup.InitializeShardsForPartition(ctx, stores[0], MakeNodeGRPCAddressesMap(stores...), partition)
 	require.NoError(t, err)
 }
 
-func (sf *StoreFactory) StartShardWithRanges(t *testing.T, ctx context.Context, startingRanges []*rfpb.RangeDescriptor, stores ...*TestingStore) {
+func (sf *StoreFactory) InitializeShardsForMetaRange(t *testing.T, ctx context.Context, stores ...*TestingStore) {
 	require.Greater(t, len(stores), 0)
-	err := bringup.SendStartShardRequestsWithRanges(ctx, client.NewSessionWithClock(sf.clock), stores[0], MakeNodeGRPCAddressesMap(stores...), startingRanges)
+	err := bringup.InitializeShardsForMetaRange(ctx, sf.session, stores[0], MakeNodeGRPCAddressesMap(stores...))
+	require.NoError(t, err)
+}
+
+func (sf *StoreFactory) InitializeShardsForPartition(t *testing.T, ctx context.Context, partition disk.Partition, stores ...*TestingStore) {
+	require.Greater(t, len(stores), 0)
+	err := bringup.InitializeShardsForPartition(ctx, stores[0], MakeNodeGRPCAddressesMap(stores...), partition)
 	require.NoError(t, err)
 }
 

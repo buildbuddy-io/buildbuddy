@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -31,15 +32,12 @@ import (
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )
 
 var (
 	sessionLifetime = flag.Duration("cache.raft.client_session_lifetime", 1*time.Hour, "The duration of a client session before it's reset")
-	// This value should be approximately 10x the config.RTTMilliseconds,
-	// but we want to include a little more time for the operation itself to
-	// complete.
-	singleRaftOpTimeout = flag.Duration("cache.raft.op_timeout", 1*time.Second, "The duration of timeout for a single raft operation")
 )
 
 const (
@@ -141,19 +139,18 @@ func (c *APIClient) HaveReadyConnections(ctx context.Context, rd *rfpb.ReplicaDe
 	return c.haveReadyConnections(ctx, addr), nil
 }
 
-func singleOpTimeout(ctx context.Context) time.Duration {
-	maxTimeout := *singleRaftOpTimeout
+func singleOpTimeout(ctx context.Context, maxSingleOpTimeout time.Duration) time.Duration {
 	if deadline, ok := ctx.Deadline(); ok {
 		dur := time.Until(deadline)
 		if dur <= 0 {
 			return dur
 		}
-		if dur < maxTimeout {
+		if dur < maxSingleOpTimeout {
 			// ensure that the returned duration / constants.RTTMillisecond > 0.
 			return dur + constants.RTTMillisecond
 		}
 	}
-	return maxTimeout
+	return maxSingleOpTimeout
 }
 
 type aggErr struct {
@@ -167,15 +164,27 @@ func (e *aggErr) err() error {
 		return nil
 	}
 
-	if e.lastErr == dragonboat.ErrShardNotFound || e.lastErr == dragonboat.ErrRejected || e.lastErr == dragonboat.ErrShardNotReady {
-		return e.lastErr
-	} else if status.IsOutOfRangeError(e.lastErr) {
-		return e.lastErr
-	} else if e.lastErr == e.lastNonTimeoutErr || e.lastNonTimeoutErr == nil {
-		return fmt.Errorf("last error: %s, errors encountered: %+v", e.lastErr, e.errCount)
+	// Build the error to return
+	var err error
+	if e.lastErr == e.lastNonTimeoutErr || e.lastNonTimeoutErr == nil {
+		err = fmt.Errorf("last error: %w, errors encountered: %+v", e.lastErr, e.errCount)
 	} else {
-		return fmt.Errorf("last error: %s, last non-timeout error: %s, errors encountered: %+v", e.lastErr, e.lastNonTimeoutErr, e.errCount)
+		err = fmt.Errorf("last error: %w, last non-timeout error: %s, errors encountered: %+v", e.lastErr, e.lastNonTimeoutErr, e.errCount)
 	}
+
+	// If error already has a status code, return as-is
+	if !status.IsUnknownError(err) {
+		return err
+	}
+
+	// Add appropriate status code based on error type
+	if dragonboat.IsTempError(err) {
+		return status.WithCode(err, codes.Unavailable)
+	}
+	if errors.Is(err, dragonboat.ErrCanceled) {
+		return status.WithCode(err, codes.Canceled)
+	}
+	return status.WithCode(err, codes.Internal)
 }
 
 func (e *aggErr) Add(err error) {
@@ -189,7 +198,7 @@ func (e *aggErr) Add(err error) {
 	e.errCount[err.Error()] += 1
 }
 
-func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) error {
+func RunNodehostFn(ctx context.Context, maxSingleOpTimeout time.Duration, nhf func(ctx context.Context) error) error {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 	// Ensure that the outer context has a timeout set to limit the total
@@ -203,7 +212,7 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 
 	retrier := retry.DefaultWithContext(ctx)
 	for retrier.Next() {
-		timeout := singleOpTimeout(ctx)
+		timeout := singleOpTimeout(ctx, maxSingleOpTimeout)
 		if timeout <= 0 {
 			// The deadline has already passed.
 			continue
@@ -234,6 +243,8 @@ type Session struct {
 	mu        sync.Mutex
 
 	locker lockmap.Locker
+
+	maxSingleOpTimeout time.Duration
 }
 
 func (s *Session) ToProto() *rfpb.Session {
@@ -251,12 +262,13 @@ func NewSession() *Session {
 func NewSessionWithClock(clock clockwork.Clock) *Session {
 	now := clock.Now()
 	return &Session{
-		id:        uuid.New(),
-		index:     0,
-		clock:     clock,
-		createdAt: now,
-		refreshAt: now.Add(*sessionLifetime),
-		locker:    lockmap.New(),
+		id:                 uuid.New(),
+		index:              0,
+		clock:              clock,
+		createdAt:          now,
+		refreshAt:          now.Add(*sessionLifetime),
+		locker:             lockmap.New(),
+		maxSingleOpTimeout: config.SingleRaftOpTimeout(),
 	}
 }
 
@@ -307,7 +319,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 	}
 	var raftResponse dbsm.Result
 
-	err = RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 		spn.SetName("nodehost.SyncPropose")
 		fnStart := s.clock.Now()
@@ -348,7 +360,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 	return batchResponse, err
 }
 
-func SyncReadLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func SyncReadLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch *rfpb.BatchCmdRequest, maxSingleOpTimeout time.Duration) (*rfpb.BatchCmdResponse, error) {
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
@@ -358,10 +370,10 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch
 		return nil, status.FailedPreconditionError("Header must be set")
 	}
 	var raftResponseIface interface{}
-	err = RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = RunNodehostFn(ctx, maxSingleOpTimeout, func(ctx context.Context) error {
 		switch batch.GetHeader().GetConsistencyMode() {
 		case rfpb.Header_LINEARIZABLE:
-			rs, err := nodehost.ReadIndex(rangeID, singleOpTimeout(ctx))
+			rs, err := nodehost.ReadIndex(rangeID, singleOpTimeout(ctx, maxSingleOpTimeout))
 			if err != nil {
 				return err
 			}
@@ -406,12 +418,12 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch
 	return batchResponse, nil
 }
 
-func SyncReadLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, rangeID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
+func SyncReadLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, rangeID uint64, builder *rbuilder.BatchBuilder, maxSingleOpTimeout time.Duration) (*rbuilder.BatchResponse, error) {
 	batch, err := builder.ToProto()
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := SyncReadLocal(ctx, nodehost, rangeID, batch)
+	rsp, err := SyncReadLocal(ctx, nodehost, rangeID, batch, maxSingleOpTimeout)
 	if err != nil {
 		return nil, err
 	}

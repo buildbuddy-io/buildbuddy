@@ -185,7 +185,11 @@ func (tm *TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
 	case *bespb.BuildEvent_Completed:
 		{
 			if target := tm.Targets[event.GetId().GetTargetCompleted().GetLabel()]; target != nil {
-				target.Status = cmnpb.Status_BUILT
+				if p.Completed.GetSuccess() {
+					target.Status = cmnpb.Status_BUILT
+				} else {
+					target.Status = cmnpb.Status_FAILED_TO_BUILD
+				}
 			}
 		}
 	case *bespb.BuildEvent_TestSummary:

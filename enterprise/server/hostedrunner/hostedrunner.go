@@ -5,11 +5,14 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -33,6 +36,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gstatus "google.golang.org/grpc/status"
@@ -87,18 +91,39 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, status.UnavailableError("No cache configured.")
 	}
 
-	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), req.GetInstanceName(), req.GetOs(), req.GetArch())
+	// The top level OS and arch fields are deprecated, so prefer the platform property values.
+	os := req.GetOs()
+	arch := req.GetArch()
+	if osProp := getExecProperty(req.GetExecProperties(), platform.OperatingSystemPropertyName); osProp != "" {
+		os = osProp
+	} else if os != "" {
+		req.ExecProperties = append(req.GetExecProperties(), &repb.Platform_Property{
+			Name:  platform.OperatingSystemPropertyName,
+			Value: req.GetOs(),
+		})
+	}
+	if archProp := getExecProperty(req.GetExecProperties(), platform.CPUArchitecturePropertyName); archProp != "" {
+		arch = archProp
+	} else if arch != "" {
+		req.ExecProperties = append(req.GetExecProperties(), &repb.Platform_Property{
+			Name:  platform.CPUArchitecturePropertyName,
+			Value: req.GetArch(),
+		})
+	}
+
+	in := instanceName(req)
+	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), in, os, arch)
 	if err != nil {
 		return nil, status.WrapError(err, "upload input root")
 	}
 
 	var patchURIs []string
 	for _, patch := range req.GetRepoState().GetPatch() {
-		patchDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), req.GetInstanceName(), repb.DigestFunction_BLAKE3, patch)
+		patchDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), in, repb.DigestFunction_BLAKE3, patch)
 		if err != nil {
 			return nil, status.WrapError(err, "upload patch")
 		}
-		rn := digest.NewCASResourceName(patchDigest, req.GetInstanceName(), repb.DigestFunction_BLAKE3)
+		rn := digest.NewCASResourceName(patchDigest, in, repb.DigestFunction_BLAKE3)
 		patchURIs = append(patchURIs, rn.DownloadString())
 	}
 
@@ -155,12 +180,10 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--target_branch=" + req.GetRepoState().GetBranch(),
 		"--serialized_action=" + serializedAction,
 		"--timeout=" + timeout.String(),
+		"--remote_instance_name=" + in,
 	}
 	if !req.GetRunRemotely() {
 		args = append(args, "--record_run_metadata")
-	}
-	if req.GetInstanceName() != "" {
-		args = append(args, "--remote_instance_name="+req.GetInstanceName())
 	}
 	for _, patchURI := range patchURIs {
 		args = append(args, "--patch_uri="+patchURI)
@@ -196,7 +219,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	// Containers/VMs aren't supported on darwin - default to bare execution
 	// and use the action workspace as the working directory.
-	if req.GetOs() == "darwin" || isolationType == "none" {
+	if os == "darwin" || isolationType == "none" {
 		wd = ""
 		image = ""
 		isolationType = "none"
@@ -206,6 +229,15 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	retry := !req.GetDisableRetry()
+
+	pool := r.env.GetWorkflowService().WorkflowsPoolName()
+	if efp := r.env.GetExperimentFlagProvider(); efp != nil {
+		poolOverride := efp.String(ctx, "remote-runner-pool", "",
+			experiments.WithContext("workflow-name", "remote-bazel"))
+		if poolOverride != "" {
+			pool = poolOverride
+		}
+	}
 
 	// Hosted Bazel shares the same pool with workflows.
 	cmd := &repb.Command{
@@ -218,7 +250,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		Arguments: args,
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "Pool", Value: r.env.GetWorkflowService().WorkflowsPoolName()},
+				{Name: "Pool", Value: pool},
 				{Name: platform.HostedBazelAffinityKeyPropertyName, Value: affinityKey},
 				{Name: "container-image", Value: image},
 				{Name: "recycle-runner", Value: "true"},
@@ -231,19 +263,6 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: platform.RetryPropertyName, Value: fmt.Sprintf("%v", retry)},
 			},
 		},
-	}
-
-	if req.GetOs() != "" {
-		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
-			Name:  platform.OperatingSystemPropertyName,
-			Value: req.GetOs(),
-		})
-	}
-	if req.GetArch() != "" {
-		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
-			Name:  platform.CPUArchitecturePropertyName,
-			Value: req.GetArch(),
-		})
 	}
 
 	for k, v := range req.GetEnv() {
@@ -267,7 +286,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	// Normalize to adhere to the REAPI spec.
 	rexec.NormalizeCommand(cmd)
 
-	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, cmd)
+	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, in, repb.DigestFunction_BLAKE3, cmd)
 	if err != nil {
 		return nil, status.WrapError(err, "upload command")
 	}
@@ -283,7 +302,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		Timeout:         durationpb.New(actionTimeout),
 	}
 
-	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, action)
+	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, in, repb.DigestFunction_BLAKE3, action)
 	if err != nil {
 		return nil, status.WrapError(err, "upload action")
 	}
@@ -446,7 +465,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		return nil, status.UnimplementedError("Missing remote execution client.")
 	}
 	opStream, err := executionClient.Execute(execCtx, &repb.ExecuteRequest{
-		InstanceName:    req.GetInstanceName(),
+		InstanceName:    instanceName(req),
 		SkipCacheLookup: true,
 		ActionDigest:    actionDigest,
 		DigestFunction:  repb.DigestFunction_BLAKE3,
@@ -463,12 +482,13 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	}
 
 	res := &rnpb.RunResponse{InvocationId: invocationID}
-	if req.GetAsync() {
+
+	if req.GetAsync() || req.GetWaitUntil() == rnpb.WaitCondition_QUEUED {
 		return res, nil
 	}
 
 	executionID := op.GetName()
-	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID); err != nil {
+	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID, req.GetWaitUntil()); err != nil {
 		return nil, err
 	}
 
@@ -477,7 +497,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 
 // waitUntilInvocationExists waits until the specified invocationID exists or
 // an error is encountered. Borrowed from workflow.go.
-func waitUntilInvocationExists(ctx context.Context, env environment.Env, executionID, invocationID string) error {
+func waitUntilInvocationExists(ctx context.Context, env environment.Env, executionID, invocationID string, waitUntil rnpb.WaitCondition) error {
 	executionClient := env.GetRemoteExecutionClient()
 	if executionClient == nil {
 		return status.UnimplementedError("Missing remote execution client.")
@@ -527,8 +547,13 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			return err
 		case <-time.After(1 * time.Second):
 			if executing {
-				_, err := invocationDB.LookupInvocation(ctx, invocationID)
-				if err == nil {
+				inv, err := invocationDB.LookupInvocation(ctx, invocationID)
+				if err == nil && (waitUntil == rnpb.WaitCondition_STARTED || waitUntil == rnpb.WaitCondition_UNKNOWN_CONDITION) {
+					return nil
+				}
+				if err == nil && waitUntil == rnpb.WaitCondition_COMPLETED &&
+					(inv.InvocationStatus == int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS) ||
+						inv.InvocationStatus == int64(inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)) {
 					return nil
 				}
 			}
@@ -547,4 +572,8 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			}
 		}
 	}
+}
+
+func instanceName(req *rnpb.RunRequest) string {
+	return filepath.Join(snaputil.SnapshotPartitionPrefix, req.GetInstanceName())
 }

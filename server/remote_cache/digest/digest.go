@@ -7,6 +7,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
 	"hash"
 	"io"
@@ -228,9 +229,9 @@ func (r *ACResourceName) ActionCacheString() string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	if isOldStyleDigestFunction(r.rn.DigestFunction) {
-		return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + r.GetDigest().GetHash() + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+		return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
 	}
-	return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + strings.ToLower(r.rn.DigestFunction.String()) + "/" + r.GetDigest().GetHash() + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+	return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + strings.ToLower(r.rn.DigestFunction.String()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
 }
 
 func CacheTypeToPrefix(cacheType rspb.CacheType) string {
@@ -386,10 +387,25 @@ func isOldStyleDigestFunction(digestFunction repb.DigestFunction_Value) bool {
 	}
 }
 
+var blake3Hashes = sync.Pool{New: func() any { return blake3.New() }}
+
 func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, error) {
-	h, err := HashForDigestType(digestType)
-	if err != nil {
-		return nil, err
+	var h hash.Hash
+	if digestType == repb.DigestFunction_BLAKE3 {
+		// blake3.New() allocates over 10KiB. Use a pool to avoid this.
+		// sha256.New() allocates under 360 bytes, so we don't pool it.
+		// The other hash functions are not used frequently enough to pool.
+		h = blake3Hashes.Get().(hash.Hash)
+		defer func() {
+			h.Reset()
+			blake3Hashes.Put(h)
+		}()
+	} else {
+		var err error
+		h, err = HashForDigestType(digestType)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Read file in 32KB chunks (default)
@@ -398,7 +414,7 @@ func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, 
 		return nil, err
 	}
 	return &repb.Digest{
-		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
+		Hash:      hex.EncodeToString(h.Sum(nil)),
 		SizeBytes: n,
 	}, nil
 }
@@ -672,30 +688,26 @@ func Diff(s1 []*repb.Digest, s2 []*repb.Digest) (missingFromS1 []*repb.Digest, m
 	return missingFromS1, missingFromS2
 }
 
-type randomDataMaker struct {
-	src              rand.Source
-	compressionRatio float64
-	val              int64
-}
-
-func (r *randomDataMaker) Read(p []byte) (n int, err error) {
+func (g *Generator) fill(p []byte) {
 	todo := len(p)
 	offset := 0
+	compressionPercent := int64(g.compressionRatio * 100)
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	for {
-		// Generate a new random int64 (8 bytes) if we haven't generated one
-		// yet, or with a percent chance given by the compression ratio. This is
-		// a *very* rough way to generate blobs with the average compression
-		// ratios that we see in practice.
-		if r.val == 0 || r.src.Int63()%100 >= int64(r.compressionRatio*100) {
-			r.val = int64(r.src.Int63())
+		// Generate a new random int64 (8 bytes) with a percent chance given by
+		// the compression ratio. This is a *very* rough way to generate blobs
+		// with the average compression ratios that we see in practice.
+		if g.val == 0 || g.src.Int63()%100 >= compressionPercent {
+			g.val = g.src.Int63()
 		}
-		val := r.val
-		for i := 0; i < 8; i++ {
-			p[offset] = byte(val & 0xff)
-			todo--
+		val := g.val
+		for range 8 {
 			if todo == 0 {
-				return len(p), nil
+				return
 			}
+			p[offset] = byte(val)
+			todo--
 			offset++
 			val >>= 8
 		}
@@ -703,8 +715,11 @@ func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 }
 
 type Generator struct {
-	randMaker *randomDataMaker
-	mu        sync.Mutex
+	compressionRatio float64
+
+	mu  sync.Mutex // mu protects src and val.
+	src rand.Source
+	val int64
 }
 
 // RandomGenerator returns a digest sample generator for use in testing tools.
@@ -712,10 +727,8 @@ type Generator struct {
 // practice.
 func RandomGenerator(seed int64) *Generator {
 	return &Generator{
-		randMaker: &randomDataMaker{
-			src:              rand.NewSource(seed),
-			compressionRatio: 0.7,
-		},
+		src:              rand.NewSource(seed),
+		compressionRatio: 0.7,
 	}
 }
 
@@ -724,9 +737,7 @@ func RandomGenerator(seed int64) *Generator {
 // useful in cases where unique digests are needed.
 func UniformRandomGenerator(seed int64) *Generator {
 	return &Generator{
-		randMaker: &randomDataMaker{
-			src: rand.NewSource(seed),
-		},
+		src: rand.NewSource(seed),
 	}
 }
 
@@ -739,21 +750,16 @@ func (g *Generator) RandomDigestReader(sizeBytes int64) (*repb.Digest, io.ReadSe
 }
 
 func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
 	// Read some random bytes.
-	buf := bytes.NewBuffer(make([]byte, 0, sizeBytes))
-	if _, err := io.CopyN(buf, g.randMaker, sizeBytes); err != nil {
-		return nil, nil, err
-	}
+	buf := make([]byte, sizeBytes)
+	g.fill(buf)
 
 	// Compute a digest for the random bytes.
-	d, err := Compute(bytes.NewReader(buf.Bytes()), repb.DigestFunction_SHA256)
+	d, err := Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, nil, err
 	}
-	return d, buf.Bytes(), nil
+	return d, buf, nil
 }
 
 // ParseFunction parses a digest function name to a proto.

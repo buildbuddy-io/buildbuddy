@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -148,7 +149,7 @@ func TestAllowedRPCs(t *testing.T) {
 			env := testenv.GetTestEnv(t)
 			users := testauth.TestUsers("US1", "GR1")
 			ta := testauth.NewTestAuthenticator(users)
-			ta.ServerAdminGroupID = test.ServerAdminGroupID
+			flags.Set(t, "auth.admin_group_id", test.ServerAdminGroupID)
 			env.SetAuthenticator(ta)
 			u := users["US1"].(*testauth.TestUser)
 			u.Capabilities = test.Capabilities

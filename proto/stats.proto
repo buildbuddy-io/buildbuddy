@@ -301,3 +301,42 @@ message GetStatDrilldownResponse {
   int64 total_in_base = 3;
   int64 total_in_selection = 4;
 }
+
+enum TargetAggregation {
+  UNKNOWN_TARGET_AGGREGATION = 0;
+  SUM_TARGET_AGGREGATION = 1;
+  AVG_TARGET_AGGREGATION = 2;
+  MAX_TARGET_AGGREGATION = 3;
+  MIN_TARGET_AGGREGATION = 4;
+  P50_TARGET_AGGREGATION = 5;
+  P90_TARGET_AGGREGATION = 6;
+  P99_TARGET_AGGREGATION = 7;
+}
+
+message GetTargetTrendsRequest {
+  context.RequestContext request_context = 1;
+  TrendQuery query = 2;
+  stat_filter.ExecutionMetricType metric = 3;
+
+  // If unspecified, defaults to SUM_TARGET_AGGREGATION.
+  TargetAggregation agg = 4;
+}
+
+message TargetStats {
+  // The target name associated with the relevant execution.
+  string target = 1;
+
+  // The total amount of the relevant metric used for this target.
+  // For example, if these are CPU nanos stats, this is the sum of
+  // cpu_nanos for the executions that match the specified target.
+  int64 value = 2;
+}
+
+message GetTargetTrendsResponse {
+  context.ResponseContext response_context = 1;
+
+  // An ordered list of the targets matching the specified filters, sorted in
+  // descending order by the summed total of the requested execution metric
+  // in RBE for each target.
+  repeated TargetStats target_stats = 2;
+}

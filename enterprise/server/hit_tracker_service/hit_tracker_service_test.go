@@ -156,10 +156,12 @@ func TestHitTrackerService_DetailedStats(t *testing.T) {
 type fakeUsageTracker struct {
 	interfaces.UsageTracker
 	Increments []*tables.UsageCounts
+	Labels     []*tables.UsageLabels
 }
 
 func (ut *fakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
 	ut.Increments = append(ut.Increments, counts)
+	ut.Labels = append(ut.Labels, labels)
 	return nil
 }
 
@@ -257,12 +259,18 @@ func TestHitTrackerService_Usage(t *testing.T) {
 				Duration:         durationpb.New(time.Minute),
 				CacheRequestType: tc.requestType,
 			}
-			req := hitpb.TrackRequest{Hits: []*hitpb.CacheHit{&emptyHit, &hit}}
+			req := hitpb.TrackRequest{Hits: []*hitpb.CacheHit{&emptyHit, &hit}, Server: "servicio"}
 			_, err = env.GetHitTrackerServiceServer().Track(ctx, &req)
 			require.NoError(t, err)
 
 			require.Len(t, ut.Increments, 2)
 			require.Equal(t, tc.expectedUsage, ut.Increments)
+			require.Equal(t, len(ut.Increments), len(ut.Labels))
+			for _, l := range ut.Labels {
+				require.Equal(t, &tables.UsageLabels{
+					Server: "servicio",
+				}, l)
+			}
 			ut.Increments = nil
 		})
 	}

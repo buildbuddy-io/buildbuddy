@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/jonboulle/clockwork"
 
 	"github.com/docker/go-units"
@@ -71,6 +70,7 @@ const (
 
 	SamplerIterRefreshPeriod = 5 * time.Minute
 	evictFlushPeriod         = 10 * time.Second
+	metricsRefreshPeriod     = 30 * time.Second
 )
 
 type Tracker struct {
@@ -218,7 +218,7 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 			}
 			batchCmd, err := batch.ToProto()
 			if err != nil {
-				return nil, status.InternalErrorf("could not construct delete req proto: %s", err)
+				return nil, status.WrapError(err, "could not construct delete req proto")
 			}
 			rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 				Header: h,
@@ -239,7 +239,7 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 				}
 			}
 			if errCount > 0 {
-				return res, status.InternalErrorf("failed to evict %d keys", errCount)
+				return res, status.InternalErrorf("failed to evict %d keys in partition %s", errCount, pu.part.ID)
 
 			}
 			return res, nil
@@ -283,11 +283,7 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 }
 
 func (pu *partitionUsage) startSampleGenerator(ctx context.Context) {
-	eg := &errgroup.Group{}
-	eg.Go(func() error {
-		return pu.generateSamplesForEviction(ctx)
-	})
-	eg.Wait()
+	pu.generateSamplesForEviction(ctx)
 	// Drain samples chan before exiting
 	for len(pu.samples) > 0 {
 		<-pu.samples
@@ -332,8 +328,8 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
-	timer := pu.clock.NewTimer(SamplerSleepDuration)
-	defer timeutil.StopAndDrainClockworkTimer(timer)
+	timer := pu.clock.NewTimer(0)
+	defer timer.Stop()
 
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
@@ -425,7 +421,6 @@ func (pu *partitionUsage) maybeAddToSampleChan(ctx context.Context, iter pebble.
 		SizeBytes: sizeBytes,
 		Timestamp: atime,
 	}
-	timeutil.StopAndDrainClockworkTimer(timer)
 	timer.Reset(SamplerSleepDuration)
 	select {
 	case pu.samples <- sample:
@@ -484,6 +479,15 @@ func (pu *partitionUsage) sample(ctx context.Context, k int) ([]*approxlru.Sampl
 	return samples, nil
 }
 
+func (pu *partitionUsage) updateMetrics() {
+	pu.mu.Lock()
+	defer pu.mu.Unlock()
+
+	metrics.RaftEvictionSamplesChanSize.With(prometheus.Labels{
+		metrics.PartitionID: pu.part.ID,
+	}).Set(float64(len(pu.samples)))
+}
+
 func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces.GossipService, node *rfpb.NodeDescriptor, partitions []disk.Partition, clock clockwork.Clock) (*Tracker, error) {
 	ut := &Tracker{
 		gossipManager: gossipManager,
@@ -497,6 +501,9 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 	}
 
 	for _, p := range partitions {
+		if p.SoftDeleted {
+			continue
+		}
 		u := &partitionUsage{
 			part:                     p,
 			sender:                   sender,
@@ -572,6 +579,10 @@ func (ut *Tracker) Start() {
 
 	eg.Go(func() error {
 		ut.broadcastLoop(gctx)
+		return nil
+	})
+	eg.Go(func() error {
+		ut.refreshMetrics(gctx)
 		return nil
 	})
 }
@@ -669,6 +680,29 @@ func (ut *Tracker) RemoteUpdate(usage *rfpb.NodePartitionUsage) {
 	}
 }
 
+func (ut *Tracker) refreshMetrics(ctx context.Context) {
+	partitionUsages := make([]*partitionUsage, 0, len(ut.byPartition))
+	ut.mu.Lock()
+	for _, pu := range ut.byPartition {
+		partitionUsages = append(partitionUsages, pu)
+	}
+
+	ut.mu.Unlock()
+
+	ticker := ut.clock.NewTicker(metricsRefreshPeriod)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.Chan():
+			for _, pu := range partitionUsages {
+				pu.updateMetrics()
+			}
+		}
+	}
+}
+
 func (ut *Tracker) computeUsage() *rfpb.NodePartitionUsage {
 	ut.mu.Lock()
 	defer ut.mu.Unlock()
@@ -704,7 +738,6 @@ func (ut *Tracker) broadcastLoop(ctx context.Context) {
 				log.Warningf("could not gossip node partition usage info: %s", err)
 			}
 			if broadcasted {
-				timeutil.StopAndDrainClockworkTimer(idleTimer)
 				idleTimer.Reset(storePartitionUsageMaxAge)
 			}
 		case <-idleTimer.Chan():

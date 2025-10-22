@@ -2,10 +2,12 @@ package tracing
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -23,6 +25,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/trace"
@@ -36,7 +40,9 @@ import (
 var (
 	// TODO: use this project ID or deprecate it. It is currently unreferenced.
 	traceProjectID            = flag.String("app.trace_project_id", "", "Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP.")
-	traceJaegerCollector      = flag.String("app.trace_jaeger_collector", "", "Address of the Jager collector endpoint where traces will be sent.")
+	traceJaegerCollector      = flag.String("app.trace_jaeger_collector", "", "Address of the Jaeger collector HTTP endpoint where traces will be sent, e.g. http://jaeger.svc.cluster.local:14268")
+	traceOTLPCollector        = flag.String("app.trace_otlp_grpc_collector", "", "Address of the OTLP gRPC collector endpoint where traces will be sent, e.g. otel-collector.svc.cluster.local:4317")
+	traceOTLPHTTPCollector    = flag.String("app.trace_otlp_http_collector", "", "Address of the OTLP HTTP collector endpoint where traces will be sent, e.g. http://otel-collector.svc.cluster.local:4318")
 	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces.")
 	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
 	traceFractionOverrides    = flag.Slice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
@@ -127,14 +133,43 @@ func Configure(env environment.Env) error {
 		return nil
 	}
 
-	if *traceJaegerCollector == "" {
-		return status.InvalidArgumentErrorf("Tracing enabled but Jaeger collector endpoint is not set.")
+	var traceExporter sdktrace.SpanExporter
+	var err error
+
+	if *traceJaegerCollector != "" {
+		traceExporter, err = jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(*traceJaegerCollector)))
+		if err != nil {
+			log.Warningf("Could not initialize Jaeger exporter: %s", err)
+			return nil
+		}
+	}
+	if *traceOTLPCollector != "" {
+		if traceExporter != nil {
+			return status.InvalidArgumentErrorf("only one trace collector ('app.trace_*_collector') can be configured at a time.")
+		}
+		traceExporter, err = otlptracegrpc.New(env.GetServerContext(), otlptracegrpc.WithEndpoint(*traceOTLPCollector), otlptracegrpc.WithInsecure())
+		if err != nil {
+			log.Warningf("Could not initialize OTEL exporter: %s", err)
+			return nil
+		}
+	}
+	if *traceOTLPHTTPCollector != "" {
+		if traceExporter != nil {
+			return status.InvalidArgumentErrorf("only one trace collector ('app.trace_*_collector') can be configured at a time.")
+		}
+		opts, err := parseHTTPOptions(*traceOTLPHTTPCollector)
+		if err != nil {
+			return status.InvalidArgumentErrorf("parse OTEL HTTP collector endpoint: %s", err)
+		}
+		traceExporter, err = otlptracehttp.New(env.GetServerContext(), opts...)
+		if err != nil {
+			log.Warningf("Could not initialize OTEL exporter: %s", err)
+			return nil
+		}
 	}
 
-	traceExporter, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(*traceJaegerCollector)))
-	if err != nil {
-		log.Warningf("Could not initialize Cloud Trace exporter: %s", err)
-		return nil
+	if traceExporter == nil {
+		return status.InvalidArgumentErrorf("no trace collector ('app.trace_{jaeger,otlp_grpc,otlp_http}_collector') configured")
 	}
 
 	fractionOverrides := make(map[string]float64)
@@ -187,6 +222,24 @@ func Configure(env environment.Env) error {
 	otel.SetTextMapPropagator(propagator)
 	log.Infof("Tracing enabled with sampler: %s", sampler.Description())
 	return nil
+}
+
+func parseHTTPOptions(s string) ([]otlptracehttp.Option, error) {
+	u, err := url.Parse(s)
+	if err != nil {
+		return nil, fmt.Errorf("parse URL: %w", err)
+	}
+	var opts []otlptracehttp.Option
+	opts = append(opts, otlptracehttp.WithEndpoint(u.Host))
+	if u.Scheme == "http" {
+		opts = append(opts, otlptracehttp.WithInsecure())
+	}
+	if user := u.User.String(); user != "" {
+		opts = append(opts, otlptracehttp.WithHeaders(map[string]string{
+			"Authorization": fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString([]byte(user))),
+		}))
+	}
+	return opts, nil
 }
 
 type SetMetadata func(m *tpb.Metadata)
@@ -301,6 +354,12 @@ func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Cont
 		span.SetName(filepath.Base(frame.Function))
 	}
 	return ctx, span
+}
+
+// StartNamedSpan is like StartSpan, expect the caller specifies the name
+// instead of using the call stack.
+func StartNamedSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+	return otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, name, opts...)
 }
 
 func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {

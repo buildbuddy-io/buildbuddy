@@ -1,9 +1,13 @@
 import { CheckCircle } from "lucide-react";
 import React from "react";
-import { github } from "../../../proto/github_ts_proto";
 import alertService from "../../../app/alert/alert_service";
+import authService from "../../../app/auth/auth_service";
 import { User } from "../../../app/auth/user";
+import capabilities from "../../../app/capabilities/capabilities";
+import Banner from "../../../app/components/banner/banner";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
+import LinkButton from "../../../app/components/button/link_button";
+import Checkbox from "../../../app/components/checkbox/checkbox";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -11,19 +15,14 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
+import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
+import { TextLink } from "../../../app/components/link/link";
 import Modal from "../../../app/components/modal/modal";
 import Spinner from "../../../app/components/spinner/spinner";
-import rpcService from "../../../app/service/rpc_service";
 import errorService from "../../../app/errors/error_service";
-import authService from "../../../app/auth/auth_service";
-import { TextLink } from "../../../app/components/link/link";
-import capabilities from "../../../app/capabilities/capabilities";
-import Banner from "../../../app/components/banner/banner";
-import LinkButton from "../../../app/components/button/link_button";
-import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
+import rpcService from "../../../app/service/rpc_service";
+import { github } from "../../../proto/github_ts_proto";
 import GitHubTooltip from "./github_tooltip";
-import { installReadOnlyGitHubAppURL, installReadWriteGitHubAppURL } from "../../../app/util/github";
-import Checkbox from "../../../app/components/checkbox/checkbox";
 
 export interface Props {
   user: User;

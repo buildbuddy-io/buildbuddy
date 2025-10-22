@@ -1,10 +1,10 @@
-import React from "react";
 import Layout from "@theme/Layout";
+import React from "react";
 import common from "../css/common.module.css";
 
-import Hero from "../components/hero/hero";
 import CTA from "../components/cta/cta";
-import Terminal, { Prompt, Info, Error, Question, Detail } from "../components/terminal/terminal";
+import Hero from "../components/hero/hero";
+import Terminal, { Detail, Error, Info, Prompt, Question } from "../components/terminal/terminal";
 
 function Component() {
   return (

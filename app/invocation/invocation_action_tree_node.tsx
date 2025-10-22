@@ -1,6 +1,6 @@
+import { ArrowRight, Download, FileSymlink, FolderMinus, FolderPlus } from "lucide-react";
 import React from "react";
 import { build } from "../../proto/remote_execution_ts_proto";
-import { ArrowRight, Download, FileSymlink, FolderMinus, FolderPlus } from "lucide-react";
 import DigestComponent from "../components/digest/digest";
 import format from "../format/format";
 

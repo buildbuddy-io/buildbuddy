@@ -3,10 +3,11 @@
 package tables
 
 import (
-	"flag"
 	"fmt"
+	"slices"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
@@ -14,12 +15,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"gorm.io/gorm"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 var (
 	dropInvocationPKCol = flag.Bool("drop_invocation_pk_cols", false, "If true, attempt to drop invocation PK cols")
+
+	// Temporary flag until the feature is ready.
+	createUserListTables = flag.Bool("database.create_user_list_tables", false, "If true, crate user list tables.", flag.Internal)
 )
 
 const (
@@ -280,7 +285,13 @@ func (ug *UserGroup) TableName() string {
 
 type GroupRole struct {
 	Group
-	Role uint32
+	// Deprecated. Don't reference this in any new code!
+	Role         *uint32
+	Capabilities []cappb.Capability
+}
+
+func (gr *GroupRole) HasCapability(cap cappb.Capability) bool {
+	return slices.Contains(gr.Capabilities, cap)
 }
 
 type User struct {
@@ -348,6 +359,41 @@ func subIDToAccountType(s string) uspb.AccountType {
 		return uspb.AccountType_GITHUB
 	}
 	return uspb.AccountType_OIDC
+}
+
+// UserList is a named collection of users.
+type UserList struct {
+	UserListID string `gorm:"primaryKey"`
+	GroupID    string `gorm:"index:user_list_group_id_index"`
+	Name       string
+}
+
+func (ul *UserList) TableName() string {
+	return "UserLists"
+}
+
+// UserUserList maps users to users lists.
+type UserUserList struct {
+	UserUserID         string `gorm:"primaryKey"`
+	UserListUserListID string `gorm:"primaryKey"`
+}
+
+func (uul *UserUserList) TableName() string {
+	return "UserUserLists"
+}
+
+// UserListGroup maps user lists to groups with an associated role.
+type UserListGroup struct {
+	UserListUserListID string `gorm:"primaryKey"`
+	GroupGroupID       string `gorm:"primaryKey"`
+
+	// The list's role within the group.
+	// Constants are defined in the perms package.
+	Role uint32
+}
+
+func (ug *UserListGroup) TableName() string {
+	return "UserListGroups"
 }
 
 type Token struct {
@@ -708,6 +754,10 @@ type UsageLabels struct {
 	// Client describes the type of client responsible for the usage, such as
 	// "bazel" or "executor".
 	Client string `gorm:"not null;default:''"`
+
+	// Server describes the type of server that ultimately handled generating
+	// the response, for example "cache-proxy" or "app".
+	Server string `gorm:"not null;default:''"`
 }
 
 // Usage holds usage counter values for a group during a particular time period.
@@ -1352,5 +1402,10 @@ func RegisterTables() {
 	registerTable("UA", &Usage{})
 	registerTable("UG", &UserGroup{})
 	registerTable("US", &User{})
+	if *createUserListTables {
+		registerTable("UL", &UserList{})
+		registerTable("UU", &UserUserList{})
+		registerTable("UM", &UserListGroup{})
+	}
 	registerTable("WF", &Workflow{})
 }

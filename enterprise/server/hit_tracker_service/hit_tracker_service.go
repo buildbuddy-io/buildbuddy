@@ -28,14 +28,13 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-// TODO(iain): record a source (e.g. Cache Proxy).
 func (h HitTrackerService) Track(ctx context.Context, req *hitpb.TrackRequest) (*hitpb.TrackResponse, error) {
 	for _, hit := range req.GetHits() {
 		var hitTracker interfaces.HitTracker
 		if hit.GetResource().GetCacheType() == rspb.CacheType_AC {
-			hitTracker = h.hitTrackerFactory.NewACHitTracker(ctx, hit.GetRequestMetadata())
+			hitTracker = h.hitTrackerFactory.NewRemoteACHitTracker(ctx, hit.GetRequestMetadata(), req.GetServer())
 		} else if hit.GetResource().GetCacheType() == rspb.CacheType_CAS {
-			hitTracker = h.hitTrackerFactory.NewCASHitTracker(ctx, hit.GetRequestMetadata())
+			hitTracker = h.hitTrackerFactory.NewRemoteCASHitTracker(ctx, hit.GetRequestMetadata(), req.GetServer())
 		} else {
 			alert.UnexpectedEvent("invalid_hit_tracker_event", "invalid cache type %s", hit.GetResource().GetCacheType())
 			return nil, status.InvalidArgumentErrorf("invalid cache type %s", hit.GetResource().GetCacheType())

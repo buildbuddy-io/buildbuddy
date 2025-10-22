@@ -1,24 +1,25 @@
-import React from "react";
 import { AlertCircle } from "lucide-react";
+import React from "react";
 import { User } from "../../../app/auth/auth_service";
-import rpc_service from "../../../app/service/rpc_service";
 import capabilities from "../../../app/capabilities/capabilities";
-import FilledButton from "../../../app/components/button/button";
-import ApiKeysComponent from "../api_keys/api_keys";
-import EditOrgComponent from "../org/edit_org";
-import OrgMembersComponent from "../org/org_members";
-import SecretsComponent from "../secrets/secrets";
-import router from "../../../app/router/router";
-import UserPreferences from "../../../app/preferences/preferences";
-import GitHubLink from "./github_link";
-import QuotaComponent from "../quota/quota";
-import UserGitHubLink from "./user_github_link";
 import Banner from "../../../app/components/banner/banner";
+import FilledButton from "../../../app/components/button/button";
 import Link from "../../../app/components/link/link";
-import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
+import UserPreferences from "../../../app/preferences/preferences";
+import router from "../../../app/router/router";
+import rpc_service from "../../../app/service/rpc_service";
+import ApiKeysComponent from "../api_keys/api_keys";
 import EncryptionComponent from "../encryption/encryption";
 import IpRulesComponent from "../iprules/iprules";
+import EditOrgComponent from "../org/edit_org";
 import OrgJoinRequests from "../org/org_join_requests";
+import OrgMembersComponent from "../org/org_members";
+import OrgUserListsComponent from "../org/org_user_lists";
+import QuotaComponent from "../quota/quota";
+import SecretsComponent from "../secrets/secrets";
+import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
+import GitHubLink from "./github_link";
+import UserGitHubLink from "./user_github_link";
 
 export interface SettingsProps {
   user: User;
@@ -30,6 +31,7 @@ export interface SettingsProps {
 enum TabId {
   OrgDetails = "org/details",
   OrgMembers = "org/members",
+  OrgUserLists = "org/user-lists",
   OrgGitHub = "org/github",
   OrgApiKeys = "org/api-keys",
   OrgSecrets = "org/secrets",
@@ -126,9 +128,16 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   </SettingsTab>
                 )}
                 {router.canAccessOrgMembersPage(this.props.user) && (
-                  <SettingsTab id={TabId.OrgMembers} activeTabId={activeTabId}>
-                    Members
-                  </SettingsTab>
+                  <>
+                    <SettingsTab id={TabId.OrgMembers} activeTabId={activeTabId}>
+                      Members
+                    </SettingsTab>
+                    {capabilities.config.userListsUiEnabled && (
+                      <SettingsTab id={TabId.OrgUserLists} activeTabId={activeTabId}>
+                        IAM Groups
+                      </SettingsTab>
+                    )}
+                  </>
                 )}
                 {router.canAccessOrgGitHubLinkPage(this.props.user) &&
                   (capabilities.github || capabilities.config.githubAppEnabled) && (
@@ -247,6 +256,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       <OrgMembersComponent user={this.props.user} />
                     </>
                   )}
+                  {activeTabId === TabId.OrgUserLists && <OrgUserListsComponent user={this.props.user} />}
                   {activeTabId === TabId.OrgGitHub &&
                     (capabilities.github || capabilities.config.githubAppEnabled) &&
                     this.props.user.canCall("unlinkGitHubAccount") && (

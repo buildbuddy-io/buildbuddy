@@ -1,5 +1,5 @@
-import React from "react";
 import { HelpCircle } from "lucide-react";
+import React from "react";
 import { Tooltip } from "../../../app/components/tooltip/tooltip";
 
 export default class GitHubTooltip extends React.Component<{}, {}> {

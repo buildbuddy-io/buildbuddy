@@ -230,6 +230,55 @@ func TestParseUploadResourceName(t *testing.T) {
 	}
 }
 
+func TestActionCacheString(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		have string
+		want string
+	}{
+		{
+			name: "implicit sha256 hash",
+			have: "/blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			want: "/blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		},
+		{
+			name: "explicit sha256 hash",
+			have: "/blobs/ac/sha256/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			want: "/blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		},
+		{
+			name: "implicit sha256 hash with instance name",
+			have: "instance_name/blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			want: "instance_name/blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		},
+		{
+			name: "blake3 hash",
+			have: "/blobs/ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			want: "/blobs/ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		},
+		{
+			name: "blake3 hash with instance name",
+			have: "instance_name/blobs/ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			want: "instance_name/blobs/ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		},
+		{
+			name: "normalized instance name slashes",
+			have: "//foo//bar//blobs/ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			want: "/foo/bar/blobs/ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			have, err := digest.ParseActionCacheResourceName(tc.have)
+			if err != nil {
+				t.Fatalf("ParseActionCacheResourceName(%q) got err %v", tc.have, err)
+			}
+			if have.ActionCacheString() != tc.want {
+				t.Errorf("ActionCacheString(%q) got %q; want %q", tc.have, have.ActionCacheString(), tc.want)
+			}
+		})
+	}
+}
+
 func FuzzParseUploadResourceName(f *testing.F) {
 	f.Add("instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/da39a3ee5e6b4b0d3255bfef95601890afd80709/1234")
 	f.Add("instance/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234")
@@ -506,7 +555,7 @@ func TestRandomGenerator(t *testing.T) {
 	const expectedCompression = 0.3
 	gen := digest.RandomGenerator(0)
 
-	for _, size := range []int64{1_000, 10_000, 100_000} {
+	for _, size := range []int64{0, 1_000, 10_000, 100_000} {
 		d, b, err := gen.RandomDigestBuf(size)
 		cb := compression.CompressZstd(nil, b)
 
@@ -545,8 +594,7 @@ func BenchmarkDigestCompute(b *testing.B) {
 				buf := make([]byte, size)
 				_, err := rand.Read(buf)
 				require.NoError(b, err)
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					digest.Compute(bytes.NewReader(buf), df)
 				}
 			})

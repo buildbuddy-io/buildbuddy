@@ -318,6 +318,10 @@ svg.icon.orange {
   stroke: #ff6f00;
 }
 
+svg.icon.yellow {
+  stroke: #ffc107;
+}
+
 .rotate-90 {
   transform: rotate(90deg);
 }
@@ -451,7 +455,6 @@ body {
   font-size: 14px;
   display: flex;
   align-items: flex-start;
-  overflow: hidden;
   background-color: #fff;
 }
 
@@ -1474,7 +1477,7 @@ code .comment {
   color: #757575;
 }
 
-.login-buttons button svg {
+.login-buttons button :is(svg, img) {
   margin-right: 16px;
 }
 

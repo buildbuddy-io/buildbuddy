@@ -2,10 +2,10 @@ import { Share2 } from "lucide-react";
 import React from "react";
 import { acl } from "../../proto/acl_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
+import alert_service from "../alert/alert_service";
 import { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
 import { FilledButton, OutlinedButton } from "../components/button/button";
-import alert_service from "../alert/alert_service";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -15,11 +15,11 @@ import Dialog, {
 } from "../components/dialog/dialog";
 import Input from "../components/input/input";
 import Modal from "../components/modal/modal";
-import Spinner from "../components/spinner/spinner";
 import Select, { Option } from "../components/select/select";
+import Spinner from "../components/spinner/spinner";
 import rpcService from "../service/rpc_service";
-import InvocationModel from "./invocation_model";
 import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
+import InvocationModel from "./invocation_model";
 
 export interface InvocationShareButtonComponentProps {
   user?: User;

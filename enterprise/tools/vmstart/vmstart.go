@@ -100,7 +100,7 @@ func getToolEnv() *real_environment.RealEnv {
 	re.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	re.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	re.SetActionCacheClient(repb.NewActionCacheClient(conn))
-	re.SetAuthenticator(nullauth.NewNullAuthenticator(true /*anonymousEnabled*/, ""))
+	re.SetAuthenticator(nullauth.NewNullAuthenticator(true /*anonymousEnabled*/))
 	re.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	return re
 }

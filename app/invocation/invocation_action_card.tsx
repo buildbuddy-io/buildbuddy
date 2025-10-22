@@ -1,22 +1,14 @@
-import React, { ReactElement } from "react";
-import shlex from "shlex";
-import format, { durationUsec } from "../format/format";
-import InvocationModel from "./invocation_model";
 import { ArrowRight, Copy, Download, File, FileQuestion, FileSymlink, Folder, Info, MoreVertical } from "lucide-react";
-import { build } from "../../proto/remote_execution_ts_proto";
+import React, { ReactElement } from "react";
+import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
-import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
-import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
-import rpcService, { Cancelable, CancelablePromise } from "../service/rpc_service";
-import DigestComponent from "../components/digest/digest";
-import { TextLink } from "../components/link/link";
-import TerminalComponent from "../terminal/terminal";
-import { parseActionDigest, digestToString } from "../util/cache";
-import UserPreferences from "../preferences/preferences";
-import alert_service from "../alert/alert_service";
+import { build } from "../../proto/remote_execution_ts_proto";
+import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { workflow } from "../../proto/workflow_ts_proto";
-import errorService from "../errors/error_service";
+import alert_service from "../alert/alert_service";
+import capabilities from "../capabilities/capabilities";
+import Button, { OutlinedButton } from "../components/button/button";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -24,22 +16,31 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../components/dialog/dialog";
-import Button, { OutlinedButton } from "../components/button/button";
+import DigestComponent from "../components/digest/digest";
+import { TextLink } from "../components/link/link";
+import Menu, { MenuItem } from "../components/menu/menu";
 import Modal from "../components/modal/modal";
-import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
-import capabilities from "../capabilities/capabilities";
-import { getErrorReason } from "../util/rpc";
-import rpc_service from "../service/rpc_service";
-import { execution_stats } from "../../proto/execution_stats_ts_proto";
-import { BuildBuddyError, HTTPStatusError } from "../util/errors";
+import Popup from "../components/popup/popup";
+import Spinner from "../components/spinner/spinner";
+import errorService from "../errors/error_service";
+import format, { durationUsec } from "../format/format";
+import UserPreferences from "../preferences/preferences";
+import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
+import TerminalComponent from "../terminal/terminal";
 import { Profile, readProfile } from "../trace/trace_events";
 import TraceViewer from "../trace/trace_viewer";
-import Spinner from "../components/spinner/spinner";
-import { MessageClass, timestampToDate } from "../util/proto";
+import { digestToString, parseActionDigest } from "../util/cache";
 import { copyToClipboard } from "../util/clipboard";
-import Popup from "../components/popup/popup";
-import Menu, { MenuItem } from "../components/menu/menu";
+import { BuildBuddyError, HTTPStatusError } from "../util/errors";
+import { MessageClass, timestampToDate } from "../util/proto";
+import { getErrorReason } from "../util/rpc";
+import { quote } from "../util/shlex";
+import ActionCompareButtonComponent from "./action_compare_button";
+import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
+import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
+import InvocationModel from "./invocation_model";
 
+type IDigest = build.bazel.remote.execution.v2.IDigest;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
 
 interface Props {
@@ -226,14 +227,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
    * locate the ExecuteResponse that was returned for this particular
    * invocation.
    */
-  fetchActionResult() {
-    let digestParam = this.props.search.get("actionDigest");
-    const digest = parseActionDigest(digestParam ?? "");
-    if (!digest) {
-      alert_service.error("Missing action digest in URL");
-      return;
-    }
-    const actionResultUrl = this.props.model.getActionCacheURL(digest);
+  fetchActionResult(actionDigest: IDigest) {
+    const actionResultUrl = this.props.model.getActionCacheURL(actionDigest);
     this.actionResultRPC = rpcService
       .fetchBytestreamFile(actionResultUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
@@ -242,7 +237,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.fetchStdout(actionResult);
         this.fetchStderr(actionResult);
       })
-      .catch((e) => console.error("Failed to fetch action result:", e));
+      .catch((e) => {
+        const error = BuildBuddyError.parse(e);
+        if (error.code !== "NotFound") {
+          console.error("Error during AC fallback:", e);
+          // Optionally handle other non-NotFound errors from AC fetch.
+        } else {
+          console.debug("Action result not found in AC.");
+        }
+      });
   }
 
   private executeResponseRPC?: CancelablePromise<build.bazel.remote.execution.v2.ExecuteResponse | null>;
@@ -285,14 +288,25 @@ export default class InvocationActionCardComponent extends React.Component<Props
         alert_service.error("Invalid execute response digest in URL");
         return;
       }
-      this.executeResponseRPC = this.fetchExecuteResponseByDigest(executeResponseDigest);
+      this.fetchExecuteResponseByDigest(executeResponseDigest);
     } else {
       const actionDigest = parseActionDigest(actionDigestParam);
       if (!actionDigest) {
         alert_service.error("Missing action digest in URL");
         return;
       }
-      this.executeResponseRPC = this.fetchExecuteResponseByActionDigest(actionDigest);
+      // If we have an execution ID, it means that this was certainly an RBE action
+      // and we can fetch the ExecuteResponse directly by action digest.
+      //
+      // If we don't have an execution ID, we can fall back to fetching the
+      // ActionResult from the action cache.
+      this.getExecutionId()
+        ? this.fetchExecuteResponseByActionDigest(actionDigest)
+        : this.fetchActionResult(actionDigest);
+    }
+
+    if (!this.executeResponseRPC) {
+      return;
     }
 
     let executionFound = false;
@@ -301,6 +315,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
         if (!executeResponse) {
           return;
         }
+        // If we found an execution, we can cancel the direct AC fetch.
+        this.actionResultRPC?.cancel();
         executionFound = true;
         this.setState({ executeResponse });
         if (executeResponse.result) {
@@ -323,7 +339,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
         errorService.handleError(e);
       })
       .finally(() => {
-        if (!executionFound && streamFallback) {
+        if (executionFound) return;
+
+        if (streamFallback) {
           console.debug("Falling back to WaitExecution");
           this.streamExecution();
         }
@@ -331,7 +349,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchExecuteResponseByDigest(executeResponseDigest: build.bazel.remote.execution.v2.Digest) {
-    return rpcService
+    this.executeResponseRPC = rpcService
       .fetchBytestreamFile(
         this.props.model.getActionCacheURL(executeResponseDigest),
         this.props.model.getInvocationId(),
@@ -348,10 +366,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchExecuteResponseByActionDigest(actionDigest: build.bazel.remote.execution.v2.Digest) {
-    const service = rpc_service.getRegionalServiceOrDefault(
-      this.props.model.stringCommandLineOption("remote_executor")
-    );
-    return service
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
+    this.executeResponseRPC = service
       .getExecution({
         executionLookup: new execution_stats.ExecutionLookup({
           invocationId: this.props.model.getInvocationId(),
@@ -448,7 +464,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .finally(() => this.setState({ profileLoading: false }));
   }
 
-  getExecutionId() {
+  getExecutionId(): string | undefined {
     // If we got here from the executions page then we'll have the execution ID
     // in the URL; otherwise the execution ID gets fetched from the executions
     // linked to the invocation matching the actionDigest in the URL.
@@ -521,12 +537,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const { action, command } = this.state;
     if (!action || !command) return "";
 
-    const parts: string[] = ["bb execute"];
-    parts.push(`--remote_header=x-buildbuddy-api-key=$BB_API_KEY`);
+    const unquotedIndexes = new Set();
+
+    const parts: string[] = ["bb", "execute"];
+    parts.push("--remote_header=x-buildbuddy-api-key=${BB_API_KEY?}");
+    // Don't quote this arg, since we want ${BB_API_KEY?} to be evaluated by
+    // the shell.
+    unquotedIndexes.add(parts.length - 1);
 
     // Remote executor / instance (derived from invocation options if present)
     const remoteExec = this.props.model.stringCommandLineOption("remote_executor");
-    if (remoteExec) parts.push(`--remote_executor=${shlex.quote(remoteExec)}`);
+    if (remoteExec) parts.push(`--remote_executor=${remoteExec}`);
 
     const digestFn =
       build.bazel.remote.execution.v2.DigestFunction.Value[this.props.model.getDigestFunction()].toLowerCase();
@@ -536,7 +557,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (invocationId) parts.push(`--invocation_id=${invocationId}`);
 
     const remoteInstance = this.props.model.optionsMap.get("remote_instance_name");
-    if (remoteInstance) parts.push(`--remote_instance_name=${shlex.quote(remoteInstance)}`);
+    if (remoteInstance) parts.push(`--remote_instance_name=${remoteInstance}`);
 
     // Timeout
     if (action.timeout?.seconds) parts.push(`--remote_timeout=${action.timeout.seconds}s`);
@@ -545,26 +566,27 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     // Env vars
     for (const env of command.environmentVariables) {
-      parts.push(`--action_env=${shlex.quote(`${env.name}=${env.value}`)}`);
+      parts.push(`--action_env=${env.name}=${env.value}`);
     }
 
     // Platform props
     for (const prop of command.platform?.properties ?? []) {
-      parts.push(`--exec_properties=${shlex.quote(`${prop.name}=${prop.value}`)}`);
+      parts.push(`--exec_properties=${prop.name}=${prop.value}`);
     }
 
     // Expected outputs
-    const addOutPath = (p: string) => parts.push(`--output_path=${shlex.quote(p)}`);
-    if (command.outputPaths.length) command.outputPaths.forEach(addOutPath);
-    else {
+    const addOutPath = (p: string) => parts.push(`--output_path=${p}`);
+    if (command.outputPaths.length) {
+      command.outputPaths.forEach(addOutPath);
+    } else {
       command.outputFiles.forEach(addOutPath);
       command.outputDirectories.forEach(addOutPath);
     }
 
     // Separator and original argv
-    parts.push("--", ...command.arguments.map((a) => shlex.quote(a)));
+    parts.push("--", ...command.arguments);
 
-    return parts.join(" \\\n\t");
+    return parts.map((arg, i) => (unquotedIndexes.has(i) ? arg : quote(arg))).join(" \\\n\t");
   }
 
   /** Copy the command to clipboard and toast the user. */
@@ -1050,7 +1072,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
                   </div>
                 </>
               )}
-              <div className="title">Action details</div>
+              <div className="action-header">
+                <div className="action-title">Action details</div>
+                {digest && (
+                  <ActionCompareButtonComponent
+                    invocationId={this.props.model.getInvocationId()}
+                    actionDigest={digestToString(digest)}
+                  />
+                )}
+              </div>
               {this.state.action ? (
                 <div className="details">
                   <div>

@@ -1,10 +1,10 @@
 import React from "react";
+import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import Banner from "../../../app/components/banner/banner";
-import { User } from "../../../app/auth/auth_service";
-import { grp } from "../../../proto/group_ts_proto";
-import { BuildBuddyError } from "../../../app/util/errors";
 import Select, { Option } from "../../../app/components/select/select";
+import { BuildBuddyError } from "../../../app/util/errors";
+import { grp } from "../../../proto/group_ts_proto";
 
 export type FormProps = {
   user: User;

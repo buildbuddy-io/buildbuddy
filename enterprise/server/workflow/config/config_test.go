@@ -121,6 +121,52 @@ func TestMatchesAnyTrigger_SupportsBasicWildcard(t *testing.T) {
 	}
 }
 
+func TestMatchesAndTrigger_NegationPatterns(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		patterns       []string
+		branch         string
+		shouldMatch    []string
+		shouldNotMatch []string
+	}{
+		{
+			name:           "negation pattern with exact branch",
+			patterns:       []string{"*", "!main"},
+			shouldMatch:    []string{"feature", "main1"},
+			shouldNotMatch: []string{"main"},
+		},
+		{
+			name:           "negation pattern with wildcard",
+			patterns:       []string{"*", "!release-*"},
+			shouldMatch:    []string{"main", "feature", "releasefoo"},
+			shouldNotMatch: []string{"release-20240101"},
+		},
+		{
+			name:           "negation pattern with exception - last match wins",
+			patterns:       []string{"*", "!release-*", "release-exception", "some-other-branch"},
+			shouldMatch:    []string{"main", "feature", "release-exception", "some-other-branch"},
+			shouldNotMatch: []string{"release-20240101"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			action := &config.Action{
+				Triggers: &config.Triggers{
+					Push: &config.PushTrigger{Branches: tc.patterns},
+				},
+			}
+			event := "push"
+			for _, branch := range tc.shouldMatch {
+				m := config.MatchesAnyTrigger(action, event, branch)
+				assert.True(t, m, "MatchesAnyTrigger(%v, %q) should be true", branch, tc.patterns)
+			}
+			for _, branch := range tc.shouldNotMatch {
+				m := config.MatchesAnyTrigger(action, event, branch)
+				assert.False(t, m, "MatchesAnyTrigger(%v, %q) should be false", branch, tc.patterns)
+			}
+		})
+	}
+}
+
 func TestGetGitFetchFilters(t *testing.T) {
 	for _, test := range []struct {
 		Name    string

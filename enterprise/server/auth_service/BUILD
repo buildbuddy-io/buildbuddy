@@ -24,6 +24,7 @@ go_test(
     deps = [
         "//proto:auth_go_proto",
         "//server/testutil/testauth",
+        "//server/testutil/testgrpc",
         "//server/util/authutil",
         "//server/util/status",
         "@com_github_stretchr_testify//assert",

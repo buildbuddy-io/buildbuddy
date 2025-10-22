@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
@@ -34,6 +36,7 @@ import (
 	"github.com/docker/go-units"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -96,7 +99,12 @@ func (s *Executor) HostID() string {
 }
 
 func (s *Executor) Warmup() {
-	s.runnerPool.Warmup(context.Background())
+	ctx := context.Background()
+	if executor_auth.APIKey() != "" {
+		log.CtxInfo(ctx, "Using executor API key during warmup")
+		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, executor_auth.APIKey())
+	}
+	s.runnerPool.Warmup(ctx)
 }
 
 func timevalDuration(tv syscall.Timeval) time.Duration {
@@ -182,6 +190,11 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	workerStart := s.env.GetClock().Now()
+	stage := &stagedGauge{estimatedSize: st.GetSchedulingMetadata().GetTaskSize()}
+	stage.Set("init")
+	defer stage.End()
+
 	ctx = interceptors.AddAuthToContext(s.env, ctx)
 	ctx = bazel_request.ParseRequestMetadataOnce(ctx)
 
@@ -229,7 +242,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	md := &repb.ExecutedActionMetadata{
 		Worker:                   s.hostID,
 		QueuedTimestamp:          task.QueuedTimestamp,
-		WorkerStartTimestamp:     timestamppb.New(s.env.GetClock().Now()),
+		WorkerStartTimestamp:     timestamppb.New(workerStart),
 		WorkerCompletedTimestamp: timestamppb.New(s.env.GetClock().Now()),
 		ExecutorId:               s.id,
 		IoStats:                  &repb.IOStats{},
@@ -254,15 +267,13 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return false, finalErr
 	}
 
-	stage := &stagedGauge{estimatedSize: md.EstimatedTaskSize}
-	defer stage.End()
-
 	if err := validateCommand(st.GetExecutionTask().GetCommand()); err != nil {
 		return finishWithErrFn(status.WrapError(err, "validate command"))
 	}
 
 	if *checkActionResultBeforeExecution && !req.GetSkipCacheLookup() {
 		log.CtxDebugf(ctx, "Checking action cache for existing result.")
+		stage.Set("check_cache")
 		if err := stateChangeFn(repb.ExecutionStage_CACHE_CHECK, operation.InProgressExecuteResponse()); err != nil {
 			return true, err
 		}
@@ -279,6 +290,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 
 	log.CtxDebugf(ctx, "Getting a runner for task.")
+	stage.Set("get_runner")
 	r, err := s.runnerPool.Get(ctx, st)
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
@@ -286,14 +298,22 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	if span.IsRecording() {
 		span.SetAttributes(attribute.String("isolation_type", r.GetIsolationType()))
 	}
+	auxMetadata.RunnerMetadata = r.Metadata()
 	auxMetadata.IsolationType = r.GetIsolationType()
 	actionMetrics.Isolation = r.GetIsolationType()
-	finishedCleanly := false
+	reuseRunner := false
+	var cmdResult *interfaces.CommandResult
 	defer func() {
+		// Respect the DoNotRecycle bit set by the container implementation,
+		// since specific implementations will have better knowledge about the
+		// runner being in a potentially unrecoverable state.
+		if cmdResult != nil && cmdResult.DoNotRecycle {
+			reuseRunner = false
+		}
 		// Note: recycling is done in the foreground here in order to ensure
 		// that the runner is fully cleaned up (if applicable) before its
 		// resource claims are freed up by the priority_task_scheduler.
-		s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
+		s.runnerPool.TryRecycle(ctx, r, reuseRunner)
 	}()
 
 	log.CtxDebugf(ctx, "Preparing runner for task.")
@@ -302,7 +322,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// an image.
 	_ = stream.SetState(repb.ExecutionProgress_PULLING_CONTAINER_IMAGE)
 	if err := r.PrepareForTask(ctx); err != nil {
-		return finishWithErrFn(err)
+		return finishWithErrFn(status.WrapError(err, "prepare runner filesystem"))
 	}
 
 	md.InputFetchStartTimestamp = timestamppb.New(s.env.GetClock().Now())
@@ -310,16 +330,59 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	log.CtxDebugf(ctx, "Downloading inputs.")
 	stage.Set("input_fetch")
 	_ = stream.SetState(repb.ExecutionProgress_DOWNLOADING_INPUTS)
-	if err := r.DownloadInputs(ctx, md.IoStats); err != nil {
-		return finishWithErrFn(err)
+	if err := r.DownloadInputs(ctx); err != nil {
+		// If we failed to download inputs, and preserve-workspace is not
+		// enabled, then it should be safe to attempt recycling:
+		//
+		// - If the download failed due to filesystem issues, then we'd expect
+		//   the workspace cleanup to either fail (which prevents recycling),
+		//   or succeed, getting the filesystem back in a usable state.
+		//
+		// - If the download failed due to a networking error, then we'll
+		//   just cleanup the workspace and it'll be as though nothing
+		//   happened.
+		//
+		// - We really don't expect other types of errors to happen, since the
+		//   only IO going on here should be filesystem operations and CAS
+		//   downloads.
+		if !platform.IsTrue(platform.FindEffectiveValue(task, platform.PreserveWorkspacePropertyName)) {
+			reuseRunner = true
+		}
+		// Coerce DeadlineExceeded error code to Unavailable. We haven't applied
+		// the action timeout yet, so any DeadlineExceeded errors at this point
+		// would be internal timeouts.
+		if status.IsDeadlineExceededError(err) {
+			err = status.UnavailableError(status.Message(err))
+		}
+
+		// Bazel will attempt to reupload inputs if it sees a
+		// FailedPreconditionError with a particular format:
+		// https://github.com/buildbuddy-io/buildbuddy/blob/41bd3c440b2c79cb219c3523449db1c7f9d4ce1d/proto/remote_execution.proto#L108-L117.
+		//
+		// Bazel does *not* attempt to reupload if it sees a NotFound error. So
+		// here, we coerce NotFound to this special FailedPrecondition error so
+		// that bazel will reupload inputs in the rare cases where inputs are
+		// missing.
+		//
+		// At the time of writing (bazel 8.x), bazel does not actually care
+		// about the "subject" part of the spec, and will instead just reupload
+		// all inputs. So for now, we just return an empty digest in the subject
+		// field.
+		if status.IsNotFoundError(err) {
+			err = digest.MissingDigestError(&repb.Digest{Hash: digest.EmptySha256})
+		}
+
+		return finishWithErrFn(status.WrapError(err, "download inputs"))
 	}
 
 	md.InputFetchCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	md.ExecutionStartTimestamp = timestamppb.New(s.env.GetClock().Now())
 	execTimeouts, err := parseTimeouts(task)
 	if err != nil {
+		// Don't fail recycling if the user requested invalid timeouts.
+		reuseRunner = true
 		// These errors are failure-specific. Pass through unchanged.
-		return finishWithErrFn(err)
+		return finishWithErrFn(status.WrapError(err, "parse timeouts"))
 	}
 	auxMetadata.Timeout = durationpb.New(execTimeouts.TerminateAfter)
 
@@ -361,7 +424,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// to our caller while execution is ongoing.
 	updateTicker := time.NewTicker(*execProgressCallbackPeriod)
 	defer updateTicker.Stop()
-	var cmdResult *interfaces.CommandResult
 	for cmdResult == nil {
 		select {
 		case cmdResult = <-cmdResultChan:
@@ -433,7 +495,12 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	stage.Set("output_upload")
 	_ = stream.SetState(repb.ExecutionProgress_UPLOADING_OUTPUTS)
 	if err := r.UploadOutputs(ctx, md.IoStats, executeResponse, cmdResult); err != nil {
-		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
+		// If we failed to upload outputs, the runner may still be recyclable -
+		// see comments near DownloadInputs.
+		if cmdResult.Error == nil && !platform.IsTrue(platform.FindEffectiveValue(task, platform.PreserveWorkspacePropertyName)) {
+			reuseRunner = true
+		}
+		return finishWithErrFn(status.UnavailableErrorf("upload outputs: %s", err.Error()))
 	}
 	md.OutputUploadCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
@@ -442,17 +509,20 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// If there's an error that we know the client won't retry, return an error
 	// so that the scheduler can retry it.
 	if cmdResult.Error != nil && shouldRetry(task, cmdResult.Error) {
-		return finishWithErrFn(cmdResult.Error)
+		return finishWithErrFn(status.WrapError(cmdResult.Error, "command execution failed"))
 	}
 	// Otherwise, send the error back to the client via the ExecuteResponse
 	// status.
 	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, executeResponse); err != nil {
 		log.CtxErrorf(ctx, "Failed to publish ExecuteResponse: %s", err)
-		return finishWithErrFn(err)
+		if cmdResult.Error == nil {
+			reuseRunner = true
+		}
+		return finishWithErrFn(status.WrapError(err, "publish execute response"))
 	}
-	if cmdResult.Error == nil && !cmdResult.DoNotRecycle {
+	if cmdResult.Error == nil {
 		log.CtxDebugf(ctx, "Task finished cleanly.")
-		finishedCleanly = true
+		reuseRunner = true
 	}
 	return false, nil
 }
@@ -513,15 +583,15 @@ func (m *ActionMetrics) Report(ctx context.Context) {
 	}).Inc()
 	md := m.Result.GetExecutionMetadata()
 	if md != nil {
-		observeStageDuration(groupID, "queued", md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp())
-		observeStageDuration(groupID, "pull_image", md.GetWorkerStartTimestamp(), md.GetInputFetchStartTimestamp())
-		observeStageDuration(groupID, "input_fetch", md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
-		observeStageDuration(groupID, "execution", md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
-		observeStageDuration(groupID, "output_upload", md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
-		observeStageDuration(groupID, "worker", md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
+		observeStageDuration(ctx, groupID, "queued", md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp())
+		observeStageDuration(ctx, groupID, "pull_image", md.GetWorkerStartTimestamp(), md.GetInputFetchStartTimestamp())
+		observeStageDuration(ctx, groupID, "input_fetch", md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
+		observeStageDuration(ctx, groupID, "execution", md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
+		observeStageDuration(ctx, groupID, "output_upload", md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
+		observeStageDuration(ctx, groupID, "worker", md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
 	}
 	if md != nil && m.AuxMetadata != nil {
-		observeStageDuration(groupID, "worker_queued", m.AuxMetadata.GetWorkerQueuedTimestamp(), md.GetWorkerStartTimestamp())
+		observeStageDuration(ctx, groupID, "worker_queued", m.AuxMetadata.GetWorkerQueuedTimestamp(), md.GetWorkerStartTimestamp())
 	}
 	// If the isolation type supports it, report PSI metrics.
 	if md != nil && (m.Isolation == string(platform.PodmanContainerType) || m.Isolation == string(platform.OCIContainerType)) {
@@ -563,7 +633,7 @@ func incompleteExecutionError(ctx context.Context, exitCode int, err error) erro
 	return err
 }
 
-func observeStageDuration(groupID string, stage string, start *timestamppb.Timestamp, end *timestamppb.Timestamp) {
+func observeStageDuration(ctx context.Context, groupID string, stage string, start *timestamppb.Timestamp, end *timestamppb.Timestamp) {
 	startTime := start.AsTime()
 	if startTime.IsZero() {
 		return
@@ -573,10 +643,13 @@ func observeStageDuration(groupID string, stage string, start *timestamppb.Times
 		return
 	}
 	duration := endTime.Sub(startTime)
+	if duration > 20*time.Hour {
+		log.CtxInfof(ctx, "Stage %v took longer than 20h. Duration = %v; Start = %v; End = %v", stage, duration, start, end)
+	}
 	metrics.RemoteExecutionExecutedActionMetadataDurationsUsec.With(prometheus.Labels{
 		metrics.GroupID:                  metricsutil.FilteredGroupIDLabel(groupID),
 		metrics.ExecutedActionStageLabel: stage,
-	}).Observe(float64(duration / time.Microsecond))
+	}).Observe(float64(duration.Microseconds()))
 }
 
 func observePSI(resourceLabel string, psi *repb.PSI, execDuration time.Duration) {

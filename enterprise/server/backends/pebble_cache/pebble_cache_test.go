@@ -807,6 +807,19 @@ func TestReadWrite(t *testing.T) {
 				require.NoError(t, err, "Error getting %q reader", rn.GetDigest().GetHash())
 				d2 := testdigest.ReadDigestAndClose(t, reader)
 				require.Equal(t, rn.GetDigest().GetHash(), d2.GetHash())
+
+				contains, err := pc.Contains(ctx, rn)
+				require.NoError(t, err)
+				require.True(t, contains)
+
+				require.NoError(t, pc.Delete(ctx, rn))
+
+				_, err = pc.Reader(ctx, rn, 0, 0)
+				require.True(t, status.IsNotFoundError(err), "error should be NotFound but is %v", err)
+
+				contains, err = pc.Contains(ctx, rn)
+				require.NoError(t, err)
+				require.False(t, contains)
 			})
 		}
 	}
@@ -1229,7 +1242,7 @@ func TestCompression_ParallelRequests(t *testing.T) {
 			blobSize:               100,
 		},
 		{
-			desc:                   "chunking off inline",
+			desc:                   "chunking off non_inline",
 			maxInlineFileSizeBytes: 1,
 			blobSize:               100,
 		},
@@ -1565,7 +1578,7 @@ func TestLRU(t *testing.T) {
 	}{
 		{
 			desc:                  "chunking_on_multiple_chunks",
-			averageChunkSizeBytes: 64 * 4,
+			averageChunkSizeBytes: 64 * 4, // 256
 			digestSize:            2 * 1024,
 		},
 		{
@@ -1586,26 +1599,21 @@ func TestLRU(t *testing.T) {
 			ctx := getAnonContext(t, te)
 			clock := clockwork.NewFakeClock()
 			numDigests := 25
-			activeKeyVersion := int64(5)
 			maxSizeBytes := int64(math.Ceil( // account for integer rounding
 				float64(numDigests) * float64(tc.digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
-			rootDir := testfs.MakeTempDir(t)
-			atimeUpdateThreshold := time.Duration(0) // update atime on every access
-			atimeBufferSize := 0                     // blocking channel of atime updates
-			samplesPerBatch := 50
-			minEvictionAge := time.Duration(0) // no min eviction age
 			opts := &pebble_cache.Options{
-				RootDirectory:               rootDir,
+				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                maxSizeBytes,
-				AtimeUpdateThreshold:        &atimeUpdateThreshold,
-				AtimeBufferSize:             &atimeBufferSize,
-				MinEvictionAge:              &minEvictionAge,
+				AtimeUpdateThreshold:        pointer(time.Duration(0)), // update atime on every access
+				AtimeBufferSize:             pointer(0),                // blocking channel of atime updates
+				MinEvictionAge:              pointer(time.Duration(0)), // no min eviction age
 				MinBytesAutoZstdCompression: maxSizeBytes,
 				MaxInlineFileSizeBytes:      tc.maxInlineFileSizeBytes,
 				AverageChunkSizeBytes:       tc.averageChunkSizeBytes,
-				ActiveKeyVersion:            &activeKeyVersion,
+				ActiveKeyVersion:            pointer(int64(5)),
 				Clock:                       clock,
-				SamplesPerBatch:             &samplesPerBatch,
+				SamplesPerBatch:             pointer(50),
+				SampleBufferSize:            pointer(10), // Don't allow filling the sample channel with many copies of the same key.
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)
@@ -2899,7 +2907,7 @@ func TestSampling(t *testing.T) {
 	}{
 		{
 			desc:                  "chunking_on",
-			averageChunkSizeBytes: 64 * 4,
+			averageChunkSizeBytes: 64 * 4, // 256
 		},
 		{
 			desc:                  "chunking_off",
@@ -2909,13 +2917,10 @@ func TestSampling(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			rootDir := testfs.MakeTempDir(t)
 			minEvictionAge := 1 * time.Hour
-			samplesPerBatch := 50
 			clock := clockwork.NewFakeClock()
-
 			opts := &pebble_cache.Options{
-				RootDirectory: rootDir,
+				RootDirectory: testfs.MakeTempDir(t),
 				Partitions: []disk.Partition{{
 					ID: pebble_cache.DefaultPartitionID,
 					// Force all entries to be evicted as soon as they pass the minimum
@@ -2926,7 +2931,10 @@ func TestSampling(t *testing.T) {
 				AverageChunkSizeBytes: tc.averageChunkSizeBytes,
 				Clock:                 clock,
 				ActiveKeyVersion:      &activeKeyVersion,
-				SamplesPerBatch:       &samplesPerBatch,
+				SamplesPerBatch:       pointer(50),
+				// Never update atime so we can check if something has been evicted
+				// without preventing its eviction.
+				AtimeUpdateThreshold: pointer(time.Duration(math.MaxInt64)),
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)
@@ -2960,13 +2968,23 @@ func TestSampling(t *testing.T) {
 			// kick in. The unencrypted test digest should be evicted.
 			clock.Advance(minEvictionAge - 1*time.Minute)
 
-			for i := 0; ; i++ {
-				if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
-					log.Infof("i = %d: unencrypted test digest is evicted", i)
-					break
+			waitForEviction := func(timeout time.Duration) {
+				interval := 100 * time.Millisecond
+				for i := 0; i < int(timeout/interval); i++ {
+					if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
+						log.Infof("i = %d: unencrypted test digest is evicted", i)
+						return
+					}
+					time.Sleep(interval)
+					// generateSamplesForEviction might be sleeping, so advance
+					// enough to wake it up. Alternatively, we could call
+					// pc.Start() after the cache already has some data so that
+					// generateSamplesForEviction never sleeps.
+					clock.Advance(pebble_cache.SamplerSleepDuration)
 				}
-				time.Sleep(100 * time.Millisecond)
+				t.Fatalf("unencrypted test digest (%v) is not evicted after %v", rn, timeout)
 			}
+			waitForEviction(15 * time.Second)
 
 			// The unencrypted key should no longer exist.
 			unencryptedExists, err := pc.Contains(anonCtx, rn)
@@ -3250,6 +3268,9 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			flags.Set(t, "cache.pebble.samples_per_eviction", 1)
 			flags.Set(t, "cache.pebble.deletes_per_eviction", 1)
 
+			// Don't allow filling the sample channel with many copies of the same key.
+			tc.opts.SamplesPerBatch = pointer(50)
+			tc.opts.SampleBufferSize = pointer(10)
 			pc, err := pebble_cache.NewPebbleCache(te, tc.opts)
 			if err != nil {
 				t.Fatal(err)

@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/golang-jwt/jwt/v4"
+	"google.golang.org/grpc/metadata"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
@@ -39,14 +40,27 @@ var (
 	signUsingNewJwtKey = flag.Bool("auth.sign_using_new_jwt_key", false, "If true, new JWTs will be signed using the new JWT key.")
 	claimsCacheTTL     = flag.Duration("auth.jwt_claims_cache_ttl", 15*time.Second, "TTL for JWT string to parsed claims caching. Set to '0' to disable cache.")
 	jwtDuration        = flag.Duration("auth.jwt_duration", 6*time.Hour, "Maximum lifetime of the generated JWT.")
+
+	serverAdminGroupID = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
+)
+
+var (
+	// Generic permission denied error.
+	errPermissionDenied = status.PermissionDeniedError("permission denied")
 )
 
 type Claims struct {
 	jwt.StandardClaims
-	APIKeyID      string `json:"api_key_id,omitempty"`
-	UserID        string `json:"user_id"`
-	GroupID       string `json:"group_id"`
-	Impersonating bool   `json:"impersonating"`
+	APIKeyID                   string `json:"api_key_id,omitempty"`
+	UserID                     string `json:"user_id"`
+	GroupID                    string `json:"group_id"`
+	ExperimentTargetingGroupID string `json:"experiment_targeting_group_id"`
+	// APIKeyOwnerGroupID identifies the group that owns the API key used
+	// for authentication. Will be empty if authentication was not performed
+	// using an API key.
+	// The GroupID field above should be used in most cases!
+	APIKeyOwnerGroupID string `json:"api_key_owner_group_id,omitempty"`
+	Impersonating      bool   `json:"impersonating"`
 	// TODO(bduffany): remove this field
 	AllowedGroups          []string                      `json:"allowed_groups"`
 	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
@@ -59,8 +73,10 @@ type Claims struct {
 	CustomerSSO bool `json:"customer_sso,omitempty"`
 }
 
-func (c *Claims) GetAPIKeyID() string {
-	return c.APIKeyID
+func (c *Claims) GetAPIKeyInfo() interfaces.APIKeyInfo {
+	return interfaces.APIKeyInfo{
+		ID: c.APIKeyID, OwnerGroupID: c.APIKeyOwnerGroupID,
+	}
 }
 
 func (c *Claims) GetUserID() string {
@@ -69,6 +85,13 @@ func (c *Claims) GetUserID() string {
 
 func (c *Claims) GetGroupID() string {
 	return c.GroupID
+}
+
+func (c *Claims) GetExperimentTargetingGroupID() string {
+	if c.ExperimentTargetingGroupID == "" {
+		return c.GroupID
+	}
+	return c.ExperimentTargetingGroupID
 }
 
 func (c *Claims) IsImpersonating() bool {
@@ -144,23 +167,16 @@ func ParseClaims(token string) (*Claims, error) {
 }
 
 func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims, error) {
-	keyRole := role.Default
-	// User management through SCIM requires Admin access.
-	if akg.GetCapabilities()&int32(cappb.Capability_ORG_ADMIN) > 0 {
-		keyRole = role.Admin
-	}
 	allowedGroups := []string{akg.GetGroupID()}
 	groupMemberships := []*interfaces.GroupMembership{{
 		GroupID:      akg.GetGroupID(),
 		Capabilities: capabilities.FromInt(akg.GetCapabilities()),
-		Role:         keyRole,
 	}}
 	for _, cg := range akg.GetChildGroupIDs() {
 		allowedGroups = append(allowedGroups, cg)
 		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
 			GroupID:      cg,
 			Capabilities: capabilities.FromInt(akg.GetCapabilities()),
-			Role:         keyRole,
 		})
 	}
 
@@ -174,16 +190,29 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 		}
 	}
 
+	experimentTargetingGroup := ""
+	if v := metadata.ValueFromIncomingContext(ctx, "x-buildbuddy-experiment.group_id"); len(v) > 0 {
+		// Only server admins can set this header. Note: can't use
+		// AuthorizeServerAdmin directly, since the claims aren't in the ctx yet
+		// (this function is building the claims).
+		if !isAdminOfServerAdminGroup(groupMemberships) {
+			return nil, errPermissionDenied
+		}
+		experimentTargetingGroup = v[len(v)-1]
+	}
+
 	return &Claims{
-		APIKeyID:               akg.GetAPIKeyID(),
-		UserID:                 akg.GetUserID(),
-		GroupID:                effectiveGroup,
-		AllowedGroups:          allowedGroups,
-		GroupMemberships:       groupMemberships,
-		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
-		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
-		CacheEncryptionEnabled: akg.GetCacheEncryptionEnabled(),
-		EnforceIPRules:         akg.GetEnforceIPRules(),
+		APIKeyID:                   akg.GetAPIKeyID(),
+		UserID:                     akg.GetUserID(),
+		GroupID:                    effectiveGroup,
+		ExperimentTargetingGroupID: experimentTargetingGroup,
+		APIKeyOwnerGroupID:         akg.GetGroupID(),
+		AllowedGroups:              allowedGroups,
+		GroupMemberships:           groupMemberships,
+		Capabilities:               capabilities.FromInt(akg.GetCapabilities()),
+		UseGroupOwnedExecutors:     akg.GetUseGroupOwnedExecutors(),
+		CacheEncryptionEnabled:     akg.GetCacheEncryptionEnabled(),
+		EnforceIPRules:             akg.GetEnforceIPRules(),
 	}, nil
 }
 
@@ -226,7 +255,7 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 	// *only* have access to the org being impersonated.
 	if requestContext.GetImpersonatingGroupId() != "" {
 		for _, membership := range claims.GetGroupMemberships() {
-			if membership.GroupID != env.GetAuthenticator().AdminGroupID() || membership.Role != role.Admin {
+			if membership.GroupID != ServerAdminGroupID() || !slices.Contains(membership.Capabilities, cappb.Capability_ORG_ADMIN) {
 				continue
 			}
 
@@ -242,8 +271,8 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 			}
 
 			u.Groups = []*tables.GroupRole{{
-				Group: *ig,
-				Role:  uint32(role.Admin),
+				Group:        *ig,
+				Capabilities: role.AdminCapabilities,
 			}}
 			claims, err := userClaims(u, requestContext.GetImpersonatingGroupId())
 			if err != nil {
@@ -266,27 +295,22 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	var capabilities []cappb.Capability
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
-		c, err := role.ToCapabilities(role.Role(g.Role))
-		if err != nil {
-			return nil, err
-		}
 		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
 			GroupID:      g.Group.GroupID,
-			Capabilities: c,
-			Role:         role.Role(g.Role),
+			Capabilities: g.Capabilities,
 		})
 		if g.Group.GroupID == effectiveGroup {
 			// TODO: move these fields into u.GroupMemberships
 			cacheEncryptionEnabled = g.Group.CacheEncryptionEnabled
 			enforceIPRules = g.Group.EnforceIPRules
-			capabilities = c
+			capabilities = g.Capabilities
 		}
 	}
 	return &Claims{
 		UserID:                 u.UserID,
+		GroupID:                effectiveGroup,
 		GroupMemberships:       groupMemberships,
 		AllowedGroups:          allowedGroups,
-		GroupID:                effectiveGroup,
 		Capabilities:           capabilities,
 		CacheEncryptionEnabled: cacheEncryptionEnabled,
 		EnforceIPRules:         enforceIPRules,
@@ -369,6 +393,47 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	// errors.
 	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
 	return nil, status.UnauthenticatedErrorf("%s: %s", authutil.UserNotFoundMsg, err.Error())
+}
+
+// AuthorizeServerAdmin checks whether the authenticated user is a server admin
+// (a member of the server admin group, with ORG_ADMIN capability).
+func AuthorizeServerAdmin(ctx context.Context) error {
+	u, err := ClaimsFromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	// If impersonation is in effect, it implies the user is an admin.
+	// Can't check group membership because impersonation modifies
+	// group information.
+	if u.IsImpersonating() {
+		return nil
+	}
+
+	if isAdminOfServerAdminGroup(u.GetGroupMemberships()) {
+		return nil
+	}
+
+	return errPermissionDenied
+}
+
+func isAdminOfServerAdminGroup(memberships []*interfaces.GroupMembership) bool {
+	serverAdminGID := *serverAdminGroupID
+	if serverAdminGID == "" {
+		return false
+	}
+	for _, m := range memberships {
+		if m.GroupID == serverAdminGID && slices.Contains(m.Capabilities, cappb.Capability_ORG_ADMIN) {
+			return true
+		}
+	}
+	return false
+}
+
+// ServerAdminGroupID returns the ID of the server admin group.
+// For auth checks, prefer using AuthorizeServerAdmin instead.
+func ServerAdminGroupID() string {
+	return *serverAdminGroupID
 }
 
 // ClaimsCache helps reduce CPU overhead due to JWT parsing by caching parsed

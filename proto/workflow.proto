@@ -5,7 +5,6 @@ import "google/rpc/status.proto";
 import "proto/context.proto";
 import "proto/invocation_status.proto";
 import "proto/firecracker.proto";
-import "proto/git.proto";
 
 package workflow;
 

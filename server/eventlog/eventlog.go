@@ -335,7 +335,7 @@ func (q *chunkQueue) pop(ctx context.Context) ([]byte, error) {
 	return result.data, nil
 }
 
-func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, pubsub interfaces.PubSub, pubsubChannel string, eventLogPath string, numLinesToRetain int) (*EventLogWriter, error) {
+func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, pubsub interfaces.PubSub, pubsubChannel string, eventLogPath string, requestedTerminalColumns int, requestedTerminalLines int) (*EventLogWriter, error) {
 	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
 		WriteBlockSize: defaultLogChunkSize,
 	}
@@ -355,14 +355,16 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 		WriteHook:            writeHook,
 	}
 	cw := chunkstore.New(b, chunkstoreOptions).Writer(ctx, eventLogPath, chunkstoreWriterOptions)
-	sw, err := terminal.NewScreenWriter(numLinesToRetain)
+	// If a UI action is split across more than 2 lines, it will mangle the log a
+	// little bit by leaving lines behind, and that's okay. That's exceptional,
+	// and logs where actions are spanning three or more lines are likely to not
+	// be very readable in the first place.
+	height := max(1, requestedTerminalLines*2)
+	sw, err := terminal.NewScreenWriter(requestedTerminalColumns, height)
 	if err != nil {
 		return nil, err
 	}
-	eventLogWriter.WriteCloserWithContext = &ANSICursorBufferWriter{
-		WriteWithTailCloser: cw,
-		terminalWriter:      sw,
-	}
+	eventLogWriter.WriteCloserWithContext = NewANSICursorBufferWriter(cw, sw)
 	eventLogWriter.chunkstoreWriter = cw
 
 	return eventLogWriter, nil
@@ -429,32 +431,26 @@ type WriteWithTailCloser interface {
 // N lines.
 type ANSICursorBufferWriter struct {
 	WriteWithTailCloser
-	terminalWriter *terminal.ScreenWriter
+	terminal *terminal.ScreenWriter
+}
+
+func NewANSICursorBufferWriter(closer WriteWithTailCloser, terminal *terminal.ScreenWriter) *ANSICursorBufferWriter {
+	return &ANSICursorBufferWriter{WriteWithTailCloser: closer, terminal: terminal}
 }
 
 func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, error) {
 	if len(p) == 0 {
 		return w.WriteWithTailCloser.WriteWithTail(ctx, p, nil)
 	}
-	if _, err := w.terminalWriter.Write(p); err != nil {
+	if _, err := w.terminal.Write(p); err != nil {
 		return 0, err
 	}
-	if !w.terminalWriter.AccumulatingOutput() {
-		// We aren't accumulating scrolled-out output, which means this isn't using
-		// curses. Just render the terminal and write the rendered output.
-		n, err := w.WriteWithTailCloser.WriteWithTail(ctx, []byte(w.terminalWriter.Render()), []byte{})
-		if err != nil {
-			return 0, err
-		}
-		w.terminalWriter.Reset(0)
-		return n, err
+	if w.terminal.WriteErr != nil {
+		return 0, w.terminal.WriteErr
 	}
-	if w.terminalWriter.WriteErr != nil {
-		return 0, w.terminalWriter.WriteErr
-	}
-	popped := w.terminalWriter.OutputAccumulator.String()
-	w.terminalWriter.OutputAccumulator.Reset()
-	return w.WriteWithTailCloser.WriteWithTail(ctx, []byte(popped), []byte(w.terminalWriter.Render()))
+	popped := w.terminal.OutputAccumulator.String()
+	w.terminal.OutputAccumulator.Reset()
+	return w.WriteWithTailCloser.WriteWithTail(ctx, []byte(popped), []byte(w.terminal.Render()))
 }
 
 func (w *ANSICursorBufferWriter) Close(ctx context.Context) error {

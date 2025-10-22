@@ -1,52 +1,51 @@
+import { PlayCircleIcon } from "lucide-react";
 import moment from "moment";
 import React from "react";
 import { Subscription } from "rxjs";
-import { invocation } from "../../proto/invocation_ts_proto";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import { google as google_grpc_status } from "../../proto/grpc_status_ts_proto";
+import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
+import capabilities from "../capabilities/capabilities";
 import faviconService from "../favicon/favicon";
-import rpcService, { Cancelable, CancelablePromise } from "../service/rpc_service";
+import UserPreferences from "../preferences/preferences";
+import router from "../router/router";
+import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
+import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import TargetComponent from "../target/target";
+import TargetV2Component from "../target/target_v2";
+import { BuildBuddyError } from "../util/errors";
+import CacheRequestsCardComponent from "./cache_requests_card";
+import ChildInvocations from "./child_invocations";
 import DenseInvocationOverviewComponent from "./dense/dense_invocation_overview";
+import { ExecuteOperation, ExecutionStage, executionStatusLabel, waitExecution } from "./execution_status";
+import InvocationActionCardComponent from "./invocation_action_card";
 import ArtifactsCardComponent from "./invocation_artifacts_card";
+import { InvocationBotCard } from "./invocation_bot_card";
 import BuildLogsCardComponent from "./invocation_build_logs_card";
-import QueryGraphCardComponent from "./invocation_query_graph_card";
 import CacheCardComponent from "./invocation_cache_card";
-import ScorecardCardComponent from "./scorecard_card";
-import FetchCardComponent from "./invocation_fetch_card";
+import InvocationCoverageCardComponent from "./invocation_coverage_card";
 import InvocationDetailsCardComponent from "./invocation_details_card";
 import ErrorCardComponent from "./invocation_error_card";
-import SuggestionCardComponent, { getSuggestions } from "./invocation_suggestion_card";
+import InvocationExecLogCardComponent from "./invocation_exec_log_card";
+import FetchCardComponent from "./invocation_fetch_card";
+import FileCardComponent from "./invocation_file_card";
 import InvocationFilterComponent from "./invocation_filter";
 import InvocationInProgressComponent from "./invocation_in_progress";
-import InvocationModel, { CI_RUNNER_ROLE } from "./invocation_model";
 import InvocationLogsModel from "./invocation_logs_model";
-import ChildInvocations from "./child_invocations";
+import InvocationModel, { CI_RUNNER_ROLE } from "./invocation_model";
 import InvocationNotFoundComponent from "./invocation_not_found";
 import InvocationOverviewComponent from "./invocation_overview";
+import QueryGraphCardComponent from "./invocation_query_graph_card";
 import RawLogsCardComponent from "./invocation_raw_logs_card";
-import InvocationTabsComponent, { getActiveTab } from "./invocation_tabs";
-import TimingCardComponent from "./invocation_timing_card";
-import FileCardComponent from "./invocation_file_card";
 import SpawnCardComponent from "./invocation_spawn_card";
-import InvocationExecLogCardComponent from "./invocation_exec_log_card";
-import InvocationActionCardComponent from "./invocation_action_card";
+import SuggestionCardComponent, { getSuggestions } from "./invocation_suggestion_card";
+import InvocationTabsComponent, { getActiveTab } from "./invocation_tabs";
 import TargetsComponent from "./invocation_targets";
-import { BuildBuddyError } from "../util/errors";
-import UserPreferences from "../preferences/preferences";
-import capabilities from "../capabilities/capabilities";
-import CacheRequestsCardComponent from "./cache_requests_card";
-import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
-import router from "../router/router";
-import rpc_service from "../service/rpc_service";
-import { InvocationBotCard } from "./invocation_bot_card";
-import TargetV2Component from "../target/target_v2";
-import { ExecuteOperation, ExecutionStage, executionStatusLabel, waitExecution } from "./execution_status";
-import { PlayCircle, PlayCircleIcon } from "lucide-react";
-import InvocationCoverageCardComponent from "./invocation_coverage_card";
+import TimingCardComponent from "./invocation_timing_card";
+import ScorecardCardComponent from "./scorecard_card";
 
 interface State {
   loading: boolean;
@@ -145,9 +144,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
     // Update title and favicon
     if (this.state.model) {
-      document.title = `${this.state.model.getUser(
-        true
-      )} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
+      document.title = `${this.state.model.getUserPossessivePrefix()}${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
       faviconService.setFaviconForType(this.state.model.getFaviconType());
     }
     // If in progress or queued, schedule another fetch of the invocation (and
@@ -303,6 +300,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
       await this.fetchInvocation();
       this.timeoutRef = undefined;
+      if (this.state.model?.isInProgress() || this.isQueued()) {
+        this.scheduleRefetch();
+      }
     }, 3000);
   }
 
@@ -336,7 +336,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
   fetchRunnerExecution() {
     this.runnerExecutionRPC?.cancel();
-    this.runnerExecutionRPC = rpc_service.service
+    this.runnerExecutionRPC = rpcService.service
       .getExecution({
         executionLookup: new execution_stats.ExecutionLookup({
           invocationId: this.props.invocationId,
@@ -347,6 +347,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
       .then((response) => {
         const runnerExecution = response.execution?.[response.execution.length - 1] ?? undefined;
         this.setState({ runnerExecution });
+      })
+      .catch((e) => {
+        console.error("Failed to fetch runner execution", e);
+        this.setState({ runnerExecution: undefined });
       });
     return this.runnerExecutionRPC;
   }
@@ -523,7 +527,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     });
     const isBazelInvocation = this.state.model.isBazelInvocation();
     const fetchBuildLogs = () => {
-      rpc_service.downloadLog(this.props.invocationId, Number(this.state.model?.invocation.attempt ?? 0));
+      rpcService.downloadLog(this.props.invocationId, Number(this.state.model?.invocation.attempt ?? 0));
     };
 
     const suggestions = getSuggestions({
@@ -575,7 +579,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             activeTab == "spawns" ||
             activeTab == "files") && (
             <InvocationFilterComponent
-              tab={this.props.tab}
+              tab={`#${activeTab}`}
               search={this.props.search}
               placeholder={activeTab === "execution" ? "Filter by target, action mnemonic, command, or digest..." : ""}
               // When serving a paginated invocation, debounce since searching

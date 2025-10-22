@@ -29,6 +29,16 @@
   left: 0;
 }
 
+.popup.anchor-center {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.popup.anchor-center-right {
+  right: 0;
+  transform: translateX(25%);
+}
+
 .popup-container {
   position: relative;
 }

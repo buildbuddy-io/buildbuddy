@@ -1,0 +1,73 @@
+container_pull = use_repo_rule("@io_bazel_rules_docker//container:pull.bzl", "container_pull")
+
+container_pull(
+    name = "buildbuddy_go_image_base",
+    digest = "sha256:54b60abf4fff72d703e028d1c412a727776a6a191a00d7598214ef67b496ef95",
+    registry = "gcr.io",
+    repository = "distroless/cc-debian12",
+)
+
+container_pull(
+    name = "bazel_image_base",
+    digest = "sha256:8bb82ccf73085b71159ce05d2cc6030cbaa927b403c04774f0b22f37ab4fd78a",
+    registry = "gcr.io",
+    repository = "distroless/java17-debian12",
+)
+
+dockerfile_image = use_repo_rule("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
+
+dockerfile_image(
+    name = "default_execution_image",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/default_execution_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "executor_image",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/executor_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "nonroot_user_image",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/test_images/nonroot_user_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu20-04_image",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/rbe-ubuntu20-04:Dockerfile",
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu20-04-webtest_image",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/rbe-ubuntu20-04-webtest:Dockerfile",
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu22-04_image",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/rbe-ubuntu22-04:Dockerfile",
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu24-04_image",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/rbe-ubuntu24-04:Dockerfile",
+)
+
+dockerfile_image(
+    name = "ci_runner_image",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//enterprise/dockerfiles/ci_runner_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu20-04-workflows_image",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//enterprise/dockerfiles/rbe-ubuntu20-04-workflows:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "run_script_image",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/run_script:Dockerfile",
+    visibility = ["//visibility:public"],
+)

@@ -12,13 +12,16 @@ import "C"
 import (
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"unsafe"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -34,13 +37,30 @@ const defaultXcodeVersion = "default-xcode-version"
 var desiredXcodeVersions = flag.Slice("executor.desired_xcode_versions", []string{}, "List of Xcode versions desired on the host system. If any of the provided Xcode versions cannot be found on the host, the executor will log a warning message.")
 
 type xcodeLocator struct {
+	// Map from Xcode version string (e.g. "16" or "16.0.0.16A242") to an
+	// xcodeVersion containing information about that Xcode installation. Note
+	// that a single xcodeVersion will appear multiple times in this map, once
+	// for each degree of version specificity. For example, Xcode version
+	// "16.0.0" will appear under the following keys: "16", "16.0", "16.0.0",
+	// and "16.0.0.16A242" (16A242 is the build number). This is done so that
+	// the client may target it via just the major version number, or a more
+	// specific version if desired.
 	versions map[string]*xcodeVersion
 }
 
 type xcodeVersion struct {
+	// The specific version of Xcode (e.g. "16.0.0.16A242")
 	version          string
 	developerDirPath string
-	sdks             map[string]string
+
+	// This map contains all of the Xcode SDKs that are installed and available
+	// for this version of Xcode. The keys are the SDK versions, and the values
+	// are the filesystem path of this SDKs developer directory. Like the
+	// xcodeLocator.versions map above, SDKs can appear in this map multiple
+	// times under different levels of version specifity, for example this map
+	// can contain keys: "iPhoneSimulator" and "iPhoneSimulator18.2" pointing
+	// to the same underlying SDK.
+	sdks map[string]string
 }
 
 // The interesting bits to pull from Xcode's version plist.
@@ -61,9 +81,54 @@ func NewXcodeLocator() *xcodeLocator {
 func (x *xcodeLocator) verify() {
 	for _, version := range *desiredXcodeVersions {
 		if _, ok := x.versions[version]; !ok {
-			log.Warningf("Failed to locate desired Xcode version %s", version)
+			alert.UnexpectedEvent("xcode version missing", "Failed to locate desired Xcode version %s", version)
 		}
 	}
+}
+
+func (x *xcodeLocator) Versions() []string {
+	xcodes := map[string]struct{}{}
+	for _, xcode := range x.versions {
+		if xcode.version == defaultXcodeVersion {
+			continue
+		}
+		xcodes[xcode.version] = struct{}{}
+	}
+	return slices.Sorted(maps.Keys(xcodes))
+}
+
+func (x *xcodeLocator) SDKs() []string {
+	allSDKs := map[string]struct{}{}
+	for _, xcode := range x.versions {
+		if xcode.version == defaultXcodeVersion {
+			continue
+		}
+		for sdk := range xcode.sdks {
+			allSDKs[sdk] = struct{}{}
+		}
+	}
+
+	// Determine the most specific version of each SDK and return that one.
+	sdks := []string{}
+	for sdk := range allSDKs {
+		add := true
+		for otherSDK := range allSDKs {
+			if sdk == otherSDK {
+				continue
+			}
+			if strings.HasPrefix(otherSDK, sdk) {
+				add = false
+				break
+			}
+		}
+
+		if add {
+			sdks = append(sdks, sdk)
+		}
+	}
+
+	slices.Sort(sdks)
+	return sdks
 }
 
 // Finds the Xcode that matches the given Xcode version.

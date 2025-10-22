@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags"
 
 	flagtags "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags/tags"
@@ -19,6 +20,8 @@ var Internal = flagtags.InternalTag
 
 var NewFlagSet = flag.NewFlagSet
 var ContinueOnError = flag.ContinueOnError
+var ExitOnError = flag.ExitOnError
+var PanicOnError = flag.PanicOnError
 var ErrHelp = flag.ErrHelp
 var CommandLine = flag.CommandLine
 var Args = flag.Args
@@ -50,11 +53,11 @@ func Int64(name string, value int64, usage string, tags ...flagtags.Taggable) *i
 	return autoflags.New(common.DefaultFlagSet, name, value, usage, tags...)
 }
 
-func UInt(name string, value uint, usage string, tags ...flagtags.Taggable) *uint {
+func Uint(name string, value uint, usage string, tags ...flagtags.Taggable) *uint {
 	return autoflags.New(common.DefaultFlagSet, name, value, usage, tags...)
 }
 
-func UInt64(name string, value uint64, usage string, tags ...flagtags.Taggable) *uint64 {
+func Uint64(name string, value uint64, usage string, tags ...flagtags.Taggable) *uint64 {
 	return autoflags.New(common.DefaultFlagSet, name, value, usage, tags...)
 }
 
@@ -81,4 +84,8 @@ func Slice[T any](name string, value []T, usage string, tags ...flagtags.Taggabl
 
 func Struct[T any](name string, value T, usage string, tags ...flagtags.Taggable) *T {
 	return autoflags.New(common.DefaultFlagSet, name, value, usage, tags...)
+}
+
+func Alias[T any](oldname string, newNames ...string) *T {
+	return types.Alias[T](common.DefaultFlagSet, oldname, newNames...)
 }

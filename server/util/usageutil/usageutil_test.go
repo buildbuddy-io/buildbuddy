@@ -1,10 +1,10 @@
 package usageutil_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -74,9 +74,9 @@ func TestLabels(t *testing.T) {
 			if test.ClientHeader != "" {
 				md[usageutil.ClientHeaderName] = []string{test.ClientHeader}
 			}
-			ctx := metadata.NewIncomingContext(context.Background(), md)
+			ctx := metadata.NewIncomingContext(t.Context(), md)
 
-			labels, err := usageutil.Labels(ctx)
+			labels, err := usageutil.LabelsForUsageRecording(ctx, "")
 
 			require.NoError(t, err)
 			require.Equal(t, test.Expected, labels)
@@ -88,6 +88,7 @@ func TestLabelPropagation(t *testing.T) {
 	for _, test := range []struct {
 		Name     string
 		Client   string
+		Server   string
 		Origin   string
 		Expected *tables.UsageLabels
 	}{
@@ -101,37 +102,40 @@ func TestLabelPropagation(t *testing.T) {
 			Expected: &tables.UsageLabels{Client: "executor"},
 		},
 		{
+			Name:     "Server",
+			Server:   "app",
+			Expected: &tables.UsageLabels{Server: "app"},
+		},
+		{
 			Name:     "Origin",
 			Origin:   "external",
 			Expected: &tables.UsageLabels{Origin: "external"},
 		},
 		{
 			Name:     "All",
-			Client:   "app",
+			Client:   "executor",
+			Server:   "cache-proxy",
 			Origin:   "internal",
-			Expected: &tables.UsageLabels{Client: "app", Origin: "internal"},
+			Expected: &tables.UsageLabels{Client: "executor", Server: "cache-proxy", Origin: "internal"},
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
 			flags.Set(t, "grpc_client_origin_header", test.Origin)
-			usageutil.SetClientType(test.Client)
+			usageutil.SetServerName(test.Client)
 
-			ctx := context.Background()
+			ctx := t.Context()
 			// Set some pre-existing bazel request metadata on the incoming
 			// context; our propagated labels should always take precedence.
 			bazelMD := &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "bazel"}}
 			ctx, err := bazel_request.WithRequestMetadata(ctx, bazelMD)
 			ctx = usageutil.WithLocalServerLabels(ctx)
 			require.NoError(t, err)
-			outgoingMD, ok := metadata.FromOutgoingContext(ctx)
-			require.True(t, ok)
+			ctx = testgrpc.OutgoingToIncomingContext(t, ctx)
 
-			// Simulate an RPC by creating a new context with the incoming
-			// metadata set to the previously applied outgoing metadata.
-			ctx = context.Background()
-			ctx = metadata.NewIncomingContext(ctx, outgoingMD)
-
-			labels, err := usageutil.Labels(ctx)
+			// Simulate that we've arrived at the receiving server by
+			// changing the server name on the fly.
+			usageutil.SetServerName(test.Server)
+			labels, err := usageutil.LabelsForUsageRecording(ctx, test.Server)
 
 			require.NoError(t, err)
 			require.Equal(t, test.Expected, labels)

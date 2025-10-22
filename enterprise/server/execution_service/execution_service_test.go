@@ -179,7 +179,12 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 					InvocationId: test.invocations[0].InvocationID,
 				},
 			})
-			require.Equal(t, test.wantErr, err)
+			if test.wantErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.Equal(t, test.wantErr.Error(), err.Error())
+			}
 			require.Empty(t, cmp.Diff(
 				test.wantExecutions, rsp.GetExecution(),
 				protocmp.Transform(),

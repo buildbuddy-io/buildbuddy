@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "download",
     srcs = ["download.go"],
@@ -13,7 +15,9 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/flag",
         "//server/util/grpc_client",
+        "//server/util/mdutil",
         "//server/util/proto",
         "//server/util/status",
         "@com_github_docker_go_units//:go-units",
@@ -23,5 +27,3 @@ go_library(
         "@org_golang_google_protobuf//encoding/protojson",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

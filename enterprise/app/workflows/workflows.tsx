@@ -1,27 +1,26 @@
+import { AlertCircle, CheckCircle, GitBranch, GitMerge, MoreVertical, Wrench, XCircle } from "lucide-react";
 import React from "react";
+import alert_service from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/auth_service";
-import Button, { OutlinedButton, FilledButton } from "../../../app/components/button/button";
+import capabilities from "../../../app/capabilities/capabilities";
+import Button, { FilledButton, OutlinedButton } from "../../../app/components/button/button";
 import { OutlinedLinkButton } from "../../../app/components/button/link_button";
+import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
+import TextInput from "../../../app/components/input/input";
+import { Link } from "../../../app/components/link/link";
 import Menu, { MenuItem } from "../../../app/components/menu/menu";
 import Popup from "../../../app/components/popup/popup";
+import Spinner from "../../../app/components/spinner/spinner";
+import { default as error_service, default as errorService } from "../../../app/errors/error_service";
 import router from "../../../app/router/router";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
+import { normalizeRepoURL } from "../../../app/util/git";
+import { github } from "../../../proto/github_ts_proto";
 import { workflow } from "../../../proto/workflow_ts_proto";
+import ActionListComponent from "./action_list";
 import GitHubAppImport from "./github_app_import";
 import WorkflowsZeroStateAnimation from "./zero_state";
-import { AlertCircle, CheckCircle, GitBranch, GitMerge, MoreVertical, Wrench, XCircle } from "lucide-react";
-import capabilities from "../../../app/capabilities/capabilities";
-import { github } from "../../../proto/github_ts_proto";
-import error_service from "../../../app/errors/error_service";
-import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
-import { normalizeRepoURL } from "../../../app/util/git";
-import { Link } from "../../../app/components/link/link";
-import TextInput from "../../../app/components/input/input";
-import alert_service from "../../../app/alert/alert_service";
-import errorService from "../../../app/errors/error_service";
-import Spinner from "../../../app/components/spinner/spinner";
-import ActionListComponent from "./action_list";
 
 type Workflow = workflow.GetWorkflowsResponse.Workflow;
 
@@ -223,7 +222,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
               </div>
               <div className="title">Workflows</div>
             </div>
-            {Boolean(this.state.workflowsResponse?.workflow?.length || this.state.reposResponse?.repoUrls?.length) && (
+            {Boolean(this.state.workflowsResponse?.workflow?.length || this.state.reposResponse?.repos?.length) && (
               <div className="buttons create-new-container">
                 {isAdmin && <Button onClick={this.onClickCreate.bind(this)}>Link a repository</Button>}
                 <OutlinedLinkButton href="https://docs.buildbuddy.io/docs/workflows-setup" target="_blank">
@@ -234,7 +233,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
           </div>
         </div>
         <div className="content">
-          {!(this.state.workflowsResponse?.workflow?.length || this.state.reposResponse?.repoUrls?.length) && (
+          {!(this.state.workflowsResponse?.workflow?.length || this.state.reposResponse?.repos?.length) && (
             <div className="no-workflows-container">
               <div className="no-workflows-card">
                 <WorkflowsZeroStateAnimation />
@@ -254,17 +253,18 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
               </div>
             </div>
           )}
-          {Boolean(this.state.workflowsResponse?.workflow?.length || this.state.reposResponse?.repoUrls?.length) && (
+          {Boolean(this.state.workflowsResponse?.workflow?.length || this.state.reposResponse?.repos?.length) && (
             <div className="workflows-list">
               {/* Render linked repositories */}
-              {this.state.reposResponse?.repoUrls.map((repoUrl) => (
+              {this.state.reposResponse?.repos?.map((repo) => (
                 <>
                   <RepoItem
                     user={this.props.user}
-                    repoUrl={repoUrl}
-                    onClickUnlinkItem={() => this.setState({ repoToUnlink: repoUrl })}
-                    onClickInvalidateAllItem={() => this.setState({ repoToInvalidate: repoUrl })}
-                    history={this.renderActionList(repoUrl)}
+                    repoUrl={repo.repoUrl}
+                    useDefaultWorkflowConfig={repo.useDefaultWorkflowConfig}
+                    onClickUnlinkItem={() => this.setState({ repoToUnlink: repo.repoUrl })}
+                    onClickInvalidateAllItem={() => this.setState({ repoToInvalidate: repo.repoUrl })}
+                    history={this.renderActionList(repo.repoUrl)}
                   />
                 </>
               ))}
@@ -275,6 +275,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     user={this.props.user}
                     repoUrl={workflow.repoUrl}
                     webhookUrl={workflow.webhookUrl}
+                    useDefaultWorkflowConfig={true} /* Default for legacy workflows */
                     onClickUnlinkItem={() => this.setState({ workflowToDelete: workflow })}
                     onClickInvalidateAllItem={null} /* Not implemented for legacy workflows */
                     history={null}
@@ -333,6 +334,7 @@ type RepoItemProps = {
   user?: User;
   repoUrl: string;
   webhookUrl?: string;
+  useDefaultWorkflowConfig: boolean;
   onClickUnlinkItem: (url: string) => void;
   onClickInvalidateAllItem: ((url: string) => void) | null;
   history: React.ReactNode;
@@ -349,6 +351,7 @@ type RepoItemState = {
   isWorkflowRunning: boolean;
   runWorkflowActionStatuses: workflow.ExecuteWorkflowResponse.ActionStatus[] | null;
   startTime: Date | null;
+  useDefaultWorkflowConfig: boolean;
 };
 
 class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
@@ -362,6 +365,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     isWorkflowRunning: false,
     runWorkflowActionStatuses: null,
     startTime: null,
+    useDefaultWorkflowConfig: this.props.useDefaultWorkflowConfig,
   };
 
   private onClickMenuButton() {
@@ -375,6 +379,32 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   private onClickCopyWebhookUrl() {
     copyToClipboard(this.props.webhookUrl || "");
     alert_service.success("Copied webhook URL to clipboard!");
+  }
+
+  private onClickUpdateDefaultConfig(updated: boolean) {
+    const prev = this.state.useDefaultWorkflowConfig;
+    this.setState({ useDefaultWorkflowConfig: updated });
+
+    const request = new github.UpdateRepoSettingsRequest({
+      repoUrl: this.props.repoUrl,
+      useDefaultWorkflowConfig: updated,
+    });
+
+    alert_service.loading();
+    rpcService.service
+      .updateGitHubRepoSettings(request)
+      .then(() => {
+        alert_service.success(`Successfully updated repository settings`);
+      })
+      .catch((e) => {
+        this.setState({ useDefaultWorkflowConfig: prev });
+        errorService.handleError(e);
+      });
+  }
+
+  private onClickUpdateDefaultConfigMenuItem() {
+    this.setState({ isMenuOpen: false });
+    this.onClickUpdateDefaultConfig(!this.state.useDefaultWorkflowConfig);
   }
 
   private onClickUnlinkMenuItem() {
@@ -433,6 +463,10 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
       .finally(() => this.setState({ isWorkflowRunning: false }));
   }
 
+  isDeprecatedWorkflow(): boolean {
+    return Boolean(this.props.webhookUrl);
+  }
+
   renderWorkflowResults() {
     if (!this.state.runWorkflowActionStatuses) return;
     return this.state.runWorkflowActionStatuses.map((actionStatus) => {
@@ -483,6 +517,12 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
         <MenuItem onClick={this.onClickInvalidateAllMenuItem.bind(this)}>Invalidate all workflow VM snapshots</MenuItem>
       );
     }
+    if (!this.isDeprecatedWorkflow()) {
+      const configText = this.state.useDefaultWorkflowConfig
+        ? "Disable default workflow config"
+        : "Enable default workflow config";
+      menuItems.push(<MenuItem onClick={this.onClickUpdateDefaultConfigMenuItem.bind(this)}>{configText}</MenuItem>);
+    }
 
     return (
       <div className="workflow-item container">
@@ -494,7 +534,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                 <Link href={router.getWorkflowHistoryUrl(normalizeRepoURL(this.props.repoUrl))} className="repo-url">
                   {formatURL(this.props.repoUrl)}
                 </Link>
-                {capabilities.config.githubAppEnabled && this.props.webhookUrl && (
+                {capabilities.config.githubAppEnabled && this.isDeprecatedWorkflow() && (
                   <div className="upgrade-notice">
                     <AlertCircle className="icon orange" /> This repository uses the legacy GitHub OAuth integration.
                     Unlink and re-link to use the new GitHub App integration.
@@ -506,7 +546,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
           <div className="workflow-item-column workflow-buttons-container">
             <div className="workflow-item-row">
               {/* The Run Workflow button is only supported for workflows configured with the Github App, not legacy workflows */}
-              {!this.props.webhookUrl && (
+              {!this.isDeprecatedWorkflow() && (
                 <div className="workflow-button-container">
                   <OutlinedButton
                     className="run-workflow-button"

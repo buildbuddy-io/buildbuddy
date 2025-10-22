@@ -10,6 +10,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfscommon"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -88,13 +91,13 @@ func requireSyscallError(t *testing.T, err error, errno syscall.Errno) {
 	assert.FailNow(t, "RPC status error did not contain a syscall error number", "RPC error: %s", err)
 }
 
-func newServer(t *testing.T) (*vfs_server.Server, string) {
+func newServer(t *testing.T) (*vfs_server.Server, environment.Env) {
 	env := testenv.GetTestEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 
 	server, err := vfs_server.New(env, tmpDir)
 	require.NoError(t, err)
-	return server, tmpDir
+	return server, env
 }
 
 func newServerWithEnv(t *testing.T) (context.Context, *testenv.TestEnv, *vfs_server.Server, string) {
@@ -109,7 +112,7 @@ func newServerWithEnv(t *testing.T) (context.Context, *testenv.TestEnv, *vfs_ser
 func writeToVFS(t *testing.T, server *vfs_server.Server, name string, content string) uint64 {
 	ctx := context.Background()
 
-	rsp, err := server.Lookup(ctx, &vfspb.LookupRequest{Name: name})
+	rsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: name})
 	var id, handleID uint64
 	if err == nil {
 		openRsp, err := server.Open(ctx, &vfspb.OpenRequest{
@@ -121,9 +124,10 @@ func writeToVFS(t *testing.T, server *vfs_server.Server, name string, content st
 		handleID = openRsp.GetHandleId()
 	} else {
 		createRsp, err := server.Create(ctx, &vfspb.CreateRequest{
-			Name:  name,
-			Mode:  0644,
-			Flags: uint32(os.O_CREATE | os.O_RDWR),
+			ParentId: vfscommon.RootInodeId,
+			Name:     name,
+			Mode:     0644,
+			Flags:    uint32(os.O_CREATE | os.O_RDWR),
 		})
 		require.NoError(t, err)
 		id = createRsp.GetId()
@@ -145,10 +149,8 @@ func writeToVFS(t *testing.T, server *vfs_server.Server, name string, content st
 
 func readFromVFS(t *testing.T, server *vfs_server.Server, name string) string {
 	ctx := context.Background()
-	rsp, err := server.Lookup(ctx, &vfspb.LookupRequest{Name: name})
-	if err != nil {
-		return ""
-	}
+	rsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: name})
+	require.NoError(t, err)
 
 	f, err := server.Open(ctx, &vfspb.OpenRequest{
 		Id:    rsp.GetId(),
@@ -169,8 +171,15 @@ func readFromVFS(t *testing.T, server *vfs_server.Server, name string) string {
 	return string(res.Data)
 }
 
+func prepare(t *testing.T, env environment.Env, server *vfs_server.Server, tree *repb.Tree) {
+	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{})
+	require.NoError(t, err)
+	_, err = server.Prepare(t.Context(), &container.FileSystemLayout{Inputs: tree}, tf)
+	require.NoError(t, err)
+}
+
 func TestGetLayout(t *testing.T) {
-	server, _ := newServer(t)
+	server, env := newServer(t)
 	ctx := context.Background()
 
 	fileNode1 := &repb.FileNode{
@@ -216,17 +225,16 @@ func TestGetLayout(t *testing.T) {
 		Children: []*repb.Directory{subDir},
 	}
 
-	err = server.Prepare(ctx, &container.FileSystemLayout{
-		Inputs: inputTree,
-	})
+	require.NoError(t, err)
+	prepare(t, env, server, inputTree)
 	require.NoError(t, err)
 
-	rsp, err := server.GetDirectoryContents(ctx, &vfspb.GetDirectoryContentsRequest{})
+	rsp, err := server.GetDirectoryContents(ctx, &vfspb.GetDirectoryContentsRequest{Id: vfscommon.RootInodeId})
 	require.NoError(t, err)
 
 	expectedRsp := &vfspb.GetDirectoryContentsResponse{
 		Nodes: []*vfspb.Node{
-			{Name: "adirectory", Attrs: &vfspb.Attrs{Size: 1000, Perm: 0755}, Mode: syscall.S_IFDIR},
+			{Name: "adirectory", Attrs: &vfspb.Attrs{Size: 1000, Perm: 0755, Nlink: 1}, Mode: syscall.S_IFDIR},
 			{Name: "afile.txt", Attrs: &vfspb.Attrs{Size: 123, Perm: 0644, Immutable: true, Nlink: 1}, Mode: syscall.S_IFREG},
 			{Name: "anotherfile.txt", Attrs: &vfspb.Attrs{Size: 456, Perm: 0755, Immutable: true, Nlink: 1}, Mode: syscall.S_IFREG},
 			{Name: "asymlink", Attrs: &vfspb.Attrs{Size: 1000, Perm: 0644}, Mode: syscall.S_IFLNK},
@@ -235,7 +243,7 @@ func TestGetLayout(t *testing.T) {
 	require.Empty(t, cmp.Diff(expectedRsp, rsp, protocmp.Transform(),
 		protocmp.IgnoreFields(&vfspb.Node{}, "id"), protocmp.IgnoreFields(&vfspb.Attrs{}, "atime_nanos", "mtime_nanos")))
 
-	subdirLookupRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{Name: "adirectory"})
+	subdirLookupRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "adirectory"})
 	require.NoError(t, err)
 
 	rsp, err = server.GetDirectoryContents(ctx, &vfspb.GetDirectoryContentsRequest{Id: subdirLookupRsp.GetId()})
@@ -260,17 +268,17 @@ func TestLookupNonExistentFile(t *testing.T) {
 }
 
 func TestFileHandles(t *testing.T) {
-	server, _ := newServer(t)
+	server, env := newServer(t)
 	ctx := context.Background()
 
-	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
-	require.NoError(t, err)
+	prepare(t, env, server, &repb.Tree{})
 
 	testFile := "test.file"
 	createRsp, err := server.Create(ctx, &vfspb.CreateRequest{
-		Name:  testFile,
-		Flags: uint32(os.O_CREATE | os.O_RDWR),
-		Mode:  0644,
+		ParentId: vfscommon.RootInodeId,
+		Name:     testFile,
+		Flags:    uint32(os.O_CREATE | os.O_RDWR),
+		Mode:     0644,
 	})
 	require.NoError(t, err)
 	handleID := createRsp.HandleId
@@ -333,13 +341,12 @@ func TestFileHandles(t *testing.T) {
 }
 
 func TestDirOps(t *testing.T) {
-	server, _ := newServer(t)
+	server, env := newServer(t)
 	ctx := context.Background()
 
-	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
-	require.NoError(t, err)
+	prepare(t, env, server, &repb.Tree{})
 
-	mkdirRsp, err := server.Mkdir(ctx, &vfspb.MkdirRequest{Name: "dir", Perms: 0700})
+	mkdirRsp, err := server.Mkdir(ctx, &vfspb.MkdirRequest{ParentId: vfscommon.RootInodeId, Name: "dir", Perms: 0700})
 	require.NoError(t, err)
 
 	getAttrRsp, err := server.GetAttr(ctx, &vfspb.GetAttrRequest{Id: mkdirRsp.GetId()})
@@ -351,7 +358,7 @@ func TestDirOps(t *testing.T) {
 	require.NoError(t, err)
 
 	// Deleting non-empty dir should fail.
-	_, err = server.Rmdir(ctx, &vfspb.RmdirRequest{Name: "dir"})
+	_, err = server.Rmdir(ctx, &vfspb.RmdirRequest{ParentId: vfscommon.RootInodeId, Name: "dir"})
 	requireSyscallError(t, err, syscall.ENOTEMPTY)
 
 	_, err = server.Rmdir(ctx, &vfspb.RmdirRequest{ParentId: mkdirRsp.GetId(), Name: "subdir"})
@@ -359,31 +366,35 @@ func TestDirOps(t *testing.T) {
 }
 
 func TestFilenameOps(t *testing.T) {
-	server, _ := newServer(t)
+	server, env := newServer(t)
 	ctx := context.Background()
 
-	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
-	require.NoError(t, err)
+	prepare(t, env, server, &repb.Tree{})
 
 	testFile := "a.file"
 	writeToVFS(t, server, testFile, "some data")
 
 	newName := "b.file"
-	_, err = server.Rename(ctx, &vfspb.RenameRequest{OldName: testFile, NewName: newName})
+	_, err := server.Rename(ctx, &vfspb.RenameRequest{
+		OldParentId: vfscommon.RootInodeId,
+		OldName:     testFile,
+		NewParentId: vfscommon.RootInodeId,
+		NewName:     newName,
+	})
 	require.NoError(t, err)
 
 	// Old file shouldn't exist anymore.
 	_, err = server.Lookup(ctx, &vfspb.LookupRequest{Name: testFile})
 	requireSyscallError(t, err, syscall.ENOENT)
 
-	lookupRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{Name: newName})
+	lookupRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: newName})
 	require.NoError(t, err)
 
 	getAttrRsp, err := server.GetAttr(ctx, &vfspb.GetAttrRequest{Id: lookupRsp.GetId()})
 	require.NoError(t, err)
 	require.EqualValues(t, 0644, getAttrRsp.GetAttrs().GetPerm())
 
-	_, err = server.Unlink(ctx, &vfspb.UnlinkRequest{Name: newName})
+	_, err = server.Unlink(ctx, &vfspb.UnlinkRequest{ParentId: vfscommon.RootInodeId, Name: newName})
 	require.NoError(t, err)
 
 	// File shouldn't exist anymore.
@@ -392,14 +403,17 @@ func TestFilenameOps(t *testing.T) {
 }
 
 func TestHardlink(t *testing.T) {
-	server, _ := newServer(t)
+	server, env := newServer(t)
 	ctx := context.Background()
 
-	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
-	require.NoError(t, err)
+	prepare(t, env, server, &repb.Tree{})
 
 	fileID := writeToVFS(t, server, "src", "hello")
-	_, err = server.Link(ctx, &vfspb.LinkRequest{Name: "dst", TargetId: fileID})
+	_, err := server.Link(ctx, &vfspb.LinkRequest{
+		ParentId: vfscommon.RootInodeId,
+		Name:     "dst",
+		TargetId: fileID,
+	})
 	require.NoError(t, err)
 
 	content := readFromVFS(t, server, "dst")
@@ -412,7 +426,7 @@ func TestHardlink(t *testing.T) {
 	require.Equal(t, "world", content, "hardlink content should match updated source file")
 
 	// Unlink src; hardlink should still be readable
-	_, err = server.Unlink(ctx, &vfspb.UnlinkRequest{Name: "src"})
+	_, err = server.Unlink(ctx, &vfspb.UnlinkRequest{ParentId: vfscommon.RootInodeId, Name: "src"})
 	require.NoError(t, err)
 
 	content = readFromVFS(t, server, "dst")
@@ -420,20 +434,20 @@ func TestHardlink(t *testing.T) {
 }
 
 func TestFileLocking(t *testing.T) {
-	server, _ := newServer(t)
+	server, env := newServer(t)
 	ctx := context.Background()
 
-	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
-	require.NoError(t, err)
+	prepare(t, env, server, &repb.Tree{})
 
 	var nodeID uint64
 	// Init two different file handle IDs referring to the same inode.
 	var id1, id2 uint64
 	{
 		req := &vfspb.CreateRequest{
-			Name:  "lock",
-			Flags: uint32(os.O_CREATE),
-			Mode:  0644,
+			ParentId: vfscommon.RootInodeId,
+			Name:     "lock",
+			Flags:    uint32(os.O_CREATE),
+			Mode:     0644,
 		}
 		res, err := server.Create(ctx, req)
 		require.NoError(t, err)

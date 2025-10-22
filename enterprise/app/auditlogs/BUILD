@@ -1,12 +1,13 @@
 load("//rules/typescript:index.bzl", "ts_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 exports_files(["auditlogs.css"])
 
 ts_library(
     name = "auditlogs",
     srcs = ["auditlogs.tsx"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-date-range",
         "//:node_modules/lucide-react",
@@ -25,5 +26,3 @@ ts_library(
         "//proto:auditlog_ts_proto",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

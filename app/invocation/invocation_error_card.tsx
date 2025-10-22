@@ -1,11 +1,11 @@
 import { AlertCircle } from "lucide-react";
 import React from "react";
-import InvocationModel from "./invocation_model";
-import { failure_details } from "../../proto/failure_details_ts_proto";
-import TerminalComponent from "../terminal/terminal";
-import rpc_service, { CancelablePromise } from "../service/rpc_service";
-import { exitCode } from "../util/exit_codes";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { failure_details } from "../../proto/failure_details_ts_proto";
+import rpcService, { CancelablePromise } from "../service/rpc_service";
+import TerminalComponent from "../terminal/terminal";
+import { exitCode } from "../util/exit_codes";
+import InvocationModel from "./invocation_model";
 
 const debugMessage =
   "Use --sandbox_debug to see verbose messages from the sandbox and retain the sandbox build root for debugging";
@@ -57,7 +57,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
     for (const error of model.errors) {
       if (error.action?.stderr?.uri) {
         promises.push(
-          rpc_service
+          rpcService
             .fetchBytestreamFile(error.action?.stderr?.uri, this.props.model.getInvocationId(), "text")
             .then((stderr) => {
               error.actionStderr = stderr;
@@ -67,7 +67,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
       }
       if (error.action?.stdout?.uri) {
         promises.push(
-          rpc_service
+          rpcService
             .fetchBytestreamFile(error.action?.stdout?.uri, this.props.model.getInvocationId(), "text")
             .then((stdout) => {
               error.actionStdout = stdout;
@@ -138,7 +138,8 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
         }
       }
     }
-    let text = lines.join("\n");
+
+    let text = deduplicateLines(lines).join("\n");
     text = deemphasizeSandboxDebug(text);
     text = underlineFileNames(text);
     return text;
@@ -213,6 +214,10 @@ function formatFailureDescription(failureDetail: failure_details.IFailureDetail)
 
 function joinNonEmpty(parts: string[], join: string) {
   return parts.filter((x) => x).join(join);
+}
+
+function deduplicateLines(lines: string[]): string[] {
+  return lines.filter((x, index, self) => self.indexOf(x) === index);
 }
 
 function modelsEqual(a: CardModel, b: CardModel): boolean {

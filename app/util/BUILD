@@ -189,3 +189,25 @@ ts_library(
     name = "github",
     srcs = ["github.tsx"],
 )
+
+ts_library(
+    name = "diff",
+    srcs = ["diff.tsx"],
+    deps = [
+        "//:node_modules/@types/diff-match-patch",
+        "//:node_modules/@types/react",
+        "//:node_modules/diff-match-patch",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "shlex",
+    srcs = ["shlex.ts"],
+)
+
+ts_jasmine_node_test(
+    name = "shlex_test",
+    srcs = ["shlex_test.ts"],
+    deps = ["//app/util:shlex"],
+)

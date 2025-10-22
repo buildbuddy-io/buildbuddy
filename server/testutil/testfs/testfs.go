@@ -57,7 +57,21 @@ func MakeTempDir(t testing.TB) string {
 		assert.FailNow(t, "failed to create temp dir", err)
 	}
 	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil && !os.IsNotExist(err) {
+		// Use mktempdir to get a new tempdir name to move our dir to before we
+		// remove it. This prevents a race condition where something else could
+		// write a file to the directory as we're removing it, preventing the
+		// removal of the directory. If something tries and fails to write a file
+		// to a temp directory during test cleanup, we don't really care.
+		newDir, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "buildbuddy-test-*")
+		if err != nil {
+			assert.FailNow(t, "failed to clean up temp dir", err)
+		}
+		// Move the old directory into the new directory.
+		if err := os.Rename(tmpDir, path.Join(newDir, path.Base(tmpDir))); err != nil && !os.IsNotExist(err) {
+			assert.FailNow(t, "failed to clean up temp dir", err)
+		}
+		// Remove the new directory containing the old directory.
+		if err := os.RemoveAll(newDir); err != nil && !os.IsNotExist(err) {
 			assert.FailNow(t, "failed to clean up temp dir", err)
 		}
 	})
@@ -139,11 +153,13 @@ func MakeExecutable(t testing.TB, rootDir string, path string) {
 	require.NoError(t, err)
 }
 
-func WriteFile(t testing.TB, rootDir, path, content string) {
-	err := os.MkdirAll(filepath.Dir(filepath.Join(rootDir, path)), 0755)
+func WriteFile(t testing.TB, rootDir, path, content string) string {
+	fullPath := filepath.Join(rootDir, path)
+	err := os.MkdirAll(filepath.Dir(fullPath), 0755)
 	require.NoError(t, err)
-	err = os.WriteFile(filepath.Join(rootDir, path), []byte(content), 0644)
+	err = os.WriteFile(fullPath, []byte(content), 0644)
 	require.NoError(t, err)
+	return fullPath
 }
 
 func WriteAllFileContents(t testing.TB, rootDir string, contents map[string]string) {
@@ -234,6 +250,8 @@ func AssertExactFileContents(t testing.TB, rootDir string, contents map[string]s
 
 		require.NoError(t, err)
 		relPath := strings.TrimPrefix(path, rootDir+string(os.PathSeparator))
+		// Always use forward slashes for paths.
+		relPath = strings.ReplaceAll(relPath, string(os.PathSeparator), "/")
 		actualFilePaths = append(actualFilePaths, relPath)
 		if content, ok := contents[relPath]; ok {
 			require.NoError(t, err)

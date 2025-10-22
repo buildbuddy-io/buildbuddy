@@ -2,10 +2,12 @@ package filecache
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
 	"hash"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -79,6 +81,12 @@ type fileCache struct {
 	lock        sync.Mutex
 	l           *lru.LRU[*entry]
 	dirScanDone chan struct{}
+
+	linkFromFileCacheLatency prometheus.Observer
+	linkIntoFileCacheLatency prometheus.Observer
+	createParentDirLatency   prometheus.Observer
+	addFileLatency           prometheus.Observer
+	requestCounter           map[bool]prometheus.Counter
 }
 
 // entry is used to hold a value in the evictList
@@ -129,9 +137,17 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 		return nil, err
 	}
 	c := &fileCache{
-		rootDir:     rootDir,
-		l:           l,
-		dirScanDone: make(chan struct{}),
+		rootDir:                  rootDir,
+		l:                        l,
+		dirScanDone:              make(chan struct{}),
+		linkFromFileCacheLatency: metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_from_filecache"}),
+		linkIntoFileCacheLatency: metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_into_filecache"}),
+		createParentDirLatency:   metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "create_parent_dir"}),
+		addFileLatency:           metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "add_file"}),
+		requestCounter: map[bool]prometheus.Counter{
+			true:  metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: hitMetricLabel}),
+			false: metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: missMetricLabel}),
+		},
 	}
 	if err := os.RemoveAll(c.TempDir()); err != nil {
 		return nil, status.WrapErrorf(err, "failed to clear filecache temp dir")
@@ -267,13 +283,7 @@ func key(ctx context.Context, node *repb.FileNode) string {
 
 func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outputPath string) (hit bool) {
 	defer func() {
-		label := missMetricLabel
-		if hit {
-			label = hitMetricLabel
-		}
-		metrics.FileCacheRequests.
-			With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: label}).
-			Inc()
+		c.requestCounter[hit].Inc()
 	}()
 
 	groupID := groupIDStringFromContext(ctx)
@@ -290,19 +300,14 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 		log.Warningf("Failed to link file from cache: %s", err)
 		return false
 	}
-	metrics.FileCacheLinkLatencyUsec.Observe(float64(time.Since(start).Microseconds()))
+	c.linkFromFileCacheLatency.Observe(float64(time.Since(start).Microseconds()))
 	return true
 }
 
 func (c *fileCache) Open(ctx context.Context, node *repb.FileNode) (f *os.File, err error) {
 	defer func() {
-		label := missMetricLabel
-		if f != nil {
-			label = hitMetricLabel
-		}
-		metrics.FileCacheRequests.
-			With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: label}).
-			Inc()
+		hit := f != nil
+		c.requestCounter[hit].Inc()
 	}()
 
 	groupID := groupIDStringFromContext(ctx)
@@ -341,9 +346,11 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 	// group. With includeSubdirPrefix=false, this could make the Add path
 	// 7% faster, but it's more complicated with includeSubdirPrefix=true.
 	if fp != existingFilePath {
+		start := time.Now()
 		if err := disk.EnsureDirectoryExists(filepath.Dir(fp)); err != nil {
 			return err
 		}
+		c.createParentDirLatency.Observe(float64(time.Since(start).Microseconds()))
 	}
 
 	c.lock.Lock()
@@ -362,9 +369,12 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 		// (i.e. it's being added from some action workspace), then remove and
 		// unlink any existing entry, then hardlink to the destination path.
 		c.l.Remove(k)
+
+		start := time.Now()
 		if err := cloneOrLink(groupID, existingFilePath, fp); err != nil {
 			return err
 		}
+		c.linkIntoFileCacheLatency.Observe(float64(time.Since(start).Microseconds()))
 
 		// If the file being added is inside the filecache dir, and it
 		// is stored in an "old-style" location, then remove it.
@@ -391,9 +401,15 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 }
 
 func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) error {
+	start := time.Now()
 	groupID := groupIDStringFromContext(ctx)
 	// Locking happens in addFileToGroup().
-	return c.addFileToGroup(groupID, node, existingFilePath)
+	err := c.addFileToGroup(groupID, node, existingFilePath)
+	if err != nil {
+		return err
+	}
+	c.addFileLatency.Observe(float64(time.Since(start).Microseconds()))
+	return nil
 }
 
 func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
@@ -462,9 +478,10 @@ type verifiedWriter struct {
 	ctx context.Context
 	fc  *fileCache
 
-	csum hash.Hash
-	node *repb.FileNode
-	file *os.File
+	digestFunction repb.DigestFunction_Value
+	csum           hash.Hash
+	node           *repb.FileNode
+	file           *os.File
 }
 
 func newVerifiedWriter(ctx context.Context, fc *fileCache, node *repb.FileNode, digestFunction repb.DigestFunction_Value, file *os.File) (*verifiedWriter, error) {
@@ -473,12 +490,38 @@ func newVerifiedWriter(ctx context.Context, fc *fileCache, node *repb.FileNode, 
 		return nil, err
 	}
 	return &verifiedWriter{
-		ctx:  ctx,
-		fc:   fc,
-		csum: csum,
-		node: node,
-		file: file,
+		ctx:            ctx,
+		fc:             fc,
+		digestFunction: digestFunction,
+		csum:           csum,
+		node:           node,
+		file:           file,
 	}, nil
+}
+
+func (v *verifiedWriter) Seek(offset int64, whence int) (int64, error) {
+	if v.file == nil {
+		return 0, errors.New("file cache writer is closed")
+	}
+	if whence != io.SeekStart {
+		return 0, fmt.Errorf("unsupported whence for file cache writer: %d", whence)
+	}
+	if offset != 0 {
+		return 0, errors.New("filecache writer only supports seeking to start")
+	}
+
+	ret, err := v.file.Seek(offset, whence)
+	if err != nil {
+		return 0, err
+	}
+
+	csum, err := digest.HashForDigestType(v.digestFunction)
+	if err != nil {
+		return 0, err
+	}
+	v.csum = csum
+
+	return ret, nil
 }
 
 func (v *verifiedWriter) Write(p []byte) (n int, err error) {
@@ -495,7 +538,7 @@ func (v *verifiedWriter) Commit() error {
 	if v.file == nil {
 		return status.FailedPreconditionError("writer is closed")
 	}
-	hashStr := fmt.Sprintf("%x", v.csum.Sum(nil))
+	hashStr := hex.EncodeToString(v.csum.Sum(nil))
 	if v.node.GetDigest().GetHash() != hashStr {
 		return status.DataLossErrorf("data checksum %q does not match expected checksum %q", hashStr, v.node.GetDigest().GetHash())
 	}

@@ -4,7 +4,13 @@
 # debian 12
 FROM mirror.gcr.io/debian@sha256:7ca9335a5953654f8feb8b846ad3dd78309a838d62b090c785d1f5908c2d59d2
 
-RUN apt-get update && \
+RUN \
+    # /etc/apt/debian.sources doesn't pin the debian release by name, but by `stable`.
+    # Now that debian 13 was upgraded to stable, the `apt-get upgrade` command below
+    # will attempt to upgrade the OS to debian 13. Manually pin it to debian 12 (bookworkm).
+    sed -i 's/^Suites: stable stable-updates$/Suites: bookworm bookworm-updates/' /etc/apt/sources.list.d/debian.sources && \
+    sed -i 's/^Suites: stable-security$/Suites: bookworm-security/' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && \
     apt-get install -y \
     # FUSE support, used by vbd and vfs packages.
     # TODO: probably not needed since we use DirectMountStrict now?

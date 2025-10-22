@@ -1,7 +1,7 @@
 import * as monaco from "monaco-editor";
+import rpc_service from "../../../app/service/rpc_service";
 import { CancelablePromise } from "../../../app/util/async";
 import { github } from "../../../proto/github_ts_proto";
-import rpc_service from "../../../app/service/rpc_service";
 import { getLangHintFromFilePath } from "../monaco/monaco";
 
 // Proto interfaces are fully optional, but we need these to all be defined,

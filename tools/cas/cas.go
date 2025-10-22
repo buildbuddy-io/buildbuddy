@@ -28,9 +28,9 @@ import (
 var (
 	// Required flags:
 
-	target     = flag.String("target", "", "Cache grpc target, such as grpcs://remote.buildbuddy.io")
-	blobDigest = flag.String("digest", "", "Digest of the blob to fetch, in HASH/SIZE format.")
-	blobType   = flag.String("type", "", "Type of blob to inspect: Action, ActionResult, Command, Tree, file, stdout, stderr")
+	target   = flag.String("target", "", "Cache grpc target, such as grpcs://remote.buildbuddy.io")
+	resource = flag.String("resource", "", "Resource to fetch. May be a simple digest (HASH/SIZE) or a full resource name.")
+	blobType = flag.String("type", "", "Type of blob to inspect: Action, ActionResult, ExecuteResponse, Command, Tree, file, stdout, stderr")
 
 	// Optional flags:
 
@@ -59,26 +59,42 @@ func main() {
 	if *target == "" {
 		log.Fatalf("Missing --target")
 	}
-	if *blobDigest == "" {
-		log.Fatalf("Missing --digest")
+	if *resource == "" {
+		log.Fatalf("Missing --resource")
+	}
+
+	resourceNameString := *resource
+
+	// If fetching an ExecuteResponse then we're expecting an execution ID.
+	// Parse the execution ID, and use the hash function to get an AC resource
+	// name.
+	if *blobType == "ExecuteResponse" {
+		r, err := digest.ParseUploadResourceName(*resource)
+		if err != nil {
+			log.Fatalf("Parse --resource as upload resource name: %s", err)
+		}
+		executeResponseDigest, err := digest.Compute(strings.NewReader(*resource), r.GetDigestFunction())
+		if err != nil {
+			log.Fatalf("Failed to compute execute response digest: %s", err)
+		}
+		resourceNameString = digest.NewACResourceName(executeResponseDigest, r.GetInstanceName(), r.GetDigestFunction()).ActionCacheString()
 	}
 
 	// For backwards compatibility, attempt to fixup old style digest
 	// strings that don't start with a '/blobs/' prefix.
-	digestString := *blobDigest
-	if !strings.HasPrefix(digestString, "/blobs") {
-		digestString = "/blobs/" + digestString
+	if !strings.Contains(resourceNameString, "/blobs/") {
+		resourceNameString = "/blobs/" + resourceNameString
 	}
 
 	var ind *rspb.ResourceName
-	if *blobType == "ActionResult" {
-		indDownload, err := digest.ParseActionCacheResourceName(digestString)
+	if *blobType == "ActionResult" || *blobType == "ExecuteResponse" {
+		indDownload, err := digest.ParseActionCacheResourceName(resourceNameString)
 		if err != nil {
 			log.Fatal(status.Message(err))
 		}
 		ind = indDownload.ToProto()
 	} else {
-		indDownload, err := digest.ParseDownloadResourceName(digestString)
+		indDownload, err := digest.ParseDownloadResourceName(resourceNameString)
 		if err != nil {
 			log.Fatal(status.Message(err))
 		}
@@ -146,7 +162,7 @@ func main() {
 	}
 
 	// Handle ActionResults (these are stored in the action cache)
-	if *blobType == "ActionResult" {
+	if *blobType == "ActionResult" || *blobType == "ExecuteResponse" {
 		r, err := digest.ACResourceNameFromProto(ind)
 		if err != nil {
 			log.Fatalf("Failed to convert resource name to AC: %s", err)
@@ -154,6 +170,16 @@ func main() {
 		ar, err := cachetools.GetActionResult(ctx, acClient, r)
 		if err != nil {
 			log.Fatal(err.Error())
+		}
+		// When fetching an ExecuteResponse, the response is encoded in the
+		// action stdout.
+		if *blobType == "ExecuteResponse" {
+			executeResponse := &repb.ExecuteResponse{}
+			if err := proto.Unmarshal(ar.GetStdoutRaw(), executeResponse); err != nil {
+				log.Fatalf("Failed to unmarshal execute response: %s", err)
+			}
+			printMessage(executeResponse)
+			return
 		}
 		printMessage(ar)
 		return

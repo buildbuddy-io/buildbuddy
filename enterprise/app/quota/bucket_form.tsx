@@ -2,8 +2,8 @@ import React from "react";
 import alert_service from "../../../app/alert/alert_service";
 import FilledButton from "../../../app/components/button/button";
 import TextInput, { TextInputProps } from "../../../app/components/input/input";
-import { quota } from "../../../proto/quota_ts_proto";
 import { google as google_duration } from "../../../proto/duration_ts_proto";
+import { quota } from "../../../proto/quota_ts_proto";
 
 export interface BucketFormValues {
   namespace?: string;
@@ -98,7 +98,11 @@ export default class BucketForm extends React.Component<BucketFormProps, State> 
         {this.props.namespaceEditable && (
           <div className="labeled-input">
             <label>Namespace name (required)</label>
-            <this.Field name="namespace" initialValue={this.props.initialValues?.namespace} placeholder="/rpc/FooBar" />
+            <this.Field
+              name="namespace"
+              initialValue={this.props.initialValues?.namespace}
+              placeholder="rpc:/service/method"
+            />
             <div className="validation-message">Required.</div>
           </div>
         )}

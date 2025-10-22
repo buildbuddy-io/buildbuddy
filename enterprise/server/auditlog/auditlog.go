@@ -132,12 +132,12 @@ func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, actio
 		entry.AuthUserEmail = ui.Email
 	}
 
-	if u.GetAPIKeyID() != "" {
-		ak, err := l.env.GetAuthDB().GetAPIKey(ctx, u.GetAPIKeyID())
+	if id := u.GetAPIKeyInfo().ID; id != "" {
+		ak, err := l.env.GetAuthDB().GetAPIKey(ctx, id)
 		if err != nil {
 			return status.WrapError(err, "could not lookup API key")
 		}
-		entry.AuthAPIKeyID = u.GetAPIKeyID()
+		entry.AuthAPIKeyID = id
 		entry.AuthAPIKeyLabel = ak.Label
 	}
 

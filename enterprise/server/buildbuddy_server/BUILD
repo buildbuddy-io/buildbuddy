@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_test(
     name = "buildbuddy_server_test",
     srcs = ["buildbuddy_server_test.go"],
@@ -16,5 +18,3 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

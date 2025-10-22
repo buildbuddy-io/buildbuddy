@@ -15,12 +15,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel/metric/noop"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/google"
 	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/keepalive"
@@ -37,7 +38,8 @@ const (
 )
 
 var (
-	poolSize = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
+	poolSize                       = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
+	enableGoogleDefaultCredentials = flag.Bool("grpc_client.enable_google_default_credentials", false, "Whether to enable Google default credentials for all outgoing RPCs.", flag.Internal)
 )
 
 type clientConn struct {
@@ -221,11 +223,17 @@ func (p *ClientConnPoolSplitter) NewStream(ctx context.Context, desc *grpc.Strea
 // such as from cli tools and the like. When dialing from BuildBuddy servers
 // (app, executor) you should use DialInternal.
 func DialSimple(target string, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
+	return DialSimpleWithPoolSize(target, *poolSize, extraOptions...)
+}
+
+// DialSimpleWithPoolSize is like DialSimple, but with a specified pool size
+// instead of the default.
+func DialSimpleWithPoolSize(target string, poolSize int, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
 	var mu sync.Mutex
 	var conns []*clientConn
 
 	eg, _ := errgroup.WithContext(context.Background())
-	for i := 0; i < *poolSize; i++ {
+	for range poolSize {
 		eg.Go(func() error {
 			conn, err := DialSimpleWithoutPooling(target, extraOptions...)
 			if err != nil {
@@ -260,7 +268,13 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 			dialOptions = append(dialOptions, grpc.WithPerRPCCredentials(newRPCCredentials(u.User.String())))
 		}
 		if u.Scheme == "grpcs" {
-			dialOptions = append(dialOptions, grpc.WithTransportCredentials(google.NewDefaultCredentials().TransportCredentials()))
+			if *enableGoogleDefaultCredentials {
+				log.Debugf("Initializing google default credentials")
+				dialOptions = append(dialOptions, grpc.WithTransportCredentials(google.NewDefaultCredentials().TransportCredentials()))
+				log.Debugf("Initialized google default credentials")
+			} else {
+				dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(nil)))
+			}
 		} else {
 			dialOptions = append(dialOptions, grpc.WithInsecure())
 		}
@@ -283,9 +297,15 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 //
 // Outside of BuildBuddy servers, DialSimple should be used instead.
 func DialInternal(env environment.Env, target string, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
+	return DialInternalWithPoolSize(env, target, *poolSize, extraOptions...)
+}
+
+// DialInternalWithPoolSize is similar to DialInternal, but with a specified
+// pool size instead of the default.
+func DialInternalWithPoolSize(env environment.Env, target string, poolSize int, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
 	opts := []grpc.DialOption{interceptors.GetUnaryClientIdentityInterceptor(env), interceptors.GetStreamClientIdentityInterceptor(env)}
 	opts = append(opts, extraOptions...)
-	return DialSimple(target, opts...)
+	return DialSimpleWithPoolSize(target, poolSize, opts...)
 }
 
 // DialInternalWithoutPooling is a variant of DialInternal that disables
@@ -329,7 +349,7 @@ func (c *rpcCredentials) RequireTransportSecurity() bool {
 
 func CommonGRPCClientOptions() []grpc.DialOption {
 	return []grpc.DialOption{
-		grpc.WithStatsHandler(otelgrpc.NewClientHandler(otelgrpc.WithMeterProvider(noop.NewMeterProvider()))),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler(otelgrpc.WithMeterProvider(rpcutil.MeterProvider()), otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents))),
 		interceptors.GetUnaryClientInterceptor(),
 		interceptors.GetStreamClientInterceptor(),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),

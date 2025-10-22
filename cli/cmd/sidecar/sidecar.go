@@ -49,7 +49,7 @@ var (
 	cacheDir          = flag.String("cache_dir", "", "Root directory to use for local cache")
 	cacheMaxSizeBytes = flag.Int64("cache_max_size_bytes", 0, "Max cache size, in bytes")
 	inactivityTimeout = flag.Duration("inactivity_timeout", 5*time.Minute, "Sidecar will terminate after this much inactivity")
-	besSynchronous    = flag.Bool("bes_synchronous", false, "If true, wait until ackowledged")
+	besSynchronous    = flag.Bool("bes_synchronous", false, "If true, wait until acknowledged")
 )
 
 var (

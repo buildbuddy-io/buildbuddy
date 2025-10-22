@@ -1,4 +1,5 @@
-load("@bazel_tools//tools/build_defs/pkg:pkg.bzl", "pkg_tar")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 def _extract_bazel_installation_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.attr.out_dir)
@@ -74,17 +75,17 @@ extract_bazel_installation = rule(
 def bazel_pkg_tar(name, versions = [], **kwargs):
     """Create a tar file containing Bazel executable for each version in versions."""
     for version in versions:
-        native.genrule(
+        copy_file(
             name = "bazel-{}_crossplatform".format(version),
-            srcs = select({
-                "//platforms/configs:linux_x86_64": ["@io_bazel_bazel-{}-linux-x86_64//file:downloaded".format(version)],
-                "//platforms/configs:linux_arm64": ["@io_bazel_bazel-{}-linux-arm64//file:downloaded".format(version)],
-                "//platforms/configs:macos_x86_64": ["@io_bazel_bazel-{}-darwin-x86_64//file:downloaded".format(version)],
-                "//platforms/configs:macos_arm64": ["@io_bazel_bazel-{}-darwin-arm64//file:downloaded".format(version)],
+            src = select({
+                "//platforms/configs:linux_x86_64": "@io_bazel_bazel-{}-linux-x86_64//file:downloaded".format(version),
+                "//platforms/configs:linux_arm64": "@io_bazel_bazel-{}-linux-arm64//file:downloaded".format(version),
+                "//platforms/configs:macos_x86_64": "@io_bazel_bazel-{}-darwin-x86_64//file:downloaded".format(version),
+                "//platforms/configs:macos_arm64": "@io_bazel_bazel-{}-darwin-arm64//file:downloaded".format(version),
             }),
-            outs = ["bazel-{}".format(version)],
-            cmd_bash = "cp $(SRCS) $@",
-            executable = True,
+            out = "bazel-{}".format(version),
+            allow_symlink = True,
+            is_executable = True,
             **kwargs
         )
 

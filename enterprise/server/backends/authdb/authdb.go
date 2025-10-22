@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -23,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -499,10 +501,9 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 			LIMIT 1
 		) AS u
 			LEFT JOIN "UserGroups" AS ug
-				ON u.user_id = ug.user_user_id
+				ON u.user_id = ug.user_user_id AND ug.membership_status = ?
 			LEFT JOIN "Groups" AS g
 				ON ug.group_group_id = g.group_id
-		AND (ug.membership_status = ? OR ug.user_user_id IS NULL)
 		ORDER BY u.user_id, g.group_id ASC
 		`, subID, int32(grpb.GroupMembershipStatus_MEMBER),
 	)
@@ -528,7 +529,11 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 			log.CtxWarningf(ctx, "In LookupUserFromSubID, the UserGroup row User: %s Group %s did not match a group with that ID.", v.UserGroup.UserUserID, v.UserGroup.GroupGroupID)
 			continue
 		}
-		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: v.UserGroup.Role})
+		caps, err := role.ToCapabilities(role.Role(v.UserGroup.Role))
+		if err != nil {
+			return nil, status.WrapError(err, "could not convert role to capabilities")
+		}
+		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: &v.UserGroup.Role, Capabilities: caps})
 	}
 	return user, nil
 }
@@ -656,7 +661,7 @@ func (d *AuthDB) authorizeGroupAdminRole(ctx context.Context, groupID string) er
 	return authutil.AuthorizeOrgAdmin(u, groupID)
 }
 
-func (d *AuthDB) CreateAPIKey(ctx context.Context, groupID string, label string, caps []cappb.Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
+func (d *AuthDB) CreateAPIKey(ctx context.Context, groupID string, label string, caps []cappb.Capability, expiresIn time.Duration, visibleToDevelopers bool) (*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
 	}
@@ -672,6 +677,9 @@ func (d *AuthDB) CreateAPIKey(ctx context.Context, groupID string, label string,
 		Label:               label,
 		Capabilities:        capabilities.ToInt(caps),
 		VisibleToDevelopers: visibleToDevelopers,
+	}
+	if expiresIn > 0 {
+		ak.ExpiryUsec = d.clock.Now().Add(expiresIn).UnixMicro()
 	}
 	return d.createAPIKey(ctx, d.h, ak)
 }
@@ -689,11 +697,7 @@ func (d *AuthDB) CreateImpersonationAPIKey(ctx context.Context, groupID string) 
 	// Can't check group membership because impersonation modifies
 	// group information.
 	if !u.IsImpersonating() {
-		adminGroupID := d.env.GetAuthenticator().AdminGroupID()
-		if adminGroupID == "" {
-			return nil, status.PermissionDeniedError("You do not have access to the requested organization")
-		}
-		if err := authutil.AuthorizeOrgAdmin(u, adminGroupID); err != nil {
+		if err := claims.AuthorizeServerAdmin(ctx); err != nil {
 			return nil, err
 		}
 	}
@@ -750,7 +754,7 @@ func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, gro
 	return d.authorizeGroupAdminRole(ctx, groupID)
 }
 
-func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label string, caps []cappb.Capability) (*tables.APIKey, error) {
+func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label string, caps []cappb.Capability, expiresIn time.Duration) (*tables.APIKey, error) {
 	if !*userOwnedKeysEnabled {
 		return nil, status.UnimplementedError("not implemented")
 	}
@@ -815,6 +819,9 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label st
 		GroupID:      u.GetGroupID(),
 		Label:        label,
 		Capabilities: capabilities.ToInt(caps),
+	}
+	if expiresIn > 0 {
+		ak.ExpiryUsec = d.clock.Now().Add(expiresIn).UnixMicro()
 	}
 	return d.createAPIKey(ctx, d.h, ak)
 }

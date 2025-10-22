@@ -26,4 +26,9 @@ service Api {
   // Debug API
   rpc GetRangeDebugInfo(raft.GetRangeDebugInfoRequest)
       returns (raft.GetRangeDebugInfoResponse);
+  rpc AdminUpdateDescriptor(raft.AdminUpdateDescriptorRequest)
+      returns (raft.AdminUpdateDescriptorResponse);
+
+  rpc CheckRangeOverlaps(raft.CheckRangeOverlapsRequest)
+      returns (raft.CheckRangeOverlapsResponse);
 }

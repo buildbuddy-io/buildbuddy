@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import styles from "./terminal.module.css";
 
 function Term(props) {
@@ -115,4 +115,4 @@ function Detail(props) {
   return <span style={{ color: "#9e9e9e" }}>{props.text || "ERROR:"}</span>;
 }
 
-export { Term as default, Prompt, Info, Error, Question, Detail };
+export { Term as default, Detail, Error, Info, Prompt, Question };

@@ -226,10 +226,13 @@ func parseLogTimestamp(line string) (time.Time, bool) {
 }
 
 func ConfigureSidecar(args []string) ([]string, *Instance) {
+	// Allow an escape hatch to disable all sidecar features.
+	if os.Getenv("BB_DISABLE_SIDECAR") == "1" || os.Getenv("BB_DISABLE_SIDECAR") == "true" {
+		return args, nil
+	}
+
 	originalArgs := args
 
-	// Disable sidecar on CI for now since the async upload behavior can cause
-	// problems if the CI runner terminates before the uploads have completed.
 	if isCI(args) {
 		log.Debugf("CI build detected.")
 		syncFlag := arg.Get(args, "sync")

@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
-	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -29,6 +28,8 @@ var (
 	compress           = flags.Bool("compress", true, "If true, enable compression of uploads to remote caches")
 	stdin              = flags.Bool("stdin", false, "If true, read from stdin")
 	digestFunction     = flags.String("digest_function", "SHA256", "If set, use this digest function for uploads.")
+	forceTracing       = flags.Bool("trace", true, "If true, force tracing")
+	apiKey             = flags.String("api_key", "", "Optionally override the API key with this value")
 
 	usage = `
 usage: bb ` + flags.Name() + ` filename
@@ -87,8 +88,13 @@ func uploadFile(args []string) error {
 	defer f.Close()
 
 	ctx := context.Background()
-	if apiKey, err := storage.ReadRepoConfig("api-key"); err == nil && apiKey != "" {
+	if *apiKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+	} else if apiKey, err := login.GetAPIKey(); err == nil && apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
+	}
+	if *forceTracing {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", "force")
 	}
 
 	conn, err := grpc_client.DialSimple(*target)

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -24,13 +25,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -236,11 +241,6 @@ type resolveTestCase struct {
 	args       resolveArgs
 	checkError func(error) bool
 	opts       testregistry.Opts
-
-	readManifests  bool
-	writeManifests bool
-	readLayers     bool
-	writeLayers    bool
 }
 
 func TestResolve(t *testing.T) {
@@ -645,7 +645,7 @@ func TestAllowPrivateIPs(t *testing.T) {
 //
 // Currently caching is not implemented end-to-end, so each Resolve(...) call will make the same number of upstream requests.
 func TestResolve_WithCache(t *testing.T) {
-	baseCases := []resolveTestCase{
+	for _, tc := range []resolveTestCase{
 		{
 			name: "resolving an existing image without credentials succeeds",
 
@@ -688,42 +688,11 @@ func TestResolve_WithCache(t *testing.T) {
 				},
 			},
 		},
-	}
-
-	var testCasesWithFlags []resolveTestCase
-	for _, base := range baseCases {
-		for _, readManifests := range []bool{false, true} {
-			for _, writeManifests := range []bool{false, true} {
-				for _, writeLayers := range []bool{false, true} {
-					for _, readLayers := range []bool{false, true} {
-						tc := base
-						tc.readManifests = readManifests
-						tc.writeManifests = writeManifests
-						tc.writeLayers = writeLayers
-						tc.readLayers = readLayers
-						testCasesWithFlags = append(testCasesWithFlags, tc)
-					}
-				}
-			}
-		}
-	}
-
-	for _, tc := range testCasesWithFlags {
-		name := tc.name + fmt.Sprintf(
-			"/write_manifests_%t_read_manifests_%t_write_layers_%t_read_layers_%t",
-			tc.writeManifests,
-			tc.readManifests,
-			tc.writeLayers,
-			tc.readLayers,
-		)
-		t.Run(name, func(t *testing.T) {
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			te := setupTestEnvWithCache(t)
 			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 			flags.Set(t, "executor.container_registry.use_cache_percent", 100)
-			flags.Set(t, "executor.container_registry.write_manifests_to_cache", tc.writeManifests)
-			flags.Set(t, "executor.container_registry.read_manifests_from_cache", tc.readManifests)
-			flags.Set(t, "executor.container_registry.write_layers_to_cache", tc.writeLayers)
-			flags.Set(t, "executor.container_registry.read_layers_from_cache", tc.readLayers)
 			counter := newRequestCounter()
 			registry := testregistry.Run(t, testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -741,36 +710,63 @@ func TestResolve_WithCache(t *testing.T) {
 			})
 			registry.PushIndex(t, index, tc.imageName+"_index")
 
+			// Test with normal image manifest
 			{
 				imageAddress := registry.ImageAddress(tc.args.imageName + "_image")
+				imageDigest, err := pushedImage.Digest()
+				require.NoError(t, err)
 				pushedLayers, err := pushedImage.Layers()
 				require.NoError(t, err)
 				require.Len(t, pushedLayers, 1)
 				layerDigest, err := pushedLayers[0].Digest()
 				require.NoError(t, err)
+
+				// Initially, nothing is cached, and we expect to make requests
+				// to resolve the manifest, as well as to fetch the manifest and
+				// layer contents.
 				expected := map[string]int{
 					http.MethodGet + " /v2/": 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":             1,
 					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/latest":              1,
 					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(): 1,
 				}
-				if tc.readManifests {
-					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_image/manifests/latest"] = 1
+				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
+
+				// Try resolving again - the image should now be cached and we
+				// should be able to avoid GET requests for manifests and blobs,
+				// but we still expect some requests to resolve the tag to a
+				// digest.
+				expected = map[string]int{
+					http.MethodGet + " /v2/": 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest": 1,
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 
-				expected = map[string]int{http.MethodGet + " /v2/": 1}
-				if tc.readManifests {
-					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_image/manifests/latest"] = 1
+				// Try resolving again but fetch using a digest ref - we should
+				// still do a HEAD request for auth purposes, even though we
+				// don't need to resolve the tag to a digest.
+				imageAddressWithDigest := imageAddress + "@" + imageDigest.String()
+				expected = map[string]int{
+					http.MethodGet + " /v2/": 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/" + imageDigest.String(): 1,
 				}
-				if !(tc.writeManifests && tc.readManifests) {
-					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_image/manifests/latest"] = 1
-				}
-				if !(tc.writeLayers && tc.readLayers) {
-					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_image/blobs/"+layerDigest.String()] = 1
-				}
-				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
+				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter)
+
+				// Try resolving again but enable registry bypass (server admins
+				// can use this to bypass the registry for images that are
+				// cached). Should be able to avoid contacting the registry
+				// entirely, since we don't need to resolve the tag to a digest.
+				tcWithCreds := tc // copy
+				tcWithCreds.args.credentials, err = oci.CredentialsFromProperties(&platform.Properties{
+					ContainerImage:          imageAddressWithDigest,
+					ContainerRegistryBypass: true,
+				})
+				require.NoError(t, err)
+				expected = map[string]int{}
+				resolveAndCheck(t, tcWithCreds, te, imageAddressWithDigest, expected, counter)
 			}
 
+			// Test with index manifest
 			{
 				indexAddress := registry.ImageAddress(tc.args.imageName + "_index")
 				imageDigest, err := pushedImage.Digest()
@@ -780,36 +776,55 @@ func TestResolve_WithCache(t *testing.T) {
 				require.Len(t, pushedLayers, 1)
 				layerDigest, err := pushedLayers[0].Digest()
 				require.NoError(t, err)
+
+				// Initially, nothing is cached, and we expect to make requests
+				// to resolve the manifest, as well as to fetch the manifest and
+				// layer contents. Note that we have one more GET request here
+				// compared to the non-index manifest case, since the index
+				// manifest points to the platform-specific image manifest.
 				expected := map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():     1,
-				}
-				if tc.readManifests {
-					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/latest"] = 1
-					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/"+imageDigest.String()] = 1
-				}
-
-				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
-
-				expected = map[string]int{http.MethodGet + " /v2/": 1}
-				if tc.readManifests {
-					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/latest"] = 1
-					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/"+imageDigest.String()] = 1
-				}
-				if !(tc.writeManifests && tc.readManifests) {
-					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_index/manifests/latest"] = 1
-					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_index/manifests/"+imageDigest.String()] = 1
-
-				}
-				if !(tc.writeLayers && tc.readLayers) {
-					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_index/blobs/"+layerDigest.String()] = 1
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                   1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String():  1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():      1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
+
+				// Try resolving again - the image should now be cached and we
+				// should be able to avoid GET requests for manifests and blobs,
+				// but we still expect some requests to resolve the tag to a
+				// digest.
+				expected = map[string]int{
+					http.MethodGet + " /v2/": 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+				}
+				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
+
+				// Try resolving again but fetch using a digest ref - should be
+				// able to avoid contacting the registry entirely, since we
+				// don't need to resolve the tag to a digest.
+				imageAddressWithDigest := indexAddress + "@" + imageDigest.String()
+				expected = map[string]int{
+					http.MethodGet + " /v2/": 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+				}
+				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter)
 			}
 		})
 	}
+}
+
+// contextWithUnverifiedJWT creates a JWT with the given claims
+// and attaches it to the returned context.
+// Necessary now that we do not allow anonymous requests to access
+// the OCI cache.
+func contextWithUnverifiedJWT(c *claims.Claims) context.Context {
+	authCtx := claims.AuthContextWithJWT(context.Background(), c, nil)
+	jwt := authCtx.Value(authutil.ContextTokenStringKey).(string)
+	return context.WithValue(context.Background(), authutil.ContextTokenStringKey, jwt)
 }
 
 // TestResolve_Concurrency fetches layer contents from multiple goroutines
@@ -818,10 +833,6 @@ func TestResolve_Concurrency(t *testing.T) {
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
-	flags.Set(t, "executor.container_registry.write_manifests_to_cache", true)
-	flags.Set(t, "executor.container_registry.read_manifests_from_cache", true)
-	flags.Set(t, "executor.container_registry.write_layers_to_cache", true)
-	flags.Set(t, "executor.container_registry.read_layers_from_cache", true)
 	counter := newRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -860,8 +871,10 @@ func TestResolve_Concurrency(t *testing.T) {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
 	counter.reset()
+	c := &claims.Claims{UserID: "US123"}
+	testContext := contextWithUnverifiedJWT(c)
 	pulledImage, err := newResolver(t, te).Resolve(
-		context.Background(),
+		testContext,
 		imageAddress,
 		&rgpb.Platform{
 			Arch: runtime.GOARCH,
@@ -947,8 +960,10 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 
 func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, expected map[string]int, counter *requestCounter) {
 	counter.reset()
+	c := &claims.Claims{UserID: "US123"}
+	testContext := contextWithUnverifiedJWT(c)
 	pulledImage, err := newResolver(t, te).Resolve(
-		context.Background(),
+		testContext,
 		imageAddress,
 		tc.args.platform,
 		tc.args.credentials,
@@ -994,4 +1009,248 @@ func (c *requestCounter) reset() {
 	c.mu.Lock()
 	c.counts = map[string]int{}
 	c.mu.Unlock()
+}
+
+func TestResolveImageDigest_TagExists(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	imageName := "image_tag_exists"
+	_, img := registry.PushNamedImage(t, imageName)
+	pushedDigest, err := img.Digest()
+	require.NoError(t, err)
+	nameToResolve := registry.ImageAddress(imageName)
+
+	nameWithDigest, err := newResolver(t, te).ResolveImageDigest(
+		context.Background(),
+		nameToResolve,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+	)
+	require.NoError(t, err)
+
+	resolvedDigest, err := name.NewDigest(nameWithDigest)
+	require.NoError(t, err)
+	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
+}
+
+func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	nonexistent := registry.ImageAddress("does_not_exist")
+
+	_, err := newResolver(t, te).ResolveImageDigest(
+		context.Background(),
+		nonexistent,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+	)
+	require.Error(t, err)
+	require.True(t, status.IsUnavailableError(err), "expected UnavailableError, got: %v", err)
+}
+
+func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+
+	counter := newRequestCounter()
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	})
+
+	imageName := "cache_hit"
+	_, img := registry.PushNamedImage(t, imageName)
+	pushedDigest, err := img.Digest()
+	require.NoError(t, err)
+	nameToResolve := registry.ImageAddress(imageName + "@" + pushedDigest.String())
+
+	resolver := newResolver(t, te)
+
+	counter.reset()
+	nameWithDigest, err := resolver.ResolveImageDigest(
+		context.Background(),
+		nameToResolve,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+	)
+	require.NoError(t, err)
+	resolvedDigest, err := name.NewDigest(nameWithDigest)
+	require.NoError(t, err)
+	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
+
+	require.Empty(t, counter.snapshot())
+}
+
+func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+
+	counter := newRequestCounter()
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	})
+
+	imageName := "cache_hit"
+	_, img := registry.PushNamedImage(t, imageName)
+	pushedDigest, err := img.Digest()
+	require.NoError(t, err)
+	nameToResolve := registry.ImageAddress(imageName)
+
+	resolver := newResolver(t, te)
+
+	{
+		counter.reset()
+		nameWithDigest, err := resolver.ResolveImageDigest(
+			context.Background(),
+			nameToResolve,
+			oci.RuntimePlatform(),
+			oci.Credentials{},
+		)
+		require.NoError(t, err)
+		resolvedDigest, err := name.NewDigest(nameWithDigest)
+		require.NoError(t, err)
+		require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
+
+		expectedRequests := map[string]int{
+			http.MethodGet + " /v2/":                                    1,
+			http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
+		}
+		require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
+	}
+
+	{
+		counter.reset()
+		nameWithDigest, err := resolver.ResolveImageDigest(
+			context.Background(),
+			nameToResolve,
+			oci.RuntimePlatform(),
+			oci.Credentials{},
+		)
+		require.NoError(t, err)
+
+		resolvedDigest, err := name.NewDigest(nameWithDigest)
+		require.NoError(t, err)
+		require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
+
+		require.Empty(t, counter.snapshot())
+	}
+
+	{
+		ref, err := name.ParseReference(nameToResolve)
+		require.NoError(t, err)
+		registryAndRepoNoTag := ref.Context().String()
+		counter.reset()
+		nameWithDigest, err := resolver.ResolveImageDigest(
+			context.Background(),
+			registryAndRepoNoTag,
+			oci.RuntimePlatform(),
+			oci.Credentials{},
+		)
+		require.NoError(t, err)
+
+		resolvedDigest, err := name.NewDigest(nameWithDigest)
+		require.NoError(t, err)
+		require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
+
+		require.Empty(t, counter.snapshot())
+	}
+}
+
+func TestResolveImageDigest_CacheExpiration(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+
+	counter := newRequestCounter()
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	})
+
+	imageName := "cache_expiration"
+	_, img := registry.PushNamedImage(t, imageName)
+	pushedDigest, err := img.Digest()
+	require.NoError(t, err)
+	nameToResolve := registry.ImageAddress(imageName)
+
+	fakeClock := clockwork.NewFakeClock()
+	te.SetClock(fakeClock)
+	resolver := newResolver(t, te)
+
+	counter.reset()
+	nameWithDigest, err := resolver.ResolveImageDigest(
+		context.Background(),
+		nameToResolve,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+	)
+	require.NoError(t, err)
+	resolvedDigest, err := name.NewDigest(nameWithDigest)
+	require.NoError(t, err)
+	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
+
+	expectedFirst := map[string]int{
+		http.MethodGet + " /v2/":                                    1,
+		http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expectedFirst, counter.snapshot()))
+
+	// Immediate resolve should be a cache hit; no HTTP requests.
+	counter.reset()
+	nameWithDigest, err = resolver.ResolveImageDigest(
+		context.Background(),
+		nameToResolve,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+	)
+	require.NoError(t, err)
+	resolvedDigest, err = name.NewDigest(nameWithDigest)
+	require.NoError(t, err)
+	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
+	require.Empty(t, counter.snapshot())
+
+	// Advance time to just before TTL expiry; still a cache hit.
+	fakeClock.Advance(15*time.Minute - time.Second)
+	counter.reset()
+	nameWithDigest, err = resolver.ResolveImageDigest(
+		context.Background(),
+		nameToResolve,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+	)
+	require.NoError(t, err)
+	resolvedDigest, err = name.NewDigest(nameWithDigest)
+	require.NoError(t, err)
+	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
+	require.Empty(t, counter.snapshot())
+
+	// Advance past TTL; expect cache refresh (GET /v2/ and HEAD manifest).
+	fakeClock.Advance(2 * time.Second)
+	counter.reset()
+	nameWithDigest, err = resolver.ResolveImageDigest(
+		context.Background(),
+		nameToResolve,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+	)
+	require.NoError(t, err)
+	resolvedDigest, err = name.NewDigest(nameWithDigest)
+	require.NoError(t, err)
+	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
+
+	expectedRefresh := map[string]int{
+		http.MethodGet + " /v2/":                                    1,
+		http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expectedRefresh, counter.snapshot()))
 }

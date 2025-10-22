@@ -1,13 +1,17 @@
 package rangecache
 
 import (
+	"context"
+	"fmt"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
@@ -99,19 +103,28 @@ func (rc *RangeCache) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 // SetPreferredReplica moves the given replica to the front for the given range
 // descriptor. It's an no-op when the given range is not in the cache or the given
 // replica is not included in the range descriptor's replica list.
-func (rc *RangeCache) SetPreferredReplica(rep *rfpb.ReplicaDescriptor, rng *rfpb.RangeDescriptor) {
+func (rc *RangeCache) SetPreferredReplica(ctx context.Context, rep *rfpb.ReplicaDescriptor, rng *rfpb.RangeDescriptor) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	rangeIDAttr := attribute.Int64("range_id", int64(rep.GetRangeId()))
+	spn.SetAttributes(rangeIDAttr)
+	defer spn.End()
+
 	rc.rangeMu.RLock()
 	defer rc.rangeMu.RUnlock()
 
 	r := rc.rangeMap.Get(rng.GetStart(), rng.GetEnd())
 	if r == nil {
-		log.Errorf("SetPreferredReplica called but range %+v not in cache", rng)
+		err := fmt.Errorf("SetPreferredReplica called but range %+v not in cache", rng)
+		log.Error(err.Error())
+		tracing.RecordErrorToSpan(spn, err)
 		return
 	}
 
 	lr := r.Val
 	if lr == nil {
-		log.Errorf("locking range descriptor value for range [%q, %q) is nil", r.Start, r.End)
+		err := fmt.Errorf("locking range descriptor value for range [%q, %q) is nil", r.Start, r.End)
+		log.Error(err.Error())
+		tracing.RecordErrorToSpan(spn, err)
 		return
 	}
 	rd := lr.Get()
@@ -126,11 +139,21 @@ func (rc *RangeCache) SetPreferredReplica(rep *rfpb.ReplicaDescriptor, rng *rfpb
 		}
 	}
 	if leadReplicaIndex == -1 {
-		log.Errorf("SetPreferredReplica called but range %+v does not contain preferred %+v", rng, rep)
+		err := fmt.Errorf("SetPreferredReplica called but range %+v does not contain preferred %+v", rng, rep)
+		log.Error(err.Error())
+		tracing.RecordErrorToSpan(spn, err)
 		return
 	}
 	newDescriptor.Replicas[0], newDescriptor.Replicas[leadReplicaIndex] = newDescriptor.Replicas[leadReplicaIndex], newDescriptor.Replicas[0]
+
 	lr.Update(newDescriptor)
+
+	replica_ids := []int64{}
+	for _, repl := range newDescriptor.GetReplicas() {
+		replica_ids = append(replica_ids, int64(repl.GetReplicaId()))
+	}
+	replicaIDAttr := attribute.Int64Slice("replicas", replica_ids)
+	spn.SetAttributes(replicaIDAttr)
 }
 
 // Get returns a RangeDescriptor that includes the given key within its range.

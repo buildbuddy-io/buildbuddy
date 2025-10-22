@@ -9,12 +9,12 @@ go_library(
     deps = [
         "//proto:auth_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:encryption_go_proto",
         "//proto:hit_tracker_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
-        "//proto:soci_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/backends/blobstore",
         "//server/backends/disk_cache",

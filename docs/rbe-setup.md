@@ -10,28 +10,56 @@ This guide assumes you're using [BuildBuddy Cloud](cloud.md) or [BuildBuddy Ente
 
 ## The basics
 
-The very simplest Bazel command needed to enable RBE is the following:
+To execute a build remotely on BuildBuddy, pass the `--remote_executor` flag to your `bazel build` command:
 
 ```bash
 bazel build //... --remote_executor=grpcs://remote.buildbuddy.io
 ```
 
-This points Bazel at BuildBuddy Cloud as a remote executor. A simple repo that has no C/C++/CGO or Java dependencies will build just fine like this. Most interesting repos have some dependencies on C/C++/CGO or Java - so we'll need to tell our remote executors where to find tools like gcc or the JRE. We do this with [platforms](https://docs.bazel.build/versions/master/platforms.html) and [toolchains](https://docs.bazel.build/versions/master/toolchains.html).
+This points Bazel at BuildBuddy Cloud as a remote executor. Projects that do not build native libraries or binaries will likely build correctly using the command above.
 
-## Configuring your workspace
+Projects that build native libraries or binaries or depend on platform-specific tools will need more configuration to take advantage of RBE. We do this with [platforms](https://bazel.build/extending/platforms) and [toolchains](https://bazel.build/extending/toolchains). Adding the [BuildBuddy Toolchain](https://github.com/buildbuddy-io/buildbuddy-toolchain) to your project will let you build and test targets remotely.
 
-There are several options for configuring your platforms and toolchains, the most fully features of which being [bazel-toolchains](https://releases.bazel.build/bazel-toolchains.html). It comes with an `rbe_autoconfig` rule that works nicely with BuildBuddy.
+## Using the BuildBuddy Toolchain with Bazel modules
 
-Unfortunately, bazel-toolchains has a dependency on Docker and can take quite some time to start up in a clean workspace, so we provide a simple and easy-to-use [BuildBuddy toolchain](https://github.com/buildbuddy-io/toolchain) that enables you to get up and running quickly, and works for most use cases.
+If your project uses [Bazel modules](https://bazel.build/external/module), you can add the BuildBuddy Toolchain as a dependency for your module:
 
-To get started with the BuildBuddy Toolchain, add the following lines to your `WORKSPACE` file:
+```python title="MODULE.bazel"
+bazel_dep(name = "toolchains_buildbuddy")
+archive_override(
+    module_name = "toolchains_buildbuddy",
+    integrity = "sha256-VtJjefgP2Vq5S6DiGYczsupNkosybmSBGWwcLUAYz8c=",
+    strip_prefix = "buildbuddy-toolchain-66146a3015faa348391fcceea2120caa390abe03",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/66146a3015faa348391fcceea2120caa390abe03.tar.gz"],
+)
+buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
+
+register_toolchains(
+    "@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64",
+)
+```
+
+Then, to build remotely on x86_64 Linux:
+
+```bash
+bazel build //... \
+    --bes_results_url=https://app.buildbuddy.io/invocation/ \
+    --bes_backend=grpcs://remote.buildbuddy.io \
+    --remote_executor=grpcs://remote.buildbuddy.io \
+    --platforms=@toolchains_buildbuddy//platforms:linux_x86_64 \
+    --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+```
+
+## Using the BuildBuddy Toolchain with a WORKSPACE file
+
+If your project still uses a [`WORKSPACE`](https://bazel.build/concepts/build-ref) file, you can add the BuildBuddy Toolchain with this snippet:
 
 ```python title="WORKSPACE"
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    integrity = "sha256-e6gcgLHmJHvxCNNbCSQ4OrX8FbGn8TiS7XSVphM1ZU8=",
-    strip_prefix = "buildbuddy-toolchain-badf8034b2952ec613970a27f24fb140be7eaf73",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/badf8034b2952ec613970a27f24fb140be7eaf73.tar.gz"],
+    integrity = "sha256-VtJjefgP2Vq5S6DiGYczsupNkosybmSBGWwcLUAYz8c=",
+    strip_prefix = "buildbuddy-toolchain-66146a3015faa348391fcceea2120caa390abe03",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/66146a3015faa348391fcceea2120caa390abe03.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
@@ -165,7 +193,7 @@ This determines the number of parallel actions Bazel will remotely execute at on
 --jobs=50
 ```
 
-[Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--jobs)
+[Bazel docs](https://bazel.build/reference/command-line-reference#build-flag--jobs)
 
 ### --remote_timeout
 
@@ -175,11 +203,11 @@ This determines the maximum time Bazel will spend on any single remote call, inc
 --remote_timeout=10m
 ```
 
-[Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--remote_timeout)
+[Bazel docs](https://bazel.build/reference/command-line-reference#build-flag--remote_timeout)
 
 ### --remote_download_minimal
 
-By default, bazel will download intermediate results of remote executions - so in case an artifact isn't found in the remote cache, it can be re-uploaded. This can slow down builds in networks constrained environments.
+By default, bazel will download intermediate results of remote executions - so in case an artifact isn't found in the remote cache, it can be re-uploaded. This can slow down builds in network-constrained environments.
 
 This can be turned off with the flag:
 
@@ -187,9 +215,9 @@ This can be turned off with the flag:
 --remote_download_minimal
 ```
 
-While this flag can speed up your build, it makes them more sensitive to caching issues - and likely shouldn't be used in production yet.
+This flag can speed up your build and reduce your cache transfer. It's recommended as long you're using Bazel version 7.0 or higher.
 
-[Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--remote_download_minimal)
+[Bazel docs](https://bazel.build/reference/command-line-reference#build-flag--remote_download_minimal)
 
 ### --remote_instance_name
 
@@ -199,7 +227,7 @@ If you'd like separate remote caches, whether it's for CI builds vs local builds
 --remote_instance_name=buildbuddy-io/buildbuddy/ci
 ```
 
-[Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--remote_instance_name)
+[Bazel docs](https://bazel.build/reference/command-line-reference#build-flag--remote_instance_name)
 
 ### --disk_cache
 
@@ -209,7 +237,7 @@ While setting a local disk cache can speed up your builds, when used in conjunct
 --disk_cache=
 ```
 
-[Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--disk_cache)
+[Bazel docs](https://bazel.build/reference/command-line-reference#build-flag--disk_cache)
 
 ### --incompatible_strict_action_env
 
@@ -219,7 +247,7 @@ Some rules (like protobuf) are particularly sensitive to changes in environment 
 --incompatible_strict_action_env
 ```
 
-[Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--incompatible_strict_action_env)
+[Bazel docs](https://bazel.build/reference/command-line-reference#flag--incompatible_strict_action_env)
 
 ### --action_env, --test_env
 
@@ -232,8 +260,8 @@ This is commonly used to set environment variables such as `GO_TEST_WRAP_TESTV=1
 --test_env=GO_TEST_WRAP_TESTV=1
 ```
 
-[`--action_env` Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--action_env)
-[`--test_env` Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--test_env)
+[`--action_env` Bazel docs](https://bazel.build/reference/command-line-reference#flag--action_env)
+[`--test_env` Bazel docs](https://bazel.build/reference/command-line-reference#flag--test_env)
 
 ### --repo_env
 
@@ -251,7 +279,7 @@ It's commonly used to set environment variables that are used to augment how too
 --repo_env=GOMODCACHE=/some-path/my-go-mod-cache
 ```
 
-[Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--repo_env)
+[Bazel docs](https://bazel.build/reference/command-line-reference#common_options-flag--repo_env)
 
 ### --define
 
@@ -261,7 +289,7 @@ Define allows you to assign build variables. This is commonly use to set `EXECUT
 --define=EXECUTOR=remote
 ```
 
-[Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--define)
+[Bazel docs](https://bazel.build/reference/command-line-reference#flag--define)
 
 ### --spawn_strategy
 
@@ -271,7 +299,7 @@ Sets the list of strategies in priority order from highest to lowest. Each actio
 --strategy=remote,local
 ```
 
-[Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--spawn_strategy)
+[Bazel docs](https://bazel.build/reference/command-line-reference#build-flag--spawn_strategy)
 
 ### --strategy
 
@@ -281,7 +309,7 @@ Explicitly setting strategies should [no longer be needed](https://github.com/ba
 --strategy=Scalac=remote
 ```
 
-[Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--strategy)
+[Bazel docs](https://bazel.build/reference/command-line-reference#build-flag--strategy)
 
 ### --remote_execution_priority
 
@@ -305,7 +333,7 @@ bazel run //emergency_deployment --remote_execution_priority=-1000
 Note: remote execution priority is applied on a best-effort basis. Setting
 this flag doesn't provide a strong guarantee of execution ordering.
 
-[Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--remote_execution_priority)
+[Bazel docs](https://bazel.build/reference/command-line-reference#build-flag--remote_execution_priority)
 
 ### --experimental_inmemory_dotd_files
 
@@ -315,7 +343,7 @@ If enabled, C++ .d files will be passed through in memory directly from the remo
 --experimental_inmemory_dotd_files
 ```
 
-[Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--experimental_inmemory_dotd_files)
+[Bazel docs](https://bazel.build/reference/command-line-reference#flag--experimental_inmemory_dotd_files)
 
 ### --experimental_inmemory_jdeps_files
 
@@ -325,7 +353,7 @@ If enabled, .jdeps files generated from Java compilations will be passed through
 --experimental_inmemory_jdeps_files
 ```
 
-[Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--experimental_inmemory_jdeps_files)
+[Bazel docs](https://bazel.build/reference/command-line-reference#flag--experimental_inmemory_jdeps_files)
 
 ## Examples
 
@@ -382,7 +410,7 @@ build:remote --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 # Platform flags:
 # The toolchain container used for execution is defined in the target indicated
 # by "extra_execution_platforms", "host_platform" and "platforms".
-# More about platforms: https://docs.bazel.build/versions/master/platforms.html
+# More about platforms: https://bazel.build/extending/platforms
 build:remote --extra_toolchains=@rbe_default//config:cc-toolchain
 build:remote --extra_execution_platforms=@rbe_default//config:platform
 build:remote --host_platform=@rbe_default//config:platform

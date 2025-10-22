@@ -138,9 +138,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-22.04
+            flags: --config=static
           - os: ubuntu-22.04-16cpu-arm64-arm-limited # linux arm64
+            flags: --config=static-arm64
           - os: macos-13 # macOS amd64
+            flags: ""
           - os: macos-13-xlarge # macOS arm64
+            flags: ""
     runs-on: ${{ matrix.os }}
     needs: [push-tag, create-release]
     steps:
@@ -187,6 +191,9 @@ jobs:
               --repository_cache='~/repo-cache/' \
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
               --//cli/version:cli_version="$VERSION" \
+              --compilation_mode=opt \
+              --strip=always \
+              ${{ matrix.flags }} \
               //cli/cmd/bb
 
           BINARY="bazel-${VERSION}-${OS}-${ARCH}"
@@ -223,3 +230,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
         run: |
           gh release edit ${{ needs.push-tag.outputs.version }} --draft=false --repo=buildbuddy-io/bazel
+
+      - name: Slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: all
+        env:
+          GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_AUTO_RELEASE_WEBHOOK_URL }}
+        if: always()

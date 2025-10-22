@@ -41,6 +41,14 @@
   padding: 4px 16px;
 }
 
+.global-filter .option-group-section-title {
+  font-weight: 600;
+  font-size: 15px;
+  background: white;
+  padding: 4px 16px;
+  margin-top: 16px;
+}
+
 .global-filter .option-group {
   padding: 4px 0;
   padding-right: 16px;

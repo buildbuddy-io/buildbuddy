@@ -1,7 +1,7 @@
 import { grp } from "../../proto/group_ts_proto";
 import { user_id } from "../../proto/user_id_ts_proto";
-import { BuildBuddyServiceRpcName } from "../service/rpc_service";
 import { user } from "../../proto/user_ts_proto";
+import { BuildBuddyServiceRpcName } from "../service/rpc_service";
 
 export class User {
   displayUser: user_id.DisplayUser;
@@ -65,4 +65,17 @@ export class User {
   isGroupAdmin() {
     return this.allowedRpcs.has("updateGroup");
   }
+}
+
+export function accountName(user: user_id.DisplayUser | undefined | null): string {
+  if (!user) {
+    return "Unknown User";
+  }
+  if (user.username) {
+    return user.username;
+  }
+  if (user.email) {
+    return user.email;
+  }
+  return `BuildBuddy User ${user.userId?.id}`;
 }

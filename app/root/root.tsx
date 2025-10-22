@@ -1,17 +1,16 @@
 import React from "react";
-import FooterComponent from "../footer/footer";
-import MenuComponent from "../menu/menu";
-import InvocationComponent from "../invocation/invocation";
-import SetupComponent from "../docs/setup";
+import AlertComponent from "../alert/alert";
+import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
-import router, { Path } from "../router/router";
-import authService from "../auth/auth_service";
-import { User } from "../auth/auth_service";
+import CompareInvocationsComponent from "../compare/compare_invocations";
+import SetupComponent from "../docs/setup";
 import errorService from "../errors/error_service";
 import faviconService from "../favicon/favicon";
-import CompareInvocationsComponent from "../compare/compare_invocations";
-import AlertComponent from "../alert/alert";
+import FooterComponent from "../footer/footer";
+import InvocationComponent from "../invocation/invocation";
+import MenuComponent from "../menu/menu";
 import UserPreferences from "../preferences/preferences";
+import router, { Path } from "../router/router";
 
 declare var window: any;
 

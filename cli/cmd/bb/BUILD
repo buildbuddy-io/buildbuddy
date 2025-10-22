@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "bb_lib",
     srcs = ["bb.go"],
@@ -12,17 +14,24 @@ go_library(
         "//cli/arg",
         "//cli/bazelisk",
         "//cli/cli_command",
+        "//cli/cli_command/register",
         "//cli/cmd/sidecar",
         "//cli/help",
+        "//cli/help/option_definitions",
         "//cli/log",
+        "//cli/log/option_definitions",
         "//cli/metadata",
         "//cli/parser",
+        "//cli/parser/arguments",
+        "//cli/parser/options",
+        "//cli/parser/parsed",
         "//cli/picker",
         "//cli/plugin",
         "//cli/runscript",
         "//cli/setup",
-        "//cli/shortcuts",
         "//cli/watcher",
+        "//cli/watcher/option_definitions",
+        "//server/util/lib/seq",
         "//server/util/rlimit",
         "//server/util/status",
     ],
@@ -104,5 +113,3 @@ go_binary(
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

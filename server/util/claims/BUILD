@@ -20,6 +20,7 @@ go_library(
         "//server/util/status",
         "//server/util/subdomain",
         "@com_github_golang_jwt_jwt_v4//:jwt",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
@@ -28,14 +29,18 @@ go_test(
     srcs = ["claims_test.go"],
     deps = [
         ":claims",
+        "//proto:capability_go_proto",
         "//proto:context_go_proto",
         "//server/interfaces",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
         "//server/util/authutil",
         "//server/util/capabilities",
         "//server/util/request_context",
-        "//server/util/role",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//metadata",
     ],
 )

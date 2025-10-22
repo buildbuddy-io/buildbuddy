@@ -3,24 +3,23 @@ package options
 import (
 	"fmt"
 	"iter"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/options/flag_form"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 
 	bfpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_flags"
 )
 
 const (
+	NativeBuiltinPluginID   = "//builtin/native"
 	StarlarkBuiltinPluginID = "//builtin/starlark"
 	UnknownBuiltinPluginID  = "//builtin/unknown"
-)
-
-const (
-	longForm = iota
-	shortForm
-	negativeForm
 )
 
 // These are the starlark flag prefixes
@@ -79,6 +78,9 @@ type Definition struct {
 	// name is the long-form name of this flag. Example: "compilation_mode"
 	name string
 
+	// oldName is the old name for this flag, if one exists.
+	oldName string
+
 	// shortName is the short-form name of this flag, if one exists. Bazel only
 	// allows single letters for these, like "c". Note that the "=" assignment
 	// syntax cannot be used with short names. For example,
@@ -94,14 +96,14 @@ type Definition struct {
 	hasNegative bool
 
 	// Flags that do not require a value must be parsed differently. Their name
-	// and value, if any,must appear as a single token, which means the "=" syntax
-	// has to be used when assigning a value. For example, "bazel build
+	// and value, if any, must appear as a single token, which means the "="
+	// syntax has to be used when assigning a value. For example, "bazel build
 	// --subcommands false" is actually equivalent to "bazel build
 	// --subcommands=true //false:false".
 	requiresValue bool
 
 	// The list of commands that support this option.
-	supportedCommands map[string]struct{}
+	supportedCommands set.Set[string]
 
 	// pluginID is the ID of the bb cli plugin associated with this option
 	// definition, if applicable (or a pseudo-plugin ID for so-called "built-in"
@@ -111,6 +113,10 @@ type Definition struct {
 
 func (d *Definition) Name() string {
 	return d.name
+}
+
+func (d *Definition) OldName() string {
+	return d.oldName
 }
 
 func (d *Definition) ShortName() string {
@@ -145,7 +151,7 @@ func (d *Definition) SupportedCommands() iter.Seq[string] {
 
 func (d *Definition) Supports(command string) bool {
 	for cmd, ok := command, true; ok; cmd, ok = bazelrc.Parent(cmd) {
-		if _, ok := d.supportedCommands[cmd]; ok {
+		if d.supportedCommands.Contains(cmd) {
 			return true
 		}
 	}
@@ -155,11 +161,9 @@ func (d *Definition) Supports(command string) bool {
 
 func (d *Definition) AddSupportedCommand(commands ...string) {
 	if d.supportedCommands == nil {
-		d.supportedCommands = make(map[string]struct{}, 1)
+		d.supportedCommands = make(set.Set[string], 1)
 	}
-	for _, command := range commands {
-		d.supportedCommands[command] = struct{}{}
-	}
+	d.supportedCommands.AddSeq(slices.Values(commands))
 }
 
 func (d *Definition) PluginID() string {
@@ -168,6 +172,9 @@ func (d *Definition) PluginID() string {
 
 type DefinitionOpt func(d *Definition)
 
+func WithOldName(oldName string) DefinitionOpt {
+	return func(d *Definition) { d.oldName = oldName }
+}
 func WithShortName(shortName string) DefinitionOpt {
 	return func(d *Definition) { d.shortName = shortName }
 }
@@ -180,15 +187,7 @@ func WithPluginID(pluginID string) DefinitionOpt {
 
 func WithSupportFor(commands ...string) DefinitionOpt {
 	return func(d *Definition) {
-		if len(commands) == 0 {
-			return
-		}
-		if d.supportedCommands == nil {
-			d.supportedCommands = make(map[string]struct{}, len(commands))
-		}
-		for _, command := range commands {
-			d.supportedCommands[command] = struct{}{}
-		}
+		d.AddSupportedCommand(commands...)
 	}
 }
 
@@ -260,14 +259,13 @@ func DefinitionFrom(info *bfpb.FlagInfo) *Definition {
 	d := &Definition{
 		name:              info.GetName(),
 		shortName:         info.GetAbbreviation(),
+		oldName:           info.GetOldName(),
 		multi:             info.GetAllowsMultiple(),
 		hasNegative:       info.GetHasNegativeFlag(),
 		requiresValue:     info.GetRequiresValue(),
-		supportedCommands: make(map[string]struct{}, len(info.GetCommands())),
+		supportedCommands: make(set.Set[string], len(info.GetCommands())),
 	}
-	for _, cmd := range info.GetCommands() {
-		d.supportedCommands[cmd] = struct{}{}
-	}
+	d.AddSupportedCommand(info.GetCommands()...)
 	return d
 }
 
@@ -286,7 +284,13 @@ type Option interface {
 	ClearValue()
 	SetValue(string)
 	GetDefinition() *Definition
-	UseShortName(bool)
+	SetDefinition(*Definition)
+	UseName()
+	UseShortName()
+	UseOldName()
+	UsesName() bool
+	UsesShortName() bool
+	UsesOldName() bool
 	Normalized() Option
 
 	// Because Options wrap other Options sometimes, we cannot depend on being
@@ -296,18 +300,169 @@ type Option interface {
 	BoolLike() BoolLike
 }
 
+// The base type for all option types. Handles a lot of formatting and option
+// representation transformations.
+type optionBase struct {
+	*Definition
+
+	// The name this flag will use when formatted.
+	Form flag_form.Form
+}
+
+// Returns a new option base derived from the option string (without the leading
+// dashes) and the provided Definition.
+func NewOptionBase(opt string, d *Definition) (*optionBase, error) {
+	// validate optName
+	var form flag_form.Form
+	switch opt {
+	case d.name:
+		form = flag_form.Name
+	case d.oldName:
+		form = flag_form.OldName
+	case d.shortName:
+		form = flag_form.ShortName
+	default:
+		if d.hasNegative {
+			if n, cut := strings.CutPrefix(opt, "no"); cut {
+				if n == d.name {
+					form = flag_form.NegativeName
+					break
+				}
+				if n == d.oldName {
+					form = flag_form.NegativeOldName
+					break
+				}
+			}
+		}
+		return nil, fmt.Errorf("option name '%s' cannot specify an option with definition '%#v'", opt, d)
+	}
+	return &optionBase{
+		Definition: d,
+		Form:       form,
+	}, nil
+}
+
+// Coerce this option base to use the standard name for this option.
+func (o *optionBase) UseName() {
+	if o.Name() == "" {
+		log.Warnf("Attempted to use name for option %s, which lacks a name.", o.Name())
+		return
+	}
+	o.Form = o.Form.AsNameType(flag_form.Name)
+}
+
+// Coerce this option base to use the old name for this option.
+func (o *optionBase) UseOldName() {
+	if o.OldName() == "" {
+		log.Warnf("Attempted to use old name for option %s, which lacks an old name.", o.Name())
+		return
+	}
+	o.Form = o.Form.AsNameType(flag_form.OldName)
+}
+
+// Coerce this option base to use the short name for this option. Does not
+// support coercing from a negative (`--no`) type flag.
+func (o *optionBase) UseShortName() {
+	if o.ShortName() == "" {
+		log.Warnf("Attempted to use short name for option %s, which lacks a short name.", o.Name())
+		return
+	}
+	if o.Form.Negative() {
+		log.Warnf("Cannot coerce short form from negative form for option %s.", o.Name())
+		return
+	}
+	o.Form = flag_form.ShortName
+}
+
+// Returns whether or not this option will be represented using the standard
+// name for the option.
+func (o *optionBase) UsesName() bool {
+	return o.Form.CompareNameType(flag_form.Name)
+}
+
+// Returns whether or not this option will be represented using the old
+// name for the option.
+func (o *optionBase) UsesOldName() bool {
+	return o.OldName() != "" && o.Form.CompareNameType(flag_form.OldName)
+}
+
+// Returns whether or not this option will be represented using the short name
+// for the option.
+func (o *optionBase) UsesShortName() bool {
+	return o.ShortName() != "" && o.Form == flag_form.ShortName
+}
+
+// Returns a formatted version of the option.
+func (o *optionBase) Format() string {
+	switch o.Form {
+	case flag_form.Name:
+		return "--" + o.Name()
+	case flag_form.NegativeName:
+		return "--" + "no" + o.Name()
+	case flag_form.OldName:
+		return "--" + o.OldName()
+	case flag_form.NegativeOldName:
+		return "--" + "no" + o.OldName()
+	case flag_form.ShortName:
+		return "-" + o.ShortName()
+	default:
+		// Just default to the standard representaation if the form is unknown.
+		return "--" + o.Name()
+	}
+}
+
+// Coerces this option base to be a negative (`--no`) form option. If this is
+// called on option base which uses a short name representation,  it will
+// default to using the standard name representation instead, so long as one
+// exists.
+//
+// Has no effect if called on an option base with a definition that does not
+// have a negative representation.
+//
+// Has no effect if called on option base with an unknown representation.
+func (o *optionBase) SetNegative() {
+	if !o.HasNegative() {
+		log.Warnf("Can't negate flag '%s', which does not have a negative form.", o.Name())
+		return
+	}
+	if o.Form.Unknown() {
+		log.Warnf("Can't negate flag '%s', which does not have a known form.", o.Name())
+		return
+	}
+	if o.Form == flag_form.ShortName {
+		if o.Name() != "" {
+			log.Warnf("Can't negate short name of flag '%s'; defaulting to using negative form of the standard name.", o.Name)
+			o.Form = flag_form.NegativeName
+			return
+		}
+		log.Warnf("Can't negate short name of flag '%s' and there is no known standard name to default to; flag could not be negated.", o.Name)
+	}
+	o.Form = o.Form.SetNegative()
+}
+
+// Coerces this option base to not be a negative (`--no`) form option.
+//
+// Has no effect if called on option base with an unknown representation.
+func (o *optionBase) ClearNegative() error {
+	if o.Form.Unknown() {
+		return fmt.Errorf("Can't clear negation of flag '%s', which does not have a known form.", o.Name())
+	}
+	o.Form = o.Form.ClearNegative()
+	return nil
+}
+
+// Returns whether or not this option base is a negative (`--no`) form option.
+func (o *optionBase) Negative() bool {
+	return o.Form.Negative()
+}
+
 // RequiredValueOption is used to represent an option whose definition specifies
 // `RequiresValue` as `true`.
 type RequiredValueOption struct {
-	*Definition
+	*optionBase
 
 	// The string Value of this option
 	Value *string
-
-	// If this is true, the option will be formatted using the short name.
-	// Otherwise, it will use the long name. If the option definition has an empty
-	// `ShortName`, this value is ignored.
-	UsesShortName bool
 
 	// If this is true, the option will be formatted Joined to its value by `=`.
 	// Otherwise, it will be formatted with its value as two separate tokens.
@@ -318,6 +473,10 @@ type RequiredValueOption struct {
 
 func (o *RequiredValueOption) GetDefinition() *Definition {
 	return o.Definition
+}
+
+func (o *RequiredValueOption) SetDefinition(d *Definition) {
+	o.Definition = d
 }
 
 func (o *RequiredValueOption) HasValue() bool {
@@ -345,26 +504,20 @@ func (o *RequiredValueOption) SetValue(value string) {
 
 func (o *RequiredValueOption) Format() []string {
 	switch {
-	case o.UsesShortName && o.ShortName() != "":
-		return []string{"-" + o.ShortName(), o.GetValue()}
+	case o.UsesShortName():
+		return []string{o.optionBase.Format(), o.GetValue()}
 	case o.Joined:
-		return []string{"--" + o.Name() + "=" + o.GetValue()}
+		return []string{o.optionBase.Format() + "=" + o.GetValue()}
 	default:
-		return []string{"--" + o.Name(), o.GetValue()}
+		return []string{o.optionBase.Format(), o.GetValue()}
 	}
-}
-
-func (o *RequiredValueOption) UseShortName(u bool) {
-	if o.ShortName() == "" {
-		log.Warnf("Attempted to use short name for option %s, which lacks a short name.", o.Name())
-		return
-	}
-	o.UsesShortName = u
 }
 
 func (o *RequiredValueOption) Normalized() Option {
+	normalizedOptionBase := *o.optionBase
+	normalizedOptionBase.UseName()
 	return &RequiredValueOption{
-		Definition: o.Definition,
+		optionBase: &normalizedOptionBase,
 		Value:      o.Value,
 		Joined:     true,
 	}
@@ -377,7 +530,6 @@ func (o *RequiredValueOption) BoolLike() BoolLike {
 type BoolLike interface {
 	AsBool() (bool, error)
 	Cleared() bool
-	Clear()
 	Negated() bool
 	Negate()
 }
@@ -385,24 +537,18 @@ type BoolLike interface {
 // BoolOrEnumOption is used to represent an option whose definition specifies
 // `HasNegative` as `true`.
 type BoolOrEnumOption struct {
-	*Definition
+	*optionBase
 
 	// The string Value of this option, if any
 	Value *string
-
-	// If IsNegative is true, the flag will be formatted in --noNAME format.
-	// This value is ignored if `Value` is set.
-	IsNegative bool
-
-	// If this is true, the option will be formatted using the short name.
-	// Otherwise, it will use the long name. If the option definition has an empty
-	// `ShortName`, this value is ignored.
-	// If Value is not nil or BoolValue is false, this value is ignored.
-	UsesShortName bool
 }
 
 func (o *BoolOrEnumOption) GetDefinition() *Definition {
 	return o.Definition
+}
+
+func (o *BoolOrEnumOption) SetDefinition(d *Definition) {
+	o.Definition = d
 }
 
 func (o *BoolOrEnumOption) HasValue() bool {
@@ -417,7 +563,7 @@ func (o *BoolOrEnumOption) GetValue() string {
 	if o.Value != nil {
 		return *o.Value
 	}
-	if o.IsNegative {
+	if o.optionBase.Negative() {
 		return "0"
 	}
 	return "1"
@@ -425,42 +571,32 @@ func (o *BoolOrEnumOption) GetValue() string {
 
 func (o *BoolOrEnumOption) ClearValue() {
 	o.Value = nil
-	o.IsNegative = false
+	o.optionBase.ClearNegative()
 }
 
 func (o *BoolOrEnumOption) SetValue(value string) {
 	o.Value = &value
+	o.optionBase.ClearNegative()
 }
 
 func (o *BoolOrEnumOption) Cleared() bool {
-	return o.Value == nil && !o.IsNegative
-}
-
-func (o *BoolOrEnumOption) Clear() {
-	o.Value = nil
-	o.IsNegative = false
+	return o.Value == nil && !o.optionBase.Negative()
 }
 
 func (o *BoolOrEnumOption) Negated() bool {
-	return o.Value == nil && o.IsNegative
+	return o.Value == nil && o.optionBase.Negative()
 }
 
 func (o *BoolOrEnumOption) Negate() {
 	o.Value = nil
-	o.IsNegative = true
+	o.optionBase.SetNegative()
 }
 
 func (o *BoolOrEnumOption) Format() []string {
-	switch {
-	case o.Value != nil:
-		return []string{"--" + o.Name() + "=" + *o.Value}
-	case o.IsNegative:
-		return []string{"--no" + o.Name()}
-	case o.UsesShortName && o.ShortName() != "":
-		return []string{"-" + o.ShortName()}
-	default:
-		return []string{"--" + o.Name()}
+	if o.Value != nil {
+		return []string{o.optionBase.Format() + "=" + *o.Value}
 	}
+	return []string{o.optionBase.Format()}
 }
 
 func (o *BoolOrEnumOption) AsBool() (bool, error) {
@@ -473,27 +609,23 @@ func (o *BoolOrEnumOption) AsBool() (bool, error) {
 	return false, fmt.Errorf("Error converting to bool: flag '--%s' has non-boolean value '%s'.", o.Name(), o.GetValue())
 }
 
-func (o *BoolOrEnumOption) UseShortName(u bool) {
-	if o.ShortName() == "" {
-		log.Warnf("Attempted to use short name for option %s, which lacks a short name.", o.Name())
-		return
-	}
-	o.UsesShortName = u
-}
-
 func (o *BoolOrEnumOption) Normalized() Option {
+	normalizedOptionBase := *o.optionBase
+	normalizedOptionBase.UseName()
 	if v, err := o.AsBool(); err == nil {
+		if !v {
+			// This accounts for the case where the value is what makes the option
+			// evaluate to false.
+			normalizedOptionBase.SetNegative()
+		}
 		return &BoolOrEnumOption{
-			Definition:    o.Definition,
-			Value:         nil,
-			IsNegative:    !v,
-			UsesShortName: false,
+			optionBase: &normalizedOptionBase,
+			Value:      nil,
 		}
 	}
 	return &BoolOrEnumOption{
-		Definition:    o.Definition,
-		Value:         o.Value,
-		UsesShortName: false,
+		optionBase: &normalizedOptionBase,
+		Value:      o.Value,
 	}
 }
 
@@ -509,18 +641,18 @@ type starlarkOption struct {
 
 func (o *starlarkOption) Normalized() Option {
 	// don't normalize starlark flags
+	normalizedOptionBase := *o.optionBase
 	return &BoolOrEnumOption{
-		Definition: o.Definition,
+		optionBase: &normalizedOptionBase,
 		Value:      o.Value,
-		IsNegative: o.IsNegative,
 	}
 }
 
 func (o *starlarkOption) Format() []string {
-	if o.Value != nil && o.IsNegative {
+	if o.Value != nil {
 		// Starlark flags can have both a "no" prefix and a value; account for
 		// that here.
-		return []string{"--no" + o.Name() + "=" + *o.Value}
+		return []string{o.optionBase.Format() + "=" + *o.Value}
 	}
 	return o.BoolOrEnumOption.Format()
 }
@@ -537,16 +669,15 @@ func (_ *starlarkOption) Supports(command string) bool {
 // These options cannot take values and are not interpreted as booleans (true or
 // false).
 type ExpansionOption struct {
-	*Definition
-
-	// If this is true, the option will be formatted using the short name.
-	// Otherwise, it will use the long name. If the option definition has an empty
-	// `ShortName`, this value is ignored.
-	UsesShortName bool
+	*optionBase
 }
 
 func (o *ExpansionOption) GetDefinition() *Definition {
 	return o.Definition
+}
+
+func (o *ExpansionOption) SetDefinition(d *Definition) {
+	o.Definition = d
 }
 
 func (_ *ExpansionOption) HasValue() bool {
@@ -571,24 +702,14 @@ func (_ *ExpansionOption) SetValue(value string) {
 }
 
 func (o *ExpansionOption) Format() []string {
-	if o.UsesShortName && o.ShortName() != "" {
-		return []string{"-" + o.ShortName()}
-	}
-	return []string{"--" + o.Name()}
-}
-
-func (o *ExpansionOption) UseShortName(u bool) {
-	if o.ShortName() == "" {
-		log.Warnf("Attempted to use short name for option %s, which lacks a short name.", o.Name())
-		return
-	}
-	o.UsesShortName = u
+	return []string{o.optionBase.Format()}
 }
 
 func (o *ExpansionOption) Normalized() Option {
+	normalizedOptionBase := *o.optionBase
+	normalizedOptionBase.UseName()
 	return &ExpansionOption{
-		Definition:    o.Definition,
-		UsesShortName: false,
+		optionBase: &normalizedOptionBase,
 	}
 }
 
@@ -648,31 +769,25 @@ func newOptionImpl(optName string, v *string, d *Definition) (Option, error) {
 	if d == nil {
 		return nil, fmt.Errorf("In NewOption: definition was nil for optname %s and value %+v", optName, v)
 	}
-
-	// validate optName
-	var form int
-	switch optName {
-	case d.name:
-		form = longForm
-	case d.shortName:
-		form = shortForm
-	case "no" + d.name:
-		if d.hasNegative {
-			form = negativeForm
-			break
-		}
-		fallthrough
-	default:
-		return nil, fmt.Errorf("option name '%s' cannot specify an option with definition '%#v'", optName, d)
+	base, err := NewOptionBase(optName, d)
+	if err != nil {
+		return nil, err
 	}
 
 	if d.PluginID() == StarlarkBuiltinPluginID {
 		return &starlarkOption{
-			BoolOrEnumOption: BoolOrEnumOption{Definition: d, Value: v, UsesShortName: form == shortForm, IsNegative: form == negativeForm},
+			BoolOrEnumOption: BoolOrEnumOption{
+				optionBase: base,
+				Value:      v,
+			},
 		}, nil
 	}
 	if d.RequiresValue() {
-		return &RequiredValueOption{Definition: d, Value: v, UsesShortName: form == shortForm, Joined: v != nil}, nil
+		return &RequiredValueOption{
+			optionBase: base,
+			Value:      v,
+			Joined:     v != nil,
+		}, nil
 	}
 	if v != nil {
 		// A flag that didn't require a value had one anyway; this is normally okay if this
@@ -690,16 +805,21 @@ func newOptionImpl(optName string, v *string, d *Definition) (Option, error) {
 			// and remove the value ourselves, we should output the warning instead.
 			log.Warnf("option '%s' is an expansion option. It does not accept values, and does not change its expansion based on the value provided. Value '%s' will be ignored.", d.name, v)
 		}
-		if form == negativeForm && d.pluginID != StarlarkBuiltinPluginID {
+		if base.Form.Negative() && d.pluginID != StarlarkBuiltinPluginID {
 			// This is a negative boolean value (of the form "--noNAME") with a
 			// specified value, which is only supported for starlark.
 			return nil, fmt.Errorf("Unexpected value after boolean option: %s", optName)
 		}
 	}
 	if d.hasNegative {
-		return &BoolOrEnumOption{Definition: d, Value: v, UsesShortName: form == shortForm, IsNegative: form == negativeForm}, nil
+		return &BoolOrEnumOption{
+			optionBase: base,
+			Value:      v,
+		}, nil
 	}
-	return &ExpansionOption{Definition: d, UsesShortName: form == shortForm}, nil
+	return &ExpansionOption{
+		optionBase: base,
+	}, nil
 }
 
 type BoolOrEnum struct {
@@ -770,14 +890,20 @@ func (b *BoolOrEnum) Set(value any) {
 	}
 }
 
-// AccumulateValues accepts an initial value, acc, and a variadic Option
+func NameFilter[O Option](name string) func(O) bool {
+	return func(opt O) bool {
+		return opt.Name() == name
+	}
+}
+
+// AccumulateValues accepts an initial value, acc, and a Sequenceable Option
 // parameter, opts, and returns the resulting value of evaluating all of those
 // options in order. It should only be called with opts that all share the same
-// definition, and an inital value that matches the type of value that
+// definition, and an initial value that matches the type of value that
 // definition implies. Otherwise, its output will be nonsensical.
-func AccumulateValues[T string | []string | bool | BoolOrEnum, O Option](acc T, opts ...O) (T, error) {
+func AccumulateValues[O Option, T string | []string | bool | BoolOrEnum, S seq.Sequenceable[O]](acc T, opts S) (T, error) {
 	p := any(&acc)
-	for _, opt := range opts {
+	for opt := range seq.Sequence[O](opts) {
 		switch p := p.(type) {
 		case *string:
 			*p = opt.GetValue()
@@ -796,8 +922,7 @@ func AccumulateValues[T string | []string | bool | BoolOrEnum, O Option](acc T, 
 		case *BoolOrEnum:
 			b := opt.BoolLike()
 			if b == nil {
-				p.SetEnum(opt.GetValue())
-				continue
+				return *new(T), fmt.Errorf("Option '%s' is not a boolean (or boolean-or-enum) option.", opt.Name())
 			}
 			v, err := b.AsBool()
 			if err != nil {
@@ -805,6 +930,8 @@ func AccumulateValues[T string | []string | bool | BoolOrEnum, O Option](acc T, 
 				continue
 			}
 			p.SetBool(v)
+		default:
+			return *new(T), fmt.Errorf("Accumulator is of unsupported type %T.", acc)
 		}
 	}
 	return acc, nil

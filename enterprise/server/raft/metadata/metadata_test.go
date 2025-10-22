@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
@@ -77,6 +78,12 @@ func getCacheConfig(t *testing.T) *metadata.Config {
 		HTTPPort:        testport.FindFree(t),
 		GRPCPort:        testport.FindFree(t),
 		LogDBConfigType: store.SmallMemLogDBConfigType,
+		Partitions: []disk.Partition{
+			{
+				ID:           constants.DefaultPartitionID,
+				MaxSizeBytes: 10_000_000_000, /* 10 GB */
+				NumRanges:    1,
+			}},
 	}
 }
 
@@ -442,6 +449,7 @@ func TestLRU(t *testing.T) {
 			{
 				ID:           "default",
 				MaxSizeBytes: maxSizeBytes,
+				NumRanges:    1,
 			},
 		}
 	}

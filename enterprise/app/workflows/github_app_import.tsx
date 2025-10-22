@@ -6,15 +6,15 @@ import Banner from "../../../app/components/banner/banner";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import LinkButton from "../../../app/components/button/link_button";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
+import { TextLink } from "../../../app/components/link/link";
 import Select, { Option } from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
 import router from "../../../app/router/router";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { normalizeRepoURL } from "../../../app/util/git";
-import { github } from "../../../proto/github_ts_proto";
-import { TextLink } from "../../../app/components/link/link";
 import { linkReadOnlyGitHubAppURL, linkReadWriteGitHubAppURL } from "../../../app/util/github";
+import { github } from "../../../proto/github_ts_proto";
 
 type GitHubAppImportProps = {
   user: User;
@@ -164,7 +164,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
       .finally(() => this.setState({ linkRequest: null, linkLoading: false }));
   }
   private getLinkedRepoUrls(): Set<string> {
-    return new Set(this.state.linkedReposResponse?.repoUrls || []);
+    return new Set(this.state.linkedReposResponse?.repos?.map((repo) => repo.repoUrl) || []);
   }
 
   private onClickInstallApp() {

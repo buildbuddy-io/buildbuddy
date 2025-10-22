@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"runtime"
 	"testing"
 	"time"
 
@@ -370,6 +372,62 @@ func BenchmarkFindMissing(b *testing.B) {
 			name := fmt.Sprintf("%s%d", cache.Name, size)
 			b.Run(name, func(b *testing.B) {
 				benchmarkFindMissing(ctx, cache, size, b)
+			})
+		}
+	}
+}
+
+func BenchmarkParallel(b *testing.B) {
+	te := getTestEnv(b)
+	ctx := getUserContext(b, te)
+	caches := getAllCaches(b, te)
+
+	size := int64(20000)
+	b.ReportAllocs()
+	b.SetBytes(size)
+	for _, cacheType := range []rspb.CacheType{rspb.CacheType_AC, rspb.CacheType_CAS} {
+		digestBufs := makeDigests(b, numDigests, size, cacheType)
+		for _, cache := range caches {
+			name := fmt.Sprintf("%s%d/%s", cache.Name, size, cacheType)
+			b.Run(name, func(b *testing.B) {
+				b.SetParallelism(2 * runtime.GOMAXPROCS(0))
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						dbuf := digestBufs[i%len(digestBufs)]
+						i++
+
+						// Set the digest in the cache.
+						if i%2 == 0 {
+							require.NoError(b, cache.Cache.Set(ctx, dbuf.d, dbuf.buf))
+						} else {
+							w, err := cache.Cache.Writer(ctx, dbuf.d)
+							require.NoError(b, err)
+							n, err := w.Write(dbuf.buf)
+							require.NoError(b, err)
+							require.Equal(b, size, int64(n))
+							require.NoError(b, w.Commit())
+							require.NoError(b, w.Close())
+						}
+
+						// Read the digest from the cache.
+						r, err := cache.Cache.Reader(ctx, dbuf.d, 0, 0)
+						require.NoError(b, err)
+						n, err := io.Copy(io.Discard, r)
+						require.NoError(b, err)
+						require.Equal(b, size, n)
+						require.NoError(b, r.Close())
+
+						// Get the digest from the cache.
+						res, err := cache.Cache.Get(ctx, dbuf.d)
+						require.NoError(b, err)
+						require.Equal(b, dbuf.buf, res)
+
+						missing, err := cache.Cache.FindMissing(ctx, []*rspb.ResourceName{dbuf.d})
+						require.NoError(b, err)
+						require.Len(b, missing, 0, "expected no missing digests")
+					}
+				})
 			})
 		}
 	}

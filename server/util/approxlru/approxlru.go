@@ -1,9 +1,10 @@
 package approxlru
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -210,7 +211,7 @@ func (l *LRU[T]) resampleK(k int) error {
 
 	// read new entries to put in the pool.
 	additions := make([]*Sample[T], 0, k*l.samplesPerEviction)
-	for i := 0; i < k; i++ {
+	for range k {
 		entries, err := l.onSample(l.ctx, l.samplesPerEviction)
 		if err != nil {
 			return err
@@ -227,8 +228,8 @@ func (l *LRU[T]) resampleK(k int) error {
 	l.samplePool = append(l.samplePool, additions...)
 
 	if len(l.samplePool) > 0 {
-		sort.Slice(l.samplePool, func(i, j int) bool {
-			return l.samplePool[i].Timestamp.UnixNano() > l.samplePool[j].Timestamp.UnixNano()
+		slices.SortFunc(l.samplePool, func(l, r *Sample[T]) int {
+			return cmp.Compare(r.Timestamp.UnixNano(), l.Timestamp.UnixNano())
 		})
 	}
 

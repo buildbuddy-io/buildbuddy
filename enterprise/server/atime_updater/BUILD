@@ -8,13 +8,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/batch_operator",
         "//proto:remote_execution_go_proto",
-        "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
-        "//server/remote_cache/digest",
-        "//server/util/authutil",
-        "//server/util/log",
         "@org_golang_google_grpc//status",
     ],
 )
@@ -25,11 +22,13 @@ go_test(
     srcs = ["atime_updater_test.go"],
     embed = [":atime_updater"],
     deps = [
+        "//enterprise/server/batch_operator",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/testutil/testhealthcheck",
         "//server/util/authutil",
         "//server/util/log",
         "//server/util/status",

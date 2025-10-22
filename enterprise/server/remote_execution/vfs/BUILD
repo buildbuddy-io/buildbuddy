@@ -18,6 +18,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs",
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin_amd64": [
+            "//enterprise/server/util/vfscommon",
             "//proto:vfs_go_proto",
             "//server/util/log",
             "//server/util/status",
@@ -28,6 +29,7 @@ go_library(
             "@org_golang_x_sys//unix",
         ],
         "@io_bazel_rules_go//go/platform:darwin_arm64": [
+            "//enterprise/server/util/vfscommon",
             "//proto:vfs_go_proto",
             "//server/util/log",
             "//server/util/status",
@@ -38,6 +40,7 @@ go_library(
             "@org_golang_x_sys//unix",
         ],
         "@io_bazel_rules_go//go/platform:linux_amd64": [
+            "//enterprise/server/util/vfscommon",
             "//proto:vfs_go_proto",
             "//server/util/log",
             "//server/util/status",
@@ -48,6 +51,7 @@ go_library(
             "@org_golang_x_sys//unix",
         ],
         "@io_bazel_rules_go//go/platform:linux_arm64": [
+            "//enterprise/server/util/vfscommon",
             "//proto:vfs_go_proto",
             "//server/util/log",
             "//server/util/status",
@@ -58,9 +62,11 @@ go_library(
             "@org_golang_x_sys//unix",
         ],
         "@io_bazel_rules_go//go/platform:windows_amd64": [
+            "//enterprise/server/util/vfscommon",
             "//proto:vfs_go_proto",
         ],
         "@io_bazel_rules_go//go/platform:windows_arm64": [
+            "//enterprise/server/util/vfscommon",
             "//proto:vfs_go_proto",
         ],
         "//conditions:default": [],
@@ -84,8 +90,11 @@ go_test(
             "//enterprise/server/remote_execution/filecache",
             "//enterprise/server/util/vfs_server",
             "//proto:remote_execution_go_proto",
+            "//server/cache/dirtools",
             "//server/environment",
             "//server/remote_cache/byte_stream_server",
+            "//server/remote_cache/cachetools",
+            "//server/remote_cache/digest",
             "//server/testutil/testdigest",
             "//server/testutil/testenv",
             "//server/testutil/testfs",
@@ -101,8 +110,11 @@ go_test(
             "//enterprise/server/remote_execution/filecache",
             "//enterprise/server/util/vfs_server",
             "//proto:remote_execution_go_proto",
+            "//server/cache/dirtools",
             "//server/environment",
             "//server/remote_cache/byte_stream_server",
+            "//server/remote_cache/cachetools",
+            "//server/remote_cache/digest",
             "//server/testutil/testdigest",
             "//server/testutil/testenv",
             "//server/testutil/testfs",

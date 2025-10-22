@@ -1,7 +1,6 @@
-import React from "react";
-import InvocationModel from "./invocation_model";
 import DagreGraph from "dagre-d3-react";
 import { AlertCircle, List } from "lucide-react";
+import React from "react";
 
 interface Props {
   buildLogs: string;

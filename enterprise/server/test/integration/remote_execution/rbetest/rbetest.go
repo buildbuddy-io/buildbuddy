@@ -62,7 +62,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -106,7 +105,7 @@ type Env struct {
 	t                             *testing.T
 	testEnv                       *testenv.TestEnv
 	rbeClient                     *rbeclient.Client
-	redisTarget                   string
+	redisClient                   redis.UniversalClient
 	rootDataDir                   string
 	buildBuddyServers             map[*BuildBuddyServer]struct{}
 	shutdownBuildBuddyServersOnce sync.Once
@@ -229,8 +228,22 @@ func (r *Env) setupRootDirectoryWithTestCommandBinary(ctx context.Context) *repb
 // The returned environment does not have any executors by default. Use the
 // Add*Executor functions to add executors.
 func NewRBETestEnv(t *testing.T) *Env {
-	redisTarget := testredis.Start(t).Target
-	envOpts := &enterprise_testenv.Options{RedisTarget: redisTarget}
+	return NewRBETestEnvWithOptions(t, &EnvOptions{})
+}
+
+type EnvOptions struct {
+	// ShardedRedis indicates whether to use a sharded redis setup.
+	ShardedRedis bool
+}
+
+func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
+	envOpts := &enterprise_testenv.Options{}
+	if opts.ShardedRedis {
+		ring := testredis.StartSharded(t, 0 /*use default shard count*/)
+		envOpts.RedisClient = ring.Client()
+	} else {
+		envOpts.RedisClient = testredis.Start(t).Client()
+	}
 
 	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
 	auth := enterprise_testauth.Configure(t, testEnv)
@@ -244,7 +257,7 @@ func NewRBETestEnv(t *testing.T) *Env {
 	// API key to allow registering executors.
 	var userID, groupID string
 	for _, u := range randUsers {
-		if len(u.Groups) != 1 || u.Groups[0].Role != uint32(role.Admin) {
+		if len(u.Groups) != 1 || !u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			continue
 		}
 		userID = u.UserID
@@ -269,7 +282,7 @@ func NewRBETestEnv(t *testing.T) *Env {
 	rbe := &Env{
 		testEnv:           testEnv,
 		t:                 t,
-		redisTarget:       redisTarget,
+		redisClient:       envOpts.RedisClient,
 		buildBuddyServers: make(map[*BuildBuddyServer]struct{}),
 		executors:         make(map[string]*Executor),
 		envOpts:           envOpts,
@@ -690,7 +703,7 @@ func (r *Env) AddBuildBuddyServers(n int) {
 }
 
 func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *BuildBuddyServer {
-	envOpts := &enterprise_testenv.Options{RedisTarget: r.redisTarget}
+	envOpts := &enterprise_testenv.Options{RedisClient: r.redisClient}
 	env := &buildBuddyServerEnv{TestEnv: enterprise_testenv.GetCustomTestEnv(r.t, envOpts), rbeEnv: r}
 	// We're using an in-memory SQLite database so we need to make sure all servers share the same handle.
 	env.SetDBHandle(r.testEnv.GetDBHandle())
@@ -1291,21 +1304,19 @@ func DownloadInputsNoop(ctx context.Context, ioStats *repb.IOStats) error {
 // test.
 type testRunnerPool struct {
 	interfaces.RunnerPool
-	runInterceptor            RunInterceptor
-	recycleInterceptor        RecycleInterceptor
-	downloadInputsInterceptor DownloadInputsFunc
+	runInterceptor     RunInterceptor
+	recycleInterceptor RecycleInterceptor
 }
 
 type TestRunnerOverrides struct {
 	RunInterceptor     RunInterceptor
 	RecycleInterceptor RecycleInterceptor
-	DownloadInputsMock DownloadInputsFunc
 }
 
 func NewTestRunnerPool(t testing.TB, env environment.Env, cacheRoot string, opts TestRunnerOverrides) interfaces.RunnerPool {
 	realPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{})
 	require.NoError(t, err)
-	return &testRunnerPool{realPool, opts.RunInterceptor, opts.RecycleInterceptor, opts.DownloadInputsMock}
+	return &testRunnerPool{realPool, opts.RunInterceptor, opts.RecycleInterceptor}
 }
 
 func (p *testRunnerPool) Get(ctx context.Context, task *repb.ScheduledTask) (interfaces.Runner, error) {
@@ -1313,7 +1324,7 @@ func (p *testRunnerPool) Get(ctx context.Context, task *repb.ScheduledTask) (int
 	if err != nil {
 		return nil, err
 	}
-	return &testRunner{realRunner, p.runInterceptor, p.downloadInputsInterceptor}, nil
+	return &testRunner{realRunner, p.runInterceptor}, nil
 }
 
 func (p *testRunnerPool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedCleanly bool) {
@@ -1328,8 +1339,7 @@ func (p *testRunnerPool) TryRecycle(ctx context.Context, r interfaces.Runner, fi
 // testRunner is a Runner implementation that allows mocking out its methods.
 type testRunner struct {
 	interfaces.Runner
-	run            RunInterceptor
-	downloadInputs DownloadInputsFunc
+	run RunInterceptor
 }
 
 func (r *testRunner) Run(ctx context.Context, ioStats *repb.IOStats) *interfaces.CommandResult {
@@ -1337,13 +1347,6 @@ func (r *testRunner) Run(ctx context.Context, ioStats *repb.IOStats) *interfaces
 		return r.Runner.Run(ctx, ioStats)
 	}
 	return r.run(ctx, r.Runner.Run)
-}
-
-func (r *testRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
-	if r.downloadInputs == nil {
-		return r.Runner.DownloadInputs(ctx, ioStats)
-	}
-	return r.downloadInputs(ctx, ioStats)
 }
 
 type FakeTaskSizer struct {

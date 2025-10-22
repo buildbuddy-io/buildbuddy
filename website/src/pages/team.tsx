@@ -1,9 +1,9 @@
-import React from "react";
+import Image from "@theme/IdealImage";
 import Layout from "@theme/Layout";
+import { Github, Linkedin, Mail, Twitter } from "lucide-react";
+import React from "react";
 import common from "../css/common.module.css";
 import styles from "./team.module.css";
-import Image from "@theme/IdealImage";
-import { Github, Linkedin, Mail, Twitter } from "lucide-react";
 
 const teamMembers = [
   {

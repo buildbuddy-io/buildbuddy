@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -124,27 +123,16 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 		if event.GetDeleted() {
 			return nil, nil
 		}
-		v, err := fieldgetter.ExtractValues(
-			event,
-			"HeadCommit.ID",
-			"Ref",
-			"Repo.CloneURL",
-			"Repo.Private",
-			"Repo.DefaultBranch",
-		)
-		if err != nil {
-			return nil, err
-		}
-		branch := strings.TrimPrefix(v["Ref"], "refs/heads/")
+		branch := strings.TrimPrefix(event.GetRef(), "refs/heads/")
 		return &interfaces.WebhookData{
 			EventName:               webhook_data.EventName.Push,
-			PushedRepoURL:           v["Repo.CloneURL"],
+			PushedRepoURL:           event.GetRepo().GetCloneURL(),
 			PushedBranch:            branch,
-			SHA:                     v["HeadCommit.ID"],
-			TargetRepoURL:           v["Repo.CloneURL"],
-			TargetRepoDefaultBranch: v["Repo.DefaultBranch"],
+			SHA:                     event.GetHeadCommit().GetID(),
+			TargetRepoURL:           event.GetRepo().GetCloneURL(),
+			TargetRepoDefaultBranch: event.GetRepo().GetDefaultBranch(),
 			TargetBranch:            branch,
-			IsTargetRepoPublic:      v["Repo.Private"] == "false",
+			IsTargetRepoPublic:      !event.GetRepo().GetPrivate(),
 		}, nil
 
 	case *gh.PullRequestEvent:
@@ -182,35 +170,23 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 	}
 }
 
+type HasPullRequestEvent interface {
+	GetPullRequest() *gh.PullRequest
+}
+
 // parsePullRequestOrReview extracts WebhookData from a pull_request or
 // pull_request_review event.
-func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error) {
-	v, err := fieldgetter.ExtractValues(
-		event,
-		"PullRequest.Head.Repo.CloneURL",
-		"PullRequest.Head.Ref",
-		"PullRequest.Head.SHA",
-		"PullRequest.Base.Repo.CloneURL",
-		"PullRequest.Base.Repo.Private",
-		"PullRequest.Base.Repo.DefaultBranch",
-		"PullRequest.Base.Ref",
-		"PullRequest.User.Login",
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	isTargetRepoPublic := v["PullRequest.Base.Repo.Private"] == "false"
+func parsePullRequestOrReview(event HasPullRequestEvent) (*interfaces.WebhookData, error) {
 	return &interfaces.WebhookData{
 		EventName:               webhook_data.EventName.PullRequest,
-		PushedRepoURL:           v["PullRequest.Head.Repo.CloneURL"],
-		PushedBranch:            v["PullRequest.Head.Ref"],
-		SHA:                     v["PullRequest.Head.SHA"],
-		TargetRepoURL:           v["PullRequest.Base.Repo.CloneURL"],
-		TargetRepoDefaultBranch: v["PullRequest.Base.Repo.DefaultBranch"],
-		IsTargetRepoPublic:      isTargetRepoPublic,
-		TargetBranch:            v["PullRequest.Base.Ref"],
-		PullRequestAuthor:       v["PullRequest.User.Login"],
+		PushedRepoURL:           event.GetPullRequest().GetHead().GetRepo().GetCloneURL(),
+		PushedBranch:            event.GetPullRequest().GetHead().GetRef(),
+		SHA:                     event.GetPullRequest().GetHead().GetSHA(),
+		TargetRepoURL:           event.GetPullRequest().GetBase().GetRepo().GetCloneURL(),
+		TargetRepoDefaultBranch: event.GetPullRequest().GetBase().GetRepo().GetDefaultBranch(),
+		IsTargetRepoPublic:      !event.GetPullRequest().GetBase().GetRepo().GetPrivate(),
+		TargetBranch:            event.GetPullRequest().GetBase().GetRef(),
+		PullRequestAuthor:       event.GetPullRequest().GetUser().GetLogin(),
 	}, nil
 }
 

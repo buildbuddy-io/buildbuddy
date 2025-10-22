@@ -2,16 +2,30 @@ package config
 
 import (
 	"flag"
+	"time"
 
 	dbConfig "github.com/lni/dragonboat/v4/config"
 )
 
 var (
-	maxRangeSizeBytes = flag.Int64("cache.raft.max_range_size_bytes", 1e8, "If set to a value greater than 0, ranges will be split until smaller than this size")
+	targetRangeSizeBytes  = flag.Int64("cache.raft.target_range_size_bytes", 1e8, "If set to a value greater than 0, ranges will be split until smaller than this size")
+	rangeSizeJitterFactor = flag.Float64("cache.raft.range_size_jitter_factor", 0.1, "Randomization factor we use to determine the split threshold, should be [0, 1)")
+	// This value should be approximately 10x the config.RTTMilliseconds,
+	// but we want to include a little more time for the operation itself to
+	// complete.
+	singleRaftOpTimeout = flag.Duration("cache.raft.op_timeout", 1*time.Second, "The duration of timeout for a single raft operation")
 )
 
-func MaxRangeSizeBytes() int64 {
-	return *maxRangeSizeBytes
+func TargetRangeSizeBytes() int64 {
+	return *targetRangeSizeBytes
+}
+
+func RangeSizeJitterFactor() float64 {
+	return *rangeSizeJitterFactor
+}
+
+func SingleRaftOpTimeout() time.Duration {
+	return *singleRaftOpTimeout
 }
 
 func GetRaftConfig(rangeID, replicaID uint64) dbConfig.Config {

@@ -1,6 +1,8 @@
 actions:
   - name: Test
     container_image: ubuntu-22.04
+    resource_requests:
+      disk: 27GB
     triggers:
       push:
         branches:
@@ -11,19 +13,6 @@ actions:
           - "*"
     steps:
       - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-bare"
-  - name: Test with BzlMod
-    container_image: ubuntu-22.04
-    resource_requests:
-      disk: 27GB
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "*"
-    steps:
-      - run: "bazel test //... --enable_bzlmod --noenable_workspace --config=linux-workflows --config=bzlmod-target-linux-x86 --config=race --test_tag_filters=-performance,-docker,-bare"
   - name: Check style
     container_image: ubuntu-22.04
     triggers:
@@ -37,7 +26,7 @@ actions:
     # when running on push to master.
     git_fetch_depth: 0
     steps:
-      - run: "bazel run //tools/checkstyle --config=linux-workflows"
+      - run: "bazel run //tools/lint --config=linux-workflows"
   - name: Test (darwin_amd64)
     os: "darwin"
     triggers:

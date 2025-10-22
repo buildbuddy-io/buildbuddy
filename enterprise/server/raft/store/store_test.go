@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,8 +19,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -53,12 +54,26 @@ func getMembership(t *testing.T, ts *testutil.TestingStore, ctx context.Context,
 	return replicas
 }
 
+type addToRaftFunc func(t *testing.T, ts *testutil.TestingStore, ctx context.Context, rangeID uint64, replicaID uint64, nhid string)
+
 func addNonVoting(t *testing.T, ts *testutil.TestingStore, ctx context.Context, rangeID uint64, replicaID uint64, nhid string) {
 	membership, err := ts.GetMembership(ctx, rangeID)
 	require.NoError(t, err)
 	ccid := membership.ConfigChangeID
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	maxSingleOpTimeout := 3 * time.Second
+	err = client.RunNodehostFn(ctx, maxSingleOpTimeout, func(ctx context.Context) error {
 		return ts.NodeHost().SyncRequestAddNonVoting(ctx, rangeID, replicaID, nhid, ccid)
+	})
+	require.NoError(t, err)
+}
+
+func addNode(t *testing.T, ts *testutil.TestingStore, ctx context.Context, rangeID uint64, replicaID uint64, nhid string) {
+	membership, err := ts.GetMembership(ctx, rangeID)
+	require.NoError(t, err)
+	ccid := membership.ConfigChangeID
+	maxSingleOpTimeout := 3 * time.Second
+	err = client.RunNodehostFn(ctx, maxSingleOpTimeout, func(ctx context.Context) error {
+		return ts.NodeHost().SyncRequestAddReplica(ctx, rangeID, replicaID, nhid, ccid)
 	})
 	require.NoError(t, err)
 }
@@ -71,6 +86,79 @@ func TestConfiguredClusters(t *testing.T) {
 	s1.Stop()
 	sf.RecreateStore(t, s1)
 	require.Equal(t, 2, s1.ConfiguredClusters())
+}
+
+func TestLeasedRange_LeaseInvalid(t *testing.T) {
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+	sf.StartShard(t, ctx, s1)
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+
+	rd := s.GetRange(2)
+	newRD := rd.CloneVT()
+	newRD.Generation++
+
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
+	require.NoError(t, err)
+	var storeNotLeaseHolder *testutil.TestingStore
+	for storeNotLeaseHolder == nil {
+		storeWithLease := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+
+		for _, s := range stores {
+			if s.NHID() == storeWithLease.NHID() {
+				continue
+			}
+			if s.GetRange(2) == nil {
+				continue
+			}
+			storeNotLeaseHolder = s
+			break
+		}
+	}
+
+	h := &rfpb.Header{
+		RangeId:         2,
+		Generation:      1,
+		ConsistencyMode: rfpb.Header_LINEARIZABLE,
+	}
+	_, err = storeNotLeaseHolder.LeasedRange(ctx, h)
+	require.True(t, status.IsOutOfRangeError(err), "err is %s", err)
+	require.ErrorContains(t, err, constants.RangeLeaseInvalidMsg)
+}
+
+func TestLeasedRange_LeaseNotCurrent(t *testing.T) {
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+	sf.StartShard(t, ctx, s1)
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+
+	rd := s.GetRange(2)
+	newRD := rd.CloneVT()
+	newRD.Generation++
+
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
+	require.NoError(t, err)
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	h := &rfpb.Header{
+		RangeId:         2,
+		Generation:      1,
+		ConsistencyMode: rfpb.Header_LINEARIZABLE,
+	}
+	_, err = s.LeasedRange(ctx, h)
+	require.True(t, status.IsOutOfRangeError(err), "err is %s", err)
+	require.ErrorContains(t, err, constants.RangeNotCurrentMsg)
 }
 
 func TestAddGetRemoveRange(t *testing.T) {
@@ -98,15 +186,38 @@ func TestAddGetRemoveRange(t *testing.T) {
 	require.Nil(t, gotRd)
 }
 
+func TestUpdateRangeDescriptor(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_driver", false)
+
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	sf.StartShard(t, ctx, stores...)
+
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	mrd := s.GetRange(1)
+	newRD := mrd.CloneVT()
+	newRD.Generation++
+
+	err := s.UpdateRangeDescriptor(ctx, mrd, newRD)
+	require.NoError(t, err)
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	mrd = s.GetRange(1)
+
+	require.Equal(t, newRD.GetGeneration(), mrd.GetGeneration())
+}
+
 func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
-	// TODO(lulu): the setup of the test is no longer valid with the introduction
-	// of staging replicas.
-	t.Skip("work in progress")
-	quarantine.SkipQuarantinedTest(t)
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "gossip.retransmit_mult", 10)
 	clock := clockwork.NewFakeClock()
 
+	// set up r1 and r2 on s1, s2, s3; start r2 on s4 as voter; but r2 is not
+	// in range descriptor.
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -114,58 +225,50 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 	s4 := sf.NewStore(t)
 	ctx := context.Background()
 
-	stores := []*testutil.TestingStore{s1, s2, s3, s4}
+	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
-	testutil.WaitForRangeLease(t, ctx, stores, 2)
-
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
-	rd := s.GetRange(2)
-	newRD := rd.CloneVT()
 
-	require.Equal(t, len(newRD.GetReplicas()), 4)
+	addNode(t, s, ctx, 2, 4, s4.NHID())
 
-	// Remove replica of range 2 on nh1 in meta range
-	log.Infof("nh1: %s", s1.NHID())
-	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(rd.GetReplicas())-1)
-	for _, repl := range rd.GetReplicas() {
-		if repl.GetNhid() == s1.NHID() {
-			continue
-		}
-		replicas = append(replicas, repl)
-	}
-	newRD.Replicas = replicas
-	require.Equal(t, 3, len(replicas))
-	newRD.Generation = rd.GetGeneration() + 1
-
-	err := s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
+	_, err := s4.StartShard(ctx, &rfpb.StartShardRequest{
+		RangeId:   2,
+		ReplicaId: 4,
+		Join:      true,
+	})
 	require.NoError(t, err)
 
+	now := time.Now()
 	for {
-		clock.Advance(11 * time.Second)
-		list := s1.ListReplicasForTest()
+		list := s4.ListOpenReplicasForTest()
 		if len(list) == 1 {
 			repl := list[0]
-			// nh1 only has shard 1
-			require.Equal(t, uint64(1), repl.GetRangeId())
+			// nh1 only has shard 2
+			require.Equal(t, uint64(2), repl.GetRangeId())
 			break
+		} else {
+			log.Infof("list open replicas for test: %d", len(list))
 		}
+		if time.Since(now) > 30*time.Second {
+			require.FailNowf(t, "timeout waiting for c2n4 to open on s4: ", "nhid:%s", s3.NHID())
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 
-	for i := 0; i <= 30; i++ {
-		rd := s1.GetRange(2)
-		if rd == nil {
+	log.Info("====test setup complete====")
+
+	now = time.Now()
+	for {
+		clock.Advance(11 * time.Second)
+		list := s4.ListAllReplicasInHistoryForTest()
+		if len(list) == 0 {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	_, err = s1.GetReplica(2)
-	require.True(t, status.IsOutOfRangeError(err))
-	// verify that the shard is not removed from other servers
-	for _, s := range []*testutil.TestingStore{s2, s3, s4} {
-		list := s.ListReplicasForTest()
-		require.Equal(t, 2, len(list), s.NHID())
+		if time.Since(now) > 30*time.Second {
+			require.FailNow(t, "timeout waiting for zombie janitor clean up")
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
@@ -183,19 +286,10 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2, s3}
-	startingRanges := []*rfpb.RangeDescriptor{
-		&rfpb.RangeDescriptor{
-			Start:      constants.MetaRangePrefix,
-			End:        keys.Key{constants.UnsplittableMaxByte},
-			Generation: 1,
-		},
-	}
-	sf.StartShardWithRanges(t, ctx, startingRanges, stores...)
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
 	testutil.WaitForRangeLease(t, ctx, stores, 1)
 	poolB := testutil.MakeNodeGRPCAddressesMap(s1, s2, s3)
 
-	c1, err := s1.APIClient().Get(ctx, s1.GRPCAddress)
-	require.NoError(t, err)
 	bootstrapInfo := bringup.MakeBootstrapInfo(2, 1, poolB)
 
 	replicaID := uint64(0)
@@ -204,7 +298,7 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 			replicaID = repl.GetReplicaId()
 		}
 	}
-	_, err = c1.StartShard(ctx, &rfpb.StartShardRequest{
+	_, err := s1.StartShard(ctx, &rfpb.StartShardRequest{
 		RangeId:       2,
 		ReplicaId:     replicaID,
 		InitialMember: bootstrapInfo.InitialMembersForTesting(),
@@ -213,7 +307,7 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 
 	for {
 		clock.Advance(11 * time.Second)
-		list := s1.ListReplicasForTest()
+		list := s1.ListAllReplicasInHistoryForTest()
 		if len(list) == 1 {
 			break
 		}
@@ -223,6 +317,9 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 
 	clock := clockwork.NewFakeClock()
 
@@ -262,19 +359,19 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 
 	for {
 		clock.Advance(11 * time.Second)
-		list1 := s1.ListReplicasForTest()
+		list1 := s1.ListAllReplicasInHistoryForTest()
 		if len(list1) != 1 {
 			time.Sleep(10 * time.Millisecond)
 			log.Infof("s1(%s) has more than 1 replica", s1.NHID())
 			continue
 		}
-		list2 := s2.ListReplicasForTest()
+		list2 := s2.ListAllReplicasInHistoryForTest()
 		if len(list2) != 1 {
 			time.Sleep(10 * time.Millisecond)
 			log.Infof("s2(%s) has more than 1 replica", s2.NHID())
 			continue
 		}
-		list3 := s3.ListReplicasForTest()
+		list3 := s3.ListAllReplicasInHistoryForTest()
 		if len(list3) != 1 {
 			time.Sleep(10 * time.Millisecond)
 			log.Infof("s3(%s) has more than 1 replica", s3.NHID())
@@ -287,46 +384,11 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	}
 }
 
-func TestCleanupZombieNonVoter(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
-	// Prevent driver kicks in to add the replica back to the store.
-	flags.Set(t, "cache.raft.enable_driver", false)
-
-	clock := clockwork.NewFakeClock()
-
-	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
-	ctx := context.Background()
-
-	stores := []*testutil.TestingStore{s1, s2, s3}
-	sf.StartShard(t, ctx, stores...)
-
-	s4 := sf.NewStore(t)
-	// add a non-voter c2n4
-	addNonVoting(t, s1, ctx, 2, 4, s4.NHID())
-
-	membership, err := s1.GetMembership(ctx, 2)
-	require.NoError(t, err)
-	// Check that c2n4 is a non-voter on raft.
-	require.Equal(t, 1, len(membership.NonVotings))
-	require.Contains(t, membership.NonVotings, uint64(4))
-
-	for {
-		clock.Advance(1 * time.Hour)
-		membership, err := s1.GetMembership(ctx, 2)
-		require.NoError(t, err)
-		if len(membership.NonVotings) == 0 {
-			break
-		}
-	}
-}
-
 func TestAutomaticSplitting(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
-	flags.Set(t, "cache.raft.max_range_size_bytes", 8000)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 8000)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 1)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 
@@ -340,17 +402,20 @@ func TestAutomaticSplitting(t *testing.T) {
 
 	testutil.WaitForRangeLease(t, ctx, stores, 1)
 	testutil.WaitForRangeLease(t, ctx, stores, 2)
+
+	initialRD := s1.GetRange(2).CloneVT()
+
 	writeNRecordsAndFlush(ctx, t, s1, 20, 1) // each write is 1000 bytes
 
 	// Advance the clock to trigger scan the queue.
 	clock.Advance(61 * time.Second)
-	mrd := s1.GetRange(1)
 	for {
-		ranges := fetchRangeDescriptorsFromMetaRange(ctx, t, s1, mrd)
+		ranges, err := s1.Sender().LookupRangeDescriptorsByIDs(ctx, []uint64{2, 3})
+		require.NoError(t, err)
 		if len(ranges) == 2 && s1.HaveLease(ctx, 3) {
 			rd2 := s1.GetRange(2)
 			rd3 := s1.GetRange(3)
-			if !bytes.Equal(rd2.GetEnd(), keys.MaxByte) && bytes.Equal(rd3.GetEnd(), keys.MaxByte) {
+			if !bytes.Equal(rd2.GetEnd(), initialRD.GetEnd()) && bytes.Equal(rd3.GetEnd(), initialRD.GetEnd()) {
 				break
 			}
 		}
@@ -359,12 +424,352 @@ func TestAutomaticSplitting(t *testing.T) {
 	}
 }
 
-func TestAddNodeToCluster(t *testing.T) {
+func retry(t *testing.T, fn func() error) {
+	for {
+		err := fn()
+		if err != nil && status.IsOutOfRangeError(err) && strings.HasPrefix(status.Message(err), constants.RangeLeaseInvalidMsg) {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		require.NoError(t, err)
+		return
+	}
+}
+
+func TestAddReplica(t *testing.T) {
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup.
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	sf.StartShard(t, ctx, s1, s2)
+
+	storesBefore := []*testutil.TestingStore{s1, s2}
+	storesAfter := []*testutil.TestingStore{s1, s2, s3}
+
+	retry(t, func() error {
+		s := testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
+		rd := s.GetRange(2)
+		_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
+	})
+
+	s := testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
+	replicas := getMembership(t, s, ctx, 2)
+	require.Equal(t, 3, len(replicas))
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
+	rd := s.GetRange(2)
+	require.Equal(t, 3, len(rd.GetReplicas()))
+	require.Empty(t, rd.GetStaging())
+	{
+		maxReplicaID := uint64(0)
+		for _, repl := range rd.GetReplicas() {
+			if repl.GetReplicaId() > maxReplicaID {
+				maxReplicaID = repl.GetReplicaId()
+			}
+		}
+		require.Equal(t, uint64(3), maxReplicaID)
+	}
+}
+
+func TestAddReplica_MetaRange(t *testing.T) {
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_driver", false)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	sf.StartShard(t, ctx, s1, s2)
+
+	storesBefore := []*testutil.TestingStore{s1, s2}
+	storesAfter := []*testutil.TestingStore{s1, s2, s3}
+
+	retry(t, func() error {
+		s := testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 1)
+		mrd := s.GetRange(1)
+		_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: mrd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
+	})
+
+	s := testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 1)
+	replicas := getMembership(t, s, ctx, 1)
+	require.Equal(t, 3, len(replicas))
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 1)
+	rd := s.GetRange(1)
+	require.Equal(t, 3, len(rd.GetReplicas()))
+	require.Empty(t, rd.GetStaging())
+	{
+		maxReplicaID := uint64(0)
+		for _, repl := range rd.GetReplicas() {
+			if repl.GetReplicaId() > maxReplicaID {
+				maxReplicaID = repl.GetReplicaId()
+			}
+		}
+		require.Equal(t, uint64(3), maxReplicaID)
+	}
+}
+
+// This test tests the case where the replica is added to staging in range
+// descriptor, but haven't been added to raft at all.
+func TestAddReplica_ExistingStaging(t *testing.T) {
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_driver", false)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	sf.StartShard(t, ctx, s1, s2)
+
+	storesBefore := []*testutil.TestingStore{s1, s2}
+	storesAfter := []*testutil.TestingStore{s1, s2, s3}
+	s := testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
+	rd := s.GetRange(2)
+
+	newRD := rd.CloneVT()
+	newRD.Staging = append(newRD.Staging, &rfpb.ReplicaDescriptor{
+		RangeId:   2,
+		ReplicaId: 3,
+		Nhid:      proto.String(s3.NHID()),
+	})
+	newRD.Generation++
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
+	require.NoError(t, err)
+
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
+		rd = s.GetRange(2)
+		_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
+	})
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
+	replicas := getMembership(t, s, ctx, 2)
+	require.Equal(t, 3, len(replicas))
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
+	rd = s.GetRange(2)
+	require.Equal(t, 3, len(rd.GetReplicas()))
+	require.Empty(t, rd.GetStaging())
+	{
+		maxReplicaID := uint64(0)
+		for _, repl := range rd.GetReplicas() {
+			if repl.GetReplicaId() > maxReplicaID {
+				maxReplicaID = repl.GetReplicaId()
+			}
+		}
+		require.Equal(t, uint64(3), maxReplicaID)
+	}
+}
+
+// This test adds a staging replica that is already been added to raft as a
+// non-voter, but the shard is not started.
+func TestAddReplica_NonVoterNotStarted(t *testing.T) {
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_driver", false)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	sf.StartShard(t, ctx, s1, s2)
+
+	storesBefore := []*testutil.TestingStore{s1, s2}
+	storesAfter := []*testutil.TestingStore{s1, s2, s3}
+	s := testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
+
+	// add a non-voter c2n3
+	addNonVoting(t, s1, ctx, 2, 3, s3.NHID())
+
+	rd := s.GetRange(2)
+
+	newRD := rd.CloneVT()
+	newRD.Staging = append(newRD.Staging, &rfpb.ReplicaDescriptor{
+		RangeId:   2,
+		ReplicaId: 3,
+		Nhid:      proto.String(s3.NHID()),
+	})
+	newRD.Generation++
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
+	require.NoError(t, err)
+
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
+		rd = s.GetRange(2)
+		_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
+	})
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
+	replicas := getMembership(t, s, ctx, 2)
+	require.Equal(t, 3, len(replicas))
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
+	rd = s.GetRange(2)
+	require.Equal(t, 3, len(rd.GetReplicas()))
+	require.Empty(t, rd.GetStaging())
+	{
+		maxReplicaID := uint64(0)
+		for _, repl := range rd.GetReplicas() {
+			if repl.GetReplicaId() > maxReplicaID {
+				maxReplicaID = repl.GetReplicaId()
+			}
+		}
+		require.Equal(t, uint64(3), maxReplicaID)
+	}
+}
+
+// This test adds a staging replica that is already been added to raft as a
+// non-voter and the shard is started.
+func TestAddReplica_NonVoterStarted(t *testing.T) {
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_driver", false)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	sf.StartShard(t, ctx, s1, s2)
+
+	storesBefore := []*testutil.TestingStore{s1, s2}
+	storesAfter := []*testutil.TestingStore{s1, s2, s3}
+	s := testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
+
+	// add a non-voter c2n3
+	addNonVoting(t, s1, ctx, 2, 3, s3.NHID())
+
+	rd := s.GetRange(2)
+
+	newRD := rd.CloneVT()
+	newRD.Staging = append(newRD.Staging, &rfpb.ReplicaDescriptor{
+		RangeId:   2,
+		ReplicaId: 3,
+		Nhid:      proto.String(s3.NHID()),
+	})
+	newRD.Generation++
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
+	require.NoError(t, err)
+
+	_, err = s3.StartShard(ctx, &rfpb.StartShardRequest{
+		RangeId:     2,
+		ReplicaId:   3,
+		Join:        true,
+		IsNonVoting: true,
+	})
+	require.NoError(t, err)
+
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
+		rd = s.GetRange(2)
+		_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
+	})
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
+	replicas := getMembership(t, s, ctx, 2)
+	require.Equal(t, 3, len(replicas))
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
+	rd = s.GetRange(2)
+	require.Equal(t, 3, len(rd.GetReplicas()))
+	require.Empty(t, rd.GetStaging())
+	{
+		maxReplicaID := uint64(0)
+		for _, repl := range rd.GetReplicas() {
+			if repl.GetReplicaId() > maxReplicaID {
+				maxReplicaID = repl.GetReplicaId()
+			}
+		}
+		require.Equal(t, uint64(3), maxReplicaID)
+	}
+}
+
+// This test adds a staging replica that is already been added to raft as a
+// voter, but the range descriptor has not been updated.
+func TestAddReplica_Voter(t *testing.T) {
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_driver", false)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -378,51 +783,63 @@ func TestAddNodeToCluster(t *testing.T) {
 	s := testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
 
 	rd := s.GetRange(2)
-	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: rd,
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        s3.NHID(),
-			RaftAddress: s3.RaftAddress,
-			GrpcAddress: s3.GRPCAddress,
-		},
+
+	newRD := rd.CloneVT()
+	newRD.Staging = append(newRD.Staging, &rfpb.ReplicaDescriptor{
+		RangeId:   2,
+		ReplicaId: 3,
+		Nhid:      proto.String(s3.NHID()),
+	})
+	newRD.Generation++
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
+	require.NoError(t, err)
+
+	addNode(t, s, ctx, 2, 3, s3.NHID())
+
+	_, err = s3.StartShard(ctx, &rfpb.StartShardRequest{
+		RangeId:     2,
+		ReplicaId:   3,
+		Join:        true,
+		IsNonVoting: false,
 	})
 	require.NoError(t, err)
 
+	for {
+		// transfer leadership if the staging replica is the leader.
+		s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
+		if s.NHID() != newRD.GetStaging()[0].GetNhid() {
+			break
+		}
+		s.TransferLeadership(ctx, &rfpb.TransferLeadershipRequest{
+			RangeId:         uint64(2),
+			TargetReplicaId: newRD.GetReplicas()[0].GetReplicaId(),
+		})
+	}
+
+	log.Infof("====test setup complete====")
+
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
+		rd = s.GetRange(2)
+		_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
+	})
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
 	replicas := getMembership(t, s, ctx, 2)
 	require.Equal(t, 3, len(replicas))
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
 	rd = s.GetRange(2)
 	require.Equal(t, 3, len(rd.GetReplicas()))
-	{
-		maxReplicaID := uint64(0)
-		for _, repl := range rd.GetReplicas() {
-			if repl.GetReplicaId() > maxReplicaID {
-				maxReplicaID = repl.GetReplicaId()
-			}
-		}
-		require.Equal(t, uint64(3), maxReplicaID)
-	}
-
-	// Add Replica for meta range
-	s = testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 1)
-	mrd := s.GetRange(1)
-	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: mrd,
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        s3.NHID(),
-			RaftAddress: s3.RaftAddress,
-			GrpcAddress: s3.GRPCAddress,
-		},
-	})
-	require.NoError(t, err)
-
-	replicas = getMembership(t, s, ctx, 1)
-	require.Equal(t, 3, len(replicas))
-
-	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 1)
-	rd = s.GetRange(1)
-	require.Equal(t, 3, len(rd.GetReplicas()))
+	require.Empty(t, rd.GetStaging())
 	{
 		maxReplicaID := uint64(0)
 		for _, repl := range rd.GetReplicas() {
@@ -434,11 +851,14 @@ func TestAddNodeToCluster(t *testing.T) {
 	}
 }
 
-func TestRemoveNodeFromCluster(t *testing.T) {
+// This test tests removing a normal replica that's started on raft.
+func TestRemoveReplicaRemoveData(t *testing.T) {
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup.
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_driver", false)
+
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -454,6 +874,7 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	// RemoveReplica can't remove the replica on its own machine.
 	rd := s.GetRange(2)
 	var replicaToRemove *rfpb.ReplicaDescriptor
+	var storeRemoveFrom *testutil.TestingStore
 
 	for _, repl := range rd.GetReplicas() {
 		if repl.GetNhid() != s.NHID() {
@@ -462,22 +883,374 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 		}
 	}
 	for _, store := range stores {
-		if store.NHID() != replicaToRemove.GetNhid() {
+		if store.NHID() == replicaToRemove.GetNhid() {
+			storeRemoveFrom = store
+		} else {
 			remaining = append(remaining, store)
 		}
 	}
+	require.NotNil(t, storeRemoveFrom)
+
 	log.Infof("remove replica c%dn%d", rd.GetRangeId(), replicaToRemove.GetReplicaId())
-	_, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
-		Range:     rd,
+
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		_, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+			Range:     rd,
+			ReplicaId: replicaToRemove.GetReplicaId(),
+		})
+		return err
+	})
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
+	replicas := getMembership(t, s, ctx, 2)
+	require.Equal(t, 2, len(replicas))
+
+	rd = s.GetRange(2)
+	require.Equal(t, 2, len(rd.GetReplicas()))
+	require.Equal(t, 1, len(rd.GetRemoved()))
+
+	list := storeRemoveFrom.ListAllReplicasInHistoryForTest()
+	require.Equal(t, 2, len(list))
+
+	log.Infof("=== remove data ===")
+	_, err := storeRemoveFrom.RemoveData(ctx, &rfpb.RemoveDataRequest{
 		ReplicaId: replicaToRemove.GetReplicaId(),
+		Range:     rd,
 	})
 	require.NoError(t, err)
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
+	rd = s.GetRange(2)
+	require.Equal(t, 0, len(rd.GetRemoved()))
+
+	list = storeRemoveFrom.ListAllReplicasInHistoryForTest()
+	require.Equal(t, 1, len(list))
+
+	// Now add the removed replica back to range descriptor to simulate the case
+	// where removeData is called on raft, but we failed to update the range
+	// descriptor and we retry the RemoveData.
+	log.Infof("=== set up test env to test 2nd RemoveData ===")
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
+	rd = s.GetRange(2)
+
+	newRD := rd.CloneVT()
+	newRD.Removed = append(newRD.Removed, replicaToRemove)
+	newRD.Generation++
+	err = s.UpdateRangeDescriptor(ctx, rd, newRD)
+	require.NoError(t, err)
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
+	rd = s.GetRange(2)
+
+	log.Infof("=== remove data #2 ===")
+	_, err = storeRemoveFrom.RemoveData(ctx, &rfpb.RemoveDataRequest{
+		ReplicaId: 3,
+		Range:     rd,
+	})
+	require.NoError(t, err)
+}
+
+func TestRemoveData_ShardStartedNoRangeDescriptor(t *testing.T) {
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_driver", false)
+
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	sf.StartShard(t, ctx, stores...)
+
+	pool := testutil.MakeNodeGRPCAddressesMap(s1, s2, s3)
+	bootstrapInfo := bringup.MakeBootstrapInfo(2, 1, pool)
+	_, err := s1.StartShard(ctx, &rfpb.StartShardRequest{
+		RangeId:       3,
+		ReplicaId:     1,
+		InitialMember: bootstrapInfo.InitialMembersForTesting(),
+	})
+	require.NoError(t, err)
+
+	_, err = s1.RemoveData(ctx, &rfpb.RemoveDataRequest{
+		RangeId:   3,
+		ReplicaId: 1,
+	})
+	require.NoError(t, err)
+	list := s1.ListAllReplicasInHistoryForTest()
+	require.Equal(t, 2, len(list))
+}
+
+// This test tests remove a staging replica that's added and started on raft.
+func TestRemoveReplicaRemoveData_StagingReplicaStarted(t *testing.T) {
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_driver", false)
+
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	sf.StartShard(t, ctx, stores...)
+
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	rd := s.GetRange(2)
+
+	newRD := rd.CloneVT()
+	newRD.Staging = append(newRD.Staging, newRD.Replicas[0])
+	newRD.Replicas = newRD.Replicas[1:]
+	newRD.Generation++
+
+	log.Infof("new rd: %+v", newRD)
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
+	require.NoError(t, err)
+
+	for {
+		// transfer leadership if the staging replica is the leader.
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		if s.NHID() != newRD.GetStaging()[0].GetNhid() {
+			break
+		}
+		s.TransferLeadership(ctx, &rfpb.TransferLeadershipRequest{
+			RangeId:         uint64(2),
+			TargetReplicaId: newRD.GetReplicas()[0].GetReplicaId(),
+		})
+	}
+
+	log.Infof("=== test setup completed ===")
+	replicaID := newRD.GetStaging()[0].GetReplicaId()
+	nhid := newRD.GetStaging()[0].GetNhid()
+
+	log.Infof("call nhid %s to remove replica c%dn%d", s.NHID(), rd.GetRangeId(), replicaID)
+	var removeRsp *rfpb.RemoveReplicaResponse
+	retry(t, func() error {
+		var err error
+		removeRsp, err = s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+			Range:     newRD,
+			ReplicaId: replicaID,
+		})
+		return err
+	})
+
+	remaining := make([]*testutil.TestingStore, 0, 2)
+	var storeRemoveFrom *testutil.TestingStore
+	for _, store := range stores {
+		if store.NHID() == nhid {
+			storeRemoveFrom = store
+		} else {
+			remaining = append(remaining, store)
+		}
+	}
+	require.NotNil(t, storeRemoveFrom)
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
 	replicas := getMembership(t, s, ctx, 2)
 	require.Equal(t, 2, len(replicas))
 	rd = s.GetRange(2)
-	require.Equal(t, 2, len(rd.GetReplicas()))
+	require.Equal(t, 0, len(rd.GetStaging()))
+	require.Equal(t, 1, len(rd.GetRemoved()))
+
+	list := storeRemoveFrom.ListAllReplicasInHistoryForTest()
+	require.Equal(t, 2, len(list))
+
+	log.Infof("=== remove data ===")
+	_, err = storeRemoveFrom.RemoveData(ctx, &rfpb.RemoveDataRequest{
+		ReplicaId: replicaID,
+		Range:     removeRsp.GetRange(),
+	})
+	require.NoError(t, err)
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
+	rd = s.GetRange(2)
+	require.Equal(t, 0, len(rd.GetRemoved()))
+
+	list = storeRemoveFrom.ListAllReplicasInHistoryForTest()
+	require.Equal(t, 1, len(list))
+}
+
+// This test tests removing a staging replica that's added to raft but not started.
+func testRemoveReplicaRemoveData_StagingReplicaNotStarted(t *testing.T, addFunc addToRaftFunc) {
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_driver", false)
+
+	// Set up 3 stores with range 1 on all three stores and range 2 on s1 and s2.
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	sf.StartShard(t, ctx, s1, s2)
+
+	stores := []*testutil.TestingStore{s1, s2}
+
+	retry(t, func() error {
+		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+		rd := s.GetRange(1)
+		_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
+	})
+
+	// Add staging replica c2n3.
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	rd := s.GetRange(2)
+	newRD := rd.CloneVT()
+	newRD.Staging = append(newRD.Staging, &rfpb.ReplicaDescriptor{
+		RangeId:   2,
+		ReplicaId: 3,
+		Nhid:      proto.String(s3.NHID()),
+	})
+	newRD.Generation++
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
+	require.NoError(t, err)
+
+	// add c2n3 on s3.
+	addFunc(t, s, ctx, 2, 3, s3.NHID())
+
+	var removeRsp *rfpb.RemoveReplicaResponse
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		rd = s.GetRange(2)
+		var err error
+		removeRsp, err = s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+			Range:     rd,
+			ReplicaId: 3,
+		})
+		return err
+	})
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	replicas := getMembership(t, s, ctx, 2)
+	require.Equal(t, 2, len(replicas))
+	rd = s.GetRange(2)
+	require.Equal(t, 0, len(rd.GetStaging()))
+	require.Equal(t, 1, len(rd.GetRemoved()))
+
+	list := s3.ListAllReplicasInHistoryForTest()
+	require.Equal(t, 1, len(list))
+
+	log.Infof("=== remove data ===")
+	_, err = s3.RemoveData(ctx, &rfpb.RemoveDataRequest{
+		ReplicaId: 3,
+		Range:     removeRsp.GetRange(),
+	})
+	require.NoError(t, err)
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	rd = s.GetRange(2)
+	require.Equal(t, 0, len(rd.GetRemoved()))
+
+	list = s3.ListAllReplicasInHistoryForTest()
+	require.Equal(t, 1, len(list))
+}
+
+// This test tests remove a replica that's been added to raft as a voter but
+// not started.
+func TestRemoveReplicaRemoveData_StagingReplicaVoterNotStarted(t *testing.T, addFunc addToRaftFunc) {
+	testRemoveReplicaRemoveData_StagingReplicaNotStarted(t, addNode)
+}
+
+// This test tests remove a replica that's been added to raft as a non-voter but
+// not started.
+func TestRemoveReplicaRemoveData_StagingReplicaNonVoterNotStarted(t *testing.T, addFunc addToRaftFunc) {
+	testRemoveReplicaRemoveData_StagingReplicaNotStarted(t, addNonVoting)
+}
+
+// This test tests removing a staging replica that's not added to raft.
+func TestRemoveReplicaRemoveData_StagingReplicaNotAdded(t *testing.T) {
+	// Set up 3 stores with range 1 on all three stores; range 2 on s1 and s2;
+	// but not opened on s3.
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1, s2}
+	sf.StartShard(t, ctx, stores...)
+
+	retry(t, func() error {
+		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+		rd := s.GetRange(1)
+		_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s3.NHID(),
+				RaftAddress: s3.RaftAddress,
+				GrpcAddress: s3.GRPCAddress,
+			},
+		})
+		return err
+	})
+
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	rd := s.GetRange(2)
+	newRD := rd.CloneVT()
+	newRD.Staging = append(newRD.Staging, &rfpb.ReplicaDescriptor{
+		RangeId:   2,
+		ReplicaId: 3,
+		Nhid:      proto.String(s3.NHID()),
+	})
+	newRD.Generation++
+
+	log.Infof("new rd: %+v", newRD)
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
+	require.NoError(t, err)
+	log.Infof("=== test setup completed ===")
+	var removeRsp *rfpb.RemoveReplicaResponse
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		var err error
+		removeRsp, err = s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+			Range:     newRD,
+			ReplicaId: 3,
+		})
+		return err
+	})
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	replicas := getMembership(t, s, ctx, 2)
+	require.Equal(t, 2, len(replicas))
+	rd = s.GetRange(2)
+	require.Equal(t, 0, len(rd.GetStaging()))
+	require.Equal(t, 1, len(rd.GetRemoved()))
+
+	list := s3.ListAllReplicasInHistoryForTest()
+	require.Equal(t, 1, len(list))
+
+	log.Infof("=== remove data ===")
+	_, err = s3.RemoveData(ctx, &rfpb.RemoveDataRequest{
+		ReplicaId: 3,
+		Range:     removeRsp.GetRange(),
+	})
+	require.NoError(t, err)
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	rd = s.GetRange(2)
+	require.Equal(t, 0, len(rd.GetRemoved()))
+
+	list = s3.ListAllReplicasInHistoryForTest()
+	require.Equal(t, 1, len(list))
 }
 
 func TestAddRangeBack(t *testing.T) {
@@ -519,6 +1292,7 @@ func TestAddRangeBack(t *testing.T) {
 
 	start := time.Now()
 	for {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 		rsp, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
 			Range:     rd,
 			ReplicaId: replicaToRemove.GetReplicaId(),
@@ -536,7 +1310,7 @@ func TestAddRangeBack(t *testing.T) {
 			ReplicaId: replicaToRemove.GetReplicaId(),
 			Range:     rd,
 		})
-		if rsp != nil {
+		if removeDataRsp.GetRange() != nil {
 			rd = removeDataRsp.GetRange()
 		}
 		if err != nil {
@@ -549,19 +1323,22 @@ func TestAddRangeBack(t *testing.T) {
 		}
 		break
 	}
-	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
-	replicas := getMembership(t, s, ctx, 2)
-	require.Equal(t, 3, len(replicas))
 
-	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: s.GetRange(2),
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        testStore.NHID(),
-			GrpcAddress: testStore.GRPCAddress,
-			RaftAddress: testStore.RaftAddress,
-		},
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
+		replicas := getMembership(t, s, ctx, 2)
+		require.Equal(t, 3, len(replicas))
+
+		_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: s.GetRange(2),
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        testStore.NHID(),
+				GrpcAddress: testStore.GRPCAddress,
+				RaftAddress: testStore.RaftAddress,
+			},
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	r1, err := s.GetReplica(2)
 	require.NoError(t, err)
@@ -653,40 +1430,6 @@ func metadataKey(t *testing.T, fr *sgpb.FileRecord) []byte {
 	return keyBytes
 }
 
-func fetchRangeDescriptorsFromMetaRange(ctx context.Context, t *testing.T, ts *testutil.TestingStore, metaRangeDescriptor *rfpb.RangeDescriptor) []*rfpb.RangeDescriptor {
-	batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
-		Start:    keys.RangeMetaKey([]byte{constants.UnsplittableMaxByte}),
-		End:      constants.SystemPrefix,
-		ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
-	}).ToProto()
-	require.NoError(t, err)
-	repl := metaRangeDescriptor.GetReplicas()[0]
-	c, err := ts.APIClient().GetForReplica(ctx, repl)
-	require.NoError(t, err)
-	for {
-		rsp, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
-			Header: header.New(metaRangeDescriptor, repl, rfpb.Header_LINEARIZABLE),
-			Batch:  batchReq,
-		})
-		if status.IsOutOfRangeError(err) {
-			log.Debugf("fetchRangeDescriptorFromMetaRange error: %s", err)
-			continue
-		} else {
-			require.NoError(t, err)
-		}
-		scanRsp, err := rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).ScanResponse(0)
-		require.NoError(t, err)
-		res := []*rfpb.RangeDescriptor{}
-		for _, kv := range scanRsp.GetKvs() {
-			rd := &rfpb.RangeDescriptor{}
-			err = proto.Unmarshal(kv.GetValue(), rd)
-			require.NoError(t, err)
-			res = append(res, rd)
-		}
-		return res
-	}
-}
-
 func readRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr *sgpb.FileRecord) {
 	fs := filestore.New()
 	fk := metadataKey(t, fr)
@@ -727,7 +1470,7 @@ func writeNRecordsAndFlush(ctx context.Context, t *testing.T, store *testutil.Te
 }
 
 func TestSplitMetaRange(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	ctx := context.Background()
@@ -745,10 +1488,6 @@ func TestSplitMetaRange(t *testing.T) {
 		Range: rd,
 	})
 	require.Error(t, err)
-}
-
-func headerFromRangeDescriptor(rd *rfpb.RangeDescriptor) *rfpb.Header {
-	return &rfpb.Header{RangeId: rd.GetRangeId(), Generation: rd.GetGeneration()}
 }
 
 func waitForReplicaToCatchUp(t testing.TB, ctx context.Context, r *replica.Replica, desiredLastAppliedIndex uint64) {
@@ -785,7 +1524,7 @@ func getReplica(t testing.TB, s *testutil.TestingStore, rangeID uint64) *replica
 }
 
 func TestSplitNonMetaRange(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	// store_test is sensitive to cpu pressure stall on remote executor. Increase
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
@@ -813,18 +1552,21 @@ func TestSplitNonMetaRange(t *testing.T) {
 		require.NotNil(t, replStore)
 		require.Equal(t, replStore.RaftAddress, raftAddr)
 	}
-	header := headerFromRangeDescriptor(rd)
+	hd := header.MakeLinearizableWithRangeValidation(rd, rd.GetReplicas()[0])
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
 	written := writeNRecords(ctx, t, s, 50)
-	_, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
-		Header: header,
-		Range:  rd,
-	})
-	require.NoError(t, err)
 
-	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 3)
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		_, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
+			Header: hd,
+			Range:  rd,
+		})
+		return err
+	})
+
 	rd = s.GetRange(3)
 	// Veirfy that nhid in the range descriptor matches the registry.
 	for _, repl := range rd.GetReplicas() {
@@ -834,7 +1576,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 		require.NotNil(t, replStore)
 		require.Equal(t, replStore.RaftAddress, raftAddr)
 	}
-	header = headerFromRangeDescriptor(rd)
+	hd = header.MakeLinearizableWithRangeValidation(rd, rd.GetReplicas()[0])
 	require.Equal(t, 3, len(rd.GetReplicas()))
 
 	// Expect that a new cluster was added with rangeID = 3
@@ -849,11 +1591,14 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 	// Write some more records to the new end range.
 	written = append(written, writeNRecords(ctx, t, s1, 50)...)
-	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
-		Header: header,
-		Range:  rd,
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 3)
+		_, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
+			Header: hd,
+			Range:  rd,
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	testutil.WaitForRangeLease(t, ctx, stores, 4)
 
@@ -881,17 +1626,22 @@ func TestPostFactoSplit(t *testing.T) {
 
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
-	header := headerFromRangeDescriptor(rd)
+	hd := header.MakeLinearizableWithRangeValidation(rd, rd.GetReplicas()[0])
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
 	written := writeNRecords(ctx, t, s1, 50)
 
-	splitResponse, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
-		Header: header,
-		Range:  rd,
+	var splitResponse *rfpb.SplitRangeResponse
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		var err error
+		splitResponse, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
+			Header: hd,
+			Range:  rd,
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	// Expect that a new cluster was added with a replica.
 	replicas := getMembership(t, s1, ctx, 3)
@@ -903,15 +1653,17 @@ func TestPostFactoSplit(t *testing.T) {
 	}
 
 	// Now bring up a new replica in the original cluster.
-	_, err = s1.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: s1.GetRange(2),
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        s2.NHID(),
-			RaftAddress: s2.RaftAddress,
-			GrpcAddress: s2.GRPCAddress,
-		},
+	retry(t, func() error {
+		_, err := s1.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: s1.GetRange(2),
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s2.NHID(),
+				RaftAddress: s2.RaftAddress,
+				GrpcAddress: s2.GRPCAddress,
+			},
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	r1, err := s1.GetReplica(2)
 	require.NoError(t, err)
@@ -942,7 +1694,7 @@ func TestPostFactoSplit(t *testing.T) {
 }
 
 func TestManySplits(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	ctx := context.Background()
@@ -957,7 +1709,7 @@ func TestManySplits(t *testing.T) {
 
 		var clusters []uint64
 		var seen = make(map[uint64]struct{})
-		list := s1.ListReplicasForTest()
+		list := s1.ListOpenReplicasForTest()
 
 		for _, replica := range list {
 			rangeID := replica.GetRangeId()
@@ -972,12 +1724,17 @@ func TestManySplits(t *testing.T) {
 				continue
 			}
 			rd := s.GetRange(rangeID)
-			header := headerFromRangeDescriptor(rd)
-			rsp, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
-				Header: header,
-				Range:  rd,
+			hd := header.MakeLinearizableWithRangeValidation(rd, rd.GetReplicas()[0])
+			var rsp *rfpb.SplitRangeResponse
+			retry(t, func() error {
+				s = testutil.GetStoreWithRangeLease(t, ctx, stores, rangeID)
+				var err error
+				rsp, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
+					Header: hd,
+					Range:  rd,
+				})
+				return err
 			})
-			require.NoError(t, err)
 
 			testutil.WaitForRangeLease(t, ctx, stores, rsp.GetLeft().GetRangeId())
 			testutil.WaitForRangeLease(t, ctx, stores, rsp.GetRight().GetRangeId())
@@ -1009,7 +1766,8 @@ func readSessionIDs(t *testing.T, ctx context.Context, rangeID uint64, store *te
 	}).ToProto()
 	require.NoError(t, err)
 
-	rsp, err := client.SyncReadLocal(ctx, store.NodeHost(), rangeID, req)
+	maxSingleOpTimeout := 3 * time.Second
+	rsp, err := client.SyncReadLocal(ctx, store.NodeHost(), rangeID, req, maxSingleOpTimeout)
 	require.NoError(t, err)
 	readBatch := rbuilder.NewBatchResponseFromProto(rsp)
 	scanRsp, err := readBatch.ScanResponse(0)
@@ -1085,79 +1843,38 @@ func TestCleanupExpiredSessions(t *testing.T) {
 }
 
 func TestSplitAcrossClusters(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2}
-	poolB := testutil.MakeNodeGRPCAddressesMap(s2)
-
-	startingRanges := []*rfpb.RangeDescriptor{
-		&rfpb.RangeDescriptor{
-			Start:      constants.MetaRangePrefix,
-			End:        keys.Key{constants.UnsplittableMaxByte},
-			Generation: 1,
-		},
-	}
-	sf.StartShardWithRanges(t, ctx, startingRanges, s1)
+	sf.InitializeShardsForMetaRange(t, ctx, s1)
 	testutil.WaitForRangeLease(t, ctx, stores, 1)
 
-	// Bringup new peers.
-	initialRD := &rfpb.RangeDescriptor{
-		Start:      keys.Key{constants.UnsplittableMaxByte},
-		End:        keys.MaxByte,
-		RangeId:    2,
-		Generation: 1,
-		Replicas: []*rfpb.ReplicaDescriptor{
-			{RangeId: 2, ReplicaId: 1, Nhid: proto.String(s2.NHID())},
-		},
+	// Only start ranges from default partition on s2.
+	partition := disk.Partition{
+		ID:        "default",
+		NumRanges: 1,
 	}
-	protoBytes, err := proto.Marshal(initialRD)
-	require.NoError(t, err)
-	initalRDBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
-			Value: protoBytes,
-		},
-	})
-
-	bootstrapInfo := bringup.MakeBootstrapInfo(2, 1, poolB)
-	err = bringup.StartShard(ctx, s2, bootstrapInfo, initalRDBatch)
-	require.NoError(t, err)
-
-	metaRDBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(initialRD.GetEnd()),
-			Value: protoBytes,
-		},
-	}).Add(&rfpb.IncrementRequest{
-		Key:   constants.LastRangeIDKey,
-		Delta: uint64(1),
-	}).Add(&rfpb.IncrementRequest{
-		Key:   keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte("2")),
-		Delta: uint64(1),
-	}).ToProto()
-	require.NoError(t, err)
-
-	writeRsp, err := s1.Sender().SyncPropose(ctx, constants.MetaRangePrefix, metaRDBatch)
-	require.NoError(t, err)
-	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
-	require.NoError(t, err)
+	sf.InitializeShardsForPartition(t, ctx, partition, s2)
 
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
-	header := headerFromRangeDescriptor(rd)
+	hd := header.MakeLinearizableWithRangeValidation(rd, rd.GetReplicas()[0])
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
 	written := writeNRecords(ctx, t, s1, 50)
-	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
-		Header: header,
-		Range:  rd,
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		_, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
+			Header: hd,
+			Range:  rd,
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 3)
 
@@ -1176,12 +1893,16 @@ func TestSplitAcrossClusters(t *testing.T) {
 }
 
 func TestUpReplicate(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup.
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
+	flags.Set(t, "gossip.retransmit_mult", 10)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1222,7 +1943,7 @@ func TestUpReplicate(t *testing.T) {
 		clock.Advance(61 * time.Second)
 		// wait some time to allow let driver queue execute
 		time.Sleep(100 * time.Millisecond)
-		list := s3.ListReplicasForTest()
+		list := s3.ListOpenReplicasForTest()
 		if len(list) < 2 {
 			continue
 		}
@@ -1251,12 +1972,16 @@ func TestUpReplicate(t *testing.T) {
 }
 
 func TestDownReplicate(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1274,15 +1999,18 @@ func TestDownReplicate(t *testing.T) {
 	// Added a replica for range 2, so the number of replicas for range 2 exceeds the cache.raft.min_replicas_per_range
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
-	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
-		Range: rd,
-		Node: &rfpb.NodeDescriptor{
-			Nhid:        s4.NHID(),
-			RaftAddress: s4.RaftAddress,
-			GrpcAddress: s4.GRPCAddress,
-		},
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node: &rfpb.NodeDescriptor{
+				Nhid:        s4.NHID(),
+				RaftAddress: s4.RaftAddress,
+				GrpcAddress: s4.GRPCAddress,
+			},
+		})
+		return err
 	})
-	require.NoError(t, err)
 
 	replicas := getMembership(t, s, ctx, 2)
 	require.Equal(t, 4, len(replicas))
@@ -1389,12 +2117,13 @@ func TestDownReplicate(t *testing.T) {
 }
 
 func TestReplaceDeadReplica(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1407,6 +2136,8 @@ func TestReplaceDeadReplica(t *testing.T) {
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
+	log.Info("=====StartShard finished")
+
 	{ // Verify that there are 3 replicas for range 2, and also write 10 records
 		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 		writeNRecords(ctx, t, s, 10)
@@ -1416,6 +2147,8 @@ func TestReplaceDeadReplica(t *testing.T) {
 		require.Equal(t, 3, len(rd.GetReplicas()))
 	}
 
+	log.Info("=====3 replicas exist for range 2 and wrote 10 records")
+
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	r, err := s.GetReplica(2)
 	require.NoError(t, err)
@@ -1423,8 +2156,10 @@ func TestReplaceDeadReplica(t *testing.T) {
 	require.NoError(t, err)
 
 	s4 := sf.NewStore(t)
+	log.Info("=====s4 started")
 	// Stop store 3
 	s3.Stop()
+	log.Info("=====s3 stopped")
 
 	nhid3 := s3.NodeHost().ID()
 	nhid4 := s4.NodeHost().ID()
@@ -1436,7 +2171,7 @@ func TestReplaceDeadReplica(t *testing.T) {
 		clock.Advance(61 * time.Second)
 		// wait some time to allow let driver queue execute
 		time.Sleep(100 * time.Millisecond)
-		list := s4.ListReplicasForTest()
+		list := s4.ListOpenReplicasForTest()
 		if len(list) < 2 {
 			continue
 		}
@@ -1454,17 +2189,22 @@ func TestReplaceDeadReplica(t *testing.T) {
 		}
 	}
 
+	log.Infof("=====range 1 and 1 is added to s4(%q)", nhid4)
 	r2 := getReplica(t, s4, 2)
 	waitForReplicaToCatchUp(t, ctx, r2, desiredAppliedIndex)
 }
 
 func TestRemoveDeadReplica(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1487,11 +2227,13 @@ func TestRemoveDeadReplica(t *testing.T) {
 	}
 
 	// Stop store 4
+	log.Infof("=====remove store 4: %q", s4.NHID())
 	s4.Stop()
 
 	nhid4 := s4.NodeHost().ID()
 
 	// Advance the clock pass the cache.raft.dead_store_timeout so s4 is considered dead.
+	log.Infof("=====verifying that range 1 and 2 are removed from store 4")
 	clock.Advance(5*time.Minute + 1*time.Second)
 	for {
 		// advance the clock to trigger scan replicas
@@ -1499,57 +2241,45 @@ func TestRemoveDeadReplica(t *testing.T) {
 		// wait some time to allow let driver queue execute
 		time.Sleep(100 * time.Millisecond)
 
-		if !includeReplicaWithNHID(s1.GetRange(1), nhid4) &&
-			!includeReplicaWithNHID(s1.GetRange(2), nhid4) &&
-			!includeReplicaWithNHID(s2.GetRange(1), nhid4) &&
-			!includeReplicaWithNHID(s2.GetRange(2), nhid4) &&
-			!includeReplicaWithNHID(s3.GetRange(1), nhid4) &&
-			!includeReplicaWithNHID(s3.GetRange(2), nhid4) {
-			break
+		if includeReplicaWithNHID(s1.GetRange(1), nhid4) {
+			log.Infof("range 1 on s1(%q) include replica on nhid4", s1.NHID())
+			continue
 		}
+		if includeReplicaWithNHID(s2.GetRange(1), nhid4) {
+			log.Infof("range 1 on s2(%q) include replica on nhid4", s2.NHID())
+			continue
+		}
+		if includeReplicaWithNHID(s3.GetRange(1), nhid4) {
+			log.Infof("range 1 on s3(%q) include replica on nhid4", s3.NHID())
+			continue
+		}
+		if includeReplicaWithNHID(s1.GetRange(2), nhid4) {
+			log.Infof("range 2 on s1(%q) include replica on nhid4", s1.NHID())
+			continue
+		}
+		if includeReplicaWithNHID(s1.GetRange(2), nhid4) {
+			log.Infof("range 2 on s2(%q) include replica on nhid4", s2.NHID())
+			continue
+		}
+		if includeReplicaWithNHID(s1.GetRange(2), nhid4) {
+			log.Infof("range 2 on s3(%q) include replica on nhid4", s3.NHID())
+			continue
+		}
+		break
 	}
 }
 
 func TestRebalance(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
-
-	startingRanges := []*rfpb.RangeDescriptor{
-		&rfpb.RangeDescriptor{
-			Start:      constants.MetaRangePrefix,
-			End:        keys.Key{constants.UnsplittableMaxByte},
-			Generation: 1,
-		},
-		&rfpb.RangeDescriptor{
-			Start:      keys.Key{constants.UnsplittableMaxByte},
-			End:        keys.Key("a"),
-			Generation: 1,
-		},
-		&rfpb.RangeDescriptor{
-			Start:      keys.Key("a"),
-			End:        keys.Key("b"),
-			Generation: 1,
-		},
-		&rfpb.RangeDescriptor{
-			Start:      keys.Key("b"),
-			End:        keys.Key("c"),
-			Generation: 1,
-		},
-		&rfpb.RangeDescriptor{
-			Start:      keys.Key("c"),
-			End:        keys.Key("d"),
-			Generation: 1,
-		},
-		&rfpb.RangeDescriptor{
-			Start:      keys.Key("d"),
-			End:        keys.MaxByte,
-			Generation: 1,
-		},
-	}
+	flags.Set(t, "gossip.retransmit_mult", 10)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1559,11 +2289,18 @@ func TestRebalance(t *testing.T) {
 	s4 := sf.NewStore(t)
 	ctx := context.Background()
 
-	// start shards for s1, s2, s3, s4
+	partition := disk.Partition{
+		ID:        "default",
+		NumRanges: 5,
+	}
+	// start shards for s1, s2, s3
+	log.Infof("==== start 3 shards====")
 	stores := []*testutil.TestingStore{s1, s2, s3}
-	sf.StartShardWithRanges(t, ctx, startingRanges, stores...)
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
+	sf.InitializeShardsForPartition(t, ctx, partition, stores...)
 
 	{ // Verify that there are 3 replicas for range 2
+		log.Infof("==== verify range 2 has 3 replicas ====")
 		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 		replicas := getMembership(t, s, ctx, 2)
 		require.Equal(t, 3, len(replicas))
@@ -1571,41 +2308,42 @@ func TestRebalance(t *testing.T) {
 		require.Equal(t, 3, len(rd.GetReplicas()))
 	}
 
+	size := 1 + partition.NumRanges
 	for {
 		// advance the clock to trigger scan replicas
 		clock.Advance(61 * time.Second)
 		// wait some time to allow let driver queue execute
 		time.Sleep(100 * time.Millisecond)
-		l1 := s1.ListReplicasForTest()
-		l2 := s2.ListReplicasForTest()
-		l3 := s3.ListReplicasForTest()
-		l4 := s4.ListReplicasForTest()
+		l1 := s1.ListOpenReplicasForTest()
+		l2 := s2.ListOpenReplicasForTest()
+		l3 := s3.ListOpenReplicasForTest()
+		l4 := s4.ListOpenReplicasForTest()
 
 		// store 4 should have at least one replica
 		if len(l4) == 0 {
+			log.Infof("==== store 4 doesn't have replicas yet ====")
 			continue
 		}
 
-		size := len(startingRanges)
 		if len(l1) < size || len(l2) < size || len(l3) < size {
 			break
 		}
+		log.Infof("==== store 1 has %d replicas; store 2 has %d replicas; store 3 has %d replicas; store 4 has %d replicas", len(l1), len(l2), len(l3), len(l4))
 	}
 }
 
 func TestBringupSetRanges(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
-	flags.Set(t, "cache.raft.max_range_size_bytes", 8000)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 8000)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 1)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
-	flags.Set(t, "raft.bringup.partition_splits", []bringup.SplitConfig{
-		{
-			Start:  []byte("PTdefault/0000000000000000000000000000000000000000000000000000000000000000/9/cas/v5"),
-			End:    []byte("PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/9/cas/v5"),
-			Splits: 3,
-		},
-	})
+
+	partition := disk.Partition{
+		ID:        "default",
+		NumRanges: 4,
+	}
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1613,7 +2351,8 @@ func TestBringupSetRanges(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1}
-	sf.StartShard(t, ctx, stores...)
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
+	sf.InitializeShardsForPartition(t, ctx, partition, stores...)
 
 	testutil.WaitForRangeLease(t, ctx, stores, 1) // metarange
 	testutil.WaitForRangeLease(t, ctx, stores, 2) // start -> 1st split
@@ -1623,8 +2362,8 @@ func TestBringupSetRanges(t *testing.T) {
 
 	writeNRecordsAndFlush(ctx, t, s1, 20, 1) // each write is 1000 bytes
 
-	mrd := s1.GetRange(1)
-	ranges := fetchRangeDescriptorsFromMetaRange(ctx, t, s1, mrd)
+	ranges, err := s1.Sender().LookupRangeDescriptorsByIDs(ctx, []uint64{2, 3, 4, 5})
+	require.NoError(t, err)
 
 	require.Len(t, ranges, 4)
 	require.Equal(t, "PTdefault/", string(ranges[0].GetStart()))
@@ -1637,5 +2376,377 @@ func TestBringupSetRanges(t *testing.T) {
 	require.Equal(t, "PTdefault/bffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd", string(ranges[2].GetEnd()))
 
 	require.Equal(t, "PTdefault/bffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd", string(ranges[3].GetStart()))
-	require.Equal(t, "PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[3].GetEnd()))
+	require.Equal(t, "PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[3].GetEnd()))
+}
+
+func TestSetupNewPartitions(t *testing.T) {
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
+
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	partitions := []disk.Partition{
+		{
+			ID:           "default",
+			MaxSizeBytes: int64(1_000_000_000), // 1G
+			NumRanges:    1,
+		},
+		{
+			ID:           "foo",
+			MaxSizeBytes: int64(1_000_000_000), // 1G
+			NumRanges:    2,
+		},
+		{
+			ID:           "zoo",
+			MaxSizeBytes: int64(1_000_000_000), // 1G
+			NumRanges:    3,
+		},
+	}
+	sf.SetPartitions(partitions)
+
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+	// start shards for s1, s2, s3
+	log.Infof("==== start 3 shards====")
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
+	// Set up default partition
+	sf.InitializeShardsForPartition(t, ctx, partitions[0], stores...)
+
+	testutil.WaitForRangeLease(t, ctx, stores, 1) // metarange
+	testutil.WaitForRangeLease(t, ctx, stores, 2) // range 2: default partition
+
+	// advance the clock to trigger the process to set up partitions
+	clock.Advance(30 * time.Second)
+	for {
+		clock.Advance(2 * time.Second)
+
+		replicas := s1.ListOpenReplicasForTest()
+		if len(replicas) < 7 {
+			log.Infof("====num of replicas: %d", len(replicas))
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		log.Info("====7 shards all started")
+
+		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+
+		// Verify partition descriptors
+		partitionDescriptors, err := s.Sender().FetchPartitionDescriptors(ctx)
+		require.NoError(t, err)
+
+		if len(partitionDescriptors) < 3 {
+			log.Infof("partitions are still initializing. len(partitionDescriptors)=%d", len(partitionDescriptors))
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+
+		pd1 := partitionDescriptors[0]
+		require.Equal(t, "default", pd1.GetId())
+		require.Equal(t, int64(1), pd1.GetInitialNumRanges())
+		require.Equal(t, uint64(2), pd1.GetFirstRangeId())
+
+		pd2 := partitionDescriptors[1]
+		require.Equal(t, "foo", pd2.GetId())
+		require.Equal(t, int64(2), pd2.GetInitialNumRanges())
+
+		pd3 := partitionDescriptors[2]
+		require.Equal(t, "zoo", pd3.GetId())
+		require.Equal(t, int64(3), pd3.GetInitialNumRanges())
+
+		if pd2.GetState() == rfpb.PartitionDescriptor_INITIALIZING || pd3.GetState() == rfpb.PartitionDescriptor_INITIALIZING {
+			log.Infof("partitions are still initializing: %+v, %+v", pd2, pd3)
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+
+		log.Info("===partitions are initialized")
+		{
+			ranges, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "default")
+			require.NoError(t, err)
+			require.Len(t, ranges, 1)
+			require.Equal(t, "PTdefault/", string(ranges[0].GetStart()))
+			require.Equal(t, "PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[0].GetEnd()))
+		}
+
+		{
+			ranges, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "foo")
+			require.NoError(t, err)
+			require.Len(t, ranges, 2)
+			require.Equal(t, ranges[0].GetRangeId(), pd2.GetFirstRangeId())
+			require.Equal(t, "PTfoo/", string(ranges[0].GetStart()))
+			require.Equal(t, "PTfoo/7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[0].GetEnd()))
+
+			require.Equal(t, "PTfoo/7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[1].GetStart()))
+			require.Equal(t, "PTfoo/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[1].GetEnd()))
+		}
+
+		{
+			ranges, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "zoo")
+			require.NoError(t, err)
+			require.Len(t, ranges, 3)
+			require.Equal(t, ranges[0].GetRangeId(), pd3.GetFirstRangeId())
+			require.Equal(t, "PTzoo/", string(ranges[0].GetStart()))
+			require.Equal(t, "PTzoo/5555555555555555555555555555555555555555555555555555555555555555", string(ranges[0].GetEnd()))
+
+			require.Equal(t, "PTzoo/5555555555555555555555555555555555555555555555555555555555555555", string(ranges[1].GetStart()))
+			require.Equal(t, "PTzoo/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", string(ranges[1].GetEnd()))
+
+			require.Equal(t, "PTzoo/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", string(ranges[2].GetStart()))
+			require.Equal(t, "PTzoo/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[2].GetEnd()))
+		}
+		break
+	}
+}
+
+func TestSoftDeletePartitions(t *testing.T) {
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
+
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	partitions := []disk.Partition{
+		{
+			ID:           "default",
+			MaxSizeBytes: int64(1_000_000_000), // 1G
+			NumRanges:    1,
+		},
+		{
+			ID:           "foo",
+			MaxSizeBytes: int64(1_000_000_000), // 1G
+			NumRanges:    1,
+			SoftDeleted:  true,
+		},
+	}
+	sf.SetPartitions(partitions)
+
+	ctx := context.Background()
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	// Initialize partitions
+	log.Infof("==== start 3 shards====")
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
+
+	sf.InitializeShardsForPartition(t, ctx, partitions[0], stores...)
+	// Set up 2 ranges for partition "foo" instead of 1 to test that both ranges
+	// will be stopped after soft-deletion.
+	sf.InitializeShardsForPartition(t, ctx, disk.Partition{
+		ID:           "foo",
+		MaxSizeBytes: int64(1_000_000_000), // 1G
+		NumRanges:    2,
+	}, stores...)
+
+	for i := 1; i <= 4; i++ {
+		testutil.WaitForRangeLease(t, ctx, stores, uint64(i)) // metarange
+		log.Infof("==== got range lease for range %d", i)
+	}
+
+	require.Len(t, s1.ListOpenReplicasForTest(), 4)
+	require.Len(t, s2.ListOpenReplicasForTest(), 4)
+	require.Len(t, s3.ListOpenReplicasForTest(), 4)
+	log.Infof("waiting for foo partition descriptor to be updated to soft deleted")
+	for {
+		// advance the clock to trigger the process to set up partitions
+		clock.Advance(31 * time.Second)
+		// Verify partition descriptors
+		partitionDescriptors, err := s1.Sender().FetchPartitionDescriptors(ctx)
+		require.NoError(t, err)
+
+		require.Len(t, partitionDescriptors, 2)
+		require.Equal(t, "foo", partitionDescriptors[1].GetId())
+		if partitionDescriptors[1].GetState() != rfpb.PartitionDescriptor_SOFT_DELETED {
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	log.Infof("foo partition descriptor updated to soft deleted")
+
+	for {
+		clock.Advance(11 * time.Second)
+		l1 := s1.ListOpenReplicasForTest()
+		l2 := s2.ListOpenReplicasForTest()
+		l3 := s3.ListOpenReplicasForTest()
+		if len(l1) != 2 || len(l2) != 2 || len(l3) != 2 {
+			log.Infof("open replicas on s1, s2 and s3 are: %d, %d, %d", len(l1), len(l2), len(l3))
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	// Verify that the data is not roemoved
+	require.Len(t, s1.ListAllReplicasInHistoryForTest(), 4)
+	require.Len(t, s2.ListAllReplicasInHistoryForTest(), 4)
+	require.Len(t, s3.ListAllReplicasInHistoryForTest(), 4)
+}
+
+func TestHardDeletePartitions(t *testing.T) {
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
+
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	partitions := []disk.Partition{
+		{
+			ID:           "default",
+			MaxSizeBytes: int64(1_000_000_000), // 1G
+			NumRanges:    1,
+		},
+	}
+	sf.SetPartitions(partitions)
+
+	ctx := context.Background()
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	// Initialize partitions
+	log.Infof("==== start 3 shards====")
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
+
+	sf.InitializeShardsForPartition(t, ctx, partitions[0], stores...)
+	// Set up 2 ranges for partition "foo" instead of 1. We don't set SoftDeleted
+	// to true here, otherwise, the ranges will not be set up
+	sf.InitializeShardsForPartition(t, ctx, disk.Partition{
+		ID:           "foo",
+		MaxSizeBytes: int64(1_000_000_000), // 1G
+		NumRanges:    2,
+	}, stores...)
+
+	for i := 1; i <= 4; i++ {
+		testutil.WaitForRangeLease(t, ctx, stores, uint64(i)) // metarange
+		log.Infof("==== got range lease for range %d", i)
+	}
+
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	log.Infof("==== set foo partition descriptor to be soft deleted")
+	fooPD, err := s.Sender().LookupPartitionDescriptor(ctx, "foo")
+	require.NoError(t, err)
+
+	// Update the partition descriptor foo to SoftDeleted before processing
+	// partitions.
+	partitionKey := keys.MakeKey(constants.PartitionPrefix, []byte("foo"))
+	oldBuf, err := proto.Marshal(fooPD)
+	require.NoError(t, err)
+	fooPD.State = rfpb.PartitionDescriptor_SOFT_DELETED
+	newBuf, err := proto.Marshal(fooPD)
+	require.NoError(t, err)
+	err = s1.Sender().UpdatePartitionDescriptor(ctx, partitionKey, newBuf, oldBuf)
+	require.NoError(t, err)
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	for {
+		// advance the clock to trigger the process to set up partitions
+		clock.Advance(31 * time.Second)
+
+		_, err := s.Sender().LookupPartitionDescriptor(ctx, "foo")
+		if !status.IsNotFoundError(err) {
+			continue
+		}
+		break
+	}
+
+	log.Infof("====foo partition descriptor deleted")
+	log.Infof("====wait for zombie janitor cleaning up")
+	for {
+		clock.Advance(31 * time.Second)
+		l1 := s1.ListAllReplicasInHistoryForTest()
+		l2 := s2.ListAllReplicasInHistoryForTest()
+		l3 := s3.ListAllReplicasInHistoryForTest()
+		if len(l1) != 2 || len(l2) != 2 || len(l3) != 2 {
+			log.Infof("num of replicas on s1, s2 and s3 are: %d, %d, %d", len(l1), len(l2), len(l3))
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	log.Infof("====range descriptors are deleted")
+	for {
+		clock.Advance(31 * time.Second)
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+		rangeDescriptors, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "foo")
+		require.NoError(t, err)
+		if len(rangeDescriptors) > 0 {
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		break
+	}
+}
+
+func TestNonSoftDeletedPartitionsNotDeleted(t *testing.T) {
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
+
+	// Initialize partition foo, but don't include foo in partition config.
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	partitions := []disk.Partition{
+		{
+			ID:           "default",
+			MaxSizeBytes: int64(1_000_000_000), // 1G
+			NumRanges:    1,
+		},
+	}
+	sf.SetPartitions(partitions)
+
+	ctx := context.Background()
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	// Initialize partitions
+	log.Infof("==== start 3 shards====")
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
+
+	sf.InitializeShardsForPartition(t, ctx, partitions[0], stores...)
+	// Set up 2 ranges for partition "foo" instead of 1. We don't set SoftDeleted
+	// to true here, otherwise, the ranges will not be set up
+	sf.InitializeShardsForPartition(t, ctx, disk.Partition{
+		ID:           "foo",
+		MaxSizeBytes: int64(1_000_000_000), // 1G
+		NumRanges:    2,
+	}, stores...)
+
+	for i := 1; i <= 4; i++ {
+		testutil.WaitForRangeLease(t, ctx, stores, uint64(i)) // metarange
+		log.Infof("==== got range lease for range %d", i)
+	}
+
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	log.Infof("==== set foo partition descriptor to be soft deleted")
+
+	s.ProcessPartitions(ctx)
+
+	// Verify that the partition descriptor of foo is not touched
+	fooPD, err := s.Sender().LookupPartitionDescriptor(ctx, "foo")
+	require.NoError(t, err)
+	require.Equal(t, rfpb.PartitionDescriptor_INITIALIZED, fooPD.GetState())
+	rangeDescriptors, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "foo")
+	require.NoError(t, err)
+	for _, rd := range rangeDescriptors {
+		require.Len(t, rd.GetReplicas(), 3)
+		require.False(t, rd.GetDeleted())
+	}
 }

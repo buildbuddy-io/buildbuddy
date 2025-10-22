@@ -498,6 +498,26 @@ func TestFileCacheWriter(t *testing.T) {
 	fi, err = os.Stat(cfe)
 	require.NoError(t, err)
 	require.EqualValues(t, 0755, fi.Mode())
+
+	// Write with seeking.
+	execNode = &repb.FileNode{Digest: d, IsExecutable: true}
+	w, err = fc.Writer(ctx, execNode, repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	_, err = w.Write([]byte(content[:1]))
+	require.NoError(t, err)
+	_, err = w.(io.Seeker).Seek(0, io.SeekStart)
+	require.NoError(t, err)
+	_, err = w.Write([]byte(content))
+	require.NoError(t, err)
+	err = w.Commit()
+	require.NoError(t, err)
+	err = w.Close()
+	require.NoError(t, err)
+	cfe = filepath.Join(fc.TempDir(), "cached_file_exec")
+	require.True(t, fc.FastLinkFile(ctx, execNode, cfe))
+	fi, err = os.Stat(cfe)
+	require.NoError(t, err)
+	require.EqualValues(t, 0755, fi.Mode())
 }
 
 func BenchmarkFilecacheLink(b *testing.B) {

@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
@@ -44,8 +46,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/elastic/gosigar"
@@ -67,24 +72,23 @@ import (
 )
 
 var (
-	zombieNodeScanInterval    = flag.Duration("cache.raft.zombie_node_scan_interval", 10*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
-	zombieMinDuration         = flag.Duration("cache.raft.zombie_min_duration", 1*time.Minute, "The minimum duration a replica must remain in a zombie state to be considered a zombie.")
-	zombieNonVoterMinDuration = flag.Duration("cache.raft.zombie_non_voter_min_duration", 1*time.Hour, "The minimum duration a replica must remain in a non-voter state before we remove it")
-	replicaScanInterval       = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
-	clientSessionTTL          = flag.Duration("cache.raft.client_session_ttl", 24*time.Hour, "The duration we keep the sessions stored.")
-	enableDriver              = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
-	enableTxnCleanup          = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
-	enableRegistryPreload     = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
+	zombieNodeScanInterval        = flag.Duration("cache.raft.zombie_node_scan_interval", 30*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
+	replicaScanInterval           = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
+	clientSessionTTL              = flag.Duration("cache.raft.client_session_ttl", 24*time.Hour, "The duration we keep the sessions stored.")
+	enableDriver                  = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
+	enableTxnCleanup              = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
+	enableRegistryPreload         = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
+	blockCacheSizeBytes           = flag.Int64("cache.raft.block_cache_size_bytes", 1e9, "How much ram to give the block cache")
+	dragonboatBlockCacheSizeBytes = flag.Uint64("cache.raft.dragonboat_block_cache_size_bytes", 1e9, "How much ram to give the block cache in dragonboat")
 )
 
 const (
-	nonVoterZombieJanitorRateLimit = 1
-	deleteSessionsRateLimit        = 1
-	removeZombieRateLimit          = 1
-	numReplicaStarter              = 50
-	checkReplicaCaughtUpInterval   = 1 * time.Second
-	maxWaitTimeForReplicaRange     = 30 * time.Second
-	metricsRefreshPeriod           = 30 * time.Second
+	deleteSessionsRateLimit      = 1
+	removeZombieRateLimit        = 1
+	numReplicaStarter            = 50
+	checkReplicaCaughtUpInterval = 1 * time.Second
+	maxWaitTimeForReplicaRange   = 30 * time.Second
+	metricsRefreshPeriod         = 30 * time.Second
 
 	// listenerID for replicaStatusWaiter
 	listenerID = "replicaStatusWaiter"
@@ -98,10 +102,11 @@ const (
 )
 
 type Store struct {
-	env        environment.Env
-	rootDir    string
-	grpcAddr   string
-	partitions []disk.Partition
+	env                      environment.Env
+	rootDir                  string
+	grpcAddr                 string
+	partitions               []disk.Partition
+	partitionsAllInitialized bool
 
 	nodeHost      *dragonboat.NodeHost
 	gossipManager interfaces.GossipService
@@ -131,6 +136,7 @@ type Store struct {
 
 	rangeMu    sync.RWMutex
 	openRanges map[uint64]*rfpb.RangeDescriptor
+	rangeMap   *rangemap.RangeMap[*rfpb.RangeDescriptor]
 
 	leaseKeeper *leasekeeper.LeaseKeeper
 	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
@@ -151,10 +157,9 @@ type Store struct {
 	updateTagsWorker *updateTagsWorker
 	txnCoordinator   *txn.Coordinator
 
-	driverQueue           *driver.Queue
-	deleteSessionWorker   *deleteSessionWorker
-	replicaJanitor        *replicaJanitor
-	nonVoterZombieJanitor *nonVoterZombieJanitor
+	driverQueue         *driver.Queue
+	deleteSessionWorker *deleteSessionWorker
+	replicaJanitor      *replicaJanitor
 
 	clock clockwork.Clock
 
@@ -165,6 +170,8 @@ type Store struct {
 
 	mu      sync.Mutex // protects stopped
 	stopped bool
+
+	maxSingleOpTimeout time.Duration
 }
 
 // registryHolder implements NodeRegistryFactory. When nodeHost is created, it
@@ -201,6 +208,8 @@ func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr str
 	raftListener := listener.NewRaftListener()
 	gossipManager := env.GetGossipService()
 	regHolder := &registryHolder{raftAddr, grpcAddr, gossipManager, nil}
+	logDBConfig := getLogDbConfig(logDBConfigType)
+	logDBConfig.KVLRUCacheSize = *dragonboatBlockCacheSizeBytes
 	nhc := dbConfig.NodeHostConfig{
 		WALDir:         filepath.Join(rootDir, "wal"),
 		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
@@ -208,7 +217,7 @@ func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr str
 		RaftAddress:    raftAddr,
 		Expert: dbConfig.ExpertConfig{
 			NodeRegistryFactory: regHolder,
-			LogDB:               getLogDbConfig(logDBConfigType),
+			LogDB:               logDBConfig,
 		},
 		RaftEventListener:   raftListener,
 		SystemEventListener: raftListener,
@@ -222,13 +231,24 @@ func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr str
 	apiClient := client.NewAPIClient(env, nodeHost.ID(), registry)
 	sender := sender.New(rangeCache, apiClient)
 	mc := &pebble.MetricsCollector{}
-	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{
+
+	pebbleOpts := &pebble.Options{
+		MemTableSize: 64 << 20, // 64 MB
+		MaxOpenFiles: 2000,     // double the default
 		EventListener: &pebble.EventListener{
+			BackgroundError: mc.BackgroundError,
 			WriteStallBegin: mc.WriteStallBegin,
 			WriteStallEnd:   mc.WriteStallEnd,
 			DiskSlow:        mc.DiskSlow,
 		},
-	})
+	}
+	if *blockCacheSizeBytes > 0 {
+		c := pebble.NewCache(*blockCacheSizeBytes)
+		defer c.Unref()
+		pebbleOpts.Cache = c
+	}
+
+	db, err := pebble.Open(rootDir, "raft_store", pebbleOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -268,6 +288,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 		rangeMu:    sync.RWMutex{},
 		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
+		rangeMap:   rangemap.New[*rfpb.RangeDescriptor](),
 
 		leaseKeeper: leasekeeper.New(nodeHost, nhLog, nodeLiveness, listener, eventsChan, lkSession),
 		replicas:    sync.Map{},
@@ -279,10 +300,11 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
 
-		db:               db,
-		leaser:           leaser,
-		clock:            clock,
-		metricsCollector: mc,
+		db:                 db,
+		leaser:             leaser,
+		clock:              clock,
+		metricsCollector:   mc,
+		maxSingleOpTimeout: raftConfig.SingleRaftOpTimeout(),
 	}
 
 	s.replicaInitStatusWaiter = newReplicaStatusWaiter(listener, nhLog)
@@ -301,11 +323,10 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	usages, err := usagetracker.New(s.sender, s.leaser, gossipManager, s.NodeDescriptor(), partitions, clock)
 
 	if *enableDriver {
-		s.driverQueue = driver.NewQueue(s, gossipManager, nhLog, apiClient, clock)
+		s.driverQueue = driver.NewQueue(s, s.sender, gossipManager, nhLog, apiClient, clock)
 	}
 	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s, *clientSessionTTL)
-	s.replicaJanitor = newReplicaJanitor(clock, s, *zombieNodeScanInterval, *zombieMinDuration)
-	s.nonVoterZombieJanitor = newNonVoterZombieJanitor(clock, s, *zombieNonVoterMinDuration)
+	s.replicaJanitor = newReplicaJanitor(clock, s, *zombieNodeScanInterval)
 
 	if err != nil {
 		return nil, err
@@ -364,11 +385,11 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 			rc := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
 			s.replicaInitStatusWaiter.MarkStarted(logInfo.ShardID, logInfo.ReplicaID)
 			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, rc); err != nil {
-				if err == dragonboat.ErrReplicaRemoved {
+				if errors.Is(err, dragonboat.ErrReplicaRemoved) {
 					s.log.Debugf("Replica c%dn%d was removed in the past, skipping.", logInfo.ShardID, logInfo.ReplicaID)
 					return nil
 				}
-				return status.InternalErrorf("failed to start c%dn%d: %s", logInfo.ShardID, logInfo.ReplicaID, err)
+				return status.InternalErrorf("failed to start c%dn%d: %w", logInfo.ShardID, logInfo.ReplicaID, err)
 			}
 			s.configuredClusters.Add(1)
 			s.log.Infof("Recreated c%dn%d in %s. (%d/%d)", logInfo.ShardID, logInfo.ReplicaID, time.Since(start), i+1, numReplicas)
@@ -555,12 +576,85 @@ func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugIn
 	return rsp, nil
 }
 
+func (s *Store) AdminUpdateDescriptor(ctx context.Context, req *rfpb.AdminUpdateDescriptorRequest) (*rfpb.AdminUpdateDescriptorResponse, error) {
+	if rangeChange := req.GetRangeDescriptorChange(); rangeChange != nil {
+		oldDesc := rangeChange.GetOldDescriptor()
+		newDesc := rangeChange.GetNewDescriptor()
+
+		if oldDesc == nil || newDesc == nil {
+			return nil, status.InvalidArgumentError("both old and new range descriptors must be provided")
+		}
+
+		if expected := oldDesc.GetGeneration() + 1; newDesc.GetGeneration() != expected {
+			return nil, status.InvalidArgumentErrorf("the new generation should be %d, but is %d instead", expected, newDesc.GetGeneration())
+		}
+
+		err := s.UpdateRangeDescriptor(ctx, oldDesc, newDesc)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "failed to update range descriptor")
+		}
+		return &rfpb.AdminUpdateDescriptorResponse{}, nil
+	}
+
+	if len(req.GetPartitionDescriptorChange()) == 0 {
+		return &rfpb.AdminUpdateDescriptorResponse{}, nil
+	}
+
+	batch := rbuilder.NewBatchBuilder()
+	for _, partitionChange := range req.GetPartitionDescriptorChange() {
+		oldDesc := partitionChange.GetOldDescriptor()
+		newDesc := partitionChange.GetNewDescriptor()
+
+		if oldDesc == nil || newDesc == nil {
+			return nil, status.InvalidArgumentError("both old and new partition descriptors must be provided")
+		}
+
+		if oldDesc.GetId() != newDesc.GetId() {
+			return nil, status.InvalidArgumentError("both partition ID must be provided")
+		}
+
+		if expected := oldDesc.GetGeneration() + 1; newDesc.GetGeneration() != expected {
+			return nil, status.InvalidArgumentErrorf("the new generation should be %d, but is %d instead", expected, newDesc.GetGeneration())
+		}
+
+		key := keys.MakeKey(constants.PartitionPrefix, []byte(oldDesc.GetId()))
+		oldBuf, err := proto.Marshal(oldDesc)
+		if err != nil {
+			return nil, status.InternalErrorf("failed to marshal old partition descriptor: %w", err)
+		}
+
+		newBuf, err := proto.Marshal(newDesc)
+		if err != nil {
+			return nil, status.InternalErrorf("failed to marshal new partition descriptor: %w", err)
+		}
+		batch.Add(&rfpb.CASRequest{
+			Kv: &rfpb.KV{
+				Key:   key,
+				Value: newBuf,
+			},
+			ExpectedValue: oldBuf,
+		})
+	}
+
+	batchProto, err := batch.ToProto()
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := s.sender.SyncPropose(ctx, constants.MetaRangePrefix, batchProto)
+	if err != nil {
+		return nil, err
+	}
+	batchResp := rbuilder.NewBatchResponseFromProto(rsp)
+	err = batchResp.AnyError()
+	return &rfpb.AdminUpdateDescriptorResponse{}, err
+}
+
 func (s *Store) Statusz(ctx context.Context) string {
 	buf := "<pre>"
 	buf += s.liveness.String() + "\n"
 
 	su := s.Usage()
-	buf += fmt.Sprintf("%36s | Replicas: %4d | Leases: %4d | QPS (R): %5d | (W): %5d | Size: %d MB\n",
+	buf += fmt.Sprintf("%36s | Replicas: %4d | Leases: %7d | QPS (R): %5d | (W): %5d | Size: %d MB\n",
 		su.GetNode().GetNhid(),
 		su.GetReplicaCount(),
 		su.GetLeaseCount(),
@@ -586,22 +680,42 @@ func (s *Store) Statusz(ctx context.Context) string {
 			buf += fmt.Sprintf("%s error: %s\n", replicaName, err)
 			continue
 		}
+		haveLease := 0
 		isLeader := 0
+		if s.isLeader(r.RangeID(), r.ReplicaID()) {
+			isLeader = 1
+		}
+		numStaging := 0
+		numRemoving := 0
 		if rd := s.lookupRange(r.RangeID()); rd != nil {
 			if s.leaseKeeper.HaveLease(ctx, rd.GetRangeId()) {
-				isLeader = 1
+				haveLease = 1
 			}
+			numStaging = len(rd.GetStaging())
+			numRemoving = len(rd.GetRemoved())
 		}
 
-		buf += fmt.Sprintf("%36s |                | Leader: %4d | QPS (R): %5d | (W): %5d | %s\n",
+		buf += fmt.Sprintf("%36s | Leader: %6d | HaveLease: %4d | QPS (R): %5d | (W): %5d | # Staging: %4d | # Removing: %4d | %s\n",
 			replicaName,
 			isLeader,
+			haveLease,
 			ru.GetReadQps(),
 			ru.GetRaftProposeQps(),
+			numStaging,
+			numRemoving,
 			s.replicaInitStatusWaiter.InitStatus(r.RangeID(), r.ReplicaID()),
 		)
 	}
 	buf += s.usages.Statusz(ctx)
+	buf += "Partitions from meta range:\n"
+	partitions, err := s.sender.FetchPartitionDescriptors(ctx)
+	if err != nil {
+		buf += fmt.Sprintf("failed to fetch partition descriptors error: %s\n", err)
+	} else {
+		for _, p := range partitions {
+			buf += fmt.Sprintf("\t%s: %s\n", p.GetId(), p.GetState())
+		}
+	}
 	buf += "</pre>"
 	return buf
 }
@@ -654,14 +768,10 @@ func (s *Store) Start() error {
 		s.acquireNodeLiveness(s.egCtx)
 		return nil
 	})
-	s.eg.Go(func() error {
-		s.replicaJanitor.Start(s.egCtx)
-		return nil
-	})
 
-	if maxRangeSizeBytes := raftConfig.MaxRangeSizeBytes(); maxRangeSizeBytes != 0 {
+	if targetRangeSizeBytes := raftConfig.TargetRangeSizeBytes(); targetRangeSizeBytes != 0 {
 		s.eg.Go(func() error {
-			s.checkIfReplicasNeedSplitting(s.egCtx, maxRangeSizeBytes)
+			s.checkIfReplicasNeedSplitting(s.egCtx, targetRangeSizeBytes, raftConfig.RangeSizeJitterFactor())
 			return nil
 		})
 	}
@@ -690,10 +800,18 @@ func (s *Store) Start() error {
 		return nil
 	})
 	s.eg.Go(func() error {
-		s.nonVoterZombieJanitor.Start(s.egCtx)
+		s.setupPartitions(s.egCtx)
 		return nil
 	})
 	return nil
+}
+
+// StartReplicaJanitor starts the replica janitor.
+func (s *Store) StartReplicaJanitor() {
+	s.eg.Go(func() error {
+		s.replicaJanitor.Start(s.egCtx)
+		return nil
+	})
 }
 
 func (s *Store) Stop(ctx context.Context) error {
@@ -750,6 +868,39 @@ func (s *Store) lookupRange(rangeID uint64) *rfpb.RangeDescriptor {
 	return s.openRanges[rangeID]
 }
 
+// findTargetReplicaIDForLeadershipTransfer finds a target replica ID to tranfer
+// leader to. Returns 0 if no such replica is found.
+func (s *Store) findTargetReplicaIDForLeadershipTransfer(ctx context.Context, rd *rfpb.RangeDescriptor, fromReplicaID uint64) uint64 {
+	// Pick the first node in the map that isn't us. Map ordering is
+	// random; which is a good thing, it means we're randomly picking
+	// another node in the cluster and requesting they take the lead.
+	targetReplicaID := uint64(0)
+	backupReplicaID := uint64(0)
+	for _, repl := range rd.GetReplicas() {
+		if repl.GetReplicaId() == fromReplicaID {
+			continue
+		}
+		if connReady, err := s.apiClient.HaveReadyConnections(ctx, repl); err != nil || !connReady {
+			// During rollout, after a machine restarted, it takes some time
+			// for the connections to that machine to be re-established. If
+			// we move leader to such machines, it can cause
+			// sender.SyncPropose to retry until the connections are
+			// re-established. To prevent such scenerios, we don't want to
+			// move leaders to such machines if possible.
+			backupReplicaID = repl.GetReplicaId()
+			continue
+		}
+		targetReplicaID = repl.GetReplicaId()
+		break
+	}
+
+	if targetReplicaID == 0 {
+		log.Debugf("cannot find a replica with ready connections to transfer leadership to for shard %d, choose a random replica: %d", rd.GetRangeId(), backupReplicaID)
+		targetReplicaID = backupReplicaID
+	}
+	return targetReplicaID
+}
+
 func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
 		SkipLogInfo: true,
@@ -765,34 +916,9 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 			continue
 		}
 
-		// Pick the first node in the map that isn't us. Map ordering is
-		// random; which is a good thing, it means we're randomly picking
-		// another node in the cluster and requesting they take the lead.
-		targetReplicaID := uint64(0)
-		backupReplicaID := uint64(0)
 		rd := s.GetRange(clusterInfo.ShardID)
-		for _, repl := range rd.GetReplicas() {
-			if repl.GetReplicaId() == clusterInfo.ReplicaID {
-				continue
-			}
-			if connReady, err := s.apiClient.HaveReadyConnections(ctx, repl); err != nil || !connReady {
-				// During rollout, after a machine restarted, it takes some time
-				// for the connections to that machine to be re-established. If
-				// we move leader to such machines, it can cause
-				// sender.SyncPropose to retry until the connections are
-				// re-established. To prevent such scenerios, we don't want to
-				// move leaders to such machines if possible.
-				backupReplicaID = clusterInfo.ReplicaID
-				continue
-			}
-			targetReplicaID = repl.GetReplicaId()
-			break
-		}
+		targetReplicaID := s.findTargetReplicaIDForLeadershipTransfer(ctx, rd, clusterInfo.ReplicaID)
 
-		if targetReplicaID == 0 {
-			log.Debugf("cannot find a replica with ready connections to transfer leadership to for shard %d, choose a random replica: %d", clusterInfo.ShardID, backupReplicaID)
-			targetReplicaID = backupReplicaID
-		}
 		if targetReplicaID != 0 {
 			eg.Go(func() error {
 				log.Debugf("request to transfer leadership of shard %d to replica %d from replica %d", clusterInfo.ShardID, targetReplicaID, clusterInfo.ReplicaID)
@@ -814,9 +940,26 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.log.Debugf("Update range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 	_, loaded := s.replicas.LoadOrStore(rd.GetRangeId(), r)
 
+	var err error
+	added := false
 	s.rangeMu.Lock()
 	s.openRanges[rd.GetRangeId()] = rd
+
+	if rd.GetStart() != nil && rd.GetEnd() != nil {
+		checkFn := func(v *rfpb.RangeDescriptor) bool {
+			return v.GetGeneration() < rd.GetGeneration()
+		}
+		added, err = s.rangeMap.AddAndRemoveOverlapping(rd.GetStart(), rd.GetEnd(), rd, checkFn)
+		if !added {
+			s.log.Debugf("UpdateRange: Ignoring rangeDescriptor %+v, because current has same or later generation", rd)
+		}
+	}
 	s.rangeMu.Unlock()
+
+	if err != nil {
+		s.log.Warningf("failed to add range %d: [%q, %q) gen %d failed: %s", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration(), err)
+		return
+	}
 
 	if !loaded {
 		metrics.RaftRanges.With(prometheus.Labels{
@@ -829,7 +972,7 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
-	if rd.GetStart() == nil && rd.GetEnd() == nil {
+	if rd.GetStart() == nil || rd.GetEnd() == nil {
 		s.log.Debugf("range %d has no bounds (yet?)", rd.GetRangeId())
 		return
 	}
@@ -864,6 +1007,9 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 	s.rangeMu.Lock()
 	delete(s.openRanges, rd.GetRangeId())
+	if rd.GetStart() != nil && rd.GetEnd() != nil {
+		s.rangeMap.Remove(rd.GetStart(), rd.GetEnd())
+	}
 	s.rangeMu.Unlock()
 
 	metrics.RaftRanges.With(prometheus.Labels{
@@ -915,7 +1061,7 @@ func (s *Store) validatedRangeAgainstMetaRange(ctx context.Context, rd *rfpb.Ran
 	// Fetch the range descriptor from meta range to make sure it's the most-up-to-date.
 	remoteRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), true /*skip Cache */)
 	if err != nil {
-		return nil, status.InternalErrorf("failed to look up range descriptor")
+		return nil, status.WrapError(err, "failed to look up range descriptor")
 	}
 
 	if remoteRD.GetRangeId() != rd.GetRangeId() {
@@ -927,6 +1073,19 @@ func (s *Store) validatedRangeAgainstMetaRange(ctx context.Context, rd *rfpb.Ran
 	}
 	return remoteRD, nil
 
+}
+
+func validateHeaderRangeGen(header *rfpb.Header, rd *rfpb.RangeDescriptor) error {
+	// Ensure the header generation matches what we have locally -- if not,
+	// force client to go back and re-pull the rangeDescriptor from the meta
+	// range.
+	if header.GetSkipGenerationCheck() {
+		return nil
+	}
+	if rd.GetGeneration() != header.GetGeneration() {
+		return status.OutOfRangeErrorf("%s: range_id %d generation on store: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
+	}
+	return nil
 }
 
 // validatedRange verifies that the header is valid and the client is using
@@ -943,11 +1102,9 @@ func (s *Store) validatedRange(header *rfpb.Header) (*replica.Replica, *rfpb.Ran
 		return nil, nil, err
 	}
 
-	// Ensure the header generation matches what we have locally -- if not,
-	// force client to go back and re-pull the rangeDescriptor from the meta
-	// range.
-	if rd.GetGeneration() != header.GetGeneration() {
-		return nil, nil, status.OutOfRangeErrorf("%s: id %d generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
+	err = validateHeaderRangeGen(header, rd)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	return r, rd, nil
@@ -965,20 +1122,31 @@ func (s *Store) HaveLease(ctx context.Context, rangeID uint64) bool {
 // an up-to-date range descriptor. It also checks that a local replica owns
 // the range lease for the requested range.
 func (s *Store) LeasedRange(ctx context.Context, header *rfpb.Header) (*replica.Replica, error) {
-	r, _, err := s.validatedRange(header)
+	if header == nil {
+		return nil, status.FailedPreconditionError("Header must be set (was nil)")
+	}
+
+	r, rd, err := s.replicaForRange(header.GetRangeId())
 	if err != nil {
 		return nil, err
 	}
 
-	// Stale reads don't need a lease, so return early.
-	if header.GetConsistencyMode() == rfpb.Header_STALE {
-		return r, nil
+	// HaveLease should be checked before generation check. This is because a
+	// replica that is behind can fail the generation check because its
+	// generation is less than the requested one. The sender is not going to
+	// try a different replica when the generation check failed.
+	if header.GetConsistencyMode() != rfpb.Header_STALE {
+		if !s.HaveLease(ctx, header.GetRangeId()) {
+			return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
+		}
 	}
 
-	if s.HaveLease(ctx, header.GetRangeId()) {
-		return r, nil
+	err = validateHeaderRangeGen(header, rd)
+	if err != nil {
+		return nil, err
 	}
-	return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
+
+	return r, nil
 }
 
 func (s *Store) ReplicaFactoryFn(rangeID, replicaID uint64) dbsm.IOnDiskStateMachine {
@@ -988,6 +1156,10 @@ func (s *Store) ReplicaFactoryFn(rangeID, replicaID uint64) dbsm.IOnDiskStateMac
 
 func (s *Store) Sender() *sender.Sender {
 	return s.sender
+}
+
+func (s *Store) TxnCoordinator() *txn.Coordinator {
+	return s.txnCoordinator
 }
 
 func (s *Store) APIClient() *client.APIClient {
@@ -1053,6 +1225,23 @@ func (s *Store) isLeader(rangeID uint64, replicaID uint64) bool {
 	return leaderID == replicaID && term > 0
 }
 
+// rangeDescriptorHasReplica checks whether replica ID exists in staging,
+// replicas, or removed list.
+func rangeDescriptorHasReplica(rd *rfpb.RangeDescriptor, replicaID uint64) bool {
+	replicas := append(rd.GetReplicas(), rd.GetStaging()...)
+	replicas = append(replicas, rd.GetRemoved()...)
+	return hasReplica(replicas, replicaID)
+}
+
+func hasReplica(replicas []*rfpb.ReplicaDescriptor, replicaID uint64) bool {
+	for _, repl := range replicas {
+		if repl.GetReplicaId() == replicaID {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Store) GetRegistry(ctx context.Context, req *rfpb.GetRegistryRequest) (*rfpb.GetRegistryResponse, error) {
 	connections := s.registry.ListNodes()
 	return &rfpb.GetRegistryResponse{
@@ -1097,14 +1286,33 @@ func (s *Store) SnapshotCluster(ctx context.Context, rangeID uint64) error {
 	}
 }
 
-func (s *Store) ListReplicasForTest() []*rfpb.ReplicaDescriptor {
+// ListReplicasForTest lists replicas that are opened in the machine
+func (s *Store) ListOpenReplicasForTest() []*rfpb.ReplicaDescriptor {
 	replicas := []*rfpb.ReplicaDescriptor{}
-	nhInfo := s.nodeHost.GetNodeHostInfo(dragonboat.DefaultNodeHostInfoOption)
+	nhInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
+		SkipLogInfo: true,
+	})
 	for _, shardInfo := range nhInfo.ShardInfoList {
 		replicas = append(replicas, &rfpb.ReplicaDescriptor{
 			RangeId:   shardInfo.ShardID,
 			ReplicaId: shardInfo.ReplicaID,
 		})
+	}
+	return replicas
+}
+
+// ListAllReplicasInHistoryForTest lists all replicas that have been opened on
+// the machine; even if they are removed from membership.
+func (s *Store) ListAllReplicasInHistoryForTest() []*rfpb.ReplicaDescriptor {
+	replicas := []*rfpb.ReplicaDescriptor{}
+	nhInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
+	for _, logInfo := range nhInfo.LogInfo {
+		if s.nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
+			replicas = append(replicas, &rfpb.ReplicaDescriptor{
+				RangeId:   logInfo.ShardID,
+				ReplicaId: logInfo.ReplicaID,
+			})
+		}
 	}
 	return replicas
 }
@@ -1136,19 +1344,22 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	s.log.Infof("Starting new raft node c%dn%d", req.GetRangeId(), req.GetReplicaId())
 	rc := raftConfig.GetRaftConfig(req.GetRangeId(), req.GetReplicaId())
 	rc.IsNonVoting = req.GetIsNonVoting()
-	err := s.nodeHost.StartOnDiskReplica(req.GetInitialMember(), req.GetJoin(), s.ReplicaFactoryFn, rc)
-	if err != nil {
-		if err == dragonboat.ErrShardAlreadyExist {
-			nu, nuErr := s.nodeHost.GetNodeUser(req.GetRangeId())
-			if nuErr != nil {
-				return nil, status.InternalErrorf("failed to get node user: %s", err)
-			}
-			if nu.ReplicaID() == req.GetReplicaId() {
-				return nil, status.AlreadyExistsError(err.Error())
-			}
+	startShardErr := s.nodeHost.StartOnDiskReplica(req.GetInitialMember(), req.GetJoin(), s.ReplicaFactoryFn, rc)
+	if startShardErr != nil {
+		if !errors.Is(startShardErr, dragonboat.ErrShardAlreadyExist) {
+			return nil, status.WrapErrorf(startShardErr, "failed to start node c%dn%d on dragonboat", req.GetRangeId(), req.GetReplicaId())
+		}
+		nu, nuErr := s.nodeHost.GetNodeUser(req.GetRangeId())
+		if nuErr != nil {
+			return nil, status.WrapErrorf(startShardErr, "failed to get node user")
+		}
+		if nu.ReplicaID() != req.GetReplicaId() {
 			return nil, status.InternalErrorf("cannot start c%dn%d because c%dn%d already exists", nu.ShardID(), nu.ReplicaID(), req.GetRangeId(), req.GetReplicaId())
 		}
-		return nil, status.WrapErrorf(err, "failed to start node c%dn%d on dragonboat", req.GetRangeId(), req.GetReplicaId())
+
+		// If the shard already exists, we want to wait for the replica to catch up
+		// if last_applied_index is set in the request
+		startShardErr = status.AlreadyExistsError(startShardErr.Error())
 	}
 
 	if req.GetLastAppliedIndex() > 0 {
@@ -1158,17 +1369,17 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	}
 
 	rsp := &rfpb.StartShardResponse{}
-	return rsp, nil
+	return rsp, startShardErr
 }
 
 func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID uint64) error {
 	configChangeID, err := s.getConfigChangeID(ctx, rangeID)
 	if err != nil {
-		return status.InternalErrorf("failed to get configChangeID for range %d: %s", rangeID, err)
+		return status.WrapErrorf(err, "failed to get configChangeID for range %d", rangeID)
 	}
 
 	// Propose the config change (this removes the node from the raft cluster).
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		return s.nodeHost.SyncRequestDeleteReplica(ctx, rangeID, replicaID, configChangeID)
 	})
 	return err
@@ -1178,17 +1389,17 @@ func (s *Store) stopReplica(ctx context.Context, rangeID, replicaID uint64) erro
 	if rangeID == 0 || replicaID == 0 {
 		return status.InvalidArgumentErrorf("rangeID or replicaID is not set")
 	}
-	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err := client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		err := s.nodeHost.StopReplica(rangeID, replicaID)
-		if err == dragonboat.ErrShardClosed {
+		if errors.Is(err, dragonboat.ErrShardClosed) {
 			return nil
 		}
 		return err
 	})
-	if err != nil && err != dragonboat.ErrShardNotFound {
+	if err != nil && !errors.Is(err, dragonboat.ErrShardNotFound) {
 		// Ignore ShardNotFound error. The shard can be unloaded or deleted by
 		// syncRequestDeleteReplica.
-		return status.InternalErrorf("failed to stop replica c%dn%d: %s", rangeID, replicaID, err)
+		return status.WrapErrorf(err, "failed to stop replica c%dn%d", rangeID, replicaID)
 	}
 
 	s.log.Infof("succesfully stopped replica c%dn%d", rangeID, replicaID)
@@ -1210,6 +1421,7 @@ func (s *Store) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, req
 	if rangeID == 0 {
 		rangeID = rd.GetRangeId()
 	}
+
 	if err != nil {
 		return status.WrapErrorf(err, "failed to remove replica c%dn%d", rangeID, replicaID)
 	}
@@ -1224,19 +1436,18 @@ func (s *Store) syncRemoveData(ctx context.Context, rangeID, replicaID uint64) e
 		return status.WrapErrorf(err, "failed to stop replica before removing data of c%dn%d", rangeID, replicaID)
 	}
 
-	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err := client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		err := s.nodeHost.SyncRemoveData(ctx, rangeID, replicaID)
 		// If the shard is not stopped, we want to retry SyncRemoveData call.
-		if err == dragonboat.ErrShardNotStopped {
+		if errors.Is(err, dragonboat.ErrShardNotStopped) {
 			log.Warning("shard not stopped when remove data")
 			err = dragonboat.ErrTimeout
 		}
 		return err
 	})
 	if err != nil {
-		return status.InternalErrorf("failed to remove data of c%dn%d from raft: %s", rangeID, replicaID, err)
+		return status.WrapErrorf(err, "failed to remove data of c%dn%d from raft", rangeID, replicaID)
 	}
-	s.log.Infof("successfully removed data c%dn%d", rangeID, replicaID)
 	return nil
 }
 
@@ -1250,7 +1461,7 @@ func (s *Store) syncRemoveData(ctx context.Context, rangeID, replicaID uint64) e
 // up in the result of dragonboat.GetNodeHostInfo even when skipLogInfo is false.
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
 	if req.GetReplicaId() == 0 {
-		return nil, status.InvalidArgumentErrorf("replica_id is not specified")
+		return nil, status.InvalidArgumentError("replica_id is not specified")
 	}
 	if req.GetRangeId() != 0 {
 		if err := s.syncRemoveData(ctx, req.GetRangeId(), req.GetReplicaId()); err != nil {
@@ -1260,11 +1471,11 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 	}
 	rd := req.GetRange()
 	if rd == nil {
-		return nil, status.InvalidArgumentErrorf("need to specify either range_id or range")
+		return nil, status.InvalidArgumentError("need to specify either range_id or range")
 	}
 	remoteRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), true /*skip Cache */)
 	if err != nil {
-		return nil, status.InternalErrorf("failed to look up range descriptor: %s", err)
+		return nil, status.WrapErrorf(err, "failed to look up range descriptor")
 	}
 
 	if rd.GetRangeId() != remoteRD.GetRangeId() {
@@ -1300,13 +1511,13 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 		}
 		defer db.Close()
 		if err = db.DeleteRange(remoteRD.GetStart(), remoteRD.GetEnd(), pebble.NoSync); err != nil {
-			return nil, status.InternalErrorf("failed to delete data of c%dn%d from pebble: %s", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
+			return nil, status.InternalErrorf("failed to delete data of c%dn%d from pebble: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 		}
 
 		// Remove the local range of the replica.
 		localStart, localEnd := keys.Range(replica.LocalKeyPrefix(rd.GetRangeId(), req.GetReplicaId()))
 		if err := db.DeleteRange(localStart, localEnd, pebble.NoSync); err != nil {
-			return nil, status.InternalErrorf("failed to delete data of local range of c%dn%d from pebble: %s", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
+			return nil, status.InternalErrorf("failed to delete data of local range of c%dn%d from pebble: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 		}
 	}
 
@@ -1314,8 +1525,7 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 	if markedForRemoval {
 		rd, err = s.removeReplicaFromRangeDescriptor(ctx, remoteRD.GetRangeId(), req.GetReplicaId(), remoteRD)
 		if err != nil {
-			// TODO: returns a special error so that the caller can retry.
-			return nil, status.InternalErrorf("failed to remove replica c%dn%d from range descriptor: %s", remoteRD.GetRangeId(), req.GetReplicaId(), err)
+			return nil, status.WrapErrorf(err, "failed to remove replica c%dn%d from range descriptor", remoteRD.GetRangeId(), req.GetReplicaId())
 		}
 	}
 	return &rfpb.RemoveDataResponse{
@@ -1353,7 +1563,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 	}
 	batchResponse, err := session.SyncProposeLocal(ctx, s.nodeHost, rangeID, req.GetBatch())
 	if err != nil {
-		if err == dragonboat.ErrShardNotFound {
+		if errors.Is(err, dragonboat.ErrShardNotFound) {
 			return nil, status.OutOfRangeErrorf("%s: range %d not found", constants.RangeNotFoundMsg, rangeID)
 		}
 		return nil, err
@@ -1377,9 +1587,9 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	}
 
 	rangeID := req.GetHeader().GetReplica().GetRangeId()
-	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, rangeID, batch)
+	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, rangeID, batch, s.maxSingleOpTimeout)
 	if err != nil {
-		if err == dragonboat.ErrShardNotFound {
+		if errors.Is(err, dragonboat.ErrShardNotFound) {
 			return nil, status.OutOfRangeErrorf("%s: cluster not found for %+v", constants.RangeLeaseInvalidMsg, req.GetHeader())
 		}
 		return nil, err
@@ -1541,6 +1751,7 @@ const (
 	zombieCleanupNoAction zombieCleanupAction = iota
 	zombieCleanupRemoveReplica
 	zombieCleanupRemoveData
+	zombieCleanupStopReplica
 	zombieCleanupWait
 )
 
@@ -1557,10 +1768,7 @@ type zombieCleanupTask struct {
 }
 
 type replicaJanitor struct {
-	scanInterval      time.Duration
-	zombieMinDuration time.Duration
-
-	lastDetectedAt map[uint64]time.Time // from rangeID to last_detected_at
+	scanInterval time.Duration
 
 	rateLimiter *rate.Limiter
 	clock       clockwork.Clock
@@ -1575,16 +1783,14 @@ type replicaJanitor struct {
 	eg       errgroup.Group
 }
 
-func newReplicaJanitor(clock clockwork.Clock, store *Store, scanInterval time.Duration, zombieMinDuration time.Duration) *replicaJanitor {
+func newReplicaJanitor(clock clockwork.Clock, store *Store, scanInterval time.Duration) *replicaJanitor {
 	return &replicaJanitor{
-		scanInterval:      scanInterval,
-		zombieMinDuration: zombieMinDuration,
-		rateLimiter:       rate.NewLimiter(rate.Limit(removeZombieRateLimit), 1),
-		clock:             clock,
-		tasks:             make(chan zombieCleanupTask, 500),
-		rangeIDsInQueue:   make(map[uint64]bool),
-		lastDetectedAt:    make(map[uint64]time.Time),
-		store:             store,
+		scanInterval:    scanInterval,
+		rateLimiter:     rate.NewLimiter(rate.Limit(removeZombieRateLimit), 1),
+		clock:           clock,
+		tasks:           make(chan zombieCleanupTask, 500),
+		rangeIDsInQueue: make(map[uint64]bool),
+		store:           store,
 	}
 }
 
@@ -1593,45 +1799,52 @@ func (rj *replicaJanitor) nextAttemptTime(attemptNumber int) time.Time {
 	return rj.clock.Now().Add(time.Duration(backoff))
 }
 
-func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescriptor) *zombieCleanupTask {
-	rd, foundRange := rangeMap[ss.rangeID]
-	if !ss.opened {
-		// The replica hasn't been started on raft.
-		if foundRange {
-			// The range is found in meta range.
-			ss.rd = rd
-			for _, repl := range rd.GetRemoved() {
-				if repl.GetReplicaId() == ss.replicaID {
-					// The replica is marked for removal; and we want to finish
-					// the clean up process.
-					ss.action = zombieCleanupRemoveData
-					return ss
-				}
-			}
-			ss.action = zombieCleanupNoAction
-		} else {
-			// This shard is in LogInfo, but not started and it's not found in
-			// meta range; so we should remove the data of this shard so that
-			// it won't be re-created during start-up
-			ss.action = zombieCleanupRemoveData
+func isSoftDeleted(softDeletedPartitions []*rfpb.PartitionDescriptor, rd *rfpb.RangeDescriptor) bool {
+	for _, p := range softDeletedPartitions {
+		partDir := filestore.PartitionDirectoryPrefix + p.GetId() + "/"
+		if bytes.HasPrefix(rd.GetStart(), []byte(partDir)) {
+			return true
 		}
-		return ss
 	}
+	return false
+}
 
-	// The replica has been started on raft.
+func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescriptor, softDeletedPartitions []*rfpb.PartitionDescriptor) *zombieCleanupTask {
+	rd, foundRange := rangeMap[ss.rangeID]
 	if foundRange {
 		ss.rd = rd
-		for _, repl := range rd.GetReplicas() {
-			if repl.GetReplicaId() == ss.replicaID {
-				// The replica is active; so this is not a zombie
+		if isSoftDeleted(softDeletedPartitions, rd) {
+			if ss.opened {
+				ss.action = zombieCleanupStopReplica
+				return ss
+			} else {
 				ss.action = zombieCleanupNoAction
 				return ss
 			}
 		}
-	}
 
-	// The replica is a zombie, and it should be removed.
-	ss.action = zombieCleanupRemoveReplica
+		if hasReplica(rd.GetReplicas(), ss.replicaID) || hasReplica(rd.GetStaging(), ss.replicaID) {
+			ss.action = zombieCleanupNoAction
+			return ss
+		}
+		if hasReplica(rd.GetRemoved(), ss.replicaID) {
+			if rd.GetDeleted() {
+				// This range descriptor is going to be deleted; remove the data directly.
+				ss.action = zombieCleanupRemoveData
+				return ss
+			} else {
+				ss.action = zombieCleanupNoAction
+				return ss
+			}
+		}
+		// The replica is a zombie, and it should be removed.
+		ss.action = zombieCleanupRemoveReplica
+		return ss
+	}
+	// This shard is in LogInfo, but not started and it's not found in
+	// meta range; so we should remove the data of this shard so that
+	// it won't be re-created during start-up
+	ss.action = zombieCleanupRemoveData
 	return ss
 }
 
@@ -1729,7 +1942,37 @@ func (j *replicaJanitor) scanForZombies(ctx context.Context) {
 		}
 	}
 
-	// Fetch the range descritpors from meta range
+	txnRecords, err := j.store.txnCoordinator.FetchTxnRecords(ctx, true /*=includeLive*/)
+	if err != nil {
+		j.store.log.Warningf("failed to fetch txnRecords: %s", err)
+		return
+	}
+	rangeIDsToSkip := make(set.Set[uint64])
+	for _, tr := range txnRecords {
+		for _, stmt := range tr.GetTxnRequest().GetStatements() {
+			rangeIDsToSkip.Add(stmt.GetRange().GetRangeId())
+		}
+	}
+
+	partitions, err := j.store.sender.FetchPartitionDescriptors(ctx)
+	if err != nil {
+		j.store.log.Warningf("failed to fetch partitions: %s", err)
+		return
+	}
+
+	// Skip range ids in a partition that's in the progress of initialization
+	softDeletedPartitions := []*rfpb.PartitionDescriptor{}
+	for _, p := range partitions {
+		if p.GetState() == rfpb.PartitionDescriptor_INITIALIZING {
+			for i := 0; i < int(p.GetInitialNumRanges()); i++ {
+				rangeIDsToSkip.Add(p.GetFirstRangeId() + uint64(i))
+			}
+		} else if p.GetState() == rfpb.PartitionDescriptor_SOFT_DELETED {
+			softDeletedPartitions = append(softDeletedPartitions, p)
+		}
+	}
+
+	// Fetch the range descriptors from meta range
 	ranges, err := j.store.sender.LookupRangeDescriptorsByIDs(ctx, rangeIDs)
 	if err != nil {
 		j.store.log.Warningf("failed to scan zombie nodes: %s", err)
@@ -1741,16 +1984,11 @@ func (j *replicaJanitor) scanForZombies(ctx context.Context) {
 	}
 
 	for rangeID, ss := range shardStateMap {
-		newSS := setZombieAction(&ss, rangeMap)
+		if rangeIDsToSkip.Contains(rangeID) {
+			continue
+		}
+		newSS := setZombieAction(&ss, rangeMap, softDeletedPartitions)
 		if newSS.action == zombieCleanupNoAction {
-			continue
-		}
-		detectedAt, ok := j.lastDetectedAt[rangeID]
-		if !ok {
-			j.lastDetectedAt[rangeID] = j.clock.Now()
-			continue
-		}
-		if j.clock.Since(detectedAt) < j.zombieMinDuration {
 			continue
 		}
 		// this is a zombie.
@@ -1780,6 +2018,13 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		return zombieCleanupWait, nil
 	}
 
+	if task.action == zombieCleanupStopReplica {
+		if err := j.store.stopReplica(ctx, task.rangeID, task.replicaID); err != nil {
+			return zombieCleanupStopReplica, status.WrapErrorf(err, "failed to stop replica c%dn%d", task.rangeID, task.replicaID)
+		}
+		return zombieCleanupNoAction, nil
+	}
+
 	log.Debugf("removing zombie c%dn%d, action=%d", task.rangeID, task.replicaID, task.action)
 	removeDataReq := &rfpb.RemoveDataRequest{
 		ReplicaId: task.replicaID,
@@ -1799,16 +2044,16 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		}
 
 		if task.rd == nil {
-			// When an AddReplica/SplitRange failed in the middle, it can cause the shards to be
+			// When SplitRange failed in the middle, it can cause the shards to be
 			// created without any range descriptors created.
 			rd, err = j.store.newRangeDescriptorFromRaftMembership(ctx, task.rangeID)
 			if err != nil {
-				if err == dragonboat.ErrShardNotReady || err == dragonboat.ErrShardNotFound {
+				if errors.Is(err, dragonboat.ErrShardNotReady) || errors.Is(err, dragonboat.ErrShardNotFound) {
 					// This can happen when SplitRange failed to initialize all initial members.
 					// move on to stop replica
 					log.Warningf("getMembership for c%dn%d failed: %s", task.rangeID, task.replicaID, err)
 				} else {
-					return zombieCleanupRemoveReplica, status.InternalErrorf("failed to create range descriptor from meta range:%s", err)
+					return zombieCleanupRemoveReplica, status.WrapErrorf(err, "failed to create range descriptor from meta range")
 				}
 			}
 			// Set RangeId instead of Range in RemoveDataRequest and RemoveReplicaRequest to skip range descriptor check because there is
@@ -1818,10 +2063,22 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		} else {
 			rd, err = j.store.validatedRangeAgainstMetaRange(ctx, task.rd)
 			if err != nil {
-				return zombieCleanupRemoveReplica, status.InternalErrorf("failed to fetch up-to-date range descriptor from meta range:%s", err)
+				return zombieCleanupRemoveReplica, status.WrapErrorf(err, "failed to fetch up-to-date range descriptor from meta range")
 			}
-			removeDataReq.Range = rd
+
+			if j.store.isLeader(task.rangeID, task.replicaID) && !rangeDescriptorHasReplica(rd, task.replicaID) {
+				// The replica is not in the range descriptor; and if it is the
+				// leader, we won't be able to call the sender to remove it from
+				// raft membership. This is because, none of the replicas in the
+				// range descriptor can get lease.
+				if targetReplicaID := j.store.findTargetReplicaIDForLeadershipTransfer(ctx, rd, task.replicaID); targetReplicaID != 0 {
+					if err := j.store.nodeHost.RequestLeaderTransfer(task.rangeID, targetReplicaID); err != nil {
+						return zombieCleanupRemoveReplica, status.WrapErrorf(err, "failed to transfer leader for range %d from %d to %d", task.rangeID, task.replicaID, targetReplicaID)
+					}
+				}
+			}
 			removeReplicaReq.Range = rd
+			removeDataReq.Range = rd
 		}
 
 		// Skip removeReplica if we don't have rd. This is possible when we were
@@ -1830,7 +2087,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		if rd != nil {
 			err = j.store.removeReplica(ctx, rd, removeReplicaReq)
 			if err != nil {
-				if strings.Contains(err.Error(), dragonboat.ErrRejected.Error()) {
+				if errors.Is(err, dragonboat.ErrRejected) {
 					// move on to stop replica
 					log.Warningf("request to delete replica c%dn%d was rejected, attempting to stop: %s", task.rangeID, task.replicaID, err)
 				} else {
@@ -1842,12 +2099,12 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 
 	_, err := j.store.RemoveData(ctx, removeDataReq)
 	if err != nil {
-		return zombieCleanupRemoveData, status.InternalErrorf("failed to remove data: %s", err)
+		return zombieCleanupRemoveData, status.WrapErrorf(err, "failed to remove data")
 	}
 	return zombieCleanupNoAction, nil
 }
 
-func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, maxRangeSizeBytes int64) {
+func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, targetRangeSizeBytes int64, jitterFactor float64) {
 	eventsCh := s.AddEventListener("splitRanges")
 	for {
 		select {
@@ -1868,7 +2125,9 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, maxRangeSizeBy
 				if !s.leaseKeeper.HaveLease(ctx, rangeID) {
 					continue
 				}
-				if estimatedDiskBytes < maxRangeSizeBytes {
+
+				lowerBound := (1 - jitterFactor) * float64(targetRangeSizeBytes)
+				if float64(estimatedDiskBytes) < lowerBound {
 					continue
 				}
 				repl, err := s.GetReplica(rangeID)
@@ -1876,7 +2135,7 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, maxRangeSizeBy
 					s.log.Errorf("failed to get replica with rangeID=%d: %s", rangeID, err)
 					continue
 				}
-				s.driverQueue.MaybeAdd(ctx, repl)
+				s.driverQueue.MaybeAddRangeTask(ctx, repl)
 			default:
 				break
 			}
@@ -2196,74 +2455,6 @@ func (w *replicaWorker) Start(ctx context.Context) {
 	}
 }
 
-// nonVoterZombieJanitor cleans up zombie non voters. We have zombie non voters when
-// the driver try to up-replicate a range and when it successfully add a
-// non-voter to the raft cluster, but fail to start the shard or promote it to
-// voter, and later abandon the attempt. In such case, a shard has never been
-// started, therefore, it won't be detected as a normal zombie (i.e. a shard that
-// has been started but should not exist according to meta range).
-type nonVoterZombieJanitor struct {
-	// The minimum duration the replica must remain as a non-voter before it is
-	// removed
-	minDuration time.Duration
-
-	lastDetectedAt map[string]time.Time // from replicaKey to last_detected_at
-	rateLimiter    *rate.Limiter
-	clock          clockwork.Clock
-
-	store *Store
-
-	*replicaWorker
-}
-
-func newNonVoterZombieJanitor(clock clockwork.Clock, store *Store, minDuration time.Duration) *nonVoterZombieJanitor {
-	res := &nonVoterZombieJanitor{
-		minDuration:    minDuration,
-		clock:          clock,
-		store:          store,
-		rateLimiter:    rate.NewLimiter(rate.Limit(nonVoterZombieJanitorRateLimit), 1),
-		lastDetectedAt: make(map[string]time.Time),
-	}
-	res.replicaWorker = &replicaWorker{
-		name:     "nonVoterZombieJanitor",
-		tasks:    make(chan *replica.Replica, 10000),
-		handleFn: res.checkRepl,
-	}
-	return res
-}
-
-func (j *nonVoterZombieJanitor) checkRepl(ctx context.Context, repl *replica.Replica) error {
-	if err := j.rateLimiter.Wait(ctx); err != nil {
-		return err
-	}
-	rangeID := repl.RangeID()
-	membership, err := j.store.GetMembership(ctx, rangeID)
-	if err != nil {
-		return status.WrapErrorf(err, "failed to get membership for range %d", rangeID)
-	}
-	for replicaID, _ := range membership.NonVotings {
-		key := replicaKey(rangeID, replicaID)
-		detectedAt, ok := j.lastDetectedAt[key]
-		if ok {
-			if j.clock.Since(detectedAt) < j.minDuration {
-				continue
-			}
-			_, err := j.store.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
-				RangeId:   rangeID,
-				ReplicaId: replicaID,
-			})
-			if err != nil {
-				return status.WrapErrorf(err, "failed to remove non-voter replica c%dn%d", rangeID, replicaID)
-			} else {
-				log.Infof("successfully removed non-voter c%dn%d", rangeID, replicaID)
-			}
-		} else {
-			j.lastDetectedAt[key] = j.clock.Now()
-		}
-	}
-	return nil
-}
-
 type deleteSessionWorker struct {
 	rateLimiter       *rate.Limiter
 	lastExecutionTime sync.Map // map of uint64 rangeID -> the timestamp we last delete sessions
@@ -2293,6 +2484,9 @@ func newDeleteSessionsWorker(clock clockwork.Clock, store *Store, clientSessionT
 }
 
 func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.Replica) error {
+	if repl.RangeID() == 0 {
+		return nil
+	}
 	rd := w.store.lookupRange(repl.RangeID())
 	lastExecutionTimeI, found := w.lastExecutionTime.Load(rd.GetRangeId())
 	if found {
@@ -2322,18 +2516,138 @@ func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.
 			CreatedAtUsec: now.Add(-w.clientSessionTTL).UnixMicro(),
 		}).ToProto()
 	if err != nil {
-		return status.InternalErrorf("unable to delete sessions for rangeID=%d: unable to build request: %s", rd.GetRangeId(), err)
+		return status.WrapErrorf(err, "unable to delete sessions for rangeID=%d: unable to build request", rd.GetRangeId())
 	}
 	rsp, err := w.session.SyncProposeLocal(ctx, w.store.NodeHost(), repl.RangeID(), request)
 	if err != nil {
-		return status.InternalErrorf("unable to delete sessions for rangeID=%d: SyncProposeLocal fails: %s", rd.GetRangeId(), err)
+		return status.WrapErrorf(err, "unable to delete sessions for rangeID=%d: SyncProposeLocal fails", rd.GetRangeId())
 	}
 	w.lastExecutionTime.Store(rd.GetRangeId(), now)
 	_, err = rbuilder.NewBatchResponseFromProto(rsp).DeleteSessionsResponse(0)
 	if err != nil {
-		return status.InternalErrorf("unable to delete sessions for rangeID=%d: deleteSessions fails: %s", rd.GetRangeId(), err)
+		return status.WrapErrorf(err, "unable to delete sessions for rangeID=%d: deleteSessions fails", rd.GetRangeId())
 	}
 	return nil
+}
+
+type SplitRangeTxn struct {
+	TxnBuilder       *rbuilder.TxnBuilder
+	NewRightRange    *rfpb.RangeDescriptor
+	UpdatedLeftRange *rfpb.RangeDescriptor
+}
+
+func (s *Store) BuildTxnForRangeSplit(leftRange *rfpb.RangeDescriptor, newRangeID uint64, splitKey []byte, replicaIDs []uint64) (SplitRangeTxn, error) {
+	res := SplitRangeTxn{}
+	initialMembers := make(map[uint64]string, len(leftRange.GetReplicas()))
+	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(leftRange.GetReplicas()))
+
+	for i, r := range leftRange.GetReplicas() {
+		if r.GetNhid() == "" {
+			return res, status.InternalErrorf("empty nhid in ReplicaDescriptor %+v", r)
+		}
+		replicaID := replicaIDs[i]
+		replicas = append(replicas, &rfpb.ReplicaDescriptor{
+			RangeId:   newRangeID,
+			ReplicaId: replicaID,
+			Nhid:      proto.String(r.GetNhid()),
+		})
+		initialMembers[replicaID] = r.GetNhid()
+	}
+
+	// Assemble new range descriptor.
+	newRightRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
+	newRightRange.Start = splitKey
+	newRightRange.RangeId = newRangeID
+	newRightRange.Generation += 1
+	newRightRange.Replicas = replicas
+
+	updatedLeftRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
+	updatedLeftRange.End = splitKey
+	updatedLeftRange.Generation += 1
+
+	newLeftRangeBuf, err := proto.Marshal(updatedLeftRange)
+	if err != nil {
+		return res, err
+	}
+	oldLeftRangeBuf, err := proto.Marshal(leftRange)
+	if err != nil {
+		return res, err
+	}
+	newRightRangeBuf, err := proto.Marshal(newRightRange)
+	if err != nil {
+		return res, err
+	}
+
+	leftBatch := rbuilder.NewBatchBuilder()
+
+	if err := addLocalRangeEdits(oldLeftRangeBuf, newLeftRangeBuf, leftBatch); err != nil {
+		return res, err
+	}
+	// lock the left range when we prepare the transaction. Before we finalize
+	// the transaction, we don't allow keys in the old left range to be written.
+	leftBatch.SetLockMappedRange(true)
+
+	rightBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: newRightRangeBuf,
+		},
+	})
+	metaBatch := rbuilder.NewBatchBuilder()
+	// Send a single request that:
+	//  - CAS sets the newLeftRange value to newNewStartBuf
+	//  - inserts the new newRightRangeBuf
+	//
+	// if the CAS fails, check the existing value
+	//  if it's generation is past ours, ignore the error, we're out of date
+	//  if the existing value already matches what we were trying to set, we're done.
+	//  else return an error
+	metaBatch.Add(&rfpb.CASRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.RangeMetaKey(newRightRange.GetEnd()),
+			Value: newRightRangeBuf,
+		},
+		ExpectedValue: oldLeftRangeBuf,
+	}).Add(&rfpb.CASRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.RangeMetaKey(updatedLeftRange.GetEnd()),
+			Value: newLeftRangeBuf,
+		},
+	})
+	mrd := s.sender.GetMetaRangeDescriptor()
+
+	tb := rbuilder.NewTxn()
+	leftStmt := tb.AddStatement()
+	leftStmt = leftStmt.SetRangeDescriptor(leftRange).SetBatch(leftBatch)
+	leftStmt.AddPostCommitHook(rfpb.TransactionHook_COMMIT, &rfpb.SnapshotClusterHook{})
+	leftStmt.AddPostCommitHook(rfpb.TransactionHook_PREPARE, &rfpb.StartShardHook{
+		RangeId:       newRangeID,
+		InitialMember: initialMembers,
+	})
+	// Range Validation is required on the existing range to make sure that the
+	// existing leader/range lease holder has the update-to-date range descriptor.
+	// See go/raft-range-validation-in-txn.
+	leftStmt.SetRangeValidationRequired(true)
+
+	rightStmt := tb.AddStatement()
+	rightStmt.SetRangeDescriptor(newRightRange).SetBatch(rightBatch)
+	rightStmt.AddPostCommitHook(rfpb.TransactionHook_COMMIT, &rfpb.SnapshotClusterHook{})
+
+	// No range validation b/c the range descriptor is a new one.
+	// See go/raft-range-validation-in-txn
+	rightStmt.SetRangeValidationRequired(false)
+
+	metaStmt := tb.AddStatement()
+	metaStmt.SetRangeDescriptor(mrd).SetBatch(metaBatch)
+	// The meta range descriptor is from range cache and can be not-up-to date.
+	// Validating meta range can make the txn difficult to succeed.
+	// See go/raft-range-validation-in-txn.
+	metaStmt.SetRangeValidationRequired(false)
+
+	res.TxnBuilder = tb
+	res.NewRightRange = newRightRange
+	res.UpdatedLeftRange = updatedLeftRange
+	return res, nil
 }
 
 func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error) {
@@ -2344,6 +2658,9 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	}
 	if len(req.GetRange().GetReplicas()) == 0 {
 		return nil, status.FailedPreconditionErrorf("no replicas in range: %+v", req.GetRange())
+	}
+	if rangeID := req.GetRange().GetRangeId(); !s.HaveLease(ctx, rangeID) {
+		return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, rangeID)
 	}
 
 	// Validate the header to ensure we don't start new raft nodes if the
@@ -2362,16 +2679,16 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	rangeID := leftRange.GetRangeId()
 
 	// Reserve new IDs for this cluster.
-	newRangeID, err := s.reserveRangeID(ctx)
+	newRangeID, err := s.ReserveRangeID(ctx)
 	if err != nil {
-		return nil, status.InternalErrorf("could not reserve RangeID for new range %d: %s", rangeID, err)
+		return nil, status.WrapErrorf(err, "could not reserve RangeID for range %d", rangeID)
 	}
 
 	// Find Split Point.
 	fsp := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}).SetHeader(req.GetHeader())
-	fspRsp, err := client.SyncReadLocalBatch(ctx, s.nodeHost, rangeID, fsp)
+	fspRsp, err := client.SyncReadLocalBatch(ctx, s.nodeHost, rangeID, fsp, s.maxSingleOpTimeout)
 	if err != nil {
-		return nil, status.InternalErrorf("find split point err: %s", err)
+		return nil, status.WrapErrorf(err, "find split point err")
 	}
 	splitPointResponse, err := fspRsp.FindSplitPointResponse(0)
 	if err != nil {
@@ -2380,73 +2697,15 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 
 	replicaIDs, err := s.reserveReplicaIDs(ctx, newRangeID, len(leftRange.GetReplicas()))
 	if err != nil {
-		return nil, status.InternalErrorf("could not reserve replica IDs for new range %d: %s", rangeID, err)
+		return nil, status.WrapErrorf(err, "could not reserve replica IDs for new range %d", newRangeID)
 	}
 
-	initialMembers := make(map[uint64]string, len(leftRange.GetReplicas()))
-	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(leftRange.GetReplicas()))
-
-	for i, r := range leftRange.GetReplicas() {
-		if r.GetNhid() == "" {
-			return nil, status.InternalErrorf("empty nhid in ReplicaDescriptor %+v", r)
-		}
-		replicaID := replicaIDs[i]
-		replicas = append(replicas, &rfpb.ReplicaDescriptor{
-			RangeId:   newRangeID,
-			ReplicaId: replicaID,
-			Nhid:      proto.String(r.GetNhid()),
-		})
-		initialMembers[replicaID] = r.GetNhid()
-	}
-
-	// Assemble new range descriptor.
-	newRightRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
-	newRightRange.Start = splitPointResponse.GetSplitKey()
-	newRightRange.RangeId = newRangeID
-	newRightRange.Generation += 1
-	newRightRange.Replicas = replicas
-	newRightRangeBuf, err := proto.Marshal(newRightRange)
+	splitRangeTxn, err := s.BuildTxnForRangeSplit(leftRange, newRangeID, splitPointResponse.GetSplitKey(), replicaIDs)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapErrorf(err, "could not build txn for split range %d and range %d", rangeID, newRangeID)
 	}
 
-	updatedLeftRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
-	updatedLeftRange.End = splitPointResponse.GetSplitKey()
-	updatedLeftRange.Generation += 1
-
-	leftBatch := rbuilder.NewBatchBuilder()
-	if err := addLocalRangeEdits(leftRange, updatedLeftRange, leftBatch); err != nil {
-		return nil, err
-	}
-
-	rightBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
-			Value: newRightRangeBuf,
-		},
-	})
-	metaBatch := rbuilder.NewBatchBuilder()
-	if err := addMetaRangeEdits(leftRange, updatedLeftRange, newRightRange, metaBatch); err != nil {
-		return nil, err
-	}
-	mrd := s.sender.GetMetaRangeDescriptor()
-
-	tb := rbuilder.NewTxn()
-	leftStmt := tb.AddStatement()
-	leftStmt = leftStmt.SetRangeDescriptor(leftRange).SetBatch(leftBatch)
-	leftStmt.AddPostCommitHook(rfpb.TransactionHook_COMMIT, &rfpb.SnapshotClusterHook{})
-	leftStmt.AddPostCommitHook(rfpb.TransactionHook_PREPARE, &rfpb.StartShardHook{
-		RangeId:       newRangeID,
-		InitialMember: initialMembers,
-	})
-
-	rightStmt := tb.AddStatement()
-	rightStmt.SetRangeDescriptor(newRightRange).SetBatch(rightBatch)
-	rightStmt.AddPostCommitHook(rfpb.TransactionHook_COMMIT, &rfpb.SnapshotClusterHook{})
-
-	metaStmt := tb.AddStatement()
-	metaStmt.SetRangeDescriptor(mrd).SetBatch(metaBatch)
-	if err := s.txnCoordinator.RunTxn(ctx, tb); err != nil {
+	if err := s.txnCoordinator.RunTxn(ctx, splitRangeTxn.TxnBuilder); err != nil {
 		return nil, err
 	}
 
@@ -2456,8 +2715,8 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	}).Observe(float64(time.Since(startTime).Microseconds()))
 
 	return &rfpb.SplitRangeResponse{
-		Left:  updatedLeftRange,
-		Right: newRightRange,
+		Left:  splitRangeTxn.UpdatedLeftRange,
+		Right: splitRangeTxn.NewRightRange,
 	}, nil
 }
 
@@ -2475,13 +2734,13 @@ func (s *Store) GetRemoteLastAppliedIndex(ctx context.Context, rd *rfpb.RangeDes
 	r := rd.GetReplicas()[replicaIdx]
 	client, err := s.apiClient.GetForReplica(ctx, r)
 	if err != nil {
-		return 0, status.UnavailableErrorf("failed to get client: %s", err)
+		return 0, status.UnavailableErrorf("failed to get client: %w", err)
 	}
 	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
 		Key: constants.LastAppliedIndexKey,
 	}).ToProto()
 	if err != nil {
-		return 0, status.InternalErrorf("failed to construct direct read request: %s", err)
+		return 0, status.InternalErrorf("failed to construct direct read request: %w", err)
 	}
 	// To read a local key for a replica, we don't need to check whether the
 	// replica has lease or not.
@@ -2491,12 +2750,12 @@ func (s *Store) GetRemoteLastAppliedIndex(ctx context.Context, rd *rfpb.RangeDes
 		Batch:  readReq,
 	})
 	if err != nil {
-		return 0, status.InternalErrorf("failed to read last index: %s", err)
+		return 0, status.WrapErrorf(err, "failed to read last index")
 	}
 	batchResp := rbuilder.NewBatchResponseFromProto(syncResp.GetBatch())
 	readResponse, err := batchResp.DirectReadResponse(0)
 	if err != nil {
-		return 0, status.InternalErrorf("failed to parse direct read response: %s", err)
+		return 0, status.WrapErrorf(err, "failed to parse direct read response")
 	}
 	index := bytesToUint64(readResponse.GetKv().GetValue())
 	return index, nil
@@ -2545,7 +2804,7 @@ func (s *Store) waitForReplicaToCatchUp(ctx context.Context, rangeID uint64, des
 func (s *Store) GetMembership(ctx context.Context, rangeID uint64) (*dragonboat.Membership, error) {
 	var membership *dragonboat.Membership
 	var err error
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		// Get the config change index for this cluster.
 		membership, err = s.nodeHost.SyncGetShardMembership(ctx, rangeID)
 		if err != nil {
@@ -2575,6 +2834,22 @@ func (s *Store) getConfigChangeID(ctx context.Context, rangeID uint64) (uint64, 
 	return membership.ConfigChangeID, nil
 }
 
+// CheckRangeOverlaps checks whether there is an open range overlapped with the
+// [start, end) in the request.
+func (s *Store) CheckRangeOverlaps(ctx context.Context, req *rfpb.CheckRangeOverlapsRequest) (*rfpb.CheckRangeOverlapsResponse, error) {
+	if req.GetStart() == nil || req.GetEnd() == nil {
+		return nil, status.FailedPreconditionError("req.Start or req.End cannot be nil")
+	}
+	s.rangeMu.RLock()
+	defer s.rangeMu.RUnlock()
+	overlapping := s.rangeMap.GetOverlapping(req.GetStart(), req.GetEnd())
+	rsp := &rfpb.CheckRangeOverlapsResponse{}
+	for _, overlapped := range overlapping {
+		rsp.Ranges = append(rsp.Ranges, overlapped.Val)
+	}
+	return rsp, nil
+}
+
 func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddReplicaRequest) error {
 	// Check the request looks valid.
 	if len(req.GetRange().GetReplicas()) == 0 {
@@ -2585,13 +2860,18 @@ func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddRepl
 		return status.FailedPreconditionErrorf("Incomplete node descriptor: %+v", node)
 	}
 
+	rangeID := req.GetRange().GetRangeId()
 	// Check this is a range we have and the range descriptor provided is up to date
 	s.rangeMu.RLock()
-	_, rangeOK := s.openRanges[req.GetRange().GetRangeId()]
+	_, rangeOK := s.openRanges[rangeID]
 	s.rangeMu.RUnlock()
 
 	if !rangeOK {
-		return status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, req.GetRange().GetRangeId())
+		return status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, rangeID)
+	}
+
+	if !s.HaveLease(ctx, req.GetRange().GetRangeId()) {
+		return status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, rangeID)
 	}
 
 	remoteRD, err := s.validatedRangeAgainstMetaRange(ctx, req.GetRange())
@@ -2610,6 +2890,35 @@ func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddRepl
 			return status.FailedPreconditionErrorf("range %d is being removed from node %q", req.GetRange().GetRangeId(), node.GetNhid())
 		}
 	}
+	c, err := s.apiClient.Get(ctx, node.GetGrpcAddress())
+	if err != nil {
+		return status.WrapErrorf(err, "failed to get the client for the node %q", node.GetNhid())
+	}
+
+	// Check the target node doesn't have an overlapping range. An overlapping
+	// range can be caused by a slow node that hasn't committed the split txn.
+	// Since we don't support range merge operations, we don't need to worry
+	// about the case where overlapping ranges occur between the check and when
+	// the replica is added to the node.
+	if remoteRD.GetStart() != nil && remoteRD.GetEnd() != nil {
+		rsp, err := c.CheckRangeOverlaps(ctx, &rfpb.CheckRangeOverlapsRequest{
+			Start: remoteRD.GetStart(),
+			End:   remoteRD.GetEnd(),
+		})
+		if err != nil {
+			return status.WrapErrorf(err, "failed to check range overlap on node %q", node.GetNhid())
+		}
+
+		for _, overlap := range rsp.GetRanges() {
+			// If the range was added to the node, but the range descriptor was
+			// not successfully updated to meta range, don't consider it as an
+			// overlap range.
+			if overlap.GetRangeId() != remoteRD.GetRangeId() || !bytes.Equal(overlap.GetStart(), remoteRD.GetStart()) || !bytes.Equal(overlap.GetEnd(), remoteRD.GetEnd()) {
+				return status.FailedPreconditionErrorf("node %q has overlapping ranges, e.g. range_id: %d: [%q, %q)", node.GetNhid(), overlap.GetRangeId(), overlap.GetStart(), overlap.GetEnd())
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -2618,15 +2927,15 @@ func (s *Store) addNonVoting(ctx context.Context, rangeID uint64, newReplicaID u
 	// Get the config change index for adding a non-voter.
 	configChangeID, err := s.getConfigChangeID(ctx, rangeID)
 	if err != nil {
-		return status.InternalErrorf("failed to get config change ID: %s", err)
+		return status.WrapErrorf(err, "failed to get config change ID")
 	}
 
 	// Propose the config change (this adds the node as a non-voter to the raft cluster).
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		return s.nodeHost.SyncRequestAddNonVoting(ctx, rangeID, newReplicaID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {
-		return status.InternalErrorf("nodeHost.SyncRequestAddNonVoting failed (configChangeID=%d): %s", configChangeID, err)
+		return status.WrapErrorf(err, "nodeHost.SyncRequestAddNonVoting failed (configChangeID=%d)", configChangeID)
 	}
 	return nil
 }
@@ -2638,11 +2947,11 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 		Generation: rd.GetGeneration(),
 	})
 	if err != nil {
-		return status.InternalErrorf("failed to get last applied index: %s", err)
+		return status.WrapErrorf(err, "failed to get last applied index")
 	}
 	c, err := s.apiClient.Get(ctx, node.GetGrpcAddress())
 	if err != nil {
-		return status.InternalErrorf("failed to get the client for the node %q: %s", node.GetNhid(), err)
+		return status.WrapErrorf(err, "failed to get the client for the node %q", node.GetNhid())
 	}
 	_, err = c.StartShard(ctx, &rfpb.StartShardRequest{
 		RangeId:          rd.GetRangeId(),
@@ -2653,11 +2962,7 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 	})
 	if err != nil {
 		if !status.IsAlreadyExistsError(err) {
-			return status.InternalErrorf("failed to start shard c%dn%d: %s", rd.GetRangeId(), newReplicaID, err)
-		}
-		// The shard has been started in an previous attempt; but let's still wait for this replica to catch up.
-		if err := s.waitForReplicaToCatchUp(ctx, rd.GetRangeId(), lastAppliedIndex); err != nil {
-			return status.InternalErrorf("failed to wait for replica to catch up: %s", err)
+			return status.WrapErrorf(err, "failed to start shard c%dn%d", rd.GetRangeId(), newReplicaID)
 		}
 	}
 	// StartShard ensures the node is up-to-date. We can promote non-voter to voter.
@@ -2665,14 +2970,14 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 	// Get the config change index for promoting a non-voter to a voter
 	configChangeID, err := s.getConfigChangeID(ctx, rd.GetRangeId())
 	if err != nil {
-		return status.InternalErrorf("failed to get config change ID: %s", err)
+		return status.WrapErrorf(err, "failed to get config change ID")
 	}
 	s.log.Infof("promote c%dn%d to voter, ccid=%d", rd.GetRangeId(), newReplicaID, configChangeID)
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		return s.nodeHost.SyncRequestAddReplica(ctx, rd.GetRangeId(), newReplicaID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {
-		if err == dragonboat.ErrRejected {
+		if errors.Is(err, dragonboat.ErrRejected) {
 			// SyncRequestAddReplica can be retried by RunNodehostFn. In some
 			// rare cases, when it returns a temp dragonboat error such as system
 			// busy, the config change can actually be applied in the background.
@@ -2681,7 +2986,7 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 			// id.
 			membership, membershipErr := s.GetMembership(ctx, rd.GetRangeId())
 			if membershipErr != nil {
-				return status.InternalErrorf("nodeHost.SyncRequestAddReplica failed (configChangeID=%d): %s, and getMembership failed: %s", configChangeID, err, membershipErr)
+				return status.InternalErrorf("nodeHost.SyncRequestAddReplica failed (configChangeID=%d): %w, and getMembership failed: %w", configChangeID, err, membershipErr)
 			}
 			for replicaID := range membership.Nodes {
 				if replicaID == newReplicaID {
@@ -2690,7 +2995,7 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 				}
 			}
 		}
-		return status.InternalErrorf("nodeHost.SyncRequestAddReplica failed (configChangeID=%d): %s", configChangeID, err)
+		return status.WrapErrorf(err, "nodeHost.SyncRequestAddReplica failed (configChangeID=%d)", configChangeID)
 	}
 	return nil
 }
@@ -2737,45 +3042,58 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 	}
 
 	state := addReplicaStateAbsent
-	// Determine the replica ID and the state.
-	// When there was previous attempts to add the range
-	// to the specified node, we should use the existing replicaID; otherwise, the
-	// request will be rejected by raft.
-	var newReplicaID uint64
-	if replicaMembership != nil {
-		// There are previous attempts to add a replica of this range to the node.
-		// Use the existing replica ID.
-		newReplicaID = replicaMembership.replicaID
 
-		if replicaMembership.isNonVoting {
-			state = addReplicaStateNonVoter
-		} else {
-			state = addReplicaStateVoter
+	// check if staging replica is present
+
+	// Determine the replica ID and the state.
+	// When there was previous attempts to add the range to the specified node,
+	// we should use the existing replicaID; otherwise, the request will be
+	// rejected by raft.
+	var newReplicaID uint64
+
+	var existingStaging *rfpb.ReplicaDescriptor
+	for _, repl := range rd.GetStaging() {
+		if repl.GetNhid() == node.GetNhid() {
+			existingStaging = repl
+		}
+	}
+
+	if existingStaging != nil {
+		newReplicaID = existingStaging.GetReplicaId()
+		if replicaMembership != nil {
+			if newReplicaID != replicaMembership.replicaID {
+				alert.UnexpectedEvent("staging-replica-id-mismatch", "c%dn%d is on nhid %q in staging replicas, but raft membership holds replica id %d", rangeID, newReplicaID, node.GetNhid(), replicaMembership.replicaID)
+			}
+			if replicaMembership.isNonVoting {
+				state = addReplicaStateNonVoter
+			} else {
+				state = addReplicaStateVoter
+			}
 		}
 	} else {
 		// Reserve a new replica ID for the replica to be added on the node.
 		replicaIDs, err := s.reserveReplicaIDs(ctx, rangeID, 1)
 		if err != nil {
-			return nil, status.InternalErrorf("AddReplica failed to add range(%d) to node %q: failed to reserve replica IDs: %s", rangeID, node.GetNhid(), err)
+			return nil, status.WrapErrorf(err, "AddReplica failed to add range(%d) to node %q: failed to reserve replica IDs", rangeID, node.GetNhid())
 		}
 		newReplicaID = replicaIDs[0]
 		rd, err = s.addStagingReplicaToRangeDescriptor(ctx, rangeID, newReplicaID, node.GetNhid(), rd)
 		if err != nil {
-			return nil, status.WrapErrorf(err, "AddReplica failed to add staging replica c%dn%d on %q: %s", rangeID, newReplicaID, node.GetNhid(), err)
+			return nil, status.WrapErrorf(err, "AddReplica failed to add staging replica c%dn%d on %q", rangeID, newReplicaID, node.GetNhid())
 		}
 	}
 
 	// addReplicaStateAbsent -> addReplicaStateNonVoter
 	if state == addReplicaStateAbsent {
 		if err = s.addNonVoting(ctx, rangeID, newReplicaID, node); err != nil {
-			return nil, status.InternalErrorf("AddReplica failed to add c%dn%d to node %q as a non-voter: %s", rangeID, newReplicaID, node.GetNhid(), err)
+			return nil, status.WrapErrorf(err, "AddReplica failed to add c%dn%d to node %q as a non-voter", rangeID, newReplicaID, node.GetNhid())
 		}
 		state = addReplicaStateNonVoter
 	}
 
 	if state == addReplicaStateNonVoter {
 		if err = s.promoteToVoter(ctx, rd, newReplicaID, node); err != nil {
-			return nil, status.InternalErrorf("promote c%dn%d to voter failed: %s", rd.GetRangeId(), newReplicaID, err)
+			return nil, status.WrapErrorf(err, "promote c%dn%d to voter failed", rd.GetRangeId(), newReplicaID)
 		}
 		state = addReplicaStateVoter
 	}
@@ -2784,7 +3102,7 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 	// membership of this new node in the range.
 	rd, err = s.addReplicaToRangeDescriptor(ctx, rangeID, newReplicaID, rd)
 	if err != nil {
-		return nil, status.InternalErrorf("AddReplica failed to add replica to range descriptor: %s", err)
+		return nil, status.WrapErrorf(err, "AddReplica failed to add replica to range descriptor")
 	}
 
 	return &rfpb.AddReplicaResponse{
@@ -2809,13 +3127,13 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		return nil, status.InvalidArgumentError("no range id is specified")
 	}
 
+	if !s.HaveLease(ctx, rangeID) {
+		return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, rangeID)
+	}
+
 	rsp := &rfpb.RemoveReplicaResponse{}
 
 	if req.GetRange() != nil {
-		if !s.HaveLease(ctx, rangeID) {
-			return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, rangeID)
-		}
-
 		// Check this is a range we have.
 		s.rangeMu.RLock()
 		rd, rangeOK := s.openRanges[rangeID]
@@ -2826,11 +3144,12 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		}
 
 		if rd.GetGeneration() != req.GetRange().GetGeneration() {
-			return nil, status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), req.GetRange().GetGeneration())
+			return nil, status.OutOfRangeErrorf("%s: generation: %d  on store requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), req.GetRange().GetGeneration())
 		}
 
 		var replicaDesc *rfpb.ReplicaDescriptor
-		for _, replica := range rd.GetReplicas() {
+		replicas := append(rd.GetReplicas(), rd.GetStaging()...)
+		for _, replica := range replicas {
 			if replica.GetReplicaId() == req.GetReplicaId() {
 				if replica.GetNhid() == s.NHID() {
 					return nil, status.FailedPreconditionErrorf("cannot remove leader c%dn%d", rangeID, req.GetReplicaId())
@@ -2854,109 +3173,103 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 	}
 
 	if err := s.syncRequestDeleteReplica(ctx, rangeID, req.GetReplicaId()); err != nil {
-		return rsp, status.InternalErrorf("nodehost.SyncRequestDeleteReplica failed for c%dn%d: %s", rangeID, req.GetReplicaId(), err)
+		return rsp, status.WrapErrorf(err, "nodehost.SyncRequestDeleteReplica failed for c%dn%d", rangeID, req.GetReplicaId())
 	}
 
 	return rsp, nil
 }
 
-func (s *Store) reserveReplicaIDs(ctx context.Context, rangeID uint64, n int) ([]uint64, error) {
-	key := keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", rangeID)))
+func (s *Store) reserveIDs(ctx context.Context, key []byte, n int) ([]uint64, error) {
 	newVal, err := s.sender.Increment(ctx, key, uint64(n))
 	if err != nil {
 		return nil, err
 	}
 	ids := make([]uint64, 0, n)
-	for i := 0; i < n; i++ {
-		ids = append(ids, newVal-uint64(i))
+	for i := 1; i <= n; i++ {
+		ids = append(ids, newVal-uint64(n-i))
 	}
 	return ids, nil
 }
 
-func (s *Store) reserveRangeID(ctx context.Context) (uint64, error) {
-	metaRangeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
-		Key:   constants.LastRangeIDKey,
-		Delta: uint64(1),
-	}).ToProto()
-	if err != nil {
-		return 0, err
-	}
-	metaRangeRsp, err := s.sender.SyncPropose(ctx, constants.MetaRangePrefix, metaRangeBatch)
-	if err != nil {
-		return 0, err
-	}
-	rangeIDIncrRsp, err := rbuilder.NewBatchResponseFromProto(metaRangeRsp).IncrementResponse(0)
-	if err != nil {
-		return 0, err
-	}
-	return rangeIDIncrRsp.GetValue(), nil
+func (s *Store) reserveReplicaIDs(ctx context.Context, rangeID uint64, n int) ([]uint64, error) {
+	key := keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", rangeID)))
+	return s.reserveIDs(ctx, key, n)
 }
 
-func casRangeEdit(key []byte, old, new *rfpb.RangeDescriptor) (*rfpb.CASRequest, error) {
-	newBuf, err := proto.Marshal(new)
+func (s *Store) ReserveRangeID(ctx context.Context) (uint64, error) {
+	ids, err := s.ReserveRangeIDs(ctx, 1)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	oldBuf, err := proto.Marshal(old)
-	if err != nil {
-		return nil, err
-	}
-	return &rfpb.CASRequest{
+	return ids[0], nil
+}
+
+func (s *Store) ReserveRangeIDs(ctx context.Context, n int) ([]uint64, error) {
+	return s.reserveIDs(ctx, constants.LastRangeIDKey, n)
+}
+
+func addLocalRangeEdits(oldBuf, newBuf []byte, b *rbuilder.BatchBuilder) error {
+	cas := &rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   key,
+			Key:   constants.LocalRangeKey,
 			Value: newBuf,
 		},
 		ExpectedValue: oldBuf,
-	}, nil
-}
-
-func addLocalRangeEdits(oldRange, newRange *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
-	cas, err := casRangeEdit(constants.LocalRangeKey, oldRange, newRange)
-	if err != nil {
-		return err
 	}
 	b.Add(cas)
 	return nil
 }
 
-func addMetaRangeEdits(oldLeftRange, newLeftRange, newRightRange *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
-	newLeftRangeBuf, err := proto.Marshal(newLeftRange)
-	if err != nil {
-		return err
-	}
-	oldLeftRangeBuf, err := proto.Marshal(oldLeftRange)
-	if err != nil {
-		return err
-	}
-	newRightRangeBuf, err := proto.Marshal(newRightRange)
-	if err != nil {
-		return err
-	}
-
-	// Send a single request that:
-	//  - CAS sets the newLeftRange value to newNewStartBuf
-	//  - inserts the new newRightRangeBuf
-	//
-	// if the CAS fails, check the existing value
-	//  if it's generation is past ours, ignore the error, we're out of date
-	//  if the existing value already matches what we were trying to set, we're done.
-	//  else return an error
-	b.Add(&rfpb.CASRequest{
+func addMetaRangeEdits(key, oldBuf, newBuf []byte, b *rbuilder.BatchBuilder) error {
+	req := &rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(newRightRange.GetEnd()),
-			Value: newRightRangeBuf,
+			Key:   key,
+			Value: newBuf,
 		},
-		ExpectedValue: oldLeftRangeBuf,
-	}).Add(&rfpb.CASRequest{
-		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(newLeftRange.GetEnd()),
-			Value: newLeftRangeBuf,
-		},
-	})
+		ExpectedValue: oldBuf,
+	}
+	b.Add(req)
 	return nil
 }
-func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, new *rfpb.RangeDescriptor) error {
-	s.log.Infof("start to update range descriptor for rangeID %d to gen %d", rangeID, new.GetGeneration())
+
+func (s *Store) GetTxnForRangeDescriptorUpdate(ctx context.Context, rangeID uint64, old, new *rfpb.RangeDescriptor) (*rbuilder.TxnBuilder, error) {
+	oldBuf, err := proto.Marshal(old)
+	if err != nil {
+		return nil, err
+	}
+	newBuf, err := proto.Marshal(new)
+	if err != nil {
+		return nil, err
+	}
+
+	localBatch := rbuilder.NewBatchBuilder()
+	if err := addLocalRangeEdits(oldBuf, newBuf, localBatch); err != nil {
+		return nil, err
+	}
+	metaRangeDescriptorKey := keys.RangeMetaKey(new.GetEnd())
+
+	mrd := s.sender.GetMetaRangeDescriptor()
+
+	txn := rbuilder.NewTxn()
+	metaRangeBatch := rbuilder.NewBatchBuilder()
+	addMetaRangeEdits(metaRangeDescriptorKey, oldBuf, newBuf, metaRangeBatch)
+
+	stmt := txn.AddStatement()
+	stmt.SetRangeDescriptor(old).SetBatch(localBatch)
+	// Range Validation is required on the existing range to make sure that the
+	// existing leader/range lease holder has the update-to-date range descriptor.
+	// See go/raft-range-validation-in-txn.
+	stmt.SetRangeValidationRequired(true)
+
+	stmt = txn.AddStatement()
+	stmt.SetRangeDescriptor(mrd).SetBatch(metaRangeBatch)
+	// No range validation for meta range. See
+	// go/raft-range-validation-in-txn for more details.
+	stmt.SetRangeValidationRequired(false)
+	return txn, nil
+}
+
+func (s *Store) updateMetaRangeDescriptor(ctx context.Context, old, new *rfpb.RangeDescriptor) error {
 	oldBuf, err := proto.Marshal(old)
 	if err != nil {
 		return err
@@ -2967,45 +3280,61 @@ func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, 
 	}
 
 	localBatch := rbuilder.NewBatchBuilder()
-	if err := addLocalRangeEdits(old, new, localBatch); err != nil {
+	if err := addLocalRangeEdits(oldBuf, newBuf, localBatch); err != nil {
 		return err
 	}
 	metaRangeDescriptorKey := keys.RangeMetaKey(new.GetEnd())
-	metaRangeCasReq := &rfpb.CASRequest{
-		Kv: &rfpb.KV{
-			Key:   metaRangeDescriptorKey,
-			Value: newBuf,
-		},
-		ExpectedValue: oldBuf,
-	}
 
-	metaRangeBatch := rbuilder.NewBatchBuilder()
-	metaRangeBatch.Add(metaRangeCasReq)
+	addMetaRangeEdits(metaRangeDescriptorKey, oldBuf, newBuf, localBatch)
 
-	mrd := s.sender.GetMetaRangeDescriptor()
-	newReplica := new.GetReplicas()[0]
-	metaReplica := mrd.GetReplicas()[0]
-
-	txn := rbuilder.NewTxn()
-	if newReplica.GetRangeId() == metaReplica.GetRangeId() {
-		localBatch.Add(metaRangeCasReq)
-		stmt := txn.AddStatement()
-		stmt.SetRangeDescriptor(mrd).SetBatch(localBatch)
-	} else {
-		metaRangeBatch := rbuilder.NewBatchBuilder()
-		metaRangeBatch.Add(metaRangeCasReq)
-
-		stmt := txn.AddStatement()
-		stmt.SetRangeDescriptor(new).SetBatch(localBatch)
-
-		stmt = txn.AddStatement()
-		stmt.SetRangeDescriptor(mrd).SetBatch(metaRangeBatch)
-	}
-	err = s.txnCoordinator.RunTxn(ctx, txn)
+	batchProto, err := localBatch.ToProto()
 	if err != nil {
-		return status.InternalErrorf("failed to update range descriptor for rangeID=%d, err: %s", rangeID, err)
+		return err
+	}
+	rsp, err := s.sender.SyncPropose(ctx, constants.MetaRangePrefix, batchProto)
+	if err != nil {
+		return nil
+	}
+
+	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
+}
+
+func (s *Store) UpdateRangeDescriptor(ctx context.Context, old, new *rfpb.RangeDescriptor) error {
+	if old.GetRangeId() != new.GetRangeId() {
+		return status.InvalidArgumentErrorf("range IDs do not match: old=%d, new=%d", old.GetRangeId(), new.GetRangeId())
+	}
+	rangeID := new.GetRangeId()
+	s.log.Infof("start to update range descriptor for rangeID %d to gen %d", rangeID, new.GetGeneration())
+	if rangeID == constants.MetaRangeID {
+		if err := s.updateMetaRangeDescriptor(ctx, old, new); err != nil {
+			return status.WrapErrorf(err, "failed to update range descriptor for rangeID=%d", rangeID)
+		}
+	} else {
+		txn, err := s.GetTxnForRangeDescriptorUpdate(ctx, rangeID, old, new)
+		if err != nil {
+			return err
+		}
+		err = s.txnCoordinator.RunTxn(ctx, txn)
+		if err != nil {
+			return status.WrapErrorf(err, "failed to update range descriptor for rangeID=%d", rangeID)
+		}
 	}
 	s.log.Infof("range descriptor for rangeID %d updated to gen %d", rangeID, new.GetGeneration())
+
+	if stagingDiff := len(new.GetStaging()) - len(old.GetStaging()); stagingDiff != 0 {
+		metrics.RaftIntermediateReplicaCount.With(prometheus.Labels{
+			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+			metrics.RaftReplicaState: "staging",
+		}).Add(float64(stagingDiff))
+	}
+
+	if removedDiff := len(new.GetRemoved()) - len(old.GetRemoved()); removedDiff != 0 {
+		metrics.RaftIntermediateReplicaCount.With(prometheus.Labels{
+			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+			metrics.RaftReplicaState: "removed",
+		}).Add(float64(removedDiff))
+	}
+
 	return nil
 }
 
@@ -3017,7 +3346,7 @@ func (s *Store) addStagingReplicaToRangeDescriptor(ctx context.Context, rangeID,
 		Nhid:      proto.String(nhid),
 	})
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
-	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
+	if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
 	return newDescriptor, nil
@@ -3025,6 +3354,7 @@ func (s *Store) addStagingReplicaToRangeDescriptor(ctx context.Context, rangeID,
 
 func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, rangeID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
 	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
+
 	for i, replica := range newDescriptor.GetStaging() {
 		if replica.GetReplicaId() == replicaID {
 			newDescriptor.Replicas = append(newDescriptor.GetReplicas(), newDescriptor.Staging[i])
@@ -3035,9 +3365,10 @@ func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, rangeID, replic
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
 	newDescriptor.LastAddedReplicaId = proto.Uint64(replicaID)
 	newDescriptor.LastReplicaAddedAtUsec = proto.Int64(time.Now().UnixMicro())
-	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
+	if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
+
 	return newDescriptor, nil
 }
 
@@ -3050,12 +3381,19 @@ func (s *Store) markReplicaForRemovalFromRangeDescriptor(ctx context.Context, ra
 			break
 		}
 	}
+	for i, replica := range newDescriptor.Staging {
+		if replica.GetReplicaId() == replicaID {
+			newDescriptor.Removed = append(newDescriptor.Removed, newDescriptor.Staging[i])
+			newDescriptor.Staging = append(newDescriptor.Staging[:i], newDescriptor.Staging[i+1:]...)
+		}
+
+	}
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
 	if newDescriptor.GetLastAddedReplicaId() == replicaID {
 		newDescriptor.LastAddedReplicaId = nil
 		newDescriptor.LastReplicaAddedAtUsec = nil
 	}
-	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
+	if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
 	return newDescriptor, nil
@@ -3071,7 +3409,47 @@ func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, rangeID, r
 		}
 	}
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
-	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
+
+	if !newDescriptor.GetDeleted() {
+		if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
+			return nil, err
+		}
+		return newDescriptor, nil
+	}
+
+	// This descriptor is marked for deletion; so we only want to update it in
+	// meta range and not in local range.
+	batch := rbuilder.NewBatchBuilder()
+	metaRangeDescriptorKey := keys.RangeMetaKey(newDescriptor.GetEnd())
+
+	if len(newDescriptor.GetReplicas()) == 0 && len(newDescriptor.GetStaging()) == 0 && len(newDescriptor.GetRemoved()) == 0 {
+		batch = batch.Add(&rfpb.DirectDeleteRequest{
+			Key: metaRangeDescriptorKey,
+		})
+
+	} else {
+		oldBuf, err := proto.Marshal(oldDescriptor)
+		if err != nil {
+			return nil, err
+		}
+		newBuf, err := proto.Marshal(newDescriptor)
+		if err != nil {
+			return nil, err
+		}
+
+		addMetaRangeEdits(metaRangeDescriptorKey, oldBuf, newBuf, batch)
+	}
+
+	batchProto, err := batch.ToProto()
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := s.sender.SyncPropose(ctx, constants.MetaRangePrefix, batchProto)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = rbuilder.NewBatchResponseFromProto(rsp).AnyError(); err != nil {
 		return nil, err
 	}
 	return newDescriptor, nil
@@ -3088,10 +3466,9 @@ func (store *Store) scanReplicas(ctx context.Context, scanInterval time.Duration
 		replicas := store.getLeasedReplicas(ctx)
 		for _, repl := range replicas {
 			if store.driverQueue != nil {
-				store.driverQueue.MaybeAdd(ctx, repl)
+				store.driverQueue.MaybeAddRangeTask(ctx, repl)
 			}
 			store.deleteSessionWorker.Enqueue(repl)
-			store.nonVoterZombieJanitor.Enqueue(repl)
 		}
 	}
 }
@@ -3172,6 +3549,226 @@ func (s *Store) getFileSystemUsage() (gosigar.FileSystemUsage, error) {
 	fsu := gosigar.FileSystemUsage{}
 	err := fsu.Get(s.rootDir)
 	return fsu, err
+}
+
+func (s *Store) setupPartitions(ctx context.Context) {
+	if s.driverQueue == nil {
+		return
+	}
+	ticker := s.clock.NewTicker(30 * time.Second) // Check every 30 seconds
+	for {
+		if s.partitionsAllInitialized {
+			s.log.Infof("partitions are all initialized")
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.Chan():
+			// Only run Process partitions on the meta range leader.
+			if s.HasReplicaAndIsLeader(constants.MetaRangeID) {
+				s.ProcessPartitions(ctx)
+			}
+		}
+	}
+}
+
+func (s *Store) deletePartitions(ctx context.Context, partitionID string) error {
+	// 1. Use directDelete to remove the partition descriptor
+	partitionKey := keys.MakeKey(constants.PartitionPrefix, []byte(partitionID))
+	batchBuilder := rbuilder.NewBatchBuilder().Add(&rfpb.DirectDeleteRequest{
+		Key: partitionKey,
+	})
+
+	// 2. Use sender.LookupRangeDescriptorsForPartition to get all range descriptors for this partition
+	rangeDescriptors, err := s.sender.LookupRangeDescriptorsForPartition(ctx, partitionID)
+	if err != nil {
+		return err
+	}
+
+	// 3. Add CAS requests to update each range descriptor
+	// Set all replicas from the old one to the new rd's removed field
+	for _, rd := range rangeDescriptors {
+		// Create new range descriptor with replicas moved to removed field
+		newRd := rd.CloneVT()
+
+		// Move all current replicas to the removed field
+		newRd.Removed = append(newRd.Removed, newRd.Replicas...)
+		newRd.Replicas = nil
+
+		// Move staging replicas to removed as well
+		newRd.Removed = append(newRd.Removed, newRd.Staging...)
+		newRd.Staging = nil
+
+		// Increment generation for the change
+		newRd.Generation++
+
+		newRd.Deleted = true
+
+		// Serialize the old and new range descriptors for CAS
+		oldValue, err := proto.Marshal(rd)
+		if err != nil {
+			return err
+		}
+		newValue, err := proto.Marshal(newRd)
+		if err != nil {
+			return err
+		}
+
+		// Add CAS request to update the range descriptor
+		rangeMetaKey := keys.RangeMetaKey(rd.GetEnd())
+		batchBuilder.Add(&rfpb.CASRequest{
+			Kv: &rfpb.KV{
+				Key:   rangeMetaKey,
+				Value: newValue,
+			},
+			ExpectedValue: oldValue,
+		})
+	}
+
+	// Execute all the requests in a single batch
+	batchProto, err := batchBuilder.ToProto()
+	if err != nil {
+		return err
+	}
+
+	retrier := retry.DefaultWithContext(ctx)
+	for retrier.Next() {
+		rsp, err := s.sender.SyncPropose(ctx, partitionKey, batchProto)
+		if err != nil {
+			return err
+		}
+		batchResp := rbuilder.NewBatchResponseFromProto(rsp)
+		shouldRetry := false
+
+		_, err = batchResp.DirectDeleteResponse(0)
+		if err != nil {
+			return err
+		}
+
+		for i := 1; i < batchResp.Len(); i++ {
+			casRsp, err := batchResp.CASResponse(i)
+			if err == nil {
+				continue
+			} else if status.IsFailedPreconditionError(err) && strings.Contains(err.Error(), constants.CASErrorMessage) {
+				val := casRsp.GetKv().GetValue()
+				cas := batchProto.GetUnion()[i].GetCas()
+				if cas != nil {
+					cas.ExpectedValue = val
+					shouldRetry = true
+				}
+			} else {
+				return err
+			}
+		}
+		if !shouldRetry {
+			return batchResp.AnyError()
+		}
+	}
+
+	return status.InternalErrorf("failed to delete partition descriptor and update range descriptors: number of attempts exceeded")
+}
+
+func (s *Store) ProcessPartitions(ctx context.Context) {
+	partitionsFromMetaRange, err := s.sender.FetchPartitionDescriptors(ctx)
+	if err != nil {
+		s.log.Warningf("Failed to fetch partitions from meta range: %s", err)
+		return
+	}
+
+	s.log.Debugf("Found %d partitions in meta range", len(partitionsFromMetaRange))
+
+	// Check if each store partition exists in the meta range partitions
+	partitionsNeedsSetup := false
+	for _, p := range s.partitions {
+		var pd *rfpb.PartitionDescriptor
+		for _, pFromMD := range partitionsFromMetaRange {
+			if p.ID == pFromMD.GetId() {
+				pd = pFromMD
+				break
+			}
+		}
+
+		if p.SoftDeleted {
+			if pd == nil {
+				// The partition descriptor was not added to the meta range in
+				// the first place or has been cleaned up.
+				continue
+			}
+			if pd.GetState() == rfpb.PartitionDescriptor_SOFT_DELETED {
+				continue
+			}
+
+			partitionKey := keys.MakeKey(constants.PartitionPrefix, []byte(p.ID))
+			oldBuf, err := proto.Marshal(pd)
+			if err != nil {
+				alert.UnexpectedEvent("raft-partition-descriptor-marshal-failure", "failed to marshal partition descriptor %v: %s", pd, err)
+				continue
+			}
+
+			pd.State = rfpb.PartitionDescriptor_SOFT_DELETED
+			newBuf, err := proto.Marshal(pd)
+			if err != nil {
+				alert.UnexpectedEvent("raft-partition-descriptor-marshal-failure", "failed to marshal partition descriptor %v: %s", pd, err)
+				continue
+			}
+
+			err = s.sender.UpdatePartitionDescriptor(ctx, partitionKey, newBuf, oldBuf)
+			if err != nil {
+				s.log.Errorf("failed to set soft deleted for partition %q: %s", p.ID, err)
+				partitionsNeedsSetup = true
+			}
+			metrics.RaftPartitionOperations.With(prometheus.Labels{
+				metrics.PartitionID:              p.ID,
+				metrics.RaftPartitionOpLabel:     "soft-delete",
+				metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+			}).Inc()
+		} else {
+			if pd != nil && pd.GetState() == rfpb.PartitionDescriptor_INITIALIZED {
+				continue
+			}
+
+			// set up the partition
+			s.driverQueue.MaybeAddPartitionTask(ctx, p, pd)
+			partitionsNeedsSetup = true
+		}
+	}
+
+	for _, pd := range partitionsFromMetaRange {
+		if pd.GetState() != rfpb.PartitionDescriptor_SOFT_DELETED {
+			continue
+		}
+		found := false
+		for _, p := range s.partitions {
+			if pd.GetId() == p.ID {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+
+		err = s.deletePartitions(ctx, pd.GetId())
+		if err != nil {
+			s.log.Errorf("failed to delete partition and range descriptors for partition id %q: %s", pd.GetId(), err)
+			partitionsNeedsSetup = true
+		}
+		metrics.RaftPartitionOperations.With(prometheus.Labels{
+			metrics.PartitionID:              pd.GetId(),
+			metrics.RaftPartitionOpLabel:     "hard-delete",
+			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+		}).Inc()
+	}
+
+	if !partitionsNeedsSetup {
+		s.partitionsAllInitialized = true
+	}
+}
+
+// InitializeShardsForPartition is a wrapper so that the driver can call bringup.InitializeShardsForPartition.
+func (s *Store) InitializeShardsForPartition(ctx context.Context, nodeGrpcAddrs map[string]string, partition disk.Partition) error {
+	return bringup.InitializeShardsForPartition(ctx, s, nodeGrpcAddrs, partition)
 }
 
 func (s *Store) updatePebbleMetrics() error {

@@ -17,6 +17,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [
+            "//server/util/alert",
             "//server/util/flag",
             "//server/util/log",
             "//server/util/status",
@@ -33,7 +34,7 @@ go_test(
     target_compatible_with = ["@platforms//os:macos"],
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [
-            "@com_github_stretchr_testify//assert",
+            "@com_github_stretchr_testify//require",
         ],
         "//conditions:default": [],
     }),

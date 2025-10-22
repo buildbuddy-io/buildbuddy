@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,11 +17,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -290,7 +293,7 @@ func (h *executorHandle) setRegistration(r *scpb.ExecutionNode) {
 }
 
 func (h *executorHandle) nodePoolKey(node *scpb.ExecutionNode) nodePoolKey {
-	key := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
+	key := nodePoolKey{os: node.GetOsFamily(), arch: node.GetArch(), pool: node.GetPool()}
 	if h.scheduler.enableUserOwnedExecutors {
 		key.groupID = h.groupID
 	}
@@ -460,7 +463,7 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 
 	// Apply cgroup settings based on the adjusted size.
 	if *cgroupSettingsEnabled && (req.GetSchedulingMetadata().GetOs() == "" || req.GetSchedulingMetadata().GetOs() == platform.LinuxOperatingSystemName) {
-		req.SchedulingMetadata.CgroupSettings = tasksize.GetCgroupSettings(req.GetTaskSize())
+		req.SchedulingMetadata.CgroupSettings = tasksize.GetCgroupSettings(ctx, h.env.GetExperimentFlagProvider(), req.GetTaskSize(), req.GetSchedulingMetadata())
 	}
 
 	reqProto := &scpb.RegisterAndStreamWorkResponse{
@@ -670,10 +673,16 @@ func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) (
 	return id, nil
 }
 
-func filterToHostnamePrefix(nodes []*executionNode, prefix string) []*executionNode {
+func filterToHostnamePattern(ctx context.Context, nodes []*executionNode, pattern string) []*executionNode {
+	p, err := regexp.Compile(pattern)
+	if err != nil {
+		alert.CtxUnexpectedEvent(ctx, "invalid_hostname_pattern", "invalid hostname pattern %q in experiment config", pattern)
+		return nodes
+	}
+
 	var out []*executionNode
 	for _, n := range nodes {
-		if strings.HasPrefix(n.GetHost(), prefix) {
+		if p.MatchString(n.GetHost()) {
 			out = append(out, n)
 		}
 	}
@@ -938,7 +947,7 @@ type schedulerClientCache struct {
 	env environment.Env
 
 	mu      sync.Mutex
-	clients map[string]schedulerClient
+	clients map[string]*schedulerClient
 	// Address of this app instance. If the destination address matches the address of this instance, we call into
 	// the local scheduler server instance directly instead of using RPCs.
 	localServerHostPort string
@@ -948,7 +957,7 @@ type schedulerClientCache struct {
 func newSchedulerClientCache(env environment.Env, localServerHostPort string, localServer *SchedulerServer) *schedulerClientCache {
 	cache := &schedulerClientCache{
 		env:                 env,
-		clients:             make(map[string]schedulerClient),
+		clients:             make(map[string]*schedulerClient),
 		localServerHostPort: localServerHostPort,
 		localServer:         localServer,
 	}
@@ -963,6 +972,7 @@ func (c *schedulerClientCache) startExpirer() {
 			for addr, client := range c.clients {
 				if time.Since(client.lastAccess) > unusedSchedulerClientExpiration {
 					if client.rpcConn != nil {
+						log.Debugf("Expiring unused scheduler client for %q", addr)
 						_ = client.rpcConn.Close()
 					}
 					delete(c.clients, addr)
@@ -974,21 +984,21 @@ func (c *schedulerClientCache) startExpirer() {
 	}()
 }
 
-func (c *schedulerClientCache) get(hostPort string) (schedulerClient, error) {
+func (c *schedulerClientCache) get(hostPort string) (*schedulerClient, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	client, ok := c.clients[hostPort]
 	if !ok {
 		log.Infof("Creating new scheduler client for %q", hostPort)
 		if hostPort == c.localServerHostPort {
-			client = schedulerClient{localServer: c.localServer}
+			client = &schedulerClient{localServer: c.localServer}
 		} else {
 			// This is non-blocking so it's OK to hold the lock.
-			conn, err := grpc_client.DialInternal(c.env, "grpc://"+hostPort)
+			conn, err := grpc_client.DialInternalWithPoolSize(c.env, "grpc://"+hostPort, 2)
 			if err != nil {
-				return schedulerClient{}, status.UnavailableErrorf("could not dial scheduler: %s", err)
+				return nil, status.UnavailableErrorf("could not dial scheduler: %s", err)
 			}
-			client = schedulerClient{rpcClient: scpb.NewSchedulerClient(conn), rpcConn: conn}
+			client = &schedulerClient{rpcClient: scpb.NewSchedulerClient(conn), rpcConn: conn}
 		}
 		c.clients[hostPort] = client
 	}
@@ -1085,7 +1095,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		clock = options.Clock
 	}
 
-	actionMergingLeaseTTL := action_merger.DefaultClaimedExecutionTTL
+	actionMergingLeaseTTL := action_merger.DefaultClaimedExecutionLeasePeriods * *leaseDuration
 	if options.ActionMergingLeaseTTLOverride > 0*time.Second {
 		actionMergingLeaseTTL = options.ActionMergingLeaseTTLOverride
 	}
@@ -1121,7 +1131,73 @@ func (s *SchedulerServer) GetSharedExecutorPoolGroupID() string {
 	return *sharedExecutorPoolGroupID
 }
 
-func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
+func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os, arch string, requestedPool *interfaces.PoolInfo, originalPool string) *interfaces.PoolInfo {
+	fp := s.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return nil
+	}
+
+	const experimentName = "remote_execution.pool_override"
+	obj := fp.Object(
+		ctx, experimentName, map[string]any{},
+		experiments.WithContext("os", os),
+		experiments.WithContext("arch", arch),
+		experiments.WithContext("pool", requestedPool.Name),
+		experiments.WithContext("self_hosted", requestedPool.IsSelfHosted),
+		// OriginalPool in this case is referring to a pool from another remote
+		// execution platform. Some users may set this to inform BB about how
+		// traffic is being routed in their current setup, without having to
+		// actually set the Pool property.
+		experiments.WithContext("OriginalPool", originalPool),
+	)
+
+	// If null or empty, don't override.
+	if len(obj) == 0 {
+		return nil
+	}
+
+	log.CtxInfof(ctx, "Pool override: %+#v", obj)
+
+	override := *requestedPool // shallow copy
+	if groupIDValue, ok := obj["group_id"]; ok {
+		if groupID, ok := groupIDValue.(string); ok {
+			override.GroupID = groupID
+		} else {
+			alert.CtxUnexpectedEvent(ctx, "%s: 'group_id' is not a string: %v", experimentName, groupIDValue)
+			return nil
+		}
+	}
+	if poolValue, ok := obj["pool"]; ok {
+		if pool, ok := poolValue.(string); ok {
+			override.Name = pool
+		} else {
+			alert.CtxUnexpectedEvent(ctx, "%s: 'pool' is not a string: %v", experimentName, poolValue)
+			return nil
+		}
+	}
+
+	override.IsShared = override.GroupID == *sharedExecutorPoolGroupID
+	override.IsSelfHosted = !override.IsShared
+
+	return &override
+}
+
+func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
+	poolInfo, err := s.getPoolInfo(ctx, os, requestedPool, workflowID, poolType)
+	if err != nil {
+		return nil, err
+	}
+	// Now that we know the pool we would normally route to, feed that into the
+	// experiment context and use that to potentially reroute to a different
+	// pool.
+	if override := s.getPoolOverrideFromExperiments(ctx, os, arch, poolInfo, originalPool); override != nil {
+		return override, nil
+	}
+
+	return poolInfo, nil
+}
+
+func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
 	// Note: The defaultPoolName flag only applies to the shared executor pool.
 	// The pool name for self-hosted pools is always determined directly from
 	// platform props.
@@ -1510,9 +1586,14 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 		if !nodeCanFitTask(node, task.metadata.GetTaskSize()) {
 			continue
 		}
-		// Filter to tasks with a compatible hostname prefix.
-		if prefix := task.metadata.GetHostnamePrefix(); prefix != "" && !strings.HasPrefix(node.GetHost(), prefix) {
-			continue
+		// Filter to tasks with a compatible hostname pattern.
+		if pattern := task.metadata.GetHostnamePattern(); pattern != "" {
+			p, err := regexp.Compile(pattern)
+			if err != nil {
+				alert.CtxUnexpectedEvent(ctx, "invalid_hostname_pattern", "invalid hostname pattern %q in experiment config", pattern)
+			} else if !p.MatchString(node.GetHost()) {
+				continue
+			}
 		}
 
 		// Don't try to re-assign tasks intended to run on a specific executor.
@@ -1802,8 +1883,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 
 		// If the task was successfully claimed, record action-merging state.
 		if claimed {
-			action_merger.RecordClaimedExecution(ctx, s.rdb, taskID, s.actionMergingLeaseTTL)
-			if err != nil {
+			if err := action_merger.RecordClaimedExecution(ctx, s.rdb, taskID, s.actionMergingLeaseTTL); err != nil {
 				log.CtxWarningf(ctx, "could not record claimed pending execution %q: %s", taskID, err)
 			}
 		}
@@ -1832,12 +1912,6 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionTask: %s", err)
 		return task
 	}
-	isolationType := platform.FindEffectiveValue(taskProto, platform.WorkloadIsolationPropertyName)
-	if isolationType != string(platform.FirecrackerContainerType) {
-		return task
-	}
-	expOptions := make([]any, 0, 2)
-	expOptions = append(expOptions, experiments.WithContext("executor_hostname", executorHostname))
 
 	selfHosted := false
 	if is := s.env.GetClientIdentityService(); is != nil {
@@ -1845,7 +1919,12 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		// Client identity is only set on managed executors.
 		selfHosted = err != nil || identity.Client != interfaces.ClientIdentityExecutor
 	}
-	expOptions = append(expOptions, experiments.WithContext("self_hosted_executor", selfHosted))
+
+	expOptions := []any{
+		experiments.WithContext("executor_hostname", executorHostname),
+		experiments.WithContext("self_hosted", selfHosted),
+		experiments.WithContext("workflow_name", getWorkflowName(taskProto)),
+	}
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
 	// RPC doesn't get this metadata, because the executor doesn't get it until
@@ -1853,27 +1932,66 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	// with the value in the task.
 	ctx = bazel_request.OverrideRequestMetadata(ctx, taskProto.GetRequestMetadata())
 
-	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", expOptions...)
-	if skipResavingGroup == "" {
-		return task
-	}
-	taskProto.Experiments = append(taskProto.Experiments, "skip-resaving-action-snapshots:"+skipResavingGroup)
 	if taskProto.GetPlatformOverrides() == nil {
-		taskProto.PlatformOverrides = new(repb.Platform)
+		taskProto.PlatformOverrides = &repb.Platform{}
 	}
-	plat := taskProto.GetPlatformOverrides()
-	if strings.EqualFold(skipResavingGroup, "treatment") { // No point in setting the property when it's false.
+	plat := taskProto.PlatformOverrides
+
+	// Note: this "skip-resaving-action-snapshots" experiment uses "treatment"
+	// and "control" as the values rather than the variant names, since we
+	// didn't have the Details methods at the time which allow retrieving the
+	// variant name. Going forward, we can store "treatment" / "control" as the
+	// variant name and set the platform property values as the flag value.
+	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", expOptions...)
+	if strings.EqualFold(skipResavingGroup, "treatment") {
 		plat.Properties = append(plat.Properties, &repb.Platform_Property{
 			Name:  platform.SkipResavingActionSnapshotsPropertyName,
 			Value: "true",
 		})
 	}
+	if skipResavingGroup != "" {
+		taskProto.Experiments = append(taskProto.Experiments, "skip-resaving-action-snapshots:"+skipResavingGroup)
+	}
+
+	persistentVolumes, details := fp.StringDetails(ctx, "remote_execution.persistent_volumes", "", expOptions...)
+	if persistentVolumes != "" {
+		plat.Properties = append(plat.Properties, &repb.Platform_Property{
+			Name:  platform.PersistentVolumesPropertyName,
+			Value: persistentVolumes,
+		})
+	}
+	if details.Variant() != "" {
+		taskProto.Experiments = append(taskProto.Experiments, "remote_execution.persistent_volumes:"+details.Variant())
+	}
+
+	if shouldUpgrade := fp.Boolean(ctx, "upgrade-fc-guest-kernel", false, expOptions...); shouldUpgrade {
+		taskProto.Experiments = append(taskProto.Experiments, "upgrade-fc-guest-kernel")
+	}
+
 	if newTask, err := proto.Marshal(taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to marshal ExecutionTask: %s", err)
 		return task
 	} else {
 		return newTask
 	}
+}
+
+func getWorkflowName(task *repb.ExecutionTask) string {
+	args := task.GetCommand().GetArguments()
+	if len(args) < 2 || args[0] != "./"+ci_runner_util.ExecutableName {
+		return ""
+	}
+	for _, arg := range task.GetCommand().GetArguments() {
+		if strings.HasPrefix(arg, "--action_name=") {
+			sections := strings.Split(arg, "--action_name=")
+			if len(sections) != 2 {
+				log.Warningf("unexpected action_name argument %s", arg)
+				continue
+			}
+			return sections[1]
+		}
+	}
+	return ""
 }
 
 type enqueueTaskReservationOpts struct {
@@ -1892,7 +2010,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	os := enqueueRequest.GetSchedulingMetadata().GetOs()
 	arch := enqueueRequest.GetSchedulingMetadata().GetArch()
 	pool := enqueueRequest.GetSchedulingMetadata().GetPool()
-	hostnamePrefix := enqueueRequest.GetSchedulingMetadata().GetHostnamePrefix()
+	hostnamePattern := enqueueRequest.GetSchedulingMetadata().GetHostnamePattern()
 
 	key := nodePoolKey{os: os, arch: arch, pool: pool, groupID: groupID}
 
@@ -1970,10 +2088,10 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			if len(candidateNodes) == 0 {
 				return status.WrapError(error_util.RequestedExecutorNotFoundError(), fmt.Sprintf("enqueue on debug-executor-id %s", debugExecutorID))
 			}
-			candidateNodes = filterToHostnamePrefix(candidateNodes, hostnamePrefix)
+			candidateNodes = filterToHostnamePattern(ctx, candidateNodes, hostnamePattern)
 			if len(candidateNodes) == 0 {
-				log.CtxWarningf(ctx, "No executors found matching hostname prefix %q in pool %q with os %q with arch %q", hostnamePrefix, pool, os, arch)
-				return status.UnavailableErrorf("no executors found matching hostname prefix")
+				log.CtxWarningf(ctx, "No executors found matching hostname pattern %q in pool %q with os %q with arch %q", hostnamePattern, pool, os, arch)
+				return status.UnavailableErrorf("no executors found matching hostname pattern")
 			}
 			rankedNodes = s.taskRouter.RankNodes(ctx, task.GetAction(), cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
 		}
@@ -2246,7 +2364,7 @@ func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueue
 	return &scpb.ReEnqueueTaskResponse{}, nil
 }
 
-func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupID string) ([]*scpb.ExecutionNode, error) {
+func (s *SchedulerServer) getRegisteredExecutionNodesFromRedis(ctx context.Context, groupID string) ([]*scpb.RegisteredExecutionNode, error) {
 	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -2256,7 +2374,7 @@ func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupI
 	if err != nil {
 		return nil, err
 	}
-	var executionNodes []*scpb.ExecutionNode
+	var registeredNodes []*scpb.RegisteredExecutionNode
 	for _, k := range poolKeys {
 		executors, err := s.rdb.HGetAll(ctx, k).Result()
 		if err != nil {
@@ -2272,10 +2390,10 @@ func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupI
 			if err != nil {
 				continue
 			}
-			executionNodes = append(executionNodes, registeredNode.GetRegistration())
+			registeredNodes = append(registeredNodes, registeredNode)
 		}
 	}
-	return executionNodes, nil
+	return registeredNodes, nil
 }
 
 func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error) {
@@ -2289,7 +2407,7 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		groupID = ""
 	}
 
-	executionNodes, err := s.getExecutionNodesFromRedis(ctx, groupID)
+	registeredNodes, err := s.getRegisteredExecutionNodesFromRedis(ctx, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -2309,10 +2427,11 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		return nil, err
 	}
 
-	executors := make([]*scpb.GetExecutionNodesResponse_Executor, len(executionNodes))
-	for i, node := range executionNodes {
-		isDarwinExecutor := strings.EqualFold(node.Os, platform.DarwinOperatingSystemName)
-		isWindowsExecutor := strings.EqualFold(node.Os, platform.WindowsOperatingSystemName)
+	executors := make([]*scpb.GetExecutionNodesResponse_Executor, len(registeredNodes))
+	for i, regNode := range registeredNodes {
+		node := regNode.GetRegistration()
+		isDarwinExecutor := strings.EqualFold(node.OsFamily, platform.DarwinOperatingSystemName)
+		isWindowsExecutor := strings.EqualFold(node.OsFamily, platform.WindowsOperatingSystemName)
 		executors[i] = &scpb.GetExecutionNodesResponse_Executor{
 			Node: node,
 			IsDefault: !s.requireExecutorAuthorization ||
@@ -2321,6 +2440,7 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 					(g.UseGroupOwnedExecutors ||
 						(s.forceUserOwnedDarwinExecutors && isDarwinExecutor) ||
 						(s.forceUserOwnedWindowsExecutors && isWindowsExecutor))),
+			LastCheckInTime: regNode.GetLastPingTime(),
 		}
 	}
 	slices.SortFunc(executors, func(a, b *scpb.GetExecutionNodesResponse_Executor) int {

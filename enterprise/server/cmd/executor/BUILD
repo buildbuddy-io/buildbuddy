@@ -1,6 +1,7 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//rules:utils.bzl", "runfiles_directory")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -212,8 +213,6 @@ container_layer(
         "@platforms//cpu:x86_64": [
             ":firecracker",
             ":jailer",
-            "@com_github_buildbuddy_io_soci_snapshotter-static-linux-amd64//:soci-store.bin",
-            "@com_github_buildbuddy_io_soci_snapshotter-static-linux-amd64//:soci-store-race.bin",
             "@com_github_containers_crun_crun-linux-amd64//file:crun",
         ],
         "@platforms//cpu:aarch64": [
@@ -249,7 +248,7 @@ container_image(
         ":podman_static_layer",
     ],
     symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/buildbuddy/enterprise/config/executor.release.yaml",
+        "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/%s/enterprise/config/executor.release.yaml" % runfiles_directory(),
     },
     tags = ["manual"],
     visibility = ["//visibility:public"],

@@ -327,6 +327,11 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 			log.CtxInfof(ctx, "Failed to fetch inline execution response(s): %s", err)
 		}
 	}
+
+	if len(rsp.Execution) == 0 {
+		log.CtxInfof(ctx, "No executions found for invocation %q", req.GetExecutionLookup().GetInvocationId())
+	}
+
 	return rsp, nil
 }
 

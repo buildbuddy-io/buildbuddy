@@ -2,7 +2,6 @@ package download
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -16,7 +15,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/mdutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/go-units"
@@ -35,6 +36,8 @@ var (
 	blobType        = flags.String("type", "", "Type of blob (used to interpret): Action, Command, Directory")
 	outputDirectory = flags.String("output_directory", "", "A directory where Directory contents will be recursively extracted. Implies --type=Directory.")
 	outputFile      = flags.String("output_file", "", "A destination file where the output should be written; stdout will be used if not set")
+	remoteHeader    = flag.New(flags, "remote_header", []string{}, "Arbitrary remote headers to set on the request, in `KEY=VALUE` format. Can be specified multiple times.")
+	apiKey          = flags.String("api_key", "", "Optionally override the API key with this value")
 
 	usage = `
 usage: bb ` + flags.Name() + ` {digest}/{size}
@@ -140,10 +143,20 @@ func HandleDownload(args []string) (int, error) {
 	}
 
 	ctx := context.Background()
-	if apiKey, err := login.GetAPIKey(); err == nil && apiKey != "" {
+	if *apiKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+	} else if apiKey, err := login.GetAPIKey(); err == nil && apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
-
+	if len(*remoteHeader) > 0 {
+		md, err := mdutil.Parse(*remoteHeader...)
+		if err != nil {
+			return -1, fmt.Errorf("parse remote headers: %w", err)
+		}
+		for key, values := range md {
+			ctx = metadata.AppendToOutgoingContext(ctx, key, values[len(values)-1])
+		}
+	}
 	uri := flags.Args()[0]
 	if !strings.HasPrefix(uri, "/blobs") {
 		// Interpret HASH/SIZE as a resource name using the default digest
@@ -181,7 +194,7 @@ func HandleDownload(args []string) (int, error) {
 		env.SetByteStreamClient(bsClient)
 		env.SetCapabilitiesClient(capsClient)
 		start := time.Now()
-		if txInfo, err := dirtools.DownloadTree(ctx, env, rn.GetInstanceName(), rn.GetDigestFunction(), inputTree, *outputDirectory, &dirtools.DownloadTreeOpts{}); err != nil {
+		if txInfo, err := dirtools.DownloadTree(ctx, env, rn.GetInstanceName(), rn.GetDigestFunction(), inputTree, &dirtools.DownloadTreeOpts{RootDir: *outputDirectory}); err != nil {
 			return -1, fmt.Errorf("download directory tree to %q: %w", *outputDirectory, err)
 		} else {
 			log.Printf("Downloaded %d files (%s) in %s", txInfo.FileCount, units.HumanSize(float64(txInfo.BytesTransferred)), time.Since(start))

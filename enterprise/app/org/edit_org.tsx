@@ -1,11 +1,11 @@
+import { Link } from "lucide-react";
 import React from "react";
 import authService from "../../../app/auth/auth_service";
+import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton from "../../../app/components/button/button";
 import rpcService from "../../../app/service/rpc_service";
 import { grp } from "../../../proto/group_ts_proto";
 import OrgForm, { FormProps } from "./org_form";
-import { Link } from "lucide-react";
-import capabilities from "../../../app/capabilities/capabilities";
 
 /**
  * Page that allows editing an org specified in the URL.

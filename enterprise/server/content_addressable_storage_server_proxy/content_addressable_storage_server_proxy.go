@@ -29,10 +29,11 @@ import (
 var enableGetTreeCaching = flag.Bool("cache_proxy.enable_get_tree_caching", false, "If true, the Cache Proxy attempts to serve GetTree requests out of the local cache. If false, GetTree requests are always proxied to the remote, authoritative cache.")
 
 type CASServerProxy struct {
-	atimeUpdater  interfaces.AtimeUpdater
-	authenticator interfaces.Authenticator
-	local         repb.ContentAddressableStorageServer
-	remote        repb.ContentAddressableStorageClient
+	supportsEncryption bool
+	atimeUpdater       interfaces.AtimeUpdater
+	authenticator      interfaces.Authenticator
+	local              repb.ContentAddressableStorageServer
+	remote             repb.ContentAddressableStorageClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -62,10 +63,11 @@ func New(env environment.Env) (*CASServerProxy, error) {
 		return nil, fmt.Errorf("A remote ContentAddressableStorageClient is required to enable the ContentAddressableStorageServerProxy")
 	}
 	proxy := CASServerProxy{
-		atimeUpdater:  atimeUpdater,
-		authenticator: authenticator,
-		local:         local,
-		remote:        remote,
+		supportsEncryption: env.GetCrypter() != nil,
+		atimeUpdater:       atimeUpdater,
+		authenticator:      authenticator,
+		local:              local,
+		remote:             remote,
 	}
 	return &proxy, nil
 }
@@ -121,13 +123,13 @@ func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUp
 		map[string]int{metrics.MissStatusLabel: bytesInRequest(req)},
 	)
 
-	if authutil.EncryptionEnabled(ctx, s.authenticator) {
+	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption {
 		return s.remote.BatchUpdateBlobs(ctx, req)
 	}
 
 	_, err := s.local.BatchUpdateBlobs(ctx, req)
 	if err != nil {
-		log.Warningf("Local BatchUpdateBlobs error: %s", err)
+		log.CtxWarningf(ctx, "Local BatchUpdateBlobs error: %s", err)
 	}
 	return s.remote.BatchUpdateBlobs(ctx, req)
 }
@@ -163,10 +165,14 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	defer spn.End()
 	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.Digests)))
 
+	// Store auth headers in context so they can be reused between the
+	// atime_updater and the hit_tracker_client.
+	ctx = authutil.ContextWithCachedAuthHeaders(ctx, s.authenticator)
+
 	mergedResp := repb.BatchReadBlobsResponse{}
 	mergedDigests := []*repb.Digest{}
 	localResp := &repb.BatchReadBlobsResponse{}
-	remoteOnly := authutil.EncryptionEnabled(ctx, s.authenticator)
+	remoteOnly := authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption
 	if !remoteOnly {
 		resp, err := s.local.BatchReadBlobs(ctx, req)
 		if err != nil {
@@ -232,7 +238,7 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	for _, response := range remoteResp.Responses {
 		c, ok := cardinality[digest.NewKey(response.Digest)]
 		if !ok {
-			log.Warningf("Received unexpected digest from remote CAS.BatchReadBlobs: %s/%d", response.Digest.Hash, response.Digest.SizeBytes)
+			log.CtxWarningf(ctx, "Received unexpected digest from remote CAS.BatchReadBlobs: %s/%d", response.Digest.Hash, response.Digest.SizeBytes)
 		}
 		for i := 0; i < c; i++ {
 			mergedResp.Responses = append(mergedResp.Responses, response)
@@ -284,9 +290,9 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 			Compressor: response.Compressor,
 		})
 	}
-	if !authutil.EncryptionEnabled(ctx, s.authenticator) {
+	if !authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption {
 		if _, err := s.local.BatchUpdateBlobs(ctx, &updateReq); err != nil {
-			log.Warningf("Error locally updating blobs: %s", err)
+			log.CtxWarningf(ctx, "Error locally updating blobs: %s", err)
 		}
 	}
 	return readResp, nil
@@ -381,4 +387,12 @@ func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAd
 		}
 	}
 	return stream.Send(&resp)
+}
+
+func (s *CASServerProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
+	return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently implemented")
+}
+
+func (s *CASServerProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+	return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently implemented")
 }

@@ -1,8 +1,8 @@
-import React from "react";
 import Layout from "@theme/Layout";
+import { ArrowRight } from "lucide-react";
+import React from "react";
 import common from "../css/common.module.css";
 import styles from "./careers.module.css";
-import { ArrowRight } from "lucide-react";
 
 const careers = [
   { name: "Software Engineer" },

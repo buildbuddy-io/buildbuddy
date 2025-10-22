@@ -25,7 +25,6 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "links": [],
-  "liveNow": false,
   "panels": [
     {
       "collapsed": true,
@@ -38,7 +37,6 @@
       "id": 2276,
       "panels": [
         {
-          "collapsed": true,
           "datasource": {
             "type": "prometheus",
             "uid": "vm"
@@ -99,7 +97,7 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 24,
             "x": 0,
             "y": 1
           },
@@ -139,19 +137,6 @@
           "type": "timeseries"
         },
         {
-          "cards": {
-            "cardPadding": 0.25,
-            "cardRound": 2
-          },
-          "collapsed": true,
-          "color": {
-            "cardColor": "#3274D9",
-            "colorScale": "sqrt",
-            "colorScheme": "interpolateOranges",
-            "exponent": 0.5,
-            "mode": "opacity"
-          },
-          "dataFormat": "tsbuckets",
           "datasource": {
             "type": "prometheus",
             "uid": "vm"
@@ -173,17 +158,11 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 24,
             "x": 0,
             "y": 9
           },
-          "heatmap": {},
-          "hideZeroBuckets": false,
-          "highlightCards": true,
           "id": 2323,
-          "legend": {
-            "show": false
-          },
           "maxDataPoints": 25,
           "options": {
             "calculate": false,
@@ -227,7 +206,6 @@
           "pluginVersion": "10.1.0",
           "repeat": "cache_name",
           "repeatDirection": "h",
-          "reverseYBuckets": false,
           "targets": [
             {
               "datasource": {
@@ -245,21 +223,7 @@
             }
           ],
           "title": "Eviction Age (${cache_name})",
-          "tooltip": {
-            "show": true,
-            "showHistogram": true
-          },
-          "type": "heatmap",
-          "xAxis": {
-            "show": true
-          },
-          "yAxis": {
-            "decimals": 0,
-            "format": "bytes",
-            "logBase": 1,
-            "show": true
-          },
-          "yBucketBound": "auto"
+          "type": "heatmap"
         },
         {
           "datasource": {
@@ -346,9 +310,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 24,
             "x": 0,
-            "y": 17
+            "y": 41
           },
           "id": 6201,
           "options": {
@@ -397,7 +361,6 @@
         }
       ],
       "repeat": "partition_id",
-      "repeatDirection": "h",
       "title": "Remote cache (partition: ${partition_id})",
       "type": "row"
     },
@@ -407,7 +370,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 1
+        "y": 8
       },
       "id": 3104,
       "panels": [
@@ -471,7 +434,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 30
+            "y": 644
           },
           "id": 3187,
           "options": {
@@ -574,7 +537,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 30
+            "y": 644
           },
           "id": 3269,
           "options": {
@@ -689,7 +652,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 38
+            "y": 652
           },
           "id": 3433,
           "options": {
@@ -756,7 +719,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 38
+            "y": 652
           },
           "id": 3597,
           "options": {
@@ -821,12 +784,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 2
+        "y": 9
       },
       "id": 5799,
       "panels": [
         {
-          "collapsed": true,
           "datasource": {
             "type": "prometheus",
             "uid": "vm"
@@ -838,11 +800,13 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisBorderShow": false,
                 "axisCenteredZero": false,
                 "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
+                "barWidthFactor": 0.6,
                 "drawStyle": "line",
                 "fillOpacity": 0,
                 "gradientMode": "none",
@@ -851,6 +815,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -914,7 +879,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 32
+            "y": 10
           },
           "id": 5720,
           "options": {
@@ -925,10 +890,12 @@
               "showLegend": true
             },
             "tooltip": {
+              "hideZeros": false,
               "mode": "single",
               "sort": "none"
             }
           },
+          "pluginVersion": "11.6.2",
           "targets": [
             {
               "datasource": {
@@ -946,7 +913,6 @@
           "type": "timeseries"
         },
         {
-          "collapsed": true,
           "datasource": {
             "type": "prometheus",
             "uid": "vm"
@@ -958,11 +924,13 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisBorderShow": false,
                 "axisCenteredZero": false,
                 "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
+                "barWidthFactor": 0.6,
                 "drawStyle": "line",
                 "fillOpacity": 0,
                 "gradientMode": "none",
@@ -971,6 +939,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -1009,7 +978,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 32
+            "y": 10
           },
           "id": 5955,
           "options": {
@@ -1020,10 +989,12 @@
               "showLegend": true
             },
             "tooltip": {
+              "hideZeros": false,
               "mode": "single",
               "sort": "none"
             }
           },
+          "pluginVersion": "11.6.2",
           "targets": [
             {
               "datasource": {
@@ -1041,7 +1012,6 @@
           "type": "timeseries"
         },
         {
-          "collapsed": true,
           "datasource": {
             "type": "prometheus",
             "uid": "vm"
@@ -1053,11 +1023,13 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisBorderShow": false,
                 "axisCenteredZero": false,
                 "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
+                "barWidthFactor": 0.6,
                 "drawStyle": "line",
                 "fillOpacity": 0,
                 "gradientMode": "none",
@@ -1066,6 +1038,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -1096,7 +1069,7 @@
                   }
                 ]
               },
-              "unit": "ops"
+              "unit": "none"
             },
             "overrides": []
           },
@@ -1104,7 +1077,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 40
+            "y": 18
           },
           "id": 5877,
           "options": {
@@ -1115,10 +1088,12 @@
               "showLegend": true
             },
             "tooltip": {
+              "hideZeros": false,
               "mode": "single",
               "sort": "none"
             }
           },
+          "pluginVersion": "11.6.2",
           "targets": [
             {
               "datasource": {
@@ -1136,7 +1111,6 @@
           "type": "timeseries"
         },
         {
-          "collapsed": true,
           "datasource": {
             "type": "prometheus",
             "uid": "vm"
@@ -1148,11 +1122,13 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisBorderShow": false,
                 "axisCenteredZero": false,
                 "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
+                "barWidthFactor": 0.6,
                 "drawStyle": "line",
                 "fillOpacity": 0,
                 "gradientMode": "none",
@@ -1161,6 +1137,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -1199,7 +1176,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 40
+            "y": 18
           },
           "id": 6111,
           "options": {
@@ -1210,10 +1187,12 @@
               "showLegend": true
             },
             "tooltip": {
+              "hideZeros": false,
               "mode": "single",
               "sort": "none"
             }
           },
+          "pluginVersion": "11.6.2",
           "targets": [
             {
               "datasource": {
@@ -1231,7 +1210,6 @@
           "type": "timeseries"
         },
         {
-          "collapsed": true,
           "datasource": {
             "type": "prometheus",
             "uid": "vm"
@@ -1243,11 +1221,13 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisBorderShow": false,
                 "axisCenteredZero": false,
                 "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
+                "barWidthFactor": 0.6,
                 "drawStyle": "line",
                 "fillOpacity": 0,
                 "gradientMode": "none",
@@ -1256,6 +1236,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -1288,38 +1269,13 @@
               },
               "unit": "ops"
             },
-            "overrides": [
-              {
-                "__systemRef": "hideSeriesFrom",
-                "matcher": {
-                  "id": "byNames",
-                  "options": {
-                    "mode": "exclude",
-                    "names": [
-                      "reader"
-                    ],
-                    "prefix": "All except:",
-                    "readOnly": true
-                  }
-                },
-                "properties": [
-                  {
-                    "id": "custom.hideFrom",
-                    "value": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": true
-                    }
-                  }
-                ]
-              }
-            ]
+            "overrides": []
           },
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 48
+            "y": 26
           },
           "id": 6033,
           "options": {
@@ -1330,10 +1286,12 @@
               "showLegend": true
             },
             "tooltip": {
+              "hideZeros": false,
               "mode": "single",
               "sort": "none"
             }
           },
+          "pluginVersion": "11.6.2",
           "targets": [
             {
               "datasource": {
@@ -1351,7 +1309,6 @@
           "type": "timeseries"
         },
         {
-          "collapsed": true,
           "datasource": {
             "type": "prometheus",
             "uid": "vm"
@@ -1363,11 +1320,13 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisBorderShow": false,
                 "axisCenteredZero": false,
                 "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
+                "barWidthFactor": 0.6,
                 "drawStyle": "line",
                 "fillOpacity": 0,
                 "gradientMode": "none",
@@ -1376,6 +1335,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -1393,7 +1353,9 @@
                 }
               },
               "decimals": 0,
+              "fieldMinMax": false,
               "mappings": [],
+              "max": 1.1,
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -1406,7 +1368,7 @@
                   }
                 ]
               },
-              "unit": "percent"
+              "unit": "percentunit"
             },
             "overrides": []
           },
@@ -1414,7 +1376,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 48
+            "y": 26
           },
           "id": 6189,
           "options": {
@@ -1425,10 +1387,12 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "single",
-              "sort": "none"
+              "hideZeros": false,
+              "mode": "multi",
+              "sort": "desc"
             }
           },
+          "pluginVersion": "11.6.2",
           "targets": [
             {
               "datasource": {
@@ -1450,9 +1414,9 @@
       "type": "row"
     }
   ],
+  "preload": false,
   "refresh": "1m",
-  "schemaVersion": 38,
-  "style": "dark",
+  "schemaVersion": 41,
   "tags": [
     "file:cache.json"
   ],
@@ -1460,7 +1424,6 @@
     "list": [
       {
         "current": {
-          "selected": false,
           "text": "us-west1",
           "value": "us-west1"
         },
@@ -1469,9 +1432,7 @@
           "uid": "vm"
         },
         "definition": "label_values(up, region)",
-        "hide": 0,
         "includeAll": false,
-        "multi": false,
         "name": "region",
         "options": [],
         "query": {
@@ -1480,23 +1441,16 @@
         },
         "refresh": 1,
         "regex": "",
-        "skipUrlSync": false,
         "sort": 1,
-        "tagValuesQuery": "",
-        "tagsQuery": "",
-        "type": "query",
-        "useTags": false
+        "type": "query"
       },
       {
         "current": {
-          "selected": false,
           "text": "1m",
           "value": "1m"
         },
-        "hide": 0,
         "includeAll": false,
         "label": "Averaging Window",
-        "multi": false,
         "name": "window",
         "options": [
           {
@@ -1586,13 +1540,10 @@
           }
         ],
         "query": "30s, 1m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 8h, 16h, 1d, 2d, 5d, 7d, 14d, 30d",
-        "queryValue": "",
-        "skipUrlSync": false,
         "type": "custom"
       },
       {
         "current": {
-          "selected": false,
           "text": "All",
           "value": "$__all"
         },
@@ -1601,9 +1552,7 @@
           "uid": "vm"
         },
         "definition": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\"}, partition_id)",
-        "hide": 0,
         "includeAll": true,
-        "multi": false,
         "name": "partition_id",
         "options": [],
         "query": {
@@ -1612,13 +1561,10 @@
         },
         "refresh": 1,
         "regex": "",
-        "skipUrlSync": false,
-        "sort": 0,
         "type": "query"
       },
       {
         "current": {
-          "selected": false,
           "text": "All",
           "value": "$__all"
         },
@@ -1627,9 +1573,7 @@
           "uid": "vm"
         },
         "definition": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\"}, cache_name)",
-        "hide": 0,
         "includeAll": true,
-        "multi": false,
         "name": "cache_name",
         "options": [],
         "query": {
@@ -1638,8 +1582,6 @@
         },
         "refresh": 1,
         "regex": "",
-        "skipUrlSync": false,
-        "sort": 0,
         "type": "query"
       }
     ]
@@ -1666,6 +1608,5 @@
   },
   "timezone": "",
   "title": "Remote Cache",
-  "uid": "9Zuc5O7Iz",
-  "weekStart": ""
+  "uid": "9Zuc5O7Iz"
 }

@@ -1,15 +1,21 @@
+// TODO: figure out how to properly shut down flagd in these tests.
+// https://github.com/open-feature/go-sdk/issues/397
+
 package experiments_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
@@ -29,6 +35,7 @@ func TestNoopProviderProvidesDefaults(t *testing.T) {
 	require.Equal(t, "default", fp.String(ctx, "my_flag", "default"))
 	require.Equal(t, int64(0), fp.Int64(ctx, "my_flag", 0))
 	require.Equal(t, 1.0, fp.Float64(ctx, "my_flag", 1.0))
+	require.Nil(t, fp.Object(ctx, "my_flag", nil))
 }
 
 func TestPrimitiveFlags(t *testing.T) {
@@ -89,6 +96,22 @@ func TestPrimitiveFlags(t *testing.T) {
 	require.Equal(t, int64(1), fp.Int64(ctx, "int_flag", 0))
 	require.Equal(t, 99.9999999, fp.Float64(ctx, "float_flag", 1.0))
 	require.Equal(t, map[string]any{"foo": "foo value"}, fp.Object(ctx, "object_flag", nil))
+
+	b, d := fp.BooleanDetails(ctx, "bool_flag", false)
+	require.True(t, b)
+	require.Equal(t, "on", d.Variant())
+	s, d := fp.StringDetails(ctx, "string_flag", "default")
+	require.Equal(t, "value-is-foo", s)
+	require.Equal(t, "foo", d.Variant())
+	i, d := fp.Int64Details(ctx, "int_flag", 0)
+	require.Equal(t, int64(1), i)
+	require.Equal(t, "small", d.Variant())
+	f, d := fp.Float64Details(ctx, "float_flag", 0)
+	require.Equal(t, 99.9999999, f)
+	require.Equal(t, "big", d.Variant())
+	m, d := fp.ObjectDetails(ctx, "object_flag", nil)
+	require.Equal(t, map[string]any{"foo": "foo value"}, m)
+	require.Equal(t, "foo", d.Variant())
 }
 
 func writeFlagConfig(t testing.TB, data string) string {
@@ -109,6 +132,70 @@ func writeFlagConfig(t testing.TB, data string) string {
 		os.RemoveAll(path)
 	})
 	return path
+}
+
+// TestStablePercentage ensures that once a parameter is included in an
+// experiment, it remains included even as the percentage increases.
+func TestStablePercentage(t *testing.T) {
+	var testFlags = `{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "percent-experiment": {
+      "state": "ENABLED",
+      "defaultVariant": "false",
+      "variants": {
+        "true": true,
+        "false": false
+      },
+      "targeting": {
+        "fractional": [
+			{
+				"cat": [{ "var": "$flagd.flagKey" }, { "var": "experiment-param" }]
+			},
+			["true", %d],
+			["false", %d]
+		]
+      }
+    }
+  }
+}
+`
+	offlineFlagPath := writeFlagConfig(t, fmt.Sprintf(testFlags, 0, 100))
+	writePercentConfig := func(percent int) {
+		os.WriteFile(offlineFlagPath, []byte(fmt.Sprintf(testFlags, percent, 100-percent)), os.ModePerm)
+	}
+
+	ctx := context.Background()
+	params := make([]string, 100)
+	values := make([]bool, 100)
+	for i := range params {
+		p, err := random.RandomString(10)
+		require.NoError(t, err)
+		params[i] = p
+	}
+	for percent := 0; percent <= 100; percent++ {
+		writePercentConfig(percent)
+
+		// Create a new provider after each write. Otherwise the test can race
+		// with the provider's internal goroutine that reads the file.
+		provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+		openfeature.SetProviderAndWait(provider)
+		fp, err := experiments.NewFlagProvider("test-name")
+		require.NoError(t, err)
+
+		for j, param := range params {
+			previous := values[j]
+			actual := fp.Boolean(ctx, "percent-experiment", false, experiments.WithContext("experiment-param", param))
+			if percent == 0 {
+				require.False(t, actual, "no params should be in experiment, but param %q is", param)
+			} else if percent == 100 {
+				require.True(t, actual, "all params should be in experiment, but param %q is not", param)
+			} else if previous == true {
+				require.True(t, actual, "param %q should remain in experiment, but went backward during %d%% rollout", param, percent)
+			}
+			values[j] = actual
+		}
+	}
 }
 
 func TestSelection(t *testing.T) {
@@ -205,6 +292,7 @@ func TestMultiVariant(t *testing.T) {
 	offlineFlagPath := writeFlagConfig(t, testFlags)
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
 	openfeature.SetProviderAndWait(provider)
+	defer provider.Shutdown()
 
 	fp, err := experiments.NewFlagProvider("test-name")
 	require.NoError(t, err)
@@ -225,4 +313,53 @@ func TestMultiVariant(t *testing.T) {
 	for color, count := range counts {
 		require.GreaterOrEqual(t, count, 200, color)
 	}
+}
+
+func TestTargetingGroupID(t *testing.T) {
+	ctx := context.Background()
+
+	const testFlags = `{
+	  "$schema": "https://flagd.dev/schema/v0/flags.json",
+	  "flags": {
+	    "test_flag": {
+	      "state": "ENABLED",
+	      "variants": {
+	        "override": "override",
+	        "default": "default"
+	      },
+	      "defaultVariant": "default",
+	      "targeting": {
+	        "if": [
+	          { "==": [{ "var": "group_id" }, "GR2"] },
+	          "override",
+	          "default"
+	        ]
+	      }
+	    }
+	  }
+	}
+	`
+
+	offlineFlagPath := writeFlagConfig(t, testFlags)
+	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	openfeature.SetProviderAndWait(provider)
+
+	fp, err := experiments.NewFlagProvider("test-name")
+	require.NoError(t, err)
+
+	t.Run("should use ExperimentTargetingGroupID as group_id var if set", func(t *testing.T) {
+		ctx := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+			GroupID:                    "GR1",
+			ExperimentTargetingGroupID: "GR2",
+		})
+		s := fp.String(ctx, "test_flag", "")
+		require.Equal(t, "override", s)
+	})
+	t.Run("should use GroupID as group_id var if no targeting group ID is set", func(t *testing.T) {
+		ctx := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+			GroupID: "GR1",
+		})
+		s := fp.String(ctx, "test_flag", "")
+		require.Equal(t, "default", s)
+	})
 }

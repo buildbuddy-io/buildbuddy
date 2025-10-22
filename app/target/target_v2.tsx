@@ -1,29 +1,43 @@
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  Box,
+  CheckCircle,
+  Clock,
+  Copy,
+  Hash,
+  HelpCircle,
+  History,
+  SkipForward,
+  Target,
+  XCircle,
+} from "lucide-react";
 import React from "react";
-import TargetTestLogCardComponent from "./target_test_log_card";
-import TargetTestDocumentCardComponent from "./target_test_document_card";
-import TargetTestCoverageCardComponent from "./target_test_coverage_card";
-import TargetArtifactsCardComponent from "./target_artifacts_card";
-import ActionCardComponent from "./action_card";
-import router from "../router/router";
-import format from "../format/format";
-import { User } from "../auth/auth_service";
-import { Hash, Target, Box, SkipForward, CheckCircle, XCircle, HelpCircle, Clock, Copy, History } from "lucide-react";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { copyToClipboard } from "../util/clipboard";
-import alert_service from "../alert/alert_service";
-import { addDurationToTimestamp, timestampToDateWithFallback } from "../util/proto";
-import { OutlinedLinkButton } from "../components/button/link_button";
-import { target } from "../../proto/target_ts_proto";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
-import rpc_service from "../service/rpc_service";
-import { renderTestSize } from "../invocation/target_util";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { target } from "../../proto/target_ts_proto";
+import alert_service from "../alert/alert_service";
+import { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
+import { OutlinedButton } from "../components/button/button";
+import { OutlinedLinkButton } from "../components/button/link_button";
+import format from "../format/format";
 import CacheRequestsCardComponent from "../invocation/cache_requests_card";
 import InvocationModel from "../invocation/invocation_model";
-import FlakyTargetChipComponent from "./flaky_target_chip";
-import { OutlinedButton } from "../components/button/button";
-import { commandWithRemoteRunnerFlags, supportsRemoteRun, triggerRemoteRun } from "../util/remote_runner";
+import { getTestShardingSuggestion, SuggestionComponent } from "../invocation/invocation_suggestion_card";
 import LinkGithubRepoModal from "../invocation/link_github_repo_modal";
+import { renderTestSize } from "../invocation/target_util";
+import router from "../router/router";
+import rpc_service from "../service/rpc_service";
+import { copyToClipboard } from "../util/clipboard";
+import { addDurationToTimestamp, timestampToDateWithFallback } from "../util/proto";
+import { commandWithRemoteRunnerFlags, supportsRemoteRun, triggerRemoteRun } from "../util/remote_runner";
+import ActionCardComponent from "./action_card";
+import FlakyTargetChipComponent from "./flaky_target_chip";
+import TargetArtifactsCardComponent from "./target_artifacts_card";
+import TargetTestCoverageCardComponent from "./target_test_coverage_card";
+import TargetTestDocumentCardComponent from "./target_test_document_card";
+import TargetTestLogCardComponent from "./target_test_log_card";
 
 const Status = api_common.v1.Status;
 
@@ -165,6 +179,34 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     return adjective + " test";
   }
 
+  getTestDurationStats(): { avg: number; min: number; max: number } | null {
+    const resultEvents = this.state.target?.testResultEvents;
+    if (!resultEvents || resultEvents.length === 0) return null;
+
+    let totalDurationMillis = 0;
+    let minDurationMillis = Number.MAX_VALUE;
+    let maxDurationMillis = 0;
+    let validDurationCount = 0;
+
+    for (const event of resultEvents) {
+      const durationMillis = event.testResult?.testAttemptDurationMillis;
+      if (durationMillis) {
+        const duration = Number(durationMillis);
+        totalDurationMillis += duration;
+        minDurationMillis = Math.min(minDurationMillis, duration);
+        maxDurationMillis = Math.max(maxDurationMillis, duration);
+        validDurationCount++;
+      }
+    }
+
+    if (validDurationCount === 0) return null;
+    return {
+      avg: totalDurationMillis / validDurationCount,
+      min: minDurationMillis,
+      max: maxDurationMillis,
+    };
+  }
+
   resultSort(a: build_event_stream.BuildEvent, b: build_event_stream.BuildEvent) {
     let statusDiff = (b?.testResult?.status ?? 0) - (b?.testResult?.status ?? 0);
     if (statusDiff != 0) {
@@ -218,6 +260,11 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
 
   generateRunName(testResult: build_event_stream.BuildEventId.ITestResultId) {
     return `Run ${testResult.run} (Attempt ${testResult.attempt}, Shard ${testResult.shard})`;
+  }
+
+  private renderTestShardingSuggestionCard(resultEvents: any[]) {
+    const suggestion = getTestShardingSuggestion({ model: this.props.model, resultEvents });
+    return suggestion ? <SuggestionComponent suggestion={suggestion} /> : null;
   }
 
   getTab() {
@@ -328,6 +375,29 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                   {target.testSummary.totalRunCount ?? 0} total runs
                 </div>
               )}
+              {target?.testSummary &&
+                (() => {
+                  const durationStats = this.getTestDurationStats();
+                  if (durationStats !== null) {
+                    return (
+                      <>
+                        <div className="detail">
+                          <Clock className="icon" />
+                          {format.durationMillis(durationStats.avg)} avg duration
+                        </div>
+                        <div className="detail">
+                          <ArrowDownToLine className="icon" />
+                          {format.durationMillis(durationStats.min)} min duration
+                        </div>
+                        <div className="detail">
+                          <ArrowUpToLine className="icon" />
+                          {format.durationMillis(durationStats.max)} max duration
+                        </div>
+                      </>
+                    );
+                  }
+                  return null;
+                })()}
               {Boolean(target?.metadata?.ruleType || target?.actionEvents.length) && (
                 <div className="detail">
                   <Target className="icon" />
@@ -345,6 +415,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
           </div>
         </div>
         <div className="container nopadding-dense">
+          {this.renderTestShardingSuggestionCard(resultEvents)}
           {resultEvents.length > 1 && (
             <div className={`runs ${resultEvents.length > 9 && "run-grid"}`}>
               {resultEvents.map((event, index) => (

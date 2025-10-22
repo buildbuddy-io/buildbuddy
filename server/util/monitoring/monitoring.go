@@ -17,6 +17,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/net/trace"
+	"google.golang.org/grpc"
 
 	channelz "github.com/rantav/go-grpc-channelz"
 )
@@ -24,6 +26,8 @@ import (
 var (
 	mutexProfileFraction = flag.Int("mutex_profile_fraction", 0, "The fraction of mutex contention events reported. (1/rate, 0 disables)")
 	blockProfileRate     = flag.Int("block_profile_rate", 0, "The fraction of goroutine blocking events reported. (1/rate, 0 disables)")
+
+	enableRpcz = flag.Bool("enable_rpcz", false, "Enables a /rpcz endpoint for viewing gRPC requests")
 
 	basicAuthUser = flag.String("monitoring.basic_auth.username", "", "Optional username for basic auth on the monitoring port.")
 	basicAuthPass = flag.String("monitoring.basic_auth.password", "", "Optional password for basic auth on the monitoring port.", flag.Secret)
@@ -54,8 +58,15 @@ func RegisterMonitoringHandlers(env environment.Env, mux *http.ServeMux) {
 	handle("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
 	handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
 
+	if *enableRpcz {
+		grpc.EnableTracing = true
+		handle("/debug/requests", http.HandlerFunc(trace.Traces))
+		handle("/debug/events", http.HandlerFunc(trace.Events))
+		handle("/rpcz", http.RedirectHandler("/debug/requests", http.StatusFound))
+	}
+
 	// Statusz page
-	handle(statusz.StatuszPath, statusz.Server())
+	handle(statusz.Route, statusz.Server())
 
 	// Flagz page
 	handle("/flagz", http.HandlerFunc(flagz.ServeHTTP))

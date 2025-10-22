@@ -215,7 +215,8 @@ func (c *Command) processUpdatesAsync(ctx context.Context, stream repb.Execution
 			if err != nil {
 				sendStatus(&CommandResult{
 					Stage: repb.ExecutionStage_COMPLETED,
-					Err:   status.AbortedErrorf("stream to server broken: %v", err)})
+					Err:   err,
+				})
 			}
 			continue // retry recv using new stream
 		}
@@ -223,7 +224,8 @@ func (c *Command) processUpdatesAsync(ctx context.Context, stream repb.Execution
 		if err != nil {
 			sendStatus(&CommandResult{
 				Stage: repb.ExecutionStage_COMPLETED,
-				Err:   status.AbortedErrorf("stream to server broken: %v", err)})
+				Err:   err,
+			})
 			return
 		}
 
@@ -348,7 +350,7 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := cachetools.GetBlobAsProto(ctx, c.gRPClientSource.GetByteStreamClient(), treeDigest, tree); err != nil {
 			return err
 		}
-		if _, err := dirtools.DownloadTree(ctx, env, res.InstanceName, repb.DigestFunction_SHA256, tree, path, &dirtools.DownloadTreeOpts{}); err != nil {
+		if _, err := dirtools.DownloadTree(ctx, env, res.InstanceName, repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: path}); err != nil {
 			return err
 		}
 	}

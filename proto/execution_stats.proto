@@ -165,6 +165,37 @@ message ExecutionAuxiliaryMetadata {
 
   // The timestamp at which the task was locally enqueued on the worker.
   google.protobuf.Timestamp worker_queued_timestamp = 9;
+
+  // Metadata about the runner assigned to process the task.
+  RunnerMetadata runner_metadata = 10;
+}
+
+message RunnerMetadata {
+  // Runner unique ID.
+  string runner_id = 1;
+
+  // The number of the tasks that were ever assigned to the runner this task was
+  // assigned to, including this task. This is not currently populated for
+  // Firecracker runners.
+  //
+  // Example: if this is 1, then the task associated with this RunnerMetadata
+  // was the first task assigned to the runner.
+  //
+  // In rare cases, a task may be canceled and the runner may be returned to the
+  // pool before a task is executed. But generally speaking, if this number if
+  // >= 2, it roughly indicates that the task was assigned to a "warm" runner.
+  int64 task_number = 2;
+
+  // The hash of the platform proto. This is part of the runner key and
+  // determines whether a task can be assigned to a runner in the runner pool.
+  // TODO: see whether we can just store the full platform in the DB - it'd be
+  // nice to be able to query this.
+  string platform_hash = 3;
+
+  // Persistent worker key (the 'persistentWorkerKey' platform property). This
+  // is part of the runner key and determines whether a persistent worker action
+  // can be assigned to a runner in the runner pool.
+  string persistent_worker_key = 4;
 }
 
 message ExecutionLookup {

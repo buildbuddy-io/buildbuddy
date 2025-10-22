@@ -7,6 +7,9 @@ package(default_visibility = ["//visibility:public"])
 
 esbuild(
     name = "app_bundle",
+    # Causes splitting to be very slow and fail on unused references to "crypto" and "fs".
+    # https://github.com/aspect-build/rules_esbuild/issues/190
+    bazel_sandbox_plugin = False,
     config = {
         "resolveExtensions": [
             ".mjs",

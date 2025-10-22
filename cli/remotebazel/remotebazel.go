@@ -95,6 +95,7 @@ var (
 	// TODO(Maggie): If skipping automatic checkout, remove requirements that clients
 	// pass github-related fields.
 	skipAutomaticCheckout = RemoteFlagset.Bool("skip_auto_checkout", false, "Whether to skip the automatic GitHub checkout steps on the remote runner.")
+	invocationIDFile      = RemoteFlagset.String("invocation_id_file", "", "If set, write the remote invocation ID to the file specified here.")
 )
 
 func consoleCursorMoveUp(y int) {
@@ -787,7 +788,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 		if err := os.MkdirAll(outDir, 0755); err != nil {
 			return nil, err
 		}
-		if _, err := dirtools.DownloadTree(ctx, env, rn.GetInstanceName(), rn.GetDigestFunction(), tree, outDir, &dirtools.DownloadTreeOpts{}); err != nil {
+		if _, err := dirtools.DownloadTree(ctx, env, rn.GetInstanceName(), rn.GetDigestFunction(), tree, &dirtools.DownloadTreeOpts{RootDir: outDir}); err != nil {
 			return nil, err
 		}
 	}
@@ -818,15 +819,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 	execClient := repb.NewExecutionClient(conn)
-
-	reqOS := runtime.GOOS
-	if *execOs != "" {
-		reqOS = *execOs
-	}
-	reqArch := runtime.GOARCH
-	if *execArch != "" {
-		reqArch = *execArch
-	}
 
 	envVars := make(map[string]string, 0)
 	for _, envVar := range *envInput {
@@ -875,6 +867,23 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		return 1, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
 	}
 
+	reqOS := runtime.GOOS
+	if *execOs != "" {
+		reqOS = *execOs
+	}
+	reqArch := runtime.GOARCH
+	if *execArch != "" {
+		reqArch = *execArch
+	}
+	platform.Properties = append(platform.Properties, &repb.Platform_Property{
+		Name:  "OSFamily",
+		Value: reqOS,
+	})
+	platform.Properties = append(platform.Properties, &repb.Platform_Property{
+		Name:  "Arch",
+		Value: reqArch,
+	})
+
 	if *runFromSnapshot != "" {
 		platform.Properties = append(platform.Properties, &repb.Platform_Property{
 			Name:  "snapshot-key-override",
@@ -892,8 +901,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			CommitSha: repoConfig.CommitSHA,
 			Branch:    repoConfig.Ref,
 		},
-		Os:             reqOS,
-		Arch:           reqArch,
 		ContainerImage: *containerImage,
 		Env:            envVars,
 		ExecProperties: platform.Properties,
@@ -957,6 +964,13 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 		log.Warnf("Remote run failed due to transient error. Retrying: %s", latestErr)
 		retryCount++
+	}
+	if *invocationIDFile != "" && len(inRsp.GetInvocation()) > 0 && inRsp.GetInvocation()[0].GetInvocationId() != "" {
+		if err := os.WriteFile(*invocationIDFile, []byte(inRsp.GetInvocation()[0].GetInvocationId()), 0644); err != nil {
+			log.Warnf("Failed to write invocation_id_file: %s", err)
+		} else {
+			log.Debugf("Wrote invocation ID to %q", *invocationIDFile)
+		}
 	}
 
 	if latestErr != nil {

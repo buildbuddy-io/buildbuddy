@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -18,8 +19,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
@@ -139,7 +142,9 @@ func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, workflowActio
 		workflowActionName,
 		wf.InstanceNameSuffix,
 	}, gitCleanExclude...)
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(keys, "|"))))
+	b := sha256.Sum256([]byte(strings.Join(keys, "|")))
+	s := hex.EncodeToString(b[:])
+	return filepath.Join(snaputil.SnapshotPartitionPrefix, s)
 }
 
 // startWorkflowTask represents a workflow to be started in the background in
@@ -1129,7 +1134,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		Arguments:            args,
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "Pool", Value: ws.poolForAction(workflowAction)},
+				{Name: "Pool", Value: ws.poolForAction(ctx, workflowAction)},
 				{Name: "OSFamily", Value: os},
 				{Name: "Arch", Value: workflowAction.Arch},
 				{Name: platform.DockerUserPropertyName, Value: workflowUser},
@@ -1207,9 +1212,16 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	return actionDigest, err
 }
 
-func (ws *workflowService) poolForAction(action *config.Action) string {
+func (ws *workflowService) poolForAction(ctx context.Context, action *config.Action) string {
 	if action.SelfHosted && action.Pool != "" {
 		return action.Pool
+	}
+	if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
+		poolOverride := efp.String(ctx, "remote-runner-pool", "",
+			experiments.WithContext("workflow-name", action.Name))
+		if poolOverride != "" {
+			return poolOverride
+		}
 	}
 	return ws.WorkflowsPoolName()
 }

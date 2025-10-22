@@ -10,27 +10,22 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-22.04-16cpu-arm64
+    runs-on: ubuntu-22.04-16cpu-arm64-arm-limited
     if: "!contains(github.event.head_commit.message, 'ci skip')"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # GitHub's arm64 runners do not have the same pre-installed software as
-      # the amd64 runners so we have to install a few things here.
-
-      - name: Install bazelisk
+      # podman_test installs its own version of podman under / in order to test
+      # the same version that we use in the executor while not having to
+      # configure various podman directory paths. For now just uninstall the
+      # podman installation that already comes with the GH actions runner.
+      - name: Uninstall podman
         run: |
-          curl -L --output /tmp/bazelisk https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-linux-arm64
-          chmod +x /tmp/bazelisk
-          sudo mv /tmp/bazelisk /usr/bin/bazelisk
-          sudo ln -s /usr/bin/bazelisk /usr/bin/bazel
-
-      - name: Install apt packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc g++
+          sudo apt-get remove -y podman
+          # Hack to work around https://github.com/containers/podman/issues/9164
+          find /dev/shm -name 'libpod*' | xargs -r sudo rm -rf
 
       - name: Restore caches
         id: cache-restore

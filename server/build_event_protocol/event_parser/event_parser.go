@@ -428,17 +428,36 @@ func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[st
 	if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
 		sep.setReadPermission(inpb.InvocationPermission_PUBLIC, priority)
 	}
-	if tags, ok := metadata["TAGS"]; ok && tags != "" {
-		if err := sep.setTags(tags, priority); err != nil {
-			return err
-		}
-	}
 	if parentRunId, ok := metadata["PARENT_RUN_ID"]; ok && parentRunId != "" {
 		sep.setParentRunId(parentRunId, priority)
 	}
 	if runId, ok := metadata["RUN_ID"]; ok && runId != "" {
 		sep.setRunId(runId, priority)
 	}
+
+	var tagValues []string
+	if existingTags, ok := metadata["TAGS"]; ok && existingTags != "" {
+		tagValues = append(tagValues, existingTags)
+	}
+
+	// Support TAG_ prefixed metadata
+	for key, value := range metadata {
+		if strings.HasPrefix(key, "TAG_") {
+			tagKey := strings.TrimPrefix(key, "TAG_")
+			if value != "" {
+				tagValues = append(tagValues, tagKey+"="+value)
+			} else {
+				tagValues = append(tagValues, tagKey)
+			}
+		}
+	}
+
+	if len(tagValues) > 0 {
+		if err := sep.setTags(strings.Join(tagValues, ","), priority); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -508,13 +527,19 @@ func (sep *StreamingEventParser) setPattern(value []string, priority int) {
 	}
 }
 func (sep *StreamingEventParser) setTags(value string, priority int) error {
-	if *tagsEnabled && sep.priority.Tags <= priority {
+	if *tagsEnabled {
 		tags, err := invocation_format.SplitAndTrimAndDedupeTags(value, true)
 		if err != nil {
 			return err
 		}
+
+		if sep.priority.Tags <= priority {
+			sep.invocation.Tags = append(sep.invocation.Tags, tags...)
+		} else {
+			sep.invocation.Tags = append(tags, sep.invocation.Tags...)
+		}
+
 		sep.priority.Tags = priority
-		sep.invocation.Tags = tags
 	}
 	return nil
 }

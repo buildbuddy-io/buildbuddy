@@ -149,7 +149,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "5fd223e2319947a697d6907eedcea3083ea224a72f5967139dc4e5bb097ebc6e"
+		expectedHash    = "e912813410cb1506d27205227d9d184b985bdf047d0a8625677ace008c05eb7c"
 		expectedVersion = "16"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -514,7 +514,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 
 		res := c.Exec(ctx, cmd, nil /*=stdio*/)
 		require.NoError(t, res.Error)
-
+		assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 		require.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
 		require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
 
@@ -535,7 +535,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 
 			res := c.Exec(ctx, cmd, nil /*=stdio*/)
 			require.NoError(t, res.Error)
-
+			assert.Equal(t, int64(i), res.VMMetadata.GetSavedSnapshotVersionNumber())
 			assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
 			require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
 			cpuMillisObservations = append(cpuMillisObservations, float64(res.UsageStats.GetCpuNanos())/1e6)
@@ -599,6 +599,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	cmd := appendToLog("Base")
 	res := baseVM.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	require.Equal(t, "Base\n", string(res.Stdout))
 	err = baseVM.Pause(ctx)
 	require.NoError(t, err)
@@ -638,6 +639,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		cmd = appendToLog(fmt.Sprintf("Fork-%d", i))
 		res = forkedVM.Exec(ctx, cmd, nil /*=stdio*/)
 		require.NoError(t, res.Error)
+		assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
 		// The log should contain data written to the original snapshot
 		// and the current VM, but not from any of the other VMs sharing
 		// the same original snapshot
@@ -695,6 +697,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	cmd = appendToLog("Last")
 	res = c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(2), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	require.Equal(t, "Base\nFork-3\nLast\n", string(res.Stdout))
 
 	err = c.Pause(ctx)
@@ -749,6 +752,7 @@ func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
 	cmd := appendToLog("Base")
 	res := baseVM.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	require.Equal(t, "Base\n", string(res.Stdout))
 	err = baseVM.Pause(ctx)
 	require.NoError(t, err)
@@ -786,6 +790,7 @@ func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
 		cmd = appendToLog(fmt.Sprintf("Fork-%d", i))
 		res = forkedVM.Exec(ctx, cmd, nil /*=stdio*/)
 		require.NoError(t, res.Error)
+		assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
 		// The log should contain data written to the original snapshot
 		// and the current VM, but not from any of the other VMs sharing
 		// the same original snapshot
@@ -813,24 +818,24 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 			snapshotSavePolicy: snaputil.AlwaysSaveRemoteSnapshot,
 		},
 		{
-			name:               "Only save first non-main snapshot - on main",
+			name:               "Only save first non-default snapshot - on main",
 			branch:             "main",
-			snapshotSavePolicy: snaputil.OnlySaveFirstNonMainRemoteSnapshot,
+			snapshotSavePolicy: snaputil.OnlySaveFirstNonDefaultRemoteSnapshot,
 		},
 		{
-			name:               "Only save first non-main snapshot - on feature branch",
+			name:               "Only save first non-default snapshot - on feature branch",
 			branch:             "pr-branch",
-			snapshotSavePolicy: snaputil.OnlySaveFirstNonMainRemoteSnapshot,
+			snapshotSavePolicy: snaputil.OnlySaveFirstNonDefaultRemoteSnapshot,
 		},
 		{
-			name:               "Only save non-main snapshot if no snapshots available - on main",
+			name:               "Only save non-default snapshot if no snapshots available - on main",
 			branch:             "main",
-			snapshotSavePolicy: snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable,
+			snapshotSavePolicy: snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable,
 		},
 		{
-			name:               "Only save non-main snapshot if no snapshots available - on feature branch",
+			name:               "Only save non-default snapshot if no snapshots available - on feature branch",
 			branch:             "pr-branch",
-			snapshotSavePolicy: snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable,
+			snapshotSavePolicy: snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable,
 		},
 	}
 
@@ -875,7 +880,7 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 				},
 			}
 
-			runAndSnapshotVM := func(workDir string, stringToLog string, expectedOutput string, snapshotKeyOverride *fcpb.SnapshotKey, task *repb.ExecutionTask) string {
+			runAndSnapshotVM := func(workDir string, stringToLog string, expectedOutput string, snapshotKeyOverride *fcpb.SnapshotKey, task *repb.ExecutionTask) *interfaces.CommandResult {
 				opts := firecracker.ContainerOpts{
 					ContainerImage:         busyboxImage,
 					ActionWorkingDirectory: workDir,
@@ -902,10 +907,10 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 				err = vm.Pause(ctx)
 				require.NoError(t, err)
 
-				return vm.SnapshotID()
+				return res
 			}
 
-			// Create a snapshot for the main branch.
+			// Create a snapshot for the default branch.
 			mainTask := task.CloneVT()
 			mainTask.Command.EnvironmentVariables = []*repb.Command_EnvironmentVariable{
 				{
@@ -914,22 +919,27 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 				},
 			}
 			mainWorkDir := testfs.MakeDirAll(t, rootDir, "work")
-			runAndSnapshotVM(mainWorkDir, "Main", "Main\n", nil, mainTask)
+			res := runAndSnapshotVM(mainWorkDir, "Main", "Main\n", nil, mainTask)
+			assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 
 			// Create a snapshot on the branch specified by the test case.
 			workDir := testfs.MakeDirAll(t, rootDir, "work")
-			baseSnapshotId := runAndSnapshotVM(workDir, "Test Branch 1", "Main\nTest Branch 1\n", nil, task)
+			res = runAndSnapshotVM(workDir, "Test Branch 1", "Main\nTest Branch 1\n", nil, task)
+			baseSnapshotId := res.VMMetadata.GetSnapshotId()
+			assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
 
 			// Start a VM from the snapshot. Artifacts should be stored locally in the filecache.
 			// The log should contain data written to the original snapshot
 			// and the current VM.
 			workDirForkLocalFetch := testfs.MakeDirAll(t, rootDir, "work-fork-local-fetch")
-			runAndSnapshotVM(workDirForkLocalFetch, "Test Branch 2", "Main\nTest Branch 1\nTest Branch 2\n", nil, task)
+			res = runAndSnapshotVM(workDirForkLocalFetch, "Test Branch 2", "Main\nTest Branch 1\nTest Branch 2\n", nil, task)
+			assert.Equal(t, int64(2), res.VMMetadata.GetSavedSnapshotVersionNumber())
 
 			// Start another VM from the locally cached snapshot. The log should contain
 			// data from the most recent run, as well as the current run.
 			workDirForkLocalFetch2 := testfs.MakeDirAll(t, rootDir, "work-fork-local-fetch")
-			runAndSnapshotVM(workDirForkLocalFetch2, "Test Branch 3", "Main\nTest Branch 1\nTest Branch 2\nTest Branch 3\n", nil, task)
+			res = runAndSnapshotVM(workDirForkLocalFetch2, "Test Branch 3", "Main\nTest Branch 1\nTest Branch 2\nTest Branch 3\n", nil, task)
+			assert.Equal(t, int64(3), res.VMMetadata.GetSavedSnapshotVersionNumber())
 
 			// Clear the local filecache. Vms should still be able to unpause the snapshot
 			// by pulling artifacts from the remote cache
@@ -943,22 +953,27 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 
 			// Start a VM from the remote snapshot.
 
-			// Unless we're on the main branch or remote snapshot writes are always
+			// Unless we're on the default branch or remote snapshot writes are always
 			// requested, we don't expect to see changes applied from the last
 			// couple runs that only wrote local snapshots, now that the local
 			// snapshots are gone.
 			var expectedOutput string
+			var expectedVersionNumber int64
 			if tc.branch == "main" || tc.snapshotSavePolicy == snaputil.AlwaysSaveRemoteSnapshot {
 				expectedOutput = "Main\nTest Branch 1\nTest Branch 2\nTest Branch 3\nTest Branch 4\n"
-			} else if tc.snapshotSavePolicy == snaputil.OnlySaveFirstNonMainRemoteSnapshot {
+				expectedVersionNumber = 4
+			} else if tc.snapshotSavePolicy == snaputil.OnlySaveFirstNonDefaultRemoteSnapshot {
 				expectedOutput = "Main\nTest Branch 1\nTest Branch 4\n"
-			} else if tc.snapshotSavePolicy == snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable {
+				expectedVersionNumber = 2
+			} else if tc.snapshotSavePolicy == snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable {
 				expectedOutput = "Main\nTest Branch 4\n"
+				expectedVersionNumber = 1
 			}
 			workDirForkRemoteFetch := testfs.MakeDirAll(t, rootDir, "work-fork-remote-fetch")
-			runAndSnapshotVM(workDirForkRemoteFetch, "Test Branch 4", expectedOutput, nil, task)
+			res = runAndSnapshotVM(workDirForkRemoteFetch, "Test Branch 4", expectedOutput, nil, task)
+			assert.Equal(t, expectedVersionNumber, res.VMMetadata.GetSavedSnapshotVersionNumber())
 
-			if tc.snapshotSavePolicy != snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable {
+			if tc.snapshotSavePolicy != snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable {
 				// Should still be able to start from the original snapshot if we use
 				// a snapshot key containing the original VM's snapshot ID.
 				// Note that when using a snapshot ID as the key, we only include the
@@ -971,8 +986,160 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 					InstanceName: instanceName,
 					SnapshotId:   baseSnapshotId,
 				}
-				runAndSnapshotVM(workDirForkOriginalSnapshot, "Fork from original vm", "Main\nTest Branch 1\nFork from original vm\n", originalSnapshotKey, task)
+				res = runAndSnapshotVM(workDirForkOriginalSnapshot, "Fork from original vm", "Main\nTest Branch 1\nFork from original vm\n", originalSnapshotKey, task)
+				assert.Equal(t, int64(2), res.VMMetadata.GetSavedSnapshotVersionNumber())
 			}
+		})
+	}
+}
+
+func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
+	tests := []struct {
+		name                      string
+		snapshotReadPolicy        string
+		expectedOutputAfterResume string
+	}{
+		{
+			name:               "Always read newest",
+			snapshotReadPolicy: snaputil.AlwaysReadNewestSnapshot,
+			// Even though a local snapshot exists on executor 1, expect to
+			// start from the remote snapshot written from executor 2 because
+			// it is newer.
+			expectedOutputAfterResume: "Executor1\nExecutor2\nResume\n",
+		},
+		{
+			name:               "Local first",
+			snapshotReadPolicy: snaputil.ReadLocalSnapshotFirst,
+			// Even though a newer remote snapshot was written by executor 2, expect to
+			// start from the local snapshot written by executor 1.
+			expectedOutputAfterResume: "Executor1\nResume\n",
+		},
+		{
+			name:               "Local only",
+			snapshotReadPolicy: snaputil.ReadLocalSnapshotOnly,
+			// Even though a newer remote snapshot was written by executor 2, expect to
+			// start from the local snapshot written by executor 1.
+			expectedOutputAfterResume: "Executor1\nResume\n",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			cfg := getExecutorConfig(t)
+			rootDir1 := testfs.MakeTempDir(t)
+			rootDir2 := testfs.MakeTempDir(t)
+
+			// Both "executors" should use the same remote cache, but have different
+			// local filecaches.
+			env := getTestEnv(ctx, t, envOpts{})
+			env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+
+			filecacheRoot1 := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(filecacheRoot1, fileCacheSize/2, false)
+			require.NoError(t, err)
+			fc.WaitForDirectoryScanToComplete()
+			filecacheRoot2 := testfs.MakeTempDir(t)
+			fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize/2, false)
+			require.NoError(t, err)
+			fc2.WaitForDirectoryScanToComplete()
+
+			getEnvWithFC := func(fc interfaces.FileCache) *testenv.TestEnv {
+				env.SetFileCache(fc)
+				return env
+			}
+
+			var containersToCleanup []*firecracker.FirecrackerContainer
+			t.Cleanup(func() {
+				for _, vm := range containersToCleanup {
+					err := vm.Remove(ctx)
+					assert.NoError(t, err)
+				}
+			})
+
+			instanceName := "test-instance-name"
+			task := &repb.ExecutionTask{
+				Command: &repb.Command{
+					// Note: platform must match in order to share snapshots
+					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+						{Name: platform.RemoteSnapshotSavePolicyPropertyName, Value: snaputil.AlwaysSaveRemoteSnapshot},
+						{Name: platform.SnapshotReadPolicyPropertyName, Value: tc.snapshotReadPolicy},
+					}},
+					Arguments: []string{"./buildbuddy_ci_runner"},
+					EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+						{Name: "GIT_BRANCH", Value: "pr-branch"},
+					},
+				},
+				ExecuteRequest: &repb.ExecuteRequest{
+					InstanceName: instanceName,
+				},
+			}
+			opts := firecracker.ContainerOpts{
+				ContainerImage: busyboxImage,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+					EnableNetworking:  false,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: cfg,
+			}
+
+			runAndSnapshotVM := func(env *testenv.TestEnv, workDir string, stringToLog string) {
+				opts.ActionWorkingDirectory = workDir
+				vm, err := firecracker.NewContainer(ctx, env, task, opts)
+				require.NoError(t, err)
+				containersToCleanup = append(containersToCleanup, vm)
+				require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage))
+				err = vm.Create(ctx, workDir)
+				require.NoError(t, err)
+				cmd := appendToLog(stringToLog)
+				res := vm.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(t, res.Error)
+				err = vm.Pause(ctx)
+				require.NoError(t, err)
+			}
+
+			resumeFromSnapshot := func(env *testenv.TestEnv, workDir string, stringToLog string, expectedOutput string) {
+				opts.ActionWorkingDirectory = workDir
+				vm, err := firecracker.NewContainer(ctx, env, task, opts)
+				require.NoError(t, err)
+				containersToCleanup = append(containersToCleanup, vm)
+				err = vm.Unpause(ctx)
+				require.NoError(t, err)
+				cmd := appendToLog(stringToLog)
+				res := vm.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(t, res.Error)
+				require.Equal(t, expectedOutput, string(res.Stdout))
+			}
+
+			if tc.snapshotReadPolicy == snaputil.ReadLocalSnapshotOnly {
+				// Save a snapshot from executor 2.
+				workDir2 := testfs.MakeDirAll(t, rootDir2, "executor-2")
+				runAndSnapshotVM(getEnvWithFC(fc2), workDir2, "Executor2")
+
+				// Ensure that executor 1 cannot resume from a snapshot, even though
+				// a remote snapshot exists for the same key.
+				workDir := testfs.MakeDirAll(t, rootDir1, "executor-1")
+				opts.ActionWorkingDirectory = workDir
+				vm, err := firecracker.NewContainer(ctx, getEnvWithFC(fc), task, opts)
+				require.NoError(t, err)
+				containersToCleanup = append(containersToCleanup, vm)
+				err = vm.Unpause(ctx)
+				require.Error(t, err)
+			}
+
+			// Save a snapshot from executor 1.
+			workDir1 := testfs.MakeDirAll(t, rootDir1, "executor-1")
+			runAndSnapshotVM(getEnvWithFC(fc), workDir1, "Executor1")
+
+			// Save a snapshot from executor 2.
+			workDir2 := testfs.MakeDirAll(t, rootDir2, "executor-2")
+			runAndSnapshotVM(getEnvWithFC(fc2), workDir2, "Executor2")
+
+			// Resume from snapshot on executor 1.
+			resumeFromSnapshot(getEnvWithFC(fc), workDir1, "Resume", tc.expectedOutputAfterResume)
 		})
 	}
 }
@@ -1020,7 +1187,7 @@ ATTEMPT_NUMBER=$(( ATTEMPT_NUMBER + 1 ))
 printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 `}}
 
-	run := func(instanceName string, expectedLogs string) {
+	run := func(instanceName string, expectedLogs string, expectedVersionNumber int64) {
 		task.ExecuteRequest.InstanceName = instanceName
 		c, err := firecracker.NewContainer(ctx, env, task, opts)
 		require.NoError(t, err)
@@ -1038,11 +1205,12 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 		require.Equal(t, 0, res.ExitCode)
 		require.NoError(t, res.Error)
 		assert.Equal(t, expectedLogs, string(res.Stdout))
+		assert.Equal(t, expectedVersionNumber, res.VMMetadata.GetSavedSnapshotVersionNumber())
 	}
 
-	run("", "1")  // Should start clean
-	run("A", "1") // New instance name "A"; should start clean
-	run("A", "2") // Should resume from previous, and increment the counter
+	run("", "1", 0)  // Should start clean
+	run("A", "1", 0) // New instance name "A"; should start clean
+	run("A", "2", 1) // Should resume from previous, and increment the counter
 }
 
 func TestFirecracker_SnapshotSharing_MergeQueueBranches(t *testing.T) {
@@ -1106,7 +1274,7 @@ func TestFirecracker_SnapshotSharing_MergeQueueBranches(t *testing.T) {
 		ActionWorkingDirectory: workdir,
 	}
 
-	run := func(task *repb.ExecutionTask, expectedLogs string) {
+	run := func(task *repb.ExecutionTask, expectedLogs string, expectedVersionNumber int64) {
 		// This command writes the task branch name to a file.
 		branchName := ""
 		for _, ev := range task.Command.EnvironmentVariables {
@@ -1137,17 +1305,18 @@ cat ./attempts
 		require.Equal(t, 0, res.ExitCode)
 		require.NoError(t, res.Error)
 		assert.Equal(t, expectedLogs, string(res.Stdout))
+		assert.Equal(t, expectedVersionNumber, res.VMMetadata.GetSavedSnapshotVersionNumber())
 	}
 
 	// Run the merge queue task.
-	run(mergeQueueTask, mergeQueueBranch)
+	run(mergeQueueTask, mergeQueueBranch, 0)
 	// PR task should be able to start from merge branch snapshot.
-	run(prTask, mergeQueueBranch+prBranch)
+	run(prTask, mergeQueueBranch+prBranch, 1)
 	// Merge queue task should be able to start from merge branch snapshot.
 	// Should not include changes from PR task.
-	run(mergeQueueTask, mergeQueueBranch+mergeQueueBranch)
+	run(mergeQueueTask, mergeQueueBranch+mergeQueueBranch, 1)
 	// PR task should be able to start from the latest PR branch snapshot.
-	run(prTask, mergeQueueBranch+prBranch+prBranch)
+	run(prTask, mergeQueueBranch+prBranch+prBranch, 2)
 }
 
 func TestFirecracker_LocalSnapshotSharing_ContainerImageChunksExpiredFromCache(t *testing.T) {
@@ -1185,7 +1354,7 @@ ATTEMPT_NUMBER=$(( ATTEMPT_NUMBER + 1 ))
 printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 `}}
 
-	run := func(expectedLogs string) {
+	run := func(expectedLogs string, expectedVersionNumber int64) {
 		c, err := firecracker.NewContainer(ctx, env, task, opts)
 		require.NoError(t, err)
 		container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
@@ -1202,9 +1371,10 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 		require.Equal(t, 0, res.ExitCode)
 		require.NoError(t, res.Error)
 		assert.Equal(t, expectedLogs, string(res.Stdout))
+		assert.Equal(t, expectedVersionNumber, res.VMMetadata.GetSavedSnapshotVersionNumber())
 	}
 
-	run("1") // Should start clean
+	run("1", 0) // Should start clean
 
 	// Evict all artifacts from filecache, which should expire the base image.
 	fcDir := testfs.MakeTempDir(t)
@@ -1213,8 +1383,8 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
 
-	run("1") // Should start clean
-	run("2") // Should resume from previous, and increment the counter
+	run("1", 0) // Should start clean
+	run("2", 1) // Should resume from previous, and increment the counter
 }
 
 func TestFirecrackerSnapshotVersioning(t *testing.T) {
@@ -1311,6 +1481,7 @@ func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
 	cmd := appendToLog("Base")
 	res := vm.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	require.Equal(t, "Base\n", string(res.Stdout))
 	err = vm.Pause(ctx)
 	require.NoError(t, err)
@@ -1326,6 +1497,7 @@ func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
 	cmd = appendToLog("Child")
 	res = vm.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	require.Equal(t, "Base\nChild\n", string(res.Stdout))
 }
 
@@ -1392,6 +1564,7 @@ free -h
 
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 
 	// Try pause, unpause, exec several times.
 	for i := 1; i <= 4; i++ {
@@ -1404,6 +1577,7 @@ free -h
 
 		res := c.Exec(ctx, cmd, nil /*=stdio*/)
 		require.NoError(t, res.Error)
+		assert.Equal(t, int64(i), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	}
 }
 
@@ -1699,6 +1873,7 @@ func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 
 	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
 	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
@@ -1712,6 +1887,7 @@ func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 
 	res = c.Exec(ctx, cmd, &interfaces.Stdio{})
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
 	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
@@ -1901,6 +2077,50 @@ func TestFirecrackerNonRoot(t *testing.T) {
 	require.Empty(t, string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
 	require.Regexp(t, regexp.MustCompile(`uid=[0-9]+\(nobody\) gid=[0-9]+\(nobody\)`), string(res.Stdout))
+}
+
+func TestFirecrackerRunAsNonExistentUser(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	ws, err := workspace.New(env, rootDir, &workspace.Opts{})
+	require.NoError(t, err)
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			# print out the uid/gid
+			id
+			# make sure the workspace root dir is writable
+			touch foo || exit 1
+			# make sure output directories are writable too
+			touch outputs/bar || exit 1
+			touch nested/outputs/baz || exit 1
+		`},
+		OutputDirectories: []string{"outputs", "nested/outputs"},
+	}
+	ws.SetTask(ctx, &repb.ExecutionTask{Command: cmd})
+	err = ws.CreateOutputDirs()
+	require.NoError(t, err)
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage: busyboxImage,
+		// Numeric uid that doesn't correspond to a real user in /etc/passwd
+		// in the busybox image - this is valid.
+		User:                   "1234",
+		ActionWorkingDirectory: ws.Path(),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         200,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+	require.Equal(t, "uid=1234 gid=0(root) groups=0(root)\n", string(res.Stdout))
 }
 
 func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
@@ -2265,6 +2485,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 	})
 	res := c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test1.sh"}}, nil /*=stdio*/)
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, "Hello\n", string(res.Stdout))
 
@@ -2283,8 +2504,8 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 	require.NoError(t, err)
 
 	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test2.sh"}}, nil /*=stdio*/)
-
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, "world\n", string(res.Stdout))
 
@@ -2303,8 +2524,8 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 	require.NoError(t, err)
 
 	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test3.sh"}}, nil /*=stdio*/)
-
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(2), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, "world\n", string(res.Stdout))
 
@@ -2372,6 +2593,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 	}
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, "Hello\nworld\n", string(res.Stdout))
 
@@ -2408,6 +2630,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 	log.Debugf("Resumed VM and executed docker-in-firecracker command in %s", time.Since(start))
 
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, "world\n", string(res.Stdout))
 	require.Equal(t, 0, res.ExitCode)
@@ -2470,6 +2693,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Equal(t, "Hello\n", string(res.Stdout), "stdout should contain expected output")
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
@@ -2491,6 +2715,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	res = c.Exec(ctx, cmd, nil /*=stdio*/)
 
 	require.NoError(t, res.Error)
+	assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Equal(t, "world\n", string(res.Stdout), "stdout should contain expected output")
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")

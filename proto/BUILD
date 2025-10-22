@@ -44,6 +44,7 @@ proto_library(
     deps = [
         ":capability_proto",
         ":context_proto",
+        "@com_google_protobuf//:duration_proto",
     ],
 )
 
@@ -178,6 +179,13 @@ proto_library(
 )
 
 proto_library(
+    name = "routing_proto",
+    srcs = [
+        "routing.proto",
+    ],
+)
+
+proto_library(
     name = "execution_stats_proto",
     srcs = [
         "execution_stats.proto",
@@ -211,6 +219,7 @@ proto_library(
     srcs = ["firecracker.proto"],
     deps = [
         ":remote_execution_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
@@ -298,7 +307,6 @@ proto_library(
     ],
     deps = [
         ":storage_proto",
-        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
     ],
 )
 
@@ -307,17 +315,6 @@ proto_library(
     srcs = ["secrets.proto"],
     deps = [
         ":context_proto",
-    ],
-)
-
-proto_library(
-    name = "soci_proto",
-    srcs = [
-        "soci.proto",
-    ],
-    deps = [
-        ":registry_proto",
-        ":remote_execution_proto",
     ],
 )
 
@@ -408,7 +405,6 @@ proto_library(
     deps = [
         ":context_proto",
         ":firecracker_proto",
-        ":git_proto",
         ":invocation_status_proto",
         ":remote_execution_proto",
         "@com_google_protobuf//:duration_proto",
@@ -544,6 +540,15 @@ proto_library(
 )
 
 proto_library(
+    name = "user_list_proto",
+    srcs = ["user_list.proto"],
+    deps = [
+        ":context_proto",
+        ":user_id_proto",
+    ],
+)
+
+proto_library(
     name = "user_id_proto",
     srcs = ["user_id.proto"],
 )
@@ -558,6 +563,7 @@ proto_library(
         ":capability_proto",
         ":context_proto",
         ":user_id_proto",
+        ":user_list_proto",
     ],
 )
 
@@ -618,6 +624,7 @@ proto_library(
         ":suggestion_proto",
         ":target_proto",
         ":usage_proto",
+        ":user_list_proto",
         ":user_proto",
         ":workflow_proto",
         ":workspace_proto",
@@ -794,9 +801,19 @@ proto_library(
     srcs = ["search.proto"],
     deps = [
         ":context_proto",
+        "@io_kythe//kythe/proto:common_proto",
         "@io_kythe//kythe/proto:filetree_proto",
         "@io_kythe//kythe/proto:graph_proto",
         "@io_kythe//kythe/proto:xref_proto",
+    ],
+)
+
+proto_library(
+    name = "search_rating_proto",
+    srcs = ["search_rating.proto"],
+    deps = [
+        ":git_proto",
+        ":search_proto",
     ],
 )
 
@@ -1196,21 +1213,6 @@ go_proto_library(
 )
 
 go_proto_library(
-    name = "soci_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-        "//proto:vtprotobuf_compiler",
-    ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/soci",
-    proto = ":soci_proto",
-    deps = [
-        ":registry_go_proto",
-        ":remote_execution_go_proto",
-    ],
-)
-
-go_proto_library(
     name = "spawn_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
@@ -1356,7 +1358,6 @@ go_proto_library(
     deps = [
         ":context_go_proto",
         ":firecracker_go_proto",
-        ":git_go_proto",
         ":invocation_status_go_proto",
         ":remote_execution_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
@@ -1415,7 +1416,6 @@ go_proto_library(
     proto = ":metadata_proto",
     deps = [
         ":storage_go_proto",
-        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
     ],
 )
 
@@ -1481,6 +1481,16 @@ go_proto_library(
     deps = [
         ":remote_execution_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "routing_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/routing",
+    proto = ":routing_proto",
 )
 
 go_proto_library(
@@ -1611,6 +1621,7 @@ go_proto_library(
         ":target_go_proto",
         ":usage_go_proto",
         ":user_go_proto",
+        ":user_list_go_proto",
         ":workflow_go_proto",
         ":workspace_go_proto",
         ":zip_go_proto",
@@ -1676,6 +1687,20 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "user_list_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/user_list",
+    proto = ":user_list_proto",
+    deps = [
+        ":context_go_proto",
+        ":user_id_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "group_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
@@ -1688,6 +1713,7 @@ go_proto_library(
         ":capability_go_proto",
         ":context_go_proto",
         ":user_id_go_proto",
+        ":user_list_go_proto",
     ],
 )
 
@@ -1934,6 +1960,7 @@ go_proto_library(
     name = "encryption_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
         "//proto:vtprotobuf_compiler",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/encryption",
@@ -1973,9 +2000,20 @@ go_proto_library(
     proto = ":search_proto",
     deps = [
         ":context_go_proto",
+        "@io_kythe//kythe/proto:common_go_proto",
         "@io_kythe//kythe/proto:filetree_go_proto",
         "@io_kythe//kythe/proto:graph_go_proto",
         "@io_kythe//kythe/proto:xref_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "search_rating_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/search_rating",
+    proto = ":search_rating_proto",
+    deps = [
+        ":git_go_proto",
+        ":search_go_proto",
     ],
 )
 
@@ -2060,6 +2098,7 @@ ts_proto_library(
     deps = [
         ":capability_ts_proto",
         ":context_ts_proto",
+        ":duration_ts_proto",
     ],
 )
 
@@ -2291,7 +2330,6 @@ ts_proto_library(
         ":context_ts_proto",
         ":duration_ts_proto",
         ":firecracker_ts_proto",
-        ":git_ts_proto",
         ":grpc_status_ts_proto",
         ":invocation_status_ts_proto",
         ":remote_execution_ts_proto",
@@ -2385,6 +2423,7 @@ ts_proto_library(
     proto = ":search_proto",
     deps = [
         ":context_ts_proto",
+        ":kythe_common_ts_proto",
         ":kythe_filetree_ts_proto",
         ":kythe_graph_ts_proto",
         ":kythe_xref_ts_proto",
@@ -2409,6 +2448,7 @@ ts_proto_library(
         ":capability_ts_proto",
         ":context_ts_proto",
         ":user_id_ts_proto",
+        ":user_list_ts_proto",
     ],
 )
 
@@ -2533,6 +2573,15 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "user_list_ts_proto",
+    proto = ":user_list_proto",
+    deps = [
+        ":context_ts_proto",
+        ":user_id_ts_proto",
+    ],
+)
+
+ts_proto_library(
     name = "encryption_ts_proto",
     proto = ":encryption_proto",
     deps = [":context_ts_proto"],
@@ -2565,6 +2614,7 @@ ts_proto_library(
         ":suggestion_ts_proto",
         ":target_ts_proto",
         ":usage_ts_proto",
+        ":user_list_ts_proto",
         ":user_ts_proto",
         ":workflow_ts_proto",
         ":workspace_ts_proto",
@@ -2616,6 +2666,7 @@ ts_proto_library(
     proto = ":firecracker_proto",
     deps = [
         ":remote_execution_ts_proto",
+        ":timestamp_ts_proto",
     ],
 )
 

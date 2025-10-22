@@ -59,7 +59,6 @@ type Lease struct {
 }
 
 func New(nodeHost client.NodeHost, session *client.Session, log log.Logger, liveness *nodeliveness.Liveness, rangeID uint64, r *replica.Replica) *Lease {
-	ctx, cancelFunc := context.WithCancel(context.Background())
 	return &Lease{
 		nodeHost:              nodeHost,
 		log:                   log,
@@ -72,8 +71,6 @@ func New(nodeHost client.NodeHost, session *client.Session, log log.Logger, live
 		mu:                    sync.RWMutex{},
 		leaseRecord:           &rfpb.RangeLeaseRecord{},
 		timeUntilLeaseRenewal: time.Duration(math.MaxInt64),
-		ctx:                   ctx,
-		cancel:                cancelFunc,
 	}
 }
 
@@ -98,6 +95,9 @@ func (l *Lease) Release(ctx context.Context) error {
 }
 
 func (l *Lease) isStopped() bool {
+	if l.ctx == nil {
+		return true
+	}
 	select {
 	case <-l.ctx.Done():
 		return true
@@ -153,7 +153,7 @@ func (l *Lease) verifyLease(ctx context.Context, rl *rfpb.RangeLeaseRecord) (ret
 	// This is a node epoch based lease, so check node and epoch.
 	if nl := rl.GetNodeLiveness(); nl != nil {
 		if err := l.liveness.BlockingValidateNodeLiveness(ctx, nl); err != nil {
-			return status.InternalErrorf("failed to validate node liveness: %s", err)
+			return status.InternalErrorf("failed to validate node liveness: %w", err)
 		}
 		return nil
 	}
@@ -323,7 +323,7 @@ func (l *Lease) renewLeaseUntilValid(ctx context.Context) (returnedRecord *rfpb.
 		}
 		if err := l.renewLease(ctx); err != nil {
 			l.mu.Unlock()
-			return nil, status.InternalErrorf("failed to renew lease: %s", err)
+			return nil, status.InternalErrorf("failed to renew lease: %w", err)
 		}
 		if err := l.verifyLease(ctx, l.leaseRecord); err == nil {
 			break

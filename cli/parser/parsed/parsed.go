@@ -10,6 +10,7 @@ package parsed
 import (
 	"fmt"
 	"iter"
+	"os"
 	"os/user"
 	"path/filepath"
 	"slices"
@@ -59,7 +60,7 @@ type Args interface {
 	// GetStartupOptions returns a slice of all the command options Args contains.
 	GetCommandOptions() []options.Option
 
-	// GetTargets returns a slice of all the bazel tagets Args contains.
+	// GetTargets returns a slice of all the bazel targets Args contains.
 	GetTargets() []*arguments.PositionalArgument
 
 	// GetExecArgs returns a slice of all the arguments bazel will forward to the
@@ -201,7 +202,7 @@ func (c *classifier) Classify(arg arguments.Argument) Classified {
 			return &Target{arg}
 		}
 	case options.Option:
-		if arg.Supports("startup") {
+		if c.command == nil {
 			return &StartupOption{arg}
 		}
 		return &CommandOption{arg}
@@ -527,7 +528,7 @@ func (a *OrderedArgs) appendPositionalArgument(arg *arguments.PositionalArgument
 			a.Args = append(a.Args, &arguments.DoubleDash{})
 		} else {
 			// If there's no double dash, commandOptionInsertIndex needs to be
-			// incremented to still be len(p.Args) afer we append the argument for
+			// incremented to still be len(p.Args) after we append the argument for
 			// when we return.
 			commandOptionInsertIndex += 1
 		}
@@ -585,7 +586,7 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 // args and appends an `ignore_all_rc_files` option to the startup options.
 // Returns a slice of all the rc files that should be parsed.
 func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []string, err error) {
-	if ignore, err := options.AccumulateValues(false, a.RemoveStartupOptions("ignore_all_rc_files")...); err != nil {
+	if ignore, err := options.AccumulateValues[*IndexedOption](false, a.RemoveStartupOptions("ignore_all_rc_files")); err != nil {
 		return nil, fmt.Errorf("Failed to get value from 'ignore_all_rc_files' option: %s", err)
 	} else if ignore {
 		// Before we do anything, check whether --ignore_all_rc_files is already
@@ -597,8 +598,8 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []strin
 
 	// Parse rc files in the order defined here:
 	// https://bazel.build/run/bazelrc#bazelrc-file-locations
-	for _, optName := range []string{"system_rc", "workspace_rc", " home_rc"} {
-		if v, err := options.AccumulateValues(true, a.RemoveStartupOptions(optName)...); err != nil {
+	for _, optName := range []string{"system_rc", "workspace_rc", "home_rc"} {
+		if v, err := options.AccumulateValues[*IndexedOption](true, a.RemoveStartupOptions(optName)); err != nil {
 			return nil, fmt.Errorf("Failed to get value from '%s' option: %s", optName, err)
 		} else if !v {
 			// When these flags are false, they have no effect on the list of
@@ -614,9 +615,17 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []strin
 				rcFiles = append(rcFiles, filepath.Join(workspaceDir, ".bazelrc"))
 			}
 		case "home_rc":
-			usr, err := user.Current()
-			if err == nil {
-				rcFiles = append(rcFiles, filepath.Join(usr.HomeDir, ".bazelrc"))
+			// Use $HOME or %USERPROFILE% to locate the home_rc file.
+			// This enables mocking $HOME in test environments.
+			//
+			// On Unix, if $HOME variable is unset, fallback to finding home directory
+			// by syscall (getpwuid), which typically parse /etc/passwd for the information.
+			if homeDir, osErr := os.UserHomeDir(); osErr != nil && homeDir != "" {
+				rcFiles = append(rcFiles, filepath.Join(homeDir, ".bazelrc"))
+			} else if currUser, userErr := user.Current(); userErr != nil && currUser.HomeDir != "" {
+				rcFiles = append(rcFiles, filepath.Join(currUser.HomeDir, ".bazelrc"))
+			} else {
+				log.Debugf("Unable to locate home_rc: %s - %s", osErr, userErr)
 			}
 		}
 	}
@@ -658,7 +667,7 @@ func (a *OrderedArgs) ExpandConfigs(
 	// Replace the last occurrence of `--enable_platform_specific_config` with
 	// `--config=<bazelOS>`, so long as the last occurrence evaluates as true.
 	opts := expanded.RemoveCommandOptions(bazelrc.EnablePlatformSpecificConfigFlag)
-	if v, err := options.AccumulateValues(false, opts...); err != nil {
+	if v, err := options.AccumulateValues[*IndexedOption](false, opts); err != nil {
 		return nil, fmt.Errorf("Failed to get value from '%s' option: %s", bazelrc.EnablePlatformSpecificConfigFlag, err)
 	} else if v {
 		index := opts[len(opts)-1].Index

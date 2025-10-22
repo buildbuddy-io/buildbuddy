@@ -5,12 +5,14 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -65,6 +67,9 @@ const (
 	OverrideHeaderPrefix = "x-buildbuddy-platform."
 
 	poolPropertyName = "Pool"
+
+	originalPoolPropertyName = "OriginalPool"
+
 	// DefaultPoolValue is the value for the "Pool" platform property that selects
 	// the default executor pool for remote execution.
 	DefaultPoolValue = "default"
@@ -75,19 +80,27 @@ const (
 
 	containerRegistryUsernamePropertyName = "container-registry-username"
 	containerRegistryPasswordPropertyName = "container-registry-password"
+	containerRegistryBypassPropertyName   = "container-registry-bypass"
 
 	// container-image prop value which behaves the same way as if the prop were
 	// empty or unset.
 	unsetContainerImageVal = "none"
 
-	RecycleRunnerPropertyName               = "recycle-runner"
-	RemoteSnapshotSavePolicyPropertyName    = "remote-snapshot-save-policy"
+	recycleRunnerPropertyName = "recycle-runner"
+	// dockerReuse is treated as an alias for recycle-runner.
+	dockerReusePropertyName = "dockerReuse"
+
+	RunnerRecyclingKey                      = "runner-recycling-key"
 	RunnerRecyclingMaxWaitPropertyName      = "runner-recycling-max-wait"
+	runnerCrashedExitCodesPropertyName      = "runner-crashed-exit-codes"
+	transientErrorExitCodes                 = "transient-error-exit-codes"
+	RemoteSnapshotSavePolicyPropertyName    = "remote-snapshot-save-policy"
+	SnapshotReadPolicyPropertyName          = "snapshot-read-policy"
 	PreserveWorkspacePropertyName           = "preserve-workspace"
 	overlayfsWorkspacePropertyName          = "overlayfs-workspace"
 	cleanWorkspaceInputsPropertyName        = "clean-workspace-inputs"
 	persistentWorkerPropertyName            = "persistent-workers"
-	persistentWorkerKeyPropertyName         = "persistentWorkerKey"
+	PersistentWorkerKeyPropertyName         = "persistentWorkerKey"
 	persistentWorkerProtocolPropertyName    = "persistentWorkerProtocol"
 	WorkflowIDPropertyName                  = "workflow-id"
 	WorkloadIsolationPropertyName           = "workload-isolation-type"
@@ -107,6 +120,7 @@ const (
 	SnapshotKeyOverridePropertyName         = "snapshot-key-override"
 	RetryPropertyName                       = "retry"
 	SkipResavingActionSnapshotsPropertyName = "skip-resaving-action-snapshots"
+	PersistentVolumesPropertyName           = "persistent-volumes"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -170,10 +184,6 @@ func CoerceContainerType(t string) string {
 	return "unknown"
 }
 
-func VFSEnabled() bool {
-	return *enableVFS
-}
-
 // Properties represents the platform properties parsed from a command.
 type Properties struct {
 	OS                        string
@@ -195,8 +205,23 @@ type Properties struct {
 	DockerNetwork             string
 	RecycleRunner             bool
 	RunnerRecyclingMaxWait    time.Duration
-	EnableVFS                 bool
-	IncludeSecrets            bool
+
+	// Exit codes indicating a runner crashed and should not be recycled since
+	// it may be corrupted in some way.
+	RunnerCrashedExitCodes []int
+
+	// Exit codes that should be translated to an Unavailable gRPC error so that
+	// they can be retried automatically by the client.
+	TransientErrorExitCodes []int
+
+	EnableVFS      bool
+	IncludeSecrets bool
+
+	// OriginalPool can be set to inform BuildBuddy about the original pool name
+	// from another remote execution platform. This allows configuring task
+	// sizing/routing based on the original pool name without needing to create
+	// dedicated executor pools with each original pool name.
+	OriginalPool string
 
 	// DefaultTimeout specifies a remote action timeout to be used if
 	// `action.Timeout` is unset. This works around an issue that bazel does not
@@ -233,6 +258,8 @@ type Properties struct {
 	PersistentWorkerProtocol string
 	WorkflowID               string
 	HostedBazelAffinityKey   string
+	RemoteSnapshotSavePolicy string
+	SnapshotReadPolicy       string
 
 	// DisableMeasuredTaskSize disables measurement-based task sizing, even if
 	// it is enabled via flag, and instead uses the default / platform based
@@ -266,6 +293,35 @@ type Properties struct {
 	// This property is ignored for bazel executions, because the bazel client
 	// handles retries itself.
 	Retry bool
+
+	// Persistent volumes shared across all actions within a group. Requires
+	// `executor.enable_persistent_volumes` to be enabled.
+	PersistentVolumes []PersistentVolume
+
+	// ContainerRegistryBypass skips pulling images from the container registry
+	// and pulls images only from the cache instead. Note that this does not
+	// skip cache authentication.
+	//
+	// This property can only be used by server admins, otherwise the execution
+	// request will be rejected.
+	ContainerRegistryBypass bool
+}
+
+type PersistentVolume struct {
+	name          string
+	containerPath string
+}
+
+// Name is the name of the persistent volume. The returned value is non-empty
+// and contains only alphanumeric characters, hyphens, and underscores.
+func (v *PersistentVolume) Name() string {
+	return v.name
+}
+
+// ContainerPath is the path in the container where the persistent volume is
+// mounted. The returned value is guaranteed to be non-empty.
+func (v *PersistentVolume) ContainerPath() string {
+	return v.containerPath
 }
 
 // ContainerType indicates the type of containerization required by an executor.
@@ -304,14 +360,21 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	if pool == DefaultPoolValue {
 		pool = ""
 	}
-	recycleRunner := boolProp(m, RecycleRunnerPropertyName, false)
+	// Runner recycling is enabled if any of the following are true:
+	// - recycle-runner is true
+	// - dockerReuse is true (supported for compatibility reasons)
+	// - persistentWorkerKey is set (persistent workers are implemented using
+	//   runner recycling)
+	recycleRunner := boolProp(m, recycleRunnerPropertyName, false) ||
+		boolProp(m, dockerReusePropertyName, false) ||
+		stringProp(m, PersistentWorkerKeyPropertyName, "") != ""
 	isolationType := stringProp(m, WorkloadIsolationPropertyName, "")
 
 	// Only Enable VFS if it is also enabled via flags.
 	vfsEnabled := boolProp(m, enableVFSPropertyName, false) && *enableVFS
 	// Runner recycling is not yet supported in combination with VFS workspaces.
 	// Firecracker VFS performance is not good enough yet to be enabled.
-	if recycleRunner || ContainerType(isolationType) == FirecrackerContainerType {
+	if ContainerType(isolationType) == FirecrackerContainerType {
 		vfsEnabled = false
 	}
 
@@ -371,11 +434,31 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		overrideSnapshotKey = key
 	}
 
+	persistentVolumes, err := ParsePersistentVolumes(stringListProp(m, PersistentVolumesPropertyName)...)
+	if err != nil {
+		return nil, err
+	}
+
+	snapshotSavePolicy := stringProp(m, RemoteSnapshotSavePolicyPropertyName, "")
+	switch snapshotSavePolicy {
+	case snaputil.AlwaysSaveRemoteSnapshot, snaputil.OnlySaveFirstNonDefaultRemoteSnapshot, snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable, "":
+	default:
+		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the `remote-snapshot-save-policy` platform property", snapshotSavePolicy)
+	}
+
+	snapshotReadPolicy := stringProp(m, SnapshotReadPolicyPropertyName, "")
+	switch snapshotReadPolicy {
+	case snaputil.AlwaysReadNewestSnapshot, snaputil.ReadLocalSnapshotFirst, snaputil.ReadLocalSnapshotOnly, "":
+	default:
+		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the `snapshot-read-policy` platform property", snapshotReadPolicy)
+	}
+
 	return &Properties{
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                      strings.ToLower(pool),
 		PoolType:                  poolType,
+		OriginalPool:              stringProp(m, originalPoolPropertyName, ""),
 		EstimatedComputeUnits:     float64Prop(m, EstimatedComputeUnitsPropertyName, 0),
 		EstimatedMemoryBytes:      iecBytesProp(m, EstimatedMemoryPropertyName, 0),
 		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, 0),
@@ -401,7 +484,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		OverlayfsWorkspace:        boolProp(m, overlayfsWorkspacePropertyName, false),
 		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
 		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
-		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
+		PersistentWorkerKey:       stringProp(m, PersistentWorkerKeyPropertyName, ""),
 		PersistentWorkerProtocol:  stringProp(m, persistentWorkerProtocolPropertyName, ""),
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
 		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
@@ -411,6 +494,12 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		EnvOverrides:              envOverrides,
 		OverrideSnapshotKey:       overrideSnapshotKey,
 		Retry:                     boolProp(m, RetryPropertyName, true),
+		PersistentVolumes:         persistentVolumes,
+		SnapshotReadPolicy:        snapshotReadPolicy,
+		RemoteSnapshotSavePolicy:  snapshotSavePolicy,
+		ContainerRegistryBypass:   boolProp(m, containerRegistryBypassPropertyName, false),
+		RunnerCrashedExitCodes:    intListProp(m, runnerCrashedExitCodesPropertyName),
+		TransientErrorExitCodes:   intListProp(m, transientErrorExitCodes),
 	}, nil
 }
 
@@ -505,6 +594,20 @@ func GetExecutorProperties() *ExecutorProperties {
 	}
 
 	return p
+}
+
+func ValidateIsolationTypes() error {
+	if *defaultIsolationType == "" {
+		return nil
+	}
+	if !slices.Contains(KnownContainerTypes, ContainerType(*defaultIsolationType)) {
+		return status.InvalidArgumentErrorf("the configured 'default_isolation_type' %q is invalid. Valid values: %v", *defaultIsolationType, KnownContainerTypes)
+	}
+	executorProps := GetExecutorProperties()
+	if !executorProps.SupportsIsolation(ContainerType(*defaultIsolationType)) {
+		return status.InvalidArgumentErrorf("the configured 'default_isolation_type' %q is not enabled for this executor. Enabled isolation types: %v", *defaultIsolationType, executorProps.SupportedIsolationTypes)
+	}
+	return nil
 }
 
 // ApplyOverrides modifies the platformProps and command as needed to match the
@@ -724,6 +827,23 @@ func stringListProp(props map[string]string, name string) []string {
 	return vals
 }
 
+func intListProp(props map[string]string, name string) []int {
+	p := strings.TrimSpace(props[strings.ToLower(name)])
+	if p == "" {
+		return nil
+	}
+	vals := []int{}
+	for _, item := range strings.Split(p, ",") {
+		item := strings.TrimSpace(item)
+		i, err := strconv.Atoi(item)
+		if err != nil {
+			return nil // TODO: make this fatal
+		}
+		vals = append(vals, i)
+	}
+	return vals
+}
+
 func durationProp(props map[string]string, name string, defaultValue time.Duration) (time.Duration, error) {
 	val := props[strings.ToLower(name)]
 	if val == "" {
@@ -734,6 +854,29 @@ func durationProp(props map[string]string, name string, defaultValue time.Durati
 		return 0, status.InvalidArgumentErrorf("execution property value %q: invalid duration format", name)
 	}
 	return d, nil
+}
+
+var volumeNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+func ParsePersistentVolumes(values ...string) ([]PersistentVolume, error) {
+	volumes := make([]PersistentVolume, 0, len(values))
+	for _, v := range values {
+		name, containerPath, ok := strings.Cut(v, ":")
+		if !ok || name == "" || containerPath == "" {
+			return nil, status.InvalidArgumentErrorf(`invalid persistent volume %q: expected "<name>:<container_path>"`, v)
+		}
+		// Name can only contain alphanumeric characters, hyphens, and
+		// underscores. In particular it cannot contain path separators or
+		// relative directory references.
+		if !volumeNameRegex.MatchString(name) {
+			return nil, status.InvalidArgumentErrorf(`invalid persistent volume %q: name can only contain alphanumeric characters, hyphens, and underscores`, v)
+		}
+		volumes = append(volumes, PersistentVolume{
+			name:          name,
+			containerPath: containerPath,
+		})
+	}
+	return volumes, nil
 }
 
 func containerImageName(input string) string {
@@ -755,7 +898,7 @@ func parseSnapshotKeyJSON(in string) (*fcpb.SnapshotKey, error) {
 func findValue(platform *repb.Platform, name string) (value string, ok bool) {
 	name = strings.ToLower(name)
 	for _, prop := range platform.GetProperties() {
-		if prop.GetName() == name {
+		if strings.ToLower(prop.GetName()) == name {
 			return strings.TrimSpace(prop.GetValue()), true
 		}
 	}
@@ -794,6 +937,16 @@ func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
 // IsTrue returns whether the given platform property value is truthy.
 func IsTrue(value string) bool {
 	return strings.EqualFold(value, "true")
+}
+
+// IsRecyclingEnabled returns whether runner recycling is enabled for the given
+// task.
+func IsRecyclingEnabled(task *repb.ExecutionTask) bool {
+	parsed, err := ParseProperties(task)
+	if err != nil {
+		return false
+	}
+	return parsed.RecycleRunner
 }
 
 func DockerSocket() string {

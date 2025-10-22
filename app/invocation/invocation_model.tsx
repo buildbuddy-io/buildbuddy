@@ -1,27 +1,28 @@
-import { HelpCircle, PlayCircle, XCircle, CheckCircle, Circle } from "lucide-react";
+import { CheckCircle, Circle, HelpCircle, PlayCircle, XCircle } from "lucide-react";
 import moment from "moment";
 import React from "react";
 import { Subject } from "rxjs";
-import shlex from "shlex";
+import * as varint from "varint";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
-import { capability } from "../../proto/capability_ts_proto";
-import { build } from "../../proto/remote_execution_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { cache } from "../../proto/cache_ts_proto";
+import { capability } from "../../proto/capability_ts_proto";
 import { command_line } from "../../proto/command_line_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
-import { invocation } from "../../proto/invocation_ts_proto";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
-import { suggestion } from "../../proto/suggestion_ts_proto";
-import { IconType } from "../favicon/favicon";
-import format from "../format/format";
-import { formatDate } from "../format/format";
-import { durationToMillisWithFallback, timestampToDateWithFallback } from "../util/proto";
-import rpcService from "../service/rpc_service";
-import capabilities from "../capabilities/capabilities";
-import { exitCode } from "../util/exit_codes";
-import { resourceNameToString } from "../util/cache";
+import { invocation } from "../../proto/invocation_ts_proto";
+import { build } from "../../proto/remote_execution_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
+import { tools } from "../../proto/spawn_ts_proto";
+import { suggestion } from "../../proto/suggestion_ts_proto";
+import capabilities from "../capabilities/capabilities";
+import { IconType } from "../favicon/favicon";
+import format, { formatDate } from "../format/format";
+import rpcService from "../service/rpc_service";
+import { resourceNameToString } from "../util/cache";
+import { exitCode } from "../util/exit_codes";
+import { durationToMillisWithFallback, timestampToDateWithFallback } from "../util/proto";
+import { quote } from "../util/shlex";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
@@ -75,6 +76,8 @@ export default class InvocationModel {
   testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
   actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
   rootCauseTargetLabels: Set<String> = new Set<String>();
+
+  execLogEntryPromise: Promise<tools.protos.ExecLogEntry[]> | undefined;
 
   private fileSetIDToFilesMap: Map<string, build_event_stream.File[]> = new Map();
 
@@ -237,21 +240,25 @@ export default class InvocationModel {
     }
   }
 
-  getUser(possessive: boolean) {
+  getUser() {
     let invocationUser = this.invocation.user;
     if (invocationUser) {
-      return possessive ? `${invocationUser}'s` : invocationUser;
+      return invocationUser;
     }
+    // TODO: shouldn't the server be populating invocation.user based on these?
+    let username = this.workspaceStatusMap.get("BUILD_USER") || this.clientEnvMap.get("USER") || "";
+    if (username === "<REDACTED>") {
+      return "";
+    }
+    return username;
+  }
 
-    let username = this.workspaceStatusMap.get("BUILD_USER") || this.clientEnvMap.get("USER");
-    if (username == "<REDACTED>") {
-      return "Loading";
+  getUserPossessivePrefix() {
+    const user = this.getUser();
+    if (!user) {
+      return "";
     }
-
-    if (!username) {
-      return possessive ? "Unknown user's" : "Unknown user";
-    }
-    return possessive ? `${username}'s` : username;
+    return `${user}'s `;
   }
 
   /**
@@ -288,7 +295,7 @@ export default class InvocationModel {
   }
 
   getHost() {
-    return this.invocation.host || this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
+    return this.invocation.host || this.workspaceStatusMap.get("BUILD_HOST") || "";
   }
 
   getTags(): invocation.Invocation.Tag[] {
@@ -393,7 +400,7 @@ export default class InvocationModel {
    * Returns the hostname or hostname:port of the cache address used as the
    * remote cache target for this invocation.
    */
-  private getCacheAddress(): string | undefined {
+  getCacheAddress(): string | undefined {
     const prefix = this.parseBytestreamURIPrefix();
     if (prefix) {
       return prefix.host;
@@ -852,6 +859,9 @@ export default class InvocationModel {
       });
   }
 
+  /**
+   * Returns the original command line as it was entered by the user.
+   */
   explicitCommandLine() {
     // We allow overriding EXPLICIT_COMMAND_LINE to enable tools that wrap bazel
     // to append bazel args but still preserve the appearance of the original
@@ -860,47 +870,139 @@ export default class InvocationModel {
     const overrideJSON = this.buildMetadataMap.get("EXPLICIT_COMMAND_LINE");
     if (overrideJSON) {
       try {
-        return this.quote(JSON.parse(overrideJSON));
+        return JSON.parse(overrideJSON).map(quote).join(" ");
       } catch (_) {
         // Invalid JSON; fall back to showing BES event.
       }
     }
 
-    return this.bazelCommandAndPatternWithOptions(this.optionsParsed?.explicitCmdLine ?? []);
+    return this.commandLineOptionsToShellCommand(this.optionsParsed?.explicitCmdLine ?? []);
   }
 
-  bazelCommandAndPatternWithOptions(options: string[]) {
-    let patterns: string[] = [];
-    if (!this.hasPatternFile()) {
-      patterns = this.expanded?.id?.pattern?.pattern || [];
+  /**
+   * Returns an expanded version of the command line containing both explicit
+   * and implicit options. Implicit options may include options expanded from
+   * bazelrc configs as well as flag values which are overridden by certain
+   * subcommands (for example, the "cquery" subcommand overrides "--build" to
+   * false, from its default value of true).
+   */
+  effectiveCommandLine() {
+    return this.commandLineOptionsToShellCommand(this.optionsParsed?.cmdLine ?? []);
+  }
+
+  /**
+   * Returns the build tool executable name from the structured command line.
+   */
+  private getExecutableName(): string | null {
+    return (
+      this.structuredCommandLine
+        ?.find((cmdLine) => cmdLine.commandLineLabel === "original")
+        ?.sections?.find((section) => section.sectionLabel === "executable")?.chunkList?.chunk?.[0] ?? null
+    );
+  }
+
+  /**
+   * Returns any non-flag arguments to bazel, such as target patterns or query
+   * expressions.
+   *
+   * If there are residual arguments, it returns an argument separator "--" as
+   * the first list element. If there are no residual arguments, it returns an
+   * empty list.
+   */
+  private getResidualArgsWithSeparator(): string[] {
+    const residual = this.structuredCommandLine
+      ?.find((cmdLine) => cmdLine.commandLineLabel === "original")
+      ?.sections?.find((section) => section.sectionLabel === "residual")?.chunkList?.chunk;
+    if (!residual?.length) {
+      return [];
     }
-    return this.quote(["bazel", this.started?.command ?? "", ...patterns, ...(options || [])].filter((value) => value));
+    return ["--", ...residual];
+  }
+
+  private commandLineOptionsToShellCommand(options: string[]) {
+    return [
+      this.getExecutableName() ?? "bazel",
+      this.started?.command,
+      ...(options || []),
+      ...this.getResidualArgsWithSeparator(),
+    ]
+      .filter((x) => x !== null && x !== undefined)
+      .map(quote)
+      .join(" ");
   }
 
   hasPatternFile() {
     return Boolean(this.optionsMap.get("target_pattern_file"));
   }
 
-  // Wraps arguments containing spaces in the provided command-line in
-  // quotation marks so they work when copied and pasted. The input
-  // command-line is passed in as an array with one entry per piece. For
-  // example, this command:
-  //   "bazel build --output_filter='argument with spaces' //..."
-  // is passed into this function as:
-  //   ["bazel", "build", "--output_filter=argument with spaces"," "//..."],
-  // and this will be returned:
-  //   ["bazel", "build", "--output_filter='argument with spaces'"," "//..."],
-  private quote(pieces: string[]) {
-    return pieces
-      .map((value) => {
-        if (value.includes("=")) {
-          // shlex.quote everything after the first '=' so that arguments like:
-          // --flag="  = = = '' \"" are properly quoted.
-          let parts: string[] = value.split("=");
-          return parts[0] + "=" + shlex.quote(parts.slice(1).join("="));
+  // getBazelVersion returns the major and minor version of Bazel from BES event.
+  //
+  // The version could contain rc version in the patch number, such as "7.2.1rc1".
+  getBazelVersion(): { major: number; minor: number } | null {
+    const version = this.started?.buildToolVersion;
+    if (!version) return null;
+    const segments = version.split(".").map(Number);
+    if (segments.length < 2) return null;
+    if (segments.slice(0, 2).some(isNaN)) return null;
+    return { major: segments[0], minor: segments[1] };
+  }
+
+  hasExecutionLog(): boolean {
+    return Boolean(this.getExecutionLogFileUri());
+  }
+
+  getExecutionLogFileUri(): string | undefined {
+    return this.buildToolLogs?.log.find(
+      (log: build_event_stream.File) =>
+        (log.name == "execution.log" || log.name == "execution_log.binpb.zst") &&
+        log.uri &&
+        Boolean(log.uri.startsWith("bytestream://"))
+    )?.uri;
+  }
+
+  getExecutionLog() {
+    if (this.execLogEntryPromise) {
+      return this.execLogEntryPromise;
+    }
+
+    let logFileUri = this.getExecutionLogFileUri();
+    if (!logFileUri) throw new Error("Execution log file not found");
+
+    const init = {
+      // Set the stored encoding header to prevent the server from double-compressing.
+      headers: { "X-Stored-Encoding-Hint": "zstd" },
+    };
+
+    this.execLogEntryPromise = rpcService
+      .fetchBytestreamFile(logFileUri, this.getInvocationId(), "arraybuffer", { init })
+      .then(async (body) => {
+        if (body === null) throw new Error("response body is null");
+        let entries: tools.protos.ExecLogEntry[] = [];
+        let byteArray = new Uint8Array(body);
+        for (var offset = 0; offset < body.byteLength; ) {
+          let length = varint.decode(byteArray, offset);
+          let bytes = varint.decode.bytes || 0;
+          offset += bytes;
+          entries.push(tools.protos.ExecLogEntry.decode(byteArray.subarray(offset, offset + length)));
+          offset += length;
         }
-        return value;
-      })
-      .join(" ");
+        console.log(entries);
+        return entries;
+      });
+
+    return this.execLogEntryPromise;
+  }
+
+  downloadExecutionLog() {
+    let profileFileUri = this.getExecutionLogFileUri();
+    if (!profileFileUri) {
+      return;
+    }
+
+    try {
+      rpcService.downloadBytestreamFile("execution_log.binpb.zst", profileFileUri, this.getInvocationId());
+    } catch {
+      console.error("Error downloading execution log");
+    }
   }
 }

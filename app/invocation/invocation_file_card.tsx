@@ -1,17 +1,15 @@
+import Long from "long";
+import { Download, FileIcon, FileSymlink, Folder, FolderOpen } from "lucide-react";
 import React from "react";
-import InvocationModel from "./invocation_model";
-import Select, { Option } from "../components/select/select";
-import rpcService from "../service/rpc_service";
-import { OutlinedButton } from "../components/button/button";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { tools } from "../../proto/spawn_ts_proto";
-import format from "../format/format";
-import error_service from "../errors/error_service";
-import * as varint from "varint";
-import { Download, FileIcon, FileSymlink, Folder, FolderOpen } from "lucide-react";
+import { OutlinedButton } from "../components/button/button";
 import DigestComponent from "../components/digest/digest";
 import Link from "../components/link/link";
-import Long from "long";
+import Select, { Option } from "../components/select/select";
+import error_service from "../errors/error_service";
+import format from "../format/format";
+import InvocationModel from "./invocation_model";
 
 interface Props {
   model: InvocationModel;
@@ -69,54 +67,24 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
   }
 
   fetchLog() {
-    if (!this.getExecutionLogFile()) {
+    if (!this.props.model.hasExecutionLog()) {
       this.setState({ loading: false });
     }
 
     // Already fetched
     if (this.state.log) return;
 
-    let logFile = this.getExecutionLogFile();
-    if (!logFile?.uri) return;
-
-    const init = {
-      // Set the stored encoding header to prevent the server from double-compressing.
-      headers: { "X-Stored-Encoding-Hint": "zstd" },
-    };
-
     this.setState({ loading: true });
-    rpcService
-      .fetchBytestreamFile(logFile.uri, this.props.model.getInvocationId(), "arraybuffer", { init })
-      .then(async (body) => {
-        if (body === null) throw new Error("response body is null");
-        let entries: tools.protos.ExecLogEntry[] = [];
-        let byteArray = new Uint8Array(body);
-        for (var offset = 0; offset < body.byteLength; ) {
-          let length = varint.decode(byteArray, offset);
-          let bytes = varint.decode.bytes || 0;
-          offset += bytes;
-          entries.push(tools.protos.ExecLogEntry.decode(byteArray.subarray(offset, offset + length)));
-          offset += length;
-        }
-        console.log(entries);
-        return entries;
-      })
+
+    this.props.model
+      .getExecutionLog()
       .then((log) => this.setState({ log: log }))
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ loading: false }));
   }
 
   downloadLog() {
-    let profileFile = this.getExecutionLogFile();
-    if (!profileFile?.uri) {
-      return;
-    }
-
-    try {
-      rpcService.downloadBytestreamFile("execution_log.binpb.zst", profileFile.uri, this.props.model.getInvocationId());
-    } catch {
-      console.error("Error downloading execution log");
-    }
+    this.props.model.downloadExecutionLog();
   }
 
   compareFiles(a: tools.protos.ExecLogEntry, b: tools.protos.ExecLogEntry): number {

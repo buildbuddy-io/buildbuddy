@@ -1,6 +1,6 @@
+import { isSameDay } from "date-fns";
 import Long from "long";
 import moment from "moment";
-import { isSameDay } from "date-fns";
 import { google as google_duration } from "../../proto/duration_ts_proto";
 import { durationToMillis } from "../util/proto";
 
@@ -343,6 +343,19 @@ export function formatDateRange(startDate: Date, endDate?: Date, { now = new Dat
   return `${start} ${DATE_RANGE_SEPARATOR} ${end}`;
 }
 
+export function relativeTimeSeconds(timestamp: { seconds?: number | Long; nanos?: number | Long }): string {
+  if (!timestamp) return "Never";
+
+  const timestampMs = +(timestamp.seconds || 0) * 1000 + +(timestamp.nanos || 0) / 1000000;
+  const now = Date.now();
+  const diffMs = now - timestampMs;
+
+  if (diffMs < 0) return "Just now";
+
+  const seconds = Math.floor(diffMs / 1000);
+  return `${seconds} second${seconds === 1 ? "" : "s"} ago`;
+}
+
 export function formatGitUrl(url: string) {
   return url
     ?.replace("https://", "")
@@ -371,11 +384,11 @@ export function formatRole(role: string): string | null {
   return null;
 }
 
-export function formatWithCommas(num: number | Long | Number | undefined) {
+export function formatWithCommas(num: number | Long | Number | undefined, options?: Intl.NumberFormatOptions) {
   if (num === undefined || num === null) {
     return "";
   }
-  return (+num).toLocaleString("en-US");
+  return (+num).toLocaleString("en-US", options);
 }
 
 export function differenceInCalendarDays(start: Date, end: Date) {
@@ -422,4 +435,5 @@ export default {
   colorHash,
   enumLabel,
   formatDateFromUsec,
+  relativeTimeSeconds,
 };

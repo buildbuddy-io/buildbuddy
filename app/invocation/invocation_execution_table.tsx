@@ -1,20 +1,22 @@
+import { ChevronRight } from "lucide-react";
 import React from "react";
-import format from "../format/format";
-import {
-  getExecutionStatus,
-  totalDuration,
-  queuedDuration,
-  downloadDuration,
-  executionDuration,
-  uploadDuration,
-  getActionPageLink,
-  workerDuration,
-} from "./invocation_execution_util";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import DigestComponent from "../components/digest/digest";
 import Link from "../components/link/link";
+import format from "../format/format";
+import { digestToString } from "../util/cache";
 import { joinReactNodes } from "../util/react";
-import { ChevronRight } from "lucide-react";
+import ActionCompareButtonComponent from "./action_compare_button";
+import {
+  downloadDuration,
+  executionDuration,
+  getActionPageLink,
+  getExecutionStatus,
+  queuedDuration,
+  totalDuration,
+  uploadDuration,
+  workerDuration,
+} from "./invocation_execution_util";
 
 interface Props {
   executions: execution_stats.Execution[];
@@ -57,6 +59,11 @@ export default class InvocationExecutionTable extends React.Component<Props> {
                     </span>
                   )}
                 </div>
+                <ActionCompareButtonComponent
+                  invocationId={this.props.invocationIdProvider(execution)}
+                  actionDigest={digestToString(execution.actionDigest)}
+                  mini={true}
+                />
                 <div className="invocation-execution-row-stats">
                   <div>Executor Host ID: {execution.executedActionMetadata?.worker}</div>
                   <div>Total duration: {format.durationUsec(totalDuration(execution))}</div>

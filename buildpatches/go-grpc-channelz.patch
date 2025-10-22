@@ -1,0 +1,144 @@
+diff --git a/server-page.go b/server-page.go
+index 4948aa0..bb00052 100644
+--- a/server-page.go
++++ b/server-page.go
+@@ -9,6 +9,11 @@ import (
+ 	log "google.golang.org/grpc/grpclog"
+ )
+ 
++type Server struct {
++	Server  *channelzgrpc.Server
++	Sockets *channelzgrpc.GetServerSocketsResponse
++}
++
+ func (h *grpcChannelzHandler) WriteServerPage(w io.Writer, server int64) {
+ 	writeHeader(w, fmt.Sprintf("ChannelZ server %d", server))
+ 	h.writeServer(w, server)
+@@ -18,8 +23,14 @@ func (h *grpcChannelzHandler) WriteServerPage(w io.Writer, server int64) {
+ // writeServer writes HTML to w containing RPC single server stats.
+ //
+ // It includes neither a header nor footer, so you can embed this data in other pages.
+-func (h *grpcChannelzHandler) writeServer(w io.Writer, server int64) {
+-	if err := serverTemplate.Execute(w, h.getServer(server)); err != nil {
++func (h *grpcChannelzHandler) writeServer(w io.Writer, serverID int64) {
++	serverRsp := h.getServer(serverID)
++	sockets := h.getServerSockets(serverID)
++	data := Server{
++		Server:  serverRsp.GetServer(),
++		Sockets: sockets,
++	}
++	if err := serverTemplate.Execute(w, data); err != nil {
+ 		log.Errorf("channelz: executing template: %v", err)
+ 	}
+ }
+@@ -39,6 +50,21 @@ func (h *grpcChannelzHandler) getServer(serverID int64) *channelzgrpc.GetServerR
+ 	return server
+ }
+ 
++func (h *grpcChannelzHandler) getServerSockets(serverID int64) *channelzgrpc.GetServerSocketsResponse {
++	client, err := h.connect()
++	if err != nil {
++		log.Errorf("Error creating channelz client %+v", err)
++		return nil
++	}
++	ctx := context.Background()
++	sockets, err := client.GetServerSockets(ctx, &channelzgrpc.GetServerSocketsRequest{ServerId: serverID})
++	if err != nil {
++		log.Errorf("Error querying GetServerSockets for server %d: %+v", serverID, err)
++		return nil
++	}
++	return sockets
++}
++
+ const serverTemplateHTML = `
+ <table frame=box cellspacing=0 cellpadding=2 class="vertical">
+     <tr>
+@@ -70,7 +96,7 @@ const serverTemplateHTML = `
+         <td>{{.Server.Data.LastCallStartedTimestamp | timestamp}}</td>
+ 	</tr>
+ 	<tr>
+-		<th>Sockets</th>
++		<th>Listen Sockets</th>
+ 		<td>
+ 			{{range .Server.ListenSocket}}
+ 				<a href="{{link "socket" .SocketId}}"><b>{{.SocketId}}</b> {{.Name}}</a> <br/>
+@@ -90,4 +116,14 @@ const serverTemplateHTML = `
+ 		</tr>
+ 	{{end}}
+ </table>
++<table frame=box cellspacing=0 cellpadding=2 class="vertical">
++	<tr>
++		<th>Connection Sockets</th>
++		<td>
++			{{range .Sockets.SocketRef }}
++				<a href="{{link "socket" .SocketId}}"><b>{{.SocketId}}</b> {{.Name}}</a> <br/>
++			{{end}}
++		</td>
++    </tr>
++</table>
+ `
+diff --git a/socket-page.go b/socket-page.go
+index 0bd36ff..5786788 100644
+--- a/socket-page.go
++++ b/socket-page.go
+@@ -56,7 +56,7 @@ const socketTemplateHTML = `
+ 	<tr>
+ 		<th>Socket Local -> Remote</th>
+         <td>
+-			<pre>{{.Socket.Local}} -> {{.Socket.Remote}} {{with .Socket.RemoteName}}({{.}}){{end}}</pre>
++			<pre>{{.Socket.Local | address}} -> {{.Socket.Remote | address}} {{with .Socket.RemoteName}}({{.}}){{end}}</pre>
+ 		</td>
+ 	</tr>
+ 	<tr>
+diff --git a/templates.go b/templates.go
+index 2caac51..9635ec2 100644
+--- a/templates.go
++++ b/templates.go
+@@ -1,10 +1,13 @@
+ package channelz
+ 
+ import (
++	"fmt"
+ 	"io"
++	"net"
+ 	"text/template"
+ 	"time"
+ 
++	channelzgrpc "google.golang.org/grpc/channelz/grpc_channelz_v1"
+ 	log "google.golang.org/grpc/grpclog"
+ 	"google.golang.org/protobuf/types/known/timestamppb"
+ )
+@@ -33,6 +36,7 @@ func parseTemplate(name, html string) *template.Template {
+ func getFuncs() template.FuncMap {
+ 	return template.FuncMap{
+ 		"timestamp": formatTimestamp,
++		"address":   formatAddress,
+ 		"link":      createHyperlink,
+ 	}
+ }
+@@ -41,6 +45,25 @@ func formatTimestamp(ts *timestamppb.Timestamp) string {
+ 	return ts.AsTime().Format(time.RFC3339)
+ }
+ 
++func formatAddress(addr *channelzgrpc.Address) string {
++	if addr == nil {
++		return ""
++	}
++	
++	switch a := addr.GetAddress().(type) {
++	case *channelzgrpc.Address_TcpipAddress:
++		tcpAddr := a.TcpipAddress
++		ip := net.IP(tcpAddr.GetIpAddress())
++		return fmt.Sprintf("%s:%d", ip.String(), tcpAddr.GetPort())
++	case *channelzgrpc.Address_UdsAddress_:
++		return fmt.Sprintf("unix:%s", a.UdsAddress.GetFilename())
++	case *channelzgrpc.Address_OtherAddress_:
++		return fmt.Sprintf("%s:%s", a.OtherAddress.GetName(), a.OtherAddress.GetValue())
++	default:
++		return addr.String()
++	}
++}
++
+ func writeHeader(w io.Writer, title string) {
+ 	if err := headerTemplate.Execute(w, headerData{Title: title}); err != nil {
+ 		log.Errorf("channelz: executing template: %v", err)

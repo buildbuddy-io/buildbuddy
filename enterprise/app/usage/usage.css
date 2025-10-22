@@ -55,5 +55,21 @@
 }
 
 .usage-page .usage-resource-name {
+  margin-top: 4px;
   font-weight: 600;
+}
+
+.usage-page .usage-value {
+  margin-top: 4px;
+  text-align: right;
+}
+
+.usage-page .usage-value-subcategory {
+  text-align: right;
+  color: #757575;
+}
+
+.usage-page .usage-resource-subcategory {
+  margin-left: 24px;
+  color: #757575;
 }

@@ -16,8 +16,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -55,7 +58,7 @@ func setupEnv(t *testing.T) environment.Env {
 	return env
 }
 
-func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (*vfs_server.Server, string) {
+func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (*vfs_server.Server, *vfs.VFS, string) {
 	tmp := testfs.MakeTempDir(t)
 	mnt := filepath.Join(tmp, "vfs")
 	err := os.MkdirAll(mnt, 0755)
@@ -64,11 +67,14 @@ func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (
 	err = os.MkdirAll(back, 0755)
 	require.NoError(t, err)
 
+	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{})
+	require.NoError(t, err)
+	_, err = tf.Start()
+	require.NoError(t, err)
+
 	server, err := vfs_server.New(env, back)
 	require.NoError(t, err)
-	err = server.Prepare(context.Background(), &container.FileSystemLayout{
-		Inputs: tree,
-	})
+	_, err = server.Prepare(context.Background(), &container.FileSystemLayout{Inputs: tree}, tf)
 	require.NoError(t, err)
 
 	client := vfs_server.NewDirectClient(server)
@@ -84,12 +90,12 @@ func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (
 			log.Warningf("unmount failed: %s", err)
 		}
 	})
-	return server, mnt
+	return server, fs, mnt
 }
 
 func setupVFS(t *testing.T) string {
 	env := setupEnv(t)
-	_, path := setupVFSWithInputTree(t, env, &repb.Tree{Root: &repb.Directory{}})
+	_, _, path := setupVFSWithInputTree(t, env, &repb.Tree{Root: &repb.Directory{}})
 	return path
 }
 
@@ -808,6 +814,161 @@ func TestAttrCaching(t *testing.T) {
 	}
 }
 
+func createInputTree(t *testing.T, ctx context.Context, env environment.Env, contents map[string]string) *repb.Tree {
+	tmpDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, tmpDir, contents)
+	var dirs []*repb.Directory
+	var walkDir func(path string) (*repb.Directory, error)
+	walkDir = func(path string) (*repb.Directory, error) {
+		dir := &repb.Directory{}
+		de, err := os.ReadDir(path)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range de {
+			if e.IsDir() {
+				childDir, err := walkDir(filepath.Join(path, e.Name()))
+				if err != nil {
+					return nil, err
+				}
+				dn, err := cachetools.UploadProtoToCAS(ctx, env.GetCache(), "", repb.DigestFunction_SHA256, childDir)
+				if err != nil {
+					return nil, err
+				}
+				dirNode := &repb.DirectoryNode{Name: e.Name(), Digest: dn}
+				dir.Directories = append(dir.Directories, dirNode)
+			} else {
+				d, err := digest.ComputeForFile(filepath.Join(path, e.Name()), repb.DigestFunction_SHA256)
+				if err != nil {
+					return nil, err
+				}
+				rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+				data, err := os.ReadFile(filepath.Join(path, e.Name()))
+				if err != nil {
+					return nil, err
+				}
+				err = env.GetCache().Set(ctx, rn.ToProto(), data)
+				if err != nil {
+					return nil, err
+				}
+				dir.Files = append(dir.Files, &repb.FileNode{Name: e.Name(), Digest: d})
+			}
+		}
+		dirs = append(dirs, dir)
+		return dir, nil
+	}
+	rootDir, err := walkDir(tmpDir)
+	require.NoError(t, err)
+	return &repb.Tree{
+		Root:     rootDir,
+		Children: dirs,
+	}
+}
+
+func getDirChildren(t *testing.T, path string) []string {
+	de, err := os.ReadDir(path)
+	require.NoError(t, err)
+	var names []string
+	for _, e := range de {
+		names = append(names, e.Name())
+	}
+	return names
+}
+
+func TestLayoutUpdate(t *testing.T) {
+	env := setupEnv(t)
+
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
+	require.NoError(t, err)
+
+	tree := createInputTree(t, ctx, env, map[string]string{
+		"foo/bar/baz": "hello",
+		"foo/bar/boo": "bye",
+	})
+	server, client, fsPath := setupVFSWithInputTree(t, env, tree)
+
+	children := getDirChildren(t, filepath.Join(fsPath, "foo/bar"))
+	require.Equal(t, []string{"baz", "boo"}, children)
+
+	_, err = os.ReadFile(filepath.Join(fsPath, "foo/bar/baz"))
+	require.NoError(t, err)
+
+	// Add a new input to an existing directory.
+	// Verify that the new file is visible in directory contents and that
+	// the file can be read.
+	{
+		newTree := createInputTree(t, ctx, env, map[string]string{
+			"foo/bar/newfile": "new",
+		})
+
+		tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, newTree, &dirtools.DownloadTreeOpts{})
+		require.NoError(t, err)
+		_, err = tf.Start()
+		require.NoError(t, err)
+		invalidated, err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: newTree}, tf)
+		require.NoError(t, err)
+		err = client.PrepareForTask(ctx, "foo", invalidated)
+		require.NoError(t, err)
+
+		children = getDirChildren(t, filepath.Join(fsPath, "foo/bar"))
+		require.Equal(t, []string{"baz", "boo", "newfile"}, children)
+
+		data, err := os.ReadFile(filepath.Join(fsPath, "foo/bar/newfile"))
+		require.NoError(t, err)
+		require.Equal(t, "new", string(data))
+	}
+
+	// Replace an existing file input with different content.
+	// Verify that the new contents can be read.
+	{
+		newContent := "changedcontent"
+		newTree := createInputTree(t, ctx, env, map[string]string{
+			"foo/bar/newfile": newContent,
+		})
+
+		tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, newTree, &dirtools.DownloadTreeOpts{})
+		require.NoError(t, err)
+		_, err = tf.Start()
+		require.NoError(t, err)
+		invalidated, err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: newTree}, tf)
+		require.NoError(t, err)
+		err = client.PrepareForTask(ctx, "foo", invalidated)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(filepath.Join(fsPath, "foo/bar/newfile"))
+		require.NoError(t, err)
+		require.Equal(t, newContent, string(data))
+		rs := rawStat(t, filepath.Join(fsPath, "foo/bar/newfile"))
+		require.EqualValues(t, len(newContent), rs.Size)
+	}
+
+	// Replace an existing file with a directory of the same name.
+	{
+		content := "world"
+		newTree := createInputTree(t, ctx, env, map[string]string{
+			"foo/bar/newfile/hello.txt": content,
+		})
+
+		tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, newTree, &dirtools.DownloadTreeOpts{})
+		require.NoError(t, err)
+		_, err = tf.Start()
+		require.NoError(t, err)
+		invalidated, err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: newTree}, tf)
+		require.NoError(t, err)
+		err = client.PrepareForTask(ctx, "foo", invalidated)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(filepath.Join(fsPath, "foo/bar/newfile/hello.txt"))
+		require.NoError(t, err)
+		require.Equal(t, content, string(data))
+		rs := rawStat(t, filepath.Join(fsPath, "foo/bar/newfile/hello.txt"))
+		require.EqualValues(t, len(content), rs.Size)
+
+		children := getDirChildren(t, filepath.Join(fsPath, "foo/bar/newfile"))
+		require.Equal(t, []string{"hello.txt"}, children)
+	}
+}
+
 func TestComputeStats(t *testing.T) {
 	env := setupEnv(t)
 
@@ -826,36 +987,31 @@ func TestComputeStats(t *testing.T) {
 	err = env.GetCache().Set(ctx, rn3, buf)
 	require.NoError(t, err)
 
-	server, fsPath := setupVFSWithInputTree(t, env, &repb.Tree{Root: &repb.Directory{
+	server, _, fsPath := setupVFSWithInputTree(t, env, &repb.Tree{Root: &repb.Directory{
 		Files: []*repb.FileNode{
 			{Name: "test1", Digest: rn1.GetDigest()},
 			{Name: "test2", Digest: rn2.GetDigest()},
 			{Name: "test3", Digest: rn3.GetDigest()},
 		},
 	}})
-	stats := server.ComputeStats()
+	vfsStats := server.ComputeStats()
+	require.NoError(t, err)
 
 	// Check stats before we do anything. Only CAS input size/count should be
 	// populated.
-	require.EqualValues(t, 3, stats.CasFilesCount)
-	require.EqualValues(t, 0, stats.CasFilesAccessedCount)
-	require.EqualValues(t, 650, stats.CasFilesSizeBytes)
-	require.EqualValues(t, 0, stats.CasFilesAccessedBytes)
-	require.EqualValues(t, 0, stats.FileDownloadCount)
-	require.EqualValues(t, 0, stats.FileDownloadSizeBytes)
-	require.EqualValues(t, 0, stats.FileDownloadDurationUsec)
+	require.EqualValues(t, 3, vfsStats.CasFilesCount)
+	require.EqualValues(t, 0, vfsStats.CasFilesAccessedCount)
+	require.EqualValues(t, 650, vfsStats.CasFilesSizeBytes)
+	require.EqualValues(t, 0, vfsStats.CasFilesAccessedBytes)
 
 	_, err = os.ReadFile(filepath.Join(fsPath, "test1"))
 	require.NoError(t, err)
 
-	stats = server.ComputeStats()
-	require.EqualValues(t, 3, stats.CasFilesCount)
-	require.EqualValues(t, 1, stats.CasFilesAccessedCount)
-	require.EqualValues(t, 650, stats.CasFilesSizeBytes)
-	require.EqualValues(t, 100, stats.CasFilesAccessedBytes)
-	require.EqualValues(t, 1, stats.FileDownloadCount)
-	require.EqualValues(t, 100, stats.FileDownloadSizeBytes)
-	require.Greater(t, stats.FileDownloadDurationUsec, int64(0))
+	vfsStats = server.ComputeStats()
+	require.EqualValues(t, 3, vfsStats.CasFilesCount)
+	require.EqualValues(t, 1, vfsStats.CasFilesAccessedCount)
+	require.EqualValues(t, 650, vfsStats.CasFilesSizeBytes)
+	require.EqualValues(t, 100, vfsStats.CasFilesAccessedBytes)
 }
 
 func TestRenameWhiteout(t *testing.T) {

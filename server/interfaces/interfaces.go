@@ -10,13 +10,14 @@ import (
 	"os"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-github/v59/github"
 	"github.com/hashicorp/serf/serf"
+	"github.com/miekg/dns"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
@@ -40,6 +41,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	ropb "github.com/buildbuddy-io/buildbuddy/proto/routing"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	cssrpb "github.com/buildbuddy-io/buildbuddy/proto/search"
@@ -50,10 +52,12 @@ import (
 	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
+	ulpb "github.com/buildbuddy-io/buildbuddy/proto/user_list"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/genproto/googleapis/longrunning"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
@@ -85,20 +89,29 @@ type BasicAuthToken interface {
 type GroupMembership struct {
 	GroupID      string             `json:"group_id"`
 	Capabilities []cappb.Capability `json:"capabilities"`
-	// DEPRECATED. Check Capabilities instead.
-	Role role.Role `json:"role"`
+}
+
+type APIKeyInfo struct {
+	ID           string
+	OwnerGroupID string
 }
 
 type UserInfo interface {
 	jwt.Claims
 
-	// ID of the API Key used to authenticate the request or empty if an API
-	// key was not used.
-	GetAPIKeyID() string
+	// GetAPIKeyInfo returns the metadata for the API key used for
+	// authentication. An empty struct will be returned if an API key
+	// was not used.
+	GetAPIKeyInfo() APIKeyInfo
 	// ID of the authenticated user. Empty if authenticated using an Org API
 	// key.
 	GetUserID() string
 	GetGroupID() string
+	// GetExperimentTargetingGroupID returns the group ID used for experiment
+	// targeting purposes. This should return the same value as GetGroupID()
+	// except when a server admin is setting a special header to target a
+	// different group for debugging purposes.
+	GetExperimentTargetingGroupID() string
 	// IsImpersonating returns whether the group ID is being impersonated by the
 	// user. This means that the user is not actually a member of the group, but
 	// is temporarily acting as a group member. Only server admins have this
@@ -129,8 +142,6 @@ const (
 )
 
 type InstallationAuthenticator interface {
-	// The ID of the admin group
-	AdminGroupID() string
 	// Whether or not anonymous usage is enabled
 	AnonymousUsageEnabled(ctx context.Context) bool
 	// Return a slice containing the providers
@@ -236,11 +247,12 @@ type BuildEventHandler interface {
 }
 
 type GitHubStatusService interface {
-	GetStatusClient(accessToken string) GitHubStatusClient
+	GetStatusClient() GitHubStatusClient
 }
 
 type GitHubStatusClient interface {
 	CreateStatus(ctx context.Context, ownerRepo, commitSHA string, payload *github.RepoStatus) error
+	IsStatusReportingEnabled(ctx context.Context, repoURL string) (bool, error)
 }
 
 // A Blobstore must allow for reading, writing, and deleting blobs.
@@ -468,7 +480,7 @@ type AuthDB interface {
 	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
 
 	// CreateAPIKey creates a group-level API key.
-	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []cappb.Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []cappb.Capability, expiresIn time.Duration, visibleToDevelopers bool) (*tables.APIKey, error)
 
 	// CreateAPIKeyWithoutAuthCheck creates a group-level API key without
 	// checking that the user has admin rights on the group. This should only
@@ -489,7 +501,7 @@ type AuthDB interface {
 	// user must be a member of the group. If the request is not authenticated
 	// as the given user, then the authenticated user or API key must have
 	// ORG_ADMIN capability.
-	CreateUserAPIKey(ctx context.Context, groupID, userID, label string, capabilities []cappb.Capability) (*tables.APIKey, error)
+	CreateUserAPIKey(ctx context.Context, groupID, userID, label string, capabilities []cappb.Capability, expiresIn time.Duration) (*tables.APIKey, error)
 
 	// GetAPIKey returns an API key by ID. The key may be user-owned or
 	// group-owned.
@@ -560,6 +572,15 @@ type UserDB interface {
 	// DeleteUserGitHubToken deletes the authenticated user's GitHub token.
 	DeleteUserGitHubToken(ctx context.Context) error
 
+	// User List API
+
+	CreateUserList(ctx context.Context, userList *tables.UserList) error
+	UpdateUserList(ctx context.Context, userList *tables.UserList) error
+	GetUserLists(ctx context.Context, groupID string) ([]*ulpb.UserList, error)
+	GetUserList(ctx context.Context, userListID string) (*ulpb.UserList, error)
+	DeleteUserList(ctx context.Context, userListID string) error
+	UpdateUserListMembers(ctx context.Context, userListID string, updates []*ulpb.UpdateUserListMembershipRequest_Update) error
+
 	// Secrets API
 
 	GetOrCreatePublicKey(ctx context.Context, groupID string) (string, error)
@@ -576,6 +597,7 @@ type InvocationStatService interface {
 	GetTrend(ctx context.Context, req *stpb.GetTrendRequest) (*stpb.GetTrendResponse, error)
 	GetStatHeatmap(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*stpb.GetStatHeatmapResponse, error)
 	GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error)
+	GetTargetTrends(ctx context.Context, req *stpb.GetTargetTrendsRequest) (*stpb.GetTargetTrendsResponse, error)
 }
 
 // Allows searching invocations.
@@ -644,6 +666,10 @@ type SnapshotService interface {
 	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error)
 }
 
+type DNSClient interface {
+	Exchange(m *dns.Msg, address string) (r *dns.Msg, rtt time.Duration, err error)
+}
+
 // GitHubApp represents a specific instance of either the read-only or read-write
 // BuildBuddy GitHub app.
 type GitHubApp interface {
@@ -657,6 +683,7 @@ type GitHubApp interface {
 
 	LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.LinkRepoResponse, error)
 	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
+	UpdateRepoSettings(context.Context, *ghpb.UpdateRepoSettingsRequest) (*ghpb.UpdateRepoSettingsResponse, error)
 
 	GetAccessibleGitHubRepos(context.Context, *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error)
 
@@ -843,7 +870,7 @@ type SplashPrinter interface {
 }
 
 type RemoteExecutionService interface {
-	Dispatch(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action) (string, error)
+	Dispatch(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, executionID string) error
 	Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error
 	WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error
 	PublishOperation(stream repb.Execution_PublishOperationServer) error
@@ -895,7 +922,7 @@ type SchedulerService interface {
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	TaskExists(ctx context.Context, req *scpb.TaskExistsRequest) (*scpb.TaskExistsResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
-	GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType PoolType) (*PoolInfo, error)
+	GetPoolInfo(ctx context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType PoolType) (*PoolInfo, error)
 	GetSharedExecutorPoolGroupID() string
 }
 
@@ -1035,6 +1062,9 @@ type TaskLease interface {
 // runners can be added back to the pool, then later retrieved from the pool
 // to execute a new task.
 type Runner interface {
+	// Metadata returns metadata about the runner.
+	Metadata() *espb.RunnerMetadata
+
 	// PrepareForTask prepares the filesystem for the task assigned to the runner,
 	// downloading the task's container image if applicable and cleaning up the
 	// workspace state from the previously assigned task if applicable.
@@ -1042,9 +1072,7 @@ type Runner interface {
 
 	// DownloadInputs downloads any input files associated with the task assigned
 	// to the runner.
-	//
-	// It populates the download stat fields in the given IOStats.
-	DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error
+	DownloadInputs(ctx context.Context) error
 
 	// Run runs the task that is currently assigned to the runner.
 	Run(ctx context.Context, ioStats *repb.IOStats) *CommandResult
@@ -1061,6 +1089,14 @@ type Runner interface {
 	// GetIsolationType returns the runner's effective isolation type as a
 	// string, such as "none" or "podman".
 	GetIsolationType() string
+}
+
+type CacheRoutingService interface {
+	GetCacheRoutingConfig(ctx context.Context) (*ropb.CacheRoutingConfig, error)
+	GetCASClients(ctx context.Context) (repb.ContentAddressableStorageClient, repb.ContentAddressableStorageClient, error)
+	GetACClients(ctx context.Context) (repb.ActionCacheClient, repb.ActionCacheClient, error)
+	GetBSClients(ctx context.Context) (bspb.ByteStreamClient, bspb.ByteStreamClient, error)
+	GetPrimaryCapabilitiesClient(ctx context.Context) (repb.CapabilitiesClient, error)
 }
 
 // Pool is responsible for assigning tasks to runners.
@@ -1273,13 +1309,23 @@ type HealthChecker interface {
 
 	// Implements the proto healthcheck interface.
 	Check(ctx context.Context, req *hlpb.HealthCheckRequest) (*hlpb.HealthCheckResponse, error)
+	List(ctx context.Context, req *hlpb.HealthListRequest) (*hlpb.HealthListResponse, error)
 	Watch(req *hlpb.HealthCheckRequest, stream hlpb.Health_WatchServer) error
 }
 
 // Locates all Xcode versions installed on the host system.
 type XcodeLocator interface {
-	// Finds the Xcode that matches the given Xcode version.
-	// Returns the developer directory for that Xcode and the SDK root for the given SDK.
+	// Returns a slice containing the most specific version specifier for each
+	// Xcode installed on this host. E.g.: ["16.2.0.16C503", "16.0.0.16A242"]
+	Versions() []string
+
+	// Returns a slice containing the most specific version specifier for each
+	// Xcode SDK installed on this host. E.g.:
+	// ["iPhoneOS18.2", "iPhoneSimulator18.2"]
+	SDKs() []string
+
+	// Finds the Xcode matching the given Xcode version selector. Returns the
+	// developer directory for that Xcode and the SDK root for the given SDK.
 	PathsForVersionAndSDK(xcodeVersion string, sdk string) (string, string, error)
 }
 
@@ -1334,10 +1380,11 @@ type DistributedLock interface {
 // QuotaManager manages quota.
 type QuotaManager interface {
 	// Allow checks whether a user (identified from the ctx) has exceeded a rate
-	// limit inside the namespace.
+	// limit inside the namespace and returns ResourceExhaustedError
+	// when it's not allowed.
 	// If the rate limit has not been exceeded, the underlying storage is updated
 	// by the supplied quantity.
-	Allow(ctx context.Context, namespace string, quantity int64) (bool, error)
+	Allow(ctx context.Context, namespace string, quantity int64) error
 
 	GetNamespace(ctx context.Context, req *qpb.GetNamespaceRequest) (*qpb.GetNamespaceResponse, error)
 	RemoveNamespace(ctx context.Context, req *qpb.RemoveNamespaceRequest) (*qpb.RemoveNamespaceResponse, error)
@@ -1460,6 +1507,7 @@ type ExecutionCollector interface {
 	// available starting from the start index.
 	GetExecutions(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error)
 	DeleteExecutions(ctx context.Context, iid string) error
+	ExpireExecutions(ctx context.Context, iid string, ttl time.Duration) error
 	AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error
 	GetInvocation(ctx context.Context, iid string) (*sipb.StoredInvocation, error)
 	AddExecutionInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink, bidirectional bool) error
@@ -1490,6 +1538,8 @@ type Crypter interface {
 
 	NewEncryptor(ctx context.Context, d *repb.Digest, w CommittedWriteCloser) (Encryptor, error)
 	NewDecryptor(ctx context.Context, d *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata) (Decryptor, error)
+
+	enpb.EncryptionServiceServer
 }
 
 // Provides a duplicate function call suppression mechanism, just like the
@@ -1499,7 +1549,14 @@ type SingleFlightDeduper interface {
 }
 
 type PromQuerier interface {
+	// FetchMetrics runs the configured metrics queries for the given group.
+	// TODO: use federation for this.
 	FetchMetrics(ctx context.Context, groupID string) ([]*dto.MetricFamily, error)
+
+	// FetchFederatedMetrics fetches metrics from the configured prometheus
+	// API and writes the metrics to the given writer.
+	// The given query params can be used to set match parameters.
+	FetchFederatedMetrics(ctx context.Context, w io.Writer, match string) error
 }
 
 // ConfigSecretProvider provides secrets interpolation into configs.
@@ -1549,6 +1606,7 @@ const (
 	ClientIdentityExecutor       = "executor"
 	ClientIdentityApp            = "app"
 	ClientIdentityWorkflow       = "workflow"
+	ClientIdentityCacheProxy     = "cache-proxy"
 	ClientIdentityInternalOrigin = "internal"
 )
 
@@ -1672,8 +1730,14 @@ type RegistryService interface {
 }
 
 type AtimeUpdater interface {
-	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value)
-	EnqueueByResourceName(ctx context.Context, downloadString string)
+	// Enqueues atime updates for the provided instanceName, digestFunction,
+	// and set of digests provided. Returns true if the updates were
+	// successfully enqueued, false if not.
+	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool
+
+	// Enqueues atime updates for the provided resource name. Returns true if
+	// the update was successfully enqueued, false if not.
+	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool
 }
 
 type CPULeaser interface {
@@ -1747,15 +1811,46 @@ type HitTrackerFactory interface {
 
 	// Creates a new HitTracker for tracking ByteStream/CAS hits.
 	NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) HitTracker
+
+	// Creates a new HitTracker for tracking Action Cache hits.
+	NewRemoteACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) HitTracker
+
+	// Creates a new HitTracker for tracking ByteStream/CAS hits.
+	NewRemoteCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) HitTracker
 }
 
 // ExperimentFlagProvider can be use for getting a flag value for a request to
 // enable or disable some experimental functionality. The experiment config is
 // managed outside of the app.
+//
+// Two different sets of methods are provided:
+//   - Boolean, String, Float64, Int64, Object: returns the flag value directly.
+//   - BooleanDetails, StringDetails, Float64Details, Int64Details, ObjectDetails:
+//     returns the flag value and details, including variant name.
 type ExperimentFlagProvider interface {
 	Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool
 	String(ctx context.Context, flagName string, defaultValue string, opts ...any) string
 	Float64(ctx context.Context, flagName string, defaultValue float64, opts ...any) float64
 	Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64
 	Object(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) map[string]any
+
+	BooleanDetails(ctx context.Context, flagName string, defaultValue bool, opts ...any) (bool, ExperimentFlagDetails)
+	StringDetails(ctx context.Context, flagName string, defaultValue string, opts ...any) (string, ExperimentFlagDetails)
+	Float64Details(ctx context.Context, flagName string, defaultValue float64, opts ...any) (float64, ExperimentFlagDetails)
+	Int64Details(ctx context.Context, flagName string, defaultValue int64, opts ...any) (int64, ExperimentFlagDetails)
+	ObjectDetails(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) (map[string]any, ExperimentFlagDetails)
+}
+
+// ExperimentFlagDetails contains details about the flag evaluation.
+type ExperimentFlagDetails interface {
+	// Variant returns the variant name. If the flag is either not configured or
+	// could not be evaluated, it returns an empty string.
+	Variant() string
+}
+
+// Wrapper around a bspb.ByteStream_ReadServer that supports directly providing
+// a parsed CAS resource name for Read() to avoid having to reparse one.
+type ByteStreamServer interface {
+	bspb.ByteStreamServer
+	ReadCASResource(ctx context.Context, rn *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error
 }

@@ -1,25 +1,5 @@
 package cli_command
 
-import (
-	"github.com/buildbuddy-io/buildbuddy/cli/add"
-	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
-	"github.com/buildbuddy-io/buildbuddy/cli/ask"
-	"github.com/buildbuddy-io/buildbuddy/cli/download"
-	"github.com/buildbuddy-io/buildbuddy/cli/execute"
-	"github.com/buildbuddy-io/buildbuddy/cli/explain"
-	"github.com/buildbuddy-io/buildbuddy/cli/fix"
-	"github.com/buildbuddy-io/buildbuddy/cli/index"
-	"github.com/buildbuddy-io/buildbuddy/cli/login"
-	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
-	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
-	"github.com/buildbuddy-io/buildbuddy/cli/remote_download"
-	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
-	"github.com/buildbuddy-io/buildbuddy/cli/search"
-	"github.com/buildbuddy-io/buildbuddy/cli/update"
-	"github.com/buildbuddy-io/buildbuddy/cli/upload"
-	"github.com/buildbuddy-io/buildbuddy/cli/versioncmd"
-)
-
 type Command struct {
 	Name    string
 	Help    string
@@ -27,98 +7,32 @@ type Command struct {
 	Aliases []string
 }
 
-var Commands = []Command{
-	{
-		Name:    "add",
-		Help:    "Adds a dependency to your WORKSPACE file.",
-		Handler: add.HandleAdd,
-	},
-	{
-		Name:    "analyze",
-		Help:    "Analyzes the dependency graph.",
-		Handler: analyze.HandleAnalyze,
-	},
-	{
-		Name:    "ask",
-		Help:    "Asks for suggestions about your last invocation.",
-		Handler: ask.HandleAsk,
-		Aliases: []string{"wtf", "huh"},
-	},
-	{
-		Name:    "download",
-		Help:    "Downloads artifacts from a remote cache.",
-		Handler: download.HandleDownload,
-	},
-	{
-		Name:    "execute",
-		Help:    "Executes arbitrary commands using remote execution.",
-		Handler: execute.HandleExecute,
-	},
-	{
-		Name:    "fix",
-		Help:    "Applies fixes to WORKSPACE and BUILD files.",
-		Handler: fix.HandleFix,
-	},
-	// Handle 'help' command separately to avoid circular dependency with `cli_command`
-	// package
-	{
-		Name:    "install",
-		Help:    "Installs a bb plugin (https://buildbuddy.io/plugins).",
-		Handler: plugin.HandleInstall,
-	},
-	{
-		Name:    "login",
-		Help:    "Configures bb commands to use your BuildBuddy API key.",
-		Handler: login.HandleLogin,
-	},
-	{
-		Name:    "logout",
-		Help:    "Configures bb commands to no longer use your saved API key.",
-		Handler: login.HandleLogout,
-	},
-	{
-		Name:    "print",
-		Help:    "Displays various log file types written by bazel.",
-		Handler: printlog.HandlePrint,
-	},
-	{
-		Name:    "remote",
-		Help:    "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service.",
-		Handler: remotebazel.HandleRemoteBazel,
-	},
-	{
-		Name:    "remote-download",
-		Help:    "Fetches a remote asset via an intermediate cache.",
-		Handler: remote_download.HandleRemoteDownload,
-	},
-	{
-		Name:    "search",
-		Help:    "Searches for code in the remote codesearch index.",
-		Handler: search.HandleSearch,
-	},
-	{
-		Name:    "index",
-		Help:    "Sends updates to the remote codesearch index.",
-		Handler: index.HandleIndex,
-	},
-	{
-		Name:    "update",
-		Help:    "Updates the bb CLI to the latest version.",
-		Handler: update.HandleUpdate,
-	},
-	{
-		Name:    "upload",
-		Help:    "Uploads files to the remote cache.",
-		Handler: upload.HandleUpload,
-	},
-	{
-		Name:    "version",
-		Help:    "Prints bb cli version info.",
-		Handler: versioncmd.HandleVersion,
-	},
-	{
-		Name:    "explain",
-		Help:    "Explains the difference between two compact execution logs.",
-		Handler: explain.HandleExplain,
-	},
+var (
+	// Commands is a slice of all known CLI commands, sorted by their Name fields.
+	//
+	// It is nil until Register in cli_command/register is called.
+	Commands []*Command
+
+	// CommandsByName is a map of every known CLI command, each indexed by its
+	// Name field.
+	//
+	// It is nil until Register in cli_command/register is called.
+	CommandsByName map[string]*Command
+
+	// Aliases maps every known alias to its corresponding CLI command.
+	//
+	// It is nil until Register in cli_command/register is called.
+	Aliases map[string]*Command
+)
+
+// GetCommand returns the Command corresponding to the provided command name or
+// alias, or nil if no such Command exists.
+func GetCommand(commandName string) *Command {
+	if command, ok := CommandsByName[commandName]; ok {
+		return command
+	}
+	if command, ok := Aliases[commandName]; ok {
+		return command
+	}
+	return nil
 }

@@ -9,7 +9,6 @@ ts_library(
     srcs = ["trends.tsx"],
     deps = [
         "//:node_modules/@types/long",
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/long",
         "//:node_modules/moment",
@@ -39,10 +38,11 @@ ts_library(
     srcs = ["common.ts"],
     deps = [
         "//:node_modules/@types/d3-time",
-        "//:node_modules/@types/moment",
         "//:node_modules/d3-time",
         "//:node_modules/moment",
         "//:node_modules/tslib",
+        "//app/format",
+        "//enterprise/app/filter:filter_util",
         "//proto:stat_filter_ts_proto",
         "//proto:stats_ts_proto",
     ],
@@ -64,7 +64,6 @@ ts_library(
     name = "trends_requests",
     srcs = ["trends_requests.ts"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/moment",
         "//:node_modules/tslib",
         "//app/capabilities",
@@ -92,7 +91,6 @@ ts_library(
     srcs = ["drilldown_page.tsx"],
     deps = [
         "//:node_modules/@types/long",
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/long",
         "//:node_modules/lucide-react",
@@ -106,7 +104,6 @@ ts_library(
         "//app/components/select",
         "//app/components/spinner",
         "//app/errors:error_service",
-        "//app/format",
         "//app/invocation:invocation_card",
         "//app/invocation:invocation_execution_table",
         "//app/router",
@@ -129,7 +126,6 @@ ts_library(
     deps = [
         "//:node_modules/@types/d3-scale",
         "//:node_modules/@types/long",
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/d3-scale",
         "//:node_modules/long",

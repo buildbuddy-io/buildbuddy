@@ -713,7 +713,7 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 // is passed as the first argument.
 //
 // See cli/example_plugins/go-deps/post_bazel.sh for an example.
-func (p *Plugin) PostBazel(bazelOutputPath string) error {
+func (p *Plugin) PostBazel(bazelOutputPath string, exitCode int) error {
 	path, err := p.Path()
 	if err != nil {
 		return err
@@ -734,6 +734,7 @@ func (p *Plugin) PostBazel(bazelOutputPath string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
 	cmd.Env = p.commandEnv()
+	cmd.Env = append(cmd.Env, fmt.Sprintf("BAZEL_EXIT_CODE=%d", exitCode))
 	if err := cmd.Run(); err != nil {
 		return status.InternalErrorf("Post-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
 	}

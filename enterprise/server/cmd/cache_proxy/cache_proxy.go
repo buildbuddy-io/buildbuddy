@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 
@@ -12,16 +13,24 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/batch_operator"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_action_cache_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_byte_stream_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_capabilities_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_content_addressable_storage_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_service"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -38,8 +47,8 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
-	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	channelzservice "google.golang.org/grpc/channelz/service"
 )
 
 var (
@@ -93,6 +102,9 @@ func main() {
 	env.SetAuthenticator(authenticator)
 
 	hit_tracker_client.Register(env)
+	if err := remote_crypter.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	// Configure a local cache.
 	if err := pebble_cache.Register(env); err != nil {
@@ -104,10 +116,15 @@ func main() {
 	if err := distributed.Register(env); err != nil {
 		log.Fatal(err.Error())
 	}
+	usageutil.SetServerName("cache-proxy")
 
 	env.SetListenAddr(*listen)
 	if err := ssl.Register(env); err != nil {
 		log.Fatalf("%v", err)
+	}
+
+	if err := startInternalGRPCServers(env); err != nil {
+		log.Fatalf("Could not start internal GRPC server: %s", err)
 	}
 
 	if err := startGRPCServers(env); err != nil {
@@ -137,21 +154,32 @@ func main() {
 			Handler:   server.Handler,
 			TLSConfig: tlsConfig,
 		}
+		sslListener, err := net.Listen("tcp", sslServer.Addr)
+		if err != nil {
+			log.Fatalf("Failed to listen on SSL port %d: %s", *sslPort, err)
+		}
 		go func() {
 			log.Debugf("Listening for HTTPS traffic on %s", sslServer.Addr)
-			sslServer.ListenAndServeTLS("", "")
+			_ = sslServer.ServeTLS(sslListener, "", "")
 		}()
+		httpListener, err := net.Listen("tcp", server.Addr)
+		if err != nil {
+			log.Fatalf("Failed to listen on port %d: %s", *port, err)
+		}
 		go func() {
-			addr := fmt.Sprintf("%s:%d", *listen, *port)
-			log.Debugf("Listening for HTTP traffic on %s", addr)
-			http.ListenAndServe(addr, http_interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
+			log.Debugf("Listening for HTTP traffic on %s", server.Addr)
+			_ = http.Serve(httpListener, http_interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
 		}()
 	} else {
 		log.Debug("SSL Disabled")
 		// If no SSL is enabled, we'll just serve things as-is.
+		lis, err := net.Listen("tcp", server.Addr)
+		if err != nil {
+			log.Fatalf("Failed to listen on port %d: %s", *port, err)
+		}
 		go func() {
 			log.Debugf("Listening for HTTP traffic on %s", server.Addr)
-			server.ListenAndServe()
+			_ = server.Serve(lis)
 		}()
 	}
 
@@ -197,16 +225,61 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 	return nil
 }
 
+func startInternalGRPCServers(env *real_environment.RealEnv) error {
+	b, err := grpc_server.New(env, grpc_server.InternalGRPCPort(), false /*=ssl*/, grpc_server.GRPCServerConfig{})
+	if err != nil {
+		return err
+	}
+	channelzservice.RegisterChannelzServiceToServer(b.GetServer())
+	if err = b.Start(); err != nil {
+		return err
+	}
+	env.SetInternalGRPCServer(b.GetServer())
+	return nil
+}
+
 func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv) {
 	// Connect to the remote cache and initialize gRPC clients.
 	conn, err := grpc_client.DialInternal(env, *remoteCache)
 	if err != nil {
 		log.Fatalf("Error dialing remote cache: %s", err.Error())
 	}
-	env.SetActionCacheClient(repb.NewActionCacheClient(conn))
-	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
-	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
-	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	if routing_service.IsCacheRoutingEnabled() {
+		if err := routing_service.RegisterRoutingService(env); err != nil {
+			log.Fatalf("Error initializing routing service: %s", err.Error())
+		}
+
+		noopRouter := batch_operator.NewNoopDigestOperator()
+
+		ac, err := routing_action_cache_client.New(env, noopRouter, noopRouter, noopRouter)
+		if err != nil {
+			log.Fatalf("Error initializing routing action cache client: %s", err.Error())
+		}
+		env.SetActionCacheClient(ac)
+
+		cap, err := routing_capabilities_client.New(env)
+		if err != nil {
+			log.Fatalf("Error initializing routing capabilities client: %s", err.Error())
+		}
+		env.SetCapabilitiesClient(cap)
+
+		bs, err := routing_byte_stream_client.New(env, noopRouter, noopRouter, noopRouter)
+		if err != nil {
+			log.Fatalf("Error initializing routing bytestream client: %s", err.Error())
+		}
+		env.SetByteStreamClient(bs)
+
+		cas, err := routing_content_addressable_storage_client.New(env, noopRouter, noopRouter, noopRouter, noopRouter)
+		if err != nil {
+			log.Fatalf("Error initializing routing CAS client: %s", err.Error())
+		}
+		env.SetContentAddressableStorageClient(cas)
+	} else {
+		env.SetActionCacheClient(repb.NewActionCacheClient(conn))
+		env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
+		env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	}
 
 	// The atime updater must be registered after the remote CAS client (which
 	// it depends on), but before the local CAS server (which depends on it).

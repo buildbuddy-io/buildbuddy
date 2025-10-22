@@ -340,3 +340,60 @@ a.menu__link.menu__link--active.menu__link--sublist {
 .navbar__logo:hover::before {
   opacity: 1;
 }
+
+.markdown .docs-block-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.markdown .docs-block {
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  background-image: none !important;
+  border-radius: 8px;
+  padding: 0;
+  transition: all 0.2s ease-in-out;
+}
+
+.markdown .docs-block:hover {
+  box-shadow: 0 0 10px 0 rgba(0, 0, 0, 0.1);
+}
+
+.markdown .docs-block-icon {
+  padding: 48px 16px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px 8px 0 0;
+  background-color: #000;
+  transition: all 0.2s ease-in-out;
+}
+
+.markdown .docs-block:hover .docs-block-icon {
+  background-color: #03a9f4;
+}
+
+.markdown .docs-block p {
+  margin-bottom: 0;
+}
+
+.markdown .docs-block-content {
+  padding: 16px 16px 16px 16px;
+  border: 1px solid #e0e0e0;
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  flex-grow: 1;
+}
+
+.markdown .docs-block-title {
+  font-size: 1.2em;
+  font-weight: 700;
+  margin-bottom: 1;
+}
+
+.markdown .docs-block-description {
+  font-size: 1em;
+}

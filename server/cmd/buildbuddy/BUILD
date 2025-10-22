@@ -1,6 +1,7 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//rules:utils.bzl", "runfiles_directory")
 
 # Use the go_binary rule to create an executable from our main file. Depend on
 # the static_content we created above so they are included.
@@ -30,7 +31,7 @@ container_image(
     name = "base_image",
     base = "@buildbuddy_go_image_base//image",
     symlinks = {
-        "config.yaml": "app/server/cmd/buildbuddy/buildbuddy.runfiles/buildbuddy/config/buildbuddy.release.yaml",
+        "config.yaml": "app/server/cmd/buildbuddy/buildbuddy.runfiles/%s/config/buildbuddy.release.yaml" % runfiles_directory(),
         "buildbuddy": "tmp",
     },
     tags = [

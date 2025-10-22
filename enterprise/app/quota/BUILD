@@ -79,7 +79,6 @@ ts_library(
         "//app/components/button",
         "//app/components/button:link_button",
         "//app/components/dialog:simple_modal_dialog",
-        "//app/components/spinner",
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:quota_ts_proto",

@@ -178,7 +178,7 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 	return cfg, nil
 }
 
-const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.75-buildbuddy.tar.gz"
+const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.76-buildbuddy.tar.gz"
 
 func checkoutKythe(dirName, downloadURL string) string {
 	buf := fmt.Sprintf(`
@@ -220,7 +220,7 @@ if [ "$BZLMOD_ENABLED" -eq 1 ]; then
 	# manually adding to MODULE.bazel.
     if [ $BZL_MAJOR_VERSION -lt 8 ]; then
         echo "Adding kythe repository to MODULE.bazel"
-        echo -e '\nbazel_dep(name = "kythe", version = "0.0.75")' >> MODULE.bazel
+        echo -e '\nbazel_dep(name = "kythe", version = "0.0.76")' >> MODULE.bazel
         echo "local_path_override(module_name=\"kythe\", path=\"$KYTHE_DIR\")" >> MODULE.bazel
 	else
         KYTHE_ARGS="--inject_repository=kythe_release=$KYTHE_DIR"
@@ -229,10 +229,12 @@ else
     # override_repository always works if bzlmod is disabled.
 	KYTHE_ARGS="--override_repository=kythe_release=$KYTHE_DIR"
 fi
+
+# These arguments make the extractors run on java generated code
+KYTHE_ARGS="$KYTHE_ARGS --experimental_extra_action_top_level_only=false --experimental_extra_action_filter='^//'"
+
 echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"
-set -x
-bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...
-unset -x`, dirName, bazelConfigFlags)
+bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...`, dirName, bazelConfigFlags)
 
 }
 
@@ -240,14 +242,28 @@ func prepareKytheOutputs(dirName string) string {
 	buf := fmt.Sprintf(`
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
 ulimit -n 10240
-find -L bazel-out/ -name *.go.kzip -print0 | xargs -r0 zipmerge output.go.kzip
-find -L bazel-out/ -name *.protobuf.kzip -print0 | xargs -r0 zipmerge output.protobuf.kzip
 
-if [ -f output.go.kzip ]; then
-  "$KYTHE_DIR"/indexers/go_indexer -continue output.go.kzip >> kythe_entries
-fi
-if [ -f output.protobuf.kzip ]; then
-  "$KYTHE_DIR"/indexers/proto_indexer -index_file output.protobuf.kzip >> kythe_entries
+find -L ../bazel-out/ -name "*.go.kzip" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/go_indexer -continue | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+find -L ../bazel-out/ -name "*.proto.kzip" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+find -L bazel-out -name '*.java.kzip' | xargs -P $(nproc) -n 1 java -jar $KYTHE_DIR/indexers/java_indexer.jar | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+
+# cxx indexing needs a cache to complete in a "reasonable" amount of time. It still takes a long time
+# and produces very large indices.
+# See https://groups.google.com/g/kythe/c/xKXE3S1JIRI for discussion of these args.
+# TODO(jdelfino): apt update / install are slow - consider either creating a statically linked
+# memcached binary, or installing it in the container image.
+
+cxx_kzips=$(find -L ../bazel-out/*/extra_actions -name "*.cxx.kzip")
+if [ ! -z "$cxx_kzips" ]; then
+  sudo apt update && sudo apt install -y memcached
+  memcached -p 11211 --listen localhost -m 512 & memcached_pid=$!
+  echo "$cxx_kzips" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/cxx_indexer \
+    --experimental_alias_template_instantiations \
+	--experimental_dynamic_claim_cache="--SERVER=localhost:11211" \
+	-cache="--SERVER=localhost:11211" \
+	-cache_stats \
+  | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+  kill $memcached_pid
 fi
 
 "$KYTHE_DIR"/tools/write_tables --entries kythe_entries --out leveldb:kythe_tables
@@ -291,7 +307,7 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 func sendIncrementalUpdate(apiTarget, repoURL string) string {
 	// TODO(jdelfino): Remove explicit CLI installation once buildbuddy-internal/#5060 is resolved
 	buf := fmt.Sprintf(`
-curl -fsSL https://install.buildbuddy.io | bash
+curl -fsSL https://raw.githubusercontent.com/buildbuddy-io/buildbuddy/master/cli/install.sh | bash
 git fetch --force --filter=blob:none --unshallow origin
 bb index --target %s --repo-url %s`, apiTarget, repoURL)
 	return buf
@@ -357,11 +373,11 @@ func MatchesAnyTrigger(action *Action, event, branch string) bool {
 	}
 
 	if pushCfg := action.Triggers.Push; pushCfg != nil && event == webhook_data.EventName.Push {
-		return matchesAnyBranch(pushCfg.Branches, branch)
+		return matchesBranchPatterns(pushCfg.Branches, branch)
 	}
 
 	if prCfg := action.Triggers.PullRequest; prCfg != nil && event == webhook_data.EventName.PullRequest {
-		return matchesAnyBranch(prCfg.Branches, branch)
+		return matchesBranchPatterns(prCfg.Branches, branch)
 	}
 	return false
 }
@@ -381,24 +397,28 @@ func MatchesAnyActionName(action *Action, names []string) bool {
 // The pattern is allowed to contain a single wildcard character, "*", which
 // matches anything. If there is more than one wildcard, then all wildcards
 // after the first one are treated as literals.
-func matchesRestrictedGlob(pattern, text string) bool {
+func matchesRestrictedGlob(pattern, text string) (isMatched, isNegation bool) {
+	pattern, isNegation = strings.CutPrefix(pattern, "!")
+
 	idx := strings.Index(pattern, "*")
 	if idx == -1 {
 		// No wildcard; exact match.
-		return pattern == text
+		return pattern == text, isNegation
 	}
 	prefix := pattern[:idx]
 	suffix := pattern[idx+1:]
-	return strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix)
+	return strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix), isNegation
 }
 
-func matchesAnyBranch(branches []string, branch string) bool {
-	for _, branchPattern := range branches {
-		if matchesRestrictedGlob(branchPattern, branch) {
-			return true
+func matchesBranchPatterns(branchPatterns []string, branch string) bool {
+	matched := false
+	for _, branchPattern := range branchPatterns {
+		if m, isNegation := matchesRestrictedGlob(branchPattern, branch); m {
+			matched = !isNegation
+			// Keep going - last pattern wins.
 		}
 	}
-	return false
+	return matched
 }
 
 func yamlNumberToString(num interface{}) (str string, ok bool) {

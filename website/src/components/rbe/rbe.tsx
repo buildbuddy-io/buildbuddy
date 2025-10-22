@@ -1,8 +1,6 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import common from "../../css/common.module.css";
 import styles from "./rbe.module.css";
-import { useEffect } from "react";
-import { useState } from "react";
 
 function Component() {
   let [index, setIndex] = useState(0);

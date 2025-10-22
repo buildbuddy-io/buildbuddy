@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -182,9 +183,9 @@ func (t *Terminal) Raw() string {
 // screen. For example, if the raw contents contain an ANSI sequence to delete a
 // line, that line will not be returned by this function.
 func (t *Terminal) Render() string {
-	screen, err := terminal.NewScreenWriter(0)
+	screen, err := terminal.NewScreenWriter(math.MaxInt, 0)
 	require.NoError(t.t, err)
 	_, err = screen.Write([]byte(t.Raw()))
 	require.NoError(t.t, err)
-	return string(screen.Render())
+	return string(screen.OutputAccumulator.String() + screen.Render())
 }

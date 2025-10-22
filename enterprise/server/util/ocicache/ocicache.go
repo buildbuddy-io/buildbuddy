@@ -40,9 +40,10 @@ const (
 	cacheDigestFunction = repb.DigestFunction_SHA256
 )
 
-func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string) error {
+func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
+		log.CtxWarningf(ctx, "Error creating key for manifest %s@%s (original ref %q): %s", repo, hash, originalRef, err)
 		return err
 	}
 
@@ -52,6 +53,7 @@ func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 	}
 	any, err := anypb.New(m)
 	if err != nil {
+		log.CtxWarningf(ctx, "Error constructing manifest contents %s@%s (original ref %q): %s", repo, hash, originalRef, err)
 		return err
 	}
 	ar := &repb.ActionResult{
@@ -61,7 +63,12 @@ func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 			},
 		},
 	}
-	return cachetools.UploadActionResult(ctx, acClient, arRN, ar)
+	if err := cachetools.UploadActionResult(ctx, acClient, arRN, ar); err != nil {
+		log.CtxWarningf(ctx, "Error writing manifest %s@%s (original ref %q) to AC: %s", repo, hash, originalRef, err)
+		return err
+	}
+	log.CtxInfof(ctx, "Successfully wrote manifest %s@%s (original ref %q)", repo, hash, originalRef)
+	return nil
 }
 
 func updateCacheEventMetric(ociResourceTypeLabel, cacheEventType string) {
@@ -71,47 +78,54 @@ func updateCacheEventMetric(ociResourceTypeLabel, cacheEventType string) {
 	}).Inc()
 }
 
-func manifestMiss(ctx context.Context) {
-	log.CtxDebug(ctx, "oci cache manifest miss")
+func manifestMiss(ctx context.Context, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) {
+	log.CtxInfof(ctx, "OCI cache manifest miss %s@%s (original ref %q)", repo, hash, originalRef)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.MissStatusLabel)
 }
 
-func manifestHit(ctx context.Context) {
-	log.CtxDebug(ctx, "oci cache manifest hit")
+func manifestHit(ctx context.Context, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) {
+	log.CtxInfof(ctx, "OCI cache manifest hit %s@%s (original ref %q)", repo, hash, originalRef)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.HitStatusLabel)
 }
 
-func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash) (*ocipb.OCIManifestContent, error) {
+// FetchManifestFromAC fetches the given manifest from the AC if present.
+// TODO(dan) remote originalRef argument once we've debugged frequency of manifest cache misses.
+func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) (*ocipb.OCIManifestContent, error) {
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
-		manifestMiss(ctx)
+		manifestMiss(ctx, repo, hash, originalRef)
+		log.CtxWarningf(ctx, "Error creating key for manifest %s@%s: %s", repo, hash, err)
 		return nil, err
 	}
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
-		manifestMiss(ctx)
+		manifestMiss(ctx, repo, hash, originalRef)
+		if !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Error getting action result for manifest %s@%s: %s", repo, hash, err)
+		}
 		return nil, err
 	}
 	meta := ar.GetExecutionMetadata()
 	if meta == nil {
-		manifestMiss(ctx)
-		log.CtxWarningf(ctx, "Missing execution metadata for manifest in %q", repo)
+		manifestMiss(ctx, repo, hash, originalRef)
+		log.CtxWarningf(ctx, "Missing execution metadata for manifest %s@%s", repo, hash)
 		return nil, status.InternalErrorf("missing execution metadata for manifest in %q", repo)
 	}
 	aux := meta.GetAuxiliaryMetadata()
 	if aux == nil || len(aux) != 1 {
-		manifestMiss(ctx)
-		log.CtxWarningf(ctx, "Missing auxiliary metadata for manifest in %q", repo)
-		return nil, status.InternalErrorf("missing auxiliary metadata for manifest in %q", repo)
+		manifestMiss(ctx, repo, hash, originalRef)
+		log.CtxWarningf(ctx, "Missing auxiliary metadata for manifest %s@%s", repo, hash)
+		return nil, status.InternalErrorf("missing auxiliary metadata for manifest %s@%s", repo, hash)
 	}
 	any := aux[0]
 	var mc ocipb.OCIManifestContent
 	err = any.UnmarshalTo(&mc)
 	if err != nil {
-		manifestMiss(ctx)
-		return nil, status.InternalErrorf("could not unmarshal metadata for manifest in %q: %s", repo, err)
+		manifestMiss(ctx, repo, hash, originalRef)
+		log.CtxWarningf(ctx, "Error unmarshalling manifest content %s@%s: %s", repo, hash, err)
+		return nil, status.InternalErrorf("could not unmarshal metadata for manifest %s@%s: %s", repo, hash, err)
 	}
-	manifestHit(ctx)
+	manifestHit(ctx, repo, hash, originalRef)
 	return &mc, nil
 }
 
@@ -135,6 +149,16 @@ func manifestACKey(repo gcrname.Repository, refhash gcr.Hash) (*digest.ACResourc
 	), nil
 }
 
+func blobMetadataMiss(ctx context.Context) {
+	log.CtxDebug(ctx, "oci cache blob metadata miss")
+	updateCacheEventMetric(metrics.OCIBlobMetadataResourceTypeLabel, metrics.MissStatusLabel)
+}
+
+func blobMetadataHit(ctx context.Context) {
+	log.CtxDebug(ctx, "oci cache blob metadata hit")
+	updateCacheEventMetric(metrics.OCIBlobMetadataResourceTypeLabel, metrics.HitStatusLabel)
+}
+
 func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash) (*ocipb.OCIBlobMetadata, error) {
 	arKey := &ocipb.OCIActionResultKey{
 		Registry:      repo.RegistryStr(),
@@ -145,10 +169,12 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	}
 	arKeyBytes, err := proto.Marshal(arKey)
 	if err != nil {
+		blobMetadataMiss(ctx)
 		return nil, err
 	}
 	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
 	if err != nil {
+		blobMetadataMiss(ctx)
 		return nil, err
 	}
 	arRN := digest.NewACResourceName(
@@ -158,6 +184,7 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	)
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
+		blobMetadataMiss(ctx)
 		return nil, err
 	}
 
@@ -174,6 +201,7 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 		}
 	}
 	if blobMetadataCASDigest == nil || blobCASDigest == nil {
+		blobMetadataMiss(ctx)
 		return nil, status.NotFoundErrorf("missing blob metadata digest or blob digest for %s", repo)
 	}
 	blobMetadataRN := digest.NewCASResourceName(
@@ -184,8 +212,10 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	blobMetadata := &ocipb.OCIBlobMetadata{}
 	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
 	if err != nil {
+		blobMetadataMiss(ctx)
 		return nil, err
 	}
+	blobMetadataHit(ctx)
 	return blobMetadata, nil
 }
 
@@ -399,21 +429,21 @@ func (r *readThroughCacher) Read(p []byte) (int, error) {
 
 	if n > 0 {
 		written, writeErr := r.cache.Write(p[:n])
-		if writeErr != nil {
-			log.Warningf("Error writing to cache: %s", writeErr)
-			r.cacheErr = writeErr
-			return n, err
-		}
-		if written < n {
-			r.cacheErr = io.ErrShortWrite
-			return n, err
+		r.cacheErr = writeErr
+		if r.cacheErr == nil {
+			if written < n {
+				log.Warningf("Short write to cache. Wanted %v, wrote %v", n, written)
+				r.cacheErr = io.ErrShortWrite
+			}
+		} else if !status.IsAlreadyExistsError(r.cacheErr) {
+			log.Warningf("Error writing to cache: %s", r.cacheErr)
 		}
 	}
 
-	if err == io.EOF {
-		if err := r.cache.Commit(); err != nil {
-			log.Warningf("Error committing blob to cache: %s", err)
-			r.cacheErr = err
+	if err == io.EOF && r.cacheErr == nil {
+		r.cacheErr = r.cache.Commit()
+		if r.cacheErr != nil {
+			log.Warningf("Error committing blob to cache: %s", r.cacheErr)
 		}
 	}
 
@@ -428,7 +458,7 @@ func (r *readThroughCacher) Close() error {
 	return err
 }
 
-func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
+func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64, originalRef gcrname.Reference) error {
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
 		if contentLength > maxManifestSize {
 			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
@@ -442,7 +472,7 @@ func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader
 		if written != contentLength {
 			return status.DataLossErrorf("expected manifest of length %d, only able to write %d bytes", contentLength, written)
 		}
-		return WriteManifestToAC(ctx, buf.Bytes(), acClient, repo, hash, contentType)
+		return WriteManifestToAC(ctx, buf.Bytes(), acClient, repo, hash, contentType, originalRef)
 	}
 	tr := io.TeeReader(upstream, w)
 	return WriteBlobToCache(ctx, tr, bsClient, acClient, repo, hash, contentType, contentLength)

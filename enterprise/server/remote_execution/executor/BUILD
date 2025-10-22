@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/auth",
         "//enterprise/server/remote_execution/commandutil",
+        "//enterprise/server/remote_execution/executor_auth",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
         "//proto:execution_stats_go_proto",
@@ -21,6 +22,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/rpc/interceptors",
         "//server/util/alert",
+        "//server/util/authutil",
         "//server/util/background",
         "//server/util/bazel_request",
         "//server/util/canary",
@@ -34,6 +36,7 @@ go_library(
         "@com_github_docker_go_units//:go-units",
         "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
@@ -63,5 +66,8 @@ go_test(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto//googleapis/longrunning",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

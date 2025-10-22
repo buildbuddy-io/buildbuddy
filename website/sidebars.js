@@ -1,12 +1,13 @@
 module.exports = {
   someSidebar: {
-    "Getting Started": ["introduction", "cloud", "on-prem", "contributing"],
+    "Getting Started": ["introduction", "quickstart", "contributing"],
     Guides: ["guides", "guide-auth", "guide-metadata"],
     Cache: ["cache-encryption-keys"],
     "Remote Build Execution": [
       "remote-build-execution",
       "rbe-setup",
       "rbe-platforms",
+      "rbe-container-image-caching",
       "secrets",
       "rbe-microvms",
       "rbe-github-actions",

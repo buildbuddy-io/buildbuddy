@@ -14,11 +14,14 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
@@ -51,7 +54,7 @@ type Options struct {
 	APIKeyOverride string
 }
 
-func makeExecutionNode(pool, executorID, executorHostID string, options *Options) (*scpb.ExecutionNode, error) {
+func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator interfaces.XcodeLocator, options *Options) (*scpb.ExecutionNode, error) {
 	hostname := options.HostnameOverride
 	if hostname == "" {
 		resHostname, err := resources.GetMyHostname()
@@ -60,6 +63,14 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		}
 		hostname = resHostname
 	}
+
+	// Get supported isolation types from platform configuration
+	executorProps := platform.GetExecutorProperties()
+	supportedTypes := make([]string, 0, len(executorProps.SupportedIsolationTypes))
+	for _, t := range executorProps.SupportedIsolationTypes {
+		supportedTypes = append(supportedTypes, string(t))
+	}
+
 	return &scpb.ExecutionNode{
 		Host: hostname,
 		// TODO: stop setting port once the scheduler no longer requires it.
@@ -67,12 +78,17 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		AssignableMemoryBytes:     resources.GetAllocatedRAMBytes(),
 		AssignableMilliCpu:        resources.GetAllocatedCPUMillis(),
 		AssignableCustomResources: resources.GetAllocatedCustomResources(),
-		Os:                        resources.GetOS(),
+		OsFamily:                  resources.GetOSFamily(),
+		OsDisplayName:             resources.GetOSDisplayName(),
 		Arch:                      resources.GetArch(),
 		Pool:                      strings.ToLower(pool),
 		Version:                   version.Tag(),
 		ExecutorId:                executorID,
 		ExecutorHostId:            executorHostID,
+		SupportedIsolationTypes:   supportedTypes,
+		CurrentQueueLength:        0,
+		XcodeVersions:             xcodeLocator.Versions(),
+		XcodeSdks:                 xcodeLocator.SDKs(),
 	}, nil
 }
 
@@ -154,7 +170,11 @@ func (r *Registration) Statusz(ctx context.Context) string {
 	return buf.String()
 }
 
-func (r *Registration) UpdateStatusz(w http.ResponseWriter, req *http.Request) {
+func (r *Registration) ServeStatusz(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	if err := req.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -166,10 +186,6 @@ func (r *Registration) UpdateStatusz(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Scheduler_RegisterAndStreamWorkClient, schedulerMsgs chan *scpb.RegisterAndStreamWorkResponse, schedulerErr chan error, registrationTicker, requestMoreWorkTicker *time.Ticker) (bool, error) {
-	registrationMsg := &scpb.RegisterAndStreamWorkRequest{
-		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.node},
-	}
-
 	select {
 	case <-ctx.Done():
 		log.Debugf("Context cancelled, cancelling node registration.")
@@ -213,7 +229,9 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 	case err := <-schedulerErr:
 		return false, status.WrapError(err, "failed to receive message from scheduler")
 	case <-registrationTicker.C:
-		if err := stream.Send(registrationMsg); err != nil {
+		if err := stream.Send(&scpb.RegisterAndStreamWorkRequest{
+			RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.nodeWithStats()},
+		}); err != nil {
 			return false, status.UnavailableErrorf("could not send registration message: %s", err)
 		}
 	case <-requestMoreWorkTicker.C:
@@ -254,10 +272,6 @@ func (r *Registration) monitorExcessCapacity(ctx context.Context) {
 // maintainRegistrationAndStreamWork maintains registration with a scheduler server using the newer
 // RegisterAndStreamWork API which supports both registration and task reservations.
 func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
-	registrationMsg := &scpb.RegisterAndStreamWorkRequest{
-		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.node},
-	}
-
 	defer r.setConnected(false)
 
 	registrationTicker := time.NewTicker(schedulerCheckInInterval)
@@ -275,7 +289,9 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 			}
 			continue
 		}
-		if err := stream.Send(registrationMsg); err != nil {
+		if err := stream.Send(&scpb.RegisterAndStreamWorkRequest{
+			RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.nodeWithStats()},
+		}); err != nil {
 			log.Errorf("error registering node with scheduler: %s, will retry...", err)
 			continue
 		}
@@ -318,6 +334,13 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (r *Registration) nodeWithStats() *scpb.ExecutionNode {
+	n := proto.Clone(r.node).(*scpb.ExecutionNode)
+	n.CurrentQueueLength = int32(r.taskScheduler.QueueLength())
+	n.ActiveActionCount = int32(r.taskScheduler.ActiveTaskCount())
+	return n
 }
 
 // Start registers the executor with the scheduler and maintains that registration until the context is cancelled.
@@ -370,7 +393,7 @@ func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler
 	} else if resources.GetPoolName() != "" {
 		log.Fatal("Only one of the `MY_POOL` environment variable and `executor.pool` config option may be set")
 	}
-	node, err := makeExecutionNode(poolName, executorID, executorHostID, options)
+	node, err := makeExecutionNode(poolName, executorID, executorHostID, env.GetXcodeLocator(), options)
 	if err != nil {
 		return nil, status.InternalErrorf("Error determining node properties: %s", err)
 	}

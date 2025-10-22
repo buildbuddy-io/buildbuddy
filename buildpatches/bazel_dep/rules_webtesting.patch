@@ -1,0 +1,76 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+index 1775465..771da4a 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -1,10 +1,11 @@
+ module(
+     name = "rules_webtesting",
+-    version = "0.4.0",
++    version = "0.2.1-0.20250212231324-7a1c88f61e35",
+ )
+ 
+ bazel_dep(name = "bazel_skylib", version = "1.7.1")
+ bazel_dep(name = "platforms", version = "0.0.10")
++bazel_dep(name = "rules_shell", version = "0.6.1")
+ 
+ ##### Go dependencies #####
+ bazel_dep(name = "rules_go", version = "0.51.0-rc1", repo_name = "io_bazel_rules_go")
+@@ -54,15 +55,7 @@ pip.parse(
+ use_repo(pip, "rules_webtesting_py_deps")
+ 
+ ##### Scala dependencies #####
+-bazel_dep(name = "rules_scala", repo_name = "io_bazel_rules_scala")
+-
+-# TODO: Switch to a release version once it's available in BCR.
+-# Otherwise, the root module has to declare the same override.
+-git_override(
+-    module_name = "rules_scala",
+-    commit = "219e63983e8e483e66ebf70372969ba227382001",
+-    remote = "https://github.com/mbland/rules_scala",
+-)
++bazel_dep(name = "rules_scala", version = "7.1.2", repo_name = "io_bazel_rules_scala")
+ 
+ scala_deps = use_extension(
+     "@io_bazel_rules_scala//scala/extensions:deps.bzl",
+@@ -71,9 +64,6 @@ scala_deps = use_extension(
+ scala_deps.settings(
+     fetch_sources = True,
+ )
+-scala_deps.toolchains(
+-    scalatest = True,
+-)
+ 
+ ##### Browsers dependencies #####
+ browser_repositories = use_extension("//web:extension.bzl", "browser_repositories_extension")
+diff --git a/go/metadata/main/BUILD.bazel b/go/metadata/main/BUILD.bazel
+index 992836e..ba27b45 100644
+--- a/go/metadata/main/BUILD.bazel
++++ b/go/metadata/main/BUILD.bazel
+@@ -15,6 +15,7 @@
+ ################################################################################
+ #
+ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
++load("@rules_shell//shell:sh_test.bzl", "sh_test")
+ load("//web/internal:executable_name.bzl", "get_platform_executable_name")
+ 
+ licenses(["notice"])  # Apache 2.0
+diff --git a/java/com/google/testing/bazel/BUILD.bazel b/java/com/google/testing/bazel/BUILD.bazel
+index bfe0d8e..60b85f8 100644
+--- a/java/com/google/testing/bazel/BUILD.bazel
++++ b/java/com/google/testing/bazel/BUILD.bazel
+@@ -1,3 +1,5 @@
++load("@rules_java//java:java_library.bzl", "java_library")
++
+ # Copyright 2016 Google Inc.
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+diff --git a/java/com/google/testing/web/BUILD.bazel b/java/com/google/testing/web/BUILD.bazel
+index 5b9dc2b..9f75684 100644
+--- a/java/com/google/testing/web/BUILD.bazel
++++ b/java/com/google/testing/web/BUILD.bazel
+@@ -1,3 +1,5 @@
++load("@rules_java//java:java_library.bzl", "java_library")
++
+ # Copyright 2016 Google Inc.
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");

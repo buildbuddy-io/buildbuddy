@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -24,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -35,6 +37,8 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
+	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -64,7 +68,7 @@ type schedulerServerMock struct {
 	scheduleReqs  []*scpb.ScheduleTaskRequest
 }
 
-func (s *schedulerServerMock) GetPoolInfo(_ context.Context, _ string, _ string, _ string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
+func (s *schedulerServerMock) GetPoolInfo(_ context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
 	groupID := sharedPoolGroupID
 	if poolType == interfaces.PoolTypeSelfHosted {
 		groupID = selfHostedPoolGroupID
@@ -159,7 +163,9 @@ func TestDispatch(t *testing.T) {
 	// Dispatch().
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	require.NoError(t, err)
-	taskID, err := s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action)
+	taskID := arn.NewUploadString()
+	require.NoError(t, err)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
 	require.NoError(t, err)
 
 	rn, err := digest.ParseUploadResourceName(taskID)
@@ -180,6 +186,86 @@ func TestDispatch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, task.GetRequestMetadata().GetToolDetails(), "ToolDetails should be nil")
 	assert.Equal(t, iid, task.GetRequestMetadata().GetToolInvocationId(), "invocation ID should be passed along")
+}
+
+func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
+	env, _, _ := setupEnv(t)
+
+	tmp := testfs.MakeTempDir(t)
+	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "remote_execution.task_size_overrides": {
+      "state": "ENABLED",
+      "variants": {
+        "test": {
+          "EstimatedMemory": "30GB"
+        },
+        "default": {}
+      },
+      "defaultVariant": "default",
+      "targeting": {
+        "if": [
+          { "==": [ { "var": "EstimatedComputeUnits" }, 8.0 ] },
+          "test"
+        ]
+      }
+    }
+  }
+}
+`)
+	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+	ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	action := &repb.Action{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{
+					Name:  "EstimatedComputeUnits",
+					Value: "8",
+				},
+			},
+		},
+	}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ad := arn.GetDigest()
+
+	// note: AttachUserPrefix is normally done by Execute(), which wraps
+	// Dispatch().
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, "12345678")
+	require.NoError(t, err)
+
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Equal(t, 1, len(sched.scheduleReqs))
+	b := sched.scheduleReqs[0].SerializedTask
+	task := &repb.ExecutionTask{}
+	err = proto.Unmarshal(b, task)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(&repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{
+				Name:  "EstimatedMemory",
+				Value: "30GB",
+			},
+		},
+	}, task.GetPlatformOverrides(), protocmp.Transform()))
 }
 
 func TestCancel(t *testing.T) {
@@ -556,6 +642,18 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			BytesReceived:   2000,
 			PacketsReceived: 4000,
 		}
+		usageStats.CpuPressure = &repb.PSI{
+			Some: &repb.PSI_Metrics{Total: 1010},
+			Full: &repb.PSI_Metrics{Total: 2010},
+		}
+		usageStats.MemoryPressure = &repb.PSI{
+			Some: &repb.PSI_Metrics{Total: 1020},
+			Full: &repb.PSI_Metrics{Total: 2020},
+		}
+		usageStats.IoPressure = &repb.PSI{
+			Some: &repb.PSI_Metrics{Total: 1030},
+			Full: &repb.PSI_Metrics{Total: 2030},
+		}
 	} else {
 		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
 			ExecutorGroupId: executorGroupID,
@@ -679,6 +777,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		SelfHosted:                   test.expectedSelfHosted,
 		Region:                       "test-region",
 		CommandSnippet:               "test",
+		OutputPath:                   "bazel-out/k8-fastbuild/bin/some/test",
 		QueuedTimestampUsec:          queuedTime.UnixMicro(),
 		WorkerStartTimestampUsec:     workerStartTime.UnixMicro(),
 		WorkerCompletedTimestampUsec: workerEndTime.UnixMicro(),
@@ -699,6 +798,12 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.NetworkBytesReceived = 2000
 		expectedExecution.NetworkPacketsSent = 3000
 		expectedExecution.NetworkPacketsReceived = 4000
+		expectedExecution.CpuPressureSomeStallUsec = 1010
+		expectedExecution.CpuPressureFullStallUsec = 2010
+		expectedExecution.MemoryPressureSomeStallUsec = 1020
+		expectedExecution.MemoryPressureFullStallUsec = 2020
+		expectedExecution.IoPressureSomeStallUsec = 1030
+		expectedExecution.IoPressureFullStallUsec = 2030
 	}
 	diff := cmp.Diff(
 		expectedExecution,
@@ -760,6 +865,55 @@ func TestMarkFailed(t *testing.T) {
 	require.True(t, status.IsNotFoundError(err), "error should be NotFoundError, but was %s", err)
 }
 
+func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
+	env, conn, _ := setupEnv(t)
+	ctx := context.Background()
+
+	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	env.SetSecretService(nil)
+
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+
+	action := &repb.Action{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "include-secrets", Value: "true"},
+		}},
+	}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ad := arn.GetDigest()
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	client := repb.NewExecutionClient(conn)
+	stream, err := client.Execute(ctx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   ad,
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+
+	_, err = stream.Recv()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Secrets requested but secret service not available")
+
+	rows := getExecutions(t, env)
+	require.Equal(t, 1, len(rows))
+	require.Equal(t, int64(repb.ExecutionStage_COMPLETED), rows[0].Stage)
+
+	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), rows[0].ExecutionID)
+	require.NoError(t, err)
+	require.Contains(t, executeResponse.GetStatus().GetMessage(), "Secrets requested but secret service not available")
+}
+
 func TestInvocationLink_EmptyInvocationID(t *testing.T) {
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 	env, conn, _ := setupEnv(t)
@@ -793,14 +947,17 @@ func TestInvocationLink_EmptyInvocationID(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func uploadAction(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value, action *repb.Action) *digest.ResourceName {
-	cmd := &repb.Command{Arguments: []string{"test"}}
+func uploadAction(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value, action *repb.Action) *digest.CASResourceName {
+	cmd := &repb.Command{
+		Arguments:   []string{"test"},
+		OutputFiles: []string{"bazel-out/k8-fastbuild/bin/some/test"},
+	}
 	cd, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, cmd)
 	require.NoError(t, err)
 	action.CommandDigest = cd
 	ad, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, action)
 	require.NoError(t, err)
-	return digest.NewResourceName(ad, instanceName, rspb.CacheType_CAS, df)
+	return digest.NewCASResourceName(ad, instanceName, df)
 }
 
 func withIncomingMetadata(t *testing.T, ctx context.Context, rmd *repb.RequestMetadata) context.Context {

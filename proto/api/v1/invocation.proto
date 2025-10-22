@@ -5,7 +5,7 @@ package api.v1;
 import "proto/api/v1/file.proto";
 
 // Request passed into GetInvocation.
-// Next tag: 5
+// Next tag: 6
 message GetInvocationRequest {
   // The selector defining which invocations(s) to retrieve.
   InvocationSelector selector = 1;
@@ -15,6 +15,9 @@ message GetInvocationRequest {
 
   // If true, include artifacts attached to the invocation.
   bool include_artifacts = 4;
+
+  // If true, include child invocations (if this invocation was a workflow).
+  bool include_child_invocations = 5;
 
   // The next_page_token value returned from a previous request, if any.
   string page_token = 3;
@@ -100,6 +103,10 @@ message Invocation {
 
   // The state of the build event stream for the invocation.
   InvocationStatus invocationStatus = 25;
+
+  // Any invocations spawned during this invocation. Only included if
+  // include_child_invocations = true.
+  repeated Id child_invocations = 26;
 }
 
 // Key value pair containing invocation metadata.

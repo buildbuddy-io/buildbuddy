@@ -1,21 +1,21 @@
 import React from "react";
 
-import { invocation } from "../../../proto/invocation_ts_proto";
-import router from "../../../app/router/router";
-import format from "../../../app/format/format";
 import {
-  Clock,
-  Hash,
-  XCircle,
-  PlayCircle,
-  CheckCircle,
   Activity,
+  CheckCircle,
+  Clock,
   CodeIcon,
-  Pencil,
-  Settings,
+  Hash,
   Network,
+  Pencil,
+  PlayCircle,
+  Settings,
+  XCircle,
 } from "lucide-react";
 import capabilities from "../../../app/capabilities/capabilities";
+import format from "../../../app/format/format";
+import router from "../../../app/router/router";
+import { invocation } from "../../../proto/invocation_ts_proto";
 
 interface Props {
   invocationStat: invocation.InvocationStat;

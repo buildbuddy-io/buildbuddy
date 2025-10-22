@@ -45,6 +45,7 @@ func Register(env *real_environment.RealEnv) error {
 	if err := openfeature.SetProviderAndWait(provider); err != nil {
 		return err
 	}
+	// TODO: register shutdown function to close the provider?
 	fp, err := NewFlagProvider(*appName)
 	if err != nil {
 		return err
@@ -60,6 +61,22 @@ func NewFlagProvider(clientName string) (*FlagProvider, error) {
 	return &FlagProvider{
 		client: openfeature.NewClient(clientName),
 	}, nil
+}
+
+// details implements the interfaces.ExperimentFlagDetails interface,
+// providing details about flag evaluation.
+type details struct {
+	variant string
+}
+
+// noDetails are returned when flag evaluation fails.
+var noDetails = (*details)(nil)
+
+func (d *details) Variant() string {
+	if d == nil {
+		return ""
+	}
+	return d.variant
 }
 
 // FlagProvider implements the interface.ExperimentFlagProvider interface.
@@ -104,8 +121,8 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 	}
 
 	if claims, err := claims.ClaimsFromContext(ctx); err == nil {
-		options.targetingKey = claims.GetGroupID()
-		options.attributes["group_id"] = claims.GetGroupID()
+		options.targetingKey = claims.GetExperimentTargetingGroupID()
+		options.attributes["group_id"] = claims.GetExperimentTargetingGroupID()
 		options.attributes["user_id"] = claims.GetUserID()
 	}
 	rmd := bazel_request.GetRequestMetadata(ctx)
@@ -145,42 +162,109 @@ func WithContext(key string, value interface{}) Option {
 // overrides, and returns the Boolean value for flagName, or defaultValue if no
 // experiment provider is configured.
 func (fp *FlagProvider) Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool {
-	return fp.client.Boolean(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	v, _ := fp.BooleanDetails(ctx, flagName, defaultValue, opts...)
+	return v
+}
+
+// BooleanDetails extracts the evaluationContext from ctx, applies any option
+// overrides, and returns the Boolean value for flagName, or defaultValue if no
+// experiment provider is configured. It also returns the details about the flag
+// evaluation.
+func (fp *FlagProvider) BooleanDetails(ctx context.Context, flagName string, defaultValue bool, opts ...any) (bool, interfaces.ExperimentFlagDetails) {
+	d, err := fp.client.BooleanValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	if err != nil {
+		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		return defaultValue, noDetails
+	}
+	return d.Value, &details{d.Variant}
 }
 
 // String extracts the evaluationContext from ctx, applies any option
 // overrides, and returns the String value for flagName, or defaultValue if no
 // experiment provider is configured.
 func (fp *FlagProvider) String(ctx context.Context, flagName string, defaultValue string, opts ...any) string {
-	return fp.client.String(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	v, _ := fp.StringDetails(ctx, flagName, defaultValue, opts...)
+	return v
+}
+
+// StringDetails extracts the evaluationContext from ctx, applies any option
+// overrides, and returns the String value for flagName, or defaultValue if no
+// experiment provider is configured. It also returns the details about the flag
+// evaluation.
+func (fp *FlagProvider) StringDetails(ctx context.Context, flagName string, defaultValue string, opts ...any) (string, interfaces.ExperimentFlagDetails) {
+	d, err := fp.client.StringValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	if err != nil {
+		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		return defaultValue, noDetails
+	}
+	return d.Value, &details{d.Variant}
 }
 
 // Float64 extracts the evaluationContext from ctx, applies any option
 // overrides, and returns the Float64 value for flagName, or defaultValue if no
 // experiment provider is configured.
 func (fp *FlagProvider) Float64(ctx context.Context, flagName string, defaultValue float64, opts ...any) float64 {
-	return fp.client.Float(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	v, _ := fp.Float64Details(ctx, flagName, defaultValue, opts...)
+	return v
+}
+
+// Float64Details extracts the evaluationContext from ctx, applies any option
+// overrides, and returns the Float64 value for flagName, or defaultValue if no
+// experiment provider is configured. It also returns the details about the flag
+// evaluation.
+func (fp *FlagProvider) Float64Details(ctx context.Context, flagName string, defaultValue float64, opts ...any) (float64, interfaces.ExperimentFlagDetails) {
+	d, err := fp.client.FloatValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	if err != nil {
+		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		return defaultValue, noDetails
+	}
+	return d.Value, &details{d.Variant}
 }
 
 // Int64 extracts the evaluationContext from ctx, applies any option
 // overrides, and returns the Int64 value for flagName, or defaultValue if no
 // experiment provider is configured.
 func (fp *FlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
-	return fp.client.Int(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	v, _ := fp.Int64Details(ctx, flagName, defaultValue, opts...)
+	return v
+}
+
+// Int64Details extracts the evaluationContext from ctx, applies any option
+// overrides, and returns the Int64 value for flagName, or defaultValue if no
+// experiment provider is configured. It also returns the details about the flag
+// evaluation.
+func (fp *FlagProvider) Int64Details(ctx context.Context, flagName string, defaultValue int64, opts ...any) (int64, interfaces.ExperimentFlagDetails) {
+	d, err := fp.client.IntValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	if err != nil {
+		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		return defaultValue, noDetails
+	}
+	return d.Value, &details{d.Variant}
 }
 
 // Object extracts the evaluationContext from ctx, applies any option
 // overrides, and returns the map[string]any value for flagName, or defaultValue
 // if no experiment provider is configured.
 func (fp *FlagProvider) Object(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) map[string]any {
-	v := fp.client.Object(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
-	if v == nil {
-		return defaultValue
+	m, _ := fp.ObjectDetails(ctx, flagName, defaultValue, opts...)
+	return m
+}
+
+// ObjectDetails extracts the evaluationContext from ctx, applies any option
+// overrides, and returns the map[string]any value for flagName, or defaultValue
+// if no experiment provider is configured. It also returns the details about
+// the flag evaluation.
+func (fp *FlagProvider) ObjectDetails(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) (map[string]any, interfaces.ExperimentFlagDetails) {
+	d, err := fp.client.ObjectValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	if err != nil {
+		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		return defaultValue, noDetails
 	}
-	if m, ok := v.(map[string]any); ok {
-		return m
+	v := d.Value
+	if m, ok := d.Value.(map[string]any); ok {
+		return m, &details{d.Variant}
 	} else {
-		log.CtxWarningf(ctx, "Experiment flag %q expected a map[string]any value, but the value is %T (%v)", flagName, v, v)
+		log.CtxWarningf(ctx, "Experiment flag %q expected value of type map[string]any, but the value is %T (%v)", flagName, v, v)
 	}
-	return defaultValue
+	return defaultValue, noDetails
 }

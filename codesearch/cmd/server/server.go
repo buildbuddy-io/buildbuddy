@@ -45,9 +45,11 @@ func main() {
 		log.Fatalf("Could not prepare config secrets provider: %s", err)
 	}
 
-	if err := config.Load(); err == nil {
-		config.ReloadOnSIGHUP()
+	if err := config.Load(); err != nil {
+		log.Fatalf("Could not load config: %s", err)
 	}
+
+	config.ReloadOnSIGHUP()
 
 	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)

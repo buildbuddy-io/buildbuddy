@@ -6,8 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/usageutil",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/interfaces",
         "//server/tables",
         "//server/util/bazel_request",
+        "//server/util/claims",
         "@org_golang_google_grpc//metadata",
     ],
 )
@@ -19,6 +21,7 @@ go_test(
         ":usageutil",
         "//proto:remote_execution_go_proto",
         "//server/tables",
+        "//server/testutil/testgrpc",
         "//server/util/bazel_request",
         "//server/util/proto",
         "//server/util/testing/flags",

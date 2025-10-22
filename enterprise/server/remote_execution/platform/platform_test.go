@@ -671,6 +671,67 @@ func TestExtraEnvVars(t *testing.T) {
 	}
 }
 
+func TestPersistentVolumes(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		prop          string
+		expected      []PersistentVolume
+		expectedError error
+	}{
+		{
+			name: "one volume",
+			prop: "cache:/tmp/.cache",
+			expected: []PersistentVolume{
+				{name: "cache", containerPath: "/tmp/.cache"},
+			},
+			expectedError: nil,
+		},
+		{
+			name: "multiple volumes",
+			prop: "tmp_cache:/tmp/.cache,user_cache:/root/.cache",
+			expected: []PersistentVolume{
+				{name: "tmp_cache", containerPath: "/tmp/.cache"},
+				{name: "user_cache", containerPath: "/root/.cache"},
+			},
+			expectedError: nil,
+		},
+		{
+			name: "invalid volume name",
+			prop: "..:/tmp/.cache",
+			expected: []PersistentVolume{
+				{name: "cache", containerPath: "/tmp/.cache"},
+			},
+			expectedError: status.InvalidArgumentError(`invalid persistent volume "..:/tmp/.cache": name can only contain alphanumeric characters, hyphens, and underscores`),
+		},
+		{
+			name:          "empty volume name",
+			prop:          ":/tmp/.cache",
+			expected:      nil,
+			expectedError: status.InvalidArgumentError(`invalid persistent volume ":/tmp/.cache": expected "<name>:<container_path>"`),
+		},
+		{
+			name:          "empty mount path",
+			prop:          "cache:",
+			expected:      nil,
+			expectedError: status.InvalidArgumentError(`invalid persistent volume "cache:": expected "<name>:<container_path>"`),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plat := &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "persistent-volumes", Value: tc.prop},
+			}}
+			platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+			if tc.expectedError == nil {
+				require.Equal(t, tc.expected, platformProps.PersistentVolumes)
+				require.NoError(t, err)
+			} else {
+				require.Nil(t, platformProps)
+				require.Equal(t, tc.expectedError, err)
+			}
+		})
+	}
+}
+
 type xcodeLocator struct {
 	sdks12_2    map[string]string
 	sdks12_4    map[string]string
@@ -695,4 +756,12 @@ func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (s
 	}
 	sdkRoot := fmt.Sprintf("%s/%s", developerDir, sdkPath)
 	return developerDir, sdkRoot, nil
+}
+
+func (x *xcodeLocator) Versions() []string {
+	return []string{}
+}
+
+func (x *xcodeLocator) SDKs() []string {
+	return []string{}
 }

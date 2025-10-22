@@ -4,6 +4,7 @@ package filestore
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/jonboulle/clockwork"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -163,14 +165,6 @@ func (pmk PebbleKey) CacheType() rspb.CacheType {
 	}
 }
 
-func (pmk PebbleKey) Partition() string {
-	return PartitionDirectoryPrefix + pmk.partID
-}
-
-func (pmk PebbleKey) Hash() string {
-	return pmk.hash
-}
-
 func remapANONToFixedGroupID(groupID string) string {
 	if groupID == "ANON" {
 		return AnonGroupID
@@ -276,10 +270,12 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 			if _, err := h.Write([]byte(hashExtra)); err != nil {
 				return nil, err
 			}
-			hashStr = fmt.Sprintf("%x", h.Sum(nil))
+			hashStr = hex.EncodeToString(h.Sum(nil))
 		}
 
-		filePath := PartitionDirectoryPrefix + pmk.partID + "/" + hashStr + "/" + strconv.Itoa(int(pmk.digestFunction)) + "/" + pmk.isolation + "/" + pmk.encryptionKeyID + "v5"
+		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v5")
 		return []byte(filePath), nil
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown key version: %v", version)
@@ -485,14 +481,10 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 }
 
 type Store interface {
-	FileKey(r *sgpb.FileRecord) ([]byte, error)
 	FilePath(fileDir string, f *sgpb.StorageMetadata_FileMetadata) string
-	FileMetadataKey(r *sgpb.FileRecord) ([]byte, error)
 	PebbleKey(r *sgpb.FileRecord) (PebbleKey, error)
-	BlobKey(appName string, r *sgpb.FileRecord) ([]byte, error)
 
 	NewReader(ctx context.Context, fileDir string, md *sgpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
-	NewWriter(ctx context.Context, fileDir string, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
 
 	InlineReader(f *sgpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error)
 	InlineWriter(ctx context.Context, sizeBytes int64) interfaces.MetadataWriteCloser
@@ -511,8 +503,8 @@ type Store interface {
 
 type PebbleGCSStorage interface {
 	SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error
-	Reader(ctx context.Context, blobName string) (io.ReadCloser, error)
-	ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time) (interfaces.CommittedWriteCloser, error)
+	Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error)
+	ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time, estimatedSize int64) (interfaces.CommittedWriteCloser, error)
 	DeleteBlob(ctx context.Context, blobName string) error
 	UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error
 }
@@ -568,10 +560,10 @@ func (fs *fileStorer) FilePath(fileDir string, f *sgpb.StorageMetadata_FileMetad
 	return fp
 }
 
-// FileKey is the partial path where a file will be written.
-// For example, given a fileRecord with FileKey: "foo/bar", the filestore will
+// fileKey is the partial path where a file will be written.
+// For example, given a fileRecord with fileKey: "foo/bar", the filestore will
 // write the file at a path like "/root/dir/blobs/foo/bar".
-func (fs *fileStorer) FileKey(r *sgpb.FileRecord) ([]byte, error) {
+func (fs *fileStorer) fileKey(r *sgpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	// filekeys look like this:
 	//   // {partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
@@ -593,36 +585,10 @@ func (fs *fileStorer) FileKey(r *sgpb.FileRecord) ([]byte, error) {
 	}
 }
 
-// FileMetadataKey is the partial key name where a file's metadata will be
-// written in pebble.
-// For example, given a fileRecord with FileMetadataKey: "baz/bap", the filestore will
-// write the file's metadata under pebble key like:
-//   - baz/bap
-func (fs *fileStorer) FileMetadataKey(r *sgpb.FileRecord) ([]byte, error) {
-	// This function cannot change without a data migration.
-	//
-	// Metadata keys look like this when PrioritizeHashInMetadataKey is off:
-	//    {partID}/{groupID}/{ac|cas}/{hash}
-	//    for example:
-	//      PART123456/GR123/ac/44321/abcd12345asdasdasd123123123asdasdasd
-	//      PART123456/GR123/cas/abcd12345asdasdasd123123123asdasdasd
-	//
-	// Metadata keys look like this when PrioritizeHashInMetadataKey is on:
-	//    {partID}/{groupID}/{hash}/{ac|cas}
-	//    for example:
-	//      PART123456/GR123/abcd12345asdasdasd123123123asdasdasd/ac/44321
-	//      PART123456/GR123/abcd12345asdasdasd123123123asdasdasd/cas
-	pmk, err := fs.PebbleKey(r)
-	if err != nil {
-		return nil, err
-	}
-	return pmk.Bytes(UndefinedKeyVersion)
-}
-
-// BlobKey is the partial path where a blob will be written.
+// blobKey is the partial path where a blob will be written.
 // For example, given a fileRecord with FileKey: "foo/bar", the filestore will
 // write the file at a path like "/buildbuddy-app-1/blobs/foo/bar".
-func (fs *fileStorer) BlobKey(appName string, r *sgpb.FileRecord) ([]byte, error) {
+func blobKey(appName string, r *sgpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	// blobkeys look like this:
 	//   // {appName}/{partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
@@ -667,13 +633,6 @@ func (fs *fileStorer) PebbleKey(r *sgpb.FileRecord) (PebbleKey, error) {
 	}, nil
 }
 
-func (fs *fileStorer) NewWriter(ctx context.Context, fileDir string, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
-	// New files are written using this method. Existing files will be read
-	// from wherever they were originally written according to their stored
-	// StorageMetadata.
-	return fs.FileWriter(ctx, fileDir, fileRecord)
-}
-
 func (fs *fileStorer) NewReader(ctx context.Context, fileDir string, md *sgpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error) {
 	switch {
 	case md.GetFileMetadata() != nil:
@@ -688,16 +647,11 @@ func (fs *fileStorer) NewReader(ctx context.Context, fileDir string, md *sgpb.St
 }
 
 func (fs *fileStorer) InlineReader(f *sgpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error) {
-	r := bytes.NewReader(f.GetData())
-	r.Seek(offset, 0)
-	length := int64(len(f.GetData()))
-	if limit != 0 && limit < length {
-		length = limit
+	data := f.GetData()[offset:]
+	if limit > 0 && limit < int64(len(data)) {
+		data = data[:limit]
 	}
-	if length > 0 {
-		return io.NopCloser(io.LimitReader(r, length)), nil
-	}
-	return io.NopCloser(r), nil
+	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
 type inlineWriter struct {
@@ -744,7 +698,7 @@ func (fs *fileStorer) FileReader(ctx context.Context, fileDir string, f *sgpb.St
 }
 
 func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
-	file, err := fs.FileKey(fileRecord)
+	file, err := fs.fileKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -762,7 +716,7 @@ func (fs *fileStorer) BlobReader(ctx context.Context, b *sgpb.StorageMetadata_GC
 	if fs.gcs == nil || fs.appName == "" {
 		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
-	return fs.gcs.Reader(ctx, b.GetBlobName())
+	return fs.gcs.Reader(ctx, b.GetBlobName(), offset, limit)
 }
 
 type gcsMetadataWriter struct {
@@ -770,10 +724,11 @@ type gcsMetadataWriter struct {
 	ctx        context.Context
 	blobName   string
 	customTime time.Time
-	gcs        PebbleGCSStorage
 }
 
 func (g *gcsMetadataWriter) Commit() error {
+	_, spn := tracing.StartSpan(g.ctx)
+	defer spn.End()
 	err := g.CommittedWriteCloser.Commit()
 
 	switch {
@@ -781,6 +736,8 @@ func (g *gcsMetadataWriter) Commit() error {
 		log.Debugf("Write gcs blob %q (already exists)", g.blobName)
 		return nil
 	case status.IsResourceExhaustedError(err):
+		// gcs.ConditionalWriter returns this when there are too many writes to
+		// the same object. We can assume that another write was successful.
 		log.Debugf("Write gcs blob %q (too many writes)", g.blobName)
 		return nil
 	default:
@@ -809,7 +766,9 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 	if fs.gcs == nil || fs.appName == "" {
 		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
-	blobNameBytes, err := fs.BlobKey(fs.appName, fileRecord)
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	blobNameBytes, err := blobKey(fs.appName, fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -819,8 +778,15 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 	}
 	blobName := string(blobNameBytes) + "-" + salt
 
+	estimatedSize := fileRecord.GetDigest().GetSizeBytes()
+	if fileRecord.GetCompressor() != repb.Compressor_IDENTITY {
+		// Guess that the compressed data will be 1/5th the size. The estimated
+		// size triggers an optimization for very large files, so it's better to
+		// underestimate.
+		estimatedSize /= 5
+	}
 	customTime := fs.clock.Now()
-	wc, err := fs.gcs.ConditionalWriter(ctx, blobName, true /*=overwriteExisting*/, customTime)
+	wc, err := fs.gcs.ConditionalWriter(ctx, blobName, true /*=overwriteExisting*/, customTime, estimatedSize)
 	if err != nil {
 		return nil, err
 	}
@@ -829,7 +795,6 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 		CommittedWriteCloser: wc,
 		blobName:             string(blobName),
 		customTime:           customTime,
-		gcs:                  fs.gcs,
 	}, nil
 }
 

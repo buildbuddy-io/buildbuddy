@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -96,6 +97,7 @@ var (
 		"GetTrend",
 		"GetStatHeatmap",
 		"GetStatDrilldown",
+		"GetTargetTrends",
 		"GetSuggestion",
 		"SearchExecution",
 		"GetTargetStats",
@@ -145,6 +147,13 @@ var (
 		// Org members management
 		"GetGroupUsers",
 		"UpdateGroupUsers",
+		// Org user list management
+		"GetUserLists",
+		"GetUserList",
+		"CreateUserList",
+		"DeleteUserList",
+		"UpdateUserList",
+		"UpdateUserListMembership",
 		// Org GitHub account link management
 		"UnlinkGitHubAccount",
 		// Org GitHub app link management
@@ -157,6 +166,7 @@ var (
 		"GetGitHubAppInstallPath",
 		"LinkGitHubRepo",
 		"UnlinkGitHubRepo",
+		"UpdateGitHubRepoSettings",
 		// Org API key management
 		"CreateApiKey",
 		"UpdateApiKey",
@@ -213,7 +223,7 @@ func AllowedRPCs(ctx context.Context, env environment.Env, groupID string) []str
 	var out []string
 	out = append(out, getUnfilteredRPCs()...)
 
-	if err := authorizeServerAdmin(ctx, env); err == nil {
+	if err := claims.AuthorizeServerAdmin(ctx); err == nil {
 		out = append(out, serverAdminOnlyRPCs...)
 	}
 
@@ -278,29 +288,4 @@ func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) erro
 	}
 
 	return nil
-}
-
-func authorizeServerAdmin(ctx context.Context, env environment.Env) error {
-	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return err
-	}
-
-	// If impersonation is in effect, it implies the user is an admin.
-	// Can't check group membership because impersonation modifies
-	// group information.
-	if u.IsImpersonating() {
-		return nil
-	}
-
-	serverAdminGID := env.GetAuthenticator().AdminGroupID()
-	if serverAdminGID == "" {
-		return status.PermissionDeniedError("permission denied")
-	}
-	for _, m := range u.GetGroupMemberships() {
-		if m.GroupID == serverAdminGID && (capabilities.ToInt(m.Capabilities)&int32(cappb.Capability_ORG_ADMIN) != 0) {
-			return nil
-		}
-	}
-	return status.PermissionDeniedError("Permission denied.")
 }

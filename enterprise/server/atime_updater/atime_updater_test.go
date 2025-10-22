@@ -9,10 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/batch_operator"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhealthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -126,6 +128,16 @@ func (f *fakeCAS) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressab
 	return status.InternalError("Unexpected call to GetTree")
 }
 
+func (f *fakeCAS) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
+	f.t.Fatal("Unexpected call to SpliceBlob")
+	return nil, status.InternalError("SpliceBlob RPC is not currently implemented")
+}
+
+func (f *fakeCAS) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+	f.t.Fatal("Unexpected call to SplitBlob")
+	return nil, status.InternalError("SplitBlob RPC is not currently implemented")
+}
+
 func runFakeCAS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*fakeCAS, repb.ContentAddressableStorageClient) {
 	cas := fakeCAS{t: t, authenticator: env.GetAuthenticator(), updates: []update{}}
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
@@ -137,38 +149,7 @@ func runFakeCAS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*fakeC
 	return &cas, repb.NewContentAddressableStorageClient(conn)
 }
 
-func waitExpectingNUpdates(t *testing.T, n int, cas *fakeCAS) {
-	wait := time.Millisecond
-	for i := 0; i < 6; i++ {
-		time.Sleep(wait)
-		wait = wait * 2
-		actual := cas.getUpdates()
-		if len(actual) == n {
-			return
-		}
-	}
-	t.Fatalf("Timed out waiting for expected number of digests. Expected %d, found %d", n, len(cas.getUpdates()))
-}
-
-func waitExpectingUpdates(t *testing.T, expected []update, cas *fakeCAS) {
-	waitExpectingNUpdates(t, len(expected), cas)
-	require.ElementsMatch(t, expected, cas.getUpdates())
-}
-
-func tickAlot(clock clockwork.FakeClock, interval time.Duration) {
-	for i := 0; i < 25; i++ {
-		clock.Advance(interval)
-		time.Sleep(5 * time.Millisecond)
-	}
-}
-
-func expectNoMoreUpdates(t *testing.T, clock clockwork.FakeClock, cas *fakeCAS) {
-	cas.clearUpdates()
-	tickAlot(clock, time.Second)
-	require.Equal(t, 0, len(cas.updates))
-}
-
-func setup(t testing.TB) (interfaces.Authenticator, interfaces.AtimeUpdater, *fakeCAS, clockwork.FakeClock) {
+func setup(t testing.TB) (interfaces.Authenticator, batch_operator.BatchDigestOperator, *fakeCAS, clockwork.FakeClock) {
 	env := testenv.GetTestEnv(t)
 	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
 	env.SetAuthenticator(authenticator)
@@ -176,32 +157,34 @@ func setup(t testing.TB) (interfaces.Authenticator, interfaces.AtimeUpdater, *fa
 	env.SetContentAddressableStorageClient(casClient)
 	fakeClock := clockwork.NewFakeClock()
 	env.SetClock(fakeClock)
-	require.NoError(t, Register(env))
-	updater := env.GetAtimeUpdater()
-	require.NotNil(t, updater)
+	updater, err := new(env)
+	require.NoError(t, err)
 	return authenticator, updater, cas, fakeClock
 }
 
-func ctxWithClientIdentity() context.Context {
-	return metadata.NewIncomingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, "fakeheader"))
+func authenticatedContext(ctx context.Context, user string, authenticator interfaces.Authenticator) context.Context {
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ClientIdentityHeaderName, "fakeheader"))
+	if user != "" {
+		ctx = authenticator.AuthContextFromAPIKey(ctx, user)
+	}
+	return authutil.ContextWithCachedAuthHeaders(ctx, authenticator)
 }
 
 func TestAuth(t *testing.T) {
-	authenticator, updater, cas, clock := setup(t)
+	authenticator, updater, cas, _ := setup(t)
 
 	// No auth, no updates
-	ctx := context.Background()
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
-	clock.Advance(time.Minute)
-	expectNoMoreUpdates(t, clock, cas)
+	ctx := t.Context()
+	require.False(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
 
 	// Anon updates with client-identity header
-	ctx = ctxWithClientIdentity()
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
-	clock.Advance(time.Minute)
-	waitExpectingUpdates(t,
+	ctx = authenticatedContext(t.Context(), "", authenticator)
+	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.ElementsMatch(t,
 		[]update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256)},
-		cas)
+		cas.getUpdates())
 
 	cas.mu.Lock()
 	clientIdentity := metadata.ValueFromIncomingContext(cas.lastCtx, authutil.ClientIdentityHeaderName)
@@ -211,12 +194,13 @@ func TestAuth(t *testing.T) {
 	cas.clearUpdates()
 
 	// Group updates with JWT and client-identity header
-	group1Ctx := authenticator.AuthContextFromAPIKey(ctxWithClientIdentity(), user1)
-	updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
-	clock.Advance(time.Minute)
-	waitExpectingUpdates(t,
+	group1Ctx := authenticatedContext(t.Context(), user1, authenticator)
+	require.True(t, updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.ElementsMatch(t,
 		[]update{updateOf(group1, "instance-1", digest0, repb.DigestFunction_SHA256)},
-		cas)
+		cas.getUpdates())
 
 	cas.mu.Lock()
 	clientIdentity = metadata.ValueFromIncomingContext(cas.lastCtx, authutil.ClientIdentityHeaderName)
@@ -225,180 +209,210 @@ func TestAuth(t *testing.T) {
 }
 
 func TestEnqueue_SimpleBatching(t *testing.T) {
-	_, updater, cas, clock := setup(t)
-	ctx := ctxWithClientIdentity()
+	authenticator, updater, cas, _ := setup(t)
+	ctx := authenticatedContext(t.Context(), "", authenticator)
 
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0, digest1}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest2}, repb.DigestFunction_SHA256)
-	require.Equal(t, 0, len(cas.getUpdates()))
-	clock.Advance(time.Minute)
-	waitExpectingUpdates(t,
+	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0, digest1}, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest2}, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.ElementsMatch(t,
 		[]update{
 			updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256),
 			updateOf(anon, "instance-1", digest1, repb.DigestFunction_SHA256),
 			updateOf(anon, "instance-1", digest2, repb.DigestFunction_SHA256)},
-		cas)
-	expectNoMoreUpdates(t, clock, cas)
+		cas.getUpdates())
 }
 
 func TestEnqueue_Deduping(t *testing.T) {
-	flags.Set(t, "cache_proxy.remote_atime_update_interval", time.Millisecond)
-	_, updater, cas, clock := setup(t)
-	ctx := ctxWithClientIdentity()
+	authenticator, updater, cas, _ := setup(t)
+	ctx := authenticatedContext(t.Context(), "", authenticator)
 
 	for i := 0; i < 10; i++ {
-		updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
+		require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+		updater.ForceBatchingForTesting()
 	}
-	require.Equal(t, 0, len(cas.getUpdates()))
-	clock.Advance(time.Second)
-	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256)}, cas)
-	expectNoMoreUpdates(t, clock, cas)
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.ElementsMatch(t,
+		[]update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256)},
+		cas.getUpdates())
 }
 
 func TestEnqueue_InstanceNamesIsolated(t *testing.T) {
-	flags.Set(t, "cache_proxy.remote_atime_update_interval", 999*time.Millisecond)
-	_, updater, cas, clock := setup(t)
-	ctx := ctxWithClientIdentity()
+	authenticator, updater, cas, _ := setup(t)
+	ctx := authenticatedContext(t.Context(), "", authenticator)
 
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-2", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-3", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
-	require.Equal(t, 0, len(cas.getUpdates()))
-	clock.Advance(time.Second)
-	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256)}, cas)
+	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	require.True(t, updater.Enqueue(ctx, "instance-2", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	require.True(t, updater.Enqueue(ctx, "instance-3", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.ElementsMatch(t,
+		[]update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256)},
+		cas.getUpdates())
 	cas.clearUpdates()
-	clock.Advance(time.Second)
-	waitExpectingUpdates(t, []update{updateOf(anon, "instance-2", digest0, repb.DigestFunction_SHA256)}, cas)
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.ElementsMatch(t,
+		[]update{updateOf(anon, "instance-2", digest0, repb.DigestFunction_SHA256)},
+		cas.getUpdates())
 	cas.clearUpdates()
-	clock.Advance(time.Second)
-	waitExpectingUpdates(t, []update{updateOf(anon, "instance-3", digest0, repb.DigestFunction_SHA256)}, cas)
-	expectNoMoreUpdates(t, clock, cas)
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.ElementsMatch(t,
+		[]update{updateOf(anon, "instance-3", digest0, repb.DigestFunction_SHA256)},
+		cas.getUpdates())
 }
 
 func TestEnqueue_DigestFunctionsIsolated(t *testing.T) {
-	flags.Set(t, "cache_proxy.remote_atime_update_interval", 999*time.Millisecond)
-	_, updater, cas, clock := setup(t)
-	ctx := ctxWithClientIdentity()
+	authenticator, updater, cas, _ := setup(t)
+	ctx := authenticatedContext(t.Context(), "", authenticator)
 
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_BLAKE3)
-	require.Equal(t, 0, len(cas.getUpdates()))
-	clock.Advance(time.Second)
-	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256)}, cas)
+	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_BLAKE3))
+	updater.ForceBatchingForTesting()
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.ElementsMatch(t,
+		[]update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256)},
+		cas.getUpdates())
 	cas.clearUpdates()
-	clock.Advance(time.Second)
-	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_BLAKE3)}, cas)
-	expectNoMoreUpdates(t, clock, cas)
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.ElementsMatch(t,
+		[]update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_BLAKE3)},
+		cas.getUpdates())
 }
 
 func TestEnqueue_GroupsIsolated(t *testing.T) {
-	flags.Set(t, "cache_proxy.remote_atime_update_interval", time.Millisecond)
-	authenticator, updater, cas, clock := setup(t)
-	anonCtx := ctxWithClientIdentity()
-	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
-	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
+	authenticator, updater, cas, _ := setup(t)
+	anonCtx := authenticatedContext(t.Context(), "", authenticator)
+	group1Ctx := authenticatedContext(t.Context(), user1, authenticator)
+	group2Ctx := authenticatedContext(t.Context(), user2, authenticator)
 
-	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
-	updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
-	updater.Enqueue(group2Ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
-	clock.Advance(time.Second)
-	waitExpectingUpdates(t,
+	require.True(t, updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	require.True(t, updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	require.True(t, updater.Enqueue(group2Ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.ElementsMatch(t,
 		[]update{
 			updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256),
 			updateOf(group1, "instance-1", digest0, repb.DigestFunction_SHA256),
 			updateOf(group2, "instance-1", digest0, repb.DigestFunction_SHA256)},
-		cas)
-	expectNoMoreUpdates(t, clock, cas)
+		cas.getUpdates())
 }
 
 func TestEnqueue_DedupesToFrontOfLine(t *testing.T) {
-	flags.Set(t, "cache_proxy.remote_atime_update_interval", 999*time.Millisecond)
-	_, updater, cas, clock := setup(t)
-	ctx := ctxWithClientIdentity()
+	authenticator, updater, cas, _ := setup(t)
+	ctx := authenticatedContext(t.Context(), "", authenticator)
 
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-2", []*repb.Digest{digest1}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest2}, repb.DigestFunction_SHA256)
-	require.Equal(t, 0, len(cas.getUpdates()))
-	clock.Advance(time.Second)
-	waitExpectingUpdates(t,
+	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	require.True(t, updater.Enqueue(ctx, "instance-2", []*repb.Digest{digest1}, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest2}, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.ElementsMatch(t,
 		[]update{
 			updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256),
 			updateOf(anon, "instance-1", digest2, repb.DigestFunction_SHA256)},
-		cas)
+		cas.getUpdates())
 	cas.clearUpdates()
-	clock.Advance(time.Second)
-	waitExpectingUpdates(t, []update{updateOf(anon, "instance-2", digest1, repb.DigestFunction_SHA256)}, cas)
-	expectNoMoreUpdates(t, clock, cas)
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.ElementsMatch(t,
+		[]update{updateOf(anon, "instance-2", digest1, repb.DigestFunction_SHA256)},
+		cas.getUpdates())
+}
+
+func TestEnqueue_EnqueuesDropped(t *testing.T) {
+	flags.Set(t, "cache_proxy.remote_atime_queue_size", 2)
+	authenticator, updater, _, _ := setup(t)
+	anonCtx := authenticatedContext(t.Context(), "", authenticator)
+	group1Ctx := authenticatedContext(t.Context(), user1, authenticator)
+	group2Ctx := authenticatedContext(t.Context(), user2, authenticator)
+
+	require.True(t, updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	require.True(t, updater.Enqueue(anonCtx, "instance-2", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	require.False(t, updater.Enqueue(anonCtx, "instance-3", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+
+	updater.ForceBatchingForTesting()
+	updater.ForceBatchingForTesting()
+
+	require.True(t, updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+	require.True(t, updater.Enqueue(group1Ctx, "instance-2", []*repb.Digest{digest1}, repb.DigestFunction_SHA256))
+	require.False(t, updater.Enqueue(group2Ctx, "instance-3", []*repb.Digest{digest2}, repb.DigestFunction_SHA256))
 }
 
 func TestEnqueue_DigestsDropped(t *testing.T) {
 	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_group", 7)
-	_, updater, cas, clock := setup(t)
-	ctx := ctxWithClientIdentity()
+	authenticator, updater, cas, _ := setup(t)
+	ctx := authenticatedContext(t.Context(), "", authenticator)
 	digests := []*repb.Digest{digest0, digest1, digest2, digest3, digest4, digest5, digest6, digest7, digest8, digest9, digestA}
 
 	// If the updater accumulates too many digests in a group, it drops them.
 	// This threshold is set to 7 above, so expect that many to be sent, though
 	// order is not guaranteed so we don't know which 7 will be sent.
-	updater.Enqueue(ctx, "instance-1", digests, repb.DigestFunction_SHA256)
-	tickAlot(clock, time.Second)
-	waitExpectingNUpdates(t, 7, cas)
-	expectNoMoreUpdates(t, clock, cas)
-
-	// Make sure there are no more updates sent.
+	require.True(t, updater.Enqueue(ctx, "instance-1", digests, repb.DigestFunction_SHA256))
+	updater.ForceBatchingForTesting()
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.Equal(t, 7, len(cas.getUpdates()))
 	cas.clearUpdates()
-	expectNoMoreUpdates(t, clock, cas)
 
 	// Expect the same behavior if they're sent one-by-one.
 	for _, digest := range digests {
-		updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest}, repb.DigestFunction_SHA256)
+		require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest}, repb.DigestFunction_SHA256))
+		updater.ForceBatchingForTesting()
 	}
-	tickAlot(clock, time.Second)
-	waitExpectingNUpdates(t, 7, cas)
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.Equal(t, 7, len(cas.getUpdates()))
 	cas.clearUpdates()
-	expectNoMoreUpdates(t, clock, cas)
 
 	// It shouldn't matter what instance name / digest function they're using.
 	for i, digest := range digests {
-		updater.Enqueue(ctx, fmt.Sprintf("instance-%d", i%3), []*repb.Digest{digest}, repb.DigestFunction_SHA256)
+		require.True(t, updater.Enqueue(ctx, fmt.Sprintf("instance-%d", i%3), []*repb.Digest{digest}, repb.DigestFunction_SHA256))
+		updater.ForceBatchingForTesting()
 	}
-	tickAlot(clock, time.Second)
-	waitExpectingNUpdates(t, 7, cas)
-	expectNoMoreUpdates(t, clock, cas)
+	updater.ForceFlushBatchesForTesting(t.Context())
+	updater.ForceFlushBatchesForTesting(t.Context())
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.Equal(t, 7, len(cas.getUpdates()))
 }
 
 func TestEnqueue_UpdatesDropped(t *testing.T) {
 	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_update", 5)
 	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 3)
-	flags.Set(t, "cache_proxy.remote_atime_update_interval", 999*time.Millisecond)
-	_, updater, cas, clock := setup(t)
-	ctx := ctxWithClientIdentity()
+	authenticator, updater, cas, _ := setup(t)
+	ctx := authenticatedContext(t.Context(), "", authenticator)
 
 	// If the updater accumulates too many updates, it should start to drop
 	// them. setupTest() sets the value of remote_atime_max_updates_per_group to
 	// 3, so expect the first 3 to be sent and the others to be dropped.
 	for i := 1; i <= 10; i++ {
-		updater.Enqueue(ctx, fmt.Sprintf("instance-%d", i), []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
+		require.True(t, updater.Enqueue(ctx, fmt.Sprintf("instance-%d", i), []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
+		updater.ForceBatchingForTesting()
 	}
-	tickAlot(clock, time.Second)
-	waitExpectingUpdates(t,
+	for i := 1; i <= 10; i++ {
+		updater.ForceFlushBatchesForTesting(t.Context())
+	}
+	require.ElementsMatch(t,
 		[]update{
 			updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256),
 			updateOf(anon, "instance-2", digest0, repb.DigestFunction_SHA256),
 			updateOf(anon, "instance-3", digest0, repb.DigestFunction_SHA256)},
-		cas)
-	expectNoMoreUpdates(t, clock, cas)
+		cas.getUpdates())
 }
 
 func TestEnqueue_Fairness(t *testing.T) {
 	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_update", 5)
 	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 3)
-	flags.Set(t, "cache_proxy.remote_atime_update_interval", 999*time.Millisecond)
-	authenticator, updater, cas, clock := setup(t)
-	anonCtx := ctxWithClientIdentity()
-	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
-	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
+	authenticator, updater, cas, _ := setup(t)
+	anonCtx := authenticatedContext(t.Context(), "", authenticator)
+	group1Ctx := authenticatedContext(t.Context(), user1, authenticator)
+	group2Ctx := authenticatedContext(t.Context(), user2, authenticator)
 
 	// Updates (in order of first update in the shard):
 	//   Anon/1/SHA: 0, 1, 2, 3, 4
@@ -409,18 +423,22 @@ func TestEnqueue_Fairness(t *testing.T) {
 	//   Grp2/1/SHA: 0, 6, 1, 6
 	//   Anon/1/SHA: 0, 1, 9, 6, 9, 0, 1, 9, 2
 	//   Anon/1/SHA: 0, 0, 0, 6, 1, 0, 1, 2, 2
-	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest1, digest2, digest3, digest4}, repb.DigestFunction_SHA256)
-	updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{digest0, digest5, digest2, digest6, digest7, digest8}, repb.DigestFunction_SHA256)
-	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest1, digest2, digest3, digest4}, repb.DigestFunction_MD5)
-	updater.Enqueue(anonCtx, "instance-2", []*repb.Digest{digest5, digest6, digest8, digest9, digestA}, repb.DigestFunction_SHA256)
-	updater.Enqueue(group1Ctx, "instance-2", []*repb.Digest{digest0, digest5}, repb.DigestFunction_SHA256)
-	updater.Enqueue(group2Ctx, "instance-1", []*repb.Digest{digest0, digest6, digest1, digest6}, repb.DigestFunction_SHA256)
-	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest1, digest9, digest6, digest9, digest0, digest1, digest9, digest2}, repb.DigestFunction_SHA256)
-	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest0, digest0, digest6, digest1, digest0, digest1, digest2, digest2}, repb.DigestFunction_SHA256)
-	clock.Advance(time.Second)
+	require.True(t, updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest1, digest2, digest3, digest4}, repb.DigestFunction_SHA256))
+	require.True(t, updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{digest0, digest5, digest2, digest6, digest7, digest8}, repb.DigestFunction_SHA256))
+	require.True(t, updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest1, digest2, digest3, digest4}, repb.DigestFunction_MD5))
+	require.True(t, updater.Enqueue(anonCtx, "instance-2", []*repb.Digest{digest5, digest6, digest8, digest9, digestA}, repb.DigestFunction_SHA256))
+	require.True(t, updater.Enqueue(group1Ctx, "instance-2", []*repb.Digest{digest0, digest5}, repb.DigestFunction_SHA256))
+	require.True(t, updater.Enqueue(group2Ctx, "instance-1", []*repb.Digest{digest0, digest6, digest1, digest6}, repb.DigestFunction_SHA256))
+	require.True(t, updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest1, digest9, digest6, digest9, digest0, digest1, digest9, digest2}, repb.DigestFunction_SHA256))
+	require.True(t, updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest0, digest0, digest6, digest1, digest0, digest1, digest2, digest2}, repb.DigestFunction_SHA256))
+
+	for i := 0; i < 8; i++ {
+		updater.ForceBatchingForTesting()
+	}
 
 	// Expect 5 updates from anon, 5 from group1, and 3 from group2.
-	waitExpectingNUpdates(t, 13, cas)
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.Equal(t, 13, len(cas.getUpdates()))
 	updateCount := map[string]int{anon: 0, group1: 0, group2: 0}
 	for _, update := range cas.getUpdates() {
 		updateCount[update.groupID]++
@@ -429,8 +447,8 @@ func TestEnqueue_Fairness(t *testing.T) {
 
 	// Expect 5 more updates from anon, 2 from group1, and 0 from group2.
 	cas.clearUpdates()
-	clock.Advance(time.Second)
-	waitExpectingNUpdates(t, 7, cas)
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.Equal(t, 7, len(cas.getUpdates()))
 	updateCount = map[string]int{anon: 0, group1: 0, group2: 0}
 	for _, update := range cas.getUpdates() {
 		updateCount[update.groupID]++
@@ -439,8 +457,8 @@ func TestEnqueue_Fairness(t *testing.T) {
 
 	// Expect 5 more for anon and 1 more for group1.
 	cas.clearUpdates()
-	clock.Advance(time.Second)
-	waitExpectingNUpdates(t, 6, cas)
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.Equal(t, 6, len(cas.getUpdates()))
 	updateCount = map[string]int{anon: 0, group1: 0, group2: 0}
 	for _, update := range cas.getUpdates() {
 		updateCount[update.groupID]++
@@ -449,8 +467,8 @@ func TestEnqueue_Fairness(t *testing.T) {
 
 	// Finally, expect 2 more for anon.
 	cas.clearUpdates()
-	clock.Advance(time.Second)
-	waitExpectingNUpdates(t, 2, cas)
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.Equal(t, 2, len(cas.getUpdates()))
 	updateCount = map[string]int{anon: 0, group1: 0, group2: 0}
 	for _, update := range cas.getUpdates() {
 		updateCount[update.groupID]++
@@ -465,9 +483,10 @@ func TestEnqueue_Raciness(t *testing.T) {
 	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 1_000)
 	flags.Set(t, "cache_proxy.remote_atime_update_interval", time.Millisecond)
 	authenticator, updater, _, clock := setup(t)
-	anonCtx := ctxWithClientIdentity()
-	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
-	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
+	updater.Start(&testhealthcheck.TestingHealthChecker{})
+	anonCtx := authenticatedContext(t.Context(), "", authenticator)
+	group1Ctx := authenticatedContext(t.Context(), user1, authenticator)
+	group2Ctx := authenticatedContext(t.Context(), user2, authenticator)
 
 	contexts := []context.Context{anonCtx, group1Ctx, group2Ctx}
 	instances := []string{"instance-1", "instance-2", "instance-3"}
@@ -492,29 +511,21 @@ func TestEnqueue_Raciness(t *testing.T) {
 			clock.Advance(time.Second)
 		}
 	}
+
+	updater.ForceShutdownForTesting()
 }
 
-func TestEnqueueByResourceName_ActionCache(t *testing.T) {
-	_, updater, cas, ticker := setup(t)
-	ctx := ctxWithClientIdentity()
-
-	rn := digest.NewACResourceName(digest0, "instance-1", repb.DigestFunction_SHA256).ActionCacheString()
-	updater.EnqueueByResourceName(ctx, rn)
-	expectNoMoreUpdates(t, ticker, cas)
-}
-
-func casResourceName(t *testing.T, d *repb.Digest, instanceName string) string {
-	return digest.NewCASResourceName(d, instanceName, repb.DigestFunction_SHA256).DownloadString()
+func casResourceName(t *testing.T, d *repb.Digest, instanceName string) *digest.CASResourceName {
+	return digest.NewCASResourceName(d, instanceName, repb.DigestFunction_SHA256)
 }
 
 func TestEnqueueByResourceName_CAS(t *testing.T) {
 	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_update", 5)
 	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 3)
-	flags.Set(t, "cache_proxy.remote_atime_update_interval", 999*time.Millisecond)
-	authenticator, updater, cas, clock := setup(t)
-	anonCtx := ctxWithClientIdentity()
-	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
-	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
+	authenticator, updater, cas, _ := setup(t)
+	anonCtx := authenticatedContext(t.Context(), "", authenticator)
+	group1Ctx := authenticatedContext(t.Context(), user1, authenticator)
+	group2Ctx := authenticatedContext(t.Context(), user2, authenticator)
 
 	rn01 := casResourceName(t, digest0, "instance-1")
 	rn02 := casResourceName(t, digest0, "instance-2")
@@ -548,9 +559,13 @@ func TestEnqueueByResourceName_CAS(t *testing.T) {
 	updater.EnqueueByResourceName(group2Ctx, rn21)
 	updater.EnqueueByResourceName(anonCtx, rn51)
 
+	for i := 0; i < 15; i++ {
+		updater.ForceBatchingForTesting()
+	}
+
 	// First update should be 3 for Anon/2, 1 for Grp1/1, and 1 for Grp2/1
-	clock.Advance(time.Second)
-	waitExpectingNUpdates(t, 6, cas)
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.Equal(t, 6, len(cas.getUpdates()))
 	updateCount := map[string]int{anon: 0, group1: 0, group2: 0}
 	for _, update := range cas.getUpdates() {
 		updateCount[update.groupID]++
@@ -559,8 +574,8 @@ func TestEnqueueByResourceName_CAS(t *testing.T) {
 
 	// Second update should be 5 for Anon/1
 	cas.clearUpdates()
-	clock.Advance(time.Second)
-	waitExpectingNUpdates(t, 5, cas)
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.Equal(t, 5, len(cas.getUpdates()))
 	updateCount = map[string]int{anon: 0, group1: 0, group2: 0}
 	for _, update := range cas.getUpdates() {
 		updateCount[update.groupID]++
@@ -569,8 +584,8 @@ func TestEnqueueByResourceName_CAS(t *testing.T) {
 
 	// Expect that final Anon/1 update to come through.
 	cas.clearUpdates()
-	clock.Advance(time.Second)
-	waitExpectingNUpdates(t, 1, cas)
+	updater.ForceFlushBatchesForTesting(t.Context())
+	require.Equal(t, 1, len(cas.getUpdates()))
 	updateCount = map[string]int{anon: 0, group1: 0, group2: 0}
 	for _, update := range cas.getUpdates() {
 		updateCount[update.groupID]++
@@ -594,17 +609,24 @@ func BenchmarkEnqueue(b *testing.B) {
 		// The updater discards updates and logs stuff if too many updates are
 		// enqueued. Recreate for each benchmark to prevent this.
 		b.StopTimer()
-		_, updater, _, _ := setup(b)
+		authenticator, updater, _, _ := setup(b)
+		contexts := []context.Context{
+			authenticatedContext(b.Context(), "", authenticator),
+			authenticatedContext(b.Context(), user1, authenticator),
+			authenticatedContext(b.Context(), user2, authenticator),
+		}
 		b.StartTimer()
 		wg := sync.WaitGroup{}
 		for i := 0; i < 10_000; i++ {
 			for _, instance := range instances {
 				for _, digest := range digests {
-					wg.Add(1)
-					go func() {
-						updater.Enqueue(ctxWithClientIdentity(), instance, []*repb.Digest{digest}, repb.DigestFunction_SHA256)
-						wg.Done()
-					}()
+					for _, ctx := range contexts {
+						wg.Add(1)
+						go func() {
+							updater.Enqueue(ctx, instance, []*repb.Digest{digest}, repb.DigestFunction_SHA256)
+							wg.Done()
+						}()
+					}
 				}
 			}
 		}

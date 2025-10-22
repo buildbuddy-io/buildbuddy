@@ -1,18 +1,19 @@
+import { Cpu, Globe, Hash, Laptop, LucideIcon } from "lucide-react";
 import React from "react";
+import { Subscription } from "rxjs";
+import { User } from "../../../app/auth/auth_service";
 import Banner from "../../../app/components/banner/banner";
+import LinkButton from "../../../app/components/button/link_button";
+import { TextLink } from "../../../app/components/link/link";
+import Select, { Option } from "../../../app/components/select/select";
+import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
-import { User } from "../../../app/auth/auth_service";
+import { api_key } from "../../../proto/api_key_ts_proto";
+import { bazel_config } from "../../../proto/bazel_config_ts_proto";
+import { capability } from "../../../proto/capability_ts_proto";
 import { scheduler } from "../../../proto/scheduler_ts_proto";
 import ExecutorCardComponent from "./executor_card";
-import { Subscription } from "rxjs";
-import { api_key } from "../../../proto/api_key_ts_proto";
-import { capability } from "../../../proto/capability_ts_proto";
-import { bazel_config } from "../../../proto/bazel_config_ts_proto";
-import router from "../../../app/router/router";
-import Select, { Option } from "../../../app/components/select/select";
-import LinkButton from "../../../app/components/button/link_button";
-import { Cpu, Globe, Hash, Laptop, LucideIcon } from "lucide-react";
 
 enum FetchType {
   Executors,
@@ -38,7 +39,13 @@ class ExecutorDeploy extends React.Component<ExecutorDeployProps, ExecutorDeploy
   render() {
     return (
       <>
-        <p>Self-hosted executors can be deployed by running a simple Docker image on any machine.</p>
+        <p>
+          Self-hosted executors can be deployed on Kubernetes using the{" "}
+          <TextLink href="https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-executor">
+            Helm charts
+          </TextLink>
+          , or by running the Docker image directly.
+        </p>
         <p>The example below shows how to run an executor manually using the Docker CLI.</p>
         API key:
         <Select
@@ -142,7 +149,7 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
     >();
     for (const r of this.props.regions) {
       for (const e of r.response.executor) {
-        const key = r.name + "-" + (e.node?.os || "") + "-" + (e.node?.arch || "") + "-" + (e.node?.pool || "");
+        const key = r.name + "-" + (e.node?.osFamily || "") + "-" + (e.node?.arch || "") + "-" + (e.node?.pool || "");
         if (!executorsByPool.has(key)) {
           executorsByPool.set(key, []);
         }
@@ -173,7 +180,7 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
                       {executors.length} {executors.length === 1 ? "executor" : "executors"}
                     </ExecutorDetail>
                     <ExecutorDetail Icon={Laptop} label="OS">
-                      {executors[0].executor.node?.os || "unknown"}
+                      {executors[0].executor.node?.osFamily || "unknown"}
                     </ExecutorDetail>
                     <ExecutorDetail Icon={Cpu} label="Arch">
                       {executors[0].executor.node?.arch || "unknown"}
@@ -189,7 +196,11 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
                   {executors.map(
                     (node) =>
                       node.executor.node && (
-                        <ExecutorCardComponent node={node.executor.node} isDefault={node.executor.isDefault} />
+                        <ExecutorCardComponent
+                          node={node.executor.node}
+                          isDefault={node.executor.isDefault}
+                          lastCheckInTime={node.executor.lastCheckInTime}
+                        />
                       )
                   )}
                 </>

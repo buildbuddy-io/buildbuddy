@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -166,6 +167,10 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	}
 
 	healthChecker := healthcheck.NewHealthChecker("test")
+	t.Cleanup(func() {
+		healthChecker.Shutdown()
+		healthChecker.WaitForGracefulShutdown()
+	})
 	te := real_environment.NewRealEnv(healthChecker)
 	c, err := memory_cache.NewMemoryCache(1000 * 1000 * 1000 /* 1GB */)
 	if err != nil {
@@ -216,6 +221,9 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 
 type NoOpAtimeUpdater struct{}
 
-func (a *NoOpAtimeUpdater) Enqueue(_ context.Context, _ string, _ []*repb.Digest, _ repb.DigestFunction_Value) {
+func (a *NoOpAtimeUpdater) Enqueue(_ context.Context, _ string, _ []*repb.Digest, _ repb.DigestFunction_Value) bool {
+	return true
 }
-func (a *NoOpAtimeUpdater) EnqueueByResourceName(_ context.Context, _ string) {}
+func (a *NoOpAtimeUpdater) EnqueueByResourceName(_ context.Context, _ *digest.CASResourceName) bool {
+	return true
+}

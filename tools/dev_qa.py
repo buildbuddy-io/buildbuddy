@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -32,8 +33,9 @@ API_KEY = os.environ.get(
 REPO_CONFIGS = [
     {
         "name": "buildbuddy",
+        "owner": "buildbuddy-io",
         "repo_url": "https://github.com/buildbuddy-io/buildbuddy",
-        "commit_sha": "c748c75ce7cb2f207933f84ded38d35228b7b1ec",
+        "commit_sha": "a97d4303c9485db089a33a1049fe480d0122687d",
         "command": """
             bazel test //... \
                 --config=remote-dev \
@@ -44,11 +46,13 @@ REPO_CONFIGS = [
                 --flaky_test_attempts=3 \
                 --build_metadata=TAGS=dev-qa \
                 --remote_header=x-buildbuddy-api-key={} \
+                --test_tag_filters=-docker,-bare,-performance \
                 --remote_grpc_log=grpc_log.bin
         """.format(API_KEY),
     },
     {
         "name": "bazel-gazelle",
+        "owner": "bazelbuild",
         "repo_url": "https://github.com/bazelbuild/bazel-gazelle",
         "commit_sha": "f44f85943a3f6bde872e2d39c5b552e21a797975",
         "command": """
@@ -70,6 +74,7 @@ REPO_CONFIGS = [
     },
     {
         "name": "abseil-cpp",
+        "owner": "abseil",
         "repo_url": "https://github.com/abseil/abseil-cpp",
         "commit_sha": "e968256406fd7898d7fde880e31e54b041d32a7e",
         "command": """
@@ -91,6 +96,7 @@ REPO_CONFIGS = [
     },
     {
         "name": "rules_python",
+        "owner": "bazelbuild",
         "repo_url": "https://github.com/bazelbuild/rules_python",
         "commit_sha": "da10ac49efee1b02cbfa3b22a39e68bf3fe5bbe2",
         "command": """
@@ -108,32 +114,14 @@ REPO_CONFIGS = [
                 --remote_grpc_log=grpc_log.bin
         """.format(API_KEY),
     },
-    {
-        "name": "tensorflow",
-        "repo_url": "https://github.com/tensorflow/tensorflow",
-        "commit_sha": "df75ddb32a31ba79b58679d833dfa1af478d04a8",
-        "command": """
-            bazel build tensorflow \
-                --config=rbe_linux_cpu \
-                --config=monolithic \
-                --remote_executor=remote.buildbuddy.dev \
-                --remote_cache=remote.buildbuddy.dev \
-                --bes_backend=remote.buildbuddy.dev \
-                --bes_results_url=https://app.buildbuddy.dev/invocation/ \
-                --nogoogle_default_credentials \
-                --build_metadata=TAGS=dev-qa \
-                --remote_header=x-buildbuddy-api-key={} \
-                --remote_grpc_log=grpc_log.bin
-        """.format(API_KEY),
-    },
 ]
 
 BUILDBUDDY_TOOLCHAIN_SNIPPET = """
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    integrity = "sha256-e6gcgLHmJHvxCNNbCSQ4OrX8FbGn8TiS7XSVphM1ZU8=",
-    strip_prefix = "buildbuddy-toolchain-badf8034b2952ec613970a27f24fb140be7eaf73",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/badf8034b2952ec613970a27f24fb140be7eaf73.tar.gz"],
+    integrity = "sha256-VtJjefgP2Vq5S6DiGYczsupNkosybmSBGWwcLUAYz8c=",
+    strip_prefix = "buildbuddy-toolchain-66146a3015faa348391fcceea2120caa390abe03",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/66146a3015faa348391fcceea2120caa390abe03.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
@@ -146,12 +134,12 @@ buildbuddy(
     name = "buildbuddy_toolchain",
     container_image = UBUNTU20_04_IMAGE,
     # This is the MSVC available on Github Action win22 image
-    # https://github.com/actions/runner-images/blob/win22/20250303.1/images/windows/Windows2022-Readme.md
+    # https://github.com/actions/runner-images/blob/win22/20250623.1/images/windows/Windows2022-Readme.md
     msvc_edition = "Enterprise",
     msvc_release = "2022",
     # From 'Microsoft Visual C++ 2022 Minimum Runtime' for x64 architecture
-    # https://github.com/actions/runner-images/blob/win22/20250303.1/images/windows/Windows2022-Readme.md#microsoft-visual-c
-    msvc_version = "14.43.34808",
+    # https://github.com/actions/runner-images/blob/win22/20250623.1/images/windows/Windows2022-Readme.md#microsoft-visual-c
+    msvc_version = "14.44.35207",
 )
 
 register_toolchains(
@@ -179,7 +167,7 @@ def run_test(name, repo_url, commit_sha, command, clean_repos=False):
             echo '{BUILDBUDDY_TOOLCHAIN_SNIPPET}' >> WORKSPACE
         fi
 
-        # Pin to a specific bazel version for third-party repos. 
+        # Pin to a specific bazel version for third-party repos.
         if [[ "{name}" != "buildbuddy" ]]; then
             echo '7.4.0' > .bazelversion
         fi
@@ -203,6 +191,12 @@ def run_test(name, repo_url, commit_sha, command, clean_repos=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(usage=USAGE)
     parser.add_argument(
+        "--print_matrix",
+        default=False,
+        action="store_true",
+        help="Print the matrix of repos to test, and exit.",
+    )
+    parser.add_argument(
         "--repos",
         default="buildbuddy,bazel-gazelle,abseil-cpp,rules_python",
         help="Which repos to test.",
@@ -221,6 +215,19 @@ if __name__ == "__main__":
         help="Don't continue if a command fails.",
     )
     args = parser.parse_args()
+
+    if args.print_matrix:
+        print(json.dumps({
+            "include": [
+                {
+                    "name": repo["name"],
+                    "repo": f"{repo['owner']}/{repo['name']}",
+                    "ref": repo["commit_sha"],
+                }
+                for repo in REPO_CONFIGS
+            ]
+        }))
+        sys.exit(0)
 
     if args.repos == "all":
         repos = REPO_CONFIGS

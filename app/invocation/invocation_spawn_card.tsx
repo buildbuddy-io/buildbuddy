@@ -1,18 +1,16 @@
-import React from "react";
-import InvocationModel from "./invocation_model";
-import Select, { Option } from "../components/select/select";
-import { build } from "../../proto/remote_execution_ts_proto";
-import rpcService from "../service/rpc_service";
-import { OutlinedButton } from "../components/button/button";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { tools } from "../../proto/spawn_ts_proto";
-import format from "../format/format";
-import error_service from "../errors/error_service";
-import * as varint from "varint";
 import { AlertCircle, CheckCircle, Download } from "lucide-react";
+import React from "react";
+import { build } from "../../proto/remote_execution_ts_proto";
+import { tools } from "../../proto/spawn_ts_proto";
+import { OutlinedButton } from "../components/button/button";
 import DigestComponent from "../components/digest/digest";
 import Link from "../components/link/link";
+import Select, { Option } from "../components/select/select";
+import error_service from "../errors/error_service";
+import format from "../format/format";
 import { digestToString } from "../util/cache";
+import ActionCompareButtonComponent from "./action_compare_button";
+import InvocationModel from "./invocation_model";
 
 interface Props {
   model: InvocationModel;
@@ -26,6 +24,7 @@ interface State {
   direction: "asc" | "desc";
   mnemonicFilter: string;
   runnerFilter: string;
+  platformPropertyFilters: Map<string, string>;
   limit: number;
   log: tools.protos.ExecLogEntry[] | undefined;
 }
@@ -39,6 +38,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     direction: "desc",
     mnemonicFilter: "",
     runnerFilter: "",
+    platformPropertyFilters: new Map<string, string>(),
     limit: 100,
     log: undefined,
   };
@@ -59,64 +59,25 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     clearTimeout(this.timeoutRef);
   }
 
-  getExecutionLogFile(): build_event_stream.File | undefined {
-    return this.props.model.buildToolLogs?.log.find(
-      (log: build_event_stream.File) =>
-        (log.name == "execution.log" || log.name == "execution_log.binpb.zst") &&
-        log.uri &&
-        Boolean(log.uri.startsWith("bytestream://"))
-    );
-  }
-
   fetchLog() {
-    if (!this.getExecutionLogFile()) {
+    if (!this.props.model.hasExecutionLog()) {
       this.setState({ loading: false });
     }
 
     // Already fetched
     if (this.state.log) return;
 
-    let logFile = this.getExecutionLogFile();
-    if (!logFile?.uri) return;
-
-    const init = {
-      // Set the stored encoding header to prevent the server from double-compressing.
-      headers: { "X-Stored-Encoding-Hint": "zstd" },
-    };
-
     this.setState({ loading: true });
-    rpcService
-      .fetchBytestreamFile(logFile.uri, this.props.model.getInvocationId(), "arraybuffer", { init })
-      .then(async (body) => {
-        if (body === null) throw new Error("response body is null");
-        let entries: tools.protos.ExecLogEntry[] = [];
-        let byteArray = new Uint8Array(body);
-        for (var offset = 0; offset < body.byteLength; ) {
-          let length = varint.decode(byteArray, offset);
-          let bytes = varint.decode.bytes || 0;
-          offset += bytes;
-          entries.push(tools.protos.ExecLogEntry.decode(byteArray.subarray(offset, offset + length)));
-          offset += length;
-        }
-        console.log(entries);
-        return entries;
-      })
+
+    this.props.model
+      .getExecutionLog()
       .then((log) => this.setState({ log: log }))
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ loading: false }));
   }
 
   downloadLog() {
-    let profileFile = this.getExecutionLogFile();
-    if (!profileFile?.uri) {
-      return;
-    }
-
-    try {
-      rpcService.downloadBytestreamFile("execution_log.binpb.zst", profileFile.uri, this.props.model.getInvocationId());
-    } catch {
-      console.error("Error downloading execution log");
-    }
+    this.props.model.downloadExecutionLog();
   }
 
   sort(a: tools.protos.ExecLogEntry, b: tools.protos.ExecLogEntry): number {
@@ -124,6 +85,11 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     let second = this.state.direction == "asc" ? b : a;
 
     switch (this.state.sort) {
+      case "start-time":
+        if (+(first?.spawn?.metrics?.startTime?.seconds || 0) == +(second?.spawn?.metrics?.startTime?.seconds || 0)) {
+          return +(first?.spawn?.metrics?.startTime?.nanos || 0) - +(second?.spawn?.metrics?.startTime?.nanos || 0);
+        }
+        return +(first?.spawn?.metrics?.startTime?.seconds || 0) - +(second?.spawn?.metrics?.startTime?.seconds || 0);
       case "total-duration":
         if (+(first?.spawn?.metrics?.totalTime?.seconds || 0) == +(second?.spawn?.metrics?.totalTime?.seconds || 0)) {
           return +(first?.spawn?.metrics?.totalTime?.nanos || 0) - +(second?.spawn?.metrics?.totalTime?.nanos || 0);
@@ -157,6 +123,18 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     });
   }
 
+  handlePlatformPropertyFilterChange(propertyName: string, value: string) {
+    this.setState((prevState) => {
+      const newFilters = new Map(prevState.platformPropertyFilters);
+      if (value === "*") {
+        newFilters.delete(propertyName);
+      } else {
+        newFilters.set(propertyName, value);
+      }
+      return { platformPropertyFilters: newFilters };
+    });
+  }
+
   handleMoreClicked() {
     this.setState({ limit: this.state.limit + 100 });
   }
@@ -175,6 +153,23 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     return `/invocation/${this.props.model.getInvocationId()}?${search}#action`;
   }
 
+  getPlatformProperties(platform?: any): Map<string, string> {
+    const props = new Map<string, string>();
+    if (!platform?.properties) return props;
+    for (const prop of platform.properties) {
+      if (prop.name && prop.value) {
+        props.set(prop.name, prop.value);
+      }
+    }
+    return props;
+  }
+
+  getPlatformPropertyValue(platform?: any, propertyName?: string): string {
+    if (!platform?.properties || !propertyName) return "";
+    const prop = platform.properties.find((p: any) => p.name === propertyName);
+    return prop?.value || "";
+  }
+
   render() {
     if (this.state.loading) {
       return <div className="loading" />;
@@ -189,6 +184,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
 
     const mnemonics = new Set<string>();
     const runners = new Set<string>();
+    const platformPropertyValues = new Map<string, Set<string>>();
 
     const spawns = this.state.log
       .filter((l) => {
@@ -198,6 +194,14 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
         if (l.spawn?.runner) {
           runners.add(l.spawn.runner);
         }
+        const platformProps = this.getPlatformProperties(l.spawn?.platform);
+        for (const [propName, propValue] of platformProps) {
+          if (!platformPropertyValues.has(propName)) {
+            platformPropertyValues.set(propName, new Set<string>());
+          }
+          platformPropertyValues.get(propName)!.add(propValue);
+        }
+
         if (l.type != "spawn") {
           return false;
         }
@@ -206,6 +210,12 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
         }
         if (this.state.runnerFilter != "" && l.spawn?.runner != this.state.runnerFilter) {
           return false;
+        }
+        for (const [propName, filterValue] of this.state.platformPropertyFilters) {
+          const actualValue = this.getPlatformPropertyValue(l.spawn?.platform, propName);
+          if (filterValue != "*" && actualValue != filterValue) {
+            return false;
+          }
         }
         if (
           this.props.filter != "" &&
@@ -231,24 +241,53 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                 <Download className="download-exec-log-button" onClick={() => this.downloadLog()} />
               </div>
               <div className="invocation-sort-controls">
-                <span className="invocation-filter-title">Mnemonic</span>
-                <Select onChange={this.handleMnemonicFilterChange.bind(this)} value={this.state.mnemonicFilter}>
-                  <Option value="">All</Option>
-                  {sorted(mnemonics).map((m) => (
-                    <Option value={m}>{m}</Option>
+                <div className="invocation-filter-control">
+                  <span className="invocation-filter-title">Mnemonic</span>
+                  <Select onChange={this.handleMnemonicFilterChange.bind(this)} value={this.state.mnemonicFilter}>
+                    <Option value="">All</Option>
+                    {sorted(mnemonics).map((m) => (
+                      <Option value={m}>{m}</Option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="invocation-filter-control">
+                  <span className="invocation-filter-title">Runner</span>
+                  <Select onChange={this.handleRunnerFilterChange.bind(this)} value={this.state.runnerFilter}>
+                    <Option value="">All</Option>
+                    {sorted(runners).map((m) => (
+                      <Option value={m}>{m}</Option>
+                    ))}
+                  </Select>
+                </div>
+                {Array.from(platformPropertyValues.entries())
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([propName, values]) => (
+                    <div className="invocation-filter-control" key={propName}>
+                      <span className="invocation-filter-title">{propName}</span>
+                      <Select
+                        onChange={(e) => this.handlePlatformPropertyFilterChange(propName, e.target.value)}
+                        value={
+                          this.state.platformPropertyFilters.has(propName)
+                            ? this.state.platformPropertyFilters.get(propName)
+                            : "*"
+                        }>
+                        <Option value="*">All</Option>
+                        {sorted(values).map((value) => (
+                          <Option key={value} value={value}>
+                            {value}
+                          </Option>
+                        ))}
+                        <Option value="">Not set</Option>
+                      </Select>
+                    </div>
                   ))}
-                </Select>
-                <span className="invocation-sort-title">Runner</span>
-                <Select onChange={this.handleRunnerFilterChange.bind(this)} value={this.state.runnerFilter}>
-                  <Option value="">All</Option>
-                  {sorted(runners).map((m) => (
-                    <Option value={m}>{m}</Option>
-                  ))}
-                </Select>
-                <span className="invocation-sort-title">Sort by</span>
-                <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
-                  <Option value="total-duration">Total Duration</Option>
-                </Select>
+                <div className="invocation-filter-control">
+                  <span className="invocation-filter-title">Sort by</span>
+                  <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
+                    <Option value="start-time">Start Time</Option>
+                    <Option value="total-duration">Total Duration</Option>
+                  </Select>
+                </div>
                 <span className="group-container">
                   <div>
                     <input
@@ -293,16 +332,30 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                       </div>
                       <div>{spawn.spawn?.args.join(" ").slice(0, 200)}...</div>
                       <div className="invocation-execution-row-stats">
-                        {spawn.spawn?.metrics?.totalTime && (
-                          <div>Duration: {format.durationProto(spawn.spawn.metrics.totalTime)}</div>
-                        )}
                         <div>Mnemonic: {spawn.spawn?.mnemonic}</div>
                         <div>Runner: {spawn.spawn?.runner}</div>
+                        {Array.from(this.getPlatformProperties(spawn.spawn?.platform)).map(([propName, propValue]) => (
+                          <div key={propName}>
+                            {propName}: {propValue}
+                          </div>
+                        ))}
                         <div>Remotable: {spawn.spawn?.remotable ? "true" : "false"}</div>
                         <div>Cachable: {spawn.spawn?.cacheable ? "true" : "false"}</div>
                         <div>Exit code: {spawn.spawn?.exitCode || 0}</div>
-                        {/* {spawn.spawn?.metrics.} // todo add metrics here and filters from remote exec log */}
+                        {spawn.spawn?.metrics?.startTime && (
+                          <div>Start time: {format.formatTimestamp(spawn.spawn.metrics.startTime)}</div>
+                        )}
+                        {spawn.spawn?.metrics?.totalTime && (
+                          <div>Duration: {format.durationProto(spawn.spawn.metrics.totalTime)}</div>
+                        )}
                       </div>
+                      {spawn.spawn?.digest && (
+                        <ActionCompareButtonComponent
+                          invocationId={this.props.model.getInvocationId()}
+                          actionDigest={digestToString(spawn.spawn.digest)}
+                          mini={true}
+                        />
+                      )}
                     </div>
                   </Link>
                 ))}

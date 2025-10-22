@@ -6,9 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gorm.io/gorm"
@@ -47,6 +49,7 @@ func getAllTables() []Table {
 		&Execution{},
 		&TestTargetStatus{},
 		&AuditLog{},
+		&RawUsage{},
 	}
 	return tbls
 }
@@ -63,13 +66,6 @@ func getEngine() string {
 		return fmt.Sprintf("ReplicatedReplacingMergeTree('%s', '%s')", *zooPath, *replicaName)
 	}
 	return "ReplacingMergeTree()"
-}
-
-func tableClusterOption() string {
-	if *dataReplicationEnabled {
-		return fmt.Sprintf("on cluster '%s'", *clusterName)
-	}
-	return ""
 }
 
 // Invocation constains a subset of tables.Invocations.
@@ -188,6 +184,14 @@ type Execution struct {
 	NetworkPacketsSent     int64
 	NetworkPacketsReceived int64
 
+	// UsageStats - Linux PSI stats
+	CPUPressureSomeStallUsec    int64
+	CPUPressureFullStallUsec    int64
+	MemoryPressureSomeStallUsec int64
+	MemoryPressureFullStallUsec int64
+	IOPressureSomeStallUsec     int64
+	IOPressureFullStallUsec     int64
+
 	// Task sizing
 	EstimatedMemoryBytes          int64
 	EstimatedMilliCPU             int64
@@ -224,6 +228,12 @@ type Execution struct {
 	ExecutionPriority      int32
 	RequestedIsolationType string
 	EffectiveIsolationType string `gorm:"type:LowCardinality(String)"` // This values comes from the executor
+
+	// Runner metadata
+	RunnerID            string
+	RunnerTaskNumber    int64
+	PlatformHash        string
+	PersistentWorkerKey string
 
 	RequestedTimeoutUsec int64
 	EffectiveTimeoutUsec int64
@@ -292,6 +302,12 @@ func (e *Execution) AdditionalFields() []string {
 		"NetworkBytesReceived",
 		"NetworkPacketsSent",
 		"NetworkPacketsReceived",
+		"CPUPressureSomeStallUsec",
+		"CPUPressureFullStallUsec",
+		"MemoryPressureSomeStallUsec",
+		"MemoryPressureFullStallUsec",
+		"IOPressureSomeStallUsec",
+		"IOPressureFullStallUsec",
 		"EstimatedFreeDiskBytes",
 		"RequestedComputeUnits",
 		"RequestedMemoryBytes",
@@ -307,6 +323,10 @@ func (e *Execution) AdditionalFields() []string {
 		"ExecutionPriority",
 		"RequestedIsolationType",
 		"EffectiveIsolationType",
+		"RunnerID",
+		"RunnerTaskNumber",
+		"PlatformHash",
+		"PersistentWorkerKey",
 		"RequestedTimeoutUsec",
 		"EffectiveTimeoutUsec",
 		"Region",
@@ -397,6 +417,62 @@ func (i *AuditLog) TableName() string {
 
 func (i *AuditLog) TableOptions() string {
 	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, event_time_usec, audit_log_id)", getEngine())
+}
+
+// RawUsage contains usage data which may potentially contain duplicate rows.
+// Use the Usage view to get unique usage counts.
+//
+// See http://go/usage-v2 for details.
+type RawUsage struct {
+	// GroupID is the BuildBuddy group ID to which the usage is attributed.
+	GroupID string `gorm:"type:String"`
+
+	// SKU is the usage counter type.
+	SKU sku.SKU `gorm:"type:LowCardinality(String)"`
+
+	// Labels contains additional labels used to further qualify the SKU.
+	// This should only be used in cases where there may be a large number of
+	// possible dimensions (too many to be represented as a SKU) but the
+	// frequency of usage for each combination of dimensions is expected to be
+	// relatively low.
+	Labels map[sku.LabelName]sku.LabelValue `gorm:"type:Map(LowCardinality(String), LowCardinality(String))"`
+
+	// PeriodStart is the start of the period during which the usage occurred.
+	// Currently, usage is collected in 1-minute intervals.
+	PeriodStart time.Time `gorm:"type:DateTime64(6, 'UTC')"`
+
+	// BufferID uniquely identifies the storage location where this usage row
+	// was buffered before being flushed to ClickHouse, so that if the buffered
+	// rows are flushed more than once (e.g. due to transient errors), the
+	// flushed usage data is deduplicated when using a FINAL query over the
+	// table. Currently, we buffer in Redis, in each cluster where the app is
+	// located. So an appropriate value here might be "<cluster-name>:redis".
+	BufferID string `gorm:"type:LowCardinality(String)"`
+
+	// Count is the number of units of usage measured.
+	Count int64 `gorm:"type:Int64"`
+}
+
+func (u *RawUsage) TableName() string {
+	return "RawUsage"
+}
+
+func (i *RawUsage) TableOptions() string {
+	return "ENGINE=" + getEngine() +
+		" ORDER BY (group_id, period_start, sku, labels, buffer_id)" +
+		// When using FINAL to deduplicate, partitioning by month allows
+		// the deduplication to be done in parallel for each partition.
+		// See https://clickhouse.com/docs/guides/replacing-merge-tree#partitioning-and-merging-across-partitions
+		//
+		" PARTITION BY toYYYYMM(period_start)"
+}
+
+func (i *RawUsage) ExcludedFields() []string {
+	return nil
+}
+
+func (i *RawUsage) AdditionalFields() []string {
+	return nil
 }
 
 // hasProjection checks whether a projection exist in the clickhouse

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -69,7 +70,7 @@ import (
 var (
 	appTarget                 = flag.String("executor.app_target", "grpcs://remote.buildbuddy.io", "The GRPC url of a buildbuddy app server.")
 	cacheTarget               = flag.String("executor.cache_target", "", "The GRPC url of the remote cache to use. If empty, the value from --executor.app_target is used.")
-	cacheTargetTrafficPercent = flag.Int("executor.cache_target_traffic_percent", 100, "The percent of cache traffic to send to --executor.cache_target. If not 100, the remainder will be sent to --executor.app_target.")
+	cacheTargetTrafficPercent = flag.Int("executor.cache_target_traffic_percent", -1, "The percent of cache traffic to send to --executor.cache_target. If not 100, the remainder will be sent to --executor.app_target. If -1 (the default), then 100% of cache traffic will be sent to executor.cache_target (which defaults to executor.app_target if not set).")
 	disableLocalCache         = flag.Bool("executor.disable_local_cache", false, "If true, a local file cache will not be used.")
 	deleteFileCacheOnStartup  = flag.Bool("executor.delete_filecache_on_startup", false, "If true, delete the file cache on startup")
 	deleteBuildRootOnStartup  = flag.Bool("executor.delete_build_root_on_startup", false, "If true, delete the build root on startup")
@@ -105,17 +106,29 @@ type cacheClient interface {
 }
 
 func dialCacheOrDie(target string, env environment.Env) *grpc_client.ClientConnPool {
+	log.Infof("Connecting to cache target %q", target)
 	conn, err := grpc_client.DialInternal(env, target)
 	if err != nil {
 		log.Fatalf("Unable to connect to cache '%s': %s", target, err)
 	}
-	log.Infof("Connecting to cache target: %s", target)
+	log.Debugf("Connected to cache target: %s", target)
 	return conn
 }
 
 func initializeCacheClientsOrDie(appTarget, cacheTarget string, cacheTargetTrafficPercent int, realEnv *real_environment.RealEnv) {
 	if isOldEndpoint(appTarget) || isOldEndpoint(cacheTarget) {
 		log.Warning("You are using the old BuildBuddy endpoint, cloud.buildbuddy.io. Migrate `executor.app_target` and `executor.cache_target` (if applicable) to remote.buildbuddy.io for improved performance.")
+	}
+
+	// If the user isn't explicitly configuring cache_target_traffic_percent,
+	// then route 100% to cache_target if configured, otherwise 100% to
+	// app_target.
+	if cacheTargetTrafficPercent == -1 {
+		if cacheTarget == "" {
+			cacheTargetTrafficPercent = 0
+		} else {
+			cacheTargetTrafficPercent = 100
+		}
 	}
 
 	if appTarget == "" {
@@ -228,7 +241,7 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 	}
 
 	// Identify ourselves in gRPC requests to the app.
-	usageutil.SetClientType(*clientType)
+	usageutil.SetServerName(*clientType)
 
 	initializeCacheClientsOrDie(*appTarget, *cacheTarget, *cacheTargetTrafficPercent, realEnv)
 
@@ -239,11 +252,12 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 		}
 	}
 
+	log.Infof("Connecting to app target: %s", *appTarget)
 	conn, err := grpc_client.DialInternal(realEnv, *appTarget)
 	if err != nil {
 		log.Fatalf("Unable to connect to app '%s': %s", *appTarget, err)
 	}
-	log.Infof("Connecting to app target: %s", *appTarget)
+	log.Debugf("Connected to app target: %s", *appTarget)
 
 	realEnv.GetHealthChecker().AddHealthCheck("grpc_app_connection", conn)
 	realEnv.SetSchedulerClient(scpb.NewSchedulerClient(conn))
@@ -258,10 +272,6 @@ func main() {
 
 	setUmask()
 
-	if *maxThreads > 0 {
-		debug.SetMaxThreads(*maxThreads)
-	}
-
 	rootContext := context.Background()
 
 	// Flags must be parsed before config secrets integration is enabled since
@@ -275,6 +285,10 @@ func main() {
 	}
 
 	config.ReloadOnSIGHUP()
+
+	if *maxThreads > 0 {
+		debug.SetMaxThreads(*maxThreads)
+	}
 
 	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
@@ -392,9 +406,14 @@ func main() {
 		reg.Start(rootContext)
 	}()
 
+	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *listen, *port))
+	if err != nil {
+		log.Fatalf("Failed to listen on port %d: %s", *port, err)
+	}
 	go func() {
-		http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), nil)
+		_ = http.Serve(lis, nil)
 	}()
+
 	env.GetHealthChecker().WaitForGracefulShutdown()
 }
 

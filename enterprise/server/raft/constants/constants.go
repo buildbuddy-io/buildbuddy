@@ -18,6 +18,8 @@ const (
 	PlacementDriverQueryEvent = "placement_driver_query_event"
 
 	CacheName = "raft"
+
+	DefaultPartitionID = "default"
 )
 
 // Key range contants
@@ -84,6 +86,9 @@ var (
 	// A prefix to prepend to session keys
 	SessionPrefix = keys.MakeKey(SystemPrefix, []byte("session-"))
 
+	// A prefix to prepend to partition descriptors.
+	PartitionPrefix = keys.MakeKey(SystemPrefix, []byte("partition-"))
+
 	// Local Keys:
 	// When the cluster was created.
 	ClusterSetupTimeKey = keys.MakeKey(LocalPrefix, []byte("cluster_setup_time"))
@@ -112,6 +117,7 @@ var (
 	RangeNotCurrentMsg   = "Range not current"   // break
 	RangeLeaseInvalidMsg = "Range lease invalid" // continue
 	RangeSplittingMsg    = "Range splitting"
+	ConflictKeyMsg       = "Conflict on key"
 )
 
 type ReplicaState int

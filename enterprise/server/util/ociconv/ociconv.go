@@ -1,9 +1,11 @@
 package ociconv
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -22,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -48,7 +51,7 @@ func hashFile(filename string) (string, error) {
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // getDiskImagesPath returns the parent directory where disk images are stored
@@ -214,4 +217,94 @@ func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, works
 	}
 	log.Debugf("Wrote container %q to image file: %q", containerImage, imageFile)
 	return imageFile, nil
+}
+
+// OverlayfsLayerToTarball converts an extracted overlayfs layer to an
+// uncompressed OCI image layer tarball, writing the tarball content to the
+// given writer.
+//
+// Note that this does not perfectly reconstruct the original layer tarball. For
+// example, it does not preserve hardlinks, and will instead copy each file.
+func OverlayfsLayerToTarball(ctx context.Context, w io.Writer, layerDir string) error {
+	const fileWhiteoutPrefix = ".wh."
+	const dirWhiteoutChildFileName = ".wh..wh..opq"
+
+	tw := tar.NewWriter(w)
+	err := filepath.Walk(layerDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relpath, err := filepath.Rel(layerDir, path)
+		if err != nil {
+			return err
+		}
+
+		header, err := tar.FileInfoHeader(info, "" /*=linkname*/)
+		if err != nil {
+			return fmt.Errorf("failed to create tar header for %s: %w", path, err)
+		}
+		header.Name = relpath
+
+		if info.Mode().IsRegular() {
+			if err := tw.WriteHeader(header); err != nil {
+				return fmt.Errorf("write header for %s: %w", relpath, err)
+			}
+			f, err := os.Open(path)
+			if err != nil {
+				return fmt.Errorf("open file %s: %w", relpath, err)
+			}
+			defer f.Close()
+			if _, err := io.Copy(tw, f); err != nil {
+				return fmt.Errorf("copy file %s: %w", relpath, err)
+			}
+		} else if info.Mode().IsDir() {
+			rawXattr := make([]byte, 4)
+			sz, err := unix.Getxattr(path, "trusted.overlay.opaque", rawXattr)
+			if err == nil && sz >= 0 && string(rawXattr[:sz]) == "y" {
+				tw.WriteHeader(&tar.Header{
+					Name: filepath.Join(relpath, dirWhiteoutChildFileName),
+					Mode: 0644,
+					Size: 0,
+				})
+				return nil
+			} else {
+				if err := tw.WriteHeader(header); err != nil {
+					return fmt.Errorf("write header for %s: %w", relpath, err)
+				}
+			}
+		} else if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return fmt.Errorf("readlink %s: %w", relpath, err)
+			}
+			header.Linkname = target
+			if err := tw.WriteHeader(header); err != nil {
+				return fmt.Errorf("write header for %s: %w", relpath, err)
+			}
+		} else if info.Mode()&os.ModeCharDevice != 0 {
+			// Char devices with device number 0 are represented as whiteout
+			// (deletion) markers in the tarball, by prefixing the file name
+			// with ".wh."
+			if info.Sys().(*syscall.Stat_t).Rdev == 0 {
+				base := filepath.Base(relpath)
+				if err := tw.WriteHeader(&tar.Header{
+					Name: filepath.Join(filepath.Dir(relpath), fileWhiteoutPrefix+base),
+					Mode: 0644,
+					Size: 0,
+				}); err != nil {
+					return fmt.Errorf("write header for %s: %w", relpath, err)
+				}
+				return nil
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("walk layer dir: %w", err)
+	}
+	if err := tw.Close(); err != nil {
+		return fmt.Errorf("flush tar writer: %w", err)
+	}
+	return nil
 }

@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "experiments",
     srcs = ["experiments.go"],
@@ -18,17 +20,17 @@ go_library(
     ],
 )
 
-package(default_visibility = ["//enterprise:__subpackages__"])
-
 go_test(
     name = "experiments_test",
     srcs = ["experiments_test.go"],
     deps = [
         ":experiments",
         "//server/tables",
+        "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/authutil",
         "//server/util/claims",
+        "//server/util/random",
         "@com_github_open_feature_go_sdk//openfeature",
         "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_open_feature_go_sdk//openfeature/testing",

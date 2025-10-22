@@ -22,6 +22,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -409,6 +411,14 @@ func (f *fakeCasClient) GetTree(ctx context.Context, in *repb.GetTreeRequest, op
 	return &getTreeStreamer{
 		data: f.response,
 	}, nil
+}
+
+func (f *fakeCasClient) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest, opts ...grpc.CallOption) (*repb.SpliceBlobResponse, error) {
+	panic("unimplemented")
+}
+
+func (f *fakeCasClient) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest, opts ...grpc.CallOption) (*repb.SplitBlobResponse, error) {
+	panic("unimplemented")
 }
 
 type fakeFilecache struct {
@@ -894,7 +904,7 @@ func TestUploadWriterAndGetBlob(t *testing.T) {
 
 func TestUploadWriter_BlobExists(t *testing.T) {
 	for _, useZstd := range []bool{false, true} {
-		t.Run(fmt.Sprintf("/use_zstd_%t", useZstd), func(t *testing.T) {
+		t.Run(fmt.Sprintf("zstd=%t", useZstd), func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
 			_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 			testcache.Setup(t, te, localGRPClis)
@@ -938,17 +948,22 @@ func TestUploadWriter_BlobExists(t *testing.T) {
 				uw, err := cachetools.NewUploadWriter(ctx, te.GetByteStreamClient(), casRN)
 				require.NoError(t, err)
 
+				// This will return an error iff it flushed and the server
+				// closed the stream before the last client send started.
 				n, err := uw.Write(buf)
-				if useZstd {
-					require.Error(t, err)
-					require.Greater(t, n, 0)
+				if err != nil {
+					require.Equalf(t, gstatus.Code(err).String(), codes.AlreadyExists.String(), "Error wasn't AlreadyExists: %v", err)
 				} else {
-					require.NoError(t, err)
 					require.Equal(t, uploadSize, int64(n))
 				}
 
 				err = uw.Commit()
 				require.NoError(t, err)
+				if useZstd {
+					require.Equal(t, int64(-1), uw.GetCommittedSize())
+				} else {
+					require.Equal(t, uploadSize, uw.GetCommittedSize())
+				}
 
 				err = uw.Close()
 				require.NoError(t, err)

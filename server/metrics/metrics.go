@@ -152,17 +152,20 @@ const (
 	// Status of the task size write request: `ok`, `missing_stats` or `error`.
 	TaskSizeWriteStatusLabel = "status"
 
-	// The full name of the grpc method: `/<service>/<method>`
-	GRPCFullMethodLabel = "grpc_full_method"
+	// The namespace that is protected by quota manager.
+	QuotaNamespace = "quota_namespace"
 
 	// The key used for quota accounting, either a group ID or an IP address.
 	QuotaKey = "quota_key"
 
-	// Whether the request was allowed by quota manager.
-	QuotaAllowed = "quota_allowed"
-
 	// Describes the type of cache request
 	CacheRequestType = "type"
+
+	// Origin of the cache request (for usage tracking): should be "internal" or "external"
+	CacheRequestOrigin = "origin"
+
+	// Whether or not billable usage was recorded for this request ("true", "false")
+	UsageTracked = "tracked"
 
 	// Describes the name of the server that handles a client request, such as "byte_stream_server" or "cas_server"
 	ServerName = "server_name"
@@ -176,7 +179,7 @@ const (
 	// Status of the Clickhouse operation: `ok`, `error`.
 	ClickhouseStatusLabel = "status"
 
-	// The ID of a raft nodehost.
+	// The ID of a partition.
 	RaftNodeHostIDLabel = "node_host_id"
 
 	// The range ID of a raft region.
@@ -190,6 +193,10 @@ const (
 
 	// The type of raft move `add`, or `remove`.
 	RaftMoveLabel = "move_type"
+
+	// The type of operation on a partition: "initialize", "soft-delte",
+	// "hard-delete".
+	RaftPartitionOpLabel = "op"
 
 	// The type of lease action `Acquire`, `Drop`.
 	RaftLeaseActionLabel = "lease_action"
@@ -209,6 +216,18 @@ const (
 
 	// Raft Event Type, such as "range-removed", "range-usage-updated"
 	RaftEventType = "raft_event"
+
+	// Raft Driver Action
+	RaftDriverAction = "driver_action"
+
+	// Raft Driver Requeue Type
+	RaftDriverRequeueType = "driver_requeue_type"
+
+	// Raft Replica State: staging, removing
+	RaftReplicaState = "replica_state"
+
+	// The status of processing txn record: "success" or "failure"
+	RaftTxnRecordProcessStatus = "txn_record_process_status"
 
 	// Binary version. Example: `v2.0.0`.
 	VersionLabel = "version"
@@ -237,9 +256,6 @@ const (
 
 	// Container image tag.
 	ContainerImageTag = "container_image_tag"
-
-	// SociArtifactStore.GetArtifacts outcome tag.
-	GetSociArtifactsOutcomeTag = "get_soci_artifacts_outcome_tag"
 
 	// The TreeCache status: hit/miss/invalid_entry.
 	TreeCacheLookupStatus = "status"
@@ -313,6 +329,12 @@ const (
 	CacheProxyRequestType = "proxy_request_type"
 
 	OCIResourceTypeLabel = "oci_resource_type"
+
+	OpLabel = "op"
+
+	ClientNameLabel = "client_name"
+
+	BatchOperatorName = "operator_name"
 )
 
 // Label value constants
@@ -325,8 +347,9 @@ const (
 	LocalOnlyCacheProxyRequestLabel = "local_only"
 	DefaultCacheProxyRequestLabel   = "default"
 
-	OCIManifestResourceTypeLabel = "manifest"
-	OCIBlobResourceTypeLabel     = "blob"
+	OCIManifestResourceTypeLabel     = "manifest"
+	OCIBlobResourceTypeLabel         = "blob"
+	OCIBlobMetadataResourceTypeLabel = "blob_metadata"
 )
 
 // Other constants
@@ -510,6 +533,7 @@ var (
 		CacheTypeLabel,
 		CacheEventTypeLabel,
 		GroupID,
+		UsageTracked,
 	})
 
 	CacheNumHitsExported = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -531,6 +555,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		UsageTracked,
 	})
 
 	CacheDownloadSizeBytesExported = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -540,6 +565,7 @@ var (
 		Help:      "Number of bytes downloaded from the remote cache.",
 	}, []string{
 		GroupID,
+		CacheRequestOrigin,
 	})
 	// #### Examples
 	//
@@ -556,6 +582,7 @@ var (
 		Help:      "Download duration for each file downloaded from the remote cache, in **microseconds**.",
 	}, []string{
 		CacheTypeLabel,
+		UsageTracked,
 	})
 
 	CacheRequestedInlineSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -585,6 +612,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		UsageTracked,
 	})
 
 	CacheUploadSizeBytesExported = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -594,6 +622,7 @@ var (
 		Help:      "Number of bytes uploaded to the remote cache",
 	}, []string{
 		GroupID,
+		CacheRequestOrigin,
 	})
 
 	// #### Examples
@@ -611,6 +640,7 @@ var (
 		Help:      "Upload duration for each file uploaded to the remote cache, in **microseconds**.",
 	}, []string{
 		CacheTypeLabel,
+		UsageTracked,
 	})
 
 	// #### Examples
@@ -786,6 +816,17 @@ var (
 		CacheHitMissStatus,
 	})
 
+	DistributedCacheBackfillLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_backfill_latency_usec",
+		Help:      "Latency of backfilling a single digest.",
+		Buckets:   durationUsecBuckets(10*time.Millisecond, 22*time.Second, 3),
+	}, []string{
+		GroupID,
+		StatusLabel,
+	})
+
 	MigrationNotFoundErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -923,6 +964,15 @@ var (
 		LookasideCacheLookupStatus,
 	})
 
+	LookasideCacheLookupBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "lookaside_cache_lookup_bytes",
+		Help:      "Total number bytes served from the Lookaside Cache by hit/miss status.",
+	}, []string{
+		LookasideCacheLookupStatus,
+	})
+
 	// This metric is in milliseconds because Grafana heatmaps don't display
 	// microsecond durations nicely when they can contain large durations.
 	LookasideCacheEvictionAgeMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -966,7 +1016,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "executed_action_metadata_durations_usec",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*day, 1.2),
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*day, 2.0),
 		Help:      "Time spent in each stage of action execution, in **microseconds**. Queries should filter or group by the `stage` label, taking care not to aggregate different stages.",
 	}, []string{
 		ExecutedActionStageLabel,
@@ -1229,13 +1279,6 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "assignable_milli_cpu",
 		Help:      "Maximum total CPU time on the executor that can be allocated for task execution, in **milliCPU** (CPU-milliseconds per second).",
-	})
-
-	RemoteExecutionCPUUtilization = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: bbNamespace,
-		Subsystem: "remote_execution",
-		Name:      "cpu_utilization_milli_cpu",
-		Help:      "Approximate current CPU utilization of tasks executing, in **milli-CPU** (CPU-milliseconds per second). This allows for much higher granularity than using a `rate()` on `used_milli_cpu` metric.",
 	})
 
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -1608,12 +1651,14 @@ var (
 		FileCacheRequestStatusLabel,
 	})
 
-	FileCacheLinkLatencyUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+	FileCacheOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
-		Name:      "file_cache_link_latency_usec",
-		Help:      "Latency of individual file cache link operations.",
+		Name:      "file_cache_op_latency_usec",
+		Help:      "Latency of individual file cache operations.",
 		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Second, 10),
+	}, []string{
+		OpLabel,
 	})
 
 	FileCacheLastEvictionAgeUsec = promauto.NewGauge(prometheus.GaugeOpts{
@@ -1732,6 +1777,26 @@ var (
 		Name:      "delete_duration_usec",
 		Buckets:   coarseMicrosecondToHour,
 		Help:      "Delete duration per blobstore file deletion, in **microseconds**.",
+	}, []string{
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreExistsCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "exists_count",
+		Help:      "Number of existance checks in the blobstore.",
+	}, []string{
+		StatusLabel,
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreExistsDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "exists_duration_usec",
+		Buckets:   coarseMicrosecondToHour,
+		Help:      "CheckExists duration, in **microseconds**.",
 	}, []string{
 		BlobstoreTypeLabel,
 	})
@@ -1909,7 +1974,7 @@ var (
 	// #### Examples
 	//
 	// ```promql
-	// # Median request duration for successfuly processed (2xx) requests.
+	// # Median request duration for successfully processed (2xx) requests.
 	// # Other status codes may be associated with early-exits and are
 	// # likely to add too much noise.
 	// histogram_quantile(
@@ -1946,6 +2011,7 @@ var (
 		Name:      "client_request_count",
 		Help:      "HTTP outgoing request count.",
 	}, []string{
+		ClientNameLabel,
 		HTTPHostLabel,
 		HTTPMethodLabel,
 	})
@@ -1957,6 +2023,7 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Response size of response for each HTTP client request in **bytes**.",
 	}, []string{
+		ClientNameLabel,
 		HTTPHostLabel,
 		HTTPMethodLabel,
 		HTTPResponseCodeLabel,
@@ -2235,6 +2302,28 @@ var (
 		CacheBackendLabel,
 	})
 
+	BatchOperatorEnqueuedDigests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "batch_operator_enqueued_digests",
+		Help:      "The number of digests enqueued in a batch operator, with the outcome of the enqueue operation.",
+	}, []string{
+		BatchOperatorName,
+		GroupID,
+		EnqueueUpdateOutcome,
+	})
+
+	BatchOperatorFlushedDigests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "batch_operator_flushed_digests",
+		Help:      "The number of digests flushed from a batch operator.",
+	}, []string{
+		BatchOperatorName,
+		GroupID,
+		StatusLabel,
+	})
+
 	// ### Misc metrics
 
 	Version = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -2263,23 +2352,23 @@ var (
 		HealthCheckName,
 	})
 
-	RPCsHandledTotalByQuotaKey = promauto.NewCounterVec(prometheus.CounterOpts{
+	QuotaExceeded = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "quota",
-		Name:      "rpcs_handled_total_by_quota_key",
-		Help:      "Total number of RPCs completed on the server by quota_key, regardless of success or failure.",
+		Name:      "quota_exceeded_count",
+		Help:      "Total number of calls banned by quota server",
 	}, []string{
-		GRPCFullMethodLabel,
+		QuotaNamespace,
 		QuotaKey,
-		QuotaAllowed,
 	})
 
-	RegistryBlobRangeLatencyUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+	QuotaKeyEmptyCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
-		Subsystem: "registry",
-		Name:      "blob_range_latency_usec",
-		Help:      "Latency of serving layer blob ranges.",
-		Buckets:   coarseMicrosecondToHour,
+		Subsystem: "quota",
+		Name:      "quota_key_empty_count",
+		Help:      "Total number of calls with empty quota key",
+	}, []string{
+		QuotaNamespace,
 	})
 
 	ClickhouseInsertedCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2307,6 +2396,7 @@ var (
 		Help:      "Number of ClickHouse SQL queries that resulted in an error.",
 	}, []string{
 		SQLQueryTemplateLabel,
+		StatusHumanReadableLabel,
 	})
 	ClickhouseQueryCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -2394,6 +2484,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		UsageTracked,
 	})
 
 	ServerUncompressedUploadBytesCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2405,6 +2496,7 @@ var (
 		CacheTypeLabel,
 		ServerName,
 		GroupID,
+		UsageTracked,
 	})
 
 	ServerDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -2417,6 +2509,7 @@ var (
 		CacheTypeLabel,
 		ServerName,
 		GroupID,
+		UsageTracked,
 	})
 
 	ServerUncompressedDownloadBytesCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2428,6 +2521,7 @@ var (
 		CacheTypeLabel,
 		ServerName,
 		GroupID,
+		UsageTracked,
 	})
 
 	DigestUploadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -2439,6 +2533,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		UsageTracked,
 	})
 
 	DigestDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -2450,6 +2545,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		UsageTracked,
 	})
 
 	Logs = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2462,6 +2558,17 @@ var (
 	})
 
 	// ### Raft cache metrics
+
+	RaftPartitionOperations = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "partition_operations",
+		Help:      "Number of operations on partitions",
+	}, []string{
+		PartitionID,
+		RaftPartitionOpLabel,
+		StatusHumanReadableLabel,
+	})
 
 	RaftRanges = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
@@ -2486,15 +2593,6 @@ var (
 		Subsystem: "raft",
 		Name:      "leaders",
 		Help:      "Number of raft leaders on each nodehost.",
-	}, []string{
-		RaftRangeIDLabel,
-	})
-
-	RaftRecords = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: bbNamespace,
-		Subsystem: "raft",
-		Name:      "records",
-		Help:      "Number of raft records in each range.",
 	}, []string{
 		RaftRangeIDLabel,
 	})
@@ -2677,6 +2775,45 @@ var (
 	}, []string{
 		RaftNodeHostMethodLabel,
 		RaftRangeIDLabel,
+	})
+
+	RaftDriverActionCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "driver_actions",
+		Help:      "The total number of driver action",
+	}, []string{
+		RaftDriverAction,
+		RaftDriverRequeueType,
+		RaftRangeIDLabel,
+	})
+
+	RaftIntermediateReplicaCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "intermediate_replicas_count",
+		Help:      "The number of intermediate replicas",
+	}, []string{
+		RaftReplicaState,
+		RaftRangeIDLabel,
+	})
+
+	RaftTxnRecordProcessCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "txn_record_process_count",
+		Help:      "The total number of driver action",
+	}, []string{
+		RaftTxnRecordProcessStatus,
+	})
+
+	RaftEvictionSamplesChanSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "eviction_samples_chan_size",
+		Help:      "Num of items in eviction samples chan",
+	}, []string{
+		PartitionID,
 	})
 
 	APIKeyLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -3093,17 +3230,6 @@ var (
 		CacheNameLabel,
 	})
 
-	// Temporary metric to verify AC sampling behavior.
-	PebbleCacheGroupIDSampleCount = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "remote_cache",
-		Name:      "pebble_cache_groupid_sample_count",
-		Help:      "The number of times a group has been selected for key sampling.",
-	}, []string{
-		GroupID,
-		CacheNameLabel,
-	})
-
 	PebbleCacheNumChunksPerFile = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -3124,32 +3250,6 @@ var (
 	})
 
 	// ## Podman metrics
-
-	PodmanSociStoreCrashes = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "podman",
-		Name:      "soci_store_crash_count",
-		Help:      "Total number of times the soci store binary crashed and was restarted.",
-	})
-
-	PodmanGetSociArtifactsLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "podman",
-		Name:      "get_soci_artifacts_latency_usec",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 100*time.Minute, 10),
-		Help:      "The latency of retrieving SOCI artifacts from the app and storing them locally per image, in microseconds. Note this is slightly different than the latency of the GetArtifacts RPC as the artifacts must be fetched from the cache and stored locally, which adds some additional time.",
-	}, []string{
-		ContainerImageTag,
-	})
-
-	PodmanGetSociArtifactsOutcomes = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "podman",
-		Name:      "get_soci_artifacts_outcome",
-		Help:      "The outcome (cached or reason why not) of SociArtifactStore.GetArtifacts RPCs.",
-	}, []string{
-		GetSociArtifactsOutcomeTag,
-	})
 
 	PodmanColdImagePullLatencyMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -3353,6 +3453,23 @@ var (
 	}, []string{
 		OCIResourceTypeLabel,
 		CacheEventTypeLabel,
+	})
+
+	InputTreeSetupOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "input_tree_setup_op_latency_usec",
+		Help:      "Latency of individual operations used for setting up input trees.",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Second, 10),
+	}, []string{
+		OpLabel,
+	})
+
+	DiskFileWriterInProgressOps = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "disk",
+		Name:      "file_writer_in_progress_ops",
+		Help:      "Number of started, but not yet finished, FileWriter operations. This number includes operations that are blocked on the concurrency limiter.",
 	})
 )
 

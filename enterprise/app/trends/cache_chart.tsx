@@ -1,19 +1,19 @@
 import React from "react";
 import {
-  ResponsiveContainer,
-  ComposedChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
   Bar,
-  Line,
+  CartesianGrid,
+  ComposedChart,
   Legend,
+  Line,
+  ReferenceArea,
+  ResponsiveContainer,
   Tooltip,
   TooltipProps,
-  ReferenceArea,
+  XAxis,
+  YAxis,
 } from "recharts";
-import * as format from "../../../app/format/format";
 import { CategoricalChartState } from "recharts/types/chart/types";
+import * as format from "../../../app/format/format";
 
 export interface CacheChartProps {
   title: string;

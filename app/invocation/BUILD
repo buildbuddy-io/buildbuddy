@@ -8,7 +8,6 @@ ts_library(
     name = "invocation",
     srcs = ["invocation.tsx"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/moment",
@@ -132,7 +131,6 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
-        "//:node_modules/shlex",
         "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/capabilities",
@@ -146,6 +144,7 @@ ts_library(
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/format",
+        "//app/invocation:action_compare_button",
         "//app/invocation:execution_status",
         "//app/invocation:invocation_action_tree_node",
         "//app/invocation:invocation_model",
@@ -159,6 +158,7 @@ ts_library(
         "//app/util:errors",
         "//app/util:proto",
         "//app/util:rpc",
+        "//app/util:shlex",
         "//proto:execution_stats_ts_proto",
         "//proto:firecracker_ts_proto",
         "//proto:grpc_code_ts_proto",
@@ -277,6 +277,7 @@ ts_library(
     srcs = ["invocation_compare_button.tsx"],
     deps = [
         "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/rxjs",
         "//:node_modules/tslib",
@@ -286,6 +287,32 @@ ts_library(
         "//app/components/popup",
         "//app/invocation:invocation_comparison_service",
         "//app/router",
+    ],
+)
+
+ts_library(
+    name = "action_compare_button",
+    srcs = ["action_compare_button.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
+        "//app/components/button",
+        "//app/components/menu",
+        "//app/components/popup",
+        "//app/invocation:action_comparison_service",
+        "//app/router",
+    ],
+)
+
+ts_library(
+    name = "action_comparison_service",
+    srcs = ["action_comparison_service.ts"],
+    deps = [
+        "//:node_modules/rxjs",
+        "//app/alert:alert_service",
     ],
 )
 
@@ -344,7 +371,9 @@ ts_library(
         "//app/components/digest",
         "//app/components/link",
         "//app/format",
+        "//app/invocation:action_compare_button",
         "//app/invocation:invocation_execution_util",
+        "//app/util:cache",
         "//app/util:react",
         "//proto:execution_stats_ts_proto",
     ],
@@ -439,14 +468,14 @@ ts_library(
     name = "invocation_model",
     srcs = ["invocation_model.tsx"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
+        "//:node_modules/@types/varint",
         "//:node_modules/lucide-react",
         "//:node_modules/moment",
         "//:node_modules/react",
         "//:node_modules/rxjs",
-        "//:node_modules/shlex",
         "//:node_modules/tslib",
+        "//:node_modules/varint",
         "//app/capabilities",
         "//app/favicon",
         "//app/format",
@@ -454,6 +483,7 @@ ts_library(
         "//app/util:cache",
         "//app/util:exit_codes",
         "//app/util:proto",
+        "//app/util:shlex",
         "//proto:build_event_stream_ts_proto",
         "//proto:cache_ts_proto",
         "//proto:capability_ts_proto",
@@ -463,6 +493,7 @@ ts_library(
         "//proto:invocation_ts_proto",
         "//proto:remote_execution_ts_proto",
         "//proto:resource_ts_proto",
+        "//proto:spawn_ts_proto",
         "//proto:suggestion_ts_proto",
         "//proto/api/v1:common_ts_proto",
     ],
@@ -511,7 +542,6 @@ ts_library(
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
-        "//app/invocation:invocation_model",
     ],
 )
 
@@ -524,7 +554,6 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/tslib",
         "//app/components/banner",
-        "//app/components/button",
         "//app/components/button:link_button",
         "//app/components/filter_input",
         "//app/format",
@@ -572,6 +601,7 @@ ts_library(
         "//app/components/link",
         "//app/format",
         "//app/invocation:invocation_model",
+        "//proto:build_event_stream_ts_proto",
         "//proto:execution_stats_ts_proto",
         "//proto:group_ts_proto",
     ],
@@ -652,7 +682,6 @@ ts_library(
         "//:node_modules/tslib",
         "//app/components/link",
         "//app/invocation:invocation_model",
-        "//app/router",
         "//proto:cache_ts_proto",
     ],
 )
@@ -761,6 +790,7 @@ ts_library(
         "//:node_modules/tslib",
         "//app/components/link",
         "//app/format",
+        "//app/invocation:invocation_compare_button",
         "//app/router",
         "//app/util:exit_codes",
         "//proto:invocation_status_ts_proto",
@@ -860,6 +890,7 @@ ts_library(
         "//app/components/select",
         "//app/errors:error_service",
         "//app/format",
+        "//app/invocation:action_compare_button",
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
         "//app/util:cache",

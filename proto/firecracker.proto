@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package firecracker;
 
+import "google/protobuf/timestamp.proto";
 import "proto/remote_execution.proto";
 
 // VM properties which cannot be changed across snapshot/resume cycles.
@@ -32,6 +33,8 @@ message VMConfiguration {
   // Host CPUID information. For now, if hosts differ in any of these CPUID
   // fields, we do not share snapshots across the hosts.
   CPUID host_cpuid = 14;
+
+  bool enable_vfs = 16;
 
   // TODO: add container_image here?
 }
@@ -187,6 +190,9 @@ message VMMetadata {
     // For example, even if the same execution is retried multiple times using
     // the same snapshot key, each run will have a unqiue snapshot_id.
     string snapshot_id = 5;
+
+    // The approximate finish time of the task.
+    google.protobuf.Timestamp completed_timestamp = 6;
   }
 
   // The last task to execute on this VM. When resuming from snapshot, this
@@ -198,6 +204,14 @@ message VMMetadata {
 
   // The snapshot key the currently executing task saved to after execution.
   SnapshotKey snapshot_key = 4;
+
+  // The time at which the VM was created.
+  google.protobuf.Timestamp created_timestamp = 5;
+
+  // The number of times the VM has been saved by resuming, running an
+  // action, pausing, and saving a new version. It starts at 1 when the VM is
+  // first saved.
+  int64 saved_snapshot_version_number = 6;
 }
 
 // SnapshotVersionMetadata contains the version ID to be used for snapshots.

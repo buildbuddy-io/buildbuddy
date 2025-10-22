@@ -321,9 +321,13 @@ message SchedulingMetadata {
   string os = 2;
   string arch = 3;
   string pool = 4;
+
+  reserved 14;
+
   // If set, the task will be scheduled only on nodes matching this hostname
-  // prefix within the pool.
-  string hostname_prefix = 14;
+  // pattern within the pool.
+  string hostname_pattern = 15;
+
   // Group ID that owns the executors on which the task is to be executed.
   // May be different from the Group ID of the user that issued the Execute
   // request.
@@ -507,9 +511,12 @@ message ExecutionNode {
   // Assignable custom resources.
   repeated CustomResource assignable_custom_resources = 11;
 
-  // Remote execution node operating system.
-  // Ex. "linux".
-  string os = 5;
+  // Node's operating system family. One of: "darwin", "linux", or "windows".
+  string os_family = 5;
+
+  // Node's operating system with version info, suitable for display. This will
+  // be something like "macOS 10.17 Sierra".
+  string os_display_name = 15;
 
   // Architecture of the remote execution node.
   // Ex. "amd64"
@@ -533,6 +540,22 @@ message ExecutionNode {
   //
   // Ex. "8BiY6U0F"
   string executor_host_id = 10;
+
+  // Supported isolation types for this executor.
+  // Ex. ["docker", "firecracker", "none"]
+  repeated string supported_isolation_types = 12;
+
+  // Current number of tasks in the executor's queue.
+  int32 current_queue_length = 13;
+
+  // The number of in-flight actions the executor is currently executing.
+  int32 active_action_count = 14;
+
+  // The Xcode versions installed on this executor.
+  repeated string xcode_versions = 16;
+
+  // The Xcode SDKs installed on this executor.
+  repeated string xcode_sdks = 17;
 }
 
 message GetExecutionNodesRequest {
@@ -549,6 +572,9 @@ message GetExecutionNodesResponse {
 
     // Whether tasks will be routed to this node by default.
     bool is_default = 2;
+
+    // Last time this executor checked in with the scheduler.
+    google.protobuf.Timestamp last_check_in_time = 3;
   }
 
   bool user_owned_executors_supported = 3;

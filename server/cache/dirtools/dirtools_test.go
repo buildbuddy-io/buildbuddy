@@ -3,6 +3,7 @@ package dirtools_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -10,9 +11,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -20,8 +23,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -763,7 +768,7 @@ func TestDownloadTree(t *testing.T) {
 			childDir,
 		},
 	}
-	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -828,7 +833,7 @@ func TestDownloadTreeDedupeInflight(t *testing.T) {
 	eg := errgroup.Group{}
 	for i := 0; i < 10; i++ {
 		eg.Go(func() error {
-			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
 			if err != nil {
 				return err
 			}
@@ -896,7 +901,7 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 			childDir,
 		},
 	}
-	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -961,7 +966,7 @@ func TestDownloadTreeEmptyDigest(t *testing.T) {
 			childDir,
 		},
 	}
-	info, err := dirtools.DownloadTree(ctx, env, "foo", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	info, err := dirtools.DownloadTree(ctx, env, "foo", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -999,7 +1004,7 @@ func TestDownloadTreeExistingCorrectSymlink(t *testing.T) {
 		},
 	}
 
-	_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1028,7 +1033,7 @@ func TestDownloadTreeExistingCorrectSymlink(t *testing.T) {
 		},
 	}
 
-	_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1064,7 +1069,7 @@ func TestDownloadTreeExistingIncorrectSymlink(t *testing.T) {
 		},
 	}
 
-	_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1093,7 +1098,7 @@ func TestDownloadTreeExistingIncorrectSymlink(t *testing.T) {
 		},
 	}
 
-	_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1105,8 +1110,145 @@ func TestDownloadTreeExistingIncorrectSymlink(t *testing.T) {
 	assert.Equal(t, "mytestdataB", string(targetContents), "symlinked file contents should match target file")
 }
 
+type controlledCache struct {
+	interfaces.Cache
+
+	mu          sync.Mutex
+	readerDelay map[digest.Key]chan struct{}
+}
+
+func (cc *controlledCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	dk := digest.NewKey(r.GetDigest())
+	cc.mu.Lock()
+	delay, ok := cc.readerDelay[dk]
+	cc.mu.Unlock()
+
+	if ok {
+		log.CtxInfof(ctx, "Injecting artificial reader delay for %s", digest.String(r.GetDigest()))
+		<-delay
+	}
+
+	return cc.Cache.Reader(ctx, r, uncompressedOffset, limit)
+}
+
+func (cc *controlledCache) InjectReaderPause(dk digest.Key) func() {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	done := make(chan struct{})
+	cc.readerDelay[dk] = done
+	return func() {
+		close(done)
+		cc.mu.Lock()
+		delete(cc.readerDelay, dk)
+		cc.mu.Unlock()
+	}
+}
+
+func TestDownloadTreeDirectlyToFileCache(t *testing.T) {
+	env, ctx := testEnv(t)
+
+	instanceName := "foo"
+	file1Contents := "mytestdataA"
+	file2Contents := "mytestdataB-withDifferentLength"
+	file1Digest := setFile(t, env, ctx, instanceName, file1Contents)
+	file2Digest := setFile(t, env, ctx, instanceName, file2Contents)
+	tmp := testfs.MakeTempDir(t)
+	addToFileCache(t, ctx, env, tmp, file1Contents)
+
+	largeRN, largeFileContent := testdigest.RandomCASResourceBuf(t, rpcutil.GRPCMaxSizeBytes+1)
+	err := env.GetCache().Set(ctx, largeRN, largeFileContent)
+	require.NoError(t, err)
+
+	fileNode1 := &repb.FileNode{
+		Name:   "fileA.txt",
+		Digest: file1Digest,
+	}
+	childDir := &repb.Directory{
+		Files: []*repb.FileNode{
+			fileNode1,
+		},
+	}
+
+	childDigest, err := digest.ComputeForMessage(childDir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	fileNode2 := &repb.FileNode{
+		Name:   "fileB.txt",
+		Digest: file2Digest,
+	}
+	largeFileNode := &repb.FileNode{
+		Name:   "largeFile.txt",
+		Digest: largeRN.GetDigest(),
+	}
+	directory := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				fileNode2,
+				largeFileNode,
+			},
+			Directories: []*repb.DirectoryNode{
+				{
+					Name:   "my-directory",
+					Digest: childDigest,
+				},
+			},
+		},
+		Children: []*repb.Directory{
+			childDir,
+		},
+	}
+
+	cc := env.GetCache().(*controlledCache)
+	unblockLargeRead := cc.InjectReaderPause(digest.NewKey(largeRN.GetDigest()))
+
+	// Not specifying a download directory so the inputs should be downloaded directly into the file cache.
+	tf, err := dirtools.NewTreeFetcher(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{})
+	require.NoError(t, err)
+	_, err = tf.Start()
+	require.NoError(t, err)
+
+	err = tf.Fetch(ctx, fileNode1)
+	require.NoError(t, err)
+	err = tf.Fetch(ctx, fileNode2)
+	require.NoError(t, err)
+
+	{
+		// Try fetching a digest for which there is already a fetch in progress.
+		// As the cache reader is intentionally blocked, the fetch should timeout.
+		timeoutCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+		err = tf.Fetch(timeoutCtx, largeFileNode)
+		cancel()
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+
+		// Now unblock the reader after a short delay. The fetch should be
+		// unblocked when the cache read succeeds.
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			unblockLargeRead()
+		}()
+		err = tf.Fetch(ctx, largeFileNode)
+		require.NoError(t, err)
+	}
+
+	info, err := tf.Wait()
+	require.NoError(t, err)
+
+	require.Equal(t, int64(2), info.FileCount, "two files should be transferred, one linked from filecache")
+	require.Equal(t, int64(len(file2Contents)+len(largeFileContent)), info.BytesTransferred, "two files should be transferred. file 1 should be linked from filecache")
+
+	fc := env.GetFileCache()
+	require.True(t, fc.ContainsFile(ctx, fileNode1), "file 1 should be in the file cache")
+	require.True(t, fc.ContainsFile(ctx, fileNode2), "file 2 should be in the file cache")
+	require.True(t, fc.ContainsFile(ctx, largeFileNode), "large file should be in the file cache")
+}
+
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
+
+	// wrap the cache so we can add artificial delays to operations
+	cc := &controlledCache{Cache: env.GetCache(), readerDelay: make(map[digest.Key]chan struct{})}
+	env.SetCache(cc)
+
 	ctx := context.Background()
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	if err != nil {
@@ -1154,7 +1296,8 @@ func setFile(t *testing.T, env *testenv.TestEnv, ctx context.Context, instanceNa
 		CacheType:    rspb.CacheType_CAS,
 		InstanceName: instanceName,
 	}
-	env.GetCache().Set(ctx, r, dataBytes)
+	err := env.GetCache().Set(ctx, r, dataBytes)
+	require.NoError(t, err)
 	t.Logf("Added digest %s/%d to cache (content: %q)", d.GetHash(), d.GetSizeBytes(), data)
 	return d
 }

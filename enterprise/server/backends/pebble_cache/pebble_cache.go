@@ -3,6 +3,7 @@ package pebble_cache
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -39,12 +40,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
@@ -90,7 +91,7 @@ var (
 	enableTableBloomFilter    = flag.Bool("cache.pebble.enable_table_bloom_filter", true, "If true, write bloom filter data with pebble SSTables.")
 	enableAutoRatchet         = flag.Bool("cache.pebble.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to latest version.")
 	groupSizeSampleRate       = flag.Float64("cache.pebble.group_size_sample_rate", .01, "Compute estimated size per-group in partitions by sampling at this rate.")
-	groupSizeSampleDecayRate  = flag.Float64("cache.pebble.group_size_sample_decay_rate", .9, "Constant factor used to decay away partition size estimates.")
+	groupSizeSampleDecayRate  = flag.Float64("cache.pebble.group_size_sample_decay_rate", .95, "Constant factor used to decay away partition size estimates.")
 
 	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UnspecifiedKeyVersion), "The key version new data will be written with. If negative, will write to the highest existing version in the database, or the highest known version if a new database is created.")
 	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 50, "QPS limit for data version migration")
@@ -141,7 +142,6 @@ const (
 	megabyte = 1e6
 
 	DefaultPartitionID           = "default"
-	partitionDirectoryPrefix     = "PT"
 	partitionMetadataFlushPeriod = 5 * time.Second
 	metricsRefreshPeriod         = 30 * time.Second
 
@@ -495,6 +495,15 @@ func warnIfCacheTooLarge(opts *Options) {
 	if opts.MaxSizeBytes > int64(usage.TotalBytes) {
 		alert.UnexpectedEvent(fmt.Sprintf("Pebble cache maximum size (%d) exceeds disk partition size (%d)", opts.MaxSizeBytes, usage.TotalBytes))
 	}
+	var partitionTotal int64
+	for _, part := range opts.Partitions {
+		if part.MaxSizeBytes <= 0 {
+			alert.UnexpectedEvent(fmt.Sprintf("Pebble cache partition %q size (%d) is negative", part.ID, part.MaxSizeBytes))
+		}
+	}
+	if partitionTotal > int64(usage.TotalBytes) {
+		alert.UnexpectedEvent(fmt.Sprintf("Pebble cache combined partition size (%d) exceeds maximum size (%d)", partitionTotal, opts.MaxSizeBytes))
+	}
 }
 
 // defaultPebbleOptions returns default pebble config options.
@@ -505,6 +514,7 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 		L0CompactionThreshold:    2,
 		MaxConcurrentCompactions: func() int { return 18 },
 		MemTableSize:             64 << 20, // 64 MB
+		MaxOpenFiles:             2000,     // double the default
 		EventListener: &pebble.EventListener{
 			BackgroundError: mc.BackgroundError,
 			WriteStallBegin: mc.WriteStallBegin,
@@ -809,10 +819,10 @@ func (p *PebbleCache) minDatabaseVersion() filestore.PebbleKeyVersion {
 	return p.minDBVersion
 }
 
-func (p *PebbleCache) maxDatabaseVersion() filestore.PebbleKeyVersion {
+func (p *PebbleCache) minAndMaxDatabaseVersions() (min, max filestore.PebbleKeyVersion) {
 	p.versionMu.RLock()
 	defer p.versionMu.RUnlock()
-	return p.maxDBVersion
+	return p.minDBVersion, p.maxDBVersion
 }
 
 func (p *PebbleCache) activeDatabaseVersion() filestore.PebbleKeyVersion {
@@ -949,8 +959,7 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 	}
 	defer iter.Close()
 
-	minVersion := p.maxDatabaseVersion()
-	maxVersion := p.minDatabaseVersion()
+	minVersion, maxVersion := p.minAndMaxDatabaseVersions()
 	migrationStart := time.Now()
 	keysSeen := 0
 	keysMigrated := 0
@@ -1409,7 +1418,8 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 		totalACCount += acCount
 	}
 	estimatedSizeByGroup := computeEstimatedSizeByGroup(sampledSizeByGroup, totalSizeBytes)
-	buf += fmt.Sprintf("Min DB version: %d, Max DB version: %d, Active version: %d\n", p.minDatabaseVersion(), p.maxDatabaseVersion(), p.activeDatabaseVersion())
+	minVersion, maxVersion := p.minAndMaxDatabaseVersions()
+	buf += fmt.Sprintf("Min DB version: %d, Max DB version: %d, Active version: %d\n", minVersion, maxVersion, p.activeDatabaseVersion())
 	buf += fmt.Sprintf("[All Partitions] Total Size: %d bytes\n", totalSizeBytes)
 	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
 	buf += fmt.Sprintf("[All Partitions] AC total: %d items\n", totalACCount)
@@ -1442,7 +1452,9 @@ func (p *PebbleCache) userGroupID(ctx context.Context) string {
 func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string) {
 	groupID := p.userGroupID(ctx)
 	for _, pm := range p.partitionMappings {
-		if pm.GroupID == groupID && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
+		// If the partition mapping doesn't have a group ID set, any group can
+		// write to it as long as the prefix matches.
+		if (pm.GroupID == "" || pm.GroupID == groupID) && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
 			return groupID, pm.PartitionID
 		}
 	}
@@ -1507,7 +1519,7 @@ func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebbl
 	defer spn.End()
 
 	var lastErr error
-	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
+	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
 		keyBytes, err := key.Bytes(version)
 		if err != nil {
 			return -1, err
@@ -1524,33 +1536,6 @@ func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebbl
 func (p *PebbleCache) lookupFileMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) error {
 	_, err := p.lookupFileMetadataAndVersion(ctx, db, key, fileMetadata)
 	return err
-}
-
-// iterHasKey returns a bool indicating if the provided iterator has the
-// exact key specified.
-func (p *PebbleCache) iterHasKey(iter pebble.Iterator, key filestore.PebbleKey) (bool, error) {
-	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
-		keyBytes, err := key.Bytes(version)
-		if err != nil {
-			return false, err
-		}
-		if iter.SeekGE(keyBytes) && bytes.Equal(iter.Key(), keyBytes) {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte, fileMetadata *sgpb.FileMetadata) error {
-	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
-	defer spn.End()
-
-	err := pebble.GetProto(reader, keyBytes, fileMetadata)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) bool {
@@ -1615,6 +1600,8 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 }
 
 func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1854,7 +1841,6 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 	if err != nil {
 		return err
 	}
-
 	// N.B. This deletes the file metadata. Because inlined files are stored
 	// with their metadata, this means we don't need to delete the metadata
 	// again below in the switch statement.
@@ -1892,7 +1878,7 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 }
 
 func getSizeOnLocalDisk(key []byte, md *sgpb.FileMetadata, includeMetadata bool) int64 {
-	mdSize := int64(proto.Size(md)) + int64(len(key))
+	mdSize := int64(md.SizeVT()) + int64(len(key))
 	payloadSize := int64(0)
 
 	storageMetadata := md.GetStorageMetadata()
@@ -1934,20 +1920,29 @@ func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 
 	md := sgpb.FileMetadataFromVTPool()
 	defer md.ReturnToVTPool()
-	err = p.lookupFileMetadata(ctx, db, key, md)
+	version, err := p.lookupFileMetadataAndVersion(ctx, db, key, md)
 	if err != nil {
 		return err
 	}
 
-	// TODO(tylerw): Make version aware.
-	if err := p.deleteFileAndMetadata(ctx, key, filestore.UndefinedKeyVersion, md); err != nil {
+	if err := p.deleteFileAndMetadata(ctx, key, version, md); err != nil {
 		log.Errorf("[%s] Error deleting old record %q: %s", p.name, key.String(), err)
+		if errors.Is(err, fs.ErrNotExist) {
+			return status.NotFoundErrorf("Resource %s not found in cache", r)
+		}
 		return err
 	}
 	return nil
 }
 
 func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	if spn.IsRecording() {
+		spn.SetAttributes(
+			attribute.String("digest_hash", r.GetDigest().GetHash()),
+			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
+	}
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -2254,6 +2249,13 @@ func (z *zstdCompressor) Close() error {
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	if spn.IsRecording() {
+		spn.SetAttributes(
+			attribute.String("digest_hash", r.GetDigest().GetHash()),
+			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
+	}
+	defer spn.End()
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -2456,15 +2458,9 @@ func (p *PebbleCache) DoneScanning() bool {
 	return brokenFilesDone && orphanedFilesDone
 }
 
-type watermark struct {
-	timestamp time.Time
-	sizeBytes int64
-}
-
 // TestingWaitForGC should be used by tests only.
 // This function waits until any active file deletion has finished.
 func (p *PebbleCache) TestingWaitForGC(ctx context.Context) error {
-	lastSize := make(map[string]watermark)
 	for {
 		p.statusMu.Lock()
 		evictors := p.evictors
@@ -2478,12 +2474,6 @@ func (p *PebbleCache) TestingWaitForGC(ctx context.Context) error {
 			totalSizeBytes := e.sizeBytes
 			e.mu.Unlock()
 
-			if lastSize[e.part.ID].sizeBytes != totalSizeBytes {
-				lastSize[e.part.ID] = watermark{
-					timestamp: time.Now(),
-					sizeBytes: totalSizeBytes,
-				}
-			}
 			if totalSizeBytes <= maxAllowedSize {
 				done += 1
 			}
@@ -2494,8 +2484,7 @@ func (p *PebbleCache) TestingWaitForGC(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return status.CanceledError("context canceled waiting for GC")
-		default:
-			continue
+		case <-time.After(100 * time.Millisecond): // Take a break so we don't busy loop
 		}
 	}
 	return nil
@@ -2586,12 +2575,8 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 		RateLimit:                   float64(*evictionRateLimit),
 		MaxSizeBytes:                int64(JanitorCutoffThreshold * float64(part.MaxSizeBytes)),
 		Clock:                       clock,
-		OnEvict: func(ctx context.Context, sample *approxlru.Sample[*evictionKey]) error {
-			return pe.evict(ctx, sample)
-		},
-		OnSample: func(ctx context.Context, n int) ([]*approxlru.Sample[*evictionKey], error) {
-			return pe.sample(ctx, n)
-		},
+		OnEvict:                     pe.evict,
+		OnSample:                    pe.sample,
 	})
 	if err != nil {
 		return nil, err
@@ -2614,12 +2599,7 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 }
 
 func (e *partitionEvictor) startSampleGenerator(quitChan chan struct{}) {
-	eg := &errgroup.Group{}
-	eg.Go(func() error {
-		return e.generateSamplesForEviction(quitChan)
-	})
-	eg.Wait()
-
+	e.generateSamplesForEviction(quitChan)
 	// Drain samples chan before exiting
 	for len(e.samples) > 0 {
 		<-e.samples
@@ -2654,30 +2634,24 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		return err
 	}
 	defer db.Close()
+
+	randomKeyBuf := make([]byte, 64)
 	start, end := keyRange([]byte(e.partitionKeyPrefix() + "/"))
-	iterCreatedAt := time.Now()
-	iter, err := db.NewIter(&pebble.IterOptions{
-		LowerBound: start,
-		UpperBound: end,
-	})
-	if err != nil {
-		return err
-	}
+	leftInBatch := 0
+	var iterCreatedAt time.Time
+	var iter pebble.Iterator
 	// We update the iter variable later on, so we need to wrap the Close call
 	// in a func to operate on the correct iterator instance.
 	defer func() {
-		iter.Close()
+		if iter != nil {
+			iter.Close()
+		}
 	}()
 
-	totalCount := 0
-	shouldCreateNewIter := false
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
-
-	timer := e.clock.NewTimer(SamplerSleepDuration)
-	defer timeutil.StopAndDrainClockworkTimer(timer)
-
-	randomKeyBuf := make([]byte, 64)
+	timer := e.clock.NewTimer(0)
+	defer timer.Stop()
 
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
@@ -2703,16 +2677,12 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			}
 		}
 
-		if totalCount > e.samplesPerBatch || time.Since(iterCreatedAt) > e.samplerIterRefreshPeriod {
-			// Going to refresh the iterator in the next iteration.
-			shouldCreateNewIter = true
-		}
-
 		// Refresh the iterator once a while
-		if shouldCreateNewIter {
-			shouldCreateNewIter = false
-			totalCount = 0
+		if leftInBatch <= 0 || time.Since(iterCreatedAt) > e.samplerIterRefreshPeriod {
+			leftInBatch = e.samplesPerBatch
 			iterCreatedAt = time.Now()
+			// This iterator won't be positioned (Valid() will return false),
+			// so we will position it below.
 			newIter, err := db.NewIter(&pebble.IterOptions{
 				LowerBound: start,
 				UpperBound: end,
@@ -2720,33 +2690,37 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			if err != nil {
 				return err
 			}
-			iter.Close()
+			if iter != nil {
+				iter.Close()
+			}
 			iter = newIter
 			// Decay away sampled partition sizes over time.  This value is kinda arbitrary,
 			// but was chosen based on the default sampler refresh period of 5 minutes to
 			// ensure that samples mostly decay within a couple hours (normally it's faster
 			// than this, assuming eviction is firing on all cylinders).
+			e.mu.Lock()
 			for k, v := range e.sizeByGroup {
 				e.sizeByGroup[k] = int64(float64(v) * (*groupSizeSampleDecayRate))
 			}
+			e.mu.Unlock()
 		}
-		totalCount += 1
+		leftInBatch--
 		if !iter.Valid() {
-			// This should happen once every totalCount times or when
-			// we exausted the iter.
+			// This happens when we create a new iterator or exhaust the
+			// existing one.
 			randomKey, err := e.randomKey(randomKeyBuf)
 			if err != nil {
 				log.Warningf("[%s] cannot generate samples for eviction: failed to get random key: %s", e.cacheName, err)
 				return err
 			}
-			valid := iter.SeekGE(randomKey)
-			if !valid {
-				shouldCreateNewIter = true
+			if valid := iter.SeekGE(randomKey); !valid {
+				leftInBatch = 0 // Force creating a new iterator
 				continue
 			}
 		}
 
-		err = proto.Unmarshal(iter.Value(), fileMetadata)
+		fileMetadata.ResetVT() // UnmarshalVT doesn't reset, unlike proto.Unmarshal.
+		err = fileMetadata.UnmarshalVT(iter.Value())
 		if err != nil {
 			log.Warningf("[%s] cannot generate sample for eviction, skipping: failed to read proto: %s", e.cacheName, err)
 			continue
@@ -2762,9 +2736,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		}
 
 		e.maybeAddToSampleChan(iter, fileMetadata, quitChan, timer)
-
 		iter.Next()
-		fileMetadata.ResetVT()
 	}
 }
 
@@ -2786,16 +2758,12 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 		SizeBytes: sizeBytes,
 		Timestamp: atime,
 	}
-	timeutil.StopAndDrainClockworkTimer(timer)
 	timer.Reset(SamplerSleepDuration)
 	select {
 	case e.samples <- sample:
 	case <-quitChan:
-		return
-	case <-timer.Chan():
-		// e.samples is full.
+	case <-timer.Chan(): // e.samples is full.
 	}
-
 }
 
 func (e *partitionEvictor) updateMetrics() {
@@ -2839,7 +2807,7 @@ func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, lastModifyUsec i
 	case rspb.CacheType_AC:
 		e.acCount += deltaCount
 	case rspb.CacheType_UNKNOWN_CACHE_TYPE:
-		log.Errorf("[%s] Cannot update cache size: resource of unknown type", e.cacheName)
+		log.Infof("[%s] Cannot update cache size: resource of unknown type", e.cacheName)
 	}
 	e.sizeBytes += deltaSize
 	e.lru.UpdateSizeBytes(e.sizeBytes)
@@ -3046,7 +3014,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	defer db.Close()
 
 	var key filestore.PebbleKey
-	version, err := key.FromBytes(sample.Key.bytes)
+	_, err = key.FromBytes(sample.Key.bytes)
 	if err != nil {
 		log.Warningf("[%s] unable to read key %s: %s", e.cacheName, sample.Key, err)
 		return
@@ -3055,7 +3023,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	defer unlockFn()
 
 	md := sgpb.FileMetadataFromVTPool()
-	err = readFileMetadata(e.ctx, db, sample.Key.bytes, md)
+	err = pebble.GetProto(db, sample.Key.bytes, md)
 	defer md.ReturnToVTPool()
 	if err != nil {
 		log.Infof("[%s] failed to read file metadata for key %s: %s", e.cacheName, sample.Key, err)
@@ -3068,7 +3036,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 		return
 	}
 
-	if err := e.deleteFile(key, md.GetFileRecord().GetIsolation().GetGroupId(), md.GetLastModifyUsec(), version, sample.SizeBytes, sample.Key.storageMetadata); err != nil {
+	if err := e.deleteFile(sample.Key.bytes, key, md.GetFileRecord().GetIsolation().GetGroupId(), md.GetLastModifyUsec(), sample.SizeBytes, sample.Key.storageMetadata); err != nil {
 		log.Errorf("[%s] Error evicting file for key %q: %s (ignoring)", e.cacheName, sample.Key, err)
 		return
 	}
@@ -3109,19 +3077,14 @@ func deleteDirIfEmptyAndOld(dir string) error {
 	return os.Remove(dir)
 }
 
-func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, groupID string, lastModifyUsec int64, version filestore.PebbleKeyVersion, storedSizeBytes int64, storageMetadata *sgpb.StorageMetadata) error {
-	keyBytes, err := key.Bytes(version)
-	if err != nil {
-		return err
-	}
-
+func (e *partitionEvictor) deleteFile(rawKey []byte, key filestore.PebbleKey, groupID string, lastModifyUsec int64, storedSizeBytes int64, storageMetadata *sgpb.StorageMetadata) error {
 	db, err := e.dbGetter.DB()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	if err := db.Delete(keyBytes, pebble.NoSync); err != nil {
+	if err := db.Delete(rawKey, pebble.NoSync); err != nil {
 		return err
 	}
 

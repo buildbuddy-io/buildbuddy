@@ -1,25 +1,26 @@
 import {
-  BookOpen,
-  Gauge,
-  Cloud,
-  PlayCircle,
-  Code,
-  SearchCode,
-  HardDrive,
-  Users,
-  GitBranch,
-  Github,
   BarChart2,
-  LayoutGrid,
+  BookOpen,
+  Cloud,
+  Code,
+  Fingerprint,
+  Gauge,
+  GitBranch,
   GitCommit,
+  Github,
+  HardDrive,
+  LayoutGrid,
   List,
-  Sliders,
-  Terminal,
+  MessageCircle,
   PanelLeftClose,
   PanelLeftOpen,
-  Fingerprint,
-  MessageCircle,
+  PlayCircle,
+  SearchCode,
+  Sliders,
   Snowflake,
+  Target,
+  Terminal,
+  Users,
   ZoomIn,
 } from "lucide-react";
 import React from "react";
@@ -61,6 +62,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
 
   isTrendsSelected() {
     return this.props.path.startsWith("/trends/");
+  }
+
+  isTargetsSelected() {
+    return this.props.path.startsWith("/targets/");
   }
 
   isExecutorsSelected() {
@@ -162,6 +167,12 @@ export default class SidebarComponent extends React.Component<Props, State> {
               title="Drilldown">
               <ZoomIn className="icon" />
               <span className="sidebar-item-text">Drilldown</span>
+            </SidebarLink>
+          )}
+          {capabilities.config.targetsPageEnabled && (
+            <SidebarLink selected={this.isTargetsSelected()} href={Path.targetsPath} title="Targets">
+              <Target className="icon" />
+              <span className="sidebar-item-text">Targets</span>
             </SidebarLink>
           )}
           {capabilities.test && (

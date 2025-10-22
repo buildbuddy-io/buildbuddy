@@ -16,20 +16,14 @@ var (
 	unimplementedError  = status.UnimplementedError("Auth not implemented")
 )
 
-func NewNullAuthenticator(anonymousUsageEnabled bool, adminGroupID string) *NullAuthenticator {
+func NewNullAuthenticator(anonymousUsageEnabled bool) *NullAuthenticator {
 	return &NullAuthenticator{
-		adminGroupID:           adminGroupID,
 		anonymousUsageDisabled: !anonymousUsageEnabled,
 	}
 }
 
 type NullAuthenticator struct {
-	adminGroupID           string
 	anonymousUsageDisabled bool
-}
-
-func (a *NullAuthenticator) AdminGroupID() string {
-	return a.adminGroupID
 }
 
 func (a *NullAuthenticator) AnonymousUsageEnabled(ctx context.Context) bool {

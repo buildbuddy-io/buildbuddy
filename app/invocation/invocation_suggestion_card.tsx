@@ -1,12 +1,13 @@
-import React from "react";
 import { AlertCircle, AlertTriangle, HelpCircle } from "lucide-react";
-import { TextLink } from "../components/link/link";
-import InvocationModel from "./invocation_model";
-import capabilities from "../capabilities/capabilities";
-import { User } from "../auth/user";
-import { grp } from "../../proto/group_ts_proto";
+import React from "react";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
+import { grp } from "../../proto/group_ts_proto";
+import { User } from "../auth/user";
+import capabilities from "../capabilities/capabilities";
+import { TextLink } from "../components/link/link";
 import { bytes as formatBytes } from "../format/format";
+import InvocationModel from "./invocation_model";
 
 interface Props {
   suggestions: Suggestion[];
@@ -92,6 +93,70 @@ export const getTimingDataSuggestion: SuggestionMatcher = ({ model }) => {
       </>
     ),
     reason: <>Shown because these flags are neither enabled nor explicitly disabled.</>,
+  };
+};
+
+export const getTestShardingSuggestion = ({
+  model,
+  resultEvents,
+}: {
+  model: InvocationModel;
+  resultEvents?: build_event_stream.BuildEvent[];
+}) => {
+  if (!capabilities.config.expandedSuggestionsEnabled) {
+    return null;
+  }
+  if (!model.isBazelInvocation()) {
+    return null;
+  }
+
+  // Only suggest for test commands
+  const command = model.getCommand();
+  if (command !== "test") return null;
+
+  // Check if --test_filter is specified
+  const testFilter = model.optionsMap.get("test_filter");
+  if (!testFilter) return null;
+
+  // Check if --test_sharding_strategy is already set to disabled
+  const testShardingStrategy = model.optionsMap.get("test_sharding_strategy");
+  if (testShardingStrategy === "disabled") return null;
+
+  // Check if any tests have multiple shards configured by looking at test results
+  let hasMultipleShards = false;
+
+  if (resultEvents && resultEvents.length > 0) {
+    // Early exit optimization: stop as soon as we find two different shard numbers
+    let firstShard: number | null = null;
+    for (const event of resultEvents) {
+      const shard = event.id?.testResult?.shard || 0;
+      if (firstShard === null) {
+        firstShard = shard;
+      } else if (firstShard !== shard) {
+        hasMultipleShards = true;
+        break;
+      }
+    }
+  }
+
+  if (!hasMultipleShards) {
+    return null;
+  }
+
+  return {
+    level: SuggestionLevel.INFO,
+    message: (
+      <>
+        When using <BazelFlag>--test_filter</BazelFlag>, consider adding{" "}
+        <BazelFlag>--test_sharding_strategy=disabled</BazelFlag> to find the test logs faster.
+      </>
+    ),
+    reason: (
+      <>
+        Shown because this build uses <span className="inline-code">--test_filter</span> with sharded tests, which can
+        cause misleading "no tests to run" warnings when test shards don't contain matching tests.
+      </>
+    ),
   };
 };
 
@@ -328,7 +393,7 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     if (model.optionsMap.get("experimental_remote_cache_compression")) return null;
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
 
-    const version = getBazelVersion(model);
+    const version = model.getBazelVersion();
     // Bazel pre-v5 doesn't support compression.
     if (version === null || version.major < 5) return null;
 
@@ -361,9 +426,11 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       return null;
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
 
-    const version = getBazelVersion(model);
+    const version = model.getBazelVersion();
     // threshold flag is available from Bazel 7.1 forward
-    if (version === null || version.major < 7 || version.minor < 1) return null;
+    if (version === null || version.major < 7 || (version.major == 7 && version.minor < 1)) return null;
+    // experimental_remote_cache_compression_threshold defaults to 100 from Bazel 8.0 forward
+    if (version === null || version.major >= 8) return null;
 
     return {
       level: SuggestionLevel.INFO,
@@ -409,7 +476,7 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     if (!model.optionsMap.get("remote_cache")) return null;
     if (model.optionsMap.get("remote_build_event_upload")) return null;
     if (model.optionsMap.get("experimental_remote_build_event_upload")) return null;
-    const version = getBazelVersion(model);
+    const version = model.getBazelVersion();
     // Bazel pre-v6 doesn't support --experimental_remote_build_event_upload=minimal, and Bazel post-v6 default to the
     // correct setting
     if (version === null || version.major != 6) return null;
@@ -437,7 +504,7 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
     if (!model.isBazelInvocation()) return null;
 
-    const version = getBazelVersion(model);
+    const version = model.getBazelVersion();
     if (version === null || version.major >= 8) return null;
 
     if (model.optionsMap.get("legacy_important_outputs")) return null;
@@ -723,16 +790,4 @@ function InlineProseList({ items }: { items: React.ReactNode[] }) {
     }
   }
   return <>{out}</>;
-}
-
-// getBazelVersion returns the major and minor version of Bazel from BES event.
-//
-// The version could contain rc version in the patch number, such as "7.2.1rc1".
-function getBazelVersion(model: InvocationModel): { major: number; minor: number } | null {
-  const version = model.started?.buildToolVersion;
-  if (!version) return null;
-  const segments = version.split(".").map(Number);
-  if (segments.length < 2) return null;
-  if (segments.slice(0, 2).some(isNaN)) return null;
-  return { major: segments[0], minor: segments[1] };
 }

@@ -1,10 +1,10 @@
-import React from "react";
 import Layout from "@theme/Layout";
-import common from "../css/common.module.css";
-import styles from "./open-source-repos.module.css";
-import contact from "./contact.module.css";
+import React from "react";
 import OSSList from "../components/oss/oss-list";
+import common from "../css/common.module.css";
 import message from "../util/message";
+import contact from "./contact.module.css";
+import styles from "./open-source-repos.module.css";
 
 let form = {
   name: React.createRef<HTMLInputElement>(),

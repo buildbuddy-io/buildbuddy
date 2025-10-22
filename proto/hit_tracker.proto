@@ -27,6 +27,10 @@ message CacheHit {
 
 message TrackRequest {
   repeated CacheHit hits = 1;
+
+  // A label for the server that served this cache hit--doesn't necessarily
+  // need to match the label of the server sending this TrackRequest.
+  string server = 2;
 }
 
 message TrackResponse {}

@@ -49,7 +49,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/server_notification"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/sociartifactstore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/suggestion"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -253,9 +252,6 @@ func main() {
 	if err := scheduler_server.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := remote_execution_redis_client.RegisterRemoteExecutionClient(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
 
 	if err := kms.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
@@ -270,9 +266,6 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := dsingleflight.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := sociartifactstore.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := prom.Register(realEnv); err != nil {

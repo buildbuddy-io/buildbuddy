@@ -35,8 +35,9 @@ type Index struct {
 	// top-level invocation proto.
 	TopLevelEvents []*inpb.InvocationEvent
 
-	eventCount      int
-	rootCauseLabels map[string]bool
+	eventCount            int
+	rootCauseLabels       map[string]bool
+	fullyCachedTestLabels map[string]bool
 }
 
 func New() *Index {
@@ -48,6 +49,7 @@ func New() *Index {
 		TestResultEventsByLabel:    map[string][]*bespb.BuildEvent{},
 		NamedSetOfFilesByID:        map[string]*bespb.NamedSetOfFiles{},
 		rootCauseLabels:            map[string]bool{},
+		fullyCachedTestLabels:      map[string]bool{},
 	}
 }
 
@@ -141,6 +143,9 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 			Timing:      api_common.TestTimingFromSummary(summary),
 			TestSummary: summary,
 		}
+		if summary.GetTotalNumCached() == summary.GetTotalRunCount() {
+			idx.fullyCachedTestLabels[label] = true
+		}
 	case *bespb.BuildEvent_TestResult:
 		label := event.GetBuildEvent().GetId().GetTestResult().GetLabel()
 		idx.TestResultEventsByLabel[label] = append(idx.TestResultEventsByLabel[label], event.GetBuildEvent())
@@ -227,23 +232,18 @@ func (idx *Index) Finalize() {
 	// Sort TargetsByStatus list values.
 	for _, targets := range idx.TargetsByStatus {
 		sort.Slice(targets, func(i, j int) bool {
-			// Root cause targets should be sorted first. Compute a ranking
-			// that's 0 if root cause, 1 otherwise, and compare that ranking
-			// first.
-			ri := boolToInt(!targets[i].RootCause)
-			rj := boolToInt(!targets[j].RootCause)
+			// Root cause targets should be sorted first, then non-cached
+			// targets, then cached targets. Within each group, sort by label.
+			ri, rj := targets[i].RootCause, targets[j].RootCause
 			if ri != rj {
-				return ri < rj
+				return ri
 			}
-
-			return targets[i].GetMetadata().GetLabel() < targets[j].GetMetadata().GetLabel()
+			li, lj := targets[i].GetMetadata().GetLabel(), targets[j].GetMetadata().GetLabel()
+			ci, cj := idx.fullyCachedTestLabels[li], idx.fullyCachedTestLabels[lj]
+			if ci != cj {
+				return !ci
+			}
+			return li < lj
 		})
 	}
-}
-
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }

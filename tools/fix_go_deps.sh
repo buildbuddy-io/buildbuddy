@@ -2,17 +2,11 @@
 set -euo pipefail
 
 : "${GO_PATH:=}"
-: "${GAZELLE_PATH:=}"
 : "${BAZEL_COMMAND:=bazelisk}"
 
 CI_FLAGS=""
 if [[ "${CI:-}" == true ]]; then
   CI_FLAGS=(--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url)
-fi
-
-GAZELLE_COMMAND=("$BAZEL_COMMAND" run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true ${CI_FLAGS[@]} //:gazelle --)
-if [[ "$GAZELLE_PATH" ]]; then
-  GAZELLE_COMMAND=("$GAZELLE_PATH")
 fi
 
 GO_COMMAND=("$BAZEL_COMMAND" run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true  ${CI_FLAGS[@]} //:go --)
@@ -25,8 +19,10 @@ if [[ "${1:-}" == "-d" ]] || [[ "${1:-}" == "--diff" ]]; then
   DIFF_MODE=1
 fi
 
+AFFECTED_FILES=(go.mod go.sum MODULE.bazel)
+
 if ((DIFF_MODE)); then
-  if ! git diff --quiet; then
+  if ! git diff --quiet -- "${AFFECTED_FILES[@]}"; then
     echo >&2 "Git working tree is dirty. To run in diff mode, 'check_go_deps.sh' must be run from a clean tree."
     git status --short --untracked=no 1>&2
     exit 1
@@ -36,7 +32,7 @@ fi
 tmp_log_file=$(mktemp)
 cleanup() {
   if ((DIFF_MODE)); then
-    git restore go.mod go.sum deps.bzl
+    git restore "${AFFECTED_FILES[@]}"
   fi
   rm -r "$tmp_log_file"
 }
@@ -78,22 +74,10 @@ if [[ $(echo "$first_two_lines" | uniq) != 'require (' ]]; then
   exit 1
 fi
 
-# Update deps.bzl (using Gazelle)
-if ! "${GAZELLE_COMMAND[@]}" update-repos -from_file=go.mod \
-  -to_macro=deps.bzl%install_go_mod_dependencies \
-  -prune=true &>"$tmp_log_file"; then
-  echo "Auto-updating 'deps.bzl' failed. Logs:" >&2
-  cat "$tmp_log_file" >&2
-  exit 1
-fi
-
-# Check MODULE.bazel (using 'bazel mod tidy')
-if ! "$BAZEL_COMMAND" mod tidy --enable_bzlmod &>"$tmp_log_file"; then
-  echo "Auto-updating 'MODULE.bazel' failed. Logs:" >&2
-  cat "$tmp_log_file" >&2
-  exit 1
-fi
-
 if ((DIFF_MODE)); then
-  git diff
+  DIFF=$(git diff -- "${AFFECTED_FILES[@]}")
+  if [[ "$DIFF" ]]; then
+    echo >&2 "$DIFF"
+    exit 1
+  fi
 fi

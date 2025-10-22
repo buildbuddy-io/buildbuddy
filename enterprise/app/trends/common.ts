@@ -1,7 +1,9 @@
-import moment from "moment";
-import { stats } from "../../../proto/stats_ts_proto";
 import { timeDay, timeMinute } from "d3-time";
+import moment from "moment";
+import format from "../../../app/format/format";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
+import { stats } from "../../../proto/stats_ts_proto";
+import { isExecutionMetric } from "../filter/filter_util";
 
 export enum TrendsTab {
   OVERVIEW,
@@ -92,11 +94,64 @@ export function computeTimeKeys(
   return { timeKeys: timeDay.range(timeDay.floor(domain[0]), domain[1]).map((v) => v.getTime()), ticks: [] };
 }
 
+export function renderMetricValue(m: stat_filter.Metric, v: number) {
+  if (isExecutionMetric(m)) {
+    switch (m.execution) {
+      case stat_filter.ExecutionMetricType.EXECUTION_WALL_TIME_EXECUTION_METRIC:
+      case stat_filter.ExecutionMetricType.QUEUE_TIME_USEC_EXECUTION_METRIC:
+      case stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_TIME_EXECUTION_METRIC:
+      case stat_filter.ExecutionMetricType.REAL_EXECUTION_TIME_EXECUTION_METRIC:
+      case stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_TIME_EXECUTION_METRIC:
+        return format.durationUsec(v);
+      case stat_filter.ExecutionMetricType.EXECUTION_CPU_NANOS_EXECUTION_METRIC:
+        return format.durationUsec(v / 1000);
+      case stat_filter.ExecutionMetricType.PEAK_MEMORY_EXECUTION_METRIC:
+      case stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_SIZE_EXECUTION_METRIC:
+      case stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_SIZE_EXECUTION_METRIC:
+        return format.bytes(v);
+      case stat_filter.ExecutionMetricType.EXECUTION_AVERAGE_MILLICORES_EXECUTION_METRIC:
+        return (v / 1000).toFixed(2);
+      default:
+        return v.toString();
+    }
+  } else {
+    switch (m.invocation) {
+      case stat_filter.InvocationMetricType.DURATION_USEC_INVOCATION_METRIC:
+      case stat_filter.InvocationMetricType.TIME_SAVED_USEC_INVOCATION_METRIC:
+        return (v / 1000000).toFixed(2) + "s";
+      case stat_filter.InvocationMetricType.CAS_CACHE_DOWNLOAD_SPEED_INVOCATION_METRIC:
+      case stat_filter.InvocationMetricType.CAS_CACHE_UPLOAD_SPEED_INVOCATION_METRIC:
+        return format.bitsPerSecond(8 * v);
+      case stat_filter.InvocationMetricType.CAS_CACHE_DOWNLOAD_SIZE_INVOCATION_METRIC:
+      case stat_filter.InvocationMetricType.CAS_CACHE_UPLOAD_SIZE_INVOCATION_METRIC:
+        return format.bytes(v);
+      case stat_filter.InvocationMetricType.CAS_CACHE_MISSES_INVOCATION_METRIC:
+      case stat_filter.InvocationMetricType.ACTION_CACHE_MISSES_INVOCATION_METRIC:
+      default:
+        return v.toString();
+    }
+  }
+}
+
 export function encodeMetricUrlParam(metric: stat_filter.Metric): string {
   if (metric.execution) {
     return "e" + metric.execution;
   } else {
     return "i" + metric.invocation;
+  }
+}
+
+export function decodeMetricUrlParam(param: string): stat_filter.Metric | undefined {
+  if (param.length < 2) {
+    return undefined;
+  } else if (param[0] === "e") {
+    const metric = Number.parseInt(param.substring(1));
+    return metric ? new stat_filter.Metric({ execution: metric }) : undefined;
+  } else if (param[0] === "i") {
+    const metric = Number.parseInt(param.substring(1));
+    return metric ? new stat_filter.Metric({ invocation: metric }) : undefined;
+  } else {
+    return undefined;
   }
 }
 

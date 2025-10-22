@@ -30,19 +30,15 @@ message RunRequest {
   // be routed to.
   string session_affinity_key = 6;
 
-  // OS on which to run. Defaults to "linux".
-  string os = 7;
-
-  // Arch on which to run. Defaults to "amd64".
-  string arch = 8;
-
-  // If true, start the runner but do not wait for the action to be scheduled.
-  bool async = 9;
-
   // Container image to run on. Defaults to the Ubuntu 20.04 Workflows image.
   // A `docker://` prefix is required.
   // Ex. `docker://gcr.io/flame-public/rbe-ubuntu20-04`
   string container_image = 10;
+
+  // Specifies what to wait until before returning a RunResponse.
+  // Default is value is STARTED which waits for the invocation to
+  // be started but not necessarily completed.
+  WaitCondition wait_until = 20;
 
   // Environment variables to set in the runner env.
   map<string, string> env = 11;
@@ -80,12 +76,37 @@ message RunRequest {
   // For non-idempotent workloads, set to true to disable this behavior.
   bool disable_retry = 19;
 
+  // DEPRECATED: Use wait_mode instead.
+  // If true, start the runner but do not wait for the action to be scheduled.
+  bool async = 9 [deprecated = true];
+
   // DEPRECATED: Use `steps` instead.
   string bazel_command = 4 [deprecated = true];
+
+  // DEPRECATED: Set OS and arch using the `exec_properties` named `os` and `arch`.
+  string os = 7 [deprecated = true];
+
+  // Arch on which to run. Defaults to "amd64".
+  string arch = 8 [deprecated = true];
+
 }
 
 message Step {
   string run = 1;
+}
+
+enum WaitCondition {
+  // Unknown wait condition.
+  UNKNOWN_CONDITION = 0;
+
+  // Wait for the run request to be queued.
+  QUEUED = 1;
+
+  // Wait until the invocation has started.
+  STARTED = 2;
+
+  // Wait for the invocation to complete.
+  COMPLETED = 3;
 }
 
 message RunResponse {
@@ -113,4 +134,8 @@ message RunnerKey {
   // platform property, or if unset, will default to the persistent worker's
   // command-line configuration (non-flagfile arguments).
   string persistent_worker_key = 4;
+
+  // NOTE: if adding more fields to this proto, consider also updating
+  // execution_stats.RunnerMetadata (as well as adding the field to ClickHouse)
+  // so that all runner key fields are queryable.
 }

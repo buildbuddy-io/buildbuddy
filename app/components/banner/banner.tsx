@@ -1,5 +1,5 @@
+import { AlertCircle, CheckCircle, Info, XCircle } from "lucide-react";
 import React from "react";
-import { XCircle, CheckCircle, AlertCircle, Info } from "lucide-react";
 
 const ICONS = {
   info: <Info className="icon blue" />,

@@ -8,11 +8,17 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+// Set via x_defs in the BUILD file.
+var (
+	busyboxImageRlocationpath string
 )
 
 func TestDockerWithOverlayfs_InputFilesAreImmutable(t *testing.T) {
@@ -37,11 +43,13 @@ func TestDockerWithOverlayfs_InputFilesAreImmutable(t *testing.T) {
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
+	busyboxImageRef := serveBusyboxImage(t)
+
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
 			{Name: "OSFamily", Value: runtime.GOOS},
 			{Name: "Arch", Value: runtime.GOARCH},
-			{Name: "container-image", Value: "docker://busybox"},
+			{Name: "container-image", Value: "docker://" + busyboxImageRef},
 		},
 	}
 
@@ -73,4 +81,11 @@ func TestDockerWithOverlayfs_InputFilesAreImmutable(t *testing.T) {
 			"output.txt": "output_txt_content",
 		})
 	}
+}
+
+func serveBusyboxImage(t *testing.T) string {
+	registry := testregistry.Run(t, testregistry.Opts{})
+	image := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
+	registry.Push(t, image, "busybox")
+	return registry.ImageAddress("busybox")
 }

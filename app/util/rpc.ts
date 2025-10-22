@@ -1,9 +1,8 @@
-import { Cancelable, ServerStream } from "../service/rpc_service";
-import { ServerStreamHandler, ServerStreamingRpcMethod } from "../service/rpc_service";
-import { FetchError, GRPCStatusError } from "./errors";
-import { google as google_status } from "../../proto/grpc_status_ts_proto";
 import { google as google_code } from "../../proto/grpc_code_ts_proto";
 import { google as google_errdetails } from "../../proto/grpc_error_details_ts_proto";
+import { google as google_status } from "../../proto/grpc_status_ts_proto";
+import { Cancelable, ServerStream, ServerStreamHandler, ServerStreamingRpcMethod } from "../service/rpc_service";
+import { FetchError, GRPCStatusError } from "./errors";
 
 export const Code = google_code.rpc.Code;
 

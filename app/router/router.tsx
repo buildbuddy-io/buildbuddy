@@ -1,10 +1,10 @@
+import { capability } from "../../proto/capability_ts_proto";
+import { user as user_proto } from "../../proto/user_ts_proto";
 import { User } from "../auth/user";
 import capabilities from "../capabilities/capabilities";
-import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import format from "../format/format";
 import rpc_service from "../service/rpc_service";
-import { user as user_proto } from "../../proto/user_ts_proto";
-import { grp } from "../../proto/group_ts_proto";
+import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 
 import {
   END_DATE_PARAM_NAME,
@@ -55,6 +55,9 @@ class Router {
     });
     shortcuts.registerSequence([KeyCombo.g, KeyCombo.g], () => {
       this.navigateToSettings();
+    });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.s], () => {
+      this.navigateToTargets();
     });
 
     this.redirectIfNecessary();
@@ -227,6 +230,10 @@ class Router {
     this.navigateTo(Path.settingsPath);
   }
 
+  navigateToTargets() {
+    this.navigateTo(Path.targetsPath);
+  }
+
   navigateToTrends() {
     this.navigateTo(Path.trendsPath);
   }
@@ -245,6 +252,14 @@ class Router {
 
   navigateToInvocation(invocationId: string) {
     this.navigateTo(Path.invocationPath + invocationId);
+  }
+
+  navigateToUserList(userListID: string) {
+    this.navigateTo(Path.settingsOrgUserListsPath + "/" + userListID);
+  }
+
+  navigateToUserLists() {
+    this.navigateTo(Path.settingsOrgUserListsPath);
   }
 
   getInvocationUrl(invocationId: string) {
@@ -332,6 +347,43 @@ class Router {
     return { a, b };
   }
 
+  getActionDetailsForCompare(path: string) {
+    const idsComponent = this.getLastPathComponent(path, Path.compareActionsPath);
+    if (!idsComponent) {
+      return null;
+    }
+    // Format: invocationA:actionA...invocationB:actionB
+    // Action digests can contain slashes, so we need to be careful with splitting
+    const [left, right] = idsComponent.split("...");
+    if (!left || !right) {
+      return null;
+    }
+
+    // Find the first colon to separate invocation ID from action digest
+    const colonIndexA = left.indexOf(":");
+    const colonIndexB = right.indexOf(":");
+
+    if (colonIndexA === -1 || colonIndexB === -1) {
+      return null;
+    }
+
+    const invocationA = left.substring(0, colonIndexA);
+    const actionA = left.substring(colonIndexA + 1);
+    const invocationB = right.substring(0, colonIndexB);
+    const actionB = right.substring(colonIndexB + 1);
+
+    if (!invocationA || !actionA || !invocationB || !actionB) {
+      return null;
+    }
+
+    return {
+      invocationA,
+      actionA: decodeURIComponent(actionA),
+      invocationB,
+      actionB: decodeURIComponent(actionB),
+    };
+  }
+
   getHistoryUser(path: string) {
     return this.getLastPathComponent(path, Path.userHistoryPath);
   }
@@ -397,7 +449,7 @@ class Router {
       return false;
     }
 
-    if (user?.selectedGroup.role == grp.Group.Role.ADMIN_ROLE) {
+    if (user?.selectedGroup.capabilities.includes(capability.Capability.ORG_ADMIN)) {
       return true;
     }
 
@@ -553,6 +605,7 @@ function getModifiedUrl({ query, path }: { query?: Record<string, string>; path?
 export class Path {
   static home = "/";
   static comparePath = "/compare/";
+  static compareActionsPath = "/action/compare/";
   static invocationPath = "/invocation/";
   static userHistoryPath = "/history/user/";
   static hostHistoryPath = "/history/host/";
@@ -563,6 +616,7 @@ export class Path {
   static settingsPath = "/settings/";
   static settingsOrgDetailsPath = "/settings/org/details";
   static settingsOrgMembersPath = "/settings/org/members";
+  static settingsOrgUserListsPath = "/settings/org/user-lists";
   static settingsOrgGitHubLinkPath = "/settings/org/github";
   static joinOrgPath = "/join";
   static createOrgPath = "/org/create";
@@ -577,6 +631,7 @@ export class Path {
   static codePath = "/code/";
   static reviewsPath = "/reviews/";
   static codesearchPath = "/search/";
+  static targetsPath = "/targets/";
 }
 
 export type TrendsChartId = "builds" | "duration" | "cache" | "cas" | "savings" | "build_time";
@@ -605,6 +660,7 @@ function getUnavailableMessage(matchedPath: string) {
     case Path.codePath:
     case Path.settingsPath:
     case Path.trendsPath:
+    case Path.targetsPath:
     case Path.executorsPath:
     case Path.tapPath:
     case Path.userHistoryPath:

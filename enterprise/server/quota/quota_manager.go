@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/throttled/throttled/v2"
 	"github.com/throttled/throttled/v2/store/goredisstore.v8"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -45,6 +47,8 @@ const (
 	// The channel name where quota manager publishes and subscribes the messages
 	// when there is an update.
 	pubSubChannelName = "quota-change-notifications"
+
+	namespaceSeperator = ":"
 )
 
 type assignedBucket struct {
@@ -333,19 +337,37 @@ func (qm *QuotaManager) findBucket(nsName string, key string) Bucket {
 	return ns.defaultBucket
 }
 
-func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) (bool, error) {
+func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) error {
 	key, err := quota.GetKey(ctx, qm.env)
+
 	if err != nil {
-		log.Warningf("Failed to get quota key: %s", err)
-		return true, nil
+		metrics.QuotaKeyEmptyCount.With(prometheus.Labels{
+			metrics.QuotaNamespace: namespace,
+		}).Inc()
+		return nil
 	}
 	b := qm.findBucket(namespace, key)
 	if b == nil {
 		// The bucket is not found, b/c either the namespace or the default bucket
 		// is not defined.
-		return true, nil
+		return nil
 	}
-	return b.Allow(ctx, key, quantity)
+	allow, err := b.Allow(ctx, key, quantity)
+	if err != nil {
+		log.CtxWarningf(ctx, "Quota check for %q failed: %s", namespace, err)
+		// There is some error when determining whether the request should be
+		// allowed. Do not block the traffic when the quota system has issues.
+		return nil
+	}
+	if allow {
+		return nil
+	} else {
+		metrics.QuotaExceeded.With(prometheus.Labels{
+			metrics.QuotaNamespace: namespace,
+			metrics.QuotaKey:       key,
+		}).Inc()
+		return status.ResourceExhaustedErrorf("quota exceeded for %q", namespace)
+	}
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -559,6 +581,7 @@ func (qm *QuotaManager) reloadNamespaces() error {
 		}
 		return true
 	})
+	log.Info("quota manager reloaded namespaces")
 	return nil
 }
 

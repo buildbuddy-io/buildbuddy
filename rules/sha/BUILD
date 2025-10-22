@@ -1,3 +1,4 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(":index.bzl", "sha")
 
 sh_test(

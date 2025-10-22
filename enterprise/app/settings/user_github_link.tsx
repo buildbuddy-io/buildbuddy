@@ -1,7 +1,9 @@
-import React from "react";
 import { User as UserIcon } from "lucide-react";
+import React from "react";
 import alertService from "../../../app/alert/alert_service";
+import authService from "../../../app/auth/auth_service";
 import { User } from "../../../app/auth/user";
+import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Dialog, {
   DialogBody,
@@ -10,16 +12,14 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
+import { TextLink } from "../../../app/components/link/link";
 import Modal from "../../../app/components/modal/modal";
 import Spinner from "../../../app/components/spinner/spinner";
-import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import errorService from "../../../app/errors/error_service";
-import authService from "../../../app/auth/auth_service";
-import { TextLink } from "../../../app/components/link/link";
+import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
+import { linkReadOnlyGitHubAppURL, linkReadWriteGitHubAppURL } from "../../../app/util/github";
 import { github } from "../../../proto/github_ts_proto";
 import GitHubTooltip from "./github_tooltip";
-import { linkReadOnlyGitHubAppURL, linkReadWriteGitHubAppURL } from "../../../app/util/github";
-import capabilities from "../../../app/capabilities/capabilities";
 
 export interface Props {
   user: User;

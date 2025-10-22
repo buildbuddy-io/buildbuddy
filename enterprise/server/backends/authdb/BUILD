@@ -16,6 +16,7 @@ go_library(
         "//server/tables",
         "//server/util/authutil",
         "//server/util/capabilities",
+        "//server/util/claims",
         "//server/util/db",
         "//server/util/flag",
         "//server/util/log",
@@ -23,6 +24,7 @@ go_library(
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/random",
+        "//server/util/role",
         "//server/util/status",
         "//server/util/subdomain",
         "//third_party/singleflight",
@@ -62,6 +64,7 @@ go_test(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )
 
@@ -109,6 +112,7 @@ go_test(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )
 
@@ -156,5 +160,6 @@ go_test(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )

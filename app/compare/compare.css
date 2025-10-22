@@ -8,8 +8,23 @@
   margin-right: 16px;
 }
 
-.compare-invocations .show-changes-only-button {
+.compare-invocations .header-buttons {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.compare-invocations .bb-explain-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compare-invocations .bb-explain-button .icon {
+  width: 16px;
+  height: 16px;
+  stroke: #fff;
 }
 
 @media (max-width: 1024px) {
@@ -21,6 +36,13 @@
   .compare-invocations .header > :not(:last-child) {
     margin-right: 0;
     margin-bottom: 8px;
+  }
+
+  .compare-invocations .header-buttons {
+    margin-left: 0;
+    flex-direction: column;
+    align-items: start;
+    width: 100%;
   }
 
   .compare-invocations .show-changes-only-button {
@@ -111,4 +133,110 @@
 
 .invocation-execution-row-file .invocation-execution-row-header-status {
   flex-grow: 1;
+}
+
+/* Tree Differ Styles */
+.tree-differ-container {
+  width: 100%;
+}
+
+.tree-differ-container .compare-tree-columns {
+  display: flex;
+  width: 100%;
+}
+
+.tree-differ-container .tree-column {
+  flex: 1;
+  padding: 8px;
+  border-right: 1px solid #e5e5e5;
+  overflow-x: auto;
+}
+
+.tree-differ-container .tree-column:last-child {
+  border-right: none;
+}
+
+.tree-differ-container .tree-differ-header {
+  display: flex;
+  font-weight: bold;
+  border-bottom: 2px solid #ccc;
+  background-color: #f5f5f5;
+}
+
+.tree-differ-container .tree-column-header {
+  flex: 1;
+  padding: 8px;
+  border-right: 1px solid #e5e5e5;
+}
+
+.tree-differ-container .tree-column-header:last-child {
+  border-right: none;
+}
+
+.tree-differ-container .no-input-files {
+  padding: 20px;
+  text-align: center;
+  color: #666;
+}
+
+/* Diff Tree Node Styles */
+
+.diff-tree-node .missing-node {
+  color: #999;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+}
+
+.diff-tree-node .input-tree-node-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  align-items: center;
+}
+
+.diff-tree-node .input-tree-node-name:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.diff-tree-node .input-tree-node-label {
+  flex-grow: 1;
+}
+
+.diff-tree-node .tree-node-symlink {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+}
+
+.diff-tree-node .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.diff-tree-node .file-icon,
+.diff-tree-node .folder-icon,
+.diff-tree-node .symlink-icon {
+  flex-shrink: 0;
+}
+
+.spawn-comparison-row .invocation-execution-row-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.spawn-comparison-row .invocation-execution-row-header svg {
+  width: 16px;
+  height: 16px;
+}
+
+.compare-spawns-more-buttons {
+  margin-top: 16px;
+  display: flex;
+  gap: 8px;
 }

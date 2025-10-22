@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//server/capabilities_filter",
         "//server/environment",
-        "//server/metrics",
         "//server/util/alert",
         "//server/util/authutil",
         "//server/util/bazel_request",
@@ -16,7 +15,6 @@ go_library(
         "//server/util/clientip",
         "//server/util/log",
         "//server/util/proto",
-        "//server/util/quota",
         "//server/util/request_context",
         "//server/util/status",
         "//server/util/subdomain",

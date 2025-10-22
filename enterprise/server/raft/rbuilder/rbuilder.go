@@ -249,6 +249,10 @@ func (br *BatchResponse) AnyError() error {
 	return nil
 }
 
+func (br *BatchResponse) Len() int {
+	return len(br.cmd.GetUnion())
+}
+
 func (br *BatchResponse) DirectReadResponse(n int) (*rfpb.DirectReadResponse, error) {
 	br.checkIndex(n)
 	if br.err != nil {
@@ -256,6 +260,15 @@ func (br *BatchResponse) DirectReadResponse(n int) (*rfpb.DirectReadResponse, er
 	}
 	u := br.cmd.GetUnion()[n]
 	return u.GetDirectRead(), br.unionError(u)
+}
+
+func (br *BatchResponse) DirectDeleteResponse(n int) (*rfpb.DirectDeleteResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetDirectDelete(), br.unionError(u)
 }
 
 func (br *BatchResponse) IncrementResponse(n int) (*rfpb.IncrementResponse, error) {
@@ -363,9 +376,10 @@ func NewTxn() *TxnBuilder {
 }
 
 type TxnStatementBuilder struct {
-	rangeDescriptor *rfpb.RangeDescriptor
-	rawBatch        *BatchBuilder
-	hooks           []*rfpb.TransactionHook
+	rangeDescriptor         *rfpb.RangeDescriptor
+	rawBatch                *BatchBuilder
+	hooks                   []*rfpb.TransactionHook
+	rangeValidationRequired bool
 }
 
 func (sb *TxnStatementBuilder) SetRangeDescriptor(rd *rfpb.RangeDescriptor) *TxnStatementBuilder {
@@ -375,6 +389,11 @@ func (sb *TxnStatementBuilder) SetRangeDescriptor(rd *rfpb.RangeDescriptor) *Txn
 
 func (sb *TxnStatementBuilder) SetBatch(batch *BatchBuilder) *TxnStatementBuilder {
 	sb.rawBatch = batch
+	return sb
+}
+
+func (sb *TxnStatementBuilder) SetRangeValidationRequired(required bool) *TxnStatementBuilder {
+	sb.rangeValidationRequired = required
 	return sb
 }
 
@@ -420,9 +439,10 @@ func (tb *TxnBuilder) ToProto() (*rfpb.TxnRequest, error) {
 			return nil, err
 		}
 		req.Statements = append(req.Statements, &rfpb.TxnRequest_Statement{
-			Range:    statement.rangeDescriptor,
-			RawBatch: batchProto,
-			Hooks:    statement.hooks,
+			Range:                   statement.rangeDescriptor,
+			RawBatch:                batchProto,
+			Hooks:                   statement.hooks,
+			RangeValidationRequired: statement.rangeValidationRequired,
 		})
 	}
 	return req, nil

@@ -22,7 +22,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -30,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
@@ -37,6 +40,7 @@ import (
 	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -104,6 +108,7 @@ type peerInfo struct {
 }
 
 type Cache struct {
+	authenticator        interfaces.Authenticator
 	local                interfaces.Cache
 	log                  log.Logger
 	lookasideMu          *sync.Mutex
@@ -209,6 +214,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		config.RPCHeartbeatInterval = 1 * time.Second
 	}
 	dc := &Cache{
+		authenticator:       env.GetAuthenticator(),
 		local:               c,
 		lookasideMu:         &sync.Mutex{},
 		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", config.ListenAddr)),
@@ -369,7 +375,15 @@ func isTreeCacheResource(r *rspb.ResourceName) bool {
 
 // lookasideKey returns the resource's key in the lookaside cache and true,
 // or "" and false if the resource shouldn't be stored in the lookaside cache.
-func lookasideKey(r *rspb.ResourceName) (key string, ok bool) {
+func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key string, ok bool) {
+	// Don't store contents for encrypted users/groups in the lookaside cache
+	// to avoid cache inconsistencies between the group's cache and the
+	// lookaside cache.
+	// TODO(go/b/5175): treat non-default-partition contents this way too.
+	if authutil.EncryptionEnabled(ctx, c.authenticator) {
+		return "", false
+	}
+
 	if isTreeCacheResource(r) {
 		// These are OK to put in the lookaside cache because even
 		// though they are technically AC entries, they are based on CAS
@@ -385,7 +399,7 @@ func lookasideKey(r *rspb.ResourceName) (key string, ok bool) {
 	return "", false
 }
 
-func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
+func (c *Cache) addLookasideEntry(ctx context.Context, r *rspb.ResourceName, data []byte) {
 	if !c.lookasideCacheEnabled() {
 		return
 	}
@@ -396,7 +410,7 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 		c.log.Infof("Attempted to set zero-length lookaside entry. Key %q", r)
 		return
 	}
-	k, ok := lookasideKey(r)
+	k, ok := c.lookasideKey(ctx, r)
 	if !ok {
 		c.log.Debugf("Not setting lookaside entry for resource: %s", r)
 		return
@@ -419,26 +433,34 @@ func (c *Cache) setLookasideEntry(lookasideKey string, data []byte) {
 }
 
 var lookasideCacheLookupCount map[bool]prometheus.Counter
+var lookasideCacheLookupBytes map[bool]prometheus.Counter
 
 func init() {
 	// Calling LookasideCacheLookupCount.With is a large portion of the time
 	// spent on the lookaside cache, so just do it once.
 	lookasideCacheLookupCount = make(map[bool]prometheus.Counter, 2)
+	lookasideCacheLookupBytes = make(map[bool]prometheus.Counter, 2)
 	lookasideCacheLookupCount[true] = metrics.LookasideCacheLookupCount.With(prometheus.Labels{
 		metrics.LookasideCacheLookupStatus: metrics.HitStatusLabel,
 	})
+	lookasideCacheLookupBytes[true] = metrics.LookasideCacheLookupBytes.With(prometheus.Labels{
+		metrics.LookasideCacheLookupStatus: metrics.HitStatusLabel,
+	})
 	lookasideCacheLookupCount[false] = metrics.LookasideCacheLookupCount.With(prometheus.Labels{
+		metrics.LookasideCacheLookupStatus: metrics.MissStatusLabel,
+	})
+	lookasideCacheLookupBytes[false] = metrics.LookasideCacheLookupBytes.With(prometheus.Labels{
 		metrics.LookasideCacheLookupStatus: metrics.MissStatusLabel,
 	})
 }
 
 // getLookasideEntry returns the resource and if it was found in the lookaside
 // cache.
-func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
+func (c *Cache) getLookasideEntry(ctx context.Context, r *rspb.ResourceName) ([]byte, bool) {
 	if !c.lookasideCacheEnabled() {
 		return nil, false
 	}
-	k, ok := lookasideKey(r)
+	k, ok := c.lookasideKey(ctx, r)
 	if !ok {
 		c.log.Debugf("Not getting lookaside entry for resource: %s", r)
 		return nil, false
@@ -458,6 +480,7 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
 	c.lookasideMu.Unlock()
 
 	lookasideCacheLookupCount[found].Inc()
+	lookasideCacheLookupBytes[found].Add(float64(r.GetDigest().GetSizeBytes()))
 	if found {
 		c.log.Debugf("Got %q from lookaside cache", k)
 		return entry.data, true
@@ -552,14 +575,12 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 	for {
 		select {
 		case handoffOrder := <-handoffs:
-			ctx, cancel := background.ExtendContextForFinalization(handoffOrder.ctx, 10*time.Second)
-			err := c.sendFile(ctx, handoffOrder.r, peer)
+			err := c.sendFile(handoffOrder.ctx, handoffOrder.r, peer)
 			if err != nil {
-				c.log.CtxWarningf(ctx, "unable to complete hinted handoff to peer: %q: %s (order %s)", peer, err, handoffOrder)
+				c.log.CtxWarningf(handoffOrder.ctx, "unable to complete hinted handoff to peer: %q: %s (order %s)", peer, err, handoffOrder)
 				return
 			}
-			c.log.CtxDebugf(ctx, "completed hinted handoff to peer: %q", peer)
-			cancel()
+			c.log.CtxDebugf(handoffOrder.ctx, "completed hinted handoff to peer: %q", peer)
 		default:
 			// read was unsuccessful -- no more handoffOrders to process.
 			return
@@ -596,15 +617,13 @@ func (c *Cache) StartListening() {
 	}
 	c.shutDownChan = make(chan struct{})
 	go c.heartbeatPeers(c.shutDownChan)
-	go func() {
-		log.Infof("Distributed cache listening on %q", c.config.ListenAddr)
-		if c.heartbeatChannel != nil {
-			c.heartbeatChannel.StartAdvertising()
-		}
-		if err := c.distributedProxy.StartListening(); err != nil {
-			log.Warningf("Unable to start cacheproxy: %s", err)
-		}
-	}()
+	log.Infof("Distributed cache listening on %q", c.config.ListenAddr)
+	if c.heartbeatChannel != nil {
+		c.heartbeatChannel.StartAdvertising()
+	}
+	if err := c.distributedProxy.StartListening(); err != nil {
+		log.Warningf("Unable to start cacheproxy: %s", err)
+	}
 	c.finishedShutdown = false
 }
 
@@ -726,7 +745,7 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *d
 
 	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
 	for _, r := range rns {
-		if _, found := c.getLookasideEntry(r); found {
+		if _, found := c.getLookasideEntry(ctx, r); found {
 			continue
 		} else {
 			stillMissing = append(stillMissing, r)
@@ -746,7 +765,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
 
 	for _, r := range rns {
-		if buf, found := c.getLookasideEntry(r); found {
+		if buf, found := c.getLookasideEntry(ctx, r); found {
 			results[r.GetDigest()] = buf
 		} else {
 			stillMissing = append(stillMissing, r)
@@ -764,7 +783,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 	for _, r := range stillMissing {
 		buf, ok := remoteResults[r.GetDigest()]
 		if ok {
-			c.addLookasideEntry(r, buf)
+			c.addLookasideEntry(ctx, r, buf)
 		}
 	}
 	if len(results) == 0 {
@@ -789,11 +808,11 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	// configure the lookaside writer so the blob can be cached as it is
 	// read.
 	if cacheable {
-		if buf, found := c.getLookasideEntry(r); found {
+		if buf, found := c.getLookasideEntry(ctx, r); found {
 			return io.NopCloser(bytes.NewReader(buf)), nil
 		}
 		if c.lookasideCacheEnabled() && r.GetDigest().GetSizeBytes() <= *maxLookasideEntryBytes {
-			if k, ok := lookasideKey(r); ok {
+			if k, ok := c.lookasideKey(ctx, r); ok {
 				if lwc, err := c.lookasideWriter(r, k); err == nil {
 					lookasideWriter = lwc
 				}
@@ -858,6 +877,8 @@ func (c *Cache) remoteDelete(ctx context.Context, peer string, r *rspb.ResourceN
 }
 
 func (c *Cache) sendFile(ctx context.Context, rn *rspb.ResourceName, dest string) error {
+	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
+	defer cancel()
 	if exists, err := c.distributedProxy.RemoteContains(ctx, dest, rn); err == nil && exists {
 		return nil
 	}
@@ -918,20 +939,36 @@ func dedupeBackfills(backfills []*backfillOrder) []*backfillOrder {
 	return deduped
 }
 
+func groupID(ctx context.Context) string {
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		return c.GroupID
+	}
+	return interfaces.AuthAnonymousUser
+}
+
 func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) (err error) {
 	if len(backfills) == 0 {
 		return nil
 	}
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	start := time.Now()
 	defer func() {
-		c.log.CtxDebugf(ctx, "backfill took %s err %v", time.Since(start), err)
+		c.log.CtxDebugf(ctx, "backfill took %s err: %v", time.Since(start), err)
 	}()
 	backfills = dedupeBackfills(backfills)
+	groupID := groupID(ctx)
 	eg, gCtx := errgroup.WithContext(ctx)
 	for _, bf := range backfills {
 		bf := bf
 		eg.Go(func() error {
-			return c.copyFile(gCtx, bf.r, bf.source, bf.dest)
+			start := time.Now()
+			err := c.copyFile(gCtx, bf.r, bf.source, bf.dest)
+			metrics.DistributedCacheBackfillLatencyUsec.WithLabelValues(
+				groupID,
+				gstatus.Code(err).String(),
+			).Observe(float64(time.Since(start).Microseconds()))
+			return err
 		})
 	}
 	return eg.Wait()
@@ -964,6 +1001,9 @@ func (c *Cache) getBackfillOrders(r *rspb.ResourceName, ps *peerset.PeerSet) []*
 //
 // Values found on a non-primary replica will be backfilled to the primary.
 func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
+	if _, found := c.getLookasideEntry(ctx, r); found {
+		return true, nil
+	}
 	ps := c.readPeers(r.GetDigest())
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(r, ps)); err != nil {
@@ -1347,7 +1387,7 @@ type multiWriteCloser struct {
 }
 
 func (mc *multiWriteCloser) Write(data []byte) (int, error) {
-	eg, _ := errgroup.WithContext(mc.ctx)
+	var eg errgroup.Group
 	for _, wc := range mc.peerClosers {
 		wc := wc
 		eg.Go(func() error {
@@ -1366,7 +1406,7 @@ func (mc *multiWriteCloser) Write(data []byte) (int, error) {
 }
 
 func (mc *multiWriteCloser) Commit() error {
-	eg, _ := errgroup.WithContext(mc.ctx)
+	var eg errgroup.Group
 	for peer, wc := range mc.peerClosers {
 		wc := wc
 		peer := peer
@@ -1380,7 +1420,7 @@ func (mc *multiWriteCloser) Commit() error {
 	}
 	err := eg.Wait()
 	if err == nil {
-		peers := make([]string, len(mc.peerClosers))
+		peers := make([]string, 0, len(mc.peerClosers))
 		for peer := range mc.peerClosers {
 			peers = append(peers, peer)
 		}
@@ -1390,19 +1430,12 @@ func (mc *multiWriteCloser) Commit() error {
 }
 
 func (mc *multiWriteCloser) Close() error {
-	eg, _ := errgroup.WithContext(mc.ctx)
 	for peer, wc := range mc.peerClosers {
-		wc := wc
-		peer := peer
-		eg.Go(func() error {
-			if err := wc.Close(); err != nil {
-				mc.log.CtxErrorf(mc.ctx, "Error closing peer %q writer: %s", peer, err)
-			}
-			return nil
-		})
+		if err := wc.Close(); err != nil {
+			mc.log.CtxErrorf(mc.ctx, "Error closing peer %q writer: %s", peer, err)
+		}
 	}
-	err := eg.Wait()
-	return err
+	return nil
 }
 
 // Attempt to write digest to N peers (where N == replicationFactor).
@@ -1442,6 +1475,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		mwc.peerClosers[peer] = rwc
 	}
 	if len(mwc.peerClosers) < c.config.ReplicationFactor {
+		mwc.Close()
 		openPeers := make([]string, len(mwc.peerClosers))
 		for peer := range mwc.peerClosers {
 			openPeers = append(openPeers, peer)
@@ -1493,6 +1527,14 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 				continue
 			}
 			return err
+		}
+	}
+	if c.lookasideCacheEnabled() {
+		key, ok := c.lookasideKey(ctx, r)
+		if ok {
+			c.lookasideMu.Lock()
+			defer c.lookasideMu.Unlock()
+			c.lookaside.Remove(key)
 		}
 	}
 	return nil

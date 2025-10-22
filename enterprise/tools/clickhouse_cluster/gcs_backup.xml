@@ -1,0 +1,49 @@
+<!--
+
+Example configuration that uses GCS to back up ClickHouse data.
+
+To use it with the clickhouse_cluster tool, first create a .env file with these
+values:
+
+```
+# GCS endpoint: trailing slash is important!
+BB_CLICKHOUSE_GCS_BACKUP_ENDPOINT=https://storage.googleapis.com/BUCKET/FOLDER/
+# HMAC key and secret from 'gcloud storage hmac create <service_account_email>'
+# Make sure the service account has access to the bucket.
+BB_CLICKHOUSE_GCS_BACKUP_HMAC_KEY=...
+BB_CLICKHOUSE_GCS_BACKUP_HMAC_SECRET=...
+```
+
+Then run clickhouse_cluster with the config_file flag pointing to this file, and
+the env_file flag pointing to the .env file you created.
+
+-->
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <gcs>
+                <!-- 's3_plain' disk type gives us human-readable folder structure,
+                     which is more suitable for backups than 's3' disk type which
+                     uses a flatter structure with random-looking file names. -->
+                <type>s3_plain</type>
+                <support_batch_delete>false</support_batch_delete>
+                <endpoint from_env="BB_CLICKHOUSE_GCS_BACKUP_ENDPOINT" />
+                <access_key_id from_env="BB_CLICKHOUSE_GCS_BACKUP_HMAC_KEY" />
+                <secret_access_key from_env="BB_CLICKHOUSE_GCS_BACKUP_HMAC_SECRET" />
+                <metadata_path>/var/lib/clickhouse/disks/gcs/</metadata_path>
+            </gcs>
+        </disks>
+        <policies>
+            <gcs_main>
+                <volumes>
+                    <main>
+                        <disk>gcs</disk>
+                    </main>
+                </volumes>
+            </gcs_main>
+        </policies>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>gcs</allowed_disk>
+    </backups>
+</clickhouse>

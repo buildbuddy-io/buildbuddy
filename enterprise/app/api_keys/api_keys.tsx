@@ -1,5 +1,6 @@
-import { Check, Copy, Eye, EyeOff, Key } from "lucide-react";
+import { Check, Copy, Eye, EyeOff } from "lucide-react";
 import React from "react";
+import alert_service from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
@@ -11,16 +12,14 @@ import Dialog, {
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
 import TextInput from "../../../app/components/input/input";
-import Spinner from "../../../app/components/spinner/spinner";
 import Modal from "../../../app/components/modal/modal";
-import alert_service from "../../../app/alert/alert_service";
-import { copyToClipboard } from "../../../app/util/clipboard";
+import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
-import { UnaryRpcMethod } from "../../../app/service/rpc_service";
+import rpcService, { UnaryRpcMethod } from "../../../app/service/rpc_service";
+import { copyToClipboard } from "../../../app/util/clipboard";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import { capability } from "../../../proto/capability_ts_proto";
-import rpcService from "../../../app/service/rpc_service";
 
 export interface ApiKeysComponentProps {
   /** The authenticated user. */

@@ -10,7 +10,6 @@ import (
 	"log"
 	"math/rand/v2"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -55,11 +54,10 @@ import (
 
 // Set via x_defs in BUILD file.
 var (
-	crunRlocationpath       string
-	busyboxRlocationpath    string
-	ociBusyboxRlocationpath string
-	testworkerRlocationpath string
-	netToolsImageRef        string
+	crunRlocationpath          string
+	busyboxImageRlocationpath  string
+	netToolsImageRlocationpath string
+	testworkerRlocationpath    string
 )
 
 func init() {
@@ -78,37 +76,21 @@ func setupNetworking(t *testing.T) {
 	flags.Set(t, "executor.oci.network_pool_size", 0)
 }
 
-// Returns a special image ref indicating that a busybox-based rootfs should
-// be provisioned using the 'busybox' binary on the host machine.
-// Skips the test if busybox is not available.
-// TODO: use a static test binary + empty rootfs, instead of relying on busybox
-// for testing
-func manuallyProvisionedBusyboxImage(t *testing.T) string {
-	// Make sure our bazel-provisioned busybox binary is in PATH.
-	busyboxPath, err := runfiles.Rlocation(busyboxRlocationpath)
-	require.NoError(t, err)
-	if path, _ := exec.LookPath("busybox"); path != busyboxPath {
-		err := os.Setenv("PATH", filepath.Dir(busyboxPath)+":"+os.Getenv("PATH"))
-		require.NoError(t, err)
-	}
-	return ociruntime.TestBusyboxImageRef
+// Runs a test image registry and pushes an image from runfiles to it.
+// It returns a ref that can be used to pull the image.
+func serveImageFromRunfiles(t *testing.T, name, rlocationpath string) string {
+	registry := testregistry.Run(t, testregistry.Opts{})
+	image := testregistry.ImageFromRlocationpath(t, rlocationpath)
+	registry.Push(t, image, name)
+	return registry.ImageAddress(name)
 }
 
-// Returns an image ref pointing to a remotely hosted busybox image.
-// Skips the test if we don't have mount permissions.
-// TODO: support rootless overlayfs mounts and get rid of this
-func realBusyboxImage(t *testing.T) string {
-	if !hasMountPermissions(t) {
-		t.Skipf("using a real container image with overlayfs requires mount permissions")
-	}
-	return "mirror.gcr.io/library/busybox"
+func busyboxImage(t *testing.T) string {
+	return serveImageFromRunfiles(t, "busybox", busyboxImageRlocationpath)
 }
 
 func netToolsImage(t *testing.T) string {
-	if !hasMountPermissions(t) {
-		t.Skipf("using a real container image with overlayfs requires mount permissions")
-	}
-	return netToolsImageRef
+	return serveImageFromRunfiles(t, "net-tools", netToolsImageRlocationpath)
 }
 
 // Returns a remote reference to the image in //dockerfiles/test_images/ociruntime_test/image_config_test_image
@@ -134,7 +116,7 @@ func installLeaserInEnv(t testing.TB, env *real_environment.RealEnv) {
 func TestRun(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -183,7 +165,7 @@ func TestRun(t *testing.T) {
 func TestCgroupSettings(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -237,7 +219,7 @@ func TestCgroupSettings(t *testing.T) {
 func TestRunUsageStats(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -330,7 +312,7 @@ TEST_ENV_VAR=foo
 func TestRunOOM(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -420,7 +402,7 @@ cat /sys/fs/cgroup/memory.events
 func TestCreateExecRemove(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -441,7 +423,8 @@ func TestCreateExecRemove(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Create
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 	err = c.Create(ctx, wd)
 	require.NoError(t, err)
@@ -466,7 +449,7 @@ func TestCreateExecRemove(t *testing.T) {
 func TestTini_Run(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -501,7 +484,7 @@ func TestTini_Run(t *testing.T) {
 func TestTini_CreateExec(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -563,7 +546,7 @@ func TestTini_CreateExec(t *testing.T) {
 func TestExecUsageStats(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -605,6 +588,64 @@ func TestExecUsageStats(t *testing.T) {
 	require.NoError(t, err)
 	assert.Greater(t, s.GetMemoryBytes(), int64(0), "memory")
 	assert.Greater(t, s.GetCpuNanos(), int64(0), "CPU")
+}
+
+func TestStatsPostExec(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		# Use 32MB of memory (in /dev/shm).
+		# Using this approach instead of allocating a big string,
+		# because it seems like 'sh' takes a while to actually free the string,
+		# but for what we're trying to test here, we need the memory to be freed
+		# immediately (before it can be caught by our stats polling).
+		cat /dev/zero | head -c 32000000 > /dev/shm/FILE
+
+		# Hold the memory long enough for the stats polling to register it.
+		sleep 0.25
+
+		# Free the memory then immediately exit.
+		rm /dev/shm/FILE
+	`}}
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+
+	// Stats() should report ~0 memory usage since the task has completed,
+	// even though it used 32MB of memory.
+	stats, err := c.Stats(ctx)
+	require.NoError(t, err)
+	require.Less(t, stats.GetMemoryBytes(), int64(2e6), "final memory usage should be much less than 32MB")
 }
 
 func TestPullCreateExecRemove(t *testing.T) {
@@ -691,7 +732,7 @@ TEST_ENV_VAR=foo
 func TestCreateExecPauseUnpause(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -712,7 +753,8 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Create
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 	err = c.Create(ctx, wd)
 	require.NoError(t, err)
@@ -797,7 +839,7 @@ func TestCreateFailureHasStderr(t *testing.T) {
 	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -832,7 +874,7 @@ func TestCreateFailureHasStderr(t *testing.T) {
 func TestDevices(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -888,7 +930,7 @@ func TestSignal(t *testing.T) {
 	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -934,7 +976,7 @@ func TestSignal(t *testing.T) {
 	assert.Empty(t, string(res.Stderr))
 }
 
-func TestNetwork_Enabled(t *testing.T) {
+func TestNetworking(t *testing.T) {
 	setupNetworking(t)
 
 	// Note: busybox has ping, but it fails with 'permission denied (are you
@@ -945,102 +987,92 @@ func TestNetwork_Enabled(t *testing.T) {
 	// (Note that podman has this same issue.)
 	image := netToolsImage(t)
 
-	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	for _, tc := range []struct {
+		name                       string
+		defaultNetworkFlag         string
+		dockerNetworkProp          string
+		expectExternalConnectivity bool
+	}{
+		{
+			name:                       "default enabled",
+			expectExternalConnectivity: true,
+		},
+		{
+			name:                       "enabled explicitly via prop",
+			dockerNetworkProp:          "bridge",
+			expectExternalConnectivity: true,
+		},
+		{
+			name:                       "disabled via flag",
+			defaultNetworkFlag:         "off",
+			expectExternalConnectivity: false,
+		},
+		{
+			name:                       "disabled via flag but overridden via prop",
+			defaultNetworkFlag:         "off",
+			dockerNetworkProp:          "bridge",
+			expectExternalConnectivity: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := testenv.GetTestEnv(t)
+			installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-	flags.Set(t, "executor.network_stats_enabled", true)
+			runtimeRoot := testfs.MakeTempDir(t)
+			flags.Set(t, "executor.network_stats_enabled", true)
+			flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+			if tc.defaultNetworkFlag != "" {
+				flags.Set(t, "executor.oci.default_network_mode", tc.defaultNetworkFlag)
+			}
 
-	buildRoot := testfs.MakeTempDir(t)
-	cacheRoot := testfs.MakeTempDir(t)
+			buildRoot := testfs.MakeTempDir(t)
+			cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
-	require.NoError(t, err)
-	wd := testfs.MakeDirAll(t, buildRoot, "work")
+			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+			require.NoError(t, err)
+			wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		err := c.Remove(ctx)
-		require.NoError(t, err)
-	})
+			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+				ContainerImage: image,
+				DockerNetwork:  tc.dockerNetworkProp,
+			}})
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				err := c.Remove(ctx)
+				require.NoError(t, err)
+			})
 
-	// Run
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-ec", `
-			ping -c1 -W1 $(hostname)
-			ping -c1 -W2 8.8.8.8
-			ping -c1 -W2 example.com
-		`},
+			// Run
+			cmd := &repb.Command{
+				Arguments: []string{"sh", "-c", `
+					# Should still have a loopback device available.
+					if ping -c1 -W1 $(hostname) >&2 ; then
+						echo PING_LOOPBACK_OK=true
+					else
+						echo PING_LOOPBACK_OK=false
+					fi
+					if ping -c1 -W2 8.8.8.8 >&2 ; then
+						echo PING_EXTERNAL_OK=true
+					else
+						echo PING_EXTERNAL_OK=false
+					fi
+				`},
+			}
+			res := c.Run(ctx, cmd, wd, oci.Credentials{})
+			require.NoError(t, res.Error)
+			t.Logf("stderr: %s", string(res.Stderr))
+			if tc.expectExternalConnectivity {
+				assert.Equal(t, "PING_LOOPBACK_OK=true\nPING_EXTERNAL_OK=true\n", string(res.Stdout))
+				assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+				assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
+			} else {
+				assert.Equal(t, "PING_LOOPBACK_OK=true\nPING_EXTERNAL_OK=false\n", string(res.Stdout))
+				assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesSent())
+				assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesReceived())
+			}
+		})
 	}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{})
-	require.NoError(t, res.Error)
-	t.Logf("stdout: %s", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
-	assert.Equal(t, 0, res.ExitCode)
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
-}
-
-func TestNetwork_Disabled(t *testing.T) {
-	setupNetworking(t)
-
-	// Note: busybox has ping, but it fails with 'permission denied (are you
-	// root?)' This is fixed by adding CAP_NET_RAW but we don't want to do this.
-	// So just use the net-tools image which doesn't have this issue for
-	// whatever reason (presumably it's some difference in the ping
-	// implementation) - it's enough to just set `net.ipv4.ping_group_range`.
-	// (Note that podman has this same issue.)
-	image := netToolsImage(t)
-
-	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
-
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-	flags.Set(t, "executor.network_stats_enabled", true)
-
-	buildRoot := testfs.MakeTempDir(t)
-	cacheRoot := testfs.MakeTempDir(t)
-
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
-	require.NoError(t, err)
-	wd := testfs.MakeDirAll(t, buildRoot, "work")
-
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-		DockerNetwork:  "off",
-	}})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		err := c.Remove(ctx)
-		require.NoError(t, err)
-	})
-
-	// Run
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-ec", `
-			# Should still have a loopback device available.
-			ping -c1 -W1 $(hostname)
-
-			if ping -c1 -W2 8.8.8.8 2>/dev/null; then
-				echo >&2 'Should not be able to ping external network'
-				exit 1
-			fi
-		`},
-	}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{})
-	require.NoError(t, res.Error)
-	t.Logf("stdout: %s", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
-	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesSent())
-	assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesReceived())
 }
 
 func TestUser(t *testing.T) {
@@ -1067,14 +1099,14 @@ func TestUser(t *testing.T) {
 		{
 			name: "Busybox/Default",
 			props: &platform.Properties{
-				ContainerImage: realBusyboxImage(t),
+				ContainerImage: busyboxImage(t),
 			},
 			expectedID: "uid=0(root) gid=0(root) groups=0(root)",
 		},
 		{
 			name: "Busybox/UnknownUID",
 			props: &platform.Properties{
-				ContainerImage: realBusyboxImage(t),
+				ContainerImage: busyboxImage(t),
 				DockerUser:     "2024",
 			},
 			expectedID: "uid=2024 gid=0(root) groups=0(root)",
@@ -1082,7 +1114,7 @@ func TestUser(t *testing.T) {
 		{
 			name: "Busybox/UnknownUIDAndGID",
 			props: &platform.Properties{
-				ContainerImage: realBusyboxImage(t),
+				ContainerImage: busyboxImage(t),
 				DockerUser:     "2024:2024",
 			},
 			expectedID: "uid=2024 gid=2024 groups=2024",
@@ -1195,7 +1227,7 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 
 func TestHighLayerCount(t *testing.T) {
 	// Load busybox oci image
-	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+	busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 
 	for _, tc := range []struct {
 		layerCount int
@@ -1261,7 +1293,7 @@ func TestHighLayerCount(t *testing.T) {
 func TestEntrypoint(t *testing.T) {
 	setupNetworking(t)
 	// Load busybox oci image
-	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+	busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 	// Mutate the image with an ENTRYPOINT directive which sets an env var
 	// that we expect to be visible in the command
 	cfg, err := busyboxImg.ConfigFile()
@@ -1304,7 +1336,7 @@ func TestEntrypoint(t *testing.T) {
 func TestFileOwnership(t *testing.T) {
 	setupNetworking(t)
 	// Load busybox oci image
-	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+	busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 	// Append a layer with a file, dir, and symlink that are owned by a
 	// non-root user
 	layer := testregistry.NewBytesLayer(t, testtar.EntriesBytes(
@@ -1424,7 +1456,7 @@ func TestPathSanitization(t *testing.T) {
 			imageStore, err := ociruntime.NewImageStore(resolver, cacheRoot)
 			require.NoError(t, err)
 			// Load busybox oci image
-			busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+			busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 			// Append an invalid layer
 			layer := testregistry.NewBytesLayer(t, test.Tar)
 			img, err := mutate.AppendLayers(busyboxImg, layer)
@@ -1446,7 +1478,7 @@ func TestPathSanitization(t *testing.T) {
 func TestPersistentWorker(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -1468,11 +1500,13 @@ func TestPersistentWorker(t *testing.T) {
 	require.NoError(t, err)
 
 	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
+		ContainerImage:      image,
+		PersistentWorkerKey: "abc123",
 	}})
 	require.NoError(t, err)
 
-	// Create container
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 	err = c.Create(ctx, ws.Path())
 	require.NoError(t, err)
@@ -1497,9 +1531,10 @@ func TestPersistentWorker(t *testing.T) {
 	}
 
 	// Start worker (Exec)
-	worker := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
-		Arguments: []string{"./testworker", "--persistent_worker", "--response_base64", responseBase64},
+	worker, err := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+		Arguments: []string{"./testworker", "--response_base64", responseBase64},
 	})
+	require.NoError(t, err)
 
 	// Send work request.
 	// The command doesn't matter - the test worker always just returns a fixed
@@ -1508,6 +1543,9 @@ func TestPersistentWorker(t *testing.T) {
 
 	assert.Equal(t, "test-output", string(res.Stderr))
 	assert.Equal(t, 42, res.ExitCode)
+	// Should report non-zero CPU and memory usage.
+	assert.Greater(t, res.UsageStats.GetCpuNanos(), int64(0))
+	assert.Greater(t, res.UsageStats.GetPeakMemoryBytes(), int64(0))
 
 	// Pause container and stop worker
 	err = c.Pause(ctx)
@@ -1516,10 +1554,132 @@ func TestPersistentWorker(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestPersistentWorker_WorkerCrashesBeforeReadingRequest(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	// Create workspace with testworker binary
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	ws, err := workspace.New(env, buildRoot, &workspace.Opts{Preserve: true})
+	require.NoError(t, err)
+	testworkerPath, err := runfiles.Rlocation(testworkerRlocationpath)
+	require.NoError(t, err)
+	testfs.CopyFile(t, testworkerPath, ws.Path(), "testworker")
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage:      image,
+		PersistentWorkerKey: "abc123",
+	}})
+	require.NoError(t, err)
+
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, ws.Path())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Start worker (Exec) but don't attempt to read any work requests - just
+	// crash immediately.
+	worker, err := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+		Arguments: []string{
+			// Crash immediately
+			"sh", "-c", `echo >&2 "Crashing!" && kill -KILL $$`,
+		},
+	})
+	require.NoError(t, err)
+	defer worker.Stop()
+
+	// Send work request.
+	// The command doesn't matter - the test worker always just returns a fixed
+	// response.
+	res := worker.Exec(ctx, &repb.Command{})
+
+	require.Error(t, res.Error)
+	const sigkillExitCode = 128 + int(syscall.SIGKILL)
+	require.Contains(t, res.Error.Error(), fmt.Sprintf("worker exited with code %d", sigkillExitCode))
+}
+
+func TestPersistentWorker_WorkerCrashesAfterReadingRequest(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	// Create workspace with testworker binary
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	ws, err := workspace.New(env, buildRoot, &workspace.Opts{Preserve: true})
+	require.NoError(t, err)
+	testworkerPath, err := runfiles.Rlocation(testworkerRlocationpath)
+	require.NoError(t, err)
+	testfs.CopyFile(t, testworkerPath, ws.Path(), "testworker")
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage:      image,
+		PersistentWorkerKey: "abc123",
+	}})
+	require.NoError(t, err)
+
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, ws.Path())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Start worker (Exec) with flags telling it to print 'test-stderr' on
+	// stderr, then crash, after receiving the first request.
+	worker, err := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+		Arguments: []string{
+			"./testworker",
+			"--fail_with_stderr=test-stderr-message",
+		},
+	})
+	require.NoError(t, err)
+	defer worker.Stop()
+
+	// Send work request.
+	// The command doesn't matter - the test worker always just returns a fixed
+	// response.
+	res := worker.Exec(ctx, &repb.Command{})
+
+	require.Error(t, res.Error)
+	require.Contains(t, res.Error.Error(), "worker exited with code 1")
+	require.Contains(t, res.Error.Error(), "test-stderr-message")
+}
+
 func TestCancelRun(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -1574,7 +1734,7 @@ func TestCancelRun(t *testing.T) {
 func TestCancelExec(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -1594,7 +1754,9 @@ func TestCancelExec(t *testing.T) {
 		ContainerImage: image,
 	}})
 	require.NoError(t, err)
-	// Create
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
 	err = c.Create(ctx, wd)
 	require.NoError(t, err)
 	removed := false
@@ -1714,7 +1876,7 @@ func TestPullImage(t *testing.T) {
 
 func TestMounts(t *testing.T) {
 	setupNetworking(t)
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
@@ -1758,4 +1920,58 @@ func TestMounts(t *testing.T) {
 	assert.Equal(t, "bar", string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
+}
+
+func TestPersistentVolumes(t *testing.T) {
+	setupNetworking(t)
+	image := busyboxImage(t)
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	flags.Set(t, "executor.oci.enable_persistent_volumes", true)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	volumes, err := platform.ParsePersistentVolumes("tmp_cache:/tmp/.cache", "user_cache:/root/.cache")
+	require.NoError(t, err)
+	wd1 := testfs.MakeDirAll(t, buildRoot, "work1")
+	c1, err := provider.New(ctx, &container.Init{
+		Props: &platform.Properties{
+			ContainerImage:    image,
+			PersistentVolumes: volumes,
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c1.Remove(ctx)
+		require.NoError(t, err)
+	})
+	res := c1.Run(ctx, &repb.Command{
+		Arguments: []string{"touch", "/tmp/.cache/foo", "/root/.cache/bar"},
+	}, wd1, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+
+	wd2 := testfs.MakeDirAll(t, buildRoot, "work2")
+	c2, err := provider.New(ctx, &container.Init{
+		Props: &platform.Properties{
+			ContainerImage:    image,
+			PersistentVolumes: volumes,
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c2.Remove(ctx)
+		require.NoError(t, err)
+	})
+	res = c2.Run(ctx, &repb.Command{
+		Arguments: []string{"stat", "/tmp/.cache/foo", "/root/.cache/bar"},
+	}, wd2, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
 }

@@ -1,14 +1,14 @@
-import React from "react";
-import format from "../format/format";
-import SetupCodeComponent from "../docs/setup_code";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { TerminalComponent } from "../terminal/terminal";
-import rpcService from "../service/rpc_service";
 import { CheckCircle, Clock, HelpCircle, PauseCircle, XCircle } from "lucide-react";
-import { durationToMillisWithFallback } from "../util/proto";
-import router from "../router/router";
 import moment from "moment";
+import React from "react";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import Link from "../components/link/link";
+import SetupCodeComponent from "../docs/setup_code";
+import format from "../format/format";
+import router from "../router/router";
+import rpcService from "../service/rpc_service";
+import { TerminalComponent } from "../terminal/terminal";
+import { durationToMillisWithFallback } from "../util/proto";
 
 interface Props {
   buildEvent?: build_event_stream.BuildEvent;

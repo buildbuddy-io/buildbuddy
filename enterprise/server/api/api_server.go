@@ -2,13 +2,13 @@ package api
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"maps"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -30,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
@@ -53,7 +55,9 @@ var (
 )
 
 type APIServer struct {
-	env environment.Env
+	env                     environment.Env
+	metricsFederationURL    *url.URL
+	metricsFederationClient *http.Client
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -92,6 +96,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 
 	q := query_builder.NewQuery(`SELECT * FROM "Invocations"`)
 	q = q.AddWhereClause(`group_id = ?`, user.GetGroupID())
+
 	if req.GetSelector().GetInvocationId() != "" {
 		q = q.AddWhereClause(`invocation_id = ?`, req.GetSelector().GetInvocationId())
 	}
@@ -135,7 +140,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 		return nil, err
 	}
 
-	if req.IncludeMetadata || req.IncludeArtifacts {
+	if req.IncludeMetadata || req.IncludeArtifacts || req.IncludeChildInvocations {
 		for _, i := range invocations {
 			_, err := build_event_handler.LookupInvocationWithCallback(ctx, s.env, i.Id.InvocationId, func(event *inpb.InvocationEvent) error {
 				switch p := event.GetBuildEvent().GetPayload().(type) {
@@ -146,6 +151,22 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 								Key:   k,
 								Value: v,
 							})
+						}
+					}
+					if req.IncludeChildInvocations {
+						for k, v := range p.BuildMetadata.GetMetadata() {
+							if k == "RUN_ID" {
+								childrenInvocationIDs, err := s.env.GetInvocationDB().LookupChildInvocations(ctx, v)
+								if err != nil {
+									return err
+								}
+								for _, iid := range childrenInvocationIDs {
+									i.ChildInvocations = append(i.ChildInvocations, &apipb.Invocation_Id{
+										InvocationId: iid,
+									})
+								}
+								break
+							}
 						}
 					}
 				case *bespb.BuildEvent_WorkspaceStatus:
@@ -468,6 +489,8 @@ func (s *APIServer) GetMetricsHandler() http.Handler {
 }
 
 func (s *APIServer) handleGetMetricsRequest(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	if !*enableMetricsAPI {
 		http.Error(w, "API not enabled", http.StatusNotImplemented)
 		return
@@ -495,6 +518,41 @@ func (s *APIServer) handleGetMetricsRequest(w http.ResponseWriter, r *http.Reque
 	}
 	handler := promhttp.HandlerFor(reg, opts)
 	handler.ServeHTTP(w, r)
+
+	// If enabled, also fetch federated metrics matching the authenticated group
+	fp := s.env.GetExperimentFlagProvider()
+	if fp != nil && fp.Boolean(ctx, "api.metrics_federation.enabled", false) {
+		// Get configured match parameters for filtering federated metrics, e.g.
+		// {"__name__": "remote_execution_.*", "jobs": "(mac-executor|mac-node)"}
+		paramsObj := fp.Object(ctx, "api.metrics_federation.match_parameters", nil)
+		params := map[string]string{}
+		for k, v := range paramsObj {
+			s, ok := v.(string)
+			if !ok {
+				log.CtxWarningf(ctx, "Invalid match parameter %q (type %T)", k, v)
+				continue
+			}
+			params[k] = s
+		}
+		if err := s.fetchFederatedMetrics(ctx, w, userInfo.GetGroupID(), params); err != nil && ctx.Err() == nil {
+			log.CtxWarningf(ctx, "Fetching federated metrics failed: %s", err)
+		}
+	}
+}
+
+func (s *APIServer) fetchFederatedMetrics(ctx context.Context, w http.ResponseWriter, groupID string, matchParams map[string]string) error {
+	if _, ok := matchParams["job"]; !ok {
+		log.CtxErrorf(ctx, "Missing 'job' filter - refusing to fetch federated metrics.")
+		return nil
+	}
+	parts := make([]string, 0, 1+len(matchParams))
+	parts = append(parts, fmt.Sprintf("group_id=%q", groupID))
+	for k, v := range matchParams {
+		parts = append(parts, fmt.Sprintf("%s=~%q", k, v))
+	}
+	match := fmt.Sprintf("{%s}", strings.Join(parts, ","))
+	log.CtxDebugf(ctx, "Fetching federated metrics: %s", match)
+	return s.env.GetPromQuerier().FetchFederatedMetrics(ctx, w, match)
 }
 
 // Returns true if a selector doesn't specify a particular id or matches the target's ID
@@ -581,6 +639,7 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		},
 		Steps:          steps,
 		Async:          req.GetAsync(),
+		WaitUntil:      fromApiWaitCondition(req.GetWaitUntil()),
 		Env:            req.GetEnv(),
 		Timeout:        req.GetTimeout(),
 		ExecProperties: execProps,
@@ -592,4 +651,72 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		return nil, err
 	}
 	return &apipb.RunResponse{InvocationId: rsp.InvocationId}, nil
+}
+
+// Converts from internal wait mode to api wait mode.
+func fromApiWaitCondition(waitCondition apipb.WaitCondition) rnpb.WaitCondition {
+	switch waitCondition {
+	case apipb.WaitCondition_QUEUED:
+		return rnpb.WaitCondition_QUEUED
+	case apipb.WaitCondition_STARTED:
+		return rnpb.WaitCondition_STARTED
+	case apipb.WaitCondition_COMPLETED:
+		return rnpb.WaitCondition_COMPLETED
+	case apipb.WaitCondition_UNKNOWN_CONDITION:
+		return rnpb.WaitCondition_UNKNOWN_CONDITION
+	}
+	return rnpb.WaitCondition_UNKNOWN_CONDITION
+}
+
+func (s *APIServer) CreateUserApiKey(ctx context.Context, req *apipb.CreateUserApiKeyRequest) (*apipb.CreateUserApiKeyResponse, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	authdb := s.env.GetAuthDB()
+	if authdb == nil {
+		return nil, status.UnimplementedError("not implemented")
+	}
+	userdb := s.env.GetUserDB()
+	if userdb == nil {
+		return nil, status.UnimplementedError("not implemented")
+	}
+
+	// Get user's role-based capabilities within the group.
+	reqUser, err := userdb.GetUserByIDWithoutAuthCheck(ctx, req.GetUserId())
+	if err != nil {
+		return nil, err
+	}
+	var groupRole *tables.GroupRole
+	for _, g := range reqUser.Groups {
+		if g.Group.GroupID == u.GetGroupID() {
+			groupRole = g
+			break
+		}
+	}
+	if groupRole == nil {
+		return nil, status.PermissionDeniedError("permission denied")
+	}
+	roleBasedCapabilities := capabilities.ApplyMask(groupRole.Capabilities, capabilities.UserAPIKeyCapabilitiesMask)
+
+	// Note: authdb performs additional authentication checks, such as making
+	// sure the authenticated user has ORG_ADMIN capability if needed.
+	apiKey, err := authdb.CreateUserAPIKey(
+		ctx, u.GetGroupID(), req.GetUserId(), req.GetLabel(),
+		roleBasedCapabilities, req.GetExpiresIn().AsDuration(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	rsp := &apipb.CreateUserApiKeyResponse{
+		ApiKey: &apipb.ApiKey{
+			ApiKeyId: apiKey.APIKeyID,
+			Value:    apiKey.Value,
+			Label:    apiKey.Label,
+		},
+	}
+	if apiKey.ExpiryUsec != 0 {
+		rsp.ApiKey.ExpirationTimestamp = timestamppb.New(time.UnixMicro(apiKey.ExpiryUsec))
+	}
+	return rsp, nil
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -92,6 +93,8 @@ func main() {
 		Inputs: &repb.Tree{},
 	}
 
+	inputTree := &repb.Tree{}
+	digestFunction := repb.DigestFunction_SHA256
 	if *actionDigest != "" {
 		// For backwards compatibility, attempt to fixup old style digest
 		// strings that don't start with a '/blobs/' prefix.
@@ -104,6 +107,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error parsing action digest %q: %s", *actionDigest, err)
 		}
+		digestFunction = actionRN.GetDigestFunction()
 
 		action, command, err := getActionAndCommand(ctx, bsClient, actionRN)
 		if err != nil {
@@ -114,6 +118,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Could not fetch input root structure: %s", err)
 		}
+		inputTree = tree
 
 		layout = &container.FileSystemLayout{
 			RemoteInstanceName: *remoteInstanceName,
@@ -149,13 +154,24 @@ func main() {
 		}
 
 		log.Infof("Action script written to %q", actionScript)
+	} else {
+		inputTree = &repb.Tree{}
 	}
 
 	vfsServer, err := vfs_server.New(env, vfsScratchDir)
 	if err != nil {
 		log.Fatalf("Error creating vfs server: %s", err)
 	}
-	if err := vfsServer.Prepare(ctx, layout); err != nil {
+
+	tf, err := dirtools.NewTreeFetcher(ctx, env, *remoteInstanceName, digestFunction, inputTree, &dirtools.DownloadTreeOpts{})
+	if err != nil {
+		log.Fatalf("Error creating tree fetcher: %s", err)
+	}
+	if _, err := tf.Start(); err != nil {
+		log.Fatalf("Error starting tree fetcher: %s", err)
+	}
+
+	if _, err := vfsServer.Prepare(ctx, layout, tf); err != nil {
 		log.Fatalf("Could not prepare VFS server: %s", err)
 	}
 	vfsClient := vfs_server.NewDirectClient(vfsServer)
@@ -166,7 +182,7 @@ func main() {
 		log.Fatalf("Could not mount filesystem at %q: %s", *dir, err)
 	}
 
-	err = fs.PrepareForTask(ctx, *actionDigest)
+	err = fs.PrepareForTask(ctx, *actionDigest, nil)
 	if err != nil {
 		log.Fatalf("Could not prepare layout: %s", err)
 	}

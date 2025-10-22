@@ -14,18 +14,23 @@ import (
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
 
-func executionMetricToDbField(m stat_filter.ExecutionMetricType) (string, error) {
+func rectifiedDurationValue(start string, end string) string {
+	// start is before end, start is not zero.
+	return fmt.Sprintf("IF(%s < %s OR %s = 0, 0, (%s - %s))", end, start, start, end, start)
+}
+
+func ExecutionMetricToDbField(m stat_filter.ExecutionMetricType) (string, error) {
 	switch m {
 	case stat_filter.ExecutionMetricType_UPDATED_AT_USEC_EXECUTION_METRIC:
 		return "updated_at_usec", nil
 	case stat_filter.ExecutionMetricType_QUEUE_TIME_USEC_EXECUTION_METRIC:
-		return "IF(worker_start_timestamp_usec < queued_timestamp_usec, 0, (worker_start_timestamp_usec - queued_timestamp_usec))", nil
+		return rectifiedDurationValue("queued_timestamp_usec", "worker_start_timestamp_usec"), nil
 	case stat_filter.ExecutionMetricType_INPUT_DOWNLOAD_TIME_EXECUTION_METRIC:
-		return "(input_fetch_completed_timestamp_usec - input_fetch_start_timestamp_usec)", nil
+		return rectifiedDurationValue("input_fetch_start_timestamp_usec", "input_fetch_completed_timestamp_usec"), nil
 	case stat_filter.ExecutionMetricType_REAL_EXECUTION_TIME_EXECUTION_METRIC:
-		return "(execution_completed_timestamp_usec - execution_start_timestamp_usec)", nil
+		return rectifiedDurationValue("execution_start_timestamp_usec", "execution_completed_timestamp_usec"), nil
 	case stat_filter.ExecutionMetricType_OUTPUT_UPLOAD_TIME_EXECUTION_METRIC:
-		return "(output_upload_completed_timestamp_usec - output_upload_start_timestamp_usec)", nil
+		return rectifiedDurationValue("output_upload_start_timestamp_usec", "output_upload_completed_timestamp_usec"), nil
 	case stat_filter.ExecutionMetricType_PEAK_MEMORY_EXECUTION_METRIC:
 		return "peak_memory_bytes", nil
 	case stat_filter.ExecutionMetricType_INPUT_DOWNLOAD_SIZE_EXECUTION_METRIC:
@@ -33,7 +38,11 @@ func executionMetricToDbField(m stat_filter.ExecutionMetricType) (string, error)
 	case stat_filter.ExecutionMetricType_OUTPUT_UPLOAD_SIZE_EXECUTION_METRIC:
 		return "file_upload_size_bytes", nil
 	case stat_filter.ExecutionMetricType_EXECUTION_WALL_TIME_EXECUTION_METRIC:
-		return "IF(worker_completed_timestamp_usec < queued_timestamp_usec, 0, (worker_completed_timestamp_usec - queued_timestamp_usec))", nil
+		return rectifiedDurationValue("queued_timestamp_usec", "worker_completed_timestamp_usec"), nil
+	case stat_filter.ExecutionMetricType_EXECUTION_CPU_NANOS_EXECUTION_METRIC:
+		return "cpu_nanos", nil
+	case stat_filter.ExecutionMetricType_EXECUTION_AVERAGE_MILLICORES_EXECUTION_METRIC:
+		return "IF(cpu_nanos <= 0 OR (execution_completed_timestamp_usec - execution_start_timestamp_usec) <= 0, 0, intDivOrZero(cpu_nanos*1000, (execution_completed_timestamp_usec - execution_start_timestamp_usec) * 1000))", nil
 	default:
 		return "", status.InvalidArgumentErrorf("Invalid field: %s", m.String())
 	}
@@ -93,7 +102,7 @@ func MetricToDbField(m *stat_filter.Metric) (string, error) {
 	if m.Invocation != nil {
 		return invocationMetricToDbField(m.GetInvocation())
 	} else if m.Execution != nil {
-		return executionMetricToDbField(m.GetExecution())
+		return ExecutionMetricToDbField(m.GetExecution())
 	}
 	return "", status.InvalidArgumentErrorf("Invalid filter: %v", m)
 }

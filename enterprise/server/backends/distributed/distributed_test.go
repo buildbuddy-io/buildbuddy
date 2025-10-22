@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -540,6 +539,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 }
 
 func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
+	flags.Set(t, "grpc_client.pool_size", 1)
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -586,7 +586,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	// or distributedCaches so they should not be referenced
 	// below when reading / writing, although the running nodes
 	// still have reference to them via the Nodes list.
-	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	err := dc3.Shutdown(shutdownCtx)
 	cancel()
 	assert.Nil(t, err)
@@ -596,14 +596,13 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
-		if err := distributedCaches[j].Set(ctx, rn, buf); err != nil {
-			t.Fatal(err)
-		}
+		err := distributedCaches[j].Set(ctx, rn, buf)
+		require.NoError(t, err, "Set failed for %v on distributedCache %d", rn, j)
 		resourcesWritten = append(resourcesWritten, rn)
-		for _, baseCache := range baseCaches {
+		for i, baseCache := range baseCaches {
 			exists, err := baseCache.Contains(ctx, rn)
-			assert.Nil(t, err)
-			assert.True(t, exists)
+			assert.Nil(t, err, "baseCache %d Contains failed for %v", i, rn)
+			assert.True(t, exists, "baseCache %d doesn't contain %v", i, rn)
 			readAndCompareDigest(t, ctx, baseCache, rn)
 		}
 	}
@@ -985,11 +984,10 @@ func TestGetMulti(t *testing.T) {
 }
 
 func TestHintedHandoff(t *testing.T) {
-	// TestHintedHandoff has flaked multiple times recently:
-	//   https://app.buildbuddy.io/invocation/831b22ac-123b-4190-9a32-d9f06a2719b9
-	//   https://app.buildbuddy.io/invocation/be67e9bc-5104-4538-a86c-86656f8af43d
-	//   https://app.buildbuddy.io/invocation/010bd6d5-eae4-4a02-a1ad-b81311c3a461
-	quarantine.SkipQuarantinedTest(t)
+	// Using gRPC client pooling results in a inconsistent view of peer health.
+	// This means that sometimes the hinted handoff will fail because one of the
+	// pooled channels still thinks that the peer is unhealthy.
+	flags.Set(t, "grpc_client.pool_size", 1)
 	env, authenticator, ctx := getEnvAuthAndCtx(t)
 
 	// Authenticate as user1.
@@ -1047,7 +1045,7 @@ func TestHintedHandoff(t *testing.T) {
 	// or distributedCaches so they should not be referenced
 	// below when reading / writing, although the running nodes
 	// still have reference to them via the Nodes list.
-	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	err = dc3.Shutdown(shutdownCtx)
 	cancel()
 	assert.Nil(t, err)
@@ -1057,14 +1055,13 @@ func TestHintedHandoff(t *testing.T) {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
-		if err := distributedCaches[j].Set(ctx, rn, buf); err != nil {
-			t.Fatal(err)
-		}
+		err := distributedCaches[j].Set(ctx, rn, buf)
+		require.NoError(t, err, "Set failed for %v on distributedCache %d", rn, j)
 		digestsWritten = append(digestsWritten, rn)
-		for _, baseCache := range baseCaches {
+		for i, baseCache := range baseCaches {
 			exists, err := baseCache.Contains(ctx, rn)
-			assert.Nil(t, err)
-			assert.True(t, exists)
+			assert.Nil(t, err, "baseCache %d Contains failed for %v", i, rn)
+			assert.True(t, exists, "baseCache %d doesn't contain %v", i, rn)
 			readAndCompareDigest(t, ctx, baseCache, rn)
 		}
 	}
@@ -1077,14 +1074,13 @@ func TestHintedHandoff(t *testing.T) {
 
 	// Wait for all peers to finish their backfill requests.
 	for _, distributedCache := range distributedCaches {
+		distributedCache.hintedHandoffsMu.RLock()
 		for _, backfillChannel := range distributedCache.hintedHandoffsByPeer {
-			if backfillChannel == nil {
-				continue
-			}
 			for len(backfillChannel) > 0 {
 				time.Sleep(10 * time.Millisecond)
 			}
 		}
+		distributedCache.hintedHandoffsMu.RUnlock()
 	}
 
 	// Figure out the set of digests that were hinted-handoffs. We'll verify
@@ -1103,8 +1099,8 @@ func TestHintedHandoff(t *testing.T) {
 	// Ensure that dc3 successfully received all the hinted handoffs.
 	for _, r := range hintedHandoffs {
 		exists, err := memoryCache3.Contains(ctx, r)
-		assert.Nil(t, err)
-		assert.True(t, exists)
+		assert.Nil(t, err, "memoryCache3.Contains failed for %v", r)
+		assert.True(t, exists, "memoryCache3 doesn't contain %v", r)
 		readAndCompareDigest(t, ctx, dc3, r)
 	}
 }
@@ -1955,7 +1951,7 @@ func TestAbandonedReadDoesntWriteToLookaside(t *testing.T) {
 	assert.Len(t, data, 100)
 	assert.Equal(t, buf, data)
 
-	assert.Equal(t, len(memoryCache.ops), 5, "Ops were %v", memoryCache.ops)
+	assert.Equal(t, 4, len(memoryCache.ops), "Ops were %v", memoryCache.ops)
 }
 
 func TestGetMultiLookaside(t *testing.T) {
@@ -2315,6 +2311,92 @@ func TestReadThroughLocalCache(t *testing.T) {
 	assert.Equal(t, opCountBefore[peer2]+len(allResources), len(memoryCache2.ops))
 	assert.Equal(t, opCountBefore[peer3]+len(allResources), len(memoryCache3.ops))
 
+}
+
+func TestNoEncryptedContentsInLookaside(t *testing.T) {
+	// Configure the authenticator and environment with a single user with
+	// encryption enabled: "user"
+	env := testenv.GetTestEnv(t)
+	tu := testauth.User("user", "group")
+	tu.CacheEncryptionEnabled = true
+	ta := testauth.NewTestAuthenticator(map[string]interfaces.UserInfo{"user": tu})
+	env.SetAuthenticator(ta)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), ta)
+	require.NoError(t, err)
+	ctx, err = ta.WithAuthenticatedUser(ctx, "user")
+	require.NoError(t, err)
+
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:       1,
+		Nodes:                   []string{peer1, peer2, peer3},
+		LookasideCacheSizeBytes: 100_000,
+		DisableLocalLookup:      true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 1.
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	allResources := make([]*rspb.ResourceName, 0)
+
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure we can read it back from each node via the
+		// distributed cache.
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		allResources = append(allResources, rn)
+		for _, distributedCache := range distributedCaches {
+			exists, err := distributedCache.Contains(ctx, rn)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+
+	// Now read all of the digests again -- each should only be served from one
+	// local cache (no lookaside caching).
+	for _, rn := range allResources {
+		opCountBefore := map[string]int{
+			peer1: len(memoryCache1.ops),
+			peer2: len(memoryCache2.ops),
+			peer3: len(memoryCache3.ops),
+		}
+		for _, distributedCache := range distributedCaches {
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+		if opCountBefore[peer1] == len(memoryCache1.ops) && opCountBefore[peer2] == len(memoryCache2.ops) {
+			assert.Equal(t, opCountBefore[peer3]+len(distributedCaches), len(memoryCache3.ops))
+		} else if opCountBefore[peer1] == len(memoryCache1.ops) && opCountBefore[peer3] == len(memoryCache3.ops) {
+			assert.Equal(t, opCountBefore[peer2]+len(distributedCaches), len(memoryCache2.ops))
+		} else if opCountBefore[peer2] == len(memoryCache2.ops) && opCountBefore[peer3] == len(memoryCache3.ops) {
+			assert.Equal(t, opCountBefore[peer1]+len(distributedCaches), len(memoryCache1.ops))
+		} else {
+			assert.Fail(t, "!!!")
+		}
+	}
 }
 
 type Op int

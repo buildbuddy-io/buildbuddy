@@ -1,42 +1,102 @@
 package ociconv_test
 
 import (
+	"archive/tar"
 	"context"
+	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestOciconv(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+
 	ctx := context.Background()
 	root := testfs.MakeTempDir(t)
-	os.Setenv("REGISTRY_AUTH_FILE", "_null")
 
-	for _, img := range []string{
-		// TODO: use testregistry instead of these images,
-		// and remove network dependency.
-		"gcr.io/flame-public/test-alpine@sha256:6457d53fb065d6f250e1504b9bc42d5b6c65941d57532c072d929dd0628977d0",
-		"mirror.gcr.io/ubuntu:22.04",
-	} {
-		t.Run("image="+img, func(t *testing.T) {
-			te := testenv.GetTestEnv(t)
-			resolver, err := oci.NewResolver(te)
-			require.NoError(t, err)
-			require.NotNil(t, resolver)
-			_, err = ociconv.CreateDiskImage(ctx, resolver, root, img, oci.Credentials{})
-			require.NoError(t, err)
-		})
+	reg := testregistry.Run(t, testregistry.Opts{})
+
+	ref, img := reg.PushNamedImage(t, "ociconv-test-image:latest")
+
+	resolver, err := oci.NewResolver(te)
+	require.NoError(t, err)
+	require.NotNil(t, resolver)
+
+	path, err := ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{})
+	require.NoError(t, err)
+
+	fi, err := os.Stat(path)
+	require.NoError(t, err)
+	require.False(t, fi.IsDir())
+	require.Greater(t, fi.Size(), int64(0))
+
+	// Extract ext4 image.
+	outDir := testfs.MakeTempDir(t)
+	err = ext4.ImageToDirectory(ctx, path, outDir, []string{"/"})
+	require.NoError(t, err)
+
+	// Build path->size map from the container image (regular files only).
+	rc := mutate.Extract(img)
+	defer rc.Close()
+	tr := tar.NewReader(rc)
+	imageFiles := make(map[string]int64)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		if hdr == nil {
+			continue
+		}
+		switch hdr.Typeflag {
+		case tar.TypeReg, tar.TypeRegA:
+			name := strings.TrimPrefix(hdr.Name, "./")
+			name = strings.TrimPrefix(name, "/")
+			if name == "" {
+				continue
+			}
+			imageFiles[name] = hdr.Size
+		}
 	}
+
+	// Build path->size map from the extracted ext4 directory (regular files only).
+	extractedFiles := make(map[string]int64)
+	err = filepath.Walk(outDir, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode().IsRegular() {
+			rel, err := filepath.Rel(outDir, p)
+			if err != nil {
+				return err
+			}
+			if rel == "." {
+				return nil
+			}
+			extractedFiles[rel] = info.Size()
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	require.Empty(t, cmp.Diff(imageFiles, extractedFiles))
 }
 
 func TestOciconv_ChecksCredentials(t *testing.T) {
@@ -71,7 +131,7 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 
 	// Bypass auth while pushing the image.
 	authEnabled = false
-	ref := reg.Push(t, empty.Image, "test-empty-image")
+	ref, _ := reg.PushNamedImage(t, "test-empty-image:latest")
 	authEnabled = true
 
 	resolver, err := oci.NewResolver(te)

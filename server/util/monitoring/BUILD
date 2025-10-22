@@ -18,5 +18,7 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus/promhttp",
         "@com_github_rantav_go_grpc_channelz//:go-grpc-channelz",
         "@com_github_victoriametrics_metrics//:metrics",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_x_net//trace",
     ],
 )

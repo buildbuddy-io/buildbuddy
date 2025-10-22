@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     name: Build + Test Windows executor
-    runs-on: windows-2022
+    runs-on: windows-2025
     if: "!contains(github.event.head_commit.message, 'ci skip')"
     steps:
       - name: Checkout
@@ -19,13 +19,16 @@ jobs:
         uses: ./.github/actions/cache-restore
 
       # This step would list out all files under $vs2022Path for debugging purposes.
+      # Uncomment if GitHub released a new Windows image and you need to find the new path of cl.exe.
+      # TODO(sluongng): Make buildbuddy-toolchains detect the path automatically.
+      #
       # - name: "Find CL"
       #   shell: pwsh # Use PowerShell for better cross-platform compatibility
       #   run: |
       #     $vs2022Path = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
       #     if (Test-Path $vs2022Path) {
       #         Write-Host "Listing files in: $vs2022Path"
-      #         Get-ChildItem -Path $vs2022Path -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+      #         Get-ChildItem -Path $vs2022Path -Recurse -File -Filter cl.exe -ErrorAction SilentlyContinue | ForEach-Object {
       #             Write-Host $_.FullName
       #         } | Out-File -FilePath vs2022_files.txt -Encoding utf8
       #         Write-Host "File list saved to vs2022_files.txt"
@@ -37,7 +40,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GO_REPOSITORY_USE_HOST_CACHE: 1
-          GOMODCACHE: "D:/go-mod-cache"
+          GOMODCACHE: "C:/go-mod-cache"
         # Because "startup" options could not be assigned to different configs in .bazelrc, we are adding them directly here.
         # These options follow the best practices in https://bazel.build/configure/windows. Specifically:
         #   - Set output_user_root to the shortest path possible to avoid Windows path length limitations.
@@ -51,8 +54,23 @@ jobs:
           if ($apiKey) {
             $authArgs = @("--remote_header=x-buildbuddy-api-key=$apiKey")
           }
-          bazelisk --output_user_root=D:/0 --windows_enable_symlinks build --config=untrusted-ci-windows @authArgs //enterprise/server/cmd/executor:executor
-          bazelisk --output_user_root=D:/0 --windows_enable_symlinks test --config=untrusted-ci-windows @authArgs //enterprise/server/remote_execution/workspace:workspace_test
+          bazelisk --output_user_root=C:/0 `
+                   --windows_enable_symlinks `
+                   build `
+                   --config=untrusted-ci-windows `
+                   @authArgs `
+                   -- `
+                   //enterprise/server/cmd/executor:executor
+          bazelisk --output_user_root=C:/0 `
+                   --windows_enable_symlinks `
+                   test `
+                   --config=untrusted-ci-windows `
+                   --test_tag_filters=-performance `
+                   @authArgs `
+                   -- `
+                   //enterprise/server/remote_execution/workspace:workspace_test `
+                   //enterprise/server/util/procstats:procstats_test `
+                   //server/util/fastcopy:fastcopy_test
 
       - name: Save caches
         uses: ./.github/actions/cache-save

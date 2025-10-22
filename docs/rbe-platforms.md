@@ -221,6 +221,11 @@ The following properties allow customizing the behavior of the runner:
   default. This option may be useful to improve performance in some
   situations, but is not generally recommended for most actions as it
   reduces action hermeticity. Available options are `true` and `false`.
+- `runner-recycling-max-wait`: when recycling a runner, how long to wait for a
+  recycled runner before also trying to schedule on another machine. Values must
+  be formatted as positive durations. For example, `500ms` or `3s`. This is a
+  best-effort mechanism and the server may choose to ignore or clamp this value
+  to a specific range.
 - `preserve-workspace`: only applicable when `"recycle-runner": "true"` is set. Whether to re-use the Workspace directory from the previous action. Available options are `true` and `false`.
 - `clean-workspace-inputs`: a comma-separated list of glob values that
   decides which files in the action's input tree to clean up before the
@@ -281,15 +286,9 @@ slow to run initially, but then get faster as Just-In-Time (JIT)
 compilation kicks in and allows the compiler to run using more optimized
 machine code.
 
-To use remote persistent workers, two steps are required:
-
-1. Set `"recycle-runner": "true"` in `exec_properties` to enable
-   [runner recycling](#action-isolation-and-hermeticity-properties).
-   We recommend setting this property using a Bazel macro, so that
-   it will be set automatically on the relevant targets supporting
-   persistent workers.
-2. Pass the flag ["--experimental_remote_mark_tool_inputs"](https://bazel.build/reference/command-line-reference#flag--experimental_remote_mark_tool_inputs) to
-   your bazel command or add it to your `.bazelrc`.
+To use remote persistent workers, pass the flag
+["--experimental_remote_mark_tool_inputs"](https://bazel.build/reference/command-line-reference#flag--experimental_remote_mark_tool_inputs) to
+your bazel command or add it to your `.bazelrc`.
 
 The `--experimental_remote_mark_tool_inputs` flag sets the following
 properties (it's not normally recommended to set these manually; they are

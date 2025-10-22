@@ -1,9 +1,9 @@
-import React from "react";
 import Layout from "@theme/Layout";
-import styles from "./pricing.module.css";
-import common from "../css/common.module.css";
 import { Check, CheckCircle2 } from "lucide-react";
+import React from "react";
 import CTA from "../components/cta/cta";
+import common from "../css/common.module.css";
+import styles from "./pricing.module.css";
 
 function Index() {
   return (

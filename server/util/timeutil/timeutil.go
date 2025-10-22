@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jonboulle/clockwork"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -46,23 +45,4 @@ func ShortFormatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dms", d/time.Millisecond)
 	}
 	return "< 1ms"
-}
-
-func StopAndDrainTimer(t *time.Timer) {
-	if !t.Stop() {
-		select {
-		case <-t.C:
-		default:
-		}
-	}
-}
-
-// TODO: combine StopAndDrainClockworkTimer and StopAndDrainTimer.
-func StopAndDrainClockworkTimer(t clockwork.Timer) {
-	if !t.Stop() {
-		select {
-		case <-t.Chan():
-		default:
-		}
-	}
 }

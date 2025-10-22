@@ -3,6 +3,7 @@ package disk
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -11,9 +12,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -30,11 +34,15 @@ const (
 
 var (
 	tmpWriteFileRe = regexp.MustCompile(`\.[0-9a-zA-Z]{10}\.tmp$`)
+
+	fileWriterConcurrencyLimit = flag.Int("file_writer_concurrency_limit", 5_000, "Limit on concurrent file writer operations that may result in syscalls. Can be disabled by setting the value to 0.")
 )
 
 type Partition struct {
 	ID           string `yaml:"id" json:"id" usage:"The ID of the partition."`
 	MaxSizeBytes int64  `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
+	NumRanges    int    `yaml:"num_ranges" json:"num_ranges" usage:"The number of raft ranges to pre-create for this partition. This is only useful for raft."`
+	SoftDeleted  bool   `yaml:"soft_deleted" json:"soft_delete" usage:"If set, mark this partition as soft_deleted. This is only useful for raft. Note that rollback the config change won't undo this change. To undo the change, the partition descriptor needs to be updated in meta range."`
 }
 
 type PartitionMapping struct {
@@ -245,6 +253,41 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 	return &readCloser{io.NewSectionReader(f, offset, length), f}, nil
 }
 
+// A buffered channel used for reservations.
+// Users obtain a reservation by writing a reservation to the channel.
+// The write will block if the concurrency limit has been reached.
+// The reservation is released by dequeing a value from the channel.
+var fileWriterQuotaReservations = sync.OnceValue(func() chan struct{} {
+	return make(chan struct{}, *fileWriterConcurrencyLimit)
+})
+var fileWriterInProgressCounter atomic.Int64
+
+// reserveFileWriterQuota blocks until quota is available.
+// If a reservation is obtained, the returned function must be called
+// to release the quota.
+func reserveFileWriterQuota(ctx context.Context) (func(), error) {
+	updateMetric := func(delta int64) {
+		metrics.DiskFileWriterInProgressOps.Set(float64(fileWriterInProgressCounter.Add(delta)))
+	}
+
+	updateMetric(1)
+	if *fileWriterConcurrencyLimit == 0 {
+		return func() {
+			updateMetric(-1)
+		}, nil
+	}
+	select {
+	case fileWriterQuotaReservations() <- struct{}{}:
+		return func() {
+			updateMetric(-1)
+			<-fileWriterQuotaReservations()
+		}, nil
+	case <-ctx.Done():
+		updateMetric(-1)
+		return nil, ctx.Err()
+	}
+}
+
 type writeMover struct {
 	*os.File
 	tmpFileIsClosed bool
@@ -253,12 +296,20 @@ type writeMover struct {
 }
 
 func (w *writeMover) Write(p []byte) (int, error) {
-	_, spn := tracing.StartSpan(w.ctx)
-	defer spn.End()
+	releaseQuota, err := reserveFileWriterQuota(w.ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer releaseQuota()
 	return w.File.Write(p)
 }
 
 func (w *writeMover) Commit() error {
+	releaseQuota, err := reserveFileWriterQuota(w.ctx)
+	if err != nil {
+		return err
+	}
+	defer releaseQuota()
 	tmpName := w.File.Name()
 	if err := w.File.Close(); err != nil {
 		return err
@@ -268,16 +319,31 @@ func (w *writeMover) Commit() error {
 }
 
 func (w *writeMover) Close() error {
-	if !w.tmpFileIsClosed {
-		w.File.Close()
+	defer func() {
+		if !w.tmpFileIsClosed {
+			w.File.Close()
+		}
+		if err := RemoveIfExists(w.File.Name()); err != nil {
+			log.Warningf("Failed to delete %s: %s", w.File.Name(), err)
+		}
+	}()
+	// Try to reserve quota for the temp file close and delete, but we will
+	// do both in the above defer either way. Otherwise we would leak temp files.
+	releaseQuota, err := reserveFileWriterQuota(w.ctx)
+	if err != nil {
+		return err
 	}
-	if err := RemoveIfExists(w.File.Name()); err != nil {
-		log.Warningf("Failed to delete %s: %s", w.File.Name(), err)
-	}
+	defer releaseQuota()
 	return nil
 }
 
 func FileWriter(ctx context.Context, fullPath string) (interfaces.CommittedWriteCloser, error) {
+	releaseQuota, err := reserveFileWriterQuota(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseQuota()
+
 	if err := EnsureDirectoryExists(filepath.Dir(fullPath)); err != nil {
 		return nil, err
 	}

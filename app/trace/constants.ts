@@ -34,6 +34,13 @@ export const EVENT_LABEL_FONT_SIZE = "11px";
 export const EVENT_LABEL_FONT_COLOR = SECTION_LABEL_FONT_COLOR;
 export const EVENT_FILTERED_OUT_COLOR = "#ddd";
 
+// The minimum pixel width an event should be rendered at. Events smaller than
+// this will be clamped to this width, unless they are explicitly skipped.
+//
+// When jumping to a matched span via the search bar, if the span is smaller
+// than this in pixel width, the viewer will zoom in to make it at least this wide.
+export const MIN_RENDER_PIXEL_WIDTH = 1;
+
 export const TIME_SERIES_HEIGHT = 24;
 export const TIME_SERIES_POINT_RADIUS = 2;
 

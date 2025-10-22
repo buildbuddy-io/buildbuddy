@@ -4,7 +4,7 @@ DEFAULT_CMD_TPL = """
 export BAZEL_BINDIR=. &&
 export ROOTDIR=$$(pwd) &&
 export PACKAGEDIR=$$(dirname $(location {package})) &&
-export PATH=$$ROOTDIR/$$(dirname $(location {yarn})):$$ROOTDIR/$$(dirname $(location {node})):$$PATH &&
+export PATH=$$ROOTDIR/$$(dirname $(location {yarn})):$$ROOTDIR/$$(dirname $(NODE_PATH)):$$PATH &&
 cd $$PACKAGEDIR &&
 yarn install &&
 yarn {command} &&
@@ -17,14 +17,14 @@ mv $$PACKAGEDIR/build.tar $@
 EXECUTABLE_CMD_TPL = """
 cat << EOF > $@
 export BAZEL_BINDIR=. &&
-export PATH=$$(pwd)/$$(dirname $(location {yarn})):$$(pwd)/$$(dirname $(location {node})):$$PATH &&
+export PATH=$$(pwd)/$$(dirname $(location {yarn})):$$(pwd)/$$(dirname $(NODE_PATH)):$$PATH &&
 cd $$(dirname $(location {package})) &&
 yarn install &&
 yarn {command}
 EOF
 """
 
-def yarn(name, srcs, package, command = "build", deps = [], yarn = Label("//rules/yarn"), node = "@nodejs_host//:node_bin", **kwargs):
+def yarn(name, srcs, package, command = "build", deps = [], yarn = Label("//rules/yarn"), node = Label("@nodejs_toolchains//:resolved_toolchain"), **kwargs):
     extension = ".tar"
     executable = False
     if command != "build":
@@ -39,7 +39,6 @@ def yarn(name, srcs, package, command = "build", deps = [], yarn = Label("//rule
     cmd = cmd_tpl.format(
         package = package,
         yarn = yarn,
-        node = node,
         command = command,
     )
 
@@ -50,6 +49,7 @@ def yarn(name, srcs, package, command = "build", deps = [], yarn = Label("//rule
         cmd_bash = cmd,
         executable = executable,
         tools = [yarn, node],
+        toolchains = [node],
         local = 1,
         **kwargs
     )

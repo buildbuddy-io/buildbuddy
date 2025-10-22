@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -23,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -51,6 +51,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
@@ -133,12 +134,7 @@ func TestActionResultCacheWithFailedAction(t *testing.T) {
 	// ExecuteResponse should eventually be cached (this can happen in the
 	// background since it's only used to power the Execution page, and is not
 	// strictly needed by the RE client).
-	require.Eventually(t, func() bool {
-		_, err := execution.GetCachedExecuteResponse(ctx, rbe.GetActionResultStorageClient(), res.ID)
-		return err == nil
-	}, 1*time.Minute, 100*time.Millisecond)
-	execRes, err := execution.GetCachedExecuteResponse(ctx, rbe.GetActionResultStorageClient(), res.ID)
-	require.NoError(t, err)
+	execRes := waitForCachedExecuteResponse(ctx, t, rbe, res)
 	assert.Equal(t, int32(5), execRes.GetResult().GetExitCode(), "exit code should be set in action result")
 	stdout, stderr, err := rbe.GetStdoutAndStderr(ctx, execRes.GetResult(), res.InstanceName)
 	require.NoError(t, err)
@@ -492,6 +488,7 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 		},
 	}
 	opts := &rbetest.ExecuteOpts{APIKey: rbe.APIKey1}
+	ctx = rbe.WithAPIKey(ctx, rbe.APIKey1)
 
 	// Note: output_paths are needed for affinity routing to work, and
 	// output_paths are also deleted between runs. So we always write the
@@ -509,6 +506,14 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 
 	require.Equal(t, 0, res.ExitCode)
 
+	execRes := waitForCachedExecuteResponse(ctx, t, rbe, res)
+	auxMeta := getExecutionAuxiliaryMetadata(t, execRes)
+	// Check runner task number - should be 1
+	require.Equal(t, int64(1), auxMeta.GetRunnerMetadata().GetTaskNumber())
+	runnerID := auxMeta.GetRunnerMetadata().GetRunnerId()
+	// Runner ID is arbitrary, but should be nonempty
+	require.NotEmpty(t, runnerID)
+
 	rbetest.WaitForAnyPooledRunner(t, ctx)
 
 	cmd = rbe.Execute(&repb.Command{
@@ -523,6 +528,13 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 
 	require.Equal(t, "", res.Stderr)
 	require.Equal(t, 0, res.ExitCode)
+
+	execRes = waitForCachedExecuteResponse(ctx, t, rbe, res)
+	auxMeta = getExecutionAuxiliaryMetadata(t, execRes)
+	// Check task number - should be 2 now
+	require.Equal(t, int64(2), auxMeta.GetRunnerMetadata().GetTaskNumber())
+	// Runner ID should be the same as the previous one
+	require.Equal(t, runnerID, auxMeta.GetRunnerMetadata().GetRunnerId())
 }
 
 func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExecutor(t *testing.T) {
@@ -1655,12 +1667,13 @@ func TestRedisRestart(t *testing.T) {
     "OSFamily": "%s",
     "Arch": "%s",
   },
+  tags = ["no-remote-cache"],
 )`, runtime.GOOS, runtime.GOARCH),
 	}
 
 	var redisShards []*testredis.Handle
 	for i := 0; i < 4; i++ {
-		redisShards = append(redisShards, testredis.StartTCP(t))
+		redisShards = append(redisShards, testredis.Start(t))
 	}
 
 	args := []string{
@@ -1698,7 +1711,7 @@ func TestRedisRestart(t *testing.T) {
 				victimShard = shard
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(1 * time.Millisecond)
 	}
 	require.NotNil(t, victimShard, "could not find victim shard")
 
@@ -1710,10 +1723,6 @@ func TestRedisRestart(t *testing.T) {
 
 	assert.NoError(t, result.Error)
 	assert.Contains(t, result.Stderr, "Build completed successfully")
-	require.NotContains(
-		t, result.Stderr, "1 remote cache hit",
-		"sanity check: initial build shouldn't be cached",
-	)
 }
 
 type cancelInvocationTestCase struct {
@@ -1816,7 +1825,7 @@ func WaitForPendingExecution(rdb redis.UniversalClient, opID string) error {
 }
 
 func TestActionMerging_Success(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
+	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
 
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
@@ -1849,8 +1858,116 @@ func TestActionMerging_Success(t *testing.T) {
 	require.Equal(t, op3, op4, "expected actions to be merged, even with skip_cache_lookup")
 }
 
+func TestActionMerging_CancellationDoesntAffectMergedActions(t *testing.T) {
+	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
+
+	bbServer := rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	bep, err := build_event_publisher.New(bbServer.GRPCAddress(), "", "invocation1")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	bep.Start(ctx)
+
+	startTime := time.Now()
+	err = bep.Publish(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_Started{
+			Started: &bespb.BuildStarted{
+				StartTime: timestamppb.New(startTime),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", "sleep 5"},
+		Platform:  platform,
+	}
+	cmd1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"})
+	op1 := cmd1.WaitAccepted()
+
+	cmd2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
+	op2 := cmd2.WaitAccepted()
+	require.Equal(t, op1, op2, "the execution IDs for both commands should be the same")
+
+	// Cancel the first invocation.
+	finishTime := time.Now()
+	err = bep.Publish(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_Finished{
+			Finished: &bespb.BuildFinished{
+				ExitCode:   &bespb.BuildFinished_ExitCode{Name: "INTERRUPTED", Code: build_event_handler.InterruptedExitCode},
+				FinishTime: timestamppb.New(finishTime),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	// Verify that the action can run to completion.
+
+	res := cmd1.Wait()
+	require.Equal(t, 0, res.ExitCode)
+
+	res = cmd2.Wait()
+	require.Equal(t, 0, res.ExitCode)
+}
+
+func TestActionMerging_ScheduledConcurrently(t *testing.T) {
+	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+
+	// This test is racy by nature, but would fail open in case of flakiness.
+	// Reduce the chance this happens by rerunning the test a few times, which
+	// doesn't hurt test times since most of the time is spent in shutdown
+	// anyway.
+	for n := range 5 {
+		cmd := &repb.Command{
+			Arguments: []string{"sh", "-c", fmt.Sprintf("sleep %d", 5+n)},
+			Platform:  platform,
+		}
+
+		wg := sync.WaitGroup{}
+		ops := make(chan string, 5)
+		for i := range 5 {
+			wg.Add(1)
+			go func() {
+				exec := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: fmt.Sprintf("invocation%d", i)})
+				ops <- exec.WaitAccepted()
+				wg.Done()
+			}()
+		}
+		wg.Wait()
+		close(ops)
+
+		var onlyOp string
+		for op := range ops {
+			require.NotEmpty(t, op)
+			if onlyOp == "" {
+				onlyOp = op
+			} else {
+				require.Equal(t, onlyOp, op, "not all actions were merged")
+			}
+		}
+	}
+}
+
 func TestActionMerging_LongTask(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
+	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
 	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		SchedulerServerOptions: scheduler_server.Options{
 			ActionMergingLeaseTTLOverride: 250 * time.Millisecond,
@@ -1883,7 +2000,7 @@ func TestActionMerging_LongTask(t *testing.T) {
 }
 
 func TestActionMerging_ClaimingAppDies(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
+	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
 	app := rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		SchedulerServerOptions: scheduler_server.Options{
 			ActionMergingLeaseTTLOverride: time.Millisecond,
@@ -1923,7 +2040,7 @@ func TestActionMerging_ClaimingAppDies(t *testing.T) {
 
 func TestActionMerging_Hedging(t *testing.T) {
 	flags.Set(t, "remote_execution.action_merging_hedge_count", 2)
-	rbe := rbetest.NewRBETestEnv(t)
+	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
@@ -1999,7 +2116,7 @@ touch %s`, counter, fname)
 }
 
 func TestActionMerging_DisabledWithDoNotCache(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
+	rbe := rbetest.NewRBETestEnvWithOptions(t, &rbetest.EnvOptions{ShardedRedis: true})
 
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
@@ -2260,6 +2377,31 @@ func TestTerminationGracePeriod(t *testing.T) {
 	assert.Equal(t, "Got SIGTERM\n", res.Stdout)
 }
 
+func TestContainerRegistryBypass(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			// container-registry-bypass is only supported for server admin
+			// users in impersionation mode - this should fail with an auth
+			// error, even if we're setting it in a non-canonical way, using
+			// weird casing.
+			{Name: "container-ReGiStRy-bypass", Value: "true"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{"pwd"},
+		Platform:  platform,
+	}, &rbetest.ExecuteOpts{})
+
+	err := cmd.MustFailToSchedule()
+	require.True(t, status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err), "expected auth error, got %+#v (%q)", err, err)
+}
+
 type customResourcesTest struct {
 	Name             string
 	MeasuredTaskSize *scpb.TaskSize
@@ -2394,4 +2536,22 @@ func getProgressStates(t *testing.T, c *rbetest.Command) []repb.ExecutionProgres
 		}
 	}
 	return states
+}
+
+func waitForCachedExecuteResponse(ctx context.Context, t testing.TB, rbe *rbetest.Env, res *rbetest.CommandResult) *repb.ExecuteResponse {
+	require.Eventually(t, func() bool {
+		_, err := execution.GetCachedExecuteResponse(ctx, rbe.GetActionResultStorageClient(), res.ID)
+		return err == nil
+	}, 1*time.Minute, 100*time.Millisecond)
+	execRes, err := execution.GetCachedExecuteResponse(ctx, rbe.GetActionResultStorageClient(), res.ID)
+	require.NoError(t, err)
+	return execRes
+}
+
+func getExecutionAuxiliaryMetadata(t testing.TB, execRes *repb.ExecuteResponse) *espb.ExecutionAuxiliaryMetadata {
+	auxMeta := &espb.ExecutionAuxiliaryMetadata{}
+	ok, err := rexec.AuxiliaryMetadata(execRes.GetResult().GetExecutionMetadata(), auxMeta)
+	require.NoError(t, err)
+	require.True(t, ok)
+	return auxMeta
 }

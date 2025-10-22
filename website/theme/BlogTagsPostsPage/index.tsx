@@ -1,12 +1,12 @@
 import React from "react";
 
-import Layout from "@theme/Layout";
-import { BlogPostProvider } from "@docusaurus/plugin-content-blog/client";
-import BlogPostItem from "@theme/BlogPostItem";
 import Link from "@docusaurus/Link";
-import type { Props } from "@theme/BlogTagsPostsPage";
-import BlogSidebar from "../BlogSidebar";
+import { BlogPostProvider } from "@docusaurus/plugin-content-blog/client";
 import Translate, { translate } from "@docusaurus/Translate";
+import BlogPostItem from "@theme/BlogPostItem";
+import type { Props } from "@theme/BlogTagsPostsPage";
+import Layout from "@theme/Layout";
+import BlogSidebar from "../BlogSidebar";
 
 // Very simple pluralization: probably good enough for now
 function pluralizePosts(count: number): string {

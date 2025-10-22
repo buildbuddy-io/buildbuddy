@@ -37,6 +37,7 @@ var (
 	invocationSummaryAvailableUsec = flag.Int64("app.invocation_summary_available_usec", 0, "The timstamp when the invocation summary is available in the DB")
 	tagsInDrilldowns               = flag.Bool("app.fetch_tags_drilldown_data", true, "If enabled, DrilldownType_TAG_DRILLDOWN_TYPE can be returned in GetStatDrilldownRequests")
 	finerTimeBuckets               = flag.Bool("app.finer_time_buckets", false, "If enabled, split trends and drilldowns into smaller time buckets when the user has a smaller date range selected.")
+	targetTrendsEnabled            = flag.Bool("app.enable_target_trends", true, "Enables GetTargetTrends, which returns execution data aggregated by Bazel target.")
 )
 
 type InvocationStatService struct {
@@ -512,7 +513,7 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 func (i *InvocationStatService) getExecutionTrendQuery(timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []interface{}) {
 	if !i.finerTimeBucketsEnabled() {
 		return fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
-		quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
+		quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec AND queued_timestamp_usec > 0, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
 		SUM(GREATEST(COALESCE(worker_completed_timestamp_usec - worker_start_timestamp_usec, 0), 0)) as total_build_time_usec
 		FROM "Executions"`, make([]interface{}, 0)
 	}
@@ -520,7 +521,7 @@ func (i *InvocationStatService) getExecutionTrendQuery(timeSettings *trendTimeSe
 	bucketStr, bucketArgs := i.olapdbh.BucketFromUsecTimestamp("updated_at_usec", timeSettings.location, timeSettings.interval.ClickhouseInterval())
 
 	return fmt.Sprintf("SELECT %s as bucket_start_time_micros,", bucketStr) + `
-	quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
+	quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec AND queued_timestamp_usec > 0, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
 	SUM(GREATEST(COALESCE(worker_completed_timestamp_usec - worker_start_timestamp_usec, 0), 0)) as total_build_time_usec
 	FROM "Executions"
 	`, bucketArgs
@@ -903,6 +904,9 @@ type QueryAndBuckets = struct {
 // indicate a no-error state with no results--in this case we should return an
 // empty response.
 func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*QueryAndBuckets, error) {
+	if req.GetMetric() == nil {
+		return nil, status.InvalidArgumentError("Missing metric for heatmap request.")
+	}
 	table := getTableForMetric(req.GetMetric())
 	metric, err := filter.MetricToDbField(req.GetMetric())
 	if err != nil {
@@ -1026,6 +1030,10 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
+		// Attempt normalization, and if it succeeds, use the normalized URL.
+		if u, err := git.NormalizeRepoURL(repoURL); err == nil {
+			repoURL = u.String()
+		}
 		q.AddWhereClause("repo_url = ?", repoURL)
 	}
 
@@ -1181,7 +1189,7 @@ func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilld
 
 func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{}, error) {
 	if len(filters) == 0 {
-		return "", nil, status.InvalidArgumentError("Empty filter for drilldown.")
+		return "FALSE", []interface{}{}, nil
 	}
 	var result []string
 	var resultArgs []interface{}
@@ -1200,6 +1208,9 @@ func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{},
 // are able to upgrade to clickhouse 22.6 or later.  The release date for 22.8
 // from Altinity is supposed to be 2023-02-15.
 func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb.GetStatDrilldownRequest) (string, []interface{}, error) {
+	if req.GetDrilldownMetric() == nil {
+		return "", nil, status.InvalidArgumentError("Missing metric for drilldown request.")
+	}
 	drilldownFields := []string{"user", "host", "pattern", "repo_url", "branch_name", "commit_sha"}
 	if *tagsInDrilldowns {
 		drilldownFields = append(drilldownFields, "tag")
@@ -1270,6 +1281,89 @@ func sortDrilldownChartKeys(dm map[stpb.DrilldownType]float64) *[]stpb.Drilldown
 		result[i] = pair.ddType
 	}
 	return &result
+}
+
+func getAggregationFnString(a stpb.TargetAggregation) string {
+	switch a {
+	case stpb.TargetAggregation_SUM_TARGET_AGGREGATION:
+		return "sum"
+	case stpb.TargetAggregation_AVG_TARGET_AGGREGATION:
+		return "avg"
+	case stpb.TargetAggregation_MAX_TARGET_AGGREGATION:
+		return "max"
+	case stpb.TargetAggregation_MIN_TARGET_AGGREGATION:
+		return "min"
+	case stpb.TargetAggregation_P50_TARGET_AGGREGATION:
+		return "quantile(0.5)"
+	case stpb.TargetAggregation_P90_TARGET_AGGREGATION:
+		return "quantile(0.9)"
+	case stpb.TargetAggregation_P99_TARGET_AGGREGATION:
+		return "quantile(0.99)"
+	default:
+		return "sum"
+	}
+}
+
+func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.GetTargetTrendsRequest) (*stpb.GetTargetTrendsResponse, error) {
+	if !*targetTrendsEnabled {
+		return nil, status.UnimplementedError("GetTargetTrends RPC is disabled.")
+	}
+	if !i.isOLAPDBEnabled() {
+		return nil, status.UnimplementedError("Target trends require using an OLAP DB, but none is configured.")
+	}
+	if err := authutil.AuthorizeGroupAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
+		return nil, err
+	}
+
+	// Normalize repo URL before we use it in any queries.
+	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
+		repoURL, err := git.NormalizeRepoURL(repoURL)
+		if err == nil {
+			req = req.CloneVT()
+			req.Query.RepoUrl = repoURL.String()
+		}
+	}
+
+	metric, err := filter.ExecutionMetricToDbField(req.GetMetric())
+	if err != nil {
+		return nil, err
+	}
+
+	// Merged actions appear in clickhouse as multiple rows with the same
+	// execution_id, but a different invocation_uuid.  This inner query dedupes
+	// by execution_id and takes the highest value (though all rows should have
+	// the same value).
+	innerQ := query_builder.NewQuery(fmt.Sprintf(`
+		SELECT target_label, execution_id, MAX(%s) as v
+		FROM "Executions"`, metric))
+
+	// Add where clauses from the trend query, including execution dimension filters
+	if err := i.addWhereClauses(innerQ, req.GetQuery(), true, req.GetRequestContext()); err != nil {
+		return nil, err
+	}
+
+	innerQ.AddWhereClause("cached_result = FALSE")
+	innerQ.AddWhereClause("target_label != ''")
+	innerQ.SetGroupBy("target_label, execution_id")
+
+	innerQStr, innerQArgs := innerQ.Build()
+
+	q := query_builder.NewQueryWithArgs(fmt.Sprintf(`
+		SELECT target_label as target, toInt64(%s(v)) as value
+		FROM ( %s )`, getAggregationFnString(req.GetAgg()), innerQStr), innerQArgs)
+	q.SetGroupBy("target_label")
+	q.SetOrderBy("value", false) // Descending order
+	q.SetLimit(1000)             // Reasonable limit to avoid overwhelming the response
+
+	qStr, qArgs := q.Build()
+	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_target_trends").Raw(qStr, qArgs...)
+
+	targetStats, err := db.ScanAll(rq, &stpb.TargetStats{})
+	if err != nil {
+		return nil, err
+	}
+
+	return &stpb.GetTargetTrendsResponse{TargetStats: targetStats}, nil
 }
 
 func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error) {

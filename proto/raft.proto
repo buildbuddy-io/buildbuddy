@@ -190,6 +190,16 @@ message TxnRequest {
     BatchCmdRequest raw_batch = 2;
     RangeDescriptor range = 3;
     repeated TransactionHook hooks = 4;
+
+    // Is range validation required for the statement?
+    //
+    // It's required for the existing range This is to make sure the range
+    // descriptor on the range lease holder or current leader is up-to-date w/o
+    // a linearizable read to the meta range.
+    //
+    // However, for new ranges and meta range when itself is not updated. More
+    // details can be found at go/raft-range-validation-in-txn.
+    bool range_validation_required = 5;
   }
   repeated Statement statements = 2;
 }
@@ -388,7 +398,7 @@ message ReplicaUsage {
   int64 read_qps = 5;
   int64 raft_propose_qps = 6;
 
-  repeated storage.PartitionMetadata partitions = 7;
+  reserved 7;
 }
 
 message StoreUsage {
@@ -443,8 +453,29 @@ message Header {
 
   // Session is used to guarantee idempotency for writes on the state machine.
   optional Session session = 5;
+
+  // If set, skip the range descriptor generation check
+  bool skip_generation_check = 6;
 }
 
+message PartitionDescriptor {
+  string id = 1;
+  int64 initial_num_ranges = 2;
+  uint64 first_range_id = 3;
+
+  enum State {
+    UNKNOWN_STATE = 0;
+    // Partition is in the process of being set up
+    INITIALIZING = 1;
+    // Partition is fully set up and ready to serve requests
+    INITIALIZED = 2;
+    // Partition has been soft-deleted and should not serve new requests
+    SOFT_DELETED = 3;
+  }
+  State state = 4;
+
+  uint64 generation = 5;
+}
 message RangeSet {
   repeated RangeDescriptor ranges = 1;
 }
@@ -470,6 +501,10 @@ message RangeDescriptor {
   // they are successfully added to raft, we will move the replica descriptor
   // from staging to the replicas field above.
   repeated ReplicaDescriptor staging = 9;
+
+  // If set, this range descriptor is deleted. Don't move, up-replicate, 
+  // down-replicate or rebalance.
+  bool deleted = 10;
 }
 
 // SyncPropose, in proto form.
@@ -557,6 +592,15 @@ message RemoveReplicaRequest {
 message RemoveReplicaResponse {
   // The range with the specified node marked as removed.
   RangeDescriptor range = 1;
+}
+
+message CheckRangeOverlapsRequest {
+  bytes start = 1;
+  bytes end = 2;
+}
+
+message CheckRangeOverlapsResponse {
+  repeated RangeDescriptor ranges = 1;
 }
 
 message SplitRangeRequest {
@@ -662,3 +706,20 @@ message GetRangeDebugInfoResponse {
   bool has_lease = 4;
   RaftMembership membership = 5;
 }
+
+message RangeDescriptorChange {
+  RangeDescriptor old_descriptor = 1;
+  RangeDescriptor new_descriptor = 2;
+}
+
+message PartitionDescriptorChange {
+  PartitionDescriptor old_descriptor = 1;
+  PartitionDescriptor new_descriptor = 2;
+}
+
+message AdminUpdateDescriptorRequest {
+	RangeDescriptorChange range_descriptor_change = 1;
+	repeated PartitionDescriptorChange partition_descriptor_change = 2;
+}
+
+message AdminUpdateDescriptorResponse {}

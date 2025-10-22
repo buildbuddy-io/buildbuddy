@@ -3,12 +3,19 @@ package ociruntime
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
+	"maps"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,9 +35,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
@@ -38,6 +49,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -53,17 +65,26 @@ import (
 const (
 	// Exit code 139 represents 11 (SIGSEGV signal) + 128 https://tldp.org/LDP/abs/html/exitcodes.html
 	ociSIGSEGVExitCode = 139
+
+	// Statusz section name.
+	imagesStatuszSectionName = "ociruntime_images"
 )
 
 var (
-	Runtime     = flag.String("executor.oci.runtime", "", "OCI runtime")
-	runtimeRoot = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
-	dns         = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
-	netPoolSize = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
-	enableLxcfs = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
-	capAdd      = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
-	mounts      = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
-	devices     = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
+	Runtime                 = flag.String("executor.oci.runtime", "", "OCI runtime")
+	runtimeRoot             = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
+	dns                     = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
+	netPoolSize             = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	defaultNetworkMode      = flag.String("executor.oci.default_network_mode", "", "Default network mode: either 'bridge' or 'off'. Can be overridden per-action with the 'dockerNetwork' platform property.")
+	enableLxcfs             = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
+	capAdd                  = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
+	mounts                  = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
+	devices                 = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
+	enablePersistentVolumes = flag.Bool("executor.oci.enable_persistent_volumes", false, "Enables persistent volumes that can be shared between actions within a group. Only supported for OCI isolation type.")
+	enableTini              = flag.Bool("executor.oci.enable_tini", false, "If true, run all OCI containers with tini as pid 1.")
+	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
+	minPIDsLimit            = flag.Int64("executor.oci.min_pids_limit", 0, "Min value to use for pids.max (PID limit). The scheduler may set a higher value for larger tasks. This can be used for rare cases where the scheduler does not provide a high enough limit.")
+	cgroupMemoryCushion     = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
@@ -73,10 +94,6 @@ const (
 
 	// Execution root directory path relative to the container rootfs directory.
 	execrootPath = "/buildbuddy-execroot"
-
-	// Fake image ref indicating that busybox should be manually provisioned.
-	// TODO: get rid of this
-	TestBusyboxImageRef = "test.buildbuddy.io/busybox"
 
 	// Image cache layout version.
 	//
@@ -96,6 +113,9 @@ const (
 
 var (
 	versionDirRegexp = regexp.MustCompile(`^v\d+$`)
+
+	// Fake /proc/cgroups content to mount into the container.
+	fakeProcCgroupsContent = getFakeProcCgroupsContent()
 )
 
 // Set via x_defs from the BUILD file
@@ -200,6 +220,10 @@ type provider struct {
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, error) {
+	if !slices.Contains([]string{"", "bridge", "off"}, *defaultNetworkMode) {
+		return nil, fmt.Errorf("unsupported 'executor.oci.default_network_mode' setting %q", *defaultNetworkMode)
+	}
+
 	// Enable masquerading on the host if it isn't enabled already.
 	if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
 		return nil, status.WrapError(err, "enable masquerading")
@@ -317,6 +341,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if err != nil {
 		return nil, err
 	}
+	statusz.AddSection(imagesStatuszSectionName, "OCI images", imageStore)
 
 	networkPool := networking.NewContainerNetworkPool(*netPoolSize)
 	env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
@@ -335,6 +360,11 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 }
 
 func (p *provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	networkMode := args.Props.DockerNetwork
+	if networkMode == "" {
+		networkMode = *defaultNetworkMode
+	}
+
 	container := &ociContainer{
 		env:            p.env,
 		runtime:        p.runtime,
@@ -346,16 +376,19 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		networkPool:    p.networkPool,
 		lxcfsMount:     p.lxcfsMount,
 
-		blockDevice:    args.BlockDevice,
-		cgroupParent:   args.CgroupParent,
-		cgroupSettings: &scpb.CgroupSettings{},
-		imageRef:       args.Props.ContainerImage,
-		networkEnabled: args.Props.DockerNetwork != "off",
-		tiniEnabled:    args.Props.DockerInit,
-		user:           args.Props.DockerUser,
-		forceRoot:      args.Props.DockerForceRoot,
+		blockDevice:        args.BlockDevice,
+		cgroupParent:       args.CgroupParent,
+		cgroupSettings:     &scpb.CgroupSettings{},
+		imageRef:           args.Props.ContainerImage,
+		networkEnabled:     networkMode != "off",
+		isPersistentWorker: args.Props.PersistentWorkerKey != "",
+		tiniEnabled:        args.Props.DockerInit || *enableTini,
+		user:               args.Props.DockerUser,
+		forceRoot:          args.Props.DockerForceRoot,
+		persistentVolumes:  args.Props.PersistentVolumes,
 
-		milliCPU: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
+		milliCPU:    args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
+		memoryBytes: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(),
 	}
 	if settings := args.Task.GetSchedulingMetadata().GetCgroupSettings(); settings != nil {
 		container.cgroupSettings = settings
@@ -378,23 +411,30 @@ type ociContainer struct {
 	imageCacheRoot string
 	imageStore     *ImageStore
 
-	cid              string
-	workDir          string
-	mergedMounts     []string
-	overlayfsMounted bool
-	stats            container.UsageStats
-	networkPool      *networking.ContainerNetworkPool
-	network          *networking.ContainerNetwork
-	lxcfsMount       string
-	releaseCPUs      func()
+	cid                    string
+	workDir                string
+	mergedMounts           []string
+	overlayfsMounted       bool
+	persistentVolumes      []platform.PersistentVolume
+	persistentVolumeMounts []specs.Mount
+	stats                  container.UsageStats
+	networkPool            *networking.ContainerNetworkPool
+	network                *networking.ContainerNetwork
+	lxcfsMount             string
+	releaseCPUs            func()
+	isPersistentWorker     bool
 
 	imageRef       string
 	networkEnabled bool
 	user           string
 	forceRoot      bool
 
-	milliCPU int64 // milliCPU allocation from task size
+	milliCPU    int64 // milliCPU allocation from task size
+	memoryBytes int64 // memory allocation from task size in bytes
 }
+
+// Assert [*ociContainer] implements [container.StatsRecorder].
+var _ container.StatsRecorder = (*ociContainer)(nil)
 
 // Returns the OCI bundle directory for the container.
 func (c *ociContainer) bundlePath() string {
@@ -426,6 +466,42 @@ func (c *ociContainer) containerName() string {
 		return c.cid
 	}
 	return c.cid[:cidPrefixLen]
+}
+
+func (c *ociContainer) initPersistentVolumes(ctx context.Context) error {
+	if len(c.persistentVolumes) == 0 {
+		return nil
+	}
+	if !*enablePersistentVolumes {
+		return status.UnimplementedError("persistent volumes are not enabled")
+	}
+
+	partition := "default"
+	if executor_auth.APIKey() != "" {
+		// If authentication is enabled, host mounts are only available to
+		// authenticated users.
+		c, err := claims.ClaimsFromContext(ctx)
+		if err != nil {
+			return status.UnauthenticatedErrorf("persistent volumes require authentication")
+		}
+		partition = c.GroupID
+	}
+
+	for _, volume := range c.persistentVolumes {
+		// Initialize the volume at "{build_root}/volumes/{partition}/{volume_name}"
+		// Example: "/buildbuddy/executor/buildroot/volumes/GR123/node_modules_cache"
+		hostPath := filepath.Join(filepath.Dir(c.workDir), "volumes", partition, volume.Name())
+		if err := os.MkdirAll(hostPath, 0755); err != nil {
+			return fmt.Errorf("create persistent volume backing path %q: %w", hostPath, err)
+		}
+		c.persistentVolumeMounts = append(c.persistentVolumeMounts, specs.Mount{
+			Destination: volume.ContainerPath(),
+			Type:        "bind",
+			Source:      hostPath,
+			Options:     []string{"bind", "rprivate"},
+		})
+	}
+	return nil
 }
 
 // createBundle creates the OCI bundle directory, which includes the OCI spec
@@ -468,6 +544,10 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	if err := c.setupCgroup(ctx); err != nil {
 		return fmt.Errorf("setup cgroup: %w", err)
 	}
+	// Create backing file for fake /proc/cgroups mount
+	if err := os.WriteFile(filepath.Join(c.bundlePath(), "proc_cgroups"), []byte(fakeProcCgroupsContent), 0644); err != nil {
+		return fmt.Errorf("write proc_cgroups file: %w", err)
+	}
 
 	// Create config.json from the image config and command
 	image, ok := c.imageStore.CachedImage(c.imageRef)
@@ -503,9 +583,6 @@ func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
 }
 
 func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
-	if c.imageRef == TestBusyboxImageRef {
-		return nil
-	}
 	if _, err := c.imageStore.Pull(ctx, c.imageRef, creds); err != nil {
 		return status.WrapError(err, "pull OCI image")
 	}
@@ -529,6 +606,9 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 	if c.tiniEnabled {
 		cmd = cmd.CloneVT()
 		cmd.Arguments = append([]string{tiniMountPoint, "--"}, cmd.Arguments...)
+	}
+	if err := c.initPersistentVolumes(ctx); err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("init persistent volumes: %s", err))
 	}
 	if err := c.createBundle(ctx, cmd); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("create OCI bundle: %s", err))
@@ -559,6 +639,9 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 			[]string{tiniMountPoint, "--"},
 			pid1.Arguments...,
 		)
+	}
+	if err := c.initPersistentVolumes(ctx); err != nil {
+		return status.UnavailableErrorf("init persistent volumes: %s", err)
 	}
 	// Provision bundle directory (OCI config JSON, rootfs, etc.)
 	if err := c.createBundle(ctx, pid1); err != nil {
@@ -607,9 +690,26 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 	}
 	args = append(args, c.cid)
 
+	// If this Exec() is running a long-lived persistent worker, then don't
+	// start the stats polling loop. Instead, the caller is responsible for
+	// tracking stats separately by wrapping each work request with RecordStats.
+	// This way, we only record stats while work requests are in progress.
+	if c.isPersistentWorker {
+		return c.invokeRuntime(ctx, cmd, stdio, 1*time.Microsecond, args...)
+	}
 	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
 		return c.invokeRuntime(ctx, cmd, stdio, 1*time.Microsecond, args...)
 	})
+}
+
+func (c *ociContainer) RecordStats(ctx context.Context) func() (*repb.UsageStats, error) {
+	stop := c.stats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
+		return c.cgroupPaths.Stats(ctx, c.cid, c.blockDevice)
+	})
+	return func() (*repb.UsageStats, error) {
+		stop()
+		return c.stats.TaskStats(), nil
+	}
 }
 
 func (c *ociContainer) Signal(ctx context.Context, sig syscall.Signal) error {
@@ -766,11 +866,13 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 		log.CtxWarning(ctx, status.Message(err))
 	}
 
-	networkStats, err := c.network.Stats(ctx)
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to get network stats: %s", err)
-	} else {
-		res.UsageStats.NetworkStats = networkStats
+	if c.network != nil {
+		networkStats, err := c.network.Stats(ctx)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to get network stats: %s", err)
+		} else {
+			res.UsageStats.NetworkStats = networkStats
+		}
 	}
 
 	return res
@@ -820,6 +922,12 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
 	c.cgroupSettings.NumaNode = proto.Int32(int32(numaNode))
+	if *enableCgroupMemoryLimit && c.memoryBytes > 0 {
+		c.cgroupSettings.MemoryLimitBytes = proto.Int64(c.memoryBytes + int64(float64(c.memoryBytes)*(*cgroupMemoryCushion)))
+	}
+	if c.cgroupSettings.PidsMax != nil && *minPIDsLimit > 0 {
+		c.cgroupSettings.PidsMax = proto.Int64(max(c.cgroupSettings.GetPidsMax(), *minPIDsLimit))
+	}
 
 	path := c.cgroupPath()
 	if err := os.MkdirAll(path, 0755); err != nil {
@@ -834,13 +942,6 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 func (c *ociContainer) createRootfs(ctx context.Context) error {
 	if err := os.MkdirAll(c.rootfsPath(), 0755); err != nil {
 		return fmt.Errorf("create rootfs dir: %w", err)
-	}
-
-	// For testing only, support a fake image ref that means "install busybox
-	// manually".
-	// TODO: improve testing setup and get rid of this
-	if c.imageRef == TestBusyboxImageRef {
-		return installBusybox(ctx, c.rootfsPath())
 	}
 
 	if c.imageRef == "" {
@@ -942,40 +1043,6 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	return nil
 }
 
-func installBusybox(ctx context.Context, path string) error {
-	busyboxPath, err := exec.LookPath("busybox")
-	if err != nil {
-		return fmt.Errorf("find busybox in PATH: %w", err)
-	}
-	binDir := filepath.Join(path, "bin")
-	if err := os.MkdirAll(binDir, 0755); err != nil {
-		return fmt.Errorf("mkdir -p %s: %w", binDir, err)
-	}
-	if err := disk.CopyViaTmpSibling(busyboxPath, filepath.Join(binDir, "busybox")); err != nil {
-		return fmt.Errorf("copy busybox binary: %w", err)
-	}
-	b, err := exec.CommandContext(ctx, busyboxPath, "--list").Output()
-	if err != nil {
-		return fmt.Errorf("list: %w", err)
-	}
-	names := strings.Split(strings.TrimSpace(string(b)), "\n")
-	for _, name := range names {
-		if name == "busybox" {
-			continue
-		}
-		if err := os.Symlink("busybox", filepath.Join(binDir, name)); err != nil {
-			return err
-		}
-	}
-	if err := os.MkdirAll(filepath.Join(path, "usr"), 0755); err != nil {
-		return err
-	}
-	if err := os.Symlink("../bin", filepath.Join(path, "usr", "bin")); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*specs.Spec, error) {
 	env := append(baseEnv, commandutil.EnvStringList(cmd)...)
 	image, _ := c.imageStore.CachedImage(c.imageRef)
@@ -1055,7 +1122,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 				Destination: "/dev/shm",
 				Type:        "tmpfs",
 				Source:      "shm",
-				Options:     []string{"rw", "nosuid", "nodev", "noexec", "relatime", "size=64000k", "inode64"},
+				Options:     []string{"rw", "nosuid", "nodev", "noexec", "relatime", "size=64000k"},
 			},
 			// TODO: .containerenv
 			// {
@@ -1075,6 +1142,13 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 				Type:        "cgroup",
 				Source:      "cgroup",
 				Options:     []string{"rprivate", "nosuid", "noexec", "nodev", "relatime", "ro"},
+			},
+			{
+				// See comment on getFakeProcCgroupsContent
+				Destination: "/proc/cgroups",
+				Type:        "bind",
+				Source:      filepath.Join(c.bundlePath(), "proc_cgroups"),
+				Options:     []string{"bind", "rprivate", "ro"},
 			},
 			{
 				Destination: execrootPath,
@@ -1166,6 +1240,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			Options:     []string{"bind", "rprivate", "ro"},
 		})
 	}
+	spec.Mounts = append(spec.Mounts, c.persistentVolumeMounts...)
 	spec.Mounts = append(spec.Mounts, *mounts...)
 	spec.Linux.Devices = append(spec.Linux.Devices, *devices...)
 	return &spec, nil
@@ -1232,6 +1307,9 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		if stdio.Stdout == nil {
 			stdout = &bytes.Buffer{}
 			cmd.Stdout = stdout
+			if *commandutil.DebugStreamCommandOutputs {
+				cmd.Stdout = io.MultiWriter(stdout, log.Writer("[crun] "))
+			}
 		} else {
 			stdout = nil
 			cmd.Stdout = stdio.Stdout
@@ -1239,6 +1317,9 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		if stdio.Stderr == nil {
 			stderr = &bytes.Buffer{}
 			cmd.Stderr = stderr
+			if *commandutil.DebugStreamCommandOutputs {
+				cmd.Stderr = io.MultiWriter(stderr, log.Writer("[crun] "))
+			}
 		} else {
 			stderr = nil
 			cmd.Stderr = stdio.Stderr
@@ -1290,7 +1371,7 @@ func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserPro
 	// requested user ID
 	spec := ""
 	if image != nil {
-		spec = image.Config.User
+		spec = image.ConfigFile.Config.User
 	}
 	if dockerUserProp != "" {
 		spec = dockerUserProp
@@ -1391,7 +1472,7 @@ func newCID() (string, error) {
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%x", b), nil
+	return hex.EncodeToString(b[:]), nil
 }
 
 // layerPath returns the path where the extracted image layer with the given
@@ -1417,9 +1498,9 @@ type Image struct {
 	// Layers holds the image layers from lowermost to uppermost.
 	Layers []*ImageLayer
 
-	// Config holds various image settings such as user and environment
+	// ConfigFile holds various image settings such as user and environment
 	// directives.
-	Config ctr.Config
+	ConfigFile ctr.ConfigFile
 }
 
 // ImageLayer represents a resolved image layer.
@@ -1465,12 +1546,6 @@ func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Crede
 func (s *ImageStore) CachedImage(imageName string) (image *Image, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	// TODO: make ImageStore a param of NewProvider and move this logic to a
-	// test image store
-	if imageName == TestBusyboxImageRef {
-		return &Image{}, true
-	}
 
 	image, ok = s.cachedImages[imageName]
 	return image, ok
@@ -1540,7 +1615,7 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 		if err != nil {
 			return status.UnavailableErrorf("get image config file: %s", err)
 		}
-		resolvedImage.Config = f.Config
+		resolvedImage.ConfigFile = *f
 		return nil
 	})
 	if err := eg.Wait(); err != nil {
@@ -1678,13 +1753,84 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 	return nil
 }
 
+// Statusz returns statusz page contents for the image store.
+func (s *ImageStore) Statusz(ctx context.Context) string {
+	var h strings.Builder
+	h.WriteString(`<ul>`)
+	names := slices.Collect(maps.Keys(s.cachedImages))
+	slices.Sort(names)
+	for _, name := range names {
+		downloadURL := fmt.Sprintf(
+			"%s/%s/download?name=%s",
+			statusz.BasePath, imagesStatuszSectionName, url.QueryEscape(name))
+		h.WriteString(`<li>`)
+		h.WriteString(`<a href="` + downloadURL + `" target="_blank">`)
+		h.WriteString(html.EscapeString(name))
+		h.WriteString(`</a>`)
+		h.WriteString(`</li>`)
+	}
+	h.WriteString(`</ul>`)
+	return h.String()
+}
+
+func (s *ImageStore) ServeStatusz(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/download" {
+		s.download(w, r)
+		return
+	}
+	http.NotFound(w, r)
+}
+
+var filenameUnsafeChars = regexp.MustCompile(`[^a-zA-Z0-9_\-]`)
+
+func sanitizeFilename(name string) string {
+	return filenameUnsafeChars.ReplaceAllString(name, "_")
+}
+
+// downloads a tarball image that can be loaded with 'docker load'.
+func (s *ImageStore) download(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	s.mu.RLock()
+	image, ok := s.cachedImages[name]
+	s.mu.RUnlock()
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	ctx := r.Context()
+
+	downloadTmpDir := filepath.Join(s.layersDir, "image-download"+tmpSuffix())
+	if err := os.MkdirAll(downloadTmpDir, 0755); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer os.RemoveAll(downloadTmpDir)
+
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.tar", sanitizeFilename(name)))
+	w.Header().Set("Content-Type", "application/x-tar")
+	w.WriteHeader(http.StatusOK)
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	if err := s.writeDockerImageTarball(ctx, w, image, name, downloadTmpDir); err != nil {
+		if ctx.Err() != nil {
+			// Request was cancelled
+			return
+		} else {
+			log.CtxWarningf(ctx, "Failed to export docker image tarball: %s", err)
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 func withImageConfig(cmd *repb.Command, image *Image) (*repb.Command, error) {
 	// Apply any env vars from the image which aren't overridden by the command
 	cmdVarNames := make(map[string]bool, len(cmd.EnvironmentVariables))
 	for _, cmdVar := range cmd.GetEnvironmentVariables() {
 		cmdVarNames[cmdVar.GetName()] = true
 	}
-	imageEnv, err := commandutil.EnvProto(image.Config.Env)
+	imageEnv, err := commandutil.EnvProto(image.ConfigFile.Config.Env)
 	if err != nil {
 		return nil, status.WrapError(err, "parse image env")
 	}
@@ -1698,7 +1844,7 @@ func withImageConfig(cmd *repb.Command, image *Image) (*repb.Command, error) {
 
 	// Return a copy of the command but with the image config applied
 	out := cmd.CloneVT()
-	out.Arguments = append(image.Config.Entrypoint, cmd.Arguments...)
+	out.Arguments = append(image.ConfigFile.Config.Entrypoint, cmd.Arguments...)
 	out.EnvironmentVariables = outEnv
 	return out, nil
 }
@@ -1725,4 +1871,203 @@ func cleanStaleImageCacheDirs(root string) error {
 		}
 	}
 	return nil
+}
+
+// writeDockerImageTarball constructs a Docker-compatible .tar archive and
+// writes it to the provided io.Writer.
+func (s *ImageStore) writeDockerImageTarball(ctx context.Context, w io.Writer, image *Image, imageName, tmpDir string) error {
+	tarWriter := tar.NewWriter(w)
+
+	// Add each layer to the tarball, storing the diff IDs for each.
+	// The layer will be named {diffID}.tar.gz in the tarball.
+	var layerFiles []*os.File
+	var layerDiffIDs []ctr.Hash
+	var layerFileNames []string
+	for _, layer := range image.Layers {
+		compressedTarball, err := os.CreateTemp(tmpDir, "docker-layer-*.tar.gz")
+		if err != nil {
+			return fmt.Errorf("failed to create temp file for layer %q: %w", layer.DiffID.Hex, err)
+		}
+		defer os.Remove(compressedTarball.Name())
+		defer compressedTarball.Close()
+		diffID, err := s.writeCompressedLayerTarball(ctx, compressedTarball.Name(), layer)
+		if err != nil {
+			return fmt.Errorf("write compressed layer %q: %w", layer.DiffID.Hex, err)
+		}
+		layerFiles = append(layerFiles, compressedTarball)
+		layerFileNames = append(layerFileNames, fmt.Sprintf("%s.tar.gz", layer.DiffID.Hex))
+		layerDiffIDs = append(layerDiffIDs, *diffID)
+	}
+
+	// Prepare the image configuration and manifest
+	cfg := image.ConfigFile // shallow copy
+	cfg.RootFS = ctr.RootFS{
+		Type:    "layers",
+		DiffIDs: layerDiffIDs,
+	}
+	cfg.History = nil
+	cfg.Created = ctr.Time{Time: time.Now()}
+
+	configBytes, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal image config: %w", err)
+	}
+	configHash := sha256.Sum256(configBytes)
+	configHex := hex.EncodeToString(configHash[:])
+	configFilename := fmt.Sprintf("%s.json", configHex)
+
+	// Generate a new tag based on the image name.
+	// e.g. "ubuntu@sha256:..." -> "ubuntu:buildbuddy-exported-20250101000000"
+	repoTag := imageName
+	repoTag, _, _ = strings.Cut(repoTag, "@")
+	repoTag, _, _ = strings.Cut(repoTag, ":")
+	repoTag += ":buildbuddy-executor-exported-" + time.Now().Format("20060102150405")
+
+	manifest := []struct {
+		Config   string   `json:"Config"`
+		RepoTags []string `json:"RepoTags"`
+		Layers   []string `json:"Layers"`
+	}{
+		{
+			Config:   configFilename,
+			RepoTags: []string{repoTag},
+			Layers:   layerFileNames,
+		},
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		return fmt.Errorf("failed to marshal manifest: %w", err)
+	}
+	// Add manifest and config file to the tarball.
+	if err := addFileToTar(tarWriter, "manifest.json", manifestBytes); err != nil {
+		return fmt.Errorf("failed to add manifest.json to tar: %w", err)
+	}
+	if err := addFileToTar(tarWriter, configFilename, configBytes); err != nil {
+		return fmt.Errorf("failed to add config to tar: %w", err)
+	}
+	// Add each layer to the tarball.
+	for i, layer := range image.Layers {
+		f := layerFiles[i]
+		fi, err := f.Stat()
+		if err != nil {
+			return fmt.Errorf("stat layer %q: %w", layer.DiffID.Hex, err)
+		}
+		layerHeader := &tar.Header{
+			Name:    layerFileNames[i],
+			Mode:    0644,
+			Size:    fi.Size(),
+			ModTime: time.Now(),
+		}
+		if err := tarWriter.WriteHeader(layerHeader); err != nil {
+			return fmt.Errorf("failed to write layer header: %w", err)
+		}
+		// Stream the layer from the temp file into the final tar writer.
+		// We need to seek back to the start of the file before we can read it.
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return fmt.Errorf("failed to seek temp layer file: %w", err)
+		}
+		if _, err := io.Copy(tarWriter, f); err != nil {
+			return fmt.Errorf("failed to stream layer from temp file to final tar: %w", err)
+		}
+	}
+	if err := tarWriter.Close(); err != nil {
+		return fmt.Errorf("failed to flush tar writer: %w", err)
+	}
+	return nil
+}
+
+func (s *ImageStore) writeCompressedLayerTarball(ctx context.Context, compressedTarballPath string, layer *ImageLayer) (*ctr.Hash, error) {
+	f, err := os.Create(compressedTarballPath)
+	if err != nil {
+		return nil, fmt.Errorf("create compressed layer tarball: %w", err)
+	}
+	defer f.Close()
+
+	gzipWriter := gzip.NewWriter(f)
+	diffIDHasher := sha256.New()
+
+	// We use an io.MultiWriter to pipe the output of the 'tar' command to two places:
+	// 1. The gzip.Writer, which compresses the layer and writes it to our temp file.
+	// 2. The sha256.Hasher, which calculates the diffID of the *uncompressed* layer.
+	uncompressedWriter := io.MultiWriter(gzipWriter, diffIDHasher)
+
+	layerPath := layerPath(s.layersDir, layer.DiffID)
+	if err := ociconv.OverlayfsLayerToTarball(ctx, uncompressedWriter, layerPath); err != nil {
+		return nil, fmt.Errorf("failed to convert layer to tarball: %w", err)
+	}
+	// The gzip.Writer must be closed to flush all buffered data to the
+	// underlying file.
+	if err := gzipWriter.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close gzip writer: %w", err)
+	}
+
+	diffID := &ctr.Hash{
+		Algorithm: "sha256",
+		Hex:       hex.EncodeToString(diffIDHasher.Sum(nil)),
+	}
+
+	return diffID, nil
+}
+
+// addFileToTar is a helper to write a file (represented by a byte slice) into a tar archive.
+func addFileToTar(tw *tar.Writer, filename string, content []byte) error {
+	hdr := &tar.Header{
+		Name:    filename,
+		Mode:    0644,
+		Size:    int64(len(content)),
+		ModTime: time.Now(),
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return fmt.Errorf("failed to write header for %s: %w", filename, err)
+	}
+	if _, err := tw.Write(content); err != nil {
+		return fmt.Errorf("failed to write content for %s: %w", filename, err)
+	}
+	return nil
+}
+
+// Returns the contents of the fake /proc/cgroups file to be mounted into the
+// container.
+//
+// /proc/cgroups is a file that existed in cgroups v1. The file provided
+// information about enabled v1 controllers. However, even if the system has
+// cgroup v2 enabled, the kernel still creates and populates this file, in an
+// attempt to avoid breaking older software that might depend on this v1 file's
+// existence. The populated data is essentially "fake" - it lists cgroup v1
+// controllers that no longer exist, and it reports all controllers as enabled.
+//
+// However, the data populated in this fake /proc/cgroups file seems to be
+// incomplete in some situations. In particular, the "cpuset" row can be
+// missing, even if the cgroup v2 cpuset controller is enabled. This breaks
+// Java's "UseContainerSupport" mechanism, which is what allows the JVM to limit
+// heap usage based on cgroup v2 hard limits. More specifically, when the JVM
+// initializes its container support, it reads this /proc/cgroups file, and if
+// any expected rows are missing (including the cpuset row), it skips enabling
+// container support. As a result, Java programs that use a lot of memory may
+// not run GC when they are getting close to their memory limit, and will wind
+// up getting OOM-killed.
+//
+// Arguably, this is a bug in the JVM, since the JVM should be reading
+// /sys/fs/cgroup/cgroup.controllers instead of /proc/cgroups. This bug has been
+// fixed, but (unfortunately) the fix is only available in JVM 25+, which does
+// not yet have widespread adoption. The fix commit is here:
+// https://github.com/openjdk/jdk/commit/9c5ed23eac7470f56d498e9c4d3c51c2f80fd571
+//
+// NOTE(bduffany): at some point, it might be nice to figure out why the cpuset
+// row is missing from /proc/cgroups. After briefly looking at the kernel
+// source, it seems like we might be able to fix this by setting the
+// 'cgroup_v1_proc' kernel boot param, but for now it seems less painful (and
+// probably more portable) to fake out this file, and it should be fine to do so
+// since it's already technically a fake file anyway. In any case, the relevant
+// kernel source is here:
+// https://github.com/torvalds/linux/blob/07e27ad16399afcd693be20211b0dfae63e0615f/kernel/cgroup/cgroup-v1.c#L676-L705
+func getFakeProcCgroupsContent() string {
+	out := "#subsys_name\thierarchy\tnum_cgroups\tenabled\n"
+	for _, v1Controller := range []string{
+		"cpuset", "cpu", "cpuacct", "blkio", "memory", "devices", "freezer",
+		"net_cls", "perf_event", "net_prio", "hugetlb", "pids", "rdma", "misc",
+	} {
+		out += v1Controller + "\t0\t1\t1\n"
+	}
+	return out
 }

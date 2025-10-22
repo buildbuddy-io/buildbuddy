@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -1419,7 +1419,9 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 			return nil, nil, err
 		}
 		downloadString := digest.NewCASResourceName(d.ToDigest(), *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
-
+		if !strings.HasPrefix(downloadString, "/") {
+			downloadString = "/" + downloadString
+		}
 		runfiles = append(runfiles, &bespb.File{
 			Name: relPath,
 			File: &bespb.File_Uri{
@@ -1984,6 +1986,7 @@ func (ws *workspace) config(ctx context.Context) error {
 		{"user.email", "ci-runner@buildbuddy.io"},
 		{"user.name", "BuildBuddy"},
 		{"advice.detachedHead", "false"},
+		{"credential.interactive", "false"},
 		// With the version of git that we have installed in the CI runner
 		// image, --filter=blob:none requires the partialClone extension to be
 		// enabled.
@@ -2431,12 +2434,11 @@ func getStructuredCommandLine() *clpb.CommandLine {
 		if !strings.HasPrefix(arg, "--") || !strings.Contains(arg, "=") {
 			continue
 		}
-		arg = strings.TrimPrefix(arg, "--")
-		parts := strings.SplitN(arg, "=", 2)
+		nameValue := strings.SplitN(strings.TrimPrefix(arg, "--"), "=", 2)
 		options = append(options, &clpb.Option{
 			CombinedForm: arg,
-			OptionName:   parts[0],
-			OptionValue:  parts[1],
+			OptionName:   nameValue[0],
+			OptionValue:  nameValue[1],
 		})
 	}
 	return &clpb.CommandLine{
@@ -2544,6 +2546,14 @@ func runBazelWrapper() error {
 	}
 
 	originalArgs := os.Args[1:]
+
+	// If we can't find a valid bazel command then don't attempt to apply any of
+	// our bazel options. This can happen if the command is a `bb` CLI command
+	// and `bb` is being invoked via bazelisk (e.g. by setting
+	// USE_BAZEL_VERSION=buildbuddy-io/vX.Y.Z in env)
+	if _, cmdIdx := bazel.GetBazelCommandAndIndex(originalArgs); cmdIdx == -1 {
+		return syscall.Exec(bazelBin, append([]string{bazelBin}, originalArgs...), os.Environ())
+	}
 
 	// Pass the original command as metadata, stripping the custom flags we've set,
 	// so that it can be displayed in the UI

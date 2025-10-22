@@ -29,6 +29,8 @@ enum ExecutionMetricType {
   INPUT_DOWNLOAD_SIZE_EXECUTION_METRIC = 7;
   OUTPUT_UPLOAD_SIZE_EXECUTION_METRIC = 8;
   EXECUTION_WALL_TIME_EXECUTION_METRIC = 9;
+  EXECUTION_CPU_NANOS_EXECUTION_METRIC = 10;
+  EXECUTION_AVERAGE_MILLICORES_EXECUTION_METRIC = 11;
 }
 
 message Metric {
@@ -248,6 +250,143 @@ enum FilterType {
       "tags";
     supported_objects:
       [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
+  }];
+  INVOCATION_CAS_CACHE_MISSES_FILTER_TYPE = 18 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "cas_cache_misses";
+    supported_objects:
+      [INVOCATION_OBJECTS];
+  }];
+  INVOCATION_ACTION_CACHE_MISSES_FILTER_TYPE = 19 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "action_cache_misses";
+    supported_objects:
+      [INVOCATION_OBJECTS];
+  }];
+  INVOCATION_CAS_CACHE_DOWNLOAD_BYTES_FILTER_TYPE = 20
+      [(filter_type_options) = {
+        category:
+          INT_FILTER_CATEGORY;
+        database_column_name:
+          "total_download_size_bytes";
+        supported_objects:
+          [INVOCATION_OBJECTS];
+      }];
+  INVOCATION_CAS_CACHE_DOWNLOAD_BPS_FILTER_TYPE = 21 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "download_throughput_bytes_per_second";
+    supported_objects:
+      [INVOCATION_OBJECTS];
+  }];
+  INVOCATION_CAS_CACHE_UPLOAD_BYTES_FILTER_TYPE = 22 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "total_upload_size_bytes";
+    supported_objects:
+      [INVOCATION_OBJECTS];
+  }];
+  INVOCATION_CAS_CACHE_UPLOAD_BPS_FILTER_TYPE = 23 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "upload_throughput_bytes_per_second";
+    supported_objects:
+      [INVOCATION_OBJECTS];
+  }];
+  INVOCATION_TIME_SAVED_USEC_FILTER_TYPE = 24 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "total_cached_action_exec_usec";
+    supported_objects:
+      [INVOCATION_OBJECTS];
+  }];
+  EXECUTION_QUEUE_TIME_USEC_FILTER_TYPE = 25 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "IF(worker_start_timestamp_usec < queued_timestamp_usec, 0, (worker_start_timestamp_usec - queued_timestamp_usec))";
+    supported_objects:
+      [EXECUTION_OBJECTS];
+  }];
+  EXECUTION_INPUT_DOWNLOAD_TIME_USEC_FILTER_TYPE = 26 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "(input_fetch_completed_timestamp_usec - input_fetch_start_timestamp_usec)";
+    supported_objects:
+      [EXECUTION_OBJECTS];
+  }];
+  EXECUTION_REAL_TIME_USEC_FILTER_TYPE = 27 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "(execution_completed_timestamp_usec - execution_start_timestamp_usec)";
+    supported_objects:
+      [EXECUTION_OBJECTS];
+  }];
+  OUTPUT_UPLOAD_TIME_USEC_FILTER_TYPE = 28 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "(output_upload_completed_timestamp_usec - output_upload_start_timestamp_usec)";
+    supported_objects:
+      [EXECUTION_OBJECTS];
+  }];
+  PEAK_MEMORY_BYTES_FILTER_TYPE = 29 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "peak_memory_bytes";
+    supported_objects:
+      [EXECUTION_OBJECTS];
+  }];
+  INPUT_DOWNLOAD_SIZE_BYTES_FILTER_TYPE = 30 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "file_download_size_bytes";
+    supported_objects:
+      [EXECUTION_OBJECTS];
+  }];
+  OUTPUT_UPLOAD_SIZE_BYTES_FILTER_TYPE = 31 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "file_upload_size_bytes";
+    supported_objects:
+      [EXECUTION_OBJECTS];
+  }];
+  EXECUTION_WALL_TIME_USEC_FILTER_TYPE = 32 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "IF(worker_completed_timestamp_usec < queued_timestamp_usec, 0, (worker_completed_timestamp_usec - queued_timestamp_usec))";
+    supported_objects:
+      [EXECUTION_OBJECTS];
+  }];
+  EXECUTION_CPU_NANOS_FILTER_TYPE = 33 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "cpu_nanos";
+    supported_objects:
+      [EXECUTION_OBJECTS];
+  }];
+  EXECUTION_AVERAGE_MILLICORES_FILTER_TYPE = 34 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "IF(cpu_nanos <= 0 OR (execution_completed_timestamp_usec - execution_start_timestamp_usec) <= 0, 0, intDivOrZero(cpu_nanos*1000, (execution_completed_timestamp_usec - execution_start_timestamp_usec) * 1000))";
+    supported_objects:
+      [EXECUTION_OBJECTS];
   }];
 }
 

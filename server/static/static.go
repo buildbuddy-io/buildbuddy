@@ -67,6 +67,8 @@ var (
 	targetFlakesUIEnabled                  = flag.Bool("app.target_flakes_ui_enabled", false, "If set, show some fancy new features for analyzing flakes.")
 	bazelButtonsEnabled                    = flag.Bool("app.bazel_buttons_enabled", false, "If set, show remote bazel buttons in the UI.")
 	communityLinksEnabled                  = flag.Bool("app.community_links_enabled", true, "If set, show links to BuildBuddy community in the UI.")
+	targetsPageEnabled                     = flag.Bool("app.targets_page_enabled", true, "If true, show a targets page for exploring RBE usage by target in the UI.")
+	userListsUIEnabled                     = flag.Bool("app.user_lists_ui_enabled", false, "If set, show show user list management options in the UI.")
 	defaultLoginSlug                       = flag.String("app.default_login_slug", "", "If set, the login page will default to using this slug.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
@@ -110,7 +112,7 @@ func NewStaticFileServer(env environment.Env, fs fs.FS, rootPaths []string, appB
 		handler = handleRootPaths(env, rootPaths, template, version.Tag(), jsPath, stylePath, appBundleHash, handler)
 	}
 	return &StaticFileServer{
-		handler: setCacheHeaders(handler),
+		handler: setCacheHeaders(handler, appBundleHash),
 	}, nil
 }
 
@@ -137,10 +139,12 @@ func handleRootPaths(env environment.Env, rootPaths []string, template *template
 }
 
 // Set cache headers if a static file request has a `hash` query parameter.
-func setCacheHeaders(h http.Handler) http.Handler {
+func setCacheHeaders(h http.Handler, appBundleHash string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if (r.URL.Query().Get("hash")) != "" {
+		if (r.URL.Query().Get("hash")) == appBundleHash {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable") // 1 year
+		} else if (r.URL.Query().Get("hash")) != "" {
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		h.ServeHTTP(w, r)
 	})
@@ -217,6 +221,8 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		CommunityLinksEnabled:                  *communityLinksEnabled,
 		DefaultLoginSlug:                       *defaultLoginSlug,
 		ReadOnlyGithubAppEnabled:               env.GetGitHubAppService() != nil && env.GetGitHubAppService().IsReadOnlyAppEnabled(),
+		TargetsPageEnabled:                     *targetsPageEnabled && env.GetOLAPDBHandle() != nil,
+		UserListsUiEnabled:                     *userListsUIEnabled,
 	}
 
 	if efp := env.GetExperimentFlagProvider(); efp != nil {

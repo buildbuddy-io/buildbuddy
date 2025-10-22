@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
@@ -63,8 +65,7 @@ const (
 	// atimeFlushPeriod is the time interval that we will wait before
 	// flushing any atime updates in an incomplete batch (that have not
 	// already been flushed due to throughput)
-	atimeFlushPeriod   = 10 * time.Second
-	DefaultPartitionID = "default"
+	atimeFlushPeriod = 10 * time.Second
 )
 
 type Config struct {
@@ -120,7 +121,7 @@ func clearPrevCache(dir string, currentSubDir string) error {
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return status.InternalErrorf("failed to read directory %q: %s", dir, err)
+		return status.InternalErrorf("failed to read directory %q: %w", dir, err)
 	}
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -131,7 +132,7 @@ func clearPrevCache(dir string, currentSubDir string) error {
 		}
 		path := filepath.Join(dir, e.Name())
 		if err := os.RemoveAll(path); err != nil {
-			return status.InternalErrorf("failed to delete dir %q: %s", path, err)
+			return status.InternalErrorf("failed to delete dir %q: %w", path, err)
 		}
 	}
 	return nil
@@ -143,18 +144,36 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 	}
 
 	ps := *partitions
+	partitionSet := make(set.Set[string])
+
 	haveDefault := false
-	for _, p := range ps {
-		if p.ID == DefaultPartitionID {
+	for i, p := range ps {
+		if p.NumRanges == 0 {
+			ps[i].NumRanges = 1
+		}
+		if p.NumRanges > 10 {
+			return nil, status.FailedPreconditionErrorf("NumRanges is set to %d (>10) for partition %s", p.NumRanges, p.ID)
+		}
+		partitionSet.Add(p.ID)
+		if p.ID == constants.DefaultPartitionID {
 			haveDefault = true
 			break
 		}
 	}
 	if !haveDefault {
+		partitionSet.Add(constants.DefaultPartitionID)
 		ps = append(ps, disk.Partition{
-			ID:           DefaultPartitionID,
+			ID:           constants.DefaultPartitionID,
 			MaxSizeBytes: cache_config.MaxSizeBytes(),
+			NumRanges:    1,
 		})
+	}
+
+	// Verify Partition Mappings.
+	for _, pm := range *partitionMappings {
+		if !partitionSet.Contains(pm.PartitionID) {
+			return nil, status.NotFoundErrorf("Mapping to unknown partition %q", pm.PartitionID)
+		}
 	}
 
 	if *clearCacheOnStartup {
@@ -164,7 +183,7 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		}
 	} else if *clearPrevCacheOnStartup {
 		if err := clearPrevCache(*rootDirectory, *subdir); err != nil {
-			return nil, status.InternalErrorf("failed to delete cache from previous run: %s", err)
+			return nil, status.InternalErrorf("failed to delete cache from previous run: %w", err)
 		}
 	}
 
@@ -216,7 +235,11 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
-	rc.clusterStarter = bringup.New(rc.grpcAddr, rc.gossipManager, rc.store)
+	clusterStarter, err := bringup.New(rc.grpcAddr, rc.gossipManager, rc.store, rc.conf.Partitions)
+	if err != nil {
+		return nil, err
+	}
+	rc.clusterStarter = clusterStarter
 	if err := rc.clusterStarter.InitializeClusters(); err != nil {
 		return nil, err
 	}
@@ -225,6 +248,7 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 		for !rc.clusterStarter.Done() {
 			time.Sleep(100 * time.Millisecond)
 		}
+		rc.store.StartReplicaJanitor()
 	}()
 
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {

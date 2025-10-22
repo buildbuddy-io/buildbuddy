@@ -1,18 +1,18 @@
 import React from "react";
 
 import {
-  ResponsiveContainer,
-  ComposedChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
   Bar,
-  Line,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
   Legend,
+  Line,
+  ReferenceArea,
+  ResponsiveContainer,
   Tooltip,
   TooltipProps,
-  Cell,
-  ReferenceArea,
+  XAxis,
+  YAxis,
 } from "recharts";
 import { CategoricalChartState } from "recharts/types/chart/types";
 import { TrendsChartId } from "../../../app/router/router";
@@ -66,6 +66,7 @@ export enum ChartColor {
   ORANGE = "#FF6F00",
   BLUE = "#03A9F4",
   GREY = "#AAAAAA",
+  BASICALLY_BLACK = "#212121",
 }
 
 function chartColorToCssClass(c: ChartColor): string {
@@ -80,6 +81,8 @@ function chartColorToCssClass(c: ChartColor): string {
       return "orange";
     case ChartColor.GREEN:
       return "green";
+    case ChartColor.BASICALLY_BLACK:
+      return "black";
   }
   return "";
 }

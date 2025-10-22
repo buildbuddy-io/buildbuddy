@@ -68,11 +68,11 @@ func TestCacheSecret(t *testing.T) {
 			require.NoError(t, err)
 
 			flags.Set(t, "oci.cache.secret", tc.writeSecret)
-			err = ocicache.WriteManifestToAC(ctx, raw, acClient, ref.Context(), hash, contentType)
+			err = ocicache.WriteManifestToAC(ctx, raw, acClient, ref.Context(), hash, contentType, ref)
 			require.NoError(t, err)
 
 			flags.Set(t, "oci.cache.secret", tc.fetchSecret)
-			mc, err := ocicache.FetchManifestFromAC(ctx, acClient, ref.Context(), hash)
+			mc, err := ocicache.FetchManifestFromAC(ctx, acClient, ref.Context(), hash, ref)
 			if !tc.canFetch {
 				require.Error(t, err)
 				require.Nil(t, mc)
@@ -132,12 +132,13 @@ func TestManifestWrittenOnlyToAC(t *testing.T) {
 		hash,
 		contentType,
 		int64(len(raw)),
+		ref,
 	)
 	require.NoError(t, err)
 	require.Equal(t, len(raw), out.Len())
 	require.Empty(t, cmp.Diff(raw, out.Bytes()))
 
-	mc, err := ocicache.FetchManifestFromAC(ctx, acClient, ref.Context(), hash)
+	mc, err := ocicache.FetchManifestFromAC(ctx, acClient, ref.Context(), hash, ref)
 	require.NoError(t, err)
 	require.NotNil(t, mc)
 

@@ -16,7 +16,6 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -72,6 +71,7 @@ type RealEnv struct {
 	capabilitiesClient               repb.CapabilitiesClient
 	remoteExecutionClient            repb.ExecutionClient
 	contentAddressableStorageClient  repb.ContentAddressableStorageClient
+	cacheRoutingService              interfaces.CacheRoutingService
 	metricsCollector                 interfaces.MetricsCollector
 	keyValStore                      interfaces.KeyValStore
 	APIService                       interfaces.ApiService
@@ -96,7 +96,7 @@ type RealEnv struct {
 	buildEventServer                 pepb.PublishBuildEventServer
 	localCASServer                   repb.ContentAddressableStorageServer
 	casServer                        repb.ContentAddressableStorageServer
-	localByteStreamServer            bspb.ByteStreamServer
+	localByteStreamServer            interfaces.ByteStreamServer
 	byteStreamServer                 bspb.ByteStreamServer
 	localActionCacheServer           repb.ActionCacheServer
 	actionCacheServer                repb.ActionCacheServer
@@ -113,8 +113,6 @@ type RealEnv struct {
 	executionCollector               interfaces.ExecutionCollector
 	suggestionService                interfaces.SuggestionService
 	crypterService                   interfaces.Crypter
-	sociArtifactStoreServer          socipb.SociArtifactStoreServer
-	sociArtifactStoreClient          socipb.SociArtifactStoreClient
 	singleFlightDeduper              interfaces.SingleFlightDeduper
 	promQuerier                      interfaces.PromQuerier
 	auditLog                         interfaces.AuditLogger
@@ -333,6 +331,13 @@ func (r *RealEnv) GetContentAddressableStorageClient() repb.ContentAddressableSt
 	return r.contentAddressableStorageClient
 }
 
+func (r *RealEnv) SetCacheRoutingService(s interfaces.CacheRoutingService) {
+	r.cacheRoutingService = s
+}
+func (r *RealEnv) GetCacheRoutingService() interfaces.CacheRoutingService {
+	return r.cacheRoutingService
+}
+
 func (r *RealEnv) SetAPIService(s interfaces.ApiService) {
 	r.APIService = s
 }
@@ -547,10 +552,10 @@ func (r *RealEnv) SetCASServer(casServer repb.ContentAddressableStorageServer) {
 	r.casServer = casServer
 }
 
-func (r *RealEnv) GetLocalByteStreamServer() bspb.ByteStreamServer {
+func (r *RealEnv) GetLocalByteStreamServer() interfaces.ByteStreamServer {
 	return r.localByteStreamServer
 }
-func (r *RealEnv) SetLocalByteStreamServer(localByteStreamServer bspb.ByteStreamServer) {
+func (r *RealEnv) SetLocalByteStreamServer(localByteStreamServer interfaces.ByteStreamServer) {
 	r.localByteStreamServer = localByteStreamServer
 }
 
@@ -675,13 +680,6 @@ func (r *RealEnv) GetCrypter() interfaces.Crypter {
 }
 func (r *RealEnv) SetCrypter(c interfaces.Crypter) {
 	r.crypterService = c
-}
-
-func (r *RealEnv) GetSociArtifactStoreServer() socipb.SociArtifactStoreServer {
-	return r.sociArtifactStoreServer
-}
-func (r *RealEnv) SetSociArtifactStoreServer(s socipb.SociArtifactStoreServer) {
-	r.sociArtifactStoreServer = s
 }
 
 func (r *RealEnv) GetSingleFlightDeduper() interfaces.SingleFlightDeduper {

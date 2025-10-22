@@ -2,8 +2,8 @@ import React from "react";
 
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import rpcService from "../service/rpc_service";
-import TargetTestCasesCardComponent from "./target_test_cases_card";
 import TargetLogCardComponent from "./target_log_card";
+import TargetTestCasesCardComponent from "./target_test_cases_card";
 
 interface Props {
   buildEvent?: build_event_stream.BuildEvent;

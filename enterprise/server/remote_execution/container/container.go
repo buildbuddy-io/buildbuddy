@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -38,17 +39,14 @@ const (
 	// re-authentication with the remote registry is required.
 	defaultImageCacheTokenTTL = 15 * time.Minute
 
-	// Time window over which to measure CPU usage when exporting the milliCPU
-	// used metric.
-	cpuUsageUpdateInterval = 1 * time.Second
-
 	// Exit code used when returning an error instead of an actual exit code.
 	// TODO: fix circular dependency with commandutil and reference that const
 	// instead.
 	noExitCode = -2
 
-	// How often to poll container stats.
-	statsPollInterval = 50 * time.Millisecond
+	// How long to extend the context deadline to allow the final container
+	// stats to be collected once execution has completed.
+	statsFinalMeasurementDeadlineExtension = 1 * time.Second
 
 	// Max uncompressed size in bytes to retain for timeseries data. After this
 	// limit is reached, samples are dropped.
@@ -62,6 +60,7 @@ var (
 
 	recordUsageTimelines          = flag.Bool("executor.record_usage_timelines", false, "Capture resource usage timeseries data in UsageStats for each task.")
 	imagePullTimeout              = flag.Duration("executor.image_pull_timeout", 5*time.Minute, "How long to wait for the container image to be pulled before returning an Unavailable (retryable) error for an action execution attempt. Applies to all isolation types (docker, firecracker, etc.)")
+	cgroupStatsPollInterval       = flag.Duration("executor.cgroup_stats_poll_interval", 500*time.Millisecond, "How often to poll container stats.")
 	debugUseLocalImagesOnly       = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 	debugEnableAnonymousRecycling = flag.Bool("debug_enable_anonymous_runner_recycling", false, "Whether to enable runner recycling for unauthenticated requests. For debugging purposes only - do not use in production.")
 
@@ -311,7 +310,7 @@ func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
 	if lifetimeStats.GetMemoryBytes() > s.peakMemoryUsageBytes {
 		s.peakMemoryUsageBytes = lifetimeStats.GetMemoryBytes()
 	}
-	if *recordUsageTimelines {
+	if *recordUsageTimelines && s.timeline != nil {
 		s.updateTimeline(s.clock().Now())
 	}
 }
@@ -327,6 +326,8 @@ func (s *UsageStats) TrackExecution(ctx context.Context, lifetimeStatsFn func(ct
 	// Since we're starting a new execution, set the stats baseline to the last
 	// observed value.
 	s.Reset()
+
+	originalCtx := ctx
 
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -345,11 +346,27 @@ func (s *UsageStats) TrackExecution(ctx context.Context, lifetimeStatsFn func(ct
 			}
 		}()
 
-		t := time.NewTicker(statsPollInterval)
+		t := time.NewTicker(*cgroupStatsPollInterval)
 		defer t.Stop()
 		for {
 			select {
 			case <-ctx.Done():
+				// Do one more stats collection right at the end of the
+				// execution. This serves two purposes: first, it makes sure we
+				// count any CPU usage that we might've missed at the very end
+				// of the execution. Second, it ensures we update memory usage
+				// to reflect what the task looks like at the very end, after
+				// the main task process has exited, which is important since we
+				// don't recycle runners if their current memory usage exceeds a
+				// certain threshold.
+				ctx, cancel := background.ExtendContextForFinalization(originalCtx, statsFinalMeasurementDeadlineExtension)
+				defer cancel()
+				stats, err := lifetimeStatsFn(ctx)
+				if err != nil {
+					log.CtxWarningf(ctx, "failed to read final container stats: %s", err)
+				} else {
+					s.Update(stats)
+				}
 				return
 			case <-t.C:
 				stats, err := lifetimeStatsFn(ctx)
@@ -409,6 +426,13 @@ type CommandContainer interface {
 	// stdin of the executed process. If stdout is non-nil, the stdout of the
 	// executed process will be written to the stdout writer rather than being
 	// written to the command result's stdout field (same for stderr).
+	//
+	// Implementations should populate UsageStats for the execution. If stats
+	// are reported, they must reflect only the particular command executed.
+	//
+	// Implementations should NOT record usage stats for long-lived persistent
+	// worker executions, and should instead implement [StatsTracker] so that
+	// stats can be tracked while each work request is being fulfilled.
 	Exec(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult
 
 	// Signal sends the given signal to all containerized processes.
@@ -439,6 +463,17 @@ type CommandContainer interface {
 	// container is paused, for the purposes of computing resources used for
 	// pooled runners.
 	Stats(ctx context.Context) (*repb.UsageStats, error)
+}
+
+// StatsRecorder is an optional interface implemented by a [CommandContainer]
+// that allows tracking usage stats outside of normal execution.
+//
+// Specifically, this can be used to report stats for persistent worker
+// requests, in which tasks are executed by writing work requests to stdin then
+// reading work requests from stdout, rather than calling Exec or Run (which
+// would normally be responsible for reporting stats).
+type StatsRecorder interface {
+	RecordStats(ctx context.Context) (stop func() (*repb.UsageStats, error))
 }
 
 // VM is an interface implemented by containers backed by VMs (i.e. just
@@ -766,6 +801,14 @@ func (t *TracedCommandContainer) Remove(ctx context.Context) error {
 	t.removed = true
 
 	return t.Delegate.Remove(ctx)
+}
+
+func (t *TracedCommandContainer) RecordStats(ctx context.Context) func() (*repb.UsageStats, error) {
+	if st, ok := t.Delegate.(StatsRecorder); ok {
+		return st.RecordStats(ctx)
+	} else {
+		return func() (*repb.UsageStats, error) { return nil, nil }
+	}
 }
 
 func (t *TracedCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {

@@ -1,0 +1,55 @@
+buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
+buildbuddy.platform(buildbuddy_container_image = "UBUNTU20_04_IMAGE")
+buildbuddy.msvc_toolchain(
+    # This is the MSVC available on Github Action win22 image
+    # https://github.com/actions/runner-images/blob/win25/20250727.1/images/windows/Windows2025-Readme.md#visual-studio-enterprise-2022
+    msvc_edition = "Enterprise",
+    msvc_release = "2022",
+    # From 'Microsoft Visual C++ 2022 Minimum Runtime' for x64 architecture
+    # https://github.com/actions/runner-images/blob/win25/20250727.1/images/windows/Windows2025-Readme.md#microsoft-visual-c
+    msvc_version = "14.44.35207",
+    # From 'Installed Windows SDKs'
+    # https://github.com/actions/runner-images/blob/win25/20250727.1/images/windows/Windows2025-Readme.md#installed-windows-sdks
+    windows_kits_release = "10",
+    windows_kits_version = "10.0.26100.0",
+)
+
+# Explicitly register the toolchains in the order which we want to use.
+#
+# Note: Both rules_cc and toolschains_buildbuddy modules automatically register
+# their respective toolchains automatically. Bazel will prioritize which ever bazel_dep
+# was declared first. By explicitly registering the toolchains here, we can control
+# the prioritization order.
+#
+# If none of the toolchains listed here matched against
+# the target+exec platform combintation, Bazel will pick one from the toolchains that
+# were automatically registered toolchains by these dependencies modules.
+#
+# Reference: https://bazel.build/external/migration#register-toolchains
+register_toolchains(
+    # CC toolchains
+    "@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64",
+    "@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_arm64",
+    "@toolchains_buildbuddy//toolchains/cc:windows_msvc_x86_64",
+)
+
+go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.from_file(go_mod = "@com_github_buildbuddy_io_buildbuddy//:go.mod")
+go_sdk.nogo(nogo = "@com_github_buildbuddy_io_buildbuddy//:vet")
+use_repo(
+    go_sdk,
+    "go_toolchains",
+    "io_bazel_rules_nogo",
+)
+
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node.toolchain(
+    name = "nodejs",
+    node_version = "22.20.0",
+)
+
+toolchains_musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl", dev_dependency = True)
+toolchains_musl.config(
+    extra_target_compatible_with = ["@com_github_buildbuddy_io_buildbuddy//toolchains:musl_on"],
+)
+use_repo(toolchains_musl, "musl_toolchains_hub")

@@ -23,10 +23,11 @@ import (
 )
 
 type ByteStreamServerProxy struct {
-	atimeUpdater  interfaces.AtimeUpdater
-	authenticator interfaces.Authenticator
-	local         bspb.ByteStreamServer
-	remote        bspb.ByteStreamClient
+	supportsEncryption bool
+	atimeUpdater       interfaces.AtimeUpdater
+	authenticator      interfaces.Authenticator
+	local              interfaces.ByteStreamServer
+	remote             bspb.ByteStreamClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -56,10 +57,11 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		return nil, fmt.Errorf("A local ByteStreamServer is required to enable ByteStreamServerProxy")
 	}
 	return &ByteStreamServerProxy{
-		atimeUpdater:  atimeUpdater,
-		authenticator: authenticator,
-		local:         local,
-		remote:        remote,
+		supportsEncryption: env.GetCrypter() != nil,
+		atimeUpdater:       atimeUpdater,
+		authenticator:      authenticator,
+		local:              local,
+		remote:             remote,
 	}, nil
 }
 
@@ -90,9 +92,14 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 }
 
 func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream) (string, error) {
-	if authutil.EncryptionEnabled(ctx, s.authenticator) {
+	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption {
 		return metrics.UncacheableStatusLabel, s.readRemoteOnly(ctx, req, stream)
 	}
+
+	// Store auth headers in context so they can be reused between the
+	// atime_updater and the hit_tracker_client.
+	ctx = authutil.ContextWithCachedAuthHeaders(ctx, s.authenticator)
+
 	if proxy_util.SkipRemote(ctx) {
 		if err := s.readLocalOnly(req, stream); err != nil {
 			log.CtxInfof(ctx, "Error reading local: %v", err)
@@ -101,7 +108,12 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 		return metrics.HitStatusLabel, nil
 	}
 
-	localErr := s.local.Read(req, stream)
+	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
+	if err != nil {
+		return metrics.HitStatusLabel, nil
+	}
+
+	localErr := s.local.ReadCASResource(ctx, rn, req.GetReadOffset(), req.GetReadLimit(), stream)
 	// If some responses were streamed to the client, just return the
 	// error. Otherwise, fall-back to remote. We might be able to continue
 	// streaming to the client by doing an offset read from the remote
@@ -110,7 +122,7 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 		// Recover from local error if no frames have been sent
 		return metrics.MissStatusLabel, s.readRemoteWriteLocal(req, stream)
 	} else {
-		s.atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
+		s.atimeUpdater.EnqueueByResourceName(ctx, rn)
 		return metrics.HitStatusLabel, localErr
 	}
 }
@@ -277,7 +289,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	meteredStream := &meteredServerSideClientStream{ByteStream_WriteServer: stream}
 	stream = meteredStream
 	var err error
-	if authutil.EncryptionEnabled(ctx, s.authenticator) {
+	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption {
 		err = s.writeRemoteOnly(ctx, stream)
 	} else if proxy_util.SkipRemote(ctx) {
 		err = s.writeLocalOnly(stream)
@@ -355,7 +367,7 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 		return forwarding.recvErr
 	}
 	if localErr != nil {
-		log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", err)
+		log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", localErr)
 	}
 	if forwarding.remoteSendErr != nil && forwarding.remoteSendErr != io.EOF {
 		// Remote failed, so fail the whole request

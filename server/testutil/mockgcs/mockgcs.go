@@ -54,7 +54,7 @@ func (m *mockGCS) SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) e
 	return nil
 }
 
-func (m *mockGCS) Reader(ctx context.Context, blobName string) (io.ReadCloser, error) {
+func (m *mockGCS) Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	blob, ok := m.items[blobName]
@@ -64,10 +64,14 @@ func (m *mockGCS) Reader(ctx context.Context, blobName string) (io.ReadCloser, e
 	if m.expired(blobName) {
 		return nil, status.InternalError("mock gcs blob expired")
 	}
-	return io.NopCloser(bytes.NewReader(blob.data)), nil
+	data := blob.data[offset:]
+	if limit > 0 && limit < int64(len(data)) {
+		data = data[:limit]
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
-func (m *mockGCS) ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time) (interfaces.CommittedWriteCloser, error) {
+func (m *mockGCS) ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time, estimatedSize int64) (interfaces.CommittedWriteCloser, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	_, exists := m.items[blobName]

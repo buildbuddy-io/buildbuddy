@@ -8,10 +8,10 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 )
 
@@ -19,13 +19,47 @@ const (
 	cliName = "bb"
 )
 
-var (
-	// helpModifiers are flags that affect how the help output is displayed.
-	helpModifiers = map[string]struct{}{
-		"--long":  {},
-		"--short": {},
+// FindTargetCommandFromHelpArgs extracts the target command from "bb help <command>" arguments.
+// Returns the command name if found, empty string otherwise.
+func FindTargetCommandFromHelpArgs(orderedArgs *parsed.OrderedArgs) string {
+	_, command := parsed.Find[*parsed.Command](orderedArgs.Args)
+	if command == nil {
+		return ""
 	}
-)
+
+	// If the command is "help", look for the next positional argument
+	if command.Value == "help" {
+		for i, arg := range orderedArgs.Args {
+			if pos, ok := arg.(*arguments.PositionalArgument); ok && pos.Value == "help" {
+				// Check the next argument
+				if i+1 < len(orderedArgs.Args) {
+					if nextPos, ok := orderedArgs.Args[i+1].(*arguments.PositionalArgument); ok {
+						return nextPos.Value
+					}
+				}
+				break
+			}
+		}
+	}
+
+	// Otherwise return the command itself
+	return command.Value
+}
+
+// TryShowBBCommandHelp checks if the target command is a BB CLI command and shows its help.
+// Returns true if help was shown, false if not a BB CLI command.
+func TryShowBBCommandHelp(targetCommand string) bool {
+	if targetCommand == "" {
+		return false
+	}
+
+	if bbCommand := cli_command.GetCommand(targetCommand); bbCommand != nil {
+		fmt.Printf("Usage: bb %s\n\n%s\n", bbCommand.Name, bbCommand.Help)
+		return true
+	}
+
+	return false
+}
 
 // HandleHelp Valid cases to trigger help:
 // * bb (no additional command passed)
@@ -35,41 +69,18 @@ var (
 // * bb `command name` -h
 // * bb --help `command name`
 // * bb `command name` --help
-func HandleHelp(args []string) (exitCode int, err error) {
-	args, _ = arg.SplitExecutableArgs(args)
-
-	// Returns first non-flag
-	cmd, idx := arg.GetCommandAndIndex(args)
-	// If no command is specified, show general help.
-	// TODO: Allow configuring a "default command" that is run when
-	// no args are passed? Like `build //...`
-	if idx == -1 {
-		return showHelp("", getHelpModifiers(args))
-	}
-	if cmd == "help" {
-		helpTopic := arg.GetCommand(args[idx+1:])
-		return showHelp(helpTopic, getHelpModifiers(args))
-	}
-	if arg.ContainsExact(args, "-h") || arg.ContainsExact(args, "--help") {
-		bazelCommand, _ := parser.GetBazelCommandAndIndex(args)
-		// Sanity check to work around potential issues with
-		// GetBazelCommandAndIndex (see TODOs on that func).
-		if cmd != bazelCommand {
-			return -1, nil
+func HandleHelp(args parsed.Args) (exitCode int, err error) {
+	// Check if the help request is for a BB CLI command
+	if orderedArgs, ok := args.(*parsed.OrderedArgs); ok {
+		targetCommand := FindTargetCommandFromHelpArgs(orderedArgs)
+		if TryShowBBCommandHelp(targetCommand) {
+			return 0, nil
 		}
-		return showHelp(bazelCommand, getHelpModifiers(args))
 	}
-	return -1, nil
-}
 
-func showHelp(subcommand string, modifiers []string) (exitCode int, err error) {
-	bazelArgs := []string{"help"}
-	if subcommand != "" {
-		bazelArgs = append(bazelArgs, subcommand)
-	}
-	bazelArgs = append(bazelArgs, modifiers...)
+	// Not a BB CLI command, forward to Bazel as usual
 	buf := &bytes.Buffer{}
-	exitCode, err = bazelisk.Run(bazelArgs, &bazelisk.RunOpts{Stdout: buf, Stderr: buf})
+	exitCode, err = bazelisk.Run(args.Format(), &bazelisk.RunOpts{Stdout: buf, Stderr: buf})
 	if err != nil {
 		io.Copy(os.Stdout, buf)
 		return exitCode, err
@@ -124,16 +135,6 @@ func printBBCommands() {
 		fmt.Printf("  %s  %s\n", padEnd(c.Name, 18), c.Help)
 	}
 	fmt.Println()
-}
-
-func getHelpModifiers(args []string) []string {
-	var out []string
-	for _, arg := range args {
-		if _, ok := helpModifiers[arg]; ok {
-			out = append(out, arg)
-		}
-	}
-	return out
 }
 
 func padStart(value string, targetLength int) string {

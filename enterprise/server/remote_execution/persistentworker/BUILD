@@ -15,6 +15,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:worker_go_proto",
         "//server/interfaces",
+        "//server/util/alert",
         "//server/util/background",
         "//server/util/lockingbuffer",
         "//server/util/log",

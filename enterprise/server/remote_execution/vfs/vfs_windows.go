@@ -5,6 +5,8 @@ package vfs
 import (
 	"context"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfscommon"
+
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 )
 
@@ -30,7 +32,7 @@ func (vfs *VFS) Mount() error {
 	return nil
 }
 
-func (vfs *VFS) PrepareForTask(ctx context.Context, taskID string) error {
+func (vfs *VFS) PrepareForTask(ctx context.Context, taskID string, invalidatedInodes *vfscommon.InodeInvalidations) error {
 	return nil
 }
 

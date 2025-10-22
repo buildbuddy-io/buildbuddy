@@ -1,15 +1,19 @@
 package testregistry
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"regexp"
+	"sort"
 	"testing"
+	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -22,6 +26,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
 
@@ -123,7 +128,7 @@ func (r *Registry) PushRandomImage(t *testing.T) (string, gcr.Image) {
 	for i := 0; i < 100000; i++ {
 		files[fmt.Sprintf("/tmp/%d", i)] = buffer.Bytes()
 	}
-	image, err := crane.Image(files)
+	image, err := imageFromFiles(files)
 	require.NoError(t, err)
 	return r.Push(t, image, "test"), image
 }
@@ -132,15 +137,58 @@ func (r *Registry) PushNamedImage(t *testing.T, imageName string) (string, gcr.I
 	files := map[string][]byte{
 		"/tmp/" + imageName: []byte(imageName),
 	}
-	image, err := crane.Image(files)
+	image, err := imageFromFiles(files)
 	require.NoError(t, err)
 	return r.Push(t, image, imageName), image
 }
 
 func (r *Registry) PushNamedImageWithFiles(t *testing.T, imageName string, files map[string][]byte) (string, gcr.Image) {
-	image, err := crane.Image(files)
+	image, err := imageFromFiles(files)
 	require.NoError(t, err)
 	return r.Push(t, image, imageName), image
+}
+
+// imageFromFiles reimplements crane.Image() but with proper permission added to each tar.Header.
+// This allows us to unpack the tarball locally without priviledged permission (i.e. sudo).
+func imageFromFiles(files map[string][]byte) (gcr.Image, error) {
+	buf := bytes.Buffer{}
+	tw := tar.NewWriter(&buf)
+
+	paths := make([]string, 0, len(files))
+	for p := range files {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+
+	for _, filePath := range paths {
+		content := files[filePath]
+		hdr := &tar.Header{
+			Name:    filePath,
+			Mode:    0o644,
+			Size:    int64(len(content)),
+			ModTime: time.Unix(0, 0),
+			Uid:     0,
+			Gid:     0,
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return nil, err
+		}
+		if _, err := tw.Write(content); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+
+	layer, err := tarball.LayerFromOpener(func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return mutate.AppendLayers(empty.Image, layer)
 }
 
 func (r *Registry) PushNamedImageWithMultipleLayers(t *testing.T, imageName string) (string, gcr.Image) {
@@ -194,11 +242,12 @@ type bytesLayer struct {
 //
 // testtar.EntryBytes may be useful for constructing tarball contents.
 func NewBytesLayer(t *testing.T, b []byte) gcr.Layer {
+	sha := sha256.Sum256(b)
 	layer, err := partial.UncompressedToLayer(&bytesLayer{
 		mediaType: types.OCILayer,
 		diffID: gcr.Hash{
 			Algorithm: "sha256",
-			Hex:       fmt.Sprintf("%x", sha256.Sum256(b)),
+			Hex:       hex.EncodeToString(sha[:]),
 		},
 		content: b,
 	})

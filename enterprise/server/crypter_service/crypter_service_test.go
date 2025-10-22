@@ -12,26 +12,28 @@ import (
 	"testing"
 	"time"
 
-	mrand "math/rand"
-
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_key_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdata"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
@@ -160,20 +162,6 @@ func generateKMSKey(t *testing.T, f *fakeKMS, id string) string {
 	return id
 }
 
-func writeInRandomChunks(t *testing.T, w interfaces.Encryptor, data []byte) {
-	for len(data) > 0 {
-		n := mrand.Intn(2048)
-		if n > len(data) {
-			n = len(data)
-		}
-		_, err := w.Write(data[:n])
-		require.NoError(t, err)
-		data = data[n:]
-	}
-	err := w.Commit()
-	require.NoError(t, err)
-}
-
 func createKey(t *testing.T, env environment.Env, clock clockwork.Clock, keyID, groupID, groupKeyURI string) *tables.EncryptionKeyVersion {
 	kmsClient := env.GetKMS()
 
@@ -221,6 +209,8 @@ func getEnv(t *testing.T) (*testenv.TestEnv, *fakeKMS) {
 	generateKMSKey(t, kms, "master")
 
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{})
+	flags.Set(t, "app.client_identity.key", "jwtkey")
+	clientidentity.Register(env)
 	env.SetKMS(kms)
 	return env, kms
 }
@@ -240,7 +230,7 @@ func TestEncryptDecrypt(t *testing.T) {
 	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
 	require.NoError(t, err)
 
-	crypter, err := New(env, clockwork.NewRealClock())
+	crypter, err := new(env, clockwork.NewRealClock())
 	defer crypter.Stop()
 	require.NoError(t, err)
 	out := bytes.NewBuffer(nil)
@@ -255,7 +245,7 @@ func TestEncryptDecrypt(t *testing.T) {
 
 			// Write the test data in random chunk sizes. The input chunk sizes should
 			// not affect the final result.
-			writeInRandomChunks(t, e, testData)
+			testdata.WriteInRandomChunks(t, e, testData)
 
 			d, err := crypter.newDecryptorWithChunkSize(ctx, dummyDigest, io.NopCloser(out), e.Metadata(), groupID, 1024)
 			require.NoError(t, err)
@@ -284,7 +274,7 @@ func TestDecryptWrongGroup(t *testing.T) {
 	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
 	require.NoError(t, err)
 
-	crypter, err := New(env, clockwork.NewRealClock())
+	crypter, err := new(env, clockwork.NewRealClock())
 	defer crypter.Stop()
 	require.NoError(t, err)
 	out := bytes.NewBuffer(nil)
@@ -296,7 +286,7 @@ func TestDecryptWrongGroup(t *testing.T) {
 	_, err = rand.Read(testData)
 	require.NoError(t, err)
 
-	writeInRandomChunks(t, e, testData)
+	testdata.WriteInRandomChunks(t, e, testData)
 
 	// Reading with the correct groupID should be OK.
 	d, err := crypter.newDecryptorWithChunkSize(ctx, dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata(), groupID, 1024)
@@ -327,7 +317,7 @@ func TestDecryptWrongDigest(t *testing.T) {
 	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
 	require.NoError(t, err)
 
-	crypter, err := New(env, clockwork.NewRealClock())
+	crypter, err := new(env, clockwork.NewRealClock())
 	defer crypter.Stop()
 	require.NoError(t, err)
 	out := bytes.NewBuffer(nil)
@@ -339,7 +329,7 @@ func TestDecryptWrongDigest(t *testing.T) {
 	_, err = rand.Read(testData)
 	require.NoError(t, err)
 
-	writeInRandomChunks(t, e, testData)
+	testdata.WriteInRandomChunks(t, e, testData)
 
 	d, err := crypter.newDecryptorWithChunkSize(ctx, dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata(), groupID, 1024)
 	require.NoError(t, err)
@@ -384,7 +374,7 @@ func TestKeyLookup(t *testing.T) {
 	createKey(t, env, clock, group1KeyID, groupID1, group1KeyURI)
 	createKey(t, env, clock, group2KeyID, groupID2, group2KeyURI)
 
-	crypter, err := New(env, clockwork.NewRealClock())
+	crypter, err := new(env, clockwork.NewRealClock())
 	defer crypter.Stop()
 	require.NoError(t, err)
 
@@ -399,7 +389,7 @@ func TestKeyLookup(t *testing.T) {
 		require.EqualValues(t, c.Metadata().GetVersion(), 1)
 
 		input := []byte("hello world")
-		writeInRandomChunks(t, c, input)
+		testdata.WriteInRandomChunks(t, c, input)
 		d, err := crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), c.Metadata())
 		require.NoError(t, err)
 		decrypted := make([]byte, len(input))
@@ -419,7 +409,7 @@ func TestKeyLookup(t *testing.T) {
 		require.EqualValues(t, c.Metadata().GetVersion(), 1)
 
 		input := []byte("hello universe")
-		writeInRandomChunks(t, c, input)
+		testdata.WriteInRandomChunks(t, c, input)
 		d, err := crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), c.Metadata())
 		require.NoError(t, err)
 		decrypted := make([]byte, len(input))
@@ -466,7 +456,7 @@ func testEncrypt(ctx context.Context, t *testing.T, auther *testauth.TestAuthent
 	require.Equal(t, c.Metadata().GetEncryptionKeyId(), expectedKeyID)
 	require.EqualValues(t, c.Metadata().GetVersion(), 1)
 
-	writeInRandomChunks(t, c, input)
+	testdata.WriteInRandomChunks(t, c, input)
 	return out.Bytes(), c.Metadata()
 }
 
@@ -566,7 +556,7 @@ func TestKeyCaching(t *testing.T) {
 
 	// Back to back operations should only fetch the keys once.
 	{
-		crypter, err := New(env, clockwork.NewRealClock())
+		crypter, err := new(env, clockwork.NewRealClock())
 		require.NoError(t, err)
 		kms.ResetFetchCount(group1KeyURI)
 		testEncryptDecrypt(ctx, t, auther, crypter, userID1, group1KeyID)
@@ -579,7 +569,9 @@ func TestKeyCaching(t *testing.T) {
 	// Various cache refresh conditions.
 	{
 		clock := clockwork.NewFakeClock()
-		crypter, err := New(env, clock)
+		keyRefreshScanFrequency := 10 * time.Second
+		opts := crypter_key_cache.Opts{KeyRefreshScanFrequency: keyRefreshScanFrequency}
+		crypter, err := newWithOpts(env, clock, &opts)
 		require.NoError(t, err)
 		kms.ResetFetchCount(group1KeyURI)
 		kms.ResetFetchCount(group2KeyURI)
@@ -620,7 +612,9 @@ func TestKeyCaching(t *testing.T) {
 	// Test refresh error handling.
 	{
 		clock := clockwork.NewFakeClock()
-		crypter, err := New(env, clock)
+		keyRefreshScanFrequency := 10 * time.Second
+		opts := crypter_key_cache.Opts{KeyRefreshScanFrequency: keyRefreshScanFrequency}
+		crypter, err := newWithOpts(env, clock, &opts)
 		require.NoError(t, err)
 		kms.ResetFetchCount(group1KeyURI)
 		kms.ResetFetchCount(group2KeyURI)
@@ -644,7 +638,7 @@ func TestKeyCaching(t *testing.T) {
 
 		// But we should try again once we get past the retry interval.
 		oldCount = kms.GetFetchCount(group1KeyURI)
-		contAdvanceTimeAndWaitForRefresh(clock, crypter, keyRefreshRetryInterval)
+		contAdvanceTimeAndWaitForRefresh(clock, crypter, keyRefreshScanFrequency)
 		require.Greater(t, kms.GetFetchCount(group1KeyURI), oldCount)
 
 		// Encryption should continue to use the cached key until we reach
@@ -659,7 +653,10 @@ func TestKeyCaching(t *testing.T) {
 	// Test error caching.
 	{
 		clock := clockwork.NewFakeClock()
-		crypter, err := New(env, clock)
+		keyRefreshScanFrequency := 10 * time.Hour
+		keyErrCacheTime := 10 * time.Second
+		opts := crypter_key_cache.Opts{KeyRefreshScanFrequency: keyRefreshScanFrequency, KeyErrCacheTime: keyErrCacheTime}
+		crypter, err := newWithOpts(env, clock, &opts)
 		require.NoError(t, err)
 		kms.ResetFetchCount(group1KeyURI)
 		kms.ResetFetchCount(group2KeyURI)
@@ -695,7 +692,7 @@ func TestConfigAPI(t *testing.T) {
 	users := enterprise_testauth.CreateRandomGroups(t, env)
 	var userID, groupID string
 	for _, u := range users {
-		if len(u.Groups) != 1 || u.Groups[0].Role != uint32(role.Admin) {
+		if len(u.Groups) != 1 || !u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			continue
 		}
 		userID = u.UserID
@@ -737,7 +734,7 @@ func TestConfigAPI(t *testing.T) {
 	defer pc.Stop()
 
 	clock := clockwork.NewFakeClock()
-	crypter, err := New(env, clock)
+	crypter, err := new(env, clock)
 	require.NoError(t, err)
 	env.SetCrypter(crypter)
 
@@ -795,6 +792,8 @@ func TestConfigAPI(t *testing.T) {
 }
 
 func TestKeyReencryption(t *testing.T) {
+	ttl := time.Minute
+	flags.Set(t, "crypter.key_ttl", ttl)
 	env, kms := getEnv(t)
 
 	userID1 := "US123"
@@ -809,7 +808,7 @@ func TestKeyReencryption(t *testing.T) {
 	group1KeyURI := generateKMSKey(t, kms, "group1Key")
 	group2KeyURI := generateKMSKey(t, kms, "group2Key")
 	clock := clockwork.NewFakeClock()
-	crypter, err := New(env, clock)
+	crypter, err := new(env, clock)
 	require.NoError(t, err)
 
 	// Add separate keys for the first and second users.
@@ -829,7 +828,7 @@ func TestKeyReencryption(t *testing.T) {
 
 	// Allow the keys to be expired from the cache now so we don't have to
 	// worry about the cached values when re-encryption happens.
-	advanceTimeAndWaitForRefresh(clock, crypter, *keyTTL+1*time.Minute)
+	advanceTimeAndWaitForRefresh(clock, crypter, ttl+1*time.Minute)
 
 	clock.Advance(*keyReencryptInterval * 2)
 
@@ -858,4 +857,163 @@ func TestKeyReencryption(t *testing.T) {
 	// Verify that existing content can continue to be decrypted.
 	testDecryption(user1Ctx, t, crypter, user1EncData, user1EncMD, user1Data)
 	testDecryption(user2Ctx, t, crypter, user2EncData, user2EncMD, user2Data)
+}
+
+func contextWithClientIdentity(t *testing.T, ctx context.Context, service interfaces.ClientIdentityService) context.Context {
+	ctx, err := service.AddIdentityToContext(ctx)
+	require.NoError(t, err)
+	outgoingMD, ok := metadata.FromOutgoingContext(ctx)
+	require.True(t, ok)
+	ctx = metadata.NewIncomingContext(ctx, outgoingMD)
+	ctx, err = service.ValidateIncomingIdentity(ctx)
+	require.NoError(t, err)
+	return ctx
+}
+
+func TestGetEncryptionKey(t *testing.T) {
+	flags.Set(t, "crypter.permitted_clients", []string{"cache-proxy"})
+	flags.Set(t, "app.client_identity.client", "cache-proxy")
+	env, kms := getEnv(t)
+	userID := "US123"
+	groupID := "GR123"
+	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	env.SetAuthenticator(auther)
+
+	customerKeyURI := generateKMSKey(t, kms, "customerKey")
+	clock := clockwork.NewRealClock()
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
+	crypter, err := new(env, clock)
+	require.NoError(t, err)
+	defer crypter.Stop()
+	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
+	require.NoError(t, err)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+	resp, err := crypter.GetEncryptionKey(ctx, &enpb.GetEncryptionKeyRequest{})
+	require.NoError(t, err)
+	require.Equal(t, "EK123", resp.GetKey().GetMetadata().GetId())
+	require.Equal(t, int64(1), resp.GetKey().GetMetadata().GetVersion())
+	require.Equal(t, 32, len(resp.GetKey().GetKey()))
+}
+
+func TestGetEncryptionKey_NoGroup(t *testing.T) {
+	flags.Set(t, "crypter.permitted_clients", []string{"cache-proxy"})
+	flags.Set(t, "app.client_identity.client", "cache-proxy")
+	env, kms := getEnv(t)
+	userID := "US123"
+	groupID := "GR123"
+	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	env.SetAuthenticator(auther)
+
+	customerKeyURI := generateKMSKey(t, kms, "customerKey")
+	clock := clockwork.NewRealClock()
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
+	crypter, err := new(env, clock)
+	require.NoError(t, err)
+	defer crypter.Stop()
+	// ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
+	// require.NoError(t, err)
+	ctx := contextWithClientIdentity(t, t.Context(), env.GetClientIdentityService())
+	_, err = crypter.GetEncryptionKey(ctx, &enpb.GetEncryptionKeyRequest{})
+	require.True(t, status.IsUnauthenticatedError(err))
+}
+
+func TestGetEncryptionKey_NoClientIdentity(t *testing.T) {
+	// Don't set --app.client_identity.client so there is no client identity
+	env, kms := getEnv(t)
+	userID := "US123"
+	groupID := "GR123"
+	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	env.SetAuthenticator(auther)
+
+	customerKeyURI := generateKMSKey(t, kms, "customerKey")
+	clock := clockwork.NewRealClock()
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
+	crypter, err := new(env, clock)
+	require.NoError(t, err)
+	defer crypter.Stop()
+	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
+	require.NoError(t, err)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+	_, err = crypter.GetEncryptionKey(ctx, &enpb.GetEncryptionKeyRequest{})
+	require.True(t, status.IsInvalidArgumentError(err))
+}
+
+func TestGetEncryptionKey_BadClientIdentity(t *testing.T) {
+	flags.Set(t, "crypter.permitted_clients", []string{"cache-proxy"})
+	flags.Set(t, "app.client_identity.client", "executor")
+	env, kms := getEnv(t)
+	userID := "US123"
+	groupID := "GR123"
+	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	env.SetAuthenticator(auther)
+
+	customerKeyURI := generateKMSKey(t, kms, "customerKey")
+	clock := clockwork.NewRealClock()
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
+	crypter, err := new(env, clock)
+	require.NoError(t, err)
+	defer crypter.Stop()
+	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
+	require.NoError(t, err)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+	_, err = crypter.GetEncryptionKey(ctx, &enpb.GetEncryptionKeyRequest{})
+	require.True(t, status.IsInvalidArgumentError(err))
+}
+
+func TestGetEncryptionKey_WrongId(t *testing.T) {
+	flags.Set(t, "crypter.permitted_clients", []string{"cache-proxy"})
+	flags.Set(t, "app.client_identity.client", "cache-proxy")
+	env, kms := getEnv(t)
+	userID := "US123"
+	groupID := "GR123"
+	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	env.SetAuthenticator(auther)
+
+	customerKeyURI := generateKMSKey(t, kms, "customerKey")
+	clock := clockwork.NewRealClock()
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
+	crypter, err := new(env, clock)
+	require.NoError(t, err)
+	defer crypter.Stop()
+	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
+	require.NoError(t, err)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+
+	_, err = crypter.GetEncryptionKey(ctx,
+		&enpb.GetEncryptionKeyRequest{
+			Metadata: &enpb.EncryptionKeyMetadata{
+				Id:      "EK456",
+				Version: 1,
+			},
+		})
+	require.True(t, status.IsNotFoundError(err))
+}
+
+func TestGetEncryptionKey_WrongVersion(t *testing.T) {
+	flags.Set(t, "crypter.permitted_clients", []string{"cache-proxy"})
+	flags.Set(t, "app.client_identity.client", "cache-proxy")
+	env, kms := getEnv(t)
+	userID := "US123"
+	groupID := "GR123"
+	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	env.SetAuthenticator(auther)
+
+	customerKeyURI := generateKMSKey(t, kms, "customerKey")
+	clock := clockwork.NewRealClock()
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
+	crypter, err := new(env, clock)
+	require.NoError(t, err)
+	defer crypter.Stop()
+	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
+	require.NoError(t, err)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+
+	_, err = crypter.GetEncryptionKey(ctx,
+		&enpb.GetEncryptionKeyRequest{
+			Metadata: &enpb.EncryptionKeyMetadata{
+				Id:      "EK123",
+				Version: 2,
+			},
+		})
+	require.True(t, status.IsNotFoundError(err))
 }

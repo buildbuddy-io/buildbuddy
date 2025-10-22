@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "cpuset",
     srcs = [
@@ -23,7 +25,8 @@ go_library(
             "@com_github_elastic_gosigar//:gosigar",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
-            "@com_github_prometheus_procfs//:procfs",
+            "@com_github_google_cadvisor//utils/sysfs",
+            "@com_github_google_cadvisor//utils/sysinfo",
         ],
         "@io_bazel_rules_go//go/platform:windows": [
             "@com_github_elastic_gosigar//:gosigar",
@@ -31,8 +34,6 @@ go_library(
         "//conditions:default": [],
     }),
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
     name = "cpuset_test",

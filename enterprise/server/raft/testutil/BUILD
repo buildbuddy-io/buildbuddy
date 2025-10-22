@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "testutil",
     testonly = 1,
@@ -9,6 +11,7 @@ go_library(
     deps = [
         "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/client",
+        "//enterprise/server/raft/constants",
         "//enterprise/server/raft/listener",
         "//enterprise/server/raft/logger",
         "//enterprise/server/raft/rangecache",
@@ -36,11 +39,13 @@ go_library(
     ],
 )
 
-package(default_visibility = ["//enterprise:__subpackages__"])
-
 go_test(
     name = "testutil_test",
     srcs = ["testutil_test.go"],
+    exec_properties = {
+        "test.EstimatedComputeUnits": "8",
+        "test.workload-isolation-type": "firecracker",
+    },
     deps = [
         ":testutil",
         "@com_github_jonboulle_clockwork//:clockwork",

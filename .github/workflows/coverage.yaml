@@ -36,7 +36,9 @@ jobs:
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
               --experimental_split_coverage_postprocessing \
               --experimental_fetch_all_coverage_outputs \
-              //...
+              -- \
+              //... \
+              -//server/util/fastcopy:fastcopy_test # This test runs on an image that does not have gcov installed
 
       - name: Slack
         uses: 8398a7/action-slack@v3

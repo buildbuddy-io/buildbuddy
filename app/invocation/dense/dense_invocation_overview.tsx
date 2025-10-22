@@ -10,7 +10,7 @@ interface Props {
 }
 export default class DenseInvocationOverviewComponent extends React.Component<Props> {
   handleUserClicked() {
-    router.navigateToUserHistory(this.props.model.getUser(false));
+    router.navigateToUserHistory(this.props.model.getUser());
   }
 
   handleHostClicked() {
@@ -48,16 +48,27 @@ export default class DenseInvocationOverviewComponent extends React.Component<Pr
               <span title={this.props.model.getDurationSeconds()}>{this.props.model.getTiming()}</span>
             </div>
           </div>
-          <div>
-            Evaluation started by{" "}
-            <b onClick={this.handleUserClicked.bind(this)} className="clickable">
-              {this.props.model.getUser(false)}
-            </b>{" "}
-            on{" "}
-            <b onClick={this.handleHostClicked.bind(this)} className="clickable">
-              {this.props.model.getHost()}
-            </b>
-          </div>
+          {this.props.model.getUser() || this.props.model.getHost() ? (
+            <div>
+              Evaluation started{" "}
+              {this.props.model.getUser() ? (
+                <>
+                  by{" "}
+                  <b onClick={this.handleUserClicked.bind(this)} className="clickable">
+                    {this.props.model.getUser()}
+                  </b>{" "}
+                </>
+              ) : null}
+              {this.props.model.getHost() ? (
+                <>
+                  on{" "}
+                  <b onClick={this.handleHostClicked.bind(this)} className="clickable">
+                    {this.props.model.getHost()}
+                  </b>
+                </>
+              ) : null}
+            </div>
+          ) : null}
         </div>
         <div className="dense-invocation-overview-grid">
           <div className="dense-invocation-overview-grid-chunk">

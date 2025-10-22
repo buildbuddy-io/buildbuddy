@@ -1,6 +1,6 @@
 import React from "react";
-import router from "../router/router";
 import { FilterInput } from "../components/filter_input/filter_input";
+import router from "../router/router";
 
 interface Props {
   tab: string;

@@ -83,6 +83,7 @@ go_library(
         "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
     ],

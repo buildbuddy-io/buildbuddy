@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -70,6 +71,22 @@ func setMigrationState(t *testing.T, migrationState string) {
 	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
 }
 
+func setDoubleReadPercentage(t *testing.T, doubleRead float64) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		migration_cache.MigrationCacheConfigFlag: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "singleton",
+			Variants: map[string]any{"singleton": map[string]any{
+				migration_cache.MigrationStateField:           migration_cache.SrcPrimary,
+				migration_cache.AsyncDestWriteField:           false,
+				migration_cache.DoubleReadPercentageField:     doubleRead,
+				migration_cache.DecompressReadPercentageField: 0.0,
+			}},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+}
+
 func getAnonContext(t *testing.T, env environment.Env) context.Context {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err, "error ataching user prefix")
@@ -91,7 +108,7 @@ func waitForCopy(t *testing.T, ctx context.Context, destCache interfaces.Cache, 
 		time.Sleep(delay)
 	}
 
-	require.FailNowf(t, "timeout", "Timed out waiting for data to be copied to dest cache")
+	require.FailNowf(t, "timeout", "Timed out waiting for %v to be copied to dest cache", r)
 }
 
 // errorCache lets us mock errors to test error handling
@@ -153,7 +170,7 @@ func (c *errorCache) Reader(ctx context.Context, r *rspb.ResourceName, offset, l
 func TestACIsolation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(defaultExt4BlockSize * 1)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -165,7 +182,7 @@ func TestACIsolation(t *testing.T) {
 
 	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
-	r1, buf1 := testdigest.RandomACResourceBuf(t, 100)
+	r1, buf1 := testdigest.RandomACResourceBuf(t, 10)
 	require.NoError(t, mc.Set(ctx, r1, buf1))
 
 	got1, err := mc.Get(ctx, r1)
@@ -411,6 +428,8 @@ func TestGetSet_EmptyData(t *testing.T) {
 	require.True(t, bytes.Equal([]byte{}, data))
 }
 
+// TestCopyDataInBackground ensures that the copy queue works even when there
+// are many parallel requests.
 func TestCopyDataInBackground(t *testing.T) {
 	for _, reverse := range []bool{false, true} {
 		name := "forward"
@@ -429,7 +448,7 @@ func TestCopyDataInBackground(t *testing.T) {
 			destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 			require.NoError(t, err)
 
-			numTests := 1000
+			numTests := 100
 			config := &migration_cache.MigrationConfig{
 				CopyChanBufferSize: numTests + 1,
 				NumCopyWorkers:     2,
@@ -446,14 +465,10 @@ func TestCopyDataInBackground(t *testing.T) {
 			defer mc.Stop()
 
 			eg, ctx := errgroup.WithContext(ctx)
-			lock := sync.RWMutex{}
 			for i := 0; i < numTests; i++ {
 				eg.Go(func() error {
 					r, buf := testdigest.RandomCASResourceBuf(t, 100)
-					lock.Lock()
-					defer lock.Unlock()
-
-					err = srcCache.Set(ctx, r, buf)
+					err := srcCache.Set(ctx, r, buf)
 					require.NoError(t, err)
 
 					// Get should queue copy in background
@@ -568,48 +583,40 @@ func TestCopyDataInBackground_RateLimitMax(t *testing.T) {
 func TestCopyDataInBackground_RateLimitMin(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(defaultExt4BlockSize * 10)
-	rootDirSrc := testfs.MakeTempDir(t)
-	rootDirDest := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(defaultExt4BlockSize * 100)
 
-	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	srcCache, err := memory_cache.NewMemoryCache(maxSizeBytes)
 	require.NoError(t, err)
-	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	destCache, err := memory_cache.NewMemoryCache(maxSizeBytes)
 	require.NoError(t, err)
 
+	const writeCount = 10
 	config := &migration_cache.MigrationConfig{
-		CopyChanBufferSize: 10,
-		MaxCopiesPerSec:    10,
+		CopyChanBufferSize: writeCount,
+		MaxCopiesPerSec:    writeCount,
 	}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
-	eg, ctx := errgroup.WithContext(ctx)
-	lock := sync.RWMutex{}
-	start := time.Now()
-
-	for i := 0; i < 10; i++ {
-		eg.Go(func() error {
-			r, buf := testdigest.RandomCASResourceBuf(t, 100)
-			lock.Lock()
-			defer lock.Unlock()
-
-			err = srcCache.Set(ctx, r, buf)
-			require.NoError(t, err)
-
-			// Get should queue copy in background
-			data, err := mc.Get(ctx, r)
-			require.NoError(t, err)
-			require.True(t, bytes.Equal(buf, data))
-
-			// Expect copy
-			waitForCopy(t, ctx, destCache, r)
-			return nil
-		})
+	resources := make(map[*rspb.ResourceName][]byte, writeCount)
+	for range writeCount {
+		r, buf := testdigest.RandomCASResourceBuf(t, 100)
+		err := srcCache.Set(ctx, r, buf)
+		require.NoError(t, err)
+		resources[r] = buf
 	}
-	eg.Wait()
+	start := time.Now()
+	for r, buf := range resources {
+		// Get should queue copy in background
+		data, err := mc.Get(ctx, r)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(buf, data))
+
+		// Expect copy
+		waitForCopy(t, ctx, destCache, r)
+	}
 
 	// Copies should not be rate limited, and should complete within 1 second
 	require.LessOrEqual(t, time.Since(start), 1*time.Second)
@@ -798,7 +805,7 @@ func TestCopyDataInBackground_FindMissing(t *testing.T) {
 func TestContains(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(defaultExt4BlockSize * 1)
+	maxSizeBytes := int64(defaultExt4BlockSize * 100)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 	remoteInstanceName := "cloud"
@@ -807,15 +814,21 @@ func TestContains(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	config := &migration_cache.MigrationConfig{}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
+	mc.Start()
+	defer mc.Stop()
 
 	r, buf := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_AC, remoteInstanceName)
-	err = mc.Set(ctx, r, buf)
+	err = srcCache.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	contains, err := mc.Contains(ctx, r)
 	require.NoError(t, err)
 	require.True(t, contains)
+
+	waitForCopy(t, ctx, destCache, r)
 
 	notWrittenResource, _ := testdigest.RandomCASResourceBuf(t, 100)
 	contains, err = mc.Contains(ctx, notWrittenResource)
@@ -855,10 +868,14 @@ func TestMetadata(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	config := &migration_cache.MigrationConfig{}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
+	mc.Start()
+	defer mc.Stop()
 
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
-	err = mc.Set(ctx, r, buf)
+	err = srcCache.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	md, err := mc.Metadata(ctx, r)
@@ -990,12 +1007,12 @@ func TestFindMissing_DestErr(t *testing.T) {
 	missing, err := mc.FindMissing(ctx, rns)
 	require.NoError(t, err)
 	for range 5 {
-		if destCache.calls.Load() > 1 {
+		if destCache.calls.Load() > 4 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	require.Equal(t, int64(2), destCache.calls.Load(), "Expected dest cache to be called twice (Set and FindMissing)")
+	require.Equal(t, int64(5), destCache.calls.Load(), "Expected dest cache to be called twice (Set, FindMissing, 3x Contains)")
 	require.ElementsMatch(t, []*repb.Digest{notSetR1.GetDigest(), notSetR2.GetDigest()}, missing)
 }
 
@@ -1152,6 +1169,51 @@ func TestDelete(t *testing.T) {
 
 	_, err = destCache.Get(ctx, r)
 	require.True(t, status.IsNotFoundError(err))
+}
+
+// TestReadsCopyData ensures that methods that actually read data (as opposed to
+// just checking presence) trigger copies even when double read percentage is 0.
+func TestReadsCopyData(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDirSrc := testfs.MakeTempDir(t)
+
+	setDoubleReadPercentage(t, 0)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+	require.NoError(t, err)
+	destCache.Start()
+	config := &migration_cache.MigrationConfig{}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
+	mc.Start() // Starts copying in background
+	defer mc.Stop()
+
+	t.Run("Reader", func(t *testing.T) {
+		r, buf := testdigest.RandomCASResourceBuf(t, 10)
+		require.NoError(t, srcCache.Set(ctx, r, buf))
+		reader, err := mc.Reader(ctx, r, 0, 0)
+		require.NoError(t, err)
+		reader.Close()
+		waitForCopy(t, ctx, destCache, r)
+	})
+	t.Run("Get", func(t *testing.T) {
+		r, buf := testdigest.RandomCASResourceBuf(t, 10)
+		require.NoError(t, srcCache.Set(ctx, r, buf))
+		_, err = mc.Get(ctx, r)
+		require.NoError(t, err)
+		waitForCopy(t, ctx, destCache, r)
+	})
+	t.Run("GetMulti", func(t *testing.T) {
+		r, buf := testdigest.RandomCASResourceBuf(t, 10)
+		require.NoError(t, srcCache.Set(ctx, r, buf))
+		_, err = mc.GetMulti(ctx, []*rspb.ResourceName{r})
+		require.NoError(t, err)
+		waitForCopy(t, ctx, destCache, r)
+	})
 }
 
 func TestReadWrite(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -19,18 +20,23 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
+	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
 
 const (
@@ -143,7 +149,7 @@ func getScheduleServer(t *testing.T, userOwnedEnabled, groupOwnedEnabled bool, u
 
 func TestSchedulerServerGetPoolInfoUserOwnedDisabled(t *testing.T) {
 	s, ctx := getScheduleServer(t, false, false, "")
-	p, err := s.GetPoolInfo(ctx, "linux", "", "" /*=workflowID*/, interfaces.PoolTypeDefault)
+	p, err := s.GetPoolInfo(ctx, "linux", "amd64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeDefault)
 	require.NoError(t, err)
 	require.Equal(t, "", p.GroupID)
 	require.Equal(t, "defaultPoolName", p.Name)
@@ -151,7 +157,7 @@ func TestSchedulerServerGetPoolInfoUserOwnedDisabled(t *testing.T) {
 
 func TestSchedulerServerGetPoolInfoNoAuth(t *testing.T) {
 	s, ctx := getScheduleServer(t, true, false, "")
-	p, err := s.GetPoolInfo(ctx, "linux", "", "" /*=workflowID*/, interfaces.PoolTypeDefault)
+	p, err := s.GetPoolInfo(ctx, "linux", "amd64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeDefault)
 	require.NoError(t, err)
 	require.Equal(t, "sharedGroupID", p.GroupID)
 	require.Equal(t, "defaultPoolName", p.Name)
@@ -160,23 +166,23 @@ func TestSchedulerServerGetPoolInfoNoAuth(t *testing.T) {
 func TestSchedulerServerGetPoolInfoWithOS(t *testing.T) {
 	s, ctx := getScheduleServer(t, true, false, "user1")
 	s.forceUserOwnedDarwinExecutors = false
-	p, err := s.GetPoolInfo(ctx, "linux", "", "" /*=workflowID*/, interfaces.PoolTypeDefault)
+	p, err := s.GetPoolInfo(ctx, "linux", "amd64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeDefault)
 	require.NoError(t, err)
 	require.Equal(t, "sharedGroupID", p.GroupID)
 	require.Equal(t, "defaultPoolName", p.Name)
 
-	p, err = s.GetPoolInfo(ctx, "darwin", "", "" /*=workflowID*/, interfaces.PoolTypeDefault)
+	p, err = s.GetPoolInfo(ctx, "darwin", "arm64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeDefault)
 	require.NoError(t, err)
 	require.Equal(t, "sharedGroupID", p.GroupID)
 	require.Equal(t, "defaultPoolName", p.Name)
 
 	s.forceUserOwnedDarwinExecutors = true
-	p, err = s.GetPoolInfo(ctx, "linux", "", "" /*=workflowID*/, interfaces.PoolTypeDefault)
+	p, err = s.GetPoolInfo(ctx, "linux", "amd64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeDefault)
 	require.NoError(t, err)
 	require.Equal(t, "sharedGroupID", p.GroupID)
 	require.Equal(t, "defaultPoolName", p.Name)
 
-	p, err = s.GetPoolInfo(ctx, "darwin", "", "" /*=workflowID*/, interfaces.PoolTypeDefault)
+	p, err = s.GetPoolInfo(ctx, "darwin", "arm64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeDefault)
 	require.NoError(t, err)
 	require.Equal(t, "group1", p.GroupID)
 	require.Equal(t, "", p.Name)
@@ -185,7 +191,7 @@ func TestSchedulerServerGetPoolInfoWithOS(t *testing.T) {
 func TestSchedulerServerGetPoolInfoWithRequestedPoolWithAuth(t *testing.T) {
 	s, ctx := getScheduleServer(t, true, true, "user1")
 	s.forceUserOwnedDarwinExecutors = false
-	p, err := s.GetPoolInfo(ctx, "linux", "my-pool", "" /*=workflowID*/, interfaces.PoolTypeDefault)
+	p, err := s.GetPoolInfo(ctx, "linux", "amd64", "my-pool", "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeDefault)
 	require.NoError(t, err)
 	require.Equal(t, "group1", p.GroupID)
 	require.Equal(t, "my-pool", p.Name)
@@ -194,7 +200,7 @@ func TestSchedulerServerGetPoolInfoWithRequestedPoolWithAuth(t *testing.T) {
 func TestSchedulerServerGetPoolInfoWithRequestedPoolWithNoAuth(t *testing.T) {
 	s, ctx := getScheduleServer(t, true, false, "")
 	s.forceUserOwnedDarwinExecutors = false
-	p, err := s.GetPoolInfo(ctx, "linux", "my-pool", "" /*=workflowID*/, interfaces.PoolTypeDefault)
+	p, err := s.GetPoolInfo(ctx, "linux", "amd64", "my-pool", "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeDefault)
 	require.NoError(t, err)
 	require.Equal(t, "sharedGroupID", p.GroupID)
 	require.Equal(t, "my-pool", p.Name)
@@ -202,7 +208,7 @@ func TestSchedulerServerGetPoolInfoWithRequestedPoolWithNoAuth(t *testing.T) {
 
 func TestSchedulerServerGetPoolInfoDarwin(t *testing.T) {
 	s, ctx := getScheduleServer(t, true, false, "")
-	p, err := s.GetPoolInfo(ctx, "linux", "", "" /*=workflowID*/, interfaces.PoolTypeDefault)
+	p, err := s.GetPoolInfo(ctx, "linux", "amd64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeDefault)
 	require.NoError(t, err)
 	require.Equal(t, "sharedGroupID", p.GroupID)
 	require.Equal(t, "defaultPoolName", p.Name)
@@ -211,30 +217,30 @@ func TestSchedulerServerGetPoolInfoDarwin(t *testing.T) {
 func TestSchedulerServerGetPoolInfoDarwinNoAuth(t *testing.T) {
 	s, ctx := getScheduleServer(t, true, false, "")
 	s.forceUserOwnedDarwinExecutors = true
-	_, err := s.GetPoolInfo(ctx, "darwin", "", "" /*=workflowID*/, interfaces.PoolTypeDefault)
+	_, err := s.GetPoolInfo(ctx, "darwin", "arm64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeDefault)
 	require.Error(t, err)
 }
 
 func TestSchedulerServerGetPoolInfoSelfHostedNoAuth(t *testing.T) {
 	s, ctx := getScheduleServer(t, true, false, "")
-	_, err := s.GetPoolInfo(ctx, "linux", "", "" /*=workflowID*/, interfaces.PoolTypeSelfHosted)
+	_, err := s.GetPoolInfo(ctx, "linux", "amd64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeSelfHosted)
 	require.Error(t, err)
 }
 
 func TestSchedulerServerGetPoolInfoSelfHosted(t *testing.T) {
 	s, ctx := getScheduleServer(t, true, false, "user1")
-	p, err := s.GetPoolInfo(ctx, "linux", "", "" /*=workflowID*/, interfaces.PoolTypeSelfHosted)
+	p, err := s.GetPoolInfo(ctx, "linux", "amd64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeSelfHosted)
 	require.NoError(t, err)
 	require.Equal(t, "group1", p.GroupID)
 	require.Equal(t, "", p.Name)
 
 	// Linux workflows should respect useSelfHosted bool.
-	p, err = s.GetPoolInfo(ctx, "linux", "workflows", "WF1234" /*=workflowID*/, interfaces.PoolTypeDefault)
+	p, err = s.GetPoolInfo(ctx, "linux", "amd64", "workflows", "" /*=originalPool*/, "WF1234" /*=workflowID*/, interfaces.PoolTypeDefault)
 	require.NoError(t, err)
 	require.Equal(t, "sharedGroupID", p.GroupID)
 	require.Equal(t, "workflows", p.Name)
 
-	p, err = s.GetPoolInfo(ctx, "linux", "workflows", "WF1234" /*=workflowID*/, interfaces.PoolTypeSelfHosted)
+	p, err = s.GetPoolInfo(ctx, "linux", "amd64", "workflows", "" /*=originalPool*/, "WF1234" /*=workflowID*/, interfaces.PoolTypeSelfHosted)
 	require.NoError(t, err)
 	require.Equal(t, "group1", p.GroupID)
 	require.Equal(t, "workflows", p.Name)
@@ -242,32 +248,138 @@ func TestSchedulerServerGetPoolInfoSelfHosted(t *testing.T) {
 
 func TestSchedulerServerGetPoolInfoSelfHostedByDefault(t *testing.T) {
 	s, ctx := getScheduleServer(t, true, true, "user1")
-	p, err := s.GetPoolInfo(ctx, "linux", "", "" /*=workflowID*/, interfaces.PoolTypeDefault)
+	p, err := s.GetPoolInfo(ctx, "linux", "amd64", "", "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeDefault)
 	require.NoError(t, err)
 	require.Equal(t, "group1", p.GroupID)
 	require.Equal(t, "", p.Name)
 
-	p, err = s.GetPoolInfo(ctx, "linux", "", "" /*=workflowID*/, interfaces.PoolTypeSelfHosted)
+	p, err = s.GetPoolInfo(ctx, "linux", "amd64", "", "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeSelfHosted)
 	require.NoError(t, err)
 	require.Equal(t, "group1", p.GroupID)
 	require.Equal(t, "", p.Name)
 
 	// Explicitly set use-self-hosted-executors=false
-	p, err = s.GetPoolInfo(ctx, "linux", "", "" /*=workflowID*/, interfaces.PoolTypeShared)
+	p, err = s.GetPoolInfo(ctx, "linux", "amd64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeShared)
 	require.NoError(t, err)
 	require.Equal(t, "sharedGroupID", p.GroupID)
 	require.Equal(t, "defaultPoolName", p.Name)
 
 	// Linux workflows should respect useSelfHosted bool.
-	p, err = s.GetPoolInfo(ctx, "linux", "workflows", "WF1234" /*=workflowID*/, interfaces.PoolTypeDefault)
+	p, err = s.GetPoolInfo(ctx, "linux", "amd64", "workflows", "" /*=originalPool*/, "WF1234" /*=workflowID*/, interfaces.PoolTypeDefault)
 	require.NoError(t, err)
 	require.Equal(t, "sharedGroupID", p.GroupID)
 	require.Equal(t, "workflows", p.Name)
 
-	p, err = s.GetPoolInfo(ctx, "linux", "workflows", "WF1234" /*=workflowID*/, interfaces.PoolTypeSelfHosted)
+	p, err = s.GetPoolInfo(ctx, "linux", "amd64", "workflows", "" /*=originalPool*/, "WF1234" /*=workflowID*/, interfaces.PoolTypeSelfHosted)
 	require.NoError(t, err)
 	require.Equal(t, "group1", p.GroupID)
 	require.Equal(t, "workflows", p.Name)
+}
+
+func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
+	tmp := testfs.MakeTempDir(t)
+	overridePool := "experimental-linux-amd64-pool"
+	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
+	"$schema": "https://flagd.dev/schema/v0/flags.json",
+	"flags": {
+		"remote_execution.pool_override": {
+			"state": "ENABLED",
+			"defaultVariant": "default",
+			"variants": {
+				"experimentalPool": {
+					"pool": "`+overridePool+`"
+				},
+				"default": {}
+			},
+			"targeting": {
+				"if": [
+					{
+						"and": [
+							{ "==": [{ "var": "os" }, "linux"] },
+							{ "==": [{ "var": "arch" }, "amd64"] }
+						]
+					},
+					"experimentalPool"
+				]
+			}
+		}
+	}
+}`)
+	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+
+	env, ctx := getEnv(t, &schedulerOpts{userOwnedEnabled: true}, "user1")
+	env.SetExperimentFlagProvider(fp)
+	s := env.GetSchedulerService()
+
+	p, err := s.GetPoolInfo(ctx, "linux", "arm64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeDefault)
+	require.NoError(t, err)
+	require.Equal(t, &interfaces.PoolInfo{
+		GroupID:  "sharedGroupID",
+		Name:     "defaultPoolName",
+		IsShared: true,
+	}, p)
+
+	p, err = s.GetPoolInfo(ctx, "darwin", "amd64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeDefault)
+	require.NoError(t, err)
+	require.Equal(t, &interfaces.PoolInfo{
+		GroupID:  "sharedGroupID",
+		Name:     "defaultPoolName",
+		IsShared: true,
+	}, p)
+
+	p, err = s.GetPoolInfo(ctx, "linux", "amd64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, interfaces.PoolTypeDefault)
+	require.NoError(t, err)
+	require.Equal(t, &interfaces.PoolInfo{
+		GroupID:  "sharedGroupID",
+		Name:     overridePool,
+		IsShared: true,
+	}, p)
+}
+
+func TestSchedulerServerPersistentVolumes(t *testing.T) {
+	tmp := testfs.MakeTempDir(t)
+	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
+	"$schema": "https://flagd.dev/schema/v0/flags.json",
+	"flags": {
+		"remote_execution.persistent_volumes": {
+			"state": "ENABLED",
+			"defaultVariant": "default",
+			"variants": {
+				"tmp-cache": "cache:/tmp/.cache",
+				"default": ""
+			},
+			"targeting": {
+				"fractional": [
+					["tmp-cache", 50],
+					["default", 0]
+				]
+			}
+		}
+	}
+}`)
+	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+
+	env, ctx := getEnv(t, &schedulerOpts{}, "")
+	env.SetExperimentFlagProvider(fp)
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+
+	fe.WaitForTask(taskID)
+	lease := fe.Claim(taskID)
+	defer lease.Finalize()
+
+	require.Equal(t, []string{"remote_execution.persistent_volumes:tmp-cache"}, lease.task.GetExperiments())
+	require.Empty(t, cmp.Diff([]*repb.Platform_Property{
+		{Name: "persistent-volumes", Value: "cache:/tmp/.cache"},
+	}, lease.task.GetPlatformOverrides().GetProperties(), protocmp.Transform()), nil)
 }
 
 type task struct {
@@ -291,9 +403,10 @@ type fakeExecutor struct {
 	id   string
 	node *scpb.ExecutionNode
 
-	ctx context.Context
-
+	ctx       context.Context
+	stop      context.CancelFunc
 	unhealthy atomic.Bool
+	wg        sync.WaitGroup
 
 	mu    sync.Mutex
 	tasks map[string]task
@@ -315,14 +428,15 @@ func newFakeExecutor(ctx context.Context, t *testing.T, schedulerClient scpb.Sch
 func newFakeExecutorWithId(ctx context.Context, t *testing.T, id string, schedulerClient scpb.SchedulerClient) *fakeExecutor {
 	node := &scpb.ExecutionNode{
 		ExecutorId:            id,
-		Os:                    defaultOS,
+		OsFamily:              defaultOS,
 		Arch:                  defaultArch,
 		Host:                  "foo",
 		AssignableMemoryBytes: 64_000_000_000,
 		AssignableMilliCpu:    32_000,
 	}
 	ctx = log.EnrichContext(ctx, "executor_id", id)
-	return &fakeExecutor{
+	ctx, cancel := context.WithCancel(ctx)
+	fe := &fakeExecutor{
 		t:                 t,
 		schedulerClient:   schedulerClient,
 		id:                id,
@@ -332,6 +446,11 @@ func newFakeExecutorWithId(ctx context.Context, t *testing.T, id string, schedul
 		send:              make(chan *scpb.RegisterAndStreamWorkRequest),
 		schedulerMessages: make(chan *scpb.RegisterAndStreamWorkResponse, 128),
 	}
+	t.Cleanup(func() {
+		cancel()
+		fe.wait()
+	})
+	return fe
 }
 
 func (e *fakeExecutor) markUnhealthy() {
@@ -356,16 +475,25 @@ func (e *fakeExecutor) Register() {
 	})
 	require.NoError(e.t, err)
 
-	recvChan := make(chan Result[*scpb.RegisterAndStreamWorkResponse])
+	recvChan := make(chan Result[*scpb.RegisterAndStreamWorkResponse], 1)
+	e.wg.Add(1)
 	go func() {
+		defer e.wg.Done()
 		for {
 			msg, err := stream.Recv()
 			recvChan <- Result[*scpb.RegisterAndStreamWorkResponse]{Value: msg, Err: err}
+			if err != nil {
+				return
+			}
 		}
 	}()
+	e.wg.Add(1)
 	go func() {
+		defer e.wg.Done()
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case msg := <-recvChan:
 				rsp, err := msg.Value, msg.Err
 				if status.IsUnavailableError(err) {
@@ -401,7 +529,12 @@ func (e *fakeExecutor) Register() {
 	}()
 
 	// Give the executor a moment to register with the scheduler.
+	// TODO: explicitly wait for a scheduler reply.
 	time.Sleep(100 * time.Millisecond)
+}
+
+func (e *fakeExecutor) wait() {
+	e.wg.Wait()
 }
 
 func (e *fakeExecutor) WaitForTask(taskID string) {
@@ -446,8 +579,9 @@ func (e *fakeExecutor) ResetTasks() {
 type taskLease struct {
 	t       *testing.T
 	stream  scpb.Scheduler_LeaseTaskClient
-	taskID  string
 	leaseID string
+	taskID  string
+	task    *repb.ExecutionTask
 }
 
 func (tl *taskLease) Renew() error {
@@ -490,10 +624,18 @@ func (e *fakeExecutor) Claim(taskID string) *taskLease {
 	require.NoError(e.t, err)
 	require.NotZero(e.t, rsp.GetLeaseDurationSeconds())
 
+	var task *repb.ExecutionTask
+	if len(rsp.GetSerializedTask()) > 0 {
+		task = &repb.ExecutionTask{}
+		err = proto.Unmarshal(rsp.GetSerializedTask(), task)
+		require.NoError(e.t, err)
+	}
+
 	lease := &taskLease{
 		t:       e.t,
 		stream:  stream,
 		taskID:  taskID,
+		task:    task,
 		leaseID: rsp.GetLeaseId(),
 	}
 	return lease

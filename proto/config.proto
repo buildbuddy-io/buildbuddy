@@ -186,6 +186,10 @@ message FrontendConfig {
 
   // Whether the read-only BuildBuddy GitHub app is enabled.
   bool read_only_github_app_enabled = 61;
+
+  bool targets_page_enabled = 62;
+
+  bool user_lists_ui_enabled = 63;
 }
 
 message Region {

@@ -173,6 +173,115 @@ the default snapshot stays up to date.
 For more technical details on our VM implementation, see our BazelCon
 talk [Reusing Bazel's Analysis Cache by Cloning Micro-VMs](https://www.youtube.com/watch?v=YycEXBlv7ZA).
 
+#### Remote snapshot save policy
+
+By default, after every remote run, a snapshot is cached locally on the machine
+that ran it. Subsequent runs that are assigned to the same executor can resume
+from that snapshot. Our scheduler uses affinity routing to prioritize routing
+similar workloads to the same executor, to increase the likelihood of hitting
+a local snapshot match.
+
+Snapshots can also be cached in the remote cache. There are pros and cons to
+using remote snapshots.
+
+Local snapshots cannot be guaranteed, because the executor
+that has it cached locally may be unavailable. For example if it's fully occupied
+with other workloads or is restarting during a release, subsequent remote
+runs will be executed on another machine that doesn't have access to the local
+cache. Using the remote cache increases the likelihood you will be able to access the
+latest snapshot (subject to typical remote cache eviction).
+
+However snapshots can be quite large, and storing them in the remote cache
+can cause significant network transfer. Remote snapshot uploads and downloads
+are billed, and writing every snapshot to the remote cache may result in a
+high bill.
+
+We support configuring the remote snapshot save policy with the `remote-snapshot-save-policy`
+platform property. Valid values are:
+
+- `always`: Always save a remote snapshot.
+  - For performance sensitive or interactive workloads, this will ensure the latest snapshot is
+    always saved to the remote cache and will always be accessible.
+- `first-non-default-ref`: Only the first run on a non-default ref will save a remote snapshot.
+  All runs on default refs will save a remote snapshot.
+  - This policy is applied by default.
+  - Every run on the default branch (Ex. `main` or `master`) will save a remote snapshot.
+  - The first run on your feature branch `my-feature` can resume from the default
+    snapshot, and will save a remote snapshot for the `my-feature` ref.
+  - The second run on the `my-feature` branch will resume from the original `my-feature`
+    snapshot. However it will not save a remote snapshot.
+  - The third run on the `my-feature` branch will resume from the original `my-feature`
+    snapshot. It will not resume from the second run of the `my-feature` branch, and
+    it will not save a remote snapshot.
+- `none-available`: A remote snapshot on a non-default ref will only be saved if
+  there are no remote snapshots available. If there is any fallback snapshot,
+  a remote snapshot will not be saved. All runs on default refs will save a remote snapshot.
+  - Every run on the default branch (Ex. `main` or `master`) will save a remote snapshot.
+  - For the first run on your feature branch `my-feature`, if there is snapshot
+    for the default branch available, you will resume from it. Because you resumed
+    from a remote snapshot, a remote snapshot will not be saved.
+  - Subsequent runs on the `my-feature` branch will resume from the default snapshot,
+    because no remote snapshots were saved for the `my-feature` branch.
+  - If there is no default snapshot available, then a remote snapshot will be saved
+    for the `my-feature` branch on its first run.
+
+For Workflows, you can configure this using the `platform_properties` field.
+
+NOTE: If your workflow is triggered by a GitHub webhook event, the `GIT_REPO_DEFAULT_BRANCH`
+environment variable will be set automatically. We use this to determine whether
+the Workflow is running on a default ref. If you plan to manually dispatch
+a Workflow with the ExecuteWorkflow API or our UI, you must manually set this
+environment variable in your Workflow config (as shown below) for this to work as
+expected.
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Test all targets"
+    platform_properties:
+      remote-snapshot-save-policy: none-available
+    env:
+      GIT_REPO_DEFAULT_BRANCH: main
+    # ...
+```
+
+For Remote Bazel, you can configure this using the
+`--runner_exec_properties=remote-snapshot-save-policy=` flag.
+
+NOTE: If your run is triggered by the BB CLI, the `GIT_REPO_DEFAULT_BRANCH`
+environment variable will be set automatically. We use this to determine whether
+the Workflow is running on a default ref. If you plan to use the `Run` API directly,
+you must manually set this environment variable in the API request for this to work as
+expected.
+
+```bash Sample Command
+bb remote --runner_exec_properties=remote-snapshot-save-policy=none-available test //...
+```
+
+If you want to override the remote snapshot save policy for a specific run, you
+should use a remote header. By default, platform properties are hashed in the
+snapshot key, so changing the snapshot save policy would invalidate your snapshot.
+However platform properties set in remote headers are not included in the snapshot
+key.
+
+For example, lets say you use the default `first-non-default-ref` policy, but wish
+to force save a specific remote snapshot run to do some additional debugging. You
+could apply that with a command like:
+
+```bash Sample Command
+bb remote --remote_run_header=x-buildbuddy-platform.remote-snapshot-save-policy=always test //...
+```
+
+Workflows do not support setting remote headers, but you can use Remote Bazel to
+force save a snapshot that is used by Workflows. From the invocation page for your
+Workflow, on the Executions tab next to the label "Saved to snapshot ID", there
+is a button named `Copy Remote Bazel command to run commands in snapshot`. You
+can add `--remote_run_header=x-buildbuddy-platform.remote-snapshot-save-policy=X`
+to this command to force save a remote snapshot.
+
+```bash Sample Command
+bb remote --remote_run_header=x-buildbuddy-platform.remote-snapshot-save-policy=always --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}' --script='echo "Just running this to force save a remote snapshot."'
+```
+
 ### Runner recycling (macOS only)
 
 On macOS, remote runs are matched to workspaces using a simpler

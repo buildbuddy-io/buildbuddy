@@ -7,10 +7,13 @@ go_library(
     srcs = ["hostedrunner.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner",
     deps = [
+        "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
+        "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/util/ci_runner_util",
         "//enterprise/server/workflow/config",
+        "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
         "//server/endpoint_urls/build_buddy_url",

@@ -16,6 +16,7 @@ import "proto/runner.proto";
 import "proto/stats.proto";
 import "proto/target.proto";
 import "proto/user.proto";
+import "proto/user_list.proto";
 import "proto/workflow.proto";
 import "proto/workspace.proto";
 import "proto/scheduler.proto";
@@ -58,6 +59,10 @@ service BuildBuddyService {
       returns (stats.GetStatHeatmapResponse);
   rpc GetStatDrilldown(stats.GetStatDrilldownRequest)
       returns (stats.GetStatDrilldownResponse);
+  // Fetches stats about targets that were run on RBE _only_ (i.e.,
+  // from the executions table).
+  rpc GetTargetTrends(stats.GetTargetTrendsRequest)
+      returns (stats.GetTargetTrendsResponse);
 
   // Zip manifest API
   rpc GetZipManifest(zip.GetZipManifestRequest)
@@ -80,6 +85,20 @@ service BuildBuddyService {
   rpc JoinGroup(grp.JoinGroupRequest) returns (grp.JoinGroupResponse);
   rpc CreateGroup(grp.CreateGroupRequest) returns (grp.CreateGroupResponse);
   rpc UpdateGroup(grp.UpdateGroupRequest) returns (grp.UpdateGroupResponse);
+
+  // User Lists API
+  rpc GetUserLists(user_list.GetUserListsRequest)
+      returns (user_list.GetUserListsResponse);
+  rpc GetUserList(user_list.GetUserListRequest)
+      returns (user_list.GetUserListResponse);
+  rpc CreateUserList(user_list.CreateUserListRequest)
+      returns (user_list.GetUserListsResponse);
+  rpc DeleteUserList(user_list.DeleteUserListRequest)
+      returns (user_list.DeleteUserListResponse);
+  rpc UpdateUserList(user_list.UpdateUserListRequest)
+      returns (user_list.UpdateUserListResponse);
+  rpc UpdateUserListMembership(user_list.UpdateUserListMembershipRequest)
+      returns (user_list.UpdateUserListMembershipResponse);
 
   // Org API Keys API
   rpc GetApiKeys(api_key.GetApiKeysRequest)
@@ -186,6 +205,8 @@ service BuildBuddyService {
   rpc LinkGitHubRepo(github.LinkRepoRequest) returns (github.LinkRepoResponse);
   rpc UnlinkGitHubRepo(github.UnlinkRepoRequest)
       returns (github.UnlinkRepoResponse);
+  rpc UpdateGitHubRepoSettings(github.UpdateRepoSettingsRequest)
+      returns (github.UpdateRepoSettingsResponse);
 
   // Installation-repos API (authenticates w/ GitHub using
   // installation access token)

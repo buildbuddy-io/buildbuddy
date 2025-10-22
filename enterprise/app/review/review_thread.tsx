@@ -1,7 +1,7 @@
-import React from "react";
 import moment from "moment";
-import { CommentModel } from "./review_model";
+import React from "react";
 import { ReviewController } from "./review_controller";
+import { CommentModel } from "./review_model";
 
 interface ReviewThreadComponentProps {
   threadId: string;

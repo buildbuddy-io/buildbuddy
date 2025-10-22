@@ -30,11 +30,12 @@ var (
 )
 
 type ActionCacheServerProxy struct {
-	env            environment.Env
-	authenticator  interfaces.Authenticator
-	localCache     interfaces.Cache
-	remoteACClient repb.ActionCacheClient
-	localACServer  repb.ActionCacheServer
+	supportsEncryption bool
+	env                environment.Env
+	authenticator      interfaces.Authenticator
+	localCache         interfaces.Cache
+	remoteACClient     repb.ActionCacheClient
+	localACServer      repb.ActionCacheServer
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -52,11 +53,12 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 		return nil, fmt.Errorf("An ActionCacheClient is required to enable the ActionCacheServerProxy")
 	}
 	return &ActionCacheServerProxy{
-		env:            env,
-		authenticator:  env.GetAuthenticator(),
-		localCache:     env.GetCache(),
-		remoteACClient: remoteCache,
-		localACServer:  env.GetLocalActionCacheServer(),
+		supportsEncryption: env.GetCrypter() != nil,
+		env:                env,
+		authenticator:      env.GetAuthenticator(),
+		localCache:         env.GetCache(),
+		remoteACClient:     remoteCache,
+		localACServer:      env.GetLocalActionCacheServer(),
 	}, nil
 }
 
@@ -132,7 +134,7 @@ func (s *ActionCacheServerProxy) cacheActionResultToLocalCAS(ctx context.Context
 // request to the authoritative cache, but send a hash of the last value we
 // received to avoid transferring data on unmodified actions.
 func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
-	if authutil.EncryptionEnabled(ctx, s.authenticator) {
+	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption {
 		resp, err := s.remoteACClient.GetActionResult(ctx, req)
 		labels := prometheus.Labels{
 			metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
@@ -220,7 +222,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 
 func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	// Only if it's explicitly requested do we cache AC results locally.
-	if proxy_util.SkipRemote(ctx) && !authutil.EncryptionEnabled(ctx, s.authenticator) {
+	if proxy_util.SkipRemote(ctx) && (!authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption) {
 		resp, err := s.localACServer.UpdateActionResult(ctx, req)
 
 		labels := prometheus.Labels{

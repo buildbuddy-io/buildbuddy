@@ -3,6 +3,7 @@ package fetch_server
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -142,7 +143,7 @@ func parseChecksumQualifier(qualifier *rapb.Qualifier) (repb.DigestFunction_Valu
 			if err != nil {
 				return repb.DigestFunction_UNKNOWN, "", status.FailedPreconditionErrorf("Error decoding qualifier %q: %s", qualifier.GetName(), err.Error())
 			}
-			expectedChecksum := fmt.Sprintf("%x", decodedHash)
+			expectedChecksum := hex.EncodeToString(decodedHash)
 			return digestFunc, expectedChecksum, nil
 		}
 	}
@@ -231,7 +232,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		}
 	}
 
-	httpClient := httpclient.NewWithAllowedPrivateIPs(p.allowedPrivateIPNets)
+	httpClient := httpclient.New(p.allowedPrivateIPNets, "fetch_server")
 
 	ctx, cancel := context.WithTimeout(ctx, p.computeRequestTimeout(ctx, req.GetTimeout()))
 	defer cancel()
@@ -361,6 +362,17 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 		log.CtxInfof(ctx, "FetchServer failed to get metadata for %s: %s", expectedChecksum, err)
 		return nil
 	}
+
+	// TODO(Maggie): Remove after corrupted data has been evicted from cache.
+	// If the size is 1, that indicates metadata corruption. Delete the entry from the cache.
+	if md.DigestSizeBytes == 1 {
+		log.CtxInfof(ctx, "FetchServer found corrupted metadata for %v. Deleting from cache.", cacheRN.ToProto())
+		if err := cache.Delete(ctx, cacheRN.ToProto()); err != nil {
+			log.CtxErrorf(ctx, "Failed to delete artifact with corrupted metadata %v from cache: %s", cacheRN.ToProto(), err)
+		}
+		return nil
+	}
+
 	blobDigest.SizeBytes = md.DigestSizeBytes
 
 	// Even though we successfully fetched metadata, we need to renew

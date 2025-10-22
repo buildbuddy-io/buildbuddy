@@ -5,9 +5,13 @@ bazel_pkg_tar(
     name = "bazel_binaries_tar",
     versions = [
         "5.3.2",
+        "6.2.1",
         "6.5.0",
         "7.1.0",
+        "7.6.1",
         "8.1.1",
+        "8.2.1",
+        "8.3.1",
     ],
     visibility = ["//visibility:public"],
 )

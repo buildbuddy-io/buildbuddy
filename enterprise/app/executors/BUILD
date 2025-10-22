@@ -16,6 +16,7 @@ ts_library(
         "//app/auth:auth_service",
         "//app/components/banner",
         "//app/components/button:link_button",
+        "//app/components/link",
         "//app/components/select",
         "//app/router",
         "//app/service:rpc_service",
@@ -40,5 +41,6 @@ ts_library(
         "//enterprise/app/trends:common",
         "//proto:scheduler_ts_proto",
         "//proto:stat_filter_ts_proto",
+        "//proto:timestamp_ts_proto",
     ],
 )
