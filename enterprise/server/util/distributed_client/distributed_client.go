@@ -32,9 +32,8 @@ import (
 const (
 	// readBufSizeBytes controls the buffer size used for reading from the
 	// remote cache. This should match the readBufSizeBytes in
-	// byte_stream_server.go, or it can be up to 2 times larger and still have
-	// similar performance.
-	readBufSizeBytes = 256 * 1024 // 256 KiB
+	// byte_stream_server.go.
+	readBufSizeBytes = 512 * 1024 // 512 KiB
 
 	// writeBufSizeBytes controls the maximum size of buffers used for writing
 	// to a remote cache. This is also the maximum payload size for each
