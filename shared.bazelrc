@@ -14,6 +14,9 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 # COMMON FLAGS #
 ################
 
+# Use a mirror for all source archives referenced by the BCR to protect against checksum changes and upstream outages.
+common --module_mirrors=https://bcr.cloudflaremirrors.com
+
 # Avoid being broken by version requirement changes in transitive deps.
 common --check_direct_dependencies=error
 
