@@ -2,7 +2,6 @@ package migration_cache
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"math/rand/v2"
 	"sync"
@@ -1019,7 +1018,6 @@ func (mc *MigrationCache) copy(c *copyData) {
 	ctx, cancel := background.ExtendContextForFinalization(c.ctx, 30*time.Second)
 	c.ctx = ctx
 	defer cancel()
-	fmt.Printf("Migration starting copy to dest cache: digest %v\n", c.d)
 
 	if c.d.GetCacheType() == rspb.CacheType_CAS {
 		// For CAS blobs, we can skip copying if the dest cache already has the
@@ -1156,16 +1154,4 @@ func (mc *MigrationCache) Stop() error {
 func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return mc.defaultConfigDoNotUseDirectly.src.SupportsCompressor(compressor) &&
 		mc.defaultConfigDoNotUseDirectly.dest.SupportsCompressor(compressor)
-}
-
-// WaitForPendingCopies blocks until all pending copy operations have been processed or the context is cancelled.
-// Exported for testing only.
-func (mc *MigrationCache) WaitForPendingCopies(ctx context.Context) error {
-	for len(mc.copyChan) > 0 {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return nil
 }
