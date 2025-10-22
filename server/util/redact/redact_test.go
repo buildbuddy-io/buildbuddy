@@ -671,8 +671,8 @@ func TestRedactTxt(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redacted := redact.RedactText(tc.txt)
-			require.Equal(t, tc.expected, redacted)
+			redacted := redact.RedactText([]byte(tc.txt))
+			require.Equal(t, tc.expected, string(redacted))
 		})
 	}
 }
@@ -705,8 +705,8 @@ func TestRedactAPIKeys(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redacted := redact.RedactText(tc.txt)
-			require.Equal(t, tc.expected, redacted)
+			redacted := redact.RedactText([]byte(tc.txt))
+			require.Equal(t, tc.expected, string(redacted))
 
 			event := &bespb.BuildEvent{
 				Payload: &bespb.BuildEvent_Progress{
