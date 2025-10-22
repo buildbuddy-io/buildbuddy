@@ -114,7 +114,7 @@ func init() {
 }
 
 func stripURLSecrets(input string) string {
-	return urlSecretRegex.ReplaceAllString(input, "${1}<REDACTED>${2}")
+	return string(stripURLSecretsBytes([]byte(input)))
 }
 
 func stripURLSecretsBytes(input []byte) []byte {
@@ -245,21 +245,7 @@ func RedactText(b []byte) []byte {
 // It looks for HTTP headers, URL secrets, environment variables, and the configured API key.
 // This implementation depends on BuildBuddy API keys being exactly 20 alphanumeric characters.
 func redactBuildBuddyAPIKeys(txt string) string {
-	// Replace x-buildbuddy-api-key header.
-	txt = apiKeyHeaderPattern.ReplaceAllLiteralString(txt, "x-buildbuddy-api-key=<REDACTED>")
-
-	// Replace sequences that look like API keys immediately followed by '@',
-	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
-	// or "bes_backend=$API_KEY@domain.com".
-	txt = apiKeyAtPattern.ReplaceAllString(txt, "$1<REDACTED>@")
-
-	// Replace the literal API key set up via the BuildBuddy config, which does not
-	// need to conform to the way we generate API keys.
-	if configuredKey := *apiKey; configuredKey != "" {
-		txt = strings.ReplaceAll(txt, configuredKey, "<REDACTED>")
-	}
-
-	return txt
+	return string(redactBuildBuddyAPIKeysBytes([]byte(txt)))
 }
 
 func redactBuildBuddyAPIKeysBytes(b []byte) []byte {
@@ -281,11 +267,7 @@ func redactBuildBuddyAPIKeysBytes(b []byte) []byte {
 }
 
 func redactRemoteHeaders(txt string) string {
-	for _, header := range headerOptionNames {
-		regex := regexp.MustCompile(fmt.Sprintf("--%s=[^\\s]+", header))
-		txt = regex.ReplaceAllLiteralString(txt, fmt.Sprintf("--%s=<REDACTED>", header))
-	}
-	return txt
+	return string(redactRemoteHeadersBytes([]byte(txt)))
 }
 
 func redactRemoteHeadersBytes(b []byte) []byte {
@@ -297,7 +279,7 @@ func redactRemoteHeadersBytes(b []byte) []byte {
 }
 
 func redactEnvVars(txt string) string {
-	return envVarOptionNamesRegex.ReplaceAllString(txt, "${1}<REDACTED>")
+	return string(redactEnvVarsBytes([]byte(txt)))
 }
 
 func redactEnvVarsBytes(b []byte) []byte {
