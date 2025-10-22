@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "bigcache",
-    srcs = ["bigcache.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/bigcache",
+    name = "metacache",
+    srcs = ["metacache.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/metacache",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/filestore",
@@ -33,10 +33,10 @@ go_library(
 package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
-    name = "bigcache_test",
-    srcs = ["bigcache_test.go"],
+    name = "metacache_test",
+    srcs = ["metacache_test.go"],
     deps = [
-        ":bigcache",
+        ":metacache",
         "//enterprise/server/backends/kms",
         "//enterprise/server/crypter_service",
         "//enterprise/server/filestore",

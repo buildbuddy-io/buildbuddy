@@ -1,4 +1,4 @@
-package bigcache
+package metacache
 
 import (
 	"bytes"

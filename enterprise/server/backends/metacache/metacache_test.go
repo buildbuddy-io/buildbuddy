@@ -1,4 +1,4 @@
-package bigcache_test
+package metacache_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/bigcache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/metacache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
@@ -44,7 +44,7 @@ func getAnonContext(t testing.TB, env environment.Env) context.Context {
 	return ctx
 }
 
-func runBigcache(t testing.TB, te *real_environment.RealEnv, clock clockwork.Clock, partialOpts bigcache.Options) *bigcache.Cache {
+func runMetacache(t testing.TB, te *real_environment.RealEnv, clock clockwork.Clock, partialOpts metacache.Options) *metacache.Cache {
 	t.Helper()
 
 	if partialOpts.GCSTTLDays == 0 {
@@ -74,7 +74,7 @@ func runBigcache(t testing.TB, te *real_environment.RealEnv, clock clockwork.Clo
 	opts.Clock = clock
 	opts.MetadataClient = mdspb.NewMetadataServiceClient(conn)
 
-	bc, err := bigcache.New(te, opts)
+	bc, err := metacache.New(te, opts)
 	require.NoError(t, err)
 	return bc
 }
@@ -85,7 +85,7 @@ func TestReadWrite(t *testing.T) {
 	ctx := getAnonContext(t, te)
 	clock := clockwork.NewFakeClock()
 
-	options := bigcache.Options{
+	options := metacache.Options{
 		Name: "TestReadWrite",
 
 		MaxInlineFileSizeBytes:      1000,
@@ -97,7 +97,7 @@ func TestReadWrite(t *testing.T) {
 			MaxSizeBytes: int64(1_000_000_000), // 1GB
 		}},
 	}
-	bc := runBigcache(t, te, clock, options)
+	bc := runMetacache(t, te, clock, options)
 
 	testSizes := []int64{
 		1, 10, 100, 256, 512, 1000, 1024, 2 * 1024, 10000, 1000000,
@@ -131,7 +131,7 @@ func TestGetSet(t *testing.T) {
 	ctx := getAnonContext(t, te)
 	clock := clockwork.NewFakeClock()
 
-	options := bigcache.Options{
+	options := metacache.Options{
 		Name: "TestGetSet",
 
 		MaxInlineFileSizeBytes:      1000,
@@ -143,7 +143,7 @@ func TestGetSet(t *testing.T) {
 			MaxSizeBytes: int64(1_000_000_000), // 1GB
 		}},
 	}
-	bc := runBigcache(t, te, clock, options)
+	bc := runMetacache(t, te, clock, options)
 
 	testSizes := []int64{
 		1, 10, 100, 256, 512, 1000,
@@ -169,7 +169,7 @@ func TestFindMissing(t *testing.T) {
 	ctx := getAnonContext(t, te)
 	clock := clockwork.NewFakeClock()
 
-	options := bigcache.Options{
+	options := metacache.Options{
 		Name: "TestFindMissing",
 
 		MaxInlineFileSizeBytes:      1000,
@@ -181,7 +181,7 @@ func TestFindMissing(t *testing.T) {
 			MaxSizeBytes: int64(1_000_000_000), // 1GB
 		}},
 	}
-	bc := runBigcache(t, te, clock, options)
+	bc := runMetacache(t, te, clock, options)
 
 	testSizes := []int64{50, 100, 1000, 1500, 10000}
 	for _, testSize := range testSizes {
@@ -314,17 +314,17 @@ func TestEncryption(t *testing.T) {
 				}
 
 				clock := clockwork.NewFakeClock()
-				options := bigcache.Options{
+				options := metacache.Options{
 					Name:                        desc,
 					MaxInlineFileSizeBytes:      tc.maxInlineFileSizeBytes,
 					MinBytesAutoZstdCompression: 100,
 					GCSTTLDays:                  1,
 					Partitions: []disk.Partition{{
-						ID:           bigcache.DefaultPartitionID,
+						ID:           metacache.DefaultPartitionID,
 						MaxSizeBytes: maxSizeBytes,
 					}},
 				}
-				bc := runBigcache(t, te, clock, options)
+				bc := runMetacache(t, te, clock, options)
 
 				rn, buf := testdigest.RandomCASResourceBuf(t, tc.digestSize)
 				err = bc.Set(ctx, rn, buf)
