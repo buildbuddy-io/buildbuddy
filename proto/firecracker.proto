@@ -212,6 +212,12 @@ message VMMetadata {
   // action, pausing, and saving a new version. It starts at 1 when the VM is
   // first saved.
   int64 saved_snapshot_version_number = 6;
+
+  // Whether a local snapshot should be saved for this run.
+  bool saved_local_snapshot = 7;
+
+  // Whether a remote snapshot should be saved for this run.
+  bool saved_remote_snapshot = 8;
 }
 
 // SnapshotVersionMetadata contains the version ID to be used for snapshots.

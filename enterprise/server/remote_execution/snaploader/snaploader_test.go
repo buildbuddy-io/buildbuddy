@@ -714,6 +714,7 @@ func makeFakeSnapshot(t *testing.T, workDir string, remoteEnabled bool, chunkedF
 		InitrdImagePath:       makeRandomFile(t, workDir, "initrd", 1_000),
 		ContainerFSPath:       makeRandomFile(t, workDir, "containerfs", 1_000),
 		CacheSnapshotRemotely: remoteEnabled,
+		CacheSnapshotLocally:  true,
 		WriteManifestLocally:  !remoteEnabled,
 		ChunkedFiles:          chunkedFiles,
 		VMMetadata:            &fcpb.VMMetadata{SnapshotId: snapshotID},
