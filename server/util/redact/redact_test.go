@@ -1,6 +1,7 @@
 package redact_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"testing"
@@ -721,4 +722,420 @@ func TestRedactAPIKeys(t *testing.T) {
 			require.Equal(t, tc.expected, event.GetProgress().GetStdout())
 		})
 	}
+}
+
+func TestRedactBytes(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		input    []byte
+		expected []byte
+	}{
+		{
+			name:     "url secrets",
+			input:    []byte("ok url://username:password@uri --flag=ok"),
+			expected: []byte("ok url://username:<REDACTED>@uri --flag=ok"),
+		},
+		{
+			name:     "remote headers",
+			input:    []byte("ok --remote_header=x-buildbuddy-api-key=secret --flag=ok"),
+			expected: []byte("ok --remote_header=<REDACTED> --flag=ok"),
+		},
+		{
+			name:     "api key header",
+			input:    []byte("x-buildbuddy-api-key=apikeyexactly20chars"),
+			expected: []byte("x-buildbuddy-api-key=<REDACTED>"),
+		},
+		{
+			name:     "api key before @",
+			input:    []byte("grpc://apikeyexactly20chars@mydomain.com"),
+			expected: []byte("grpc://<REDACTED>@mydomain.com"),
+		},
+		{
+			name:     "environment variables",
+			input:    []byte("common --repo_env=AWS_ACCESS_KEY_ID=super_secret_access_key_id"),
+			expected: []byte("common --repo_env=AWS_ACCESS_KEY_ID=<REDACTED>"),
+		},
+		{
+			name:     "multiple secrets",
+			input:    []byte("--remote_header=secret1 url://user:pass@host --action_env=KEY=val"),
+			expected: []byte("--remote_header=<REDACTED> url://user:<REDACTED>@host --action_env=KEY=<REDACTED>"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := redact.RedactBytes(tc.input)
+			require.Equal(t, string(tc.expected), string(result))
+		})
+	}
+}
+
+func TestRedactingWriter_Basic(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		input    []byte
+		expected []byte
+	}{
+		{
+			name:     "single write with url secret",
+			input:    []byte("url://username:password@uri\n"),
+			expected: []byte("url://username:<REDACTED>@uri\n"),
+		},
+		{
+			name:     "single write with remote header",
+			input:    []byte("--remote_header=secret\n"),
+			expected: []byte("--remote_header=<REDACTED>\n"),
+		},
+		{
+			name:     "single write with api key",
+			input:    []byte("grpc://apikeyexactly20chars@domain.com\n"),
+			expected: []byte("grpc://<REDACTED>@domain.com\n"),
+		},
+		{
+			name:     "plain text no secrets",
+			input:    []byte("this is just plain text\n"),
+			expected: []byte("this is just plain text\n"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			rw := redact.NewRedactingWriter(&buf)
+
+			_, err := rw.Write(tc.input)
+			require.NoError(t, err)
+
+			err = rw.Close()
+			require.NoError(t, err)
+
+			require.Equal(t, string(tc.expected), buf.String())
+		})
+	}
+}
+
+func TestRedactingWriter_SplitAcrossWrites(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		writes   [][]byte
+		expected string
+	}{
+		{
+			name: "url secret split across two writes",
+			writes: [][]byte{
+				[]byte("url://username:pass"),
+				[]byte("word@uri\n"),
+			},
+			expected: "url://username:<REDACTED>@uri\n",
+		},
+		{
+			name: "remote header split across writes",
+			writes: [][]byte{
+				[]byte("--remote_hea"),
+				[]byte("der=secret\n"),
+			},
+			expected: "--remote_header=<REDACTED>\n",
+		},
+		{
+			name: "api key split across writes",
+			writes: [][]byte{
+				[]byte("grpc://apikey"),
+				[]byte("exactly20"),
+				[]byte("chars@domain.com\n"),
+			},
+			expected: "grpc://<REDACTED>@domain.com\n",
+		},
+		{
+			name: "multiple secrets on different lines",
+			writes: [][]byte{
+				[]byte("line1: url://user:pass@host\n"),
+				[]byte("line2: --remote_header=secret\n"),
+				[]byte("line3: grpc://apikeyexactly20chars@domain\n"),
+			},
+			expected: "line1: url://user:<REDACTED>@host\n" +
+				"line2: --remote_header=<REDACTED>\n" +
+				"line3: grpc://<REDACTED>@domain\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			rw := redact.NewRedactingWriter(&buf)
+
+			for _, write := range tc.writes {
+				_, err := rw.Write(write)
+				require.NoError(t, err)
+			}
+
+			err := rw.Close()
+			require.NoError(t, err)
+
+			require.Equal(t, tc.expected, buf.String())
+		})
+	}
+}
+
+func TestRedactingWriter_BufferLimit(t *testing.T) {
+	// Create a very long line that exceeds the buffer limit
+	longSecret := make([]byte, 10*1024) // 10KB
+	for i := range longSecret {
+		longSecret[i] = 'x'
+	}
+
+	input := append([]byte("--remote_header="), longSecret...)
+
+	var buf bytes.Buffer
+	rw := redact.NewRedactingWriter(&buf)
+
+	_, err := rw.Write(input)
+	require.NoError(t, err)
+
+	err = rw.Close()
+	require.NoError(t, err)
+
+	// Should be redacted when buffer limit is hit
+	result := buf.String()
+	require.Contains(t, result, "<REDACTED>")
+}
+
+func TestRedactingWriter_PartialSecretAtEOF(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		input    []byte
+		expected string
+	}{
+		{
+			name:     "incomplete url secret at EOF",
+			input:    []byte("url://username:password"),
+			expected: "url://username:<REDACTED>",
+		},
+		{
+			name:     "remote header without value at EOF",
+			input:    []byte("--remote_header="),
+			expected: "--remote_header=",
+		},
+		{
+			name:     "partial api key at EOF",
+			input:    []byte("grpc://apikeyexact"),
+			expected: "grpc://apikeyexact",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			rw := redact.NewRedactingWriter(&buf)
+
+			_, err := rw.Write(tc.input)
+			require.NoError(t, err)
+
+			err = rw.Close()
+			require.NoError(t, err)
+
+			require.Equal(t, tc.expected, buf.String())
+		})
+	}
+}
+
+func TestRedactingWriter_MultipleSecrets(t *testing.T) {
+	input := `Log file contents:
+url://user:password@host
+--remote_header=secret_header
+grpc://apikeyexactly20chars@domain.com
+--action_env=SECRET_KEY=secret_value
+normal text here
+`
+	expected := `Log file contents:
+url://user:<REDACTED>@host
+--remote_header=<REDACTED>
+grpc://<REDACTED>@domain.com
+--action_env=SECRET_KEY=<REDACTED>
+normal text here
+`
+
+	var buf bytes.Buffer
+	rw := redact.NewRedactingWriter(&buf)
+
+	_, err := rw.Write([]byte(input))
+	require.NoError(t, err)
+
+	err = rw.Close()
+	require.NoError(t, err)
+
+	require.Equal(t, expected, buf.String())
+}
+
+func TestRedactingWriter_ByteByByte(t *testing.T) {
+	input := []byte("url://user:password@host\n")
+	expected := "url://user:<REDACTED>@host\n"
+
+	var buf bytes.Buffer
+	rw := redact.NewRedactingWriter(&buf)
+
+	// Write byte by byte to test incremental buffering
+	for _, b := range input {
+		_, err := rw.Write([]byte{b})
+		require.NoError(t, err)
+	}
+
+	err := rw.Close()
+	require.NoError(t, err)
+
+	require.Equal(t, expected, buf.String())
+}
+
+func TestRedactingWriter_EdgeCases(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		writes   [][]byte
+		expected string
+	}{
+		{
+			name: "secret at very end with no newline",
+			writes: [][]byte{
+				[]byte("Starting log\n"),
+				[]byte("Some info\n"),
+				[]byte("grpc://apikeyexactly20chars@domain.com"),
+			},
+			expected: "Starting log\nSome info\ngrpc://<REDACTED>@domain.com",
+		},
+		{
+			name: "multiple secrets on same line",
+			writes: [][]byte{
+				[]byte("url://user1:pass1@host1 and url://user2:pass2@host2\n"),
+			},
+			expected: "url://user1:<REDACTED>@host1 and url://user2:<REDACTED>@host2\n",
+		},
+		{
+			name: "secret split across multiple tiny writes",
+			writes: [][]byte{
+				[]byte("ht"),
+				[]byte("tp"),
+				[]byte("://"),
+				[]byte("us"),
+				[]byte("er"),
+				[]byte(":"),
+				[]byte("pa"),
+				[]byte("ss"),
+				[]byte("wo"),
+				[]byte("rd"),
+				[]byte("@h"),
+				[]byte("ost"),
+				[]byte("\n"),
+			},
+			expected: "http://user:<REDACTED>@host\n",
+		},
+		{
+			name: "newline in middle of secret pattern",
+			writes: [][]byte{
+				[]byte("url://user:password\n"),
+				[]byte("@host"),
+			},
+			// Pattern is broken by newline, so not redacted (no complete URL match)
+			expected: "url://user:password\n@host",
+		},
+		{
+			name: "multiple different secret types mixed",
+			writes: [][]byte{
+				[]byte("Config: --remote_header=secret1 "),
+				[]byte("url://user:pass@host "),
+				[]byte("--action_env=KEY=value\n"),
+			},
+			expected: "Config: --remote_header=<REDACTED> url://user:<REDACTED>@host --action_env=KEY=<REDACTED>\n",
+		},
+		{
+			name: "secret at start of stream",
+			writes: [][]byte{
+				[]byte("grpc://apikeyexactly20chars@domain.com\n"),
+				[]byte("rest of log"),
+			},
+			expected: "grpc://<REDACTED>@domain.com\nrest of log",
+		},
+		{
+			name: "empty writes mixed with content",
+			writes: [][]byte{
+				[]byte(""),
+				[]byte("url://user:pass"),
+				[]byte(""),
+				[]byte("@host\n"),
+				[]byte(""),
+			},
+			expected: "url://user:<REDACTED>@host\n",
+		},
+		{
+			name: "secret spans exactly at newline boundary",
+			writes: [][]byte{
+				[]byte("prefix url://user:password@host"),
+				[]byte("\nsuffix"),
+			},
+			expected: "prefix url://user:<REDACTED>@host\nsuffix",
+		},
+		{
+			name: "partial secret followed by complete secret",
+			writes: [][]byte{
+				[]byte("url://incomplete:pass and url://complete:pass@host\n"),
+			},
+			// Note: The regex matches greedily from first "://" to last "@", so this
+			// redacts from "incomplete:" through "@host" as a single match
+			expected: "url://incomplete:<REDACTED>@host\n",
+		},
+		{
+			name: "very long line with secret near buffer limit",
+			writes: [][]byte{
+				[]byte(string(make([]byte, 7900)) + "url://user:password@host\n"),
+			},
+			expected: string(make([]byte, 7900)) + "url://user:<REDACTED>@host\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			rw := redact.NewRedactingWriter(&buf)
+
+			for _, write := range tc.writes {
+				_, err := rw.Write(write)
+				require.NoError(t, err)
+			}
+
+			err := rw.Close()
+			require.NoError(t, err)
+
+			require.Equal(t, tc.expected, buf.String())
+		})
+	}
+}
+
+func TestRedactingWriter_SecretAtBufferBoundary(t *testing.T) {
+	// Test a secret that appears right at the 8KB buffer limit
+	// Create content that's just under the limit, then add a secret
+	padding := make([]byte, 8000)
+	for i := range padding {
+		padding[i] = 'x'
+	}
+
+	var buf bytes.Buffer
+	rw := redact.NewRedactingWriter(&buf)
+
+	// Write padding
+	_, err := rw.Write(padding)
+	require.NoError(t, err)
+
+	// Write a secret that will be in the buffer but not yet flushed
+	_, err = rw.Write([]byte(" url://user:password@host\n"))
+	require.NoError(t, err)
+
+	err = rw.Close()
+	require.NoError(t, err)
+
+	result := buf.String()
+	require.Contains(t, result, "<REDACTED>")
+	require.NotContains(t, result, "password")
+}
+
+func TestRedactingWriter_MultipleNewlines(t *testing.T) {
+	input := "line1: url://user:pass@host\n\n\nline2: --remote_header=secret\n"
+	expected := "line1: url://user:<REDACTED>@host\n\n\nline2: --remote_header=<REDACTED>\n"
+
+	var buf bytes.Buffer
+	rw := redact.NewRedactingWriter(&buf)
+
+	_, err := rw.Write([]byte(input))
+	require.NoError(t, err)
+
+	err = rw.Close()
+	require.NoError(t, err)
+
+	require.Equal(t, expected, buf.String())
 }

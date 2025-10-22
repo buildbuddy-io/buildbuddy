@@ -1,10 +1,12 @@
 package redact
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"reflect"
 	"regexp"
 	"slices"
@@ -44,6 +46,9 @@ const (
 	allowEnvPrefix            = "ALLOW_ENV="
 	allowEnvListSeparator     = ","
 	explicitCommandLineName   = "EXPLICIT_COMMAND_LINE"
+
+	// Maximum buffer size for RedactingWriter before flushing
+	maxRedactingWriterBufferSize = 8 * 1024 // 8KB
 )
 
 var (
@@ -52,6 +57,9 @@ var (
 
 	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
+
+	// Partial URL secret patterns for conservative redaction at EOF
+	partialURLSecretRegex = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@\s]+:)([^@\s]*)$`)
 
 	// There are some flags that contain multiple sub-flags which are
 	// specified as comma-separated KEY=VALUE pairs, e.g.:
@@ -267,6 +275,63 @@ func redactRemoteHeaders(txt string) string {
 
 func redactEnvVars(txt string) string {
 	return envVarOptionNamesRegex.ReplaceAllString(txt, "${1}<REDACTED>")
+}
+
+// Byte-slice variants of the redaction functions for use with []byte inputs.
+
+func stripURLSecretsBytes(input []byte) []byte {
+	return urlSecretRegex.ReplaceAll(input, []byte("${1}<REDACTED>${2}"))
+}
+
+func redactRemoteHeadersBytes(txt []byte) []byte {
+	for _, header := range headerOptionNames {
+		pattern := fmt.Sprintf("--%s=[^\\s]+", header)
+		regex := regexp.MustCompile(pattern)
+		replacement := []byte(fmt.Sprintf("--%s=<REDACTED>", header))
+		txt = regex.ReplaceAllLiteral(txt, replacement)
+	}
+	return txt
+}
+
+func redactBuildBuddyAPIKeysBytes(txt []byte) []byte {
+	// Replace x-buildbuddy-api-key header.
+	txt = apiKeyHeaderPattern.ReplaceAllLiteral(txt, []byte("x-buildbuddy-api-key=<REDACTED>"))
+
+	// Replace sequences that look like API keys immediately followed by '@',
+	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
+	// or "bes_backend=$API_KEY@domain.com".
+	txt = apiKeyAtPattern.ReplaceAll(txt, []byte("$1<REDACTED>@"))
+
+	// Replace the literal API key set up via the BuildBuddy config, which does not
+	// need to conform to the way we generate API keys.
+	if configuredKey := *apiKey; configuredKey != "" {
+		txt = bytes.ReplaceAll(txt, []byte(configuredKey), []byte("<REDACTED>"))
+	}
+
+	return txt
+}
+
+func redactEnvVarsBytes(txt []byte) []byte {
+	return envVarOptionNamesRegex.ReplaceAll(txt, []byte("${1}<REDACTED>"))
+}
+
+// RedactBytes applies the same four transformations as RedactText but operates
+// on byte slices for efficiency when the input is already in []byte form.
+func RedactBytes(txt []byte) []byte {
+	txt = stripURLSecretsBytes(txt)
+	txt = redactRemoteHeadersBytes(txt)
+	txt = redactBuildBuddyAPIKeysBytes(txt)
+	txt = redactEnvVarsBytes(txt)
+	return txt
+}
+
+// redactPartialSecretsBytes applies conservative redaction for partial/incomplete
+// secrets that may appear at EOF, following the principle of "redact when in doubt".
+func redactPartialSecretsBytes(txt []byte) []byte {
+	// Redact partial URL secrets: scheme://anything: (missing the @host suffix)
+	// This handles cases like "url://username:password" at EOF
+	txt = partialURLSecretRegex.ReplaceAll(txt, []byte("${1}<REDACTED>"))
+	return txt
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
@@ -760,4 +825,74 @@ func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, eve
 	}
 
 	return prototext.Unmarshal([]byte(txt), event)
+}
+
+// RedactingWriter is an io.WriteCloser that redacts secrets from data as it's written.
+// It buffers data to handle secrets that may span multiple Write() calls, and applies
+// conservative redaction when patterns are ambiguous or incomplete.
+type RedactingWriter struct {
+	w      io.Writer
+	buffer []byte
+}
+
+// NewRedactingWriter creates a new RedactingWriter that writes redacted output to w.
+func NewRedactingWriter(w io.Writer) *RedactingWriter {
+	return &RedactingWriter{
+		w:      w,
+		buffer: make([]byte, 0, 1024),
+	}
+}
+
+// Write implements io.Writer, buffering and redacting data before writing to the underlying writer.
+func (rw *RedactingWriter) Write(p []byte) (n int, err error) {
+	// Append incoming data to buffer
+	rw.buffer = append(rw.buffer, p...)
+
+	// If buffer exceeds max size, redact and flush everything
+	if len(rw.buffer) > maxRedactingWriterBufferSize {
+		redacted := RedactBytes(rw.buffer)
+		if _, err := rw.w.Write(redacted); err != nil {
+			return 0, err
+		}
+		rw.buffer = rw.buffer[:0]
+		return len(p), nil
+	}
+
+	// Try to flush any complete lines (data up to and including newlines)
+	// This reduces latency while still handling secrets that span lines
+	lastNewline := bytes.LastIndexByte(rw.buffer, '\n')
+	if lastNewline >= 0 {
+		// Redact and write everything up to and including the last newline
+		toWrite := rw.buffer[:lastNewline+1]
+		redacted := RedactBytes(toWrite)
+		if _, err := rw.w.Write(redacted); err != nil {
+			return 0, err
+		}
+		// Keep the remainder in the buffer (reuses underlying array)
+		rw.buffer = rw.buffer[lastNewline+1:]
+	}
+
+	return len(p), nil
+}
+
+// Close flushes any remaining buffered data and closes the writer if it implements io.Closer.
+// Any partial secrets in the buffer are conservatively redacted.
+func (rw *RedactingWriter) Close() error {
+	// Flush any remaining buffered data
+	if len(rw.buffer) > 0 {
+		// First apply standard redaction
+		redacted := RedactBytes(rw.buffer)
+		// Then apply conservative partial secret redaction for EOF
+		redacted = redactPartialSecretsBytes(redacted)
+		if _, err := rw.w.Write(redacted); err != nil {
+			return err
+		}
+		rw.buffer = rw.buffer[:0]
+	}
+
+	// Close underlying writer if it's a closer
+	if closer, ok := rw.w.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
 }
