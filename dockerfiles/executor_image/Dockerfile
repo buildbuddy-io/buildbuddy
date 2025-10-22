@@ -26,7 +26,6 @@ RUN \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
 RUN DOCKER_VERSION="5:28.2.2-1~debian.12~bookworm" && \
-    CONTAINERD_DEB_VERSION="1.7.27-1" && \
     DOCKER_BUILDX_VERSION="0.24.0-1~debian.12~bookworm" && \
     DOCKER_COMPOSE_VERSION="2.36.2-1~debian.12~bookworm" && \
     apt-get update && \
@@ -43,7 +42,6 @@ RUN DOCKER_VERSION="5:28.2.2-1~debian.12~bookworm" && \
     docker-ce=${DOCKER_VERSION} \
     docker-ce-cli=${DOCKER_VERSION} \
     docker-ce-rootless-extras=${DOCKER_VERSION} \
-    containerd.io=${CONTAINERD_DEB_VERSION} \
     docker-buildx-plugin=${DOCKER_BUILDX_VERSION} \
     docker-compose-plugin=${DOCKER_COMPOSE_VERSION} && \
     apt-mark auto \
@@ -54,11 +52,6 @@ RUN DOCKER_VERSION="5:28.2.2-1~debian.12~bookworm" && \
     # keep these in sync with the binaries we are manually
     # adding in enterprise/server/cmd/executor/BUILD.
     #
-    # containerd
-    /usr/bin/containerd \
-    /usr/bin/containerd-shim \
-    /usr/bin/containerd-shim-runc-v1 \
-    /usr/bin/ctr \
     # rootlesskit
     /usr/bin/rootlesskit \
     # runc
