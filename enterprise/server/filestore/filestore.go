@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -37,6 +38,10 @@ const (
 	// eviction to work correctly. This value should not ever need to
 	// change, but there is little harm in changing it.
 	AnonGroupID = "GR74042147050500190371"
+)
+
+var (
+	ErrMissingKeyInfo = errors.New("missing group ID or hash")
 )
 
 // returns partitionID, groupID, isolation, remote_instance_name, hash
@@ -108,6 +113,10 @@ const (
 	// name, groupID, and digest.
 	Version5
 
+	// Version6 encodes both AC and CAS keys under a synthetic digest made from
+	// their remote isntance name, groupID, and digest.
+	Version6
+
 	// MaxKeyVersion is always 1 more than the highest defined version, which
 	// allows for tests to iterate across all versions from UndefinedKeyVersion
 	// to MaxKeyVersion and check cross compatibility.
@@ -123,12 +132,13 @@ type PebbleKey struct {
 	encryptionKeyID    string
 	digestFunction     repb.DigestFunction_Value
 
-	// For Version5 keys and beyond, creating a key from the above fields is
-	// a *lossy* procedure. This means it's impossible to take a raw key and
-	// back out the groupID or other information. For that reason, when a
-	// v5+ key is parsed, the full key bytes are preserved here so that the
-	// key can be re-serialized.
-	fullKey []byte
+	// For Version5 keys and beyond, we create a synthetic hash from the above
+	// fields as part of the keys. This is a *lossy* procedure. This means it's
+	// impossible to take a raw key and back out the groupID or other
+	// information. For that reason, when a v5+ key is parsed, the synthetic hash
+	// and the key version are preserved here so that the key can be re-serialized.
+	syntheticHash        string
+	syntheticHashVersion PebbleKeyVersion
 }
 
 func (pmk PebbleKey) EncryptionKeyID() string {
@@ -200,6 +210,27 @@ func trimFixedWidthGroupID(groupID string) string {
 	return GroupIDPrefix + strings.TrimLeft(groupID[2:], "0")
 }
 
+func (pmk *PebbleKey) createSyntheticHash() (string, error) {
+	if pmk.groupID == "" || pmk.hash == "" {
+		return "", status.FailedPreconditionErrorf("cannot create synthetic hash: %w", ErrMissingKeyInfo)
+	}
+	hashExtra := remapANONToFixedGroupID(pmk.groupID)
+	rih := pmk.remoteInstanceHash
+	if rih == "" {
+		rih = "0"
+	}
+	hashExtra += "|" + rih + "|" + pmk.hash
+	h, err := digest.HashForDigestType(pmk.digestFunction)
+	if err != nil {
+		return "", err
+	}
+	if _, err := h.Write([]byte(hashExtra)); err != nil {
+		return "", err
+	}
+	hashStr := hex.EncodeToString(h.Sum(nil))
+	return hashStr, nil
+}
+
 func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 	switch version {
 	case UndefinedKeyVersion:
@@ -252,30 +283,47 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		filePath = filepath.Join(partDir, filePath, "v4")
 		return []byte(filePath), nil
 	case Version5:
-		if len(pmk.fullKey) > 0 {
-			return pmk.fullKey, nil
+		hashStr := ""
+		if pmk.syntheticHash != "" {
+			if pmk.syntheticHashVersion == Version5 {
+				// syntheticHash is only set with AC entries in V5; therefore,
+				// we don't need to check the cache type.
+				hashStr = pmk.syntheticHash
+			} else {
+				return nil, status.FailedPreconditionErrorf("unexpected syntehtic hash version %d", pmk.syntheticHashVersion)
+			}
+		} else {
+			hashStr = pmk.hash
+			if pmk.isolation == "ac" {
+				var err error
+				hashStr, err = pmk.createSyntheticHash()
+				if err != nil {
+					return nil, err
+				}
+			}
 		}
-		hashStr := pmk.hash
-		if pmk.isolation == "ac" {
-			hashExtra := remapANONToFixedGroupID(pmk.groupID)
-			rih := pmk.remoteInstanceHash
-			if rih == "" {
-				rih = "0"
-			}
-			hashExtra += "|" + rih + "|" + pmk.hash
-			h, err := digest.HashForDigestType(pmk.digestFunction)
-			if err != nil {
-				return nil, err
-			}
-			if _, err := h.Write([]byte(hashExtra)); err != nil {
-				return nil, err
-			}
-			hashStr = hex.EncodeToString(h.Sum(nil))
-		}
-
 		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)
 		partDir := PartitionDirectoryPrefix + pmk.partID
 		filePath = filepath.Join(partDir, filePath, "v5")
+		return []byte(filePath), nil
+	case Version6:
+		hashStr := ""
+		if pmk.syntheticHash != "" {
+			if pmk.syntheticHashVersion == Version6 || pmk.syntheticHashVersion == Version5 {
+				hashStr = pmk.syntheticHash
+			} else {
+				return nil, status.FailedPreconditionErrorf("unexpected synthetic hash version %d", pmk.syntheticHashVersion)
+			}
+		} else {
+			var err error
+			hashStr, err = pmk.createSyntheticHash()
+			if err != nil {
+				return nil, err
+			}
+		}
+		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v6")
 		return []byte(filePath), nil
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown key version: %v", version)
@@ -409,17 +457,27 @@ func (pmk *PebbleKey) parseVersion4(parts [][]byte) error {
 
 func (pmk *PebbleKey) parseVersion5(parts [][]byte) error {
 	digestFunctionString := ""
+	hashString := ""
 	switch len(parts) {
 	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/1/cas/v5",
 	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/9/ac/v5",
 	case 5:
-		pmk.partID, pmk.hash, digestFunctionString, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
+		pmk.partID, hashString, digestFunctionString, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
 	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/EK123/v5",
 	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/EK123/v5",
 	case 6:
-		pmk.partID, pmk.hash, digestFunctionString, pmk.isolation, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+		pmk.partID, hashString, digestFunctionString, pmk.isolation, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
 	default:
 		return parseError(parts)
+	}
+
+	// For AC entries, we created a synthetic hash when we convert the key to
+	// the bytes, and therefore the original hash of the digest is lost.
+	if pmk.CacheType() == rspb.CacheType_CAS {
+		pmk.hash = hashString
+	} else if pmk.CacheType() == rspb.CacheType_AC {
+		pmk.syntheticHash = hashString
+		pmk.syntheticHashVersion = Version5
 	}
 
 	// Parse hash type string back into a digestFunction enum.
@@ -430,9 +488,36 @@ func (pmk *PebbleKey) parseVersion5(parts [][]byte) error {
 	}
 	pmk.digestFunction = repb.DigestFunction_Value(intDigestFunction)
 	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	return nil
+}
 
-	slash := []byte{filepath.Separator}
-	pmk.fullKey = bytes.Join(parts, slash)
+func (pmk *PebbleKey) parseVersion6(parts [][]byte) error {
+	digestFunctionString := ""
+	hashString := ""
+	switch len(parts) {
+	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/1/cas/v5",
+	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/9/ac/v5",
+	case 5:
+		pmk.partID, hashString, digestFunctionString, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
+	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/EK123/v5",
+	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/EK123/v5",
+	case 6:
+		pmk.partID, hashString, digestFunctionString, pmk.isolation, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+	default:
+		return parseError(parts)
+	}
+
+	pmk.syntheticHash = hashString
+	pmk.syntheticHashVersion = Version6
+
+	// Parse hash type string back into a digestFunction enum.
+	intDigestFunction, err := strconv.Atoi(digestFunctionString)
+	if err != nil || intDigestFunction == 0 {
+		// It is an error for a v5 key to have a 0 digestFunction value.
+		return parseError(parts)
+	}
+	pmk.digestFunction = repb.DigestFunction_Value(intDigestFunction)
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
 	return nil
 }
 
@@ -475,6 +560,8 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 		return Version4, pmk.parseVersion4(parts)
 	case Version5:
 		return Version5, pmk.parseVersion5(parts)
+	case Version6:
+		return Version6, pmk.parseVersion6(parts)
 	default:
 		return -1, status.InvalidArgumentErrorf("Unable to parse %q to pebble key", in)
 	}
