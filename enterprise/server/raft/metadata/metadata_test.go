@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
@@ -42,15 +43,9 @@ var (
 	userMap = testauth.TestUsers("user1", "group1", "user2", "group2")
 )
 
-func getTestEnv(t *testing.T) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(userMap)
-	te.SetAuthenticator(ta)
-	return te
-}
-
 type testConfig struct {
 	env    *testenv.TestEnv
+	ta     *testauth.TestAuthenticator
 	config *metadata.Config
 }
 
@@ -58,9 +53,11 @@ func getTestConfigs(t *testing.T, n int) []testConfig {
 	res := make([]testConfig, 0, n)
 	for i := 0; i < n; i++ {
 		c := testConfig{
-			env:    getTestEnv(t),
+			ta:     testauth.NewTestAuthenticator(userMap),
+			env:    testenv.GetTestEnv(t),
 			config: getCacheConfig(t),
 		}
+		c.env.SetAuthenticator(c.ta)
 		res = append(res, c)
 	}
 	return res
@@ -186,7 +183,7 @@ func startNodes(t *testing.T, configs []testConfig) []*metadata.Server {
 
 var filestorer = filestore.New()
 
-func randomFileMetadata(t testing.TB, sizeBytes int64) *sgpb.FileMetadata {
+func randomFileMetadata(t testing.TB, sizeBytes int64, groupID string) *sgpb.FileMetadata {
 	t.Helper()
 
 	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
@@ -204,7 +201,7 @@ func randomFileMetadata(t testing.TB, sizeBytes int64) *sgpb.FileMetadata {
 				CacheType:          rn.GetCacheType(),
 				RemoteInstanceName: rn.GetInstanceName(),
 				PartitionId:        "default",
-				GroupId:            interfaces.AuthAnonymousUser,
+				GroupId:            groupID,
 			},
 			Digest:         rn.GetDigest(),
 			DigestFunction: rn.GetDigestFunction(),
@@ -232,38 +229,83 @@ func TestGetAndSet(t *testing.T) {
 	caches := startNodes(t, configs)
 	rc1 := caches[0]
 
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env.GetAuthenticator())
+	ta := configs[0].ta
+	ctxUser1, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+	ctxUser2, err := ta.WithAuthenticatedUser(context.Background(), "user2")
 	require.NoError(t, err)
 
 	for i := 0; i < 10; i++ {
-		md := randomFileMetadata(t, 100)
+		md := randomFileMetadata(t, 100, "group1")
 
 		// Should be able to Set a record.
-		_, err := rc1.Set(ctx, &mdpb.SetRequest{
+		_, err := rc1.Set(ctxUser1, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{
 				FileMetadata: md,
 			}},
 		})
 		require.NoError(t, err, i)
 
-		// Should be able to fetch the record just set.
-		getRsp, err := rc1.Get(ctx, &mdpb.GetRequest{
+		// User 1 should be able to fetch the record just set.
+		getRsp, err := rc1.Get(ctxUser1, &mdpb.GetRequest{
 			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
 		})
 		require.NoError(t, err, i)
 		require.Equal(t, 1, len(getRsp.GetFileMetadatas()))
 		assert.True(t, proto.Equal(md, getRsp.GetFileMetadatas()[0]))
 
-		// Should be able to lookup (check existance) of the record.
-		findRsp, err := rc1.Find(ctx, &mdpb.FindRequest{
+		// User2 should not be able to fetch the record just set.
+		_, err = rc1.Get(ctxUser2, &mdpb.GetRequest{
+			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
+		})
+		require.Error(t, err)
+		require.True(t, status.IsUnauthenticatedError(err), "is unauthenticated")
+
+		// User 2 should not be able to fetch User 1's record even when setting to
+		// its own group id.
+		fr2 := md.GetFileRecord().CloneVT()
+		fr2.GetIsolation().GroupId = "group2"
+		getRsp, err = rc1.Get(ctxUser2, &mdpb.GetRequest{
+			FileRecords: []*sgpb.FileRecord{fr2},
+		})
+		require.NoError(t, err)
+		require.Equal(t, 1, len(getRsp.GetFileMetadatas()))
+		require.Nil(t, nil, getRsp.GetFileMetadatas()[0])
+
+		// User 1 should be able to lookup (check existance) of the record.
+		findRsp, err := rc1.Find(ctxUser1, &mdpb.FindRequest{
 			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
 		})
 		require.NoError(t, err, i)
 		require.Equal(t, 1, len(findRsp.GetFindResponses()))
 		assert.True(t, findRsp.GetFindResponses()[0].GetPresent())
 
-		// Should be able to delete the record.
-		_, err = rc1.Delete(ctx, &mdpb.DeleteRequest{
+		// User 2 should not be able to lookup (check existance) of the record.
+		_, err = rc1.Find(ctxUser2, &mdpb.FindRequest{
+			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
+		})
+		require.Error(t, err)
+		require.True(t, status.IsUnauthenticatedError(err), "is unauthenticated")
+
+		// User 2 should be able to check existance; but should not find it.
+		findRsp, err = rc1.Find(ctxUser2, &mdpb.FindRequest{
+			FileRecords: []*sgpb.FileRecord{fr2},
+		})
+		require.NoError(t, err, i)
+		require.Equal(t, 1, len(findRsp.GetFindResponses()))
+		assert.False(t, findRsp.GetFindResponses()[0].GetPresent())
+
+		// User 2 should not be able to delete the record.
+		_, err = rc1.Delete(ctxUser2, &mdpb.DeleteRequest{
+			DeleteOperations: []*mdpb.DeleteRequest_DeleteOperation{{
+				FileRecord: md.GetFileRecord(),
+			}},
+		})
+		require.Error(t, err)
+		require.True(t, status.IsUnauthenticatedError(err), "is unauthenticated")
+
+		// User 1 should be able to delete the record.
+		_, err = rc1.Delete(ctxUser1, &mdpb.DeleteRequest{
 			DeleteOperations: []*mdpb.DeleteRequest_DeleteOperation{{
 				FileRecord: md.GetFileRecord(),
 			}},
@@ -271,7 +313,7 @@ func TestGetAndSet(t *testing.T) {
 		require.NoError(t, err, i)
 
 		// Record should no longer be found.
-		findRsp, err = rc1.Find(ctx, &mdpb.FindRequest{
+		findRsp, err = rc1.Find(ctxUser1, &mdpb.FindRequest{
 			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
 		})
 		require.NoError(t, err, i)
@@ -296,7 +338,7 @@ func TestCacheShutdown(t *testing.T) {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 
-		md := randomFileMetadata(t, 100)
+		md := randomFileMetadata(t, 100, interfaces.AuthAnonymousUser)
 		_, err := rc1.Set(ctx, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{
 				FileMetadata: md,
@@ -312,7 +354,7 @@ func TestCacheShutdown(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
-		md := randomFileMetadata(t, 100)
+		md := randomFileMetadata(t, 100, interfaces.AuthAnonymousUser)
 		_, err := rc2.Set(ctx, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{
 				FileMetadata: md,
@@ -345,7 +387,7 @@ func TestDistributedRanges(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		rc := caches[rand.Intn(len(caches))]
 
-		md := randomFileMetadata(t, 100)
+		md := randomFileMetadata(t, 100, interfaces.AuthAnonymousUser)
 		_, err := rc.Set(ctx, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{
 				FileMetadata: md,
@@ -385,7 +427,7 @@ func TestFindMissingMetadata(t *testing.T) {
 	recordsWritten := make([]*sgpb.FileRecord, 0)
 	setReq := &mdpb.SetRequest{}
 	for i := 0; i < 10; i++ {
-		md := randomFileMetadata(t, 100)
+		md := randomFileMetadata(t, 100, interfaces.AuthAnonymousUser)
 		setReq.SetOperations = append(setReq.SetOperations, &mdpb.SetRequest_SetOperation{
 			FileMetadata: md,
 		})
@@ -401,7 +443,7 @@ func TestFindMissingMetadata(t *testing.T) {
 	// Look for some additional records which have not been written to the
 	// metadata server. They should not be found.
 	for i := 0; i < 5; i++ {
-		md := randomFileMetadata(t, 100)
+		md := randomFileMetadata(t, 100, interfaces.AuthAnonymousUser)
 		recordsToLookFor = append(recordsToLookFor, md.GetFileRecord())
 	}
 
@@ -460,7 +502,7 @@ func TestLRU(t *testing.T) {
 	lastUsed := make(map[*sgpb.FileRecord]time.Time, numDigests)
 	resourceKeys := make([]*sgpb.FileRecord, 0)
 	for i := 0; i < numDigests; i++ {
-		md := randomFileMetadata(t, digestSize)
+		md := randomFileMetadata(t, digestSize, interfaces.AuthAnonymousUser)
 		_, err := rc1.Set(ctx, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{
 				FileMetadata: md,
@@ -497,7 +539,7 @@ func TestLRU(t *testing.T) {
 
 	// Write more data
 	for i := 0; i < quartile; i++ {
-		md := randomFileMetadata(t, digestSize)
+		md := randomFileMetadata(t, digestSize, interfaces.AuthAnonymousUser)
 		_, err := rc1.Set(ctx, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{
 				FileMetadata: md,
