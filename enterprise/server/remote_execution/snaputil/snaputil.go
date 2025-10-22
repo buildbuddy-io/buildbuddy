@@ -64,7 +64,6 @@ const (
 	ChunkSourceRemoteCache
 )
 
-// Values for platform.RemoteSnapshotSavePolicyPropertyName:
 const (
 	// Every run will save a remote snapshot.
 	AlwaysSaveRemoteSnapshot = "always"
@@ -186,14 +185,14 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 // if remote snapshot sharing is enabled.
 //
 // Returns the number of bytes written to the remote cache (including short-circuited or failed uploads).
-func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string, fileTypeLabel string) (int64, error) {
+func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, shouldCacheRemotely bool, shouldCacheLocally bool, d *repb.Digest, remoteInstanceName string, path string, fileTypeLabel string) (int64, error) {
 	if !*EnableLocalSnapshotSharing && !*EnableRemoteSnapshotSharing {
 		return 0, status.UnimplementedError("Snapshot sharing not enabled")
 	}
 
-	if *EnableLocalSnapshotSharing {
+	if *EnableLocalSnapshotSharing && shouldCacheLocally {
 		localCacheErr := cacheLocally(ctx, localCache, d, path)
-		if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled {
+		if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !shouldCacheRemotely {
 			return 0, localCacheErr
 		}
 	}
@@ -226,7 +225,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 
 // CacheBytes saves bytes to the cache.
 // It does this by writing the bytes to a temporary file in tmpDir.
-func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, b []byte, fileTypeLabel string) error {
+func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, shouldCacheRemotely bool, shouldCacheLocally bool, d *repb.Digest, remoteInstanceName string, b []byte, fileTypeLabel string) error {
 	// Write temp file containing bytes
 	randStr, err := random.RandomString(10)
 	if err != nil {
@@ -242,7 +241,7 @@ func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 		}
 	}()
 
-	_, err = Cache(ctx, localCache, bsClient, remoteEnabled, d, remoteInstanceName, tmpPath, fileTypeLabel)
+	_, err = Cache(ctx, localCache, bsClient, shouldCacheRemotely, shouldCacheLocally, d, remoteInstanceName, tmpPath, fileTypeLabel)
 	return err
 }
 

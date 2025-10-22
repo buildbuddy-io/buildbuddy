@@ -1937,22 +1937,6 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	}
 	plat := taskProto.PlatformOverrides
 
-	// Note: this "skip-resaving-action-snapshots" experiment uses "treatment"
-	// and "control" as the values rather than the variant names, since we
-	// didn't have the Details methods at the time which allow retrieving the
-	// variant name. Going forward, we can store "treatment" / "control" as the
-	// variant name and set the platform property values as the flag value.
-	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", expOptions...)
-	if strings.EqualFold(skipResavingGroup, "treatment") {
-		plat.Properties = append(plat.Properties, &repb.Platform_Property{
-			Name:  platform.SkipResavingActionSnapshotsPropertyName,
-			Value: "true",
-		})
-	}
-	if skipResavingGroup != "" {
-		taskProto.Experiments = append(taskProto.Experiments, "skip-resaving-action-snapshots:"+skipResavingGroup)
-	}
-
 	persistentVolumes, details := fp.StringDetails(ctx, "remote_execution.persistent_volumes", "", expOptions...)
 	if persistentVolumes != "" {
 		plat.Properties = append(plat.Properties, &repb.Platform_Property{
