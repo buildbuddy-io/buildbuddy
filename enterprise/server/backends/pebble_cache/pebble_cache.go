@@ -627,6 +627,10 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := os.RemoveAll(tmpFileDir); err != nil {
 				log.Warningf("Error cleaning up tmp file storage %s: %v", tmpFileDir, err)
 			}
+			if err := disk.EnsureDirectoryExists(tmpFileDir); err != nil {
+				log.Warningf("Error creating tmp file storage %s: %v", tmpFileDir, err)
+				return nil, err
+			}
 		}
 		fileStorer = filestore.New(filestoreOpts...)
 	}
