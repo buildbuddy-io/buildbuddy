@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
@@ -66,7 +67,8 @@ func setupCgroups() (string, error) {
 	}
 
 	// Create the executor cgroup and move the executor process to it.
-	executorCgroupPath := filepath.Join(cgroup.RootPath, startingCgroup, executorCgroupName)
+	executorCgroup := filepath.Join(startingCgroup, executorCgroupName)
+	executorCgroupPath := filepath.Join(cgroup.RootPath, executorCgroup)
 	if err := os.MkdirAll(executorCgroupPath, 0755); err != nil {
 		return "", fmt.Errorf("create executor cgroup %s: %w", executorCgroupPath, err)
 	}
@@ -85,11 +87,14 @@ func setupCgroups() (string, error) {
 	}
 
 	// Create the cgroup for action execution.
-	taskCgroupPath := filepath.Join(cgroup.RootPath, startingCgroup, taskCgroupName)
+	taskCgroup := filepath.Join(startingCgroup, taskCgroupName)
+	taskCgroupPath := filepath.Join(cgroup.RootPath, taskCgroup)
 	if err := os.MkdirAll(taskCgroupPath, 0755); err != nil {
 		return "", fmt.Errorf("create task cgroup %s: %w", taskCgroupPath, err)
 	}
 	log.Infof("Set up task cgroup at %s", taskCgroupPath)
+
+	registerChildCgroupPrometheusMetrics(executorCgroup, taskCgroup)
 
 	// Enable the same controllers for the child cgroups that were enabled
 	// for the starting cgroup.
@@ -149,4 +154,55 @@ func cleanupFUSEMounts() {
 
 func cleanBuildRoot(ctx context.Context, buildRoot string) error {
 	return disk.CleanDirectory(ctx, buildRoot)
+}
+
+func registerChildCgroupPrometheusMetrics(executorCgroup, taskCgroup string) error {
+	collector := newCgroupMemCollector([]string{
+		executorCgroup,
+		taskCgroup,
+	})
+	return prometheus.Register(collector)
+}
+
+type cgroupMemCollector struct {
+	desc *prometheus.Desc
+	// cgroup v2 names (paths relative to cgroup root)
+	cgroups []string
+}
+
+func newCgroupMemCollector(cgroups []string) *cgroupMemCollector {
+	return &cgroupMemCollector{
+		desc: prometheus.NewDesc(
+			"buildbuddy_remote_execution_cgroup_memory_current_bytes",
+			"Memory usage from the cgroup2 memory.current file, split by child cgroup",
+			[]string{"cgroup"},
+			nil,
+		),
+		cgroups: cgroups,
+	}
+}
+
+func (c *cgroupMemCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.desc
+}
+
+func (c *cgroupMemCollector) Collect(ch chan<- prometheus.Metric) {
+	for _, cg := range c.cgroups {
+		value, err := cgroup.ReadMemoryCurrent(filepath.Join(cgroup.RootPath, cg))
+		if err != nil {
+			log.Warningf("Failed to read memory.current for cgroup %q: %s", cg, err)
+			continue
+		}
+		m, err := prometheus.NewConstMetric(
+			c.desc,
+			prometheus.GaugeValue,
+			float64(value),
+			filepath.Base(cg), // "cgroup" label value
+		)
+		if err != nil {
+			log.Errorf("Create const metric: %s", err)
+			continue
+		}
+		ch <- m
+	}
 }
