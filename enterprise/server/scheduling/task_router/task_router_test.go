@@ -533,14 +533,26 @@ func TestTaskRouter_PersistentWorkerRouterEnabled(t *testing.T) {
 	requireNotAlwaysRanked(0, nodes[0].GetExecutorHostId(), t, router, ctx, cmd, instanceName)
 
 	// Mark node 0 as having executed a task with the persistent worker key.
-	router.MarkSucceeded(ctx, nil, cmd, instanceName, nodes[0].GetExecutorHostId())
+	// Do this twice, to indicate that there are 2 pooled runners now available.
+	for range 2 {
+		router.MarkSucceeded(ctx, nil, cmd, instanceName, nodes[0].GetExecutorHostId())
+	}
+	// Also mark node 0 as having executed a *failed* task with the persistent
+	// worker key. We should add yet another history entry, since (e.g.) with
+	// JVM actions, the JVM worker will still be warm/useful after it compiles
+	// something with bad syntax etc.
+	router.MarkFailed(ctx, nil, cmd, instanceName, nodes[0].GetExecutorHostId())
 
-	// Node 0 should now be ranked first.
-	ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
-	require.Equal(t, nodes[0].GetExecutorHostId(), ranked[0].GetExecutionNode().GetExecutorHostId())
+	// At this point we now assume that there are 3 persistent worker runners
+	// pooled on node 0. Call RankNodes 3 times, once for each pooled runner.
+	// Node 0 should be ranked first each time.
+	for range 3 {
+		ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
+		require.Equal(t, nodes[0].GetExecutorHostId(), ranked[0].GetExecutionNode().GetExecutorHostId())
+	}
 
-	// Since node 0 is now presumed to be executing the task, it no longer
-	// should be ranked first.
+	// Since all 3 runners on node 0 are now presumed to be busy, node 0 should
+	// no longer be ranked first.
 	requireNotAlwaysRanked(0, nodes[0].GetExecutorHostId(), t, router, ctx, cmd, instanceName)
 
 	// Mark the task executed by the first 10 nodes.
@@ -555,7 +567,7 @@ func TestTaskRouter_PersistentWorkerRouterEnabled(t *testing.T) {
 		expectedPreferredNodes = append(expectedPreferredNodes, nodes[i].GetExecutorHostId())
 	}
 	slices.Reverse(expectedPreferredNodes)
-	ranked = router.RankNodes(ctx, nil, cmd, instanceName, nodes)
+	ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
 	for i := 0; i < 10; i++ {
 		require.Equal(t, expectedPreferredNodes[i], ranked[i].GetExecutionNode().GetExecutorHostId())
 	}
