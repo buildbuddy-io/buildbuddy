@@ -49,6 +49,7 @@ var (
 	minEvictionAge                     = flag.Duration("cache.raft.min_eviction_age", 6*time.Hour, "Don't evict anything unless it's been idle for at least this long")
 	samplerIterRefreshPeriod           = flag.Duration("cache.raft.sampler_iter_refresh_peroid", 5*time.Minute, "How often we refresh iterator in sampler")
 	evictionBatchSize                  = flag.Int("cache.raft.eviction_batch_size", 100, "Buffer this many writes before delete")
+	numDeleteWorkers                   = flag.Int("cache.raft.num_delete_worker", 4, "Number of deletes in parallel")
 )
 
 const (
@@ -132,6 +133,7 @@ type partitionUsage struct {
 	minEvictionAge           time.Duration
 	localSizeUpdatePeriod    time.Duration
 	evictionBatchSize        int
+	numDeleteWorkers         int
 }
 
 func (pu *partitionUsage) LocalSizeBytes() int64 {
@@ -195,87 +197,92 @@ func (pu *partitionUsage) partitionKeyPrefix() string {
 	return filestore.PartitionDirectoryPrefix + pu.part.ID
 }
 
-func (pu *partitionUsage) processEviction(ctx context.Context) {
-	var keys []*sender.KeyMeta
-	timer := time.NewTimer(evictFlushPeriod)
-	defer timer.Stop()
-
-	flush := func() {
-		if len(keys) == 0 {
-			return
-		}
-		rsps, err := pu.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
-			batch := rbuilder.NewBatchBuilder()
-			for _, k := range keys {
-				sample, ok := k.Meta.(*approxlru.Sample[*evictionKey])
-				if !ok {
-					return nil, status.InternalError("meta not type of approxlru.Sample[*evictionKey]")
-				}
-				batch.Add(&rfpb.DeleteRequest{
-					Key:        k.Key,
-					MatchAtime: sample.Timestamp.UnixMicro(),
-				})
+func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender.KeyMeta) {
+	if len(keys) == 0 {
+		return
+	}
+	rsps, err := pu.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+		batch := rbuilder.NewBatchBuilder()
+		for _, k := range keys {
+			sample, ok := k.Meta.(*approxlru.Sample[*evictionKey])
+			if !ok {
+				return nil, status.InternalError("meta not type of approxlru.Sample[*evictionKey]")
 			}
-			batchCmd, err := batch.ToProto()
-			if err != nil {
-				return nil, status.WrapError(err, "could not construct delete req proto")
-			}
-			rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
-				Header: h,
-				Batch:  batchCmd,
+			batch.Add(&rfpb.DeleteRequest{
+				Key:        k.Key,
+				MatchAtime: sample.Timestamp.UnixMicro(),
 			})
-			if err != nil {
-				return nil, err
-			}
-			res := make([]*approxlru.Sample[*evictionKey], 0)
-			batchRsp := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
-			errCount := 0
-			for i, k := range keys {
-				_, err := batchRsp.DeleteResponse(i)
-				if err == nil {
-					res = append(res, k.Meta.(*approxlru.Sample[*evictionKey]))
-				} else {
-					errCount++
-				}
-			}
-			if errCount > 0 {
-				return res, status.InternalErrorf("failed to evict %d keys in partition %s", errCount, pu.part.ID)
-
-			}
-			return res, nil
+		}
+		batchCmd, err := batch.ToProto()
+		if err != nil {
+			return nil, status.WrapError(err, "could not construct delete req proto")
+		}
+		rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+			Header: h,
+			Batch:  batchCmd,
 		})
 		if err != nil {
-			metrics.RaftEvictionErrorCount.Inc()
-			log.Warning(err.Error())
+			return nil, err
 		}
-
-		for _, rsp := range rsps {
-			res, ok := rsp.([]*approxlru.Sample[*evictionKey])
-			if !ok {
-				alert.UnexpectedEvent("raft_unexpected_delete_rsp", "response not type of approxlru.Sample[*evictionKey]")
+		res := make([]*approxlru.Sample[*evictionKey], 0)
+		batchRsp := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
+		errCount := 0
+		for i, k := range keys {
+			_, err := batchRsp.DeleteResponse(i)
+			if err == nil {
+				res = append(res, k.Meta.(*approxlru.Sample[*evictionKey]))
+			} else {
+				errCount++
 			}
-			pu.updateEvictionMetrics(res)
 		}
+		if errCount > 0 {
+			return res, status.InternalErrorf("failed to evict %d keys in partition %s", errCount, pu.part.ID, err)
 
-		keys = nil
-		timer.Reset(evictFlushPeriod)
+		}
+		return res, nil
+	})
+	if err != nil {
+		metrics.RaftEvictionErrorCount.Inc()
+		log.Warning(err.Error())
 	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case sampleToDelete := <-pu.deletes:
-			keys = append(keys, &sender.KeyMeta{
-				Key:  sampleToDelete.Key.bytes,
-				Meta: sampleToDelete,
-			})
-			if len(keys) >= pu.evictionBatchSize {
-				flush()
-			}
-		case <-timer.C:
-			flush()
+	for _, rsp := range rsps {
+		res, ok := rsp.([]*approxlru.Sample[*evictionKey])
+		if !ok {
+			alert.UnexpectedEvent("raft_unexpected_delete_rsp", "response not type of approxlru.Sample[*evictionKey]")
 		}
+		pu.updateEvictionMetrics(res)
+	}
+}
+
+func (pu *partitionUsage) processEviction(ctx context.Context) {
+	eg := &errgroup.Group{}
+	for i := 0; i < pu.numDeleteWorkers; i++ {
+		eg.Go(func() error {
+			timer := time.NewTimer(evictFlushPeriod)
+			defer timer.Stop()
+			var keys []*sender.KeyMeta
+			flush := func() {
+				pu.sendDeleteRequests(ctx, keys)
+				keys = nil
+				timer.Reset(evictFlushPeriod)
+			}
+			for {
+				select {
+				case <-ctx.Done():
+					return nil
+				case sampleToDelete := <-pu.deletes:
+					keys = append(keys, &sender.KeyMeta{
+						Key:  sampleToDelete.Key.bytes,
+						Meta: sampleToDelete,
+					})
+					if len(keys) >= pu.evictionBatchSize {
+						flush()
+					}
+				case <-timer.C:
+					flush()
+				}
+			}
+		})
 	}
 }
 
@@ -510,6 +517,7 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 			minEvictionAge:           *minEvictionAge,
 			localSizeUpdatePeriod:    *localSizeUpdatePeriod,
 			evictionBatchSize:        *evictionBatchSize,
+			numDeleteWorkers:         *numDeleteWorkers,
 		}
 		ut.byPartition[p.ID] = u
 		metricLbls := prometheus.Labels{
