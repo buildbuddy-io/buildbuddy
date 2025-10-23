@@ -52,7 +52,13 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.model !== prevProps.model) {
+    const invocationIdChanged = this.props.model.getInvocationId() !== prevProps.model.getInvocationId();
+    const invocationStatusChanged =
+      this.props.model.invocation.invocationStatus !== prevProps.model.invocation.invocationStatus;
+
+    if (invocationIdChanged || invocationStatusChanged) {
+      clearTimeout(this.timeoutRef);
+      this.timeoutRef = undefined;
       this.fetchExecution();
     }
   }
