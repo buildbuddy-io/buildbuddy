@@ -3,6 +3,7 @@ package task_router
 import (
 	"context"
 	"flag"
+	"fmt"
 	"math/rand"
 	"sort"
 	"strings"
@@ -79,9 +80,9 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 	// Define the available routing strategies (note: strategies earlier in the
 	// list have higher precedence)
 	strategies := []Router{
-		ciRunnerRouter{},
+		&ciRunnerRouter{rdb: rdb},
 		&persistentWorkerRouter{env: env, rdb: rdb},
-		affinityRouter{},
+		&affinityRouter{rdb: rdb},
 	}
 	return &taskRouter{
 		env:        env,
@@ -221,21 +222,10 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 			break
 		}
 
-		var preferredHostIDs []string
-		if strategy, ok := strategy.(PreferredHostIDGetter); ok {
-			h, err := strategy.GetPreferredHostIDs(ctx, routingKey)
-			if err != nil {
-				log.Errorf("Failed to rank nodes: failed to get preferred host IDs: %s", err)
-				return nodesAsRanked(nodes)
-			}
-			preferredHostIDs = h
-		} else {
-			h, err := tr.rdb.LRange(ctx, routingKey, 0, -1).Result()
-			if err != nil {
-				log.Errorf("Failed to rank nodes: redis LRANGE failed: %s", err)
-				return nodesAsRanked(nodes)
-			}
-			preferredHostIDs = h
+		preferredHostIDs, err := strategy.GetPreferredHostIDs(ctx, routingKey)
+		if err != nil {
+			log.Errorf("Failed to rank nodes: failed to get preferred host IDs: %s", err)
+			return nodesAsRanked(nodes)
 		}
 
 		log.Debugf("Preferred executor host IDs for %q: %v", routingKey, preferredHostIDs)
@@ -294,20 +284,9 @@ func (tr *taskRouter) MarkSucceeded(ctx context.Context, action *repb.Action, cm
 	// Routing keys are ranked in order of priority. We only update the
 	// routing table for the highest priority key.
 	routingKey := routingKeys[0]
-
-	pipe := tr.rdb.TxPipeline()
-	// Push the node to the head of the list (but first remove it if already
-	// present to avoid dupes), trim to max length to prevent it from growing
-	// too large, and renew the TTL.
-	pipe.LRem(ctx, routingKey, 1, executorHostID)
-	pipe.LPush(ctx, routingKey, executorHostID)
-	pipe.LTrim(ctx, routingKey, 0, int64(preferredNodeLimit)-1)
-	pipe.Expire(ctx, routingKey, routingPropsKeyTTL)
-	if _, err := pipe.Exec(ctx); err != nil {
-		log.Errorf("Failed to mark task complete: redis pipeline failed: %s", err)
-		return
+	if err := strategy.UpdatePreferredHostIDs(ctx, true /*=succeeded*/, preferredNodeLimit, routingKey, executorHostID); err != nil {
+		log.Errorf("Failed to mark task complete: update preferred host IDs: %s", err)
 	}
-
 	log.Debugf("Preferred executor host ID %q added to %q", executorHostID, routingKey)
 }
 
@@ -319,18 +298,19 @@ func (tr *taskRouter) MarkFailed(ctx context.Context, action *repb.Action, cmd *
 	if strategy == nil {
 		return
 	}
-	_, routingKeys, err := strategy.RoutingInfo(params)
+	preferredNodeLimit, routingKeys, err := strategy.RoutingInfo(params)
 	if err != nil {
 		log.CtxErrorf(ctx, "Failed to compute routing info: %s", err)
 		return
 	}
-	for _, routingKey := range routingKeys {
-		// Note: -1 means remove all occurrences.
-		if res := tr.rdb.LRem(ctx, routingKey, -1, executorHostID); res.Err() != nil {
-			log.CtxErrorf(ctx, "Error removing task routing state from redis: %s", res.Err())
-		} else {
-			log.CtxDebugf(ctx, "Removed %s from routing key %s", executorHostID, routingKey)
-		}
+	if len(routingKeys) == 0 {
+		return
+	}
+	routingKey := routingKeys[0]
+	if err := strategy.UpdatePreferredHostIDs(ctx, false /*=succeeded*/, preferredNodeLimit, routingKey, executorHostID); err != nil {
+		log.CtxErrorf(ctx, "Error removing task routing state from redis: %s", err)
+	} else {
+		log.CtxDebugf(ctx, "Removed %s from routing key %s", executorHostID, routingKey)
 	}
 }
 
@@ -387,29 +367,53 @@ type Router interface {
 	// are sorted in order of most preferred to least preferred. That order
 	// should be preserved when ranking nodes.
 	RoutingInfo(params routingParams) (int, []string, error)
-}
 
-// Hook that allows overriding the redis read for getting the preferred host
-// IDs.
-type PreferredHostIDGetter interface {
+	// Returns the preferred executor host IDs for the given routing key.
 	GetPreferredHostIDs(ctx context.Context, key string) ([]string, error)
+
+	// Updates the preferred executor host IDs for the given routing key.
+	UpdatePreferredHostIDs(ctx context.Context, taskSucceeded bool, preferredNodeLimit int, key, hostID string) error
 }
 
 // The ciRunnerRouter routes ci_runner tasks according to git branch
 // information.
-type ciRunnerRouter struct{}
+type ciRunnerRouter struct {
+	rdb redis.UniversalClient
+}
 
-func (ciRunnerRouter) Applies(_ context.Context, params routingParams) bool {
+func (*ciRunnerRouter) Applies(_ context.Context, params routingParams) bool {
 	// TODO: pass parsed platform into routingParams and avoid manual parsing
 	// here.
 	return platform.IsCICommand(params.cmd, params.platform) && platform.IsTrue(platform.FindValue(params.platform, "recycle-runner"))
 }
 
-func (ciRunnerRouter) preferredNodeLimit(_ routingParams) int {
+func (c *ciRunnerRouter) GetPreferredHostIDs(ctx context.Context, routingKey string) ([]string, error) {
+	return c.rdb.LRange(ctx, routingKey, 0, -1).Result()
+}
+
+func (c *ciRunnerRouter) UpdatePreferredHostIDs(ctx context.Context, taskSucceeded bool, preferredNodeLimit int, routingKey, executorHostID string) error {
+	pipe := c.rdb.TxPipeline()
+	if taskSucceeded {
+		// Push the node to the head of the list (but first remove it if already
+		// present to avoid dupes), trim to max length to prevent it from growing
+		// too large, and renew the TTL.
+		pipe.LRem(ctx, routingKey, 1, executorHostID)
+		pipe.LPush(ctx, routingKey, executorHostID)
+		pipe.LTrim(ctx, routingKey, 0, int64(preferredNodeLimit)-1)
+	} else {
+		// Note: -1 means remove all occurrences.
+		pipe.LRem(ctx, routingKey, -1, executorHostID).Err()
+	}
+	pipe.Expire(ctx, routingKey, routingPropsKeyTTL)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func (*ciRunnerRouter) preferredNodeLimit(_ routingParams) int {
 	return ciRunnerPreferredNodeLimit
 }
 
-func (ciRunnerRouter) routingKeys(params routingParams) ([]string, error) {
+func (*ciRunnerRouter) routingKeys(params routingParams) ([]string, error) {
 	parts := []string{"task_route", params.groupID}
 	keys := make([]string, 0)
 
@@ -448,7 +452,7 @@ func (ciRunnerRouter) routingKeys(params routingParams) ([]string, error) {
 	return keys, nil
 }
 
-func (s ciRunnerRouter) RoutingInfo(params routingParams) (int, []string, error) {
+func (s *ciRunnerRouter) RoutingInfo(params routingParams) (int, []string, error) {
 	nodeLimit := s.preferredNodeLimit(params)
 	keys, err := s.routingKeys(params)
 	return nodeLimit, keys, err
@@ -466,17 +470,19 @@ func (s ciRunnerRouter) RoutingInfo(params routingParams) (int, []string, error)
 // whose inputs have changed to nodes which previously executed that action to
 // increase the local-cache hitrate, as it's likely that for large actions most
 // of the input tree is unchanged.
-type affinityRouter struct{}
+type affinityRouter struct {
+	rdb redis.UniversalClient
+}
 
-func (affinityRouter) Applies(_ context.Context, params routingParams) bool {
+func (*affinityRouter) Applies(_ context.Context, params routingParams) bool {
 	return *affinityRoutingEnabled && getFirstOutput(params.cmd) != ""
 }
 
-func (affinityRouter) preferredNodeLimit(_ routingParams) int {
+func (*affinityRouter) preferredNodeLimit(_ routingParams) int {
 	return defaultPreferredNodeLimit
 }
 
-func (affinityRouter) routingKey(params routingParams) (string, error) {
+func (*affinityRouter) routingKey(params routingParams) (string, error) {
 	parts := []string{"task_route", params.groupID}
 
 	if params.remoteInstanceName != "" {
@@ -502,10 +508,32 @@ func (affinityRouter) routingKey(params routingParams) (string, error) {
 	return strings.Join(parts, "/"), nil
 }
 
-func (s affinityRouter) RoutingInfo(params routingParams) (int, []string, error) {
+func (s *affinityRouter) RoutingInfo(params routingParams) (int, []string, error) {
 	nodeLimit := s.preferredNodeLimit(params)
 	key, err := s.routingKey(params)
 	return nodeLimit, []string{key}, err
+}
+
+func (s *affinityRouter) GetPreferredHostIDs(ctx context.Context, routingKey string) ([]string, error) {
+	return s.rdb.LRange(ctx, routingKey, 0, -1).Result()
+}
+
+func (s *affinityRouter) UpdatePreferredHostIDs(ctx context.Context, taskSucceeded bool, preferredNodeLimit int, routingKey, executorHostID string) error {
+	pipe := s.rdb.TxPipeline()
+	if taskSucceeded {
+		// Push the node to the head of the list (but first remove it if already
+		// present to avoid dupes), trim to max length to prevent it from growing
+		// too large, and renew the TTL.
+		pipe.LRem(ctx, routingKey, 1, executorHostID)
+		pipe.LPush(ctx, routingKey, executorHostID)
+		pipe.LTrim(ctx, routingKey, 0, int64(preferredNodeLimit)-1)
+	} else {
+		// Note: -1 means remove all occurrences.
+		pipe.LRem(ctx, routingKey, -1, executorHostID).Err()
+	}
+	pipe.Expire(ctx, routingKey, routingPropsKeyTTL)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func getFirstOutput(cmd *repb.Command) string {
@@ -583,9 +611,6 @@ func (h *persistentWorkerRouter) routingKeys(params routingParams) ([]string, er
 	return []string{key}, nil
 }
 
-// Compile-time assertion that [*persistentWorkerRouter] implements [PreferredHostIDGetter]
-var _ PreferredHostIDGetter = (*persistentWorkerRouter)(nil)
-
 // GetPreferredHostIDs overrides the routing key query to also pop from the list
 // in addition to just reading from it. This models the fact that the first
 // returned node is most likely to be the one that receives the task, and that
@@ -603,4 +628,26 @@ func (h *persistentWorkerRouter) GetPreferredHostIDs(ctx context.Context, key st
 	}
 	preferredHostIDs := lrangeCmd.Val()
 	return preferredHostIDs, nil
+}
+
+func (h *persistentWorkerRouter) UpdatePreferredHostIDs(ctx context.Context, taskSucceeded bool, preferredNodeLimit int, routingKey, executorHostID string) error {
+	// Note: we intentionally ignore the 'succeeded' bit and always just add
+	// the executor back to the history list. If a JVM build action fails,
+	// it's usually due to something like bad syntax / missing imports. The
+	// JVM should still be warm in this case, and it's still good to reuse.
+	// Note that if the runner crashed completely, the executor would have
+	// thrown it away. This is acceptable - we'll just create a new runner in
+	// that case.
+
+	pipe := h.rdb.TxPipeline()
+	// Note: executor host IDs can appear in the list more than once.
+	// This is intentional - each host ID occurrence roughly represents a
+	// separate pooled runner on the executor.
+	pipe.LPush(ctx, routingKey, executorHostID)
+	pipe.LTrim(ctx, routingKey, 0, int64(preferredNodeLimit)-1)
+	pipe.Expire(ctx, routingKey, routingPropsKeyTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("exec pipeline: %w", err)
+	}
+	return nil
 }
