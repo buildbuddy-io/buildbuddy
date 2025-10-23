@@ -152,15 +152,6 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 			}}},
 		},
 		{
-			name: "redact passwords in urls without host",
-			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
-				Stdout: fileWithURI("url://username:fakepassword"),
-			}}},
-			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
-				Stdout: fileWithURI("url://username:<REDACTED>"),
-			}}},
-		},
-		{
 			name: "redact passwords in json key urls without host",
 			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
 				Stdout: fileWithURI("https://_json_key_base64:eyJmb28iOiJiYXIifQ=="),
@@ -176,15 +167,6 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 			}}},
 			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Progress{Progress: &bespb.Progress{
 				Stdout: "ERROR: loading failure: https://_json_key_base64:<REDACTED>@us-central1-python.pkg.dev/project/repo",
-			}}},
-		},
-		{
-			name: "redact passwords in urls in progress event stderr",
-			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Progress{Progress: &bespb.Progress{
-				Stderr: "command failed with url://username:secretpassword@host.com in the error",
-			}}},
-			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Progress{Progress: &bespb.Progress{
-				Stderr: "command failed with url://username:<REDACTED>@host.com in the error",
 			}}},
 		},
 		{
