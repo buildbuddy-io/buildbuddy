@@ -187,6 +187,15 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 				Stderr: "command failed with url://username:<REDACTED>@host.com in the error",
 			}}},
 		},
+		{
+			name: "redact passwords in inline byte files",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stderr: fileWithInlineBytes("https://username:supersecret@host.invalid/resource"),
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stderr: fileWithInlineBytes("https://username:<REDACTED>@host.invalid/resource"),
+			}}},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			redactor := redact.NewStreamingRedactor(te)
@@ -375,6 +384,13 @@ func fileWithURI(uri string) *bespb.File {
 	return &bespb.File{
 		Name: "foo.txt",
 		File: &bespb.File_Uri{Uri: uri},
+	}
+}
+
+func fileWithInlineBytes(contents string) *bespb.File {
+	return &bespb.File{
+		Name: "foo.txt",
+		File: &bespb.File_Contents{Contents: []byte(contents)},
 	}
 }
 
