@@ -94,7 +94,7 @@ func setupCgroups() (string, error) {
 	}
 	log.Infof("Set up task cgroup at %s", taskCgroupPath)
 
-	registerChildCgroupPrometheusMetrics(executorCgroup, taskCgroup)
+	prometheus.Register(newCgroupMemCollector(executorCgroup, taskCgroup))
 
 	// Enable the same controllers for the child cgroups that were enabled
 	// for the starting cgroup.
@@ -156,21 +156,13 @@ func cleanBuildRoot(ctx context.Context, buildRoot string) error {
 	return disk.CleanDirectory(ctx, buildRoot)
 }
 
-func registerChildCgroupPrometheusMetrics(executorCgroup, taskCgroup string) error {
-	collector := newCgroupMemCollector([]string{
-		executorCgroup,
-		taskCgroup,
-	})
-	return prometheus.Register(collector)
-}
-
 type cgroupMemCollector struct {
 	desc *prometheus.Desc
 	// cgroup v2 names (paths relative to cgroup root)
 	cgroups []string
 }
 
-func newCgroupMemCollector(cgroups []string) *cgroupMemCollector {
+func newCgroupMemCollector(cgroups ...string) *cgroupMemCollector {
 	return &cgroupMemCollector{
 		desc: prometheus.NewDesc(
 			"buildbuddy_remote_execution_cgroup_memory_current_bytes",
