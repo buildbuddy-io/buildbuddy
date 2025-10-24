@@ -3148,7 +3148,6 @@ func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, load
 		ReadPolicy:        platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName),
 	})
 	return err == nil
-
 }
 
 // hasFallbackKeys reports whether there are fallback snapshot keys.
