@@ -322,6 +322,10 @@ func redactEnvVarsBytes(b []byte) []byte {
 	return result
 }
 
+// redactEnvVarToken redacts a single command-line token if it encodes one of the
+// Bazel env flag assignments (e.g. --test_env=KEY=value). It relies on the
+// shared parser so that command-line tokens and raw text redaction stay
+// consistent, even for multiline or quoted values.
 func redactEnvVarToken(token string) string {
 	option, envName, quote, closingQuote, ok := parseEnvAssignmentToken(token)
 	if !ok {
@@ -330,6 +334,10 @@ func redactEnvVarToken(token string) string {
 	return buildRedactedEnvVar(option, envName, quote, closingQuote)
 }
 
+// redactEnvVarBytes scans a byte buffer starting at an env flag assignment and
+// returns the fully redacted replacement along with the number of bytes
+// consumed. This lets the text redactor reuse the same logic as the token
+// redactor while iterating over arbitrary strings.
 func redactEnvVarBytes(b []byte) (string, int) {
 	option, envName, quote, closingQuote, consumed, ok := parseEnvAssignmentBytes(b)
 	if !ok {
@@ -338,15 +346,19 @@ func redactEnvVarBytes(b []byte) (string, int) {
 	return buildRedactedEnvVar(option, envName, quote, closingQuote), consumed
 }
 
+// parseEnvAssignmentBytes normalizes byte-slice input into the shared string
+// parser. Go strings are byte-indexed, so the character offsets returned by the
+// parser align with the original byte slice and can be used safely by callers.
 func parseEnvAssignmentBytes(b []byte) (option string, envName string, quote byte, closingQuote bool, consumed int, ok bool) {
 	if len(b) == 0 {
 		return "", "", 0, false, 0, false
 	}
-	// Converting to string keeps the parsing logic in one place. Go strings are byte-indexed, so the consumed offset
-	// we return still lines up with the original byte slice.
 	return parseEnvAssignment(string(b))
 }
 
+// buildRedactedEnvVar reassembles the redacted form of an env assignment,
+// preserving any opening quote (and closing quote if present) so the rendered
+// command line still resembles what Bazel would emit.
 func buildRedactedEnvVar(option, envName string, quote byte, closingQuote bool) string {
 	if quote != 0 {
 		result := option + envVarSeparator + string(quote) + envName + envVarSeparator + redactedPlaceholder
@@ -358,11 +370,21 @@ func buildRedactedEnvVar(option, envName string, quote byte, closingQuote bool) 
 	return option + envVarSeparator + envName + envVarSeparator + redactedPlaceholder
 }
 
+// parseEnvAssignmentToken parses a single command-line token containing a Bazel
+// env assignment and returns the pieces needed for redaction. It wraps the
+// shared parser to keep both token and text code paths in sync.
 func parseEnvAssignmentToken(token string) (option string, envName string, quote byte, closingQuote bool, ok bool) {
 	option, envName, quote, closingQuote, _, ok = parseEnvAssignment(token)
 	return option, envName, quote, closingQuote, ok
 }
 
+// parseEnvAssignment extracts the option prefix (e.g. --test_env), env
+// variable name, and any surrounding quotes from a string representation of a
+// Bazel env assignment. It returns enough metadata for callers to both redact
+// values and faithfully reconstruct the original quoting. The function was
+// introduced so that both command-line token redaction and raw byte redaction
+// share exactly the same parsing logic, eliminating subtle inconsistencies that
+// previously leaked multiline secrets.
 func parseEnvAssignment(s string) (option string, envName string, quote byte, closingQuote bool, consumed int, ok bool) {
 	if !strings.HasPrefix(s, envVarPrefix) {
 		return "", "", 0, false, 0, false
