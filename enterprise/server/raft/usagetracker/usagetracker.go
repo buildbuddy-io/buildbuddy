@@ -30,6 +30,7 @@ import (
 	"github.com/hashicorp/serf/serf"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
@@ -228,7 +229,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 		batchRsp := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
 		errCount := 0
 		for i, k := range keys {
-			_, err := batchRsp.DeleteResponse(i)
+			_, err = batchRsp.DeleteResponse(i)
 			if err == nil {
 				res = append(res, k.Meta.(*approxlru.Sample[*evictionKey]))
 			} else {
@@ -236,8 +237,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 			}
 		}
 		if errCount > 0 {
-			return res, status.InternalErrorf("failed to evict %d keys in partition %s", errCount, pu.part.ID, err)
-
+			return res, status.InternalErrorf("failed to evict %d keys in partition %s, last error: %s", errCount, pu.part.ID, err)
 		}
 		return res, nil
 	})
@@ -255,35 +255,43 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 }
 
 func (pu *partitionUsage) processEviction(ctx context.Context) {
-	eg := &errgroup.Group{}
-	for i := 0; i < pu.numDeleteWorkers; i++ {
-		eg.Go(func() error {
-			timer := time.NewTimer(evictFlushPeriod)
-			defer timer.Stop()
-			var keys []*sender.KeyMeta
-			flush := func() {
-				pu.sendDeleteRequests(ctx, keys)
-				keys = nil
-				timer.Reset(evictFlushPeriod)
-			}
-			for {
-				select {
-				case <-ctx.Done():
-					return nil
-				case sampleToDelete := <-pu.deletes:
-					keys = append(keys, &sender.KeyMeta{
-						Key:  sampleToDelete.Key.bytes,
-						Meta: sampleToDelete,
-					})
-					if len(keys) >= pu.evictionBatchSize {
-						flush()
-					}
-				case <-timer.C:
-					flush()
+	batches := make(chan []*sender.KeyMeta, 1)
+	go func() {
+		defer close(batches)
+		var batch []*sender.KeyMeta
+		timer := time.NewTimer(evictFlushPeriod)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case sampleToDelete := <-pu.deletes:
+				batch = append(batch, &sender.KeyMeta{
+					Key:  sampleToDelete.Key.bytes,
+					Meta: sampleToDelete,
+				})
+				if len(batch) >= pu.evictionBatchSize {
+					batches <- batch
+					batch = nil
+					timer.Reset(evictFlushPeriod)
 				}
+			case <-timer.C:
+				batches <- batch
+				batch = nil
 			}
-		})
-	}
+		}
+	}()
+	sem := semaphore.NewWeighted(int64(pu.numDeleteWorkers))
+	go func() {
+		for batch := range batches {
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return
+			}
+			go func() {
+				defer sem.Release(1)
+				pu.sendDeleteRequests(ctx, batch)
+			}()
+		}
+	}()
 }
 
 func (pu *partitionUsage) startSampleGenerator(ctx context.Context) {
