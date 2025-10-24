@@ -308,7 +308,8 @@ func redactEnvVarsBytes(b []byte) []byte {
 
 		redacted, consumed := redactEnvVarBytes(b[start:])
 		if consumed == 0 {
-			// Could not parse a full env var assignment; emit the prefix as-is and continue.
+			// Could not parse a full env var assignment (likely malformed input); emit the prefix
+			// as-is and continue scanning after it.
 			result = append(result, b[start:prefixEnd]...)
 			offset = prefixEnd
 			continue
@@ -322,51 +323,42 @@ func redactEnvVarsBytes(b []byte) []byte {
 }
 
 func redactEnvVarToken(token string) string {
-	if !strings.HasPrefix(token, envVarPrefix) {
+	option, envName, quote, consumed, ok := parseEnvAssignmentBytes([]byte(token))
+	if !ok || consumed != len(token) {
 		return token
 	}
-
-	option, rest := splitCombinedForm(token)
-	if option == token {
-		return token
-	}
-
-	optionName := strings.TrimPrefix(option, envVarPrefix)
-	if !isEnvVarOptionName(optionName) {
-		return token
-	}
-
-	redacted, ok := buildRedactedEnvVar(option, rest)
-	if !ok {
-		return token
-	}
-
-	return redacted
+	return buildRedactedEnvVar(option, envName, quote)
 }
 
 func redactEnvVarBytes(b []byte) (string, int) {
-	if len(b) == 0 {
+	option, envName, quote, consumed, ok := parseEnvAssignmentBytes(b)
+	if !ok {
 		return "", 0
 	}
+	return buildRedactedEnvVar(option, envName, quote), consumed
+}
 
-	// Locate the option name (e.g. --test_env)
+func parseEnvAssignmentBytes(b []byte) (option string, envName string, quote byte, consumed int, ok bool) {
+	if len(b) == 0 {
+		return "", "", 0, 0, false
+	}
+
 	eqIdx := bytes.IndexByte(b, '=')
 	if eqIdx < 0 {
-		return "", 0
+		return "", "", 0, 0, false
 	}
 
-	option := string(b[:eqIdx])
+	option = string(b[:eqIdx])
 	optionName := strings.TrimPrefix(option, envVarPrefix)
 	if !isEnvVarOptionName(optionName) {
-		return "", 0
+		return "", "", 0, 0, false
 	}
 
 	pos := eqIdx + 1
 	if pos >= len(b) {
-		return "", 0
+		return "", "", 0, 0, false
 	}
 
-	quote := byte(0)
 	if b[pos] == '\'' || b[pos] == '"' {
 		quote = b[pos]
 		pos++
@@ -379,26 +371,22 @@ func redactEnvVarBytes(b []byte) (string, int) {
 			break
 		}
 		if quote == 0 && isWhitespaceByte(c) {
-			return "", 0
+			return "", "", 0, 0, false
 		}
 		if quote != 0 && c == quote {
-			return "", 0
+			return "", "", 0, 0, false
 		}
 		pos++
 	}
 
-	if pos >= len(b) {
-		return "", 0
+	if pos >= len(b) || pos == keyStart {
+		return "", "", 0, 0, false
 	}
 
-	envName := string(b[keyStart:pos])
-	if envName == "" {
-		return "", 0
-	}
-
+	envName = string(b[keyStart:pos])
 	pos++ // skip '='
 	if pos > len(b) {
-		return "", 0
+		return "", "", 0, 0, false
 	}
 
 	if quote != 0 {
@@ -407,45 +395,23 @@ func redactEnvVarBytes(b []byte) (string, int) {
 			valueEnd++
 		}
 		if valueEnd >= len(b) {
-			return "", 0
+			return "", "", 0, 0, false
 		}
-		redacted := option + "=" + string(quote) + envName + "=" + redactedPlaceholder + string(quote)
-		return redacted, valueEnd + 1
+		return option, envName, quote, valueEnd + 1, true
 	}
 
 	valueEnd := pos
 	for valueEnd < len(b) && !isWhitespaceByte(b[valueEnd]) {
 		valueEnd++
 	}
-
-	redacted := option + "=" + envName + "=" + redactedPlaceholder
-	return redacted, valueEnd
+	return option, envName, 0, valueEnd, true
 }
 
-func buildRedactedEnvVar(option, rest string) (string, bool) {
-	if rest == "" {
-		return "", false
-	}
-
-	quote := byte(0)
-	if rest[0] == '\'' || rest[0] == '"' {
-		quote = rest[0]
-		if len(rest) < 2 || rest[len(rest)-1] != rest[0] {
-			return "", false
-		}
-		rest = rest[1 : len(rest)-1]
-	}
-
-	parts := strings.SplitN(rest, envVarSeparator, 2)
-	if len(parts) < 2 || parts[0] == "" {
-		return "", false
-	}
-
+func buildRedactedEnvVar(option, envName string, quote byte) string {
 	if quote != 0 {
-		return option + envVarSeparator + string(quote) + parts[0] + envVarSeparator + redactedPlaceholder + string(quote), true
+		return option + envVarSeparator + string(quote) + envName + envVarSeparator + redactedPlaceholder + string(quote)
 	}
-
-	return option + envVarSeparator + parts[0] + envVarSeparator + redactedPlaceholder, true
+	return option + envVarSeparator + envName + envVarSeparator + redactedPlaceholder
 }
 
 func isEnvVarOptionName(name string) bool {
