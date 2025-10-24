@@ -801,7 +801,7 @@ func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord
 	fileName := filepath.Join(fileDir, string(file))
 	tmpFileName := fileName
 	if fs.tmpDir != "" {
-		tmpFileName = filepath.Join(fs.tmpDir, string(file))
+		tmpFileName = filepath.Join(fs.tmpDir, filepath.Base(string(file)))
 	}
 	wc, err := disk.FileWriterWithTmpFilename(ctx, tmpFileName, fileName)
 	if err != nil {

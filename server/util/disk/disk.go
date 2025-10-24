@@ -349,11 +349,6 @@ func FileWriterWithTmpFilename(ctx context.Context, tmpFileName, fullPath string
 	if err := EnsureDirectoryExists(filepath.Dir(fullPath)); err != nil {
 		return nil, err
 	}
-	if tmpFileName != fullPath {
-		if err := EnsureDirectoryExists(filepath.Dir(tmpFileName)); err != nil {
-			return nil, err
-		}
-	}
 	randStr, err := random.RandomString(10)
 	if err != nil {
 		return nil, err
