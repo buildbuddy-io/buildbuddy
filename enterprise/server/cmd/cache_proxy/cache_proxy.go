@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
@@ -52,10 +54,11 @@ import (
 )
 
 var (
-	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
-	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	sslPort        = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
-	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
+	listen          = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	port            = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
+	sslPort         = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
+	monitoringPort  = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
+	httpProxyTarget = flag.String("http_proxy_target", "", "The HTTP target to forward unknown HTTP requests to.")
 
 	serverType = flag.String("server_type", "cache-proxy", "The server type to match on health checks")
 
@@ -134,6 +137,19 @@ func main() {
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 	env.GetMux().Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	env.GetMux().Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
+
+	if *httpProxyTarget != "" {
+		httpProxyUrl, err := url.Parse(*httpProxyTarget)
+		if err != nil {
+			log.Fatalf("Could not parse http proxy url: %v", err)
+		}
+		proxy := httputil.NewSingleHostReverseProxy(httpProxyUrl)
+
+		// Fallback to forward any unmatched HTTP routes to the proxy target.
+		env.GetMux().Handle("/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			proxy.ServeHTTP(w, req)
+		}))
+	}
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
