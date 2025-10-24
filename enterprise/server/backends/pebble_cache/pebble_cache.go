@@ -2625,6 +2625,7 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 
 func (e *partitionEvictor) startSampleGenerator(quitChan chan struct{}) {
 	e.generateSamplesForEviction(quitChan)
+	close(e.samples)
 }
 
 func (e *partitionEvictor) processEviction(quitChan chan struct{}) {

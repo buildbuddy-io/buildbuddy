@@ -281,6 +281,7 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 
 func (pu *partitionUsage) startSampleGenerator(ctx context.Context) {
 	pu.generateSamplesForEviction(ctx)
+	close(pu.samples)
 }
 
 var digestRunes = []rune("abcdef1234567890")
