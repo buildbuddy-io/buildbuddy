@@ -9,10 +9,12 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/batch_operator",
+        "//enterprise/server/routing/migration_operators",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

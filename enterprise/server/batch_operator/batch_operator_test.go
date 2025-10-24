@@ -657,7 +657,7 @@ func TestImmediateOperator(t *testing.T) {
 		return nil
 	}
 
-	operator, _ := batch_operator.NewImmediateDigestOperator(env, "el-barto", testOp, time.Second)
+	operator := batch_operator.NewImmediateDigestOperator(authenticator, "el-barto", testOp, time.Second)
 
 	// No auth, no updates
 	ctx := t.Context()
