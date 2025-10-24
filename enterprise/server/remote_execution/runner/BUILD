@@ -45,6 +45,7 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/uuid",
+        "@com_github_docker_go_units//:go-units",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_x_sync//errgroup",
