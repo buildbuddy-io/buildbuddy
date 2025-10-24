@@ -671,11 +671,11 @@ func TestRedactTxt(t *testing.T) {
 		},
 		{
 			name: "multiline environment variable - single quoted private key",
-			txt: "--test_env='SNOWFLAKE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n" +
+			txt: "--test_env='PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n" +
 				"abc123def456ghi789jkl012mno345pqr678stu901vwx234yz\n" +
 				"fooBarBazQuxMultiLineSecretValue123456789ABCDEFGH\n" +
 				"-----END PRIVATE KEY-----' --test_env='OTHER_VAR=safe_value'",
-			expected: "--test_env=SNOWFLAKE_PRIVATE_KEY=<REDACTED> --test_env=OTHER_VAR=<REDACTED>",
+			expected: "--test_env=PRIVATE_KEY=<REDACTED> --test_env=OTHER_VAR=<REDACTED>",
 		},
 		{
 			name: "multiline environment variable - double quoted certificate",
