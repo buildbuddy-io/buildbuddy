@@ -304,28 +304,33 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 	start := time.Now()
 	defer func() {
 		// Discard nonsensical PSI full-stall durations which are greater
-		// than the execution duration.
+		// than the execution duration by a significant amount.
 		// See https://bugzilla.kernel.org/show_bug.cgi?id=219194
-		// TL;DR: very rarely, the total stall duration is reported as a number
-		// which is much larger than the actual execution duration, and is
-		// sometimes exactly equal to UINT32_MAX nanoseconds, which is
-		// suspicious and suggests there is a bug in the way this number is
-		// reported.
+		// TL;DR: very rarely, a kernel bug causes UINT32_MAX to be reported
+		// instead of the actual value.
 		// Also, skip recycling in this case, because the nonsensical result
 		// will persist across tasks.
 		runDuration := time.Since(start)
 		stats := res.UsageStats
-		if cpuStallDuration := time.Duration(stats.GetCpuPressure().GetFull().GetTotal()) * time.Microsecond; cpuStallDuration > runDuration {
+		const psiCheckDurationThreshold = 1 * time.Second
+		// TODO(bduffany): remove this durationThreshold. This is needed because
+		// we technically track stats for slightly longer than the execution
+		// stage, because we reset the stats baseline relative to the last
+		// measurement, not the current value at the start of the execution. We
+		// should fix TrackExecution to take an initial baseline measurement
+		// instead, but need to fix some container implementations to support
+		// it. Podman in particular runs into a deadlock if we try to do this.
+		if cpuStallDuration := time.Duration(stats.GetCpuPressure().GetFull().GetTotal()) * time.Microsecond; cpuStallDuration > runDuration && cpuStallDuration > psiCheckDurationThreshold {
 			log.CtxWarningf(ctx, "Discarding CPU PSI stats: full-stall duration %s exceeds execution duration %s", cpuStallDuration, runDuration)
 			stats.CpuPressure = nil
 			res.DoNotRecycle = true
 		}
-		if memStallDuration := time.Duration(stats.GetMemoryPressure().GetFull().GetTotal()) * time.Microsecond; memStallDuration > runDuration {
+		if memStallDuration := time.Duration(stats.GetMemoryPressure().GetFull().GetTotal()) * time.Microsecond; memStallDuration > runDuration && memStallDuration > psiCheckDurationThreshold {
 			log.CtxWarningf(ctx, "Discarding memory PSI stats: full-stall duration %s exceeds execution duration %s", memStallDuration, runDuration)
 			stats.MemoryPressure = nil
 			res.DoNotRecycle = true
 		}
-		if ioStallDuration := time.Duration(stats.GetIoPressure().GetFull().GetTotal()) * time.Microsecond; ioStallDuration > runDuration {
+		if ioStallDuration := time.Duration(stats.GetIoPressure().GetFull().GetTotal()) * time.Microsecond; ioStallDuration > runDuration && ioStallDuration > psiCheckDurationThreshold {
 			log.CtxWarningf(ctx, "Discarding IO PSI stats: full-stall duration %s exceeds execution duration %s", ioStallDuration, runDuration)
 			stats.IoPressure = nil
 			res.DoNotRecycle = true
