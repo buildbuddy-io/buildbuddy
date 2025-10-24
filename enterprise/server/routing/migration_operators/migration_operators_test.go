@@ -3,12 +3,15 @@ package migration_operators_test
 import (
 	"context"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/batch_operator"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/migration_operators"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/stretchr/testify/require"
@@ -221,10 +224,12 @@ func (m *mockBatchOperator) EnqueueByResourceName(ctx context.Context, rn *diges
 }
 
 type mockCASClient struct {
-	missingBlobs       []*repb.Digest
-	err                error
-	lastCtx            context.Context // Capture context for verification
-	forceWrongSizeData bool            // Force generation of wrong-sized data for testing
+	missingBlobs           []*repb.Digest
+	err                    error
+	lastCtx                context.Context               // Capture context for verification
+	forceWrongSizeData     bool                          // Force generation of wrong-sized data for testing
+	lastBatchReadRequest   *repb.BatchReadBlobsRequest   // Capture last BatchReadBlobs request for verification
+	lastBatchUpdateRequest *repb.BatchUpdateBlobsRequest // Capture last BatchUpdateBlobs request for verification
 }
 
 func (m *mockCASClient) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest, opts ...grpc.CallOption) (*repb.FindMissingBlobsResponse, error) {
@@ -239,6 +244,7 @@ func (m *mockCASClient) FindMissingBlobs(ctx context.Context, req *repb.FindMiss
 
 func (m *mockCASClient) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest, opts ...grpc.CallOption) (*repb.BatchUpdateBlobsResponse, error) {
 	m.lastCtx = ctx
+	m.lastBatchUpdateRequest = req
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -258,6 +264,7 @@ func (m *mockCASClient) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpd
 
 func (m *mockCASClient) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest, opts ...grpc.CallOption) (*repb.BatchReadBlobsResponse, error) {
 	m.lastCtx = ctx
+	m.lastBatchReadRequest = req
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -364,13 +371,21 @@ func digestProto(hash string, sizeBytes int64) *repb.Digest {
 func verifyUsageTrackingDisabled(t *testing.T, ctx context.Context) {
 	md, ok := metadata.FromOutgoingContext(ctx)
 	if !ok {
-		// In test environments, DisableUsageTracking may not add metadata due to origin checks
-		// but the function should still have been called with a wrapped context
-		return
+		t.Error("Failed to read headers from context")
 	}
 	skipValues := md.Get(usageutil.SkipUsageTrackingHeaderName)
 	require.Len(t, skipValues, 1, "Expected usage tracking to be disabled, but no header was set.")
-	require.Equal(t, usageutil.SkipUsageTrackingEnabledValue, skipValues[0], "Unexpected skip-tracking header value.")
+	require.Equal(t, "1", skipValues[0], "Unexpected skip-tracking header value.")
+}
+
+func TestMain(m *testing.M) {
+	// Set values for usage tracking disablement so that it behaves properly.
+	flagutil.SetValueForFlagName("grpc_client_origin_header", "internal", nil, false)
+	usageutil.SetServerName(interfaces.ClientIdentityCacheProxy)
+
+	code := m.Run()
+
+	os.Exit(code)
 }
 
 func TestByteStreamCopy_Success(t *testing.T) {
@@ -904,6 +919,20 @@ func TestCASBatchCopy_Success(t *testing.T) {
 	// Verify usage tracking is disabled
 	verifyUsageTrackingDisabled(t, casSecondary.lastCtx)
 	verifyUsageTrackingDisabled(t, casPrimary.lastCtx)
+
+	// Verify that the appropriate digests were sent in the batchupdateblobs call to the secondary
+	require.NotNil(t, casSecondary.lastBatchUpdateRequest)
+	require.Equal(t, "test-instance", casSecondary.lastBatchUpdateRequest.InstanceName)
+	require.Equal(t, repb.DigestFunction_SHA256, casSecondary.lastBatchUpdateRequest.DigestFunction)
+	require.Len(t, casSecondary.lastBatchUpdateRequest.Requests, 2)
+
+	// Extract digests from the update requests
+	updateDigests := make([]*repb.Digest, len(casSecondary.lastBatchUpdateRequest.Requests))
+	for i, req := range casSecondary.lastBatchUpdateRequest.Requests {
+		updateDigests[i] = req.Digest
+	}
+	require.Contains(t, updateDigests, digest1)
+	require.Contains(t, updateDigests, digest2)
 }
 
 func TestCASBatchCopy_NothingMissing(t *testing.T) {
@@ -926,6 +955,7 @@ func TestCASBatchCopy_NothingMissing(t *testing.T) {
 	}
 
 	err := migration_operators.CASBatchCopy(ctx, router, "test-group", batch)
+	// The mocks are set up such that no errors here indicates no batches were flushed.
 	require.NoError(t, err)
 }
 
@@ -993,6 +1023,14 @@ func TestCASBatchReadAndVerify_Success(t *testing.T) {
 
 	// Verify usage tracking is disabled
 	verifyUsageTrackingDisabled(t, casSecondary.lastCtx)
+
+	// Verify that the appropriate digests were read in the batchreadblobs call to the secondary
+	require.NotNil(t, casSecondary.lastBatchReadRequest)
+	require.Equal(t, "test-instance", casSecondary.lastBatchReadRequest.InstanceName)
+	require.Equal(t, repb.DigestFunction_SHA256, casSecondary.lastBatchReadRequest.DigestFunction)
+	require.Len(t, casSecondary.lastBatchReadRequest.Digests, 2)
+	require.Contains(t, casSecondary.lastBatchReadRequest.Digests, digest1)
+	require.Contains(t, casSecondary.lastBatchReadRequest.Digests, digest2)
 }
 
 func TestCASBatchReadAndVerify_SizeMismatch(t *testing.T) {
@@ -1117,6 +1155,8 @@ func TestRoutedCopy_OnlySmallDigests(t *testing.T) {
 	// Verify CAS operator was called with both digests
 	require.Len(t, casCopy.enqueueCalls, 1)
 	require.Len(t, casCopy.enqueueCalls[0].digests, 2)
+	require.Equal(t, smallDigest1, casCopy.enqueueCalls[0].digests[0])
+	require.Equal(t, smallDigest2, casCopy.enqueueCalls[0].digests[1])
 
 	// Verify ByteStream operator was not called
 	require.Len(t, bytestreamCopy.enqueueCalls, 0)
@@ -1146,6 +1186,8 @@ func TestRoutedCopy_OnlyLargeDigests(t *testing.T) {
 	// Verify ByteStream operator was called with both digests
 	require.Len(t, bytestreamCopy.enqueueCalls, 1)
 	require.Len(t, bytestreamCopy.enqueueCalls[0].digests, 2)
+	require.Equal(t, largeDigest1, bytestreamCopy.enqueueCalls[0].digests[0])
+	require.Equal(t, largeDigest2, bytestreamCopy.enqueueCalls[0].digests[1])
 }
 
 func TestRoutedCopy_CASEnqueueFailed(t *testing.T) {
@@ -1216,8 +1258,22 @@ func TestGetTreeMirrorOperator_Success(t *testing.T) {
 	require.Equal(t, repb.DigestFunction_SHA256, copyOperator.enqueueCalls[0].digestFunction)
 
 	// Should have discovered the files and directories from the mock GetTree response:
-	// file1.txt, file2.txt, and subdir *and* included the root digest.
+	// file1.txt, file2.txt, subdir, plus the root digest itself
 	require.Len(t, copyOperator.enqueueCalls[0].digests, 4)
+
+	// Validate the specific digests that should have been discovered
+	foundDigests := copyOperator.enqueueCalls[0].digests
+
+	// Create the expected digests from the mock GetTree response
+	expectedFile1Digest := digestProto(strings.Repeat("a", 64), 100)  // file1.txt
+	expectedFile2Digest := digestProto(strings.Repeat("b", 64), 200)  // file2.txt
+	expectedSubdirDigest := digestProto(strings.Repeat("c", 64), 300) // subdir
+
+	// Verify all expected digests are present (order may vary due to map iteration)
+	require.Contains(t, foundDigests, expectedFile1Digest)
+	require.Contains(t, foundDigests, expectedFile2Digest)
+	require.Contains(t, foundDigests, expectedSubdirDigest)
+	require.Contains(t, foundDigests, rootDigest) // The root digest should also be included
 }
 
 func TestGetTreeMirrorOperator_GetCASClientsError(t *testing.T) {
