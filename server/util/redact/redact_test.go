@@ -669,6 +669,36 @@ func TestRedactTxt(t *testing.T) {
 			expected: "common --repo_env=AWS_ACCESS_KEY_ID=<REDACTED> # gitleaks:allow\n" +
 				"common --repo_env=AWS_SECRET_ACCESS_KEY=<REDACTED> # gitleaks:allow",
 		},
+		{
+			name: "multiline environment variable - single quoted private key",
+			txt: "--test_env='SNOWFLAKE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n" +
+				"abc123def456ghi789jkl012mno345pqr678stu901vwx234yz\n" +
+				"fooBarBazQuxMultiLineSecretValue123456789ABCDEFGH\n" +
+				"-----END PRIVATE KEY-----' --test_env='OTHER_VAR=safe_value'",
+			expected: "--test_env=SNOWFLAKE_PRIVATE_KEY=<REDACTED> --test_env=OTHER_VAR=<REDACTED>",
+		},
+		{
+			name: "multiline environment variable - double quoted certificate",
+			txt: "--action_env=\"MY_CERT=-----BEGIN CERTIFICATE-----\n" +
+				"xYzAbC123dEfGhI456jKlMnO789pQrStU012vWxYz345AbCdE\n" +
+				"fakeMultiLineCertificateDataHereForTestingPurposesOnly\n" +
+				"-----END CERTIFICATE-----\" --action_env=\"NORMAL_VAR=test123\"",
+			expected: "--action_env=MY_CERT=<REDACTED> --action_env=NORMAL_VAR=<REDACTED>",
+		},
+		{
+			name: "multiline environment variable - single quoted with trailing comment",
+			txt: "--repo_env='PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n" +
+				"madeUpSecretKey999888777666555444333222111000ZZZYYY\n" +
+				"-----END PRIVATE KEY-----' # gitleaks:allow",
+			expected: "--repo_env=PRIVATE_KEY=<REDACTED> # gitleaks:allow",
+		},
+		{
+			name: "multiline environment variable - mixed with unquoted",
+			txt: "--test_env=SIMPLE_VAR=simple_value --test_env='MULTILINE_SECRET=line1\n" +
+				"line2\n" +
+				"line3' --action_env=ANOTHER_VAR=another_value",
+			expected: "--test_env=SIMPLE_VAR=<REDACTED> --test_env=MULTILINE_SECRET=<REDACTED> --action_env=ANOTHER_VAR=<REDACTED>",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			redacted := redact.RedactText(tc.txt)
