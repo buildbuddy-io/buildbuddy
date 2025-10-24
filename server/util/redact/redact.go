@@ -323,8 +323,8 @@ func redactEnvVarsBytes(b []byte) []byte {
 }
 
 func redactEnvVarToken(token string) string {
-	option, envName, quote, consumed, ok := parseEnvAssignmentBytes([]byte(token))
-	if !ok || consumed != len(token) {
+	option, envName, quote, ok := parseEnvAssignmentToken(token)
+	if !ok {
 		return token
 	}
 	return buildRedactedEnvVar(option, envName, quote)
@@ -412,6 +412,46 @@ func buildRedactedEnvVar(option, envName string, quote byte) string {
 		return option + envVarSeparator + string(quote) + envName + envVarSeparator + redactedPlaceholder + string(quote)
 	}
 	return option + envVarSeparator + envName + envVarSeparator + redactedPlaceholder
+}
+
+func parseEnvAssignmentToken(token string) (option string, envName string, quote byte, ok bool) {
+	if !strings.HasPrefix(token, envVarPrefix) {
+		return "", "", 0, false
+	}
+
+	eqIdx := strings.Index(token, envVarSeparator)
+	if eqIdx < 0 {
+		return "", "", 0, false
+	}
+
+	option = token[:eqIdx]
+	optionName := strings.TrimPrefix(option, envVarPrefix)
+	if !isEnvVarOptionName(optionName) {
+		return "", "", 0, false
+	}
+
+	rest := token[eqIdx+1:]
+	if len(rest) == 0 {
+		return "", "", 0, false
+	}
+
+	if rest[0] == '\'' || rest[0] == '"' {
+		quote = rest[0]
+		if len(rest) < 2 || rest[len(rest)-1] != quote {
+			// Treat as unquoted if there isn't a matching trailing quote.
+			quote = 0
+		} else {
+			rest = rest[1 : len(rest)-1]
+		}
+	}
+
+	nameValueSep := strings.Index(rest, envVarSeparator)
+	if nameValueSep <= 0 {
+		return "", "", 0, false
+	}
+
+	envName = rest[:nameValueSep]
+	return option, envName, quote, true
 }
 
 func isEnvVarOptionName(name string) bool {
