@@ -264,9 +264,6 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			for len(pu.deletes) > 0 {
-				<-pu.deletes
-			}
 			return
 		case sampleToDelete := <-pu.deletes:
 			keys = append(keys, &sender.KeyMeta{
@@ -284,11 +281,6 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 
 func (pu *partitionUsage) startSampleGenerator(ctx context.Context) {
 	pu.generateSamplesForEviction(ctx)
-	// Drain samples chan before exiting
-	for len(pu.samples) > 0 {
-		<-pu.samples
-	}
-	close(pu.samples)
 }
 
 var digestRunes = []rune("abcdef1234567890")
