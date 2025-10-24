@@ -2625,10 +2625,6 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 
 func (e *partitionEvictor) startSampleGenerator(quitChan chan struct{}) {
 	e.generateSamplesForEviction(quitChan)
-	// Drain samples chan before exiting
-	for len(e.samples) > 0 {
-		<-e.samples
-	}
 	close(e.samples)
 }
 
@@ -2647,9 +2643,6 @@ func (e *partitionEvictor) processEviction(quitChan chan struct{}) {
 		})
 	}
 	eg.Wait()
-	for len(e.deletes) > 0 {
-		<-e.deletes
-	}
 }
 
 func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) error {
