@@ -285,7 +285,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 		}
 		env.SetByteStreamClient(bs)
 
-		cas, err := routing_content_addressable_storage_client.New(env, noopRouter, noopRouter, noopRouter, noopRouter)
+		cas, err := routing_content_addressable_storage_client.New(env)
 		if err != nil {
 			log.Fatalf("Error initializing routing CAS client: %s", err.Error())
 		}

@@ -3,15 +3,22 @@ package routing_content_addressable_storage_client
 import (
 	"context"
 	"math/rand/v2"
+	"time"
 
 	"google.golang.org/grpc"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/batch_operator"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/migration_operators"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+)
+
+var (
+	casMigrationOpTimeout = flag.Duration("cache_proxy.migration.cas_timeout", 60*time.Second, "Timeout for CAS operations that happen during cache migrations.")
 )
 
 type RoutingCASClient struct {
@@ -23,21 +30,50 @@ type RoutingCASClient struct {
 	treeOp       batch_operator.DigestOperator
 }
 
-func New(
-	env environment.Env,
-	copyOp batch_operator.DigestOperator,
-	readOp batch_operator.DigestOperator,
-	readVerifyOp batch_operator.DigestOperator,
-	treeOp batch_operator.DigestOperator) (*RoutingCASClient, error) {
+func New(env environment.Env) (*RoutingCASClient, error) {
 
 	routingService := env.GetCacheRoutingService()
 	if routingService == nil {
 		return nil, status.FailedPreconditionError("No routing service configured.")
 	}
 
+	authenticator := env.GetAuthenticator()
+	if authenticator == nil {
+		return nil, status.FailedPreconditionError("An authenticator is required to route and migrate between caches.")
+	}
+
+	bytestreamCopyClosure := func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
+		return migration_operators.ByteStreamCopy(ctx, env.GetCacheRoutingService(), groupID, b)
+	}
+	bsCopyOp := batch_operator.NewImmediateDigestOperator(authenticator, "bytestream-copy", bytestreamCopyClosure, *casMigrationOpTimeout)
+
+	casCopyClosure := func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
+		return migration_operators.CASBatchCopy(ctx, env.GetCacheRoutingService(), groupID, b)
+	}
+	casCopyOp := batch_operator.NewImmediateDigestOperator(authenticator, "cas-copy", casCopyClosure, *casMigrationOpTimeout)
+
+	routedCopyClosure := func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
+		return migration_operators.RoutedCopy(ctx, groupID, casCopyOp, bsCopyOp, b)
+	}
+	routedCopyOp := batch_operator.NewImmediateDigestOperator(authenticator, "routed-copy", routedCopyClosure, *casMigrationOpTimeout)
+
+	casReadClosure := func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
+		return migration_operators.CASBatchReadAndVerify(ctx, env.GetCacheRoutingService(), false, groupID, b)
+	}
+	casReadAndVerifyClosure := func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
+		return migration_operators.CASBatchReadAndVerify(ctx, env.GetCacheRoutingService(), true, groupID, b)
+	}
+	treeMirrorClosure := func(ctx context.Context, groupID string, b *batch_operator.DigestBatch) error {
+		return migration_operators.GetTreeMirrorOperator(ctx, env.GetCacheRoutingService(), routedCopyOp, groupID, b)
+	}
+
+	readOp := batch_operator.NewImmediateDigestOperator(authenticator, "cas-read", casReadClosure, *casMigrationOpTimeout)
+	readVerifyOp := batch_operator.NewImmediateDigestOperator(authenticator, "cas-read-verify", casReadAndVerifyClosure, *casMigrationOpTimeout)
+	treeOp := batch_operator.NewImmediateDigestOperator(authenticator, "cas-tree-mirror", treeMirrorClosure, *casMigrationOpTimeout)
+
 	return &RoutingCASClient{
 		router:       routingService,
-		copyOp:       copyOp,
+		copyOp:       casCopyOp,
 		readOp:       readOp,
 		readVerifyOp: readVerifyOp,
 		treeOp:       treeOp,
