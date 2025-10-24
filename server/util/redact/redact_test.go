@@ -448,6 +448,28 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 		optionsParsed.ExplicitCmdLine)
 }
 
+func TestRedactMetadata_OptionsParsed_RedactsEnvVarWithWhitespace(t *testing.T) {
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	envWithWhitespace := "--test_env=PRIVATE_KEY_ENV_VAR=-----BEGIN PRIVATE KEY-----\nABCDEF\n-----END PRIVATE KEY-----"
+
+	optionsParsed := &bespb.OptionsParsed{
+		CmdLine: []string{
+			envWithWhitespace,
+		},
+		ExplicitCmdLine: []string{
+			envWithWhitespace,
+		},
+	}
+
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: optionsParsed},
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"--test_env=PRIVATE_KEY_ENV_VAR=<REDACTED>"}, optionsParsed.CmdLine)
+	require.Equal(t, []string{"--test_env=PRIVATE_KEY_ENV_VAR=<REDACTED>"}, optionsParsed.ExplicitCmdLine)
+}
+
 func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	buildMetadata := &bespb.BuildMetadata{
