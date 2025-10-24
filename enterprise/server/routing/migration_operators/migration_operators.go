@@ -43,6 +43,7 @@ func ByteStreamCopy(ctx context.Context, router interfaces.CacheRoutingService, 
 
 	for _, d := range res.MissingBlobDigests {
 		if d.SizeBytes == 0 {
+			log.CtxInfof(ctx, "Unexpected empty digest in Bytestream copy request: %s", d.GetHash())
 			continue
 		}
 		// TODO(jdhollen): This should be using compression, when available.
