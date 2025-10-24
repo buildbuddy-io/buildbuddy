@@ -50,6 +50,7 @@ const (
 var (
 	envVarOptionNames      = []string{"action_env", "client_env", "host_action_env", "repo_env", "test_env"}
 	envVarOptionNamesRegex *regexp.Regexp
+	envVarOptionNameSet    map[string]struct{}
 
 	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
@@ -110,7 +111,11 @@ func init() {
 	for i, n := range envVarOptionNames {
 		escaped[i] = regexp.QuoteMeta(n)
 	}
-	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(escaped, "|") + `)=\w+=)[^\s]*`)
+	envVarOptionNamesRegex = regexp.MustCompile(`--(?:` + strings.Join(escaped, "|") + `)=`)
+	envVarOptionNameSet = make(map[string]struct{}, len(envVarOptionNames))
+	for _, name := range envVarOptionNames {
+		envVarOptionNameSet[name] = struct{}{}
+	}
 }
 
 func stripURLSecrets(input string) string {
@@ -222,7 +227,7 @@ func stripExplicitCommandLineFromCmdLine(tokens []string) {
 
 func stripNonAllowedEnvVars(tokens []string) {
 	for i, token := range tokens {
-		tokens[i] = envVarOptionNamesRegex.ReplaceAllString(token, "${1}<REDACTED>")
+		tokens[i] = redactEnvVarToken(token)
 	}
 }
 
@@ -283,7 +288,186 @@ func redactEnvVars(txt string) string {
 }
 
 func redactEnvVarsBytes(b []byte) []byte {
-	return envVarOptionNamesRegex.ReplaceAll(b, []byte("${1}<REDACTED>"))
+	if len(b) == 0 {
+		return b
+	}
+
+	result := make([]byte, 0, len(b))
+	offset := 0
+
+	for offset < len(b) {
+		loc := envVarOptionNamesRegex.FindIndex(b[offset:])
+		if loc == nil {
+			result = append(result, b[offset:]...)
+			break
+		}
+
+		start := offset + loc[0]
+		prefixEnd := offset + loc[1]
+		result = append(result, b[offset:start]...)
+
+		redacted, consumed := redactEnvVarBytes(b[start:])
+		if consumed == 0 {
+			// Could not parse a full env var assignment (likely malformed input); emit the prefix
+			// as-is and continue scanning after it.
+			result = append(result, b[start:prefixEnd]...)
+			offset = prefixEnd
+			continue
+		}
+
+		result = append(result, []byte(redacted)...)
+		offset = start + consumed
+	}
+
+	return result
+}
+
+// redactEnvVarToken redacts a single command-line token if it encodes one of the
+// Bazel env flag assignments (e.g. --test_env=KEY=value). It relies on the
+// shared parser so that command-line tokens and raw text redaction stay
+// consistent, even for multiline or quoted values.
+func redactEnvVarToken(token string) string {
+	option, envName, quote, closingQuote, ok := parseEnvAssignmentToken(token)
+	if !ok {
+		return token
+	}
+	return buildRedactedEnvVar(option, envName, quote, closingQuote)
+}
+
+// redactEnvVarBytes scans a byte buffer starting at an env flag assignment and
+// returns the fully redacted replacement along with the number of bytes
+// consumed. This lets the text redactor reuse the same logic as the token
+// redactor while iterating over arbitrary strings.
+func redactEnvVarBytes(b []byte) (string, int) {
+	option, envName, quote, closingQuote, consumed, ok := parseEnvAssignmentBytes(b)
+	if !ok {
+		return "", 0
+	}
+	return buildRedactedEnvVar(option, envName, quote, closingQuote), consumed
+}
+
+// parseEnvAssignmentBytes normalizes byte-slice input into the shared string
+// parser. Go strings are byte-indexed, so the character offsets returned by the
+// parser align with the original byte slice and can be used safely by callers.
+func parseEnvAssignmentBytes(b []byte) (option string, envName string, quote byte, closingQuote bool, consumed int, ok bool) {
+	if len(b) == 0 {
+		return "", "", 0, false, 0, false
+	}
+	return parseEnvAssignment(string(b))
+}
+
+// buildRedactedEnvVar reassembles the redacted form of an env assignment,
+// preserving any opening quote (and closing quote if present) so the rendered
+// command line still resembles what Bazel would emit.
+func buildRedactedEnvVar(option, envName string, quote byte, closingQuote bool) string {
+	if quote != 0 {
+		result := option + envVarSeparator + string(quote) + envName + envVarSeparator + redactedPlaceholder
+		if closingQuote {
+			result += string(quote)
+		}
+		return result
+	}
+	return option + envVarSeparator + envName + envVarSeparator + redactedPlaceholder
+}
+
+// parseEnvAssignmentToken parses a single command-line token containing a Bazel
+// env assignment and returns the pieces needed for redaction. It wraps the
+// shared parser to keep both token and text code paths in sync.
+func parseEnvAssignmentToken(token string) (option string, envName string, quote byte, closingQuote bool, ok bool) {
+	option, envName, quote, closingQuote, _, ok = parseEnvAssignment(token)
+	return option, envName, quote, closingQuote, ok
+}
+
+// parseEnvAssignment extracts the option prefix (e.g. --test_env), env
+// variable name, and any surrounding quotes from a string representation of a
+// Bazel env assignment. It returns enough metadata for callers to both redact
+// values and faithfully reconstruct the original quoting. The function was
+// introduced so that both command-line token redaction and raw byte redaction
+// share exactly the same parsing logic, eliminating subtle inconsistencies that
+// previously leaked multiline secrets.
+func parseEnvAssignment(s string) (option string, envName string, quote byte, closingQuote bool, consumed int, ok bool) {
+	if !strings.HasPrefix(s, envVarPrefix) {
+		return "", "", 0, false, 0, false
+	}
+
+	eqIdx := strings.IndexByte(s, '=')
+	if eqIdx < 0 {
+		return "", "", 0, false, 0, false
+	}
+
+	option = s[:eqIdx]
+	optionName := strings.TrimPrefix(option, envVarPrefix)
+	if !isEnvVarOptionName(optionName) {
+		return "", "", 0, false, 0, false
+	}
+
+	pos := eqIdx + 1
+	if pos >= len(s) {
+		return "", "", 0, false, 0, false
+	}
+
+	if s[pos] == '\'' || s[pos] == '"' {
+		quote = s[pos]
+		pos++
+	}
+
+	keyStart := pos
+	for pos < len(s) {
+		c := s[pos]
+		if c == '=' {
+			break
+		}
+		if quote == 0 && isWhitespaceByte(c) {
+			return "", "", 0, false, 0, false
+		}
+		if quote != 0 && c == quote {
+			return "", "", 0, false, 0, false
+		}
+		pos++
+	}
+
+	if pos >= len(s) || pos == keyStart {
+		return "", "", 0, false, 0, false
+	}
+
+	envName = s[keyStart:pos]
+	pos++ // skip '='
+	if pos > len(s) {
+		return "", "", 0, false, 0, false
+	}
+
+	if quote != 0 {
+		valueEnd := pos
+		for valueEnd < len(s) && s[valueEnd] != quote {
+			valueEnd++
+		}
+		if valueEnd >= len(s) {
+			// Unterminated quote; redact while preserving the opening quote.
+			valueEnd = len(s)
+			return option, envName, quote, false, valueEnd, true
+		}
+		return option, envName, quote, true, valueEnd + 1, true
+	}
+
+	valueEnd := pos
+	for valueEnd < len(s) && !isWhitespaceByte(s[valueEnd]) {
+		valueEnd++
+	}
+	return option, envName, 0, false, valueEnd, true
+}
+
+func isEnvVarOptionName(name string) bool {
+	_, ok := envVarOptionNameSet[name]
+	return ok
+}
+
+func isWhitespaceByte(b byte) bool {
+	switch b {
+	case ' ', '\t', '\n', '\r', '\v', '\f':
+		return true
+	default:
+		return false
+	}
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
