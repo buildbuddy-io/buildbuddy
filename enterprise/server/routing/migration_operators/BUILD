@@ -30,6 +30,7 @@ go_test(
         "//enterprise/server/batch_operator",
         "//proto:remote_execution_go_proto",
         "//proto:routing_go_proto",
+        "//server/remote_cache/digest",
         "//server/util/status",
         "//server/util/usageutil",
         "@com_github_stretchr_testify//require",
