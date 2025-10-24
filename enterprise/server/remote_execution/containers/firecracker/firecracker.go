@@ -994,14 +994,14 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	memSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.memSnapshotName)
 
 	if snapshotDetails.snapshotType == diffSnapshotType {
-		baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
-		mergeStart := time.Now()
-		if err := MergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
-			return status.UnknownErrorf("merge diff snapshot failed: %s", err)
-		}
-		log.CtxDebugf(ctx, "VMM merge diff snapshot took %s", time.Since(mergeStart))
+		// baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
+		// mergeStart := time.Now()
+		// if err := MergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
+		// 	return status.UnknownErrorf("merge diff snapshot failed: %s", err)
+		// }
+		// log.CtxDebugf(ctx, "VMM merge diff snapshot took %s", time.Since(mergeStart))
 		// Use the merged memory snapshot.
-		memSnapshotPath = baseMemSnapshotPath
+		memSnapshotPath = filepath.Join(c.getChroot(), memoryChunkDirName+vbdMountDirSuffix, vbd.FileName)
 	}
 
 	// If we're creating a snapshot for the first time, create a COWStore from
@@ -2945,7 +2945,27 @@ func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetai
 	snapshotTypeOpt := func(params *operations.CreateSnapshotParams) {
 		params.Body.SnapshotType = snapshotDetails.snapshotType
 	}
-	if err := c.machine.CreateSnapshot(ctx, snapshotDetails.memSnapshotName, snapshotDetails.vmStateSnapshotName, snapshotTypeOpt); err != nil {
+
+	memSnapshotName := snapshotDetails.memSnapshotName
+	if c.memoryStore != nil {
+		d, err := vbd.New(c.memoryStore)
+		if err != nil {
+			return status.WrapError(err, "failed to create memory VBD")
+		}
+		relVBDPath := memoryChunkDirName+vbdMountDirSuffix
+		mountPath := filepath.Join(c.getChroot(), relVBDPath)
+		if err := d.Mount(c.vmCtx, mountPath); err != nil {
+			return status.WrapError(err, "failed to mount memory VBD")
+		}
+		memSnapshotName = filepath.Join(relVBDPath, vbd.FileName)
+
+		// TODO: How do I get the updated data from the VBD?
+
+		// TODO: When should I unmount
+		defer d.Unmount(ctx)
+	}
+
+	if err := c.machine.CreateSnapshot(ctx, memSnapshotName, snapshotDetails.vmStateSnapshotName, snapshotTypeOpt); err != nil {
 		log.CtxErrorf(ctx, "Error creating %s snapshot after %v: %s", snapshotDetails.snapshotType, time.Since(machineStart), err)
 		return err
 	}

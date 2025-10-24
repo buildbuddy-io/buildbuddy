@@ -190,6 +190,7 @@ type Node struct {
 
 var _ fusefs.NodeOpener = (*Node)(nil)
 var _ fusefs.NodeGetattrer = (*Node)(nil)
+var _ fusefs.NodeSetattrer = (*Node)(nil)
 
 func (n *Node) Open(ctx context.Context, flags uint32) (fusefs.FileHandle, uint32, syscall.Errno) {
 	if n.file == nil {
@@ -209,6 +210,28 @@ func (n *Node) Getattr(ctx context.Context, _ fusefs.FileHandle, out *fuse.AttrO
 		out.Size = uint64(size)
 	}
 	return fusefs.OK
+}
+
+func (n *Node) Setattr(ctx context.Context, fh fusefs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
+	if n.file == nil {
+		return syscall.EOPNOTSUPP
+	}
+
+	if in.Valid&fuse.FATTR_SIZE != 0 {
+		currentSize, err := n.file.SizeBytes()
+		if err != nil {
+			log.CtxErrorf(ctx, "VBD size failed: %s", err)
+			return syscall.EIO
+		}
+
+		requestedSize := int64(in.Size)
+		if requestedSize != currentSize {
+			log.CtxWarningf(ctx, "VBD does not support resizing: current size %d, requested size %d", currentSize, requestedSize)
+			return syscall.EOPNOTSUPP
+		}
+	}
+
+	return n.Getattr(ctx, fh, out)
 }
 
 type fileHandle struct {
