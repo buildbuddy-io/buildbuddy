@@ -20,14 +20,13 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-// Mock ByteStream Read client
-type mockReadClient struct {
+type mockBSReadClient struct {
 	responses []*bspb.ReadResponse
 	idx       int
 	err       error
 }
 
-func (m *mockReadClient) Recv() (*bspb.ReadResponse, error) {
+func (m *mockBSReadClient) Recv() (*bspb.ReadResponse, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -39,32 +38,31 @@ func (m *mockReadClient) Recv() (*bspb.ReadResponse, error) {
 	return resp, nil
 }
 
-func (m *mockReadClient) Header() (metadata.MD, error) {
+func (m *mockBSReadClient) Header() (metadata.MD, error) {
 	return nil, nil
 }
 
-func (m *mockReadClient) Trailer() metadata.MD {
+func (m *mockBSReadClient) Trailer() metadata.MD {
 	return nil
 }
 
-func (m *mockReadClient) CloseSend() error {
+func (m *mockBSReadClient) CloseSend() error {
 	return nil
 }
 
-func (m *mockReadClient) Context() context.Context {
+func (m *mockBSReadClient) Context() context.Context {
 	return context.Background()
 }
 
-func (m *mockReadClient) SendMsg(interface{}) error {
+func (m *mockBSReadClient) SendMsg(interface{}) error {
 	return nil
 }
 
-func (m *mockReadClient) RecvMsg(interface{}) error {
+func (m *mockBSReadClient) RecvMsg(interface{}) error {
 	return nil
 }
 
-// Mock ByteStream Write client
-type mockWriteClient struct {
+type mockBSWriteClient struct {
 	requests       []*bspb.WriteRequest
 	response       *bspb.WriteResponse
 	err            error
@@ -72,7 +70,7 @@ type mockWriteClient struct {
 	expectedOffset int64
 }
 
-func (m *mockWriteClient) Send(req *bspb.WriteRequest) error {
+func (m *mockBSWriteClient) Send(req *bspb.WriteRequest) error {
 	if m.err != nil {
 		return m.err
 	}
@@ -85,41 +83,40 @@ func (m *mockWriteClient) Send(req *bspb.WriteRequest) error {
 	return nil
 }
 
-func (m *mockWriteClient) CloseAndRecv() (*bspb.WriteResponse, error) {
+func (m *mockBSWriteClient) CloseAndRecv() (*bspb.WriteResponse, error) {
 	if m.closeErr != nil {
 		return nil, m.closeErr
 	}
 	return m.response, nil
 }
 
-func (m *mockWriteClient) Header() (metadata.MD, error) {
+func (m *mockBSWriteClient) Header() (metadata.MD, error) {
 	return nil, nil
 }
 
-func (m *mockWriteClient) Trailer() metadata.MD {
+func (m *mockBSWriteClient) Trailer() metadata.MD {
 	return nil
 }
 
-func (m *mockWriteClient) CloseSend() error {
+func (m *mockBSWriteClient) CloseSend() error {
 	return nil
 }
 
-func (m *mockWriteClient) Context() context.Context {
+func (m *mockBSWriteClient) Context() context.Context {
 	return context.Background()
 }
 
-func (m *mockWriteClient) SendMsg(interface{}) error {
+func (m *mockBSWriteClient) SendMsg(interface{}) error {
 	return nil
 }
 
-func (m *mockWriteClient) RecvMsg(interface{}) error {
+func (m *mockBSWriteClient) RecvMsg(interface{}) error {
 	return nil
 }
 
-// Mock ByteStream client
 type mockBSClient struct {
-	readStreams  []*mockReadClient
-	writeStreams []*mockWriteClient
+	readStreams  []*mockBSReadClient
+	writeStreams []*mockBSWriteClient
 	readIdx      int
 	writeIdx     int
 	readError    error
@@ -157,7 +154,6 @@ func (m *mockBSClient) QueryWriteStatus(ctx context.Context, in *bspb.QueryWrite
 	return nil, status.UnimplementedError("QueryWriteStatus not implemented")
 }
 
-// Mock GetTree client
 type mockGetTreeClient struct {
 	responses []*repb.GetTreeResponse
 	idx       int
@@ -200,7 +196,6 @@ func (m *mockGetTreeClient) RecvMsg(interface{}) error {
 	return nil
 }
 
-// Mock batch operator
 type mockBatchOperator struct {
 	enqueueSuccess bool
 	enqueueCalls   []mockBatchOperatorCall
@@ -225,7 +220,6 @@ func (m *mockBatchOperator) EnqueueByResourceName(ctx context.Context, rn *diges
 	panic("unimplemented")
 }
 
-// Mock CAS client
 type mockCASClient struct {
 	missingBlobs       []*repb.Digest
 	err                error
@@ -327,7 +321,6 @@ func (m *mockCASClient) SplitBlob(ctx context.Context, req *repb.SplitBlobReques
 	return nil, status.UnimplementedError("SplitBlob not implemented")
 }
 
-// Mock CacheRoutingService
 type mockRouter struct {
 	primary      bspb.ByteStreamClient
 	secondary    bspb.ByteStreamClient
@@ -393,13 +386,13 @@ func TestByteStreamCopy_Success(t *testing.T) {
 	}
 
 	// Create mock read streams
-	readStream1 := &mockReadClient{
+	readStream1 := &mockBSReadClient{
 		responses: []*bspb.ReadResponse{
 			{Data: []byte("hello")},
 			{Data: []byte("world")},
 		},
 	}
-	readStream2 := &mockReadClient{
+	readStream2 := &mockBSReadClient{
 		responses: []*bspb.ReadResponse{
 			{Data: []byte("test")},
 			{Data: []byte("data")},
@@ -408,19 +401,19 @@ func TestByteStreamCopy_Success(t *testing.T) {
 	}
 
 	// Create mock write streams
-	writeStream1 := &mockWriteClient{
+	writeStream1 := &mockBSWriteClient{
 		response: &bspb.WriteResponse{CommittedSize: 10},
 	}
-	writeStream2 := &mockWriteClient{
+	writeStream2 := &mockBSWriteClient{
 		response: &bspb.WriteResponse{CommittedSize: 12},
 	}
 
 	// Setup mock clients
 	primary := &mockBSClient{
-		readStreams: []*mockReadClient{readStream1, readStream2},
+		readStreams: []*mockBSReadClient{readStream1, readStream2},
 	}
 	secondary := &mockBSClient{
-		writeStreams: []*mockWriteClient{writeStream1, writeStream2},
+		writeStreams: []*mockBSWriteClient{writeStream1, writeStream2},
 	}
 
 	router := &mockRouter{
@@ -502,20 +495,20 @@ func TestByteStreamCopy_ReadError(t *testing.T) {
 	}
 
 	// Create mock read stream with error
-	readStream1 := &mockReadClient{
+	readStream1 := &mockBSReadClient{
 		err: status.InternalError("read failed"),
 	}
 
 	// Create mock write stream (needed even though we'll fail on read)
-	writeStream1 := &mockWriteClient{
+	writeStream1 := &mockBSWriteClient{
 		response: &bspb.WriteResponse{CommittedSize: 10},
 	}
 
 	primary := &mockBSClient{
-		readStreams: []*mockReadClient{readStream1},
+		readStreams: []*mockBSReadClient{readStream1},
 	}
 	secondary := &mockBSClient{
-		writeStreams: []*mockWriteClient{writeStream1},
+		writeStreams: []*mockBSWriteClient{writeStream1},
 	}
 
 	router := &mockRouter{
@@ -545,22 +538,22 @@ func TestByteStreamCopy_WriteError(t *testing.T) {
 		missingBlobs: []*repb.Digest{digest1},
 	}
 
-	readStream1 := &mockReadClient{
+	readStream1 := &mockBSReadClient{
 		responses: []*bspb.ReadResponse{
 			{Data: []byte("hello")},
 		},
 	}
 
 	// Create mock write stream with error
-	writeStream1 := &mockWriteClient{
+	writeStream1 := &mockBSWriteClient{
 		err: status.InternalError("write failed"),
 	}
 
 	primary := &mockBSClient{
-		readStreams: []*mockReadClient{readStream1},
+		readStreams: []*mockBSReadClient{readStream1},
 	}
 	secondary := &mockBSClient{
-		writeStreams: []*mockWriteClient{writeStream1},
+		writeStreams: []*mockBSWriteClient{writeStream1},
 	}
 
 	router := &mockRouter{
@@ -686,13 +679,13 @@ func TestByteStreamReadAndVerify_Success(t *testing.T) {
 	digest2 := digestProto(strings.Repeat("2", 64), 12)
 
 	// Create mock read streams with correct sizes
-	readStream1 := &mockReadClient{
+	readStream1 := &mockBSReadClient{
 		responses: []*bspb.ReadResponse{
 			{Data: []byte("hello")},
 			{Data: []byte("world")},
 		},
 	}
-	readStream2 := &mockReadClient{
+	readStream2 := &mockBSReadClient{
 		responses: []*bspb.ReadResponse{
 			{Data: []byte("test")},
 			{Data: []byte("datamore")},
@@ -700,7 +693,7 @@ func TestByteStreamReadAndVerify_Success(t *testing.T) {
 	}
 
 	secondary := &mockBSClient{
-		readStreams: []*mockReadClient{readStream1, readStream2},
+		readStreams: []*mockBSReadClient{readStream1, readStream2},
 	}
 
 	router := &mockRouter{
@@ -728,7 +721,7 @@ func TestByteStreamReadAndVerify_SizeMismatch(t *testing.T) {
 	digest1 := digestProto(strings.Repeat("1", 64), 15) // Expected 15 bytes
 
 	// Create mock read stream returning only 10 bytes
-	readStream1 := &mockReadClient{
+	readStream1 := &mockBSReadClient{
 		responses: []*bspb.ReadResponse{
 			{Data: []byte("hello")},
 			{Data: []byte("world")},
@@ -736,7 +729,7 @@ func TestByteStreamReadAndVerify_SizeMismatch(t *testing.T) {
 	}
 
 	secondary := &mockBSClient{
-		readStreams: []*mockReadClient{readStream1},
+		readStreams: []*mockBSReadClient{readStream1},
 	}
 
 	router := &mockRouter{
@@ -763,7 +756,7 @@ func TestByteStreamReadAndVerify_NoVerify(t *testing.T) {
 	digest1 := digestProto(strings.Repeat("1", 64), 15) // Expected 15 bytes
 
 	// Create mock read stream returning only 10 bytes
-	readStream1 := &mockReadClient{
+	readStream1 := &mockBSReadClient{
 		responses: []*bspb.ReadResponse{
 			{Data: []byte("hello")},
 			{Data: []byte("world")},
@@ -771,7 +764,7 @@ func TestByteStreamReadAndVerify_NoVerify(t *testing.T) {
 	}
 
 	secondary := &mockBSClient{
-		readStreams: []*mockReadClient{readStream1},
+		readStreams: []*mockBSReadClient{readStream1},
 	}
 
 	router := &mockRouter{
@@ -798,12 +791,12 @@ func TestByteStreamReadAndVerify_ReadError(t *testing.T) {
 	digest1 := digestProto(strings.Repeat("1", 64), 10)
 
 	// Create mock read stream with error
-	readStream1 := &mockReadClient{
+	readStream1 := &mockBSReadClient{
 		err: status.InternalError("read failed"),
 	}
 
 	secondary := &mockBSClient{
-		readStreams: []*mockReadClient{readStream1},
+		readStreams: []*mockBSReadClient{readStream1},
 	}
 
 	router := &mockRouter{
@@ -847,13 +840,13 @@ func TestByteStreamReadAndVerify_MultipleErrors(t *testing.T) {
 	digest2 := digestProto(strings.Repeat("2", 64), 20) // Expected 20 bytes, will get 12
 
 	// Create mock read streams with incorrect sizes
-	readStream1 := &mockReadClient{
+	readStream1 := &mockBSReadClient{
 		responses: []*bspb.ReadResponse{
 			{Data: []byte("hello")},
 			{Data: []byte("world")},
 		},
 	}
-	readStream2 := &mockReadClient{
+	readStream2 := &mockBSReadClient{
 		responses: []*bspb.ReadResponse{
 			{Data: []byte("test")},
 			{Data: []byte("datamore")},
@@ -861,7 +854,7 @@ func TestByteStreamReadAndVerify_MultipleErrors(t *testing.T) {
 	}
 
 	secondary := &mockBSClient{
-		readStreams: []*mockReadClient{readStream1, readStream2},
+		readStreams: []*mockBSReadClient{readStream1, readStream2},
 	}
 
 	router := &mockRouter{
