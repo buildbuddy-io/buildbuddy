@@ -50,6 +50,7 @@ const (
 var (
 	envVarOptionNames      = []string{"action_env", "client_env", "host_action_env", "repo_env", "test_env"}
 	envVarOptionNamesRegex *regexp.Regexp
+	envVarOptionNameSet    map[string]struct{}
 
 	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
@@ -110,7 +111,11 @@ func init() {
 	for i, n := range envVarOptionNames {
 		escaped[i] = regexp.QuoteMeta(n)
 	}
-	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(escaped, "|") + `)=\w+=)[^\s]*`)
+	envVarOptionNamesRegex = regexp.MustCompile(`--(?:` + strings.Join(escaped, "|") + `)=`)
+	envVarOptionNameSet = make(map[string]struct{}, len(envVarOptionNames))
+	for _, name := range envVarOptionNames {
+		envVarOptionNameSet[name] = struct{}{}
+	}
 }
 
 func stripURLSecrets(input string) string {
@@ -222,7 +227,7 @@ func stripExplicitCommandLineFromCmdLine(tokens []string) {
 
 func stripNonAllowedEnvVars(tokens []string) {
 	for i, token := range tokens {
-		tokens[i] = envVarOptionNamesRegex.ReplaceAllString(token, "${1}<REDACTED>")
+		tokens[i] = redactEnvVarToken(token)
 	}
 }
 
@@ -283,7 +288,178 @@ func redactEnvVars(txt string) string {
 }
 
 func redactEnvVarsBytes(b []byte) []byte {
-	return envVarOptionNamesRegex.ReplaceAll(b, []byte("${1}<REDACTED>"))
+	if len(b) == 0 {
+		return b
+	}
+
+	result := make([]byte, 0, len(b))
+	offset := 0
+
+	for offset < len(b) {
+		loc := envVarOptionNamesRegex.FindIndex(b[offset:])
+		if loc == nil {
+			result = append(result, b[offset:]...)
+			break
+		}
+
+		start := offset + loc[0]
+		prefixEnd := offset + loc[1]
+		result = append(result, b[offset:start]...)
+
+		redacted, consumed := redactEnvVarBytes(b[start:])
+		if consumed == 0 {
+			// Could not parse a full env var assignment; emit the prefix as-is and continue.
+			result = append(result, b[start:prefixEnd]...)
+			offset = prefixEnd
+			continue
+		}
+
+		result = append(result, []byte(redacted)...)
+		offset = start + consumed
+	}
+
+	return result
+}
+
+func redactEnvVarToken(token string) string {
+	if !strings.HasPrefix(token, envVarPrefix) {
+		return token
+	}
+
+	option, rest := splitCombinedForm(token)
+	if option == token {
+		return token
+	}
+
+	optionName := strings.TrimPrefix(option, envVarPrefix)
+	if !isEnvVarOptionName(optionName) {
+		return token
+	}
+
+	redacted, ok := buildRedactedEnvVar(option, rest)
+	if !ok {
+		return token
+	}
+
+	return redacted
+}
+
+func redactEnvVarBytes(b []byte) (string, int) {
+	if len(b) == 0 {
+		return "", 0
+	}
+
+	// Locate the option name (e.g. --test_env)
+	eqIdx := bytes.IndexByte(b, '=')
+	if eqIdx < 0 {
+		return "", 0
+	}
+
+	option := string(b[:eqIdx])
+	optionName := strings.TrimPrefix(option, envVarPrefix)
+	if !isEnvVarOptionName(optionName) {
+		return "", 0
+	}
+
+	pos := eqIdx + 1
+	if pos >= len(b) {
+		return "", 0
+	}
+
+	quote := byte(0)
+	if b[pos] == '\'' || b[pos] == '"' {
+		quote = b[pos]
+		pos++
+	}
+
+	keyStart := pos
+	for pos < len(b) {
+		c := b[pos]
+		if c == '=' {
+			break
+		}
+		if quote == 0 && isWhitespaceByte(c) {
+			return "", 0
+		}
+		if quote != 0 && c == quote {
+			return "", 0
+		}
+		pos++
+	}
+
+	if pos >= len(b) {
+		return "", 0
+	}
+
+	envName := string(b[keyStart:pos])
+	if envName == "" {
+		return "", 0
+	}
+
+	pos++ // skip '='
+	if pos > len(b) {
+		return "", 0
+	}
+
+	if quote != 0 {
+		valueEnd := pos
+		for valueEnd < len(b) && b[valueEnd] != quote {
+			valueEnd++
+		}
+		if valueEnd >= len(b) {
+			return "", 0
+		}
+		redacted := option + "=" + string(quote) + envName + "=" + redactedPlaceholder + string(quote)
+		return redacted, valueEnd + 1
+	}
+
+	valueEnd := pos
+	for valueEnd < len(b) && !isWhitespaceByte(b[valueEnd]) {
+		valueEnd++
+	}
+
+	redacted := option + "=" + envName + "=" + redactedPlaceholder
+	return redacted, valueEnd
+}
+
+func buildRedactedEnvVar(option, rest string) (string, bool) {
+	if rest == "" {
+		return "", false
+	}
+
+	quote := byte(0)
+	if rest[0] == '\'' || rest[0] == '"' {
+		quote = rest[0]
+		if len(rest) < 2 || rest[len(rest)-1] != rest[0] {
+			return "", false
+		}
+		rest = rest[1 : len(rest)-1]
+	}
+
+	parts := strings.SplitN(rest, envVarSeparator, 2)
+	if len(parts) < 2 || parts[0] == "" {
+		return "", false
+	}
+
+	if quote != 0 {
+		return option + envVarSeparator + string(quote) + parts[0] + envVarSeparator + redactedPlaceholder + string(quote), true
+	}
+
+	return option + envVarSeparator + parts[0] + envVarSeparator + redactedPlaceholder, true
+}
+
+func isEnvVarOptionName(name string) bool {
+	_, ok := envVarOptionNameSet[name]
+	return ok
+}
+
+func isWhitespaceByte(b byte) bool {
+	switch b {
+	case ' ', '\t', '\n', '\r', '\v', '\f':
+		return true
+	default:
+		return false
+	}
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
