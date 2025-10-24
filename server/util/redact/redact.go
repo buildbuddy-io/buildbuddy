@@ -323,135 +323,115 @@ func redactEnvVarsBytes(b []byte) []byte {
 }
 
 func redactEnvVarToken(token string) string {
-	option, envName, quote, ok := parseEnvAssignmentToken(token)
+	option, envName, quote, closingQuote, ok := parseEnvAssignmentToken(token)
 	if !ok {
 		return token
 	}
-	return buildRedactedEnvVar(option, envName, quote)
+	return buildRedactedEnvVar(option, envName, quote, closingQuote)
 }
 
 func redactEnvVarBytes(b []byte) (string, int) {
-	option, envName, quote, consumed, ok := parseEnvAssignmentBytes(b)
+	option, envName, quote, closingQuote, consumed, ok := parseEnvAssignmentBytes(b)
 	if !ok {
 		return "", 0
 	}
-	return buildRedactedEnvVar(option, envName, quote), consumed
+	return buildRedactedEnvVar(option, envName, quote, closingQuote), consumed
 }
 
-func parseEnvAssignmentBytes(b []byte) (option string, envName string, quote byte, consumed int, ok bool) {
+func parseEnvAssignmentBytes(b []byte) (option string, envName string, quote byte, closingQuote bool, consumed int, ok bool) {
 	if len(b) == 0 {
-		return "", "", 0, 0, false
+		return "", "", 0, false, 0, false
 	}
-
-	eqIdx := bytes.IndexByte(b, '=')
-	if eqIdx < 0 {
-		return "", "", 0, 0, false
-	}
-
-	option = string(b[:eqIdx])
-	optionName := strings.TrimPrefix(option, envVarPrefix)
-	if !isEnvVarOptionName(optionName) {
-		return "", "", 0, 0, false
-	}
-
-	pos := eqIdx + 1
-	if pos >= len(b) {
-		return "", "", 0, 0, false
-	}
-
-	if b[pos] == '\'' || b[pos] == '"' {
-		quote = b[pos]
-		pos++
-	}
-
-	keyStart := pos
-	for pos < len(b) {
-		c := b[pos]
-		if c == '=' {
-			break
-		}
-		if quote == 0 && isWhitespaceByte(c) {
-			return "", "", 0, 0, false
-		}
-		if quote != 0 && c == quote {
-			return "", "", 0, 0, false
-		}
-		pos++
-	}
-
-	if pos >= len(b) || pos == keyStart {
-		return "", "", 0, 0, false
-	}
-
-	envName = string(b[keyStart:pos])
-	pos++ // skip '='
-	if pos > len(b) {
-		return "", "", 0, 0, false
-	}
-
-	if quote != 0 {
-		valueEnd := pos
-		for valueEnd < len(b) && b[valueEnd] != quote {
-			valueEnd++
-		}
-		if valueEnd >= len(b) {
-			return "", "", 0, 0, false
-		}
-		return option, envName, quote, valueEnd + 1, true
-	}
-
-	valueEnd := pos
-	for valueEnd < len(b) && !isWhitespaceByte(b[valueEnd]) {
-		valueEnd++
-	}
-	return option, envName, 0, valueEnd, true
+	// Converting to string keeps the parsing logic in one place. Go strings are byte-indexed, so the consumed offset
+	// we return still lines up with the original byte slice.
+	return parseEnvAssignment(string(b))
 }
 
-func buildRedactedEnvVar(option, envName string, quote byte) string {
+func buildRedactedEnvVar(option, envName string, quote byte, closingQuote bool) string {
 	if quote != 0 {
-		return option + envVarSeparator + string(quote) + envName + envVarSeparator + redactedPlaceholder + string(quote)
+		result := option + envVarSeparator + string(quote) + envName + envVarSeparator + redactedPlaceholder
+		if closingQuote {
+			result += string(quote)
+		}
+		return result
 	}
 	return option + envVarSeparator + envName + envVarSeparator + redactedPlaceholder
 }
 
-func parseEnvAssignmentToken(token string) (option string, envName string, quote byte, ok bool) {
-	if !strings.HasPrefix(token, envVarPrefix) {
-		return "", "", 0, false
+func parseEnvAssignmentToken(token string) (option string, envName string, quote byte, closingQuote bool, ok bool) {
+	option, envName, quote, closingQuote, _, ok = parseEnvAssignment(token)
+	return option, envName, quote, closingQuote, ok
+}
+
+func parseEnvAssignment(s string) (option string, envName string, quote byte, closingQuote bool, consumed int, ok bool) {
+	if !strings.HasPrefix(s, envVarPrefix) {
+		return "", "", 0, false, 0, false
 	}
 
-	eqIdx := strings.Index(token, envVarSeparator)
+	eqIdx := strings.IndexByte(s, '=')
 	if eqIdx < 0 {
-		return "", "", 0, false
+		return "", "", 0, false, 0, false
 	}
 
-	option = token[:eqIdx]
+	option = s[:eqIdx]
 	optionName := strings.TrimPrefix(option, envVarPrefix)
 	if !isEnvVarOptionName(optionName) {
-		return "", "", 0, false
+		return "", "", 0, false, 0, false
 	}
 
-	rest := token[eqIdx+1:]
-	if len(rest) == 0 {
-		return "", "", 0, false
+	pos := eqIdx + 1
+	if pos >= len(s) {
+		return "", "", 0, false, 0, false
 	}
 
-	if rest[0] == '\'' || rest[0] == '"' {
-		quote = rest[0]
-		if len(rest) < 2 || rest[len(rest)-1] != quote {
-			// Treat as unquoted if there isn't a matching trailing quote.
-			quote = 0
-		} else {
-			rest = rest[1 : len(rest)-1]
+	if s[pos] == '\'' || s[pos] == '"' {
+		quote = s[pos]
+		pos++
+	}
+
+	keyStart := pos
+	for pos < len(s) {
+		c := s[pos]
+		if c == '=' {
+			break
 		}
+		if quote == 0 && isWhitespaceByte(c) {
+			return "", "", 0, false, 0, false
+		}
+		if quote != 0 && c == quote {
+			return "", "", 0, false, 0, false
+		}
+		pos++
 	}
 
-	nameValueSep := strings.Index(rest, envVarSeparator)
-	if nameValueSep <= 0 {
-		return "", "", 0, false
+	if pos >= len(s) || pos == keyStart {
+		return "", "", 0, false, 0, false
 	}
 
-	envName = rest[:nameValueSep]
-	return option, envName, quote, true
+	envName = s[keyStart:pos]
+	pos++ // skip '='
+	if pos > len(s) {
+		return "", "", 0, false, 0, false
+	}
+
+	if quote != 0 {
+		valueEnd := pos
+		for valueEnd < len(s) && s[valueEnd] != quote {
+			valueEnd++
+		}
+		if valueEnd >= len(s) {
+			// Unterminated quote; redact while preserving the opening quote.
+			valueEnd = len(s)
+			return option, envName, quote, false, valueEnd, true
+		}
+		return option, envName, quote, true, valueEnd + 1, true
+	}
+
+	valueEnd := pos
+	for valueEnd < len(s) && !isWhitespaceByte(s[valueEnd]) {
+		valueEnd++
+	}
+	return option, envName, 0, false, valueEnd, true
 }
 
 func isEnvVarOptionName(name string) bool {
