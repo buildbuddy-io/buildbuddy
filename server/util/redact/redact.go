@@ -109,7 +109,13 @@ func init() {
 	for i, n := range envVarOptionNames {
 		escaped[i] = regexp.QuoteMeta(n)
 	}
-	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(escaped, "|") + `)=\w+=)[^\s]*`)
+	// Match env var flags with values that can be:
+	// - Single-quoted (including multiline): '--flag=VAR_NAME=...' becomes '--flag=VAR_NAME=<REDACTED>'
+	// - Double-quoted (including multiline): "--flag=VAR_NAME=..." becomes "--flag=VAR_NAME=<REDACTED>"
+	// - Unquoted (single line only): --flag=VAR_NAME=value becomes --flag=VAR_NAME=<REDACTED>
+	// Note: The quotes wrap the entire VAR_NAME=value part, not just the value
+	// Capture group 1: --flag_name= (without the env var name)
+	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(escaped, "|") + `)=)(?:'[^']*'|"[^"]*"|\S+)`)
 }
 
 func stripURLSecrets(input string) string {
@@ -217,7 +223,7 @@ func stripExplicitCommandLineFromCmdLine(tokens []string) {
 
 func stripNonAllowedEnvVars(tokens []string) {
 	for i, token := range tokens {
-		tokens[i] = envVarOptionNamesRegex.ReplaceAllString(token, "${1}<REDACTED>")
+		tokens[i] = redactEnvVars(token)
 	}
 }
 
@@ -266,7 +272,48 @@ func redactRemoteHeaders(txt string) string {
 }
 
 func redactEnvVars(txt string) string {
-	return envVarOptionNamesRegex.ReplaceAllString(txt, "${1}<REDACTED>")
+	return envVarOptionNamesRegex.ReplaceAllStringFunc(txt, func(match string) string {
+		// Extract the flag name and env var assignment
+		// Format can be:
+		// - --flag='VAR_NAME=value' or --flag="VAR_NAME=value"
+		// - --flag=VAR_NAME=value (unquoted)
+
+		// Find the = after the flag name
+		eqIdx := strings.Index(match, "=")
+		if eqIdx == -1 {
+			return match
+		}
+
+		flagName := match[:eqIdx+1] // includes the =
+		value := match[eqIdx+1:]     // everything after the =
+
+		// Check if value is quoted
+		if len(value) > 0 && (value[0] == '\'' || value[0] == '"') {
+			quote := value[0]
+			// Find the closing quote
+			closeIdx := strings.LastIndexByte(value, byte(quote))
+			if closeIdx > 0 {
+				// Extract content between quotes
+				content := value[1:closeIdx]
+				// Find the = within the content to get VAR_NAME
+				contentEqIdx := strings.Index(content, "=")
+				if contentEqIdx > 0 {
+					varName := content[:contentEqIdx]
+					return flagName + varName + "=" + redactedPlaceholder
+				}
+			}
+		} else {
+			// Unquoted value: VAR_NAME=value
+			varEqIdx := strings.Index(value, "=")
+			if varEqIdx > 0 {
+				varName := value[:varEqIdx]
+				return flagName + varName + "=" + redactedPlaceholder
+			}
+		}
+
+		// Fallback: just redact the whole value
+		return flagName + redactedPlaceholder
+	})
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
