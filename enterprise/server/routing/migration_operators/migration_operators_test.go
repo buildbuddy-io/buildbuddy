@@ -1223,8 +1223,8 @@ func TestGetTreeMirrorOperator_Success(t *testing.T) {
 	require.Equal(t, repb.DigestFunction_SHA256, copyOperator.enqueueCalls[0].digestFunction)
 
 	// Should have discovered the files and directories from the mock GetTree response:
-	// file1.txt, file2.txt, and subdir
-	require.Len(t, copyOperator.enqueueCalls[0].digests, 3)
+	// file1.txt, file2.txt, and subdir *and* included the root digest.
+	require.Len(t, copyOperator.enqueueCalls[0].digests, 4)
 }
 
 func TestGetTreeMirrorOperator_GetCASClientsError(t *testing.T) {

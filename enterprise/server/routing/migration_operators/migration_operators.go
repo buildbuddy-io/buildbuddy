@@ -44,6 +44,10 @@ func ByteStreamCopy(ctx context.Context, router interfaces.CacheRoutingService, 
 	if err != nil {
 		return err
 	}
+	if len(missing) == 0 {
+		// Nothing to copy!
+		return nil
+	}
 
 	primary, secondary, err := router.GetBSClients(ctx)
 	if err != nil {
@@ -151,6 +155,10 @@ func CASBatchCopy(ctx context.Context, router interfaces.CacheRoutingService, gr
 	if err != nil {
 		return err
 	}
+	if len(missing) == 0 {
+		// Nothing to copy!
+		return nil
+	}
 
 	primary, secondary, err := router.GetCASClients(ctx)
 	if err != nil {
@@ -160,7 +168,6 @@ func CASBatchCopy(ctx context.Context, router interfaces.CacheRoutingService, gr
 	batch := []*repb.Digest{}
 
 	flush := func() error {
-		currentBatchSize = 0
 		// TODO(jdhollen): this should use compression when possible.
 		data, err := primary.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
 			InstanceName:   b.InstanceName,
@@ -183,6 +190,7 @@ func CASBatchCopy(ctx context.Context, router interfaces.CacheRoutingService, gr
 			if err := flush(); err != nil {
 				return err
 			}
+			currentBatchSize = 0
 		}
 
 		currentBatchSize += d.GetSizeBytes()
@@ -219,7 +227,7 @@ func CASBatchReadAndVerify(ctx context.Context, router interfaces.CacheRoutingSe
 		anyErr := error(nil)
 		for _, r := range data.GetResponses() {
 			if r.GetCompressor() == repb.Compressor_IDENTITY {
-				if len(r.GetData()) != int(r.GetDigest().GetSizeBytes()) {
+				if verify && len(r.GetData()) != int(r.GetDigest().GetSizeBytes()) {
 					anyErr = status.InternalErrorf("Size mismatch for digest %s: expected %d, got %d", r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(), len(r.GetData()))
 					log.CtxWarningf(ctx, "Read validation error for group %s: %s", groupID, anyErr)
 					// Allow check to continue -- would be good to know if there are lots.
@@ -290,6 +298,7 @@ func GetTreeMirrorOperator(ctx context.Context, router interfaces.CacheRoutingSe
 	var anyErr error = nil
 	digestsToCheckAndCopy := map[digest.Key]*repb.Digest{}
 	for _, d := range b.Digests {
+		digestsToCheckAndCopy[digest.NewKey(d)] = d
 		stream, err := primary.GetTree(ctx, &repb.GetTreeRequest{
 			InstanceName:   b.InstanceName,
 			DigestFunction: b.DigestFunction,
