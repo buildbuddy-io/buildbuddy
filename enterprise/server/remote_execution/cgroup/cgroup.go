@@ -351,6 +351,13 @@ func ReadMemoryEvents(dir string) (map[string]int64, error) {
 	return readAllInt64Fields(filepath.Join(dir, "memory.events"))
 }
 
+// ReadMemoryCurrent reads the "memory.current" file under the given cgroup
+// directory and returns the current memory usage in bytes. The directory should
+// be an absolute path, including the /sys/fs/cgroup prefix.
+func ReadMemoryCurrent(dir string) (int64, error) {
+	return readInt64FromFile(filepath.Join(dir, "memory.current"))
+}
+
 // ReadPidsEvents reads the "pids.events" file under the given cgroup
 // directory and returns the counter values as a map. The directory should be an
 // absolute path, including the /sys/fs/cgroup prefix.
@@ -372,8 +379,7 @@ func Stats(ctx context.Context, dir string, blockDevice *block_io.Device) (*repb
 	}
 
 	// Read memory usage
-	memUsagePath := filepath.Join(dir, "memory.current")
-	memoryBytes, err := readInt64FromFile(memUsagePath)
+	memoryBytes, err := ReadMemoryCurrent(dir)
 	if err != nil {
 		return nil, err
 	}

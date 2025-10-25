@@ -71,6 +71,7 @@ go_library(
             "//enterprise/server/remote_execution/cgroup",
             "//enterprise/server/remote_execution/vbd",
             "//server/util/networking",
+            "@com_github_prometheus_client_golang//prometheus",
         ],
         "//conditions:default": [],
     }),
