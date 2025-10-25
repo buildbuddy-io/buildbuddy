@@ -451,8 +451,8 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		return err
 	}
 
-	r.log.writeListener = func(b []byte) {
-		r.emitBuildEventsForBazelCommands(b)
+	r.log.writeListener = func(s string) {
+		r.emitBuildEventsForBazelCommands(s)
 		// Flush whenever the log buffer fills past a certain threshold.
 		if size := r.log.Len(); size >= progressFlushThresholdBytes {
 			r.FlushProgress() // ignore error; it will surface in `bep.Finish()`
@@ -574,11 +574,11 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 //
 // Event publishing errors will be surfaced in the caller func when calling
 // `buildEventPublisher.Finish()`
-func (r *buildEventReporter) emitBuildEventsForBazelCommands(output []byte) {
+func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) {
 	// Check whether a bazel invocation was invoked
-	iidMatches := invocationIDRegex.FindAllSubmatch(output, -1)
+	iidMatches := invocationIDRegex.FindAllStringSubmatch(output, -1)
 	for _, m := range iidMatches {
-		iid := string(m[1])
+		iid := m[1]
 		childStarted := slices.Contains(r.childInvocations, iid)
 
 		var buildEvent *bespb.BuildEvent
@@ -937,20 +937,22 @@ func (r *buildEventReporter) Printf(format string, vals ...interface{}) {
 type invocationLog struct {
 	lockingbuffer.LockingBuffer
 	writer        io.Writer
-	writeListener func(b []byte)
+	writeListener func(s string)
 }
 
 func newInvocationLog() *invocationLog {
-	invLog := &invocationLog{writeListener: func(b []byte) {}}
+	invLog := &invocationLog{writeListener: func(s string) {}}
 	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
 	return invLog
 }
 
 func (invLog *invocationLog) Write(b []byte) (int, error) {
-	redacted := redact.RedactText(b)
+	output := string(b)
+
+	redacted := redact.RedactText(output)
 
 	invLog.writeListener(redacted)
-	_, err := invLog.writer.Write(redacted)
+	_, err := invLog.writer.Write([]byte(redacted))
 
 	// Return the size of the original buffer even if a redacted size was written,
 	// or clients will return a short write error

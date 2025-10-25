@@ -639,33 +639,65 @@ func TestRedactRunResidual(t *testing.T) {
 func TestRedactTxt(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		txt      []byte
-		expected []byte
+		txt      string
+		expected string
 	}{
 		{
 			name:     "remote headers",
-			txt:      []byte("ok --remote_header=x-buildbuddy-api-key=secret --flag=ok"),
-			expected: []byte("ok --remote_header=<REDACTED> --flag=ok"),
+			txt:      "ok --remote_header=x-buildbuddy-api-key=secret --flag=ok",
+			expected: "ok --remote_header=<REDACTED> --flag=ok",
 		},
 		{
 			name:     "url secrets",
-			txt:      []byte("ok url://username:password@uri --flag=ok"),
-			expected: []byte("ok url://username:<REDACTED>@uri --flag=ok"),
+			txt:      "ok url://username:password@uri --flag=ok",
+			expected: "ok url://username:<REDACTED>@uri --flag=ok",
 		},
 		{
 			name:     "do not redact rules names",
-			txt:      []byte("ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different"),
-			expected: []byte("ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different"),
+			txt:      "ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different",
+			expected: "ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different",
 		},
 		{
 			name:     "api key start of line",
-			txt:      []byte("apikeyexactly20chars@mydomain.com"),
-			expected: []byte("<REDACTED>@mydomain.com"),
+			txt:      "apikeyexactly20chars@mydomain.com",
+			expected: "<REDACTED>@mydomain.com",
 		},
 		{
-			name:     "environment variables",
-			txt:      []byte("common --repo_env=AWS_ACCESS_KEY_ID=super_secret_access_key_id # gitleaks:allow\ncommon --repo_env=AWS_SECRET_ACCESS_KEY=super_secret_access_key # gitleaks:allow"),
-			expected: []byte("common --repo_env=AWS_ACCESS_KEY_ID=<REDACTED> # gitleaks:allow\ncommon --repo_env=AWS_SECRET_ACCESS_KEY=<REDACTED> # gitleaks:allow"),
+			name: "environment variables",
+			txt: "common --repo_env=AWS_ACCESS_KEY_ID=super_secret_access_key_id # gitleaks:allow\n" +
+				"common --repo_env=AWS_SECRET_ACCESS_KEY=super_secret_access_key # gitleaks:allow",
+			expected: "common --repo_env=AWS_ACCESS_KEY_ID=<REDACTED> # gitleaks:allow\n" +
+				"common --repo_env=AWS_SECRET_ACCESS_KEY=<REDACTED> # gitleaks:allow",
+		},
+		{
+			name: "multiline environment variable - single quoted private key",
+			txt: "--test_env='PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n" +
+				"abc123def456ghi789jkl012mno345pqr678stu901vwx234yz\n" +
+				"fooBarBazQuxMultiLineSecretValue123456789ABCDEFGH\n" +
+				"-----END PRIVATE KEY-----' --test_env='OTHER_VAR=safe_value'",
+			expected: "--test_env=PRIVATE_KEY=<REDACTED> --test_env=OTHER_VAR=<REDACTED>",
+		},
+		{
+			name: "multiline environment variable - double quoted certificate",
+			txt: "--action_env=\"MY_CERT=-----BEGIN CERTIFICATE-----\n" +
+				"xYzAbC123dEfGhI456jKlMnO789pQrStU012vWxYz345AbCdE\n" +
+				"fakeMultiLineCertificateDataHereForTestingPurposesOnly\n" +
+				"-----END CERTIFICATE-----\" --action_env=\"NORMAL_VAR=test123\"",
+			expected: "--action_env=MY_CERT=<REDACTED> --action_env=NORMAL_VAR=<REDACTED>",
+		},
+		{
+			name: "multiline environment variable - single quoted with trailing comment",
+			txt: "--repo_env='PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n" +
+				"madeUpSecretKey999888777666555444333222111000ZZZYYY\n" +
+				"-----END PRIVATE KEY-----' # gitleaks:allow",
+			expected: "--repo_env=PRIVATE_KEY=<REDACTED> # gitleaks:allow",
+		},
+		{
+			name: "multiline environment variable - mixed with unquoted",
+			txt: "--test_env=SIMPLE_VAR=simple_value --test_env='MULTILINE_SECRET=line1\n" +
+				"line2\n" +
+				"line3' --action_env=ANOTHER_VAR=another_value",
+			expected: "--test_env=SIMPLE_VAR=<REDACTED> --test_env=MULTILINE_SECRET=<REDACTED> --action_env=ANOTHER_VAR=<REDACTED>",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -678,28 +710,28 @@ func TestRedactTxt(t *testing.T) {
 func TestRedactAPIKeys(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		txt      []byte
-		expected []byte
+		txt      string
+		expected string
 	}{
 		{
 			name:     "api key after equals",
-			txt:      []byte("MY_SECRET_API_KEY=apikeyexactly20chars@mydomain.com"),
-			expected: []byte("MY_SECRET_API_KEY=<REDACTED>@mydomain.com"),
+			txt:      "MY_SECRET_API_KEY=apikeyexactly20chars@mydomain.com",
+			expected: "MY_SECRET_API_KEY=<REDACTED>@mydomain.com",
 		},
 		{
 			name:     "api key in grpc call",
-			txt:      []byte("grpc://apikeyexactly20chars@mydomain.com"),
-			expected: []byte("grpc://<REDACTED>@mydomain.com"),
+			txt:      "grpc://apikeyexactly20chars@mydomain.com",
+			expected: "grpc://<REDACTED>@mydomain.com",
 		},
 		{
 			name:     "api key in http call",
-			txt:      []byte("https://apikeyexactly20chars@mydomain.com"),
-			expected: []byte("https://<REDACTED>@mydomain.com"),
+			txt:      "https://apikeyexactly20chars@mydomain.com",
+			expected: "https://<REDACTED>@mydomain.com",
 		},
 		{
 			name:     "do not redact text before bazel repository name",
-			txt:      []byte("FAILED:exactly20alphanumber@@apple_support++apple_cc_configure_extension+local_config_apple_cc; starting"),
-			expected: []byte("FAILED:exactly20alphanumber@@apple_support++apple_cc_configure_extension+local_config_apple_cc; starting"),
+			txt:      "FAILED:exactly20alphanumber@@apple_support++apple_cc_configure_extension+local_config_apple_cc; starting",
+			expected: "FAILED:exactly20alphanumber@@apple_support++apple_cc_configure_extension+local_config_apple_cc; starting",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -709,14 +741,14 @@ func TestRedactAPIKeys(t *testing.T) {
 			event := &bespb.BuildEvent{
 				Payload: &bespb.BuildEvent_Progress{
 					Progress: &bespb.Progress{
-						Stdout: string(tc.txt),
+						Stdout: tc.txt,
 					},
 				},
 			}
 			redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 			err := redactor.RedactAPIKeysWithSlowRegexp(context.TODO(), event)
 			require.NoError(t, err)
-			require.Equal(t, string(tc.expected), event.GetProgress().GetStdout())
+			require.Equal(t, tc.expected, event.GetProgress().GetStdout())
 		})
 	}
 }
