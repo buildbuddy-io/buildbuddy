@@ -673,7 +673,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 
 // Warning: This command won't parse arbitrary text correctly (Ex. if there's an
 // unterminated quote, it will return an error). Use `RedactText` to redact
-// more arbitary strings.
+// more arbitrary strings.
 func RedactCommand(cmd string) (string, error) {
 	cmdTokens, err := shlex.Split(cmd)
 	if err != nil {

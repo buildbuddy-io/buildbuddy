@@ -324,7 +324,7 @@ func (h *HealthChecker) LivenessHandler() http.Handler {
 }
 
 func (h *HealthChecker) Check(ctx context.Context, req *hlpb.HealthCheckRequest) (*hlpb.HealthCheckResponse, error) {
-	// GRPC does not have indepenent health and readiness checks like HTTP does.
+	// GRPC does not have independent health and readiness checks like HTTP does.
 	// An additional wrinkle is that AWS ALB's do not support sending a service
 	// name to the GRPC health check. To maximize compatibility and usefulness
 	// we ignore the service name for now (sad face), and return:

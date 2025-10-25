@@ -40,7 +40,7 @@ func validateStableSort(t *testing.T, preSorts []*spb.SpawnExec, expected []*spb
 
 	err := compact.StableSortExec(preSorts, collectSpawns)
 	require.NoError(t, err)
-	require.Equal(t, len(expected), len(sortedSpawns), "expected and actual have different lengths, preSorts lenth is %d", len(preSorts))
+	require.Equal(t, len(expected), len(sortedSpawns), "expected and actual have different lengths, preSorts length is %d", len(preSorts))
 	for i := range sortedSpawns {
 		assert.Same(t, expected[i], sortedSpawns[i], fmt.Sprintf("two spawns with index %d are not the same:\nEXPECTED: %v\n---\nACTUAL: %v", i, expected[i], sortedSpawns[i]))
 	}

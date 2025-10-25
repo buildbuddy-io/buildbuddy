@@ -45,7 +45,7 @@ func TestWriteMover_CloseCleansUp(t *testing.T) {
 					if shouldCancel {
 						// Cancel the context to simulate a timeout or RPC cancellation.
 						// This should cause w.Close to fail to get writer quota, but it
-						// shoud still clean up the temp file.
+						// should still clean up the temp file.
 						cancel()
 					}
 					w.Close()

@@ -167,7 +167,7 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	c, err = claims.APIKeyGroupClaims(rctx, akg)
 	require.NoError(t, err)
 	require.Equal(t, childGroupID, c.GetGroupID())
-	require.Equal(t, baseGroupID, c.GetAPIKeyInfo().OwnerGroupID) // onwer group should still be parent
+	require.Equal(t, baseGroupID, c.GetAPIKeyInfo().OwnerGroupID) // owner group should still be parent
 	require.Equal(t, []string{baseGroupID, childGroupID}, c.GetAllowedGroups())
 	require.Equal(t, []*interfaces.GroupMembership{expectedBaseMembership, expectedChildMembership}, c.GetGroupMemberships())
 

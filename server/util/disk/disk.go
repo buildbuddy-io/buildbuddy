@@ -466,7 +466,7 @@ func (s *UsageMonitor) Check(ctx context.Context) error {
 	}
 	percentUsed := float64(usage.UsedBytes) / float64(usage.TotalBytes)
 	if percentUsed > s.maxFullness {
-		return status.FailedPreconditionErrorf("Insufficent free space on %q, %2.2f%% full", s.rootDir, percentUsed*100)
+		return status.FailedPreconditionErrorf("Insufficient free space on %q, %2.2f%% full", s.rootDir, percentUsed*100)
 	}
 	return nil
 }

@@ -251,7 +251,7 @@ func (t *TS) CheckFlags(fs *flag.FlagSet, c *config.Config) error {
 }
 
 // KnownDirectives returns a list of directive keys that this Configurer can
-// interpret. Gazelle prints errors for directives that are not recoginized by
+// interpret. Gazelle prints errors for directives that are not recognized by
 // any Configurer.
 func (t *TS) KnownDirectives() []string {
 	return []string{}

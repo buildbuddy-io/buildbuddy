@@ -1323,7 +1323,7 @@ func EnableMasquerading(ctx context.Context) error {
 
 // AddRoutingTableEntryIfNotPresent adds [tableID, tableName] name pair to /etc/iproute2/rt_tables if
 // the pair is not present.
-// Equilvalent to 'echo "1 rt1" | sudo tee -a /etc/iproute2/rt_tables'.
+// Equivalent to 'echo "1 rt1" | sudo tee -a /etc/iproute2/rt_tables'.
 func addRoutingTableEntryIfNotPresent(ctx context.Context) error {
 	tableEntry := fmt.Sprintf("%d %s", routingTableID, routingTableName)
 	exists, err := routingTableContainsTable(tableEntry)
