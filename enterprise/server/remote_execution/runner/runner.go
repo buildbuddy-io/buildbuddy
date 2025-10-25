@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -47,6 +48,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/docker/go-units"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -140,7 +142,7 @@ type WarmupConfig struct {
 }
 
 // state indicates the current state of a taskRunner.
-type state int
+type state int32
 
 func (s state) String() string {
 	switch s {
@@ -154,6 +156,21 @@ func (s state) String() string {
 		return "removed"
 	default:
 		return "unknown"
+	}
+}
+
+func (s state) ShortString() string {
+	switch s {
+	case initial:
+		return "I"
+	case paused:
+		return "P"
+	case ready:
+		return "R"
+	case removed:
+		return "X"
+	default:
+		return "?"
 	}
 }
 
@@ -194,8 +211,10 @@ type taskRunner struct {
 
 	// task is the current task assigned to the runner.
 	task *repb.ExecutionTask
-	// State is the current state of the runner as it pertains to reuse.
-	state state
+	// State is the current state of the runner as it pertains to reuse. It is
+	// atomic because in some cases we want to print runner metadata for debug
+	// purposes but without having to hold the pool lock.
+	state atomic.Int32
 
 	worker *persistentworker.Worker
 
@@ -218,9 +237,14 @@ func (r *taskRunner) Metadata() *espb.RunnerMetadata {
 }
 
 func (r *taskRunner) String() string {
-	// Note: we don't log r.state here as this can make log statements calling
-	// this function racy. Beware of this if re-adding r.state below.
-	return fmt.Sprintf("%s:%d:%s", r.debugID, r.metadata.GetTaskNumber(), keyString(r.key))
+	return fmt.Sprintf("%s:%s:%d:%s", r.debugID, r.getState().ShortString(), r.metadata.GetTaskNumber(), keyString(r.key))
+}
+
+func (r *taskRunner) setState(s state) {
+	r.state.Store(int32(s))
+}
+func (r *taskRunner) getState() state {
+	return state(r.state.Load())
 }
 
 func (r *taskRunner) pullCredentials() (oci.Credentials, error) {
@@ -390,13 +414,8 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
-	//
-	// TODO(bduffany): Make this access to r.state thread-safe. The pool can be
-	// shutdown while this func is executing, which concurrently sets the runner
-	// state to "removed". This doesn't cause any known issues right now, but is
-	// error prone.
 	r.p.mu.RLock()
-	s := r.state
+	s := r.getState()
 	r.p.mu.RUnlock()
 	switch s {
 	case initial:
@@ -415,7 +434,7 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 			return commandutil.ErrorResult(err)
 		}
 		r.p.mu.Lock()
-		r.state = ready
+		r.setState(ready)
 		r.p.mu.Unlock()
 	case ready:
 	case removed:
@@ -498,8 +517,8 @@ func (r *taskRunner) shutdown(ctx context.Context) error {
 
 func (r *taskRunner) Remove(ctx context.Context) error {
 	r.p.mu.Lock()
-	s := r.state
-	r.state = removed
+	s := r.getState()
+	r.setState(removed)
 	r.p.mu.Unlock()
 	if s == removed {
 		return nil
@@ -696,10 +715,10 @@ func (p *pool) checkAddPreconditions(r *taskRunner) *labeledError {
 	}
 	// Note: shutdown can change the state to removed, so we need the lock to be
 	// held for this check.
-	if r.state != ready {
-		alert.UnexpectedEvent("unexpected_runner_state", "Unexpected runner state %d during add()", r.state)
+	if r.getState() != ready {
+		alert.UnexpectedEvent("unexpected_runner_state", "Unexpected runner state %d during add()", r.getState())
 		return &labeledError{
-			status.InternalErrorf("unexpected runner state %d; this should never happen", r.state),
+			status.InternalErrorf("unexpected runner state %d; this should never happen", r.getState()),
 			"unexpected_runner_state",
 		}
 	}
@@ -774,25 +793,29 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 		}
 	}
 
-	shouldEvict := func() bool {
+	shouldEvict := func() (bool, string) {
 		// If pooling this runner would put us over the max number of pooled
 		// runners, we need to evict a runner.
 		if p.maxRunnerCount > 0 && p.pausedRunnerCount()+1 > p.maxRunnerCount {
-			return true
+			return true, fmt.Sprintf("max runner count exceeded (max=%d)", p.maxRunnerCount)
 		}
 		// If pooling this runner would put us over the total memory limit,
 		// we need to evict a runner.
 		if p.maxTotalRunnerMemoryUsageBytes > 0 && p.pausedRunnerMemoryUsageBytes()+stats.MemoryBytes > p.maxTotalRunnerMemoryUsageBytes {
-			return true
+			return true, fmt.Sprintf("max runner memory usage exceeded (max=%s)", units.BytesSize(float64(p.maxTotalRunnerMemoryUsageBytes)))
 		}
 		// Otherwise, we don't need to evict.
-		return false
+		return false, ""
 	}
-	for shouldEvict() {
+	for {
+		evict, reason := shouldEvict()
+		if !evict {
+			break
+		}
 		// Evict the oldest (first) paused runner to make room for the new one.
 		evictIndex := -1
 		for i, r := range p.runners {
-			if r.state == paused {
+			if r.getState() == paused {
 				evictIndex = i
 				break
 			}
@@ -805,7 +828,7 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 		}
 
 		r := p.runners[evictIndex]
-		log.Infof("Evicting runner %s (pool max count %d exceeded).", r, p.maxRunnerCount)
+		log.Infof("Evicting runner %s (%s)", r, reason)
 		p.runners = append(p.runners[:evictIndex], p.runners[evictIndex+1:]...)
 
 		metrics.RunnerPoolEvictions.Inc()
@@ -831,7 +854,7 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 	metrics.RunnerPoolCount.Inc()
 
 	// Officially mark this runner paused and ready for reuse.
-	r.state = paused
+	r.setState(paused)
 
 	return nil
 }
@@ -1157,7 +1180,8 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 	r.removeCallback = func() {
 		p.pendingRemovals.Done()
 	}
-	log.CtxInfof(ctx, "Created new %s runner %s for task", props.WorkloadIsolationType, r)
+
+	log.CtxInfof(ctx, "Created new runner for task (runner=%q, type=%s, recyclable=%v)", r, props.WorkloadIsolationType, props.RecycleRunner)
 	return r, nil
 }
 
@@ -1285,7 +1309,7 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) *taskRunner {
 
 	for i := len(p.runners) - 1; i >= 0; i-- {
 		r := p.runners[i]
-		if key.GroupId != r.key.GroupId || r.state != paused {
+		if key.GroupId != r.key.GroupId || r.getState() != paused {
 			continue
 		}
 		// Check for an exact match on the runner pool keys.
@@ -1298,7 +1322,7 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) *taskRunner {
 			continue
 		}
 
-		r.state = ready
+		r.setState(ready)
 
 		metrics.RunnerPoolCount.Dec()
 		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
@@ -1334,7 +1358,7 @@ func (p *pool) ActiveRunnerCount() int {
 func (p *pool) pausedRunnerCount() int {
 	n := 0
 	for _, r := range p.runners {
-		if r.state == paused {
+		if r.getState() == paused {
 			n++
 		}
 	}
@@ -1344,7 +1368,7 @@ func (p *pool) pausedRunnerCount() int {
 func (p *pool) pausedRunnerMemoryUsageBytes() int64 {
 	b := int64(0)
 	for _, r := range p.runners {
-		if r.state == paused {
+		if r.getState() == paused {
 			b += r.memoryUsageBytes
 		}
 	}
@@ -1362,7 +1386,7 @@ func (p *pool) Shutdown(ctx context.Context) error {
 	// grace period expiring.
 	var pausedRunners, activeRunners []*taskRunner
 	for _, r := range p.runners {
-		if r.state == paused {
+		if r.getState() == paused {
 			pausedRunners = append(pausedRunners, r)
 		} else {
 			activeRunners = append(activeRunners, r)
@@ -1381,7 +1405,6 @@ func (p *pool) Shutdown(ctx context.Context) error {
 		// to finish (if applicable). A single runner that takes a long time to
 		// upload its outputs should not block other runners from working on
 		// workspace removal in the meantime.
-		r := r
 		go func() {
 			removeResults <- r.RemoveWithTimeout(ctx)
 		}()
@@ -1447,15 +1470,21 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 		return
 	}
 	p.mu.Lock()
-	state := cr.state
+	state := cr.getState()
 	p.mu.Unlock()
 	if !finishedCleanly || cr.doNotReuse || state != ready {
 		log.CtxWarningf(ctx, "Failed to recycle runner %s due to previous execution error", cr)
+		metrics.RunnerPoolFailedRecycleAttempts.With(prometheus.Labels{
+			metrics.RunnerPoolFailedRecycleReason: "execution_error",
+		}).Inc()
 		return
 	}
 	// Clean the workspace before recycling the runner (to save on disk space).
 	if err := cr.Workspace.Clean(); err != nil {
 		log.CtxErrorf(ctx, "Failed to recycle runner %s: failed to clean workspace: %s", cr, err)
+		metrics.RunnerPoolFailedRecycleAttempts.With(prometheus.Labels{
+			metrics.RunnerPoolFailedRecycleReason: "clean_workspace_failed",
+		}).Inc()
 		return
 	}
 
