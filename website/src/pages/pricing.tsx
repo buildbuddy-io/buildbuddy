@@ -239,7 +239,7 @@ function Index() {
             <div>$X / GB</div>
             <div>Unlimited</div>
 
-            <div>Globally distribued edge-cache</div>
+            <div>Globally distributed edge-cache</div>
             <Yes />
             <Yes />
             <Yes />

@@ -322,7 +322,7 @@ func (q *chunkQueue) pop(ctx context.Context) ([]byte, error) {
 		index := q.start + uint16(len(q.futures))*q.step
 		// TODO: we shouldn't push futures if we already pushed EOF; add an
 		// indicator to q as to whether or not that has happened so that we can
-		// break this this loop when we reach the end of the availiable chunks.
+		// break this this loop when we reach the end of the available chunks.
 		q.pushNewFuture(ctx, index)
 		numNewConnections--
 	}

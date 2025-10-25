@@ -59,7 +59,7 @@ function Component() {
         />
         <Hero
           title="Low latency"
-          subtitle="Custom caching infrastucture allows us to serve cache artifacts with 2ms average read latencies, compared to ~100ms with S3."
+          subtitle="Custom caching infrastructure allows us to serve cache artifacts with 2ms average read latencies, compared to ~100ms with S3."
           image={require("../../static/img/latency.png")}
           bigImage={true}
         />
@@ -72,7 +72,7 @@ function Component() {
         />
         <Hero
           title="gRPC protocol"
-          subtitle="gRPC protocool enables connection multiplexing, timing profile & test log uploading, and more."
+          subtitle="gRPC protocol enables connection multiplexing, timing profile & test log uploading, and more."
           image={require("../../static/img/test-parsing.png")}
           bigImage={true}
         />
