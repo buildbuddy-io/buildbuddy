@@ -93,18 +93,18 @@ export function redactCommand(
   const allowedLowercase = normalizeAllowList(allowEnvMetadata, defaultAllowedEnvVars);
   const redactedCommand = build.bazel.remote.execution.v2.Command.create(command);
   redactedCommand.environmentVariables = (command.environmentVariables ?? []).map((variable) => {
-    if (!variable) {
-      return variable;
-    }
-    const name = variable.name ?? "";
-    const value = variable.value ?? "";
+    const clonedVariable =
+      build.bazel.remote.execution.v2.Command.EnvironmentVariable.create(variable ?? {});
+    const name = clonedVariable.name ?? "";
+    const value = clonedVariable.value ?? "";
     if (!name || value === "" || value === REDACTED_PLACEHOLDER) {
-      return variable;
+      return clonedVariable;
     }
     if (isEnvVarAllowed(name, allowedLowercase)) {
-      return variable;
+      return clonedVariable;
     }
-    return { ...variable, value: REDACTED_PLACEHOLDER };
+    clonedVariable.value = REDACTED_PLACEHOLDER;
+    return clonedVariable;
   });
   return redactedCommand;
 }
