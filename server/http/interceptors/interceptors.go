@@ -382,7 +382,7 @@ func routeLabel(r *http.Request) string {
 	if path == "" || path == "/" {
 		return "/"
 	}
-	if path == "/readyz" || path == "/healthz" {
+	if path == "/readyz" || path == "/healthz" || path == "/file/download" {
 		return path
 	}
 	if strings.HasPrefix(path, "/image/") {
