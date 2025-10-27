@@ -597,6 +597,7 @@ type PebbleGCSStorage interface {
 }
 
 type Options struct {
+	tmpDir  string
 	gcs     PebbleGCSStorage
 	appName string
 	clock   clockwork.Clock
@@ -617,7 +618,14 @@ func WithClock(c clockwork.Clock) Option {
 	}
 }
 
+func WithTmpDir(tmpDir string) Option {
+	return func(o *Options) {
+		o.tmpDir = tmpDir
+	}
+}
+
 type fileStorer struct {
+	tmpDir  string
 	gcs     PebbleGCSStorage
 	appName string
 	clock   clockwork.Clock
@@ -633,6 +641,7 @@ func New(opts ...Option) Store {
 		options.clock = clockwork.NewRealClock()
 	}
 	return &fileStorer{
+		tmpDir:  options.tmpDir,
 		gcs:     options.gcs,
 		appName: options.appName,
 		clock:   options.clock,
@@ -789,7 +798,12 @@ func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord
 	if err != nil {
 		return nil, err
 	}
-	wc, err := disk.FileWriter(ctx, filepath.Join(fileDir, string(file)))
+	fileName := filepath.Join(fileDir, string(file))
+	tmpDir := fileDir
+	if fs.tmpDir != "" {
+		tmpDir = fs.tmpDir
+	}
+	wc, err := disk.FileWriterWithTmpDir(ctx, tmpDir, fileName)
 	if err != nil {
 		return nil, err
 	}

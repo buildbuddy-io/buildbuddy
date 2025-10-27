@@ -618,6 +618,20 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, opts.GCSAppName))
 			log.Printf("Pebble Cache: storing files larger than %d bytes in GCS (bucket: %q)", *opts.MinGCSFileSizeBytes, opts.GCSBucket)
 			log.Printf("Pebble Cache: GCS TTL is set to %d days", *opts.GCSTTLDays)
+		} else {
+			// If storing temporary files for large writes on disk, write them
+			// to a dedicated directory under the root partition so they can
+			// easily be cleaned up on server startup (and do that too). Note
+			// that this doesn't apply to inlined files.
+			tmpFileDir := filepath.Join(opts.RootDirectory, "tmp")
+			filestoreOpts = append(filestoreOpts, filestore.WithTmpDir(tmpFileDir))
+			if err := os.RemoveAll(tmpFileDir); err != nil {
+				log.Warningf("Error cleaning up tmp file storage %s: %v", tmpFileDir, err)
+			}
+			if err := disk.EnsureDirectoryExists(tmpFileDir); err != nil {
+				log.Warningf("Error creating tmp file storage %s: %v", tmpFileDir, err)
+				return nil, err
+			}
 		}
 		fileStorer = filestore.New(filestoreOpts...)
 	}
