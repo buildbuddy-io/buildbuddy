@@ -136,6 +136,9 @@ message Execution {
   // describing the action being executed).
   string action_mnemonic = 17;
 
+  // The primary output path associated with the execution, if any.
+  string primary_output_path = 18;
+
   // The executor hostname that ran the execution. This is only populated if the
   // user has permission to view the executor metadata.
   string executor_hostname = 16;
