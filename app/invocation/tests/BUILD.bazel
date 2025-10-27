@@ -1,0 +1,20 @@
+load("@npm//:@playwright/test/package_json.bzl", playwright_bin = "bin")
+
+playwright_bin.playwright_test(
+    name = "invocation_empty_state_playwright_test",
+    args = ["test", "--config=fullstack_empty/playwright.config.js"],
+    data = [
+        "fullstack_empty/empty_state.spec.js",
+        "fullstack_empty/playwright.config.js",
+        "fullstack_empty/start_buildbuddy.js",
+        "fullstack_empty/test_environment.js",
+        "//server/cmd/buildbuddy",
+        "//:node_modules",
+        "@playwright//:chromium-headless-shell",
+    ],
+    env = {
+        "PLAYWRIGHT_BROWSERS_PATH": "$(rootpath @playwright//:chromium-headless-shell)/../",
+    },
+    tags = ["no-sandbox"],
+    timeout = "moderate",
+)
