@@ -385,6 +385,15 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 	require.NotContains(t, string(b), "Running Bazel server needs to be killed")
 }
 
+func TestBazelModDumpRepoMappingEmptyString(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	cmd := testcli.Command(t, ws, "mod", "dump_repo_mapping", "")
+	b, err := testcli.Output(cmd)
+	require.NoErrorf(t, err, "output: %s", string(b))
+	// stdout should look like a JSON object
+	require.Regexp(t, `^\{.*\}$`, strings.TrimSpace(string(b)))
+}
+
 func retryUntilSuccess(t *testing.T, f func() error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
