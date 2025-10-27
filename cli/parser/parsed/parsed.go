@@ -791,7 +791,7 @@ func appendExpansion(
 	removeDoubleDash bool,
 ) ([]arguments.Argument, error) {
 	for _, a := range toExpand {
-		log.Debugf("Expanding '%+v'", a.Format())
+		log.Debugf("Expanding %s", shlex.Quote(a.Format()...))
 		switch a := a.(type) {
 		case *arguments.DoubleDash:
 			if removeDoubleDash {

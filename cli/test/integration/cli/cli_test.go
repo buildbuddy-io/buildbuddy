@@ -387,6 +387,15 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 
 func TestBazelModDumpRepoMappingEmptyString(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		// Add a nop plugin to make sure we properly handle args when there is
+		// at least one plugin in the pre-bazel plugin pipeline.
+		"testplugin/pre_bazel.sh": `#!/usr/bin/env bash`,
+		"buildbuddy.yaml": `
+plugins:
+- path: testplugin
+`,
+	})
 	cmd := testcli.Command(t, ws, "mod", "dump_repo_mapping", "")
 	b, err := testcli.Output(cmd)
 	require.NoErrorf(t, err, "output: %s", string(b))

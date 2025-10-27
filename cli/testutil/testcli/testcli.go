@@ -30,7 +30,7 @@ var (
 	bbRunfilePath string
 
 	streamOutputs = flag.Bool("test_stream_cli_output", false, "Show live CLI output during test execution.")
-	verbose       = flag.Bool("test_cli_verbose", false, "Whether to add --verbose=1 to the CLI.")
+	verbose       = flag.Bool("test_cli_verbose", false, "Whether to add --verbose to the CLI.")
 
 	initEnvOnce sync.Once
 )
@@ -56,7 +56,7 @@ func Command(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 		require.NoError(t, err)
 	})
 	if *verbose {
-		args = append(args, "--verbose=1")
+		args = append([]string{"--verbose"}, args...)
 	}
 	cmd := exec.Command(BinaryPath(t), args...)
 	cmd.Dir = workspacePath

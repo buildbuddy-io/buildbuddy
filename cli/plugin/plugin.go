@@ -639,8 +639,7 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 		argsFile.Close()
 		os.Remove(argsFile.Name())
 	}()
-	_, err = disk.WriteFile(context.TODO(), argsFile.Name(), []byte(strings.Join(args, "\n")+"\n"))
-	if err != nil {
+	if err := writeArgsFile(argsFile.Name(), args); err != nil {
 		return nil, nil, err
 	}
 
@@ -653,8 +652,7 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 		execArgsFile.Close()
 		os.Remove(execArgsFile.Name())
 	}()
-	_, err = disk.WriteFile(context.TODO(), execArgsFile.Name(), []byte(strings.Join(execArgs, "\n")+"\n"))
-	if err != nil {
+	if err := writeArgsFile(execArgsFile.Name(), execArgs); err != nil {
 		return nil, nil, err
 	}
 
@@ -863,7 +861,7 @@ func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin)
 	// post_bazel output will get intermingled with bazel output.
 	defer wc.Close()
 
-	log.Debugf("Calling bazelisk with %+v", args)
+	log.Debugf("Calling bazelisk with %s", shlex.Quote(args...))
 
 	// Create the output file where the original bazel output will be written,
 	// for post-bazel plugins to read.
@@ -942,7 +940,7 @@ func (o *overrideCloser) Close() error {
 // Blank lines are intentionally preserved, since some commands accept
 // empty arguments, e.g.: bazel mod dump_repo_mapping ""
 func readArgsFile(path string) ([]string, error) {
-	b, err := disk.ReadFile(context.TODO(), path)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, status.InternalErrorf("failed to read arguments: %s", err)
 	}
@@ -952,6 +950,14 @@ func readArgsFile(path string) ([]string, error) {
 	s := string(b)
 	s = strings.TrimSuffix(s, "\n")
 	return strings.Split(s, "\n"), nil
+}
+
+func writeArgsFile(path string, args []string) error {
+	lines := make([]string, 0, len(args))
+	for _, arg := range args {
+		lines = append(lines, arg+"\n")
+	}
+	return os.WriteFile(path, []byte(strings.Join(lines, "")), 0644)
 }
 
 func realpath(path string) (string, error) {
