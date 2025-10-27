@@ -5,9 +5,18 @@ describe("InvocationActionCard redaction helpers", () => {
   it("redacts env vars not present in the allowlist", () => {
     const command = build.bazel.remote.execution.v2.Command.create({
       environmentVariables: [
-        { name: "SECRET_ENV", value: "super-secret" },
-        { name: "SAFE_ENV", value: "safe-value" },
-        { name: "USER", value: "ci-bot" },
+        build.bazel.remote.execution.v2.Command.EnvironmentVariable.create({
+          name: "SECRET_ENV",
+          value: "super-secret",
+        }),
+        build.bazel.remote.execution.v2.Command.EnvironmentVariable.create({
+          name: "SAFE_ENV",
+          value: "safe-value",
+        }),
+        build.bazel.remote.execution.v2.Command.EnvironmentVariable.create({
+          name: "USER",
+          value: "ci-bot",
+        }),
       ],
     });
 
@@ -28,9 +37,18 @@ describe("InvocationActionCard redaction helpers", () => {
   it("supports wildcard entries in the allowlist metadata", () => {
     const command = build.bazel.remote.execution.v2.Command.create({
       environmentVariables: [
-        { name: "TOKEN_API", value: "api-token" },
-        { name: "TOKEN_SECRET", value: "another-secret" },
-        { name: "OTHER_SECRET", value: "super-secret" },
+        build.bazel.remote.execution.v2.Command.EnvironmentVariable.create({
+          name: "TOKEN_API",
+          value: "api-token",
+        }),
+        build.bazel.remote.execution.v2.Command.EnvironmentVariable.create({
+          name: "TOKEN_SECRET",
+          value: "another-secret",
+        }),
+        build.bazel.remote.execution.v2.Command.EnvironmentVariable.create({
+          name: "OTHER_SECRET",
+          value: "super-secret",
+        }),
       ],
     });
 
