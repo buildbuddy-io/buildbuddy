@@ -30,7 +30,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
-	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
 
 const (
@@ -47,7 +46,6 @@ type Options struct {
 	MetadataClient mdspb.MetadataServiceClient
 	FileStorer     filestore.Store
 
-	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
 
 	MinBytesAutoZstdCompression int64
@@ -64,7 +62,6 @@ type Cache struct {
 
 func New(env environment.Env, opts Options) (*Cache, error) {
 	localOpts := opts
-	ensureDefaultPartitionExists(&localOpts)
 	return &Cache{
 		env:        env,
 		bufferPool: bytebufferpool.VariableSize(CompressorBufSizeBytes),
@@ -139,22 +136,6 @@ func (r *compressionReader) Close() error {
 type readCloser struct {
 	io.Reader
 	io.Closer
-}
-
-func ensureDefaultPartitionExists(opts *Options) {
-	foundDefaultPartition := false
-	for _, part := range opts.Partitions {
-		if part.ID == DefaultPartitionID {
-			foundDefaultPartition = true
-		}
-	}
-	if foundDefaultPartition {
-		return
-	}
-	opts.Partitions = append(opts.Partitions, disk.Partition{
-		ID:           DefaultPartitionID,
-		MaxSizeBytes: cache_config.MaxSizeBytes(),
-	})
 }
 
 func (c *Cache) encryptionEnabled(ctx context.Context) (bool, error) {
