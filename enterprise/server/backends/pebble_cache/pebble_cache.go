@@ -621,7 +621,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		} else {
 			// If storing temporary files for large writes on disk, write them
 			// to a dedicated directory under the root partition so they can
-			// easily be cleaned up on server startup (and do that too).
+			// easily be cleaned up on server startup (and do that too). Note
+			// that this doesn't apply to inlined files.
 			tmpFileDir := filepath.Join(opts.RootDirectory, "tmp")
 			filestoreOpts = append(filestoreOpts, filestore.WithTmpDir(tmpFileDir))
 			if err := os.RemoveAll(tmpFileDir); err != nil {
