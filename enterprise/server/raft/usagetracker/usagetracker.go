@@ -2,6 +2,7 @@ package usagetracker
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -207,7 +208,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 		for _, k := range keys {
 			sample, ok := k.Meta.(*approxlru.Sample[*evictionKey])
 			if !ok {
-				return nil, status.InternalError("meta not type of approxlru.Sample[*evictionKey]")
+				return nil, errors.New("meta not type of approxlru.Sample[*evictionKey]")
 			}
 			batch.Add(&rfpb.DeleteRequest{
 				Key:        k.Key,
@@ -216,7 +217,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 		}
 		batchCmd, err := batch.ToProto()
 		if err != nil {
-			return nil, status.WrapError(err, "could not construct delete req proto")
+			return nil, fmt.Errorf("could not construct delete req proto: %s", err)
 		}
 		rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 			Header: h,
@@ -237,7 +238,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 			}
 		}
 		if errCount > 0 {
-			return res, status.InternalErrorf("failed to evict %d keys in partition %s, last error: %s", errCount, pu.part.ID, err)
+			return res, fmt.Errorf("failed to evict %d keys in partition %s, last error: %s", errCount, pu.part.ID, err)
 		}
 		return res, nil
 	})
