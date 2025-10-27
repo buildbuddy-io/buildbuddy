@@ -336,10 +336,10 @@ func (w *writeMover) Close() error {
 }
 
 func FileWriter(ctx context.Context, fullPath string) (interfaces.CommittedWriteCloser, error) {
-	return FileWriterWithTmpFilename(ctx, fullPath, fullPath)
+	return FileWriterWithTmpDir(ctx, filepath.Dir(fullPath), fullPath)
 }
 
-func FileWriterWithTmpFilename(ctx context.Context, tmpFileName, fullPath string) (interfaces.CommittedWriteCloser, error) {
+func FileWriterWithTmpDir(ctx context.Context, tmpDir, fullPath string) (interfaces.CommittedWriteCloser, error) {
 	releaseQuota, err := reserveFileWriterQuota(ctx)
 	if err != nil {
 		return nil, err
@@ -354,7 +354,7 @@ func FileWriterWithTmpFilename(ctx context.Context, tmpFileName, fullPath string
 		return nil, err
 	}
 
-	tmpFileName = tmpFileName + fmt.Sprintf(".%s.tmp", randStr)
+	tmpFileName := filepath.Join(tmpDir, filepath.Base(fullPath)+fmt.Sprintf(".%s.tmp", randStr))
 	f, err := os.OpenFile(tmpFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err

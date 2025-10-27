@@ -799,11 +799,11 @@ func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord
 		return nil, err
 	}
 	fileName := filepath.Join(fileDir, string(file))
-	tmpFileName := fileName
+	tmpDir := fileDir
 	if fs.tmpDir != "" {
-		tmpFileName = filepath.Join(fs.tmpDir, filepath.Base(string(file)))
+		tmpDir = fs.tmpDir
 	}
-	wc, err := disk.FileWriterWithTmpFilename(ctx, tmpFileName, fileName)
+	wc, err := disk.FileWriterWithTmpDir(ctx, tmpDir, fileName)
 	if err != nil {
 		return nil, err
 	}
