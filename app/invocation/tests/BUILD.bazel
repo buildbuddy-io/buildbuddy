@@ -4,7 +4,7 @@ genrule(
     name = "app_bundle_js",
     srcs = ["//app:app_bundle"],
     outs = ["app_bundle.js"],
-    cmd = "cp $< $@",
+    cmd = "cp $(location //app:app_bundle)/app.js $@",
 )
 
 genrule(

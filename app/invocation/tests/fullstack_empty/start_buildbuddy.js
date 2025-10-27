@@ -40,6 +40,7 @@ remote_execution:
       "--ssl_port=0",
       "--monitoring_port=0",
       "--grpc_port=0",
+      "--app_directory=app",
     ],
     {
       stdio: "inherit",
