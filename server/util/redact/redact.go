@@ -288,10 +288,9 @@ func RedactEnvVar(flag string) string {
 		return flag
 	}
 
-	flagName := flag[:eqIdx+1] // includes the =
-	value := flag[eqIdx+1:]    // everything after the =
+	flagName := flag[:eqIdx+1]
+	value := flag[eqIdx+1:]
 
-	// Handle quoted values of the form '--flag="VAR=value"' or '--flag=\'VAR=value\''.
 	if len(value) > 0 && (value[0] == '\'' || value[0] == '"') {
 		quote := value[0]
 		closeIdx := strings.LastIndexByte(value, byte(quote))
@@ -304,7 +303,6 @@ func RedactEnvVar(flag string) string {
 			}
 		}
 	} else {
-		// Handle unquoted values of the form '--flag=VAR=value'.
 		varEqIdx := strings.Index(value, "=")
 		if varEqIdx > 0 {
 			varName := value[:varEqIdx]
@@ -312,7 +310,6 @@ func RedactEnvVar(flag string) string {
 		}
 	}
 
-	// Fallback: strip everything after '--flag=' if we can't identify VAR=value.
 	return flagName + redactedPlaceholder
 }
 
