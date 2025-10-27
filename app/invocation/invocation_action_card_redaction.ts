@@ -48,10 +48,7 @@ export function parseAllowEnvMetadata(metadata: string | undefined): string[] {
     .filter((entry) => entry.length > 0);
 }
 
-function normalizeAllowList(
-  allowEnvMetadata: string | undefined,
-  defaultAllowedEnvVars: readonly string[]
-): string[] {
+function normalizeAllowList(allowEnvMetadata: string | undefined, defaultAllowedEnvVars: readonly string[]): string[] {
   const allowed = new Set<string>();
   for (const envVar of defaultAllowedEnvVars) {
     allowed.add(envVar.toLowerCase());
@@ -93,8 +90,7 @@ export function redactCommand(
   const allowedLowercase = normalizeAllowList(allowEnvMetadata, defaultAllowedEnvVars);
   const redactedCommand = build.bazel.remote.execution.v2.Command.create(command);
   redactedCommand.environmentVariables = (command.environmentVariables ?? []).map((variable) => {
-    const clonedVariable =
-      build.bazel.remote.execution.v2.Command.EnvironmentVariable.create(variable ?? {});
+    const clonedVariable = build.bazel.remote.execution.v2.Command.EnvironmentVariable.create(variable ?? {});
     const name = clonedVariable.name ?? "";
     const value = clonedVariable.value ?? "";
     if (!name || value === "" || value === REDACTED_PLACEHOLDER) {

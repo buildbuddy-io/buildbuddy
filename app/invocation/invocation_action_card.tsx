@@ -37,9 +37,9 @@ import { getErrorReason } from "../util/rpc";
 import { quote } from "../util/shlex";
 import ActionCompareButtonComponent from "./action_compare_button";
 import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
+import { REDACTED_PLACEHOLDER, redactCommand } from "./invocation_action_card_redaction";
 import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
 import InvocationModel from "./invocation_model";
-import { REDACTED_PLACEHOLDER, redactCommand } from "./invocation_action_card_redaction";
 
 type IDigest = build.bazel.remote.execution.v2.IDigest;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
