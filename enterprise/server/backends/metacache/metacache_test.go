@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/metacache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/metacache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/mockmetadata"
@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
@@ -92,10 +91,6 @@ func TestReadWrite(t *testing.T) {
 		MinBytesAutoZstdCompression: 100,
 
 		GCSTTLDays: 1,
-		Partitions: []disk.Partition{{
-			ID:           "default",
-			MaxSizeBytes: int64(1_000_000_000), // 1GB
-		}},
 	}
 	bc := runMetacache(t, te, clock, options)
 
@@ -138,10 +133,6 @@ func TestGetSet(t *testing.T) {
 		MinBytesAutoZstdCompression: 100,
 
 		GCSTTLDays: 1,
-		Partitions: []disk.Partition{{
-			ID:           "default",
-			MaxSizeBytes: int64(1_000_000_000), // 1GB
-		}},
 	}
 	bc := runMetacache(t, te, clock, options)
 
@@ -176,10 +167,6 @@ func TestFindMissing(t *testing.T) {
 		MinBytesAutoZstdCompression: 100,
 
 		GCSTTLDays: 1,
-		Partitions: []disk.Partition{{
-			ID:           "default",
-			MaxSizeBytes: int64(1_000_000_000), // 1GB
-		}},
 	}
 	bc := runMetacache(t, te, clock, options)
 
@@ -265,7 +252,6 @@ func getCrypterEnv(t *testing.T) (*testenv.TestEnv, string) {
 }
 
 func TestEncryption(t *testing.T) {
-	maxSizeBytes := int64(1_000_000_000) // 1GB
 	testCases := []struct {
 		desc                   string
 		averageChunkSizeBytes  int
@@ -319,10 +305,6 @@ func TestEncryption(t *testing.T) {
 					MaxInlineFileSizeBytes:      tc.maxInlineFileSizeBytes,
 					MinBytesAutoZstdCompression: 100,
 					GCSTTLDays:                  1,
-					Partitions: []disk.Partition{{
-						ID:           metacache.DefaultPartitionID,
-						MaxSizeBytes: maxSizeBytes,
-					}},
 				}
 				bc := runMetacache(t, te, clock, options)
 
