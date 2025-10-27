@@ -39,6 +39,7 @@ import ActionCompareButtonComponent from "./action_compare_button";
 import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
 import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
 import InvocationModel from "./invocation_model";
+import { REDACTED_PLACEHOLDER, redactCommand } from "./invocation_action_card_redaction";
 
 type IDigest = build.bazel.remote.execution.v2.IDigest;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
@@ -429,8 +430,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
     rpcService
       .fetchBytestreamFile(commandURL, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
+        const decodedCommand = build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer));
         this.setState({
-          command: build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer)),
+          command: redactCommand(decodedCommand, {
+            allowEnvMetadata: this.props.model.buildMetadataMap.get("ALLOW_ENV"),
+          }),
         });
       })
       .catch((e) => console.error("Failed to fetch command:", e));
@@ -1006,7 +1010,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       // after some time.
       const nameLower = prop.name.toLowerCase();
       if (nameLower.includes("username") || nameLower.includes("password") || nameLower.includes("env-overrides")) {
-        value = "<REDACTED>";
+        value = REDACTED_PLACEHOLDER;
       }
       overrides.set(prop.name, value);
     }

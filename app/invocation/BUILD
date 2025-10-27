@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -147,6 +147,7 @@ ts_library(
         "//app/invocation:action_compare_button",
         "//app/invocation:execution_status",
         "//app/invocation:invocation_action_tree_node",
+        "//app/invocation:invocation_action_card_redaction",
         "//app/invocation:invocation_model",
         "//app/preferences",
         "//app/service:rpc_service",
@@ -165,6 +166,15 @@ ts_library(
         "//proto:remote_execution_ts_proto",
         "//proto:timestamp_ts_proto",
         "//proto:workflow_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "invocation_action_card_redaction",
+    srcs = ["invocation_action_card_redaction.ts"],
+    deps = [
+        "//:node_modules/tslib",
+        "//proto:remote_execution_ts_proto",
     ],
 )
 
@@ -197,6 +207,16 @@ ts_library(
         "//app/service:rpc_service",
         "//proto:build_event_stream_ts_proto",
         "//proto:target_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "invocation_action_card_redaction_test",
+    srcs = ["invocation_action_card_redaction_test.ts"],
+    deps = [
+        "//:node_modules/tslib",
+        "//app/invocation:invocation_action_card_redaction",
+        "//proto:remote_execution_ts_proto",
     ],
 )
 
