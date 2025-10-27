@@ -272,48 +272,48 @@ func redactRemoteHeaders(txt string) string {
 }
 
 func redactEnvVars(txt string) string {
-	return envVarOptionNamesRegex.ReplaceAllStringFunc(txt, func(match string) string {
-		// Extract the flag name and env var assignment
-		// Format can be:
-		// - --flag='VAR_NAME=value' or --flag="VAR_NAME=value"
-		// - --flag=VAR_NAME=value (unquoted)
+	return envVarOptionNamesRegex.ReplaceAllStringFunc(txt, RedactEnvVar)
+}
 
-		// Find the = after the flag name
-		eqIdx := strings.Index(match, "=")
-		if eqIdx == -1 {
-			return match
-		}
+// RedactEnvVar replaces the value portion of a Bazel environment variable flag
+// (e.g. `--action_env=FOO=bar`) with the redaction placeholder while preserving the
+// surrounding flag structure, including quotes. This helper is invoked for the
+// env var options listed in envVarOptionNames (action_env, client_env, host_action_env,
+// repo_env, test_env) and handles both quoted and unquoted `VAR=value` payloads,
+// including multiline quoted values.
+func RedactEnvVar(flag string) string {
+	// Find the = after the flag name.
+	eqIdx := strings.Index(flag, "=")
+	if eqIdx == -1 {
+		return flag
+	}
 
-		flagName := match[:eqIdx+1] // includes the =
-		value := match[eqIdx+1:]     // everything after the =
+	flagName := flag[:eqIdx+1] // includes the =
+	value := flag[eqIdx+1:]    // everything after the =
 
-		// Check if value is quoted
-		if len(value) > 0 && (value[0] == '\'' || value[0] == '"') {
-			quote := value[0]
-			// Find the closing quote
-			closeIdx := strings.LastIndexByte(value, byte(quote))
-			if closeIdx > 0 {
-				// Extract content between quotes
-				content := value[1:closeIdx]
-				// Find the = within the content to get VAR_NAME
-				contentEqIdx := strings.Index(content, "=")
-				if contentEqIdx > 0 {
-					varName := content[:contentEqIdx]
-					return flagName + varName + "=" + redactedPlaceholder
-				}
-			}
-		} else {
-			// Unquoted value: VAR_NAME=value
-			varEqIdx := strings.Index(value, "=")
-			if varEqIdx > 0 {
-				varName := value[:varEqIdx]
+	// Handle quoted values of the form '--flag="VAR=value"' or '--flag=\'VAR=value\''.
+	if len(value) > 0 && (value[0] == '\'' || value[0] == '"') {
+		quote := value[0]
+		closeIdx := strings.LastIndexByte(value, byte(quote))
+		if closeIdx > 0 {
+			content := value[1:closeIdx]
+			contentEqIdx := strings.Index(content, "=")
+			if contentEqIdx > 0 {
+				varName := content[:contentEqIdx]
 				return flagName + varName + "=" + redactedPlaceholder
 			}
 		}
+	} else {
+		// Handle unquoted values of the form '--flag=VAR=value'.
+		varEqIdx := strings.Index(value, "=")
+		if varEqIdx > 0 {
+			varName := value[:varEqIdx]
+			return flagName + varName + "=" + redactedPlaceholder
+		}
+	}
 
-		// Fallback: just redact the whole value
-		return flagName + redactedPlaceholder
-	})
+	// Fallback: strip everything after '--flag=' if we can't identify VAR=value.
+	return flagName + redactedPlaceholder
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {

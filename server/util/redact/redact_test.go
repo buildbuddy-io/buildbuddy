@@ -161,6 +161,49 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 	}
 }
 
+func TestRedactEnvVar(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "unquoted var assignment",
+			input:    "--action_env=FOO=bar",
+			expected: "--action_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "double quoted var assignment",
+			input:    `--client_env="FOO=bar baz"`,
+			expected: "--client_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "single quoted var assignment",
+			input:    "--repo_env='FOO=bar=baz'",
+			expected: "--repo_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "fallback when missing VAR portion",
+			input:    "--test_env=foobar",
+			expected: "--test_env=<REDACTED>",
+		},
+		{
+			name:     "multiline quoted var assignment",
+			input:    "--client_env=\"FOO=bar\nbaz\"",
+			expected: "--client_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "no equals sign",
+			input:    "--host_action_env",
+			expected: "--host_action_env",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, redact.RedactEnvVar(tc.input))
+		})
+	}
+}
+
 func TestRedactEntireSections(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
