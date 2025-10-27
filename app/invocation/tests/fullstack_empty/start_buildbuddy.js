@@ -41,6 +41,7 @@ remote_execution:
       "--monitoring_port=0",
       "--grpc_port=0",
       "--app_directory=app",
+      "--server_type=buildbuddy-server",
     ],
     {
       stdio: "inherit",
