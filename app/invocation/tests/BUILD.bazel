@@ -1,13 +1,37 @@
 load("@npm//:@playwright/test/package_json.bzl", playwright_bin = "bin")
 
+genrule(
+    name = "app_bundle_js",
+    srcs = ["//app:app_bundle"],
+    outs = ["app_bundle.js"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "style_css",
+    srcs = ["//app:style.css"],
+    outs = ["style.css"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "sha_sum",
+    srcs = ["//app:sha"],
+    outs = ["sha.sum"],
+    cmd = "cp $< $@",
+)
+
 playwright_bin.playwright_test(
     name = "invocation_empty_state_playwright_test",
-    args = ["test", "--config=fullstack_empty/playwright.config.js"],
+    args = ["test", "--config=app/invocation/tests/fullstack_empty/playwright.config.js"],
     data = [
         "fullstack_empty/empty_state.spec.js",
         "fullstack_empty/playwright.config.js",
         "fullstack_empty/start_buildbuddy.js",
         "fullstack_empty/test_environment.js",
+        ":app_bundle_js",
+        ":style_css",
+        ":sha_sum",
         "//server/cmd/buildbuddy",
         "//:node_modules",
         "@playwright//:chromium-headless-shell",

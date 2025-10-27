@@ -2,7 +2,6 @@ const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
-const { runfiles } = require("@bazel/runfiles");
 const { HTTP_PORT } = require("./test_environment");
 
 function posixPath(p) {
@@ -31,7 +30,8 @@ remote_execution:
 
   writeFileSync(configPath, configYaml, { encoding: "utf8" });
 
-  const buildbuddyBin = runfiles.resolve("server/cmd/buildbuddy/buildbuddy_/buildbuddy");
+  const runfilesRoot = path.resolve(__dirname, "..", "..", "..", "..");
+  const buildbuddyBin = path.join(runfilesRoot, "server/cmd/buildbuddy/buildbuddy_/buildbuddy");
   const child = spawn(
     buildbuddyBin,
     [
