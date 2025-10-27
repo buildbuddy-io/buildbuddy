@@ -166,7 +166,7 @@ type envOpts struct {
 	runProxy         bool
 }
 
-func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEnv {
+func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEnv {
 	err := networking.Configure(ctx)
 	require.NoError(t, err)
 	testnetworking.Setup(t)
@@ -285,7 +285,7 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	return env
 }
 
-func runProxyServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *testing.T) {
+func runProxyServers(ctx context.Context, proxyEnv *testenv.TestEnv, t testing.TB) {
 	server, err := byte_stream_server.NewByteStreamServer(proxyEnv)
 	require.NoError(t, err)
 	acServer, err := action_cache_server.NewActionCacheServer(proxyEnv)
@@ -294,7 +294,7 @@ func runProxyServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *testing.
 	proxyEnv.SetLocalActionCacheServer(acServer)
 }
 
-func executorRootDir(t *testing.T) string {
+func executorRootDir(t testing.TB) string {
 	// When running this test on the bare executor pool, ensure the jailer root
 	// is under /buildbuddy so that it's on the same device as the executor data
 	// dir (with action workspaces and filecache).
@@ -313,7 +313,7 @@ func executorRootDir(t *testing.T) string {
 	return testfs.MakeTempSymlink(t, "/tmp", "buildbuddy-*-jailer", testfs.MakeTempDir(t))
 }
 
-func getExecutorConfig(t *testing.T) *firecracker.ExecutorConfig {
+func getExecutorConfig(t testing.TB) *firecracker.ExecutorConfig {
 	root := executorRootDir(t)
 	buildRoot := filepath.Join(root, "build")
 	cacheRoot := filepath.Join(root, "cache")
@@ -3264,6 +3264,96 @@ func TestFirecrackerStressIO(t *testing.T) {
 	}
 	err := eg.Wait()
 	assert.NoError(t, err)
+}
+
+func Benchmark_PausePerformance(b *testing.B) {
+	for _, memorySizeMb := range []int64{500, 1000, 2000, 4000} {
+		b.Run(fmt.Sprintf("memory_size_%d_mb", memorySizeMb), func(b *testing.B) {
+			ctx := context.Background()
+
+			env := getTestEnv(ctx, b, envOpts{})
+			env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+			rootDir := testfs.MakeTempDir(b)
+			workDir := testfs.MakeDirAll(b, rootDir, "work")
+
+			cfg := getExecutorConfig(b)
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         ubuntuImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:            2,
+					MemSizeMb:          memorySizeMb,
+					EnableNetworking:   true,
+					ScratchDiskSizeMb:  500,
+					GuestKernelVersion: cfg.GuestKernelVersion,
+					FirecrackerVersion: cfg.FirecrackerVersion,
+					GuestApiVersion:    cfg.GuestAPIVersion,
+				},
+				ExecutorConfig: cfg,
+			}
+			task := &repb.ExecutionTask{
+				Command: &repb.Command{
+					// Note: platform must match in order to share snapshots
+					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+					}},
+					Arguments: []string{"./buildbuddy_ci_runner"},
+				},
+			}
+
+			c, err := firecracker.NewContainer(ctx, env, task, opts)
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage); err != nil {
+				b.Fatalf("unable to pull image: %s", err)
+			}
+
+			if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+				b.Fatalf("unable to Create container: %s", err)
+			}
+			b.Cleanup(func() {
+				if err := c.Remove(ctx); err != nil {
+					b.Fatal(err)
+				}
+			})
+
+			mbToWrite := .7 * float64(memorySizeMb)
+			cmd := &repb.Command{
+				// Write a 350MB file of random data.
+				// This will dirty memory in the VM before the data gets written to disk.
+				Arguments: []string{"sh", "-c", `
+dd if=/dev/urandom of=/tmp/bigfile bs=1M count=` + fmt.Sprint(mbToWrite) + `
+free -h
+		`},
+			}
+
+			// Generate one full snapshot outside of the loop. Within the loop, it will always create a diff snapshot.
+			res := c.Exec(ctx, cmd, nil /*=stdio*/)
+			require.NoError(b, res.Error)
+			b.StartTimer()
+			err = c.Pause(ctx)
+			b.StopTimer()
+			require.NoError(b, err)
+			err = c.Unpause(ctx)
+			require.NoError(b, err)
+
+			for range b.N {
+				b.StopTimer()
+				res = c.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(b, res.Error)
+				b.StartTimer()
+				err = c.Pause(ctx)
+				b.StopTimer()
+				require.NoError(b, err)
+				err = c.Unpause(ctx)
+				require.NoError(b, err)
+			}
+			assert.Equal(b, int64(b.N), res.VMMetadata.GetSavedSnapshotVersionNumber())
+		})
+	}
+
 }
 
 func TestBazelBuild(t *testing.T) {

@@ -95,6 +95,7 @@ var (
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
 	enableLinux6_1                        = flag.Bool("executor.firecracker_enable_linux_6_1", false, "Enable the 6.1 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
+	enableNativeSnapshotOverwriting       = flag.Bool("executor.firecracker_enable_native_snapshot_overwriting", false, "If true, use the firecracker feature that directly writes a diff snapshot on top of a snapshot file, instead of us manually merging them.")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -993,15 +994,15 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	snapshotSharingEnabled := snaputil.IsChunkedSnapshotSharingEnabled()
 	memSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.memSnapshotName)
 
-	if snapshotDetails.snapshotType == diffSnapshotType {
-		// baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
-		// mergeStart := time.Now()
-		// if err := MergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
-		// 	return status.UnknownErrorf("merge diff snapshot failed: %s", err)
-		// }
-		// log.CtxDebugf(ctx, "VMM merge diff snapshot took %s", time.Since(mergeStart))
-		// Use the merged memory snapshot.
-		memSnapshotPath = filepath.Join(c.getChroot(), memoryChunkDirName+vbdMountDirSuffix, vbd.FileName)
+	if snapshotDetails.snapshotType == diffSnapshotType && !*enableNativeSnapshotOverwriting {
+		// If using firecracker's native snapshot overwriting feature, the merged memory snapshot was generated
+		// in `createSnapshot`.
+		baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
+		mergeStart := time.Now()
+		if err := MergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
+			return status.UnknownErrorf("merge diff snapshot failed: %s", err)
+		}
+		log.CtxDebugf(ctx, "VMM merge diff snapshot took %s", time.Since(mergeStart))
 	}
 
 	// If we're creating a snapshot for the first time, create a COWStore from
@@ -2947,22 +2948,18 @@ func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetai
 	}
 
 	memSnapshotName := snapshotDetails.memSnapshotName
-	if c.memoryStore != nil {
+	if c.memoryStore != nil && *enableNativeSnapshotOverwriting {
 		d, err := vbd.New(c.memoryStore)
 		if err != nil {
 			return status.WrapError(err, "failed to create memory VBD")
 		}
-		relVBDPath := memoryChunkDirName+vbdMountDirSuffix
+		relVBDPath := memoryChunkDirName + vbdMountDirSuffix
 		mountPath := filepath.Join(c.getChroot(), relVBDPath)
 		if err := d.Mount(c.vmCtx, mountPath); err != nil {
 			return status.WrapError(err, "failed to mount memory VBD")
 		}
-		memSnapshotName = filepath.Join(relVBDPath, vbd.FileName)
-
-		// TODO: How do I get the updated data from the VBD?
-
-		// TODO: When should I unmount
 		defer d.Unmount(ctx)
+		memSnapshotName = filepath.Join(relVBDPath, vbd.FileName)
 	}
 
 	if err := c.machine.CreateSnapshot(ctx, memSnapshotName, snapshotDetails.vmStateSnapshotName, snapshotTypeOpt); err != nil {
