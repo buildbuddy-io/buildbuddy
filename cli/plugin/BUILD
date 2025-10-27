@@ -17,6 +17,7 @@ go_library(
         "//cli/workspace",
         "//server/util/disk",
         "//server/util/git",
+        "//server/util/shlex",
         "//server/util/status",
         "@com_github_creack_pty//:pty",
         "@in_gopkg_yaml_v2//:yaml_v2",

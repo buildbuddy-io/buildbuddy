@@ -13,5 +13,6 @@ go_library(
         "//cli/parser/bazelrc",
         "//cli/parser/options",
         "//server/util/lib/set",
+        "//server/util/shlex",
     ],
 )

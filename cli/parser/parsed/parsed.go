@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 )
 
 type Args interface {
@@ -731,7 +732,7 @@ func (a *OrderedArgs) expandConfigs(
 	if err != nil {
 		return nil, err
 	}
-	log.Debugf("Fully expanded args: %+v", arguments.FormatAll(expanded))
+	log.Debugf("Fully expanded args: %s", shlex.Quote(arguments.FormatAll(expanded)...))
 
 	// Append to new OrderedArgs to make sure `--` is handled correctly.
 	expandedArgs := &OrderedArgs{}
