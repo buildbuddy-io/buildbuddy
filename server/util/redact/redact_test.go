@@ -161,6 +161,49 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 	}
 }
 
+func TestRedactEnvVar(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "unquoted var assignment",
+			input:    "--action_env=FOO=bar",
+			expected: "--action_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "double quoted var assignment",
+			input:    `--client_env="FOO=bar baz"`,
+			expected: "--client_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "single quoted var assignment",
+			input:    "--repo_env='FOO=bar=baz'",
+			expected: "--repo_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "fallback when missing VAR portion",
+			input:    "--test_env=foobar",
+			expected: "--test_env=<REDACTED>",
+		},
+		{
+			name:     "multiline quoted var assignment",
+			input:    "--client_env=\"FOO=bar\nbaz\"",
+			expected: "--client_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "no equals sign",
+			input:    "--host_action_env",
+			expected: "--host_action_env",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, redact.RedactEnvVar(tc.input))
+		})
+	}
+}
+
 func TestRedactEntireSections(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
@@ -668,6 +711,36 @@ func TestRedactTxt(t *testing.T) {
 				"common --repo_env=AWS_SECRET_ACCESS_KEY=super_secret_access_key # gitleaks:allow",
 			expected: "common --repo_env=AWS_ACCESS_KEY_ID=<REDACTED> # gitleaks:allow\n" +
 				"common --repo_env=AWS_SECRET_ACCESS_KEY=<REDACTED> # gitleaks:allow",
+		},
+		{
+			name: "multiline environment variable - single quoted private key",
+			txt: "--test_env='PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n" +
+				"abc123def456ghi789jkl012mno345pqr678stu901vwx234yz\n" +
+				"fooBarBazQuxMultiLineSecretValue123456789ABCDEFGH\n" +
+				"-----END PRIVATE KEY-----' --test_env='OTHER_VAR=safe_value'",
+			expected: "--test_env=PRIVATE_KEY=<REDACTED> --test_env=OTHER_VAR=<REDACTED>",
+		},
+		{
+			name: "multiline environment variable - double quoted certificate",
+			txt: "--action_env=\"MY_CERT=-----BEGIN CERTIFICATE-----\n" +
+				"xYzAbC123dEfGhI456jKlMnO789pQrStU012vWxYz345AbCdE\n" +
+				"fakeMultiLineCertificateDataHereForTestingPurposesOnly\n" +
+				"-----END CERTIFICATE-----\" --action_env=\"NORMAL_VAR=test123\"",
+			expected: "--action_env=MY_CERT=<REDACTED> --action_env=NORMAL_VAR=<REDACTED>",
+		},
+		{
+			name: "multiline environment variable - single quoted with trailing comment",
+			txt: "--repo_env='PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n" +
+				"madeUpSecretKey999888777666555444333222111000ZZZYYY\n" +
+				"-----END PRIVATE KEY-----' # gitleaks:allow",
+			expected: "--repo_env=PRIVATE_KEY=<REDACTED> # gitleaks:allow",
+		},
+		{
+			name: "multiline environment variable - mixed with unquoted",
+			txt: "--test_env=SIMPLE_VAR=simple_value --test_env='MULTILINE_SECRET=line1\n" +
+				"line2\n" +
+				"line3' --action_env=ANOTHER_VAR=another_value",
+			expected: "--test_env=SIMPLE_VAR=<REDACTED> --test_env=MULTILINE_SECRET=<REDACTED> --action_env=ANOTHER_VAR=<REDACTED>",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
