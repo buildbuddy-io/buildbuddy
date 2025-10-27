@@ -231,7 +231,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(interfaces_interface_state_counters_in_octets{region=\"${region}\"}[1m])) by (source) * 8",
+          "expr": "sum(rate(interfaces_interface_state_counters_in_octets{region=\"${region}\", interface_name!~\"Port-Channel.*\"}[1m])) by (source) * 8",
           "legendFormat": "ingress {{source}}",
           "range": true,
           "refId": "A"
@@ -242,7 +242,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(interfaces_interface_state_counters_out_octets{region=\"${region}\"}[1m])) by (source) * 8",
+          "expr": "sum(rate(interfaces_interface_state_counters_out_octets{region=\"${region}\", interface_name!~\"Port-Channel.*\"}[1m])) by (source) * 8",
           "hide": false,
           "instant": false,
           "legendFormat": "egress {{source}}",
