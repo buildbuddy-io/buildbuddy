@@ -702,6 +702,7 @@
     }
   ],
   "preload": false,
+  "refresh": "1m",
   "schemaVersion": 41,
   "tags": [
     "file:baremetal-networking.json"
@@ -756,6 +757,5 @@
   "timepicker": {},
   "timezone": "browser",
   "title": "Baremetal Networking",
-  "uid": "df22a5nr1yio0e",
-  "refresh": "1m"
+  "uid": "df22a5nr1yio0e"
 }
