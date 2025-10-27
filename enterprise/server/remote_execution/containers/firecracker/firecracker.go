@@ -1090,12 +1090,12 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 		return false
 	}
 
-	remoteSavePolicy := platform.FindEffectiveValue(c.task, platform.RemoteSnapshotSavePolicyPropertyName)
-	if remoteSavePolicy == snaputil.AlwaysSaveRemoteSnapshot || c.isLikelyDefaultSnapshot() {
+	remoteSavePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
+	if remoteSavePolicy == snaputil.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
 		// We want to always save the default snapshot, because it is used as a fallback for
 		// runs on other branches, so we want it to stay up-to-date.
 		return true
-	} else if remoteSavePolicy == snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable {
+	} else if remoteSavePolicy == snaputil.OnlySaveNonDefaultSnapshotIfNoneAvailable {
 		return !c.hasRemoteSnapshot(ctx, c.loader)
 	}
 
@@ -1115,7 +1115,18 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 		return false
 	}
 
-	return true
+	// We don't have a separate platform property for local snapshot save policy, so we use the remote snapshot save policy,
+	// as it should be a good proxy for the user's intent on snapshot behavior.
+	savePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
+	if savePolicy == snaputil.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
+		// We want to always save the default snapshot, because it is used as a fallback for
+		// runs on other branches, so we want it to stay up-to-date.
+		return true
+	}
+	// By default (applies if save policy is unset or invalid) or if
+	// savePolicy=OnlySaveFirstNonDefaultSnapshot, only save a snapshot if one for the primary key
+	// doesn't already exist.
+	return !c.hasLocalSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
 }
 
 // LoadSnapshot loads a VM snapshot from the given snapshot digest and resumes
@@ -2914,10 +2925,10 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) *snapshotDet
 	saveLocalSnapshot := c.shouldSaveLocalSnapshot(ctx)
 
 	if c.supportsRemoteSnapshots && !saveRemoteSnapshot {
-		log.CtxInfof(ctx, "Not saving remote snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.RemoteSnapshotSavePolicyPropertyName))
+		log.CtxInfof(ctx, "Not saving remote snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName))
 	}
 	if !saveLocalSnapshot {
-		log.CtxInfof(ctx, "Not saving local snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.RemoteSnapshotSavePolicyPropertyName))
+		log.CtxInfof(ctx, "Not saving local snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName))
 	}
 
 	if c.recycled {
@@ -3145,6 +3156,13 @@ func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader sna
 func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, loader snaploader.Loader, key *fcpb.SnapshotKey) bool {
 	_, err := loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
 		RemoteReadEnabled: c.supportsRemoteSnapshots,
+		ReadPolicy:        platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName),
+	})
+	return err == nil
+}
+func (c *FirecrackerContainer) hasLocalSnapshotForKey(ctx context.Context, loader snaploader.Loader, key *fcpb.SnapshotKey) bool {
+	_, err := loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
+		RemoteReadEnabled: false,
 		ReadPolicy:        platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName),
 	})
 	return err == nil

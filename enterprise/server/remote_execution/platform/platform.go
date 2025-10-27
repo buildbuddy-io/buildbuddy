@@ -90,36 +90,36 @@ const (
 	// dockerReuse is treated as an alias for recycle-runner.
 	dockerReusePropertyName = "dockerReuse"
 
-	RunnerRecyclingKey                      = "runner-recycling-key"
-	RunnerRecyclingMaxWaitPropertyName      = "runner-recycling-max-wait"
-	runnerCrashedExitCodesPropertyName      = "runner-crashed-exit-codes"
-	transientErrorExitCodes                 = "transient-error-exit-codes"
-	RemoteSnapshotSavePolicyPropertyName    = "remote-snapshot-save-policy"
-	SnapshotReadPolicyPropertyName          = "snapshot-read-policy"
-	PreserveWorkspacePropertyName           = "preserve-workspace"
-	overlayfsWorkspacePropertyName          = "overlayfs-workspace"
-	cleanWorkspaceInputsPropertyName        = "clean-workspace-inputs"
-	persistentWorkerPropertyName            = "persistent-workers"
-	PersistentWorkerKeyPropertyName         = "persistentWorkerKey"
-	persistentWorkerProtocolPropertyName    = "persistentWorkerProtocol"
-	WorkflowIDPropertyName                  = "workflow-id"
-	WorkloadIsolationPropertyName           = "workload-isolation-type"
-	initDockerdPropertyName                 = "init-dockerd"
-	enableDockerdTCPPropertyName            = "enable-dockerd-tcp"
-	enableVFSPropertyName                   = "enable-vfs"
-	HostedBazelAffinityKeyPropertyName      = "hosted-bazel-affinity-key"
-	useSelfHostedExecutorsPropertyName      = "use-self-hosted-executors"
-	disableMeasuredTaskSizePropertyName     = "debug-disable-measured-task-size"
-	disablePredictedTaskSizePropertyName    = "debug-disable-predicted-task-size"
-	extraArgsPropertyName                   = "extra-args"
-	EnvOverridesPropertyName                = "env-overrides"
-	EnvOverridesBase64PropertyName          = "env-overrides-base64"
-	IncludeSecretsPropertyName              = "include-secrets"
-	DefaultTimeoutPropertyName              = "default-timeout"
-	TerminationGracePeriodPropertyName      = "termination-grace-period"
-	SnapshotKeyOverridePropertyName         = "snapshot-key-override"
-	RetryPropertyName                       = "retry"
-	PersistentVolumesPropertyName           = "persistent-volumes"
+	RunnerRecyclingKey                   = "runner-recycling-key"
+	RunnerRecyclingMaxWaitPropertyName   = "runner-recycling-max-wait"
+	runnerCrashedExitCodesPropertyName   = "runner-crashed-exit-codes"
+	transientErrorExitCodes              = "transient-error-exit-codes"
+	SnapshotSavePolicyPropertyName       = "remote-snapshot-save-policy"
+	SnapshotReadPolicyPropertyName       = "snapshot-read-policy"
+	PreserveWorkspacePropertyName        = "preserve-workspace"
+	overlayfsWorkspacePropertyName       = "overlayfs-workspace"
+	cleanWorkspaceInputsPropertyName     = "clean-workspace-inputs"
+	persistentWorkerPropertyName         = "persistent-workers"
+	PersistentWorkerKeyPropertyName      = "persistentWorkerKey"
+	persistentWorkerProtocolPropertyName = "persistentWorkerProtocol"
+	WorkflowIDPropertyName               = "workflow-id"
+	WorkloadIsolationPropertyName        = "workload-isolation-type"
+	initDockerdPropertyName              = "init-dockerd"
+	enableDockerdTCPPropertyName         = "enable-dockerd-tcp"
+	enableVFSPropertyName                = "enable-vfs"
+	HostedBazelAffinityKeyPropertyName   = "hosted-bazel-affinity-key"
+	useSelfHostedExecutorsPropertyName   = "use-self-hosted-executors"
+	disableMeasuredTaskSizePropertyName  = "debug-disable-measured-task-size"
+	disablePredictedTaskSizePropertyName = "debug-disable-predicted-task-size"
+	extraArgsPropertyName                = "extra-args"
+	EnvOverridesPropertyName             = "env-overrides"
+	EnvOverridesBase64PropertyName       = "env-overrides-base64"
+	IncludeSecretsPropertyName           = "include-secrets"
+	DefaultTimeoutPropertyName           = "default-timeout"
+	TerminationGracePeriodPropertyName   = "termination-grace-period"
+	SnapshotKeyOverridePropertyName      = "snapshot-key-override"
+	RetryPropertyName                    = "retry"
+	PersistentVolumesPropertyName        = "persistent-volumes"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -438,9 +438,9 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		return nil, err
 	}
 
-	snapshotSavePolicy := stringProp(m, RemoteSnapshotSavePolicyPropertyName, "")
+	snapshotSavePolicy := stringProp(m, SnapshotSavePolicyPropertyName, "")
 	switch snapshotSavePolicy {
-	case snaputil.AlwaysSaveRemoteSnapshot, snaputil.OnlySaveFirstNonDefaultRemoteSnapshot, snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable, "":
+	case snaputil.AlwaysSaveSnapshot, snaputil.OnlySaveFirstNonDefaultSnapshot, snaputil.OnlySaveNonDefaultSnapshotIfNoneAvailable, "":
 	default:
 		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the `remote-snapshot-save-policy` platform property", snapshotSavePolicy)
 	}
