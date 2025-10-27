@@ -47,8 +47,13 @@ const (
 )
 
 var (
-	envVarOptionNames      = []string{"action_env", "client_env", "host_action_env", "repo_env", "test_env"}
-	envVarOptionNamesRegex *regexp.Regexp
+	envVarOptionNames         = []string{"action_env", "client_env", "host_action_env", "repo_env", "test_env"}
+	envVarOptionNamesRegex    *regexp.Regexp
+	envVarDoubleQuotedPattern = regexp.MustCompile(`(?s)^(--[^=]+=)"(.*?)"$`)
+	envVarSingleQuotedPattern = regexp.MustCompile(`(?s)^(--[^=]+=)'(.*?)'$`)
+	envVarUnquotedPattern     = regexp.MustCompile(`^(--[^=]+=)(\S+)$`)
+	envVarAnyPattern          = regexp.MustCompile(`(?s)^(--[^=]+=)(.*)$`)
+	envVarAssignmentRegex     = regexp.MustCompile(`^([^=]+)=`)
 
 	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
@@ -282,34 +287,26 @@ func redactEnvVars(txt string) string {
 // repo_env, test_env) and handles both quoted and unquoted `VAR=value` payloads,
 // including multiline quoted values.
 func RedactEnvVar(flag string) string {
-	// Find the = after the flag name.
-	eqIdx := strings.Index(flag, "=")
-	if eqIdx == -1 {
-		return flag
+	if matches := envVarDoubleQuotedPattern.FindStringSubmatch(flag); matches != nil {
+		return redactEnvVarValue(matches[1], matches[2])
 	}
-
-	flagName := flag[:eqIdx+1]
-	value := flag[eqIdx+1:]
-
-	if len(value) > 0 && (value[0] == '\'' || value[0] == '"') {
-		quote := value[0]
-		closeIdx := strings.LastIndexByte(value, byte(quote))
-		if closeIdx > 0 {
-			content := value[1:closeIdx]
-			contentEqIdx := strings.Index(content, "=")
-			if contentEqIdx > 0 {
-				varName := content[:contentEqIdx]
-				return flagName + varName + "=" + redactedPlaceholder
-			}
-		}
-	} else {
-		varEqIdx := strings.Index(value, "=")
-		if varEqIdx > 0 {
-			varName := value[:varEqIdx]
-			return flagName + varName + "=" + redactedPlaceholder
-		}
+	if matches := envVarSingleQuotedPattern.FindStringSubmatch(flag); matches != nil {
+		return redactEnvVarValue(matches[1], matches[2])
 	}
+	if matches := envVarUnquotedPattern.FindStringSubmatch(flag); matches != nil {
+		return redactEnvVarValue(matches[1], matches[2])
+	}
+	if matches := envVarAnyPattern.FindStringSubmatch(flag); matches != nil {
+		return matches[1] + redactedPlaceholder
+	}
+	return flag
+}
 
+func redactEnvVarValue(flagName, value string) string {
+	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
+		varName := assignment[1]
+		return flagName + varName + "=" + redactedPlaceholder
+	}
 	return flagName + redactedPlaceholder
 }
 
