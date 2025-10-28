@@ -35,7 +35,7 @@ var (
 const (
 	clusterName = "bb_clickhouse_cluster_local"
 
-	zookeeperImage        = "docker.io/zookeeper:3.8.0"
+	zookeeperImage        = "docker.io/zookeeper:3.8"
 	clickhouseServerImage = "clickhouse/clickhouse-server:23.8"
 
 	// Base port number for client connections.
