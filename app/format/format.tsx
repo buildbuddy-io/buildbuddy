@@ -169,23 +169,25 @@ function truncateDecimalZeroes(numString: string): string {
 }
 
 export function bytes(bytes: number | Long) {
-  bytes = +bytes;
-  if (bytes < 1e3) {
-    return bytes + "B";
+  bytes = Number(bytes);
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  for (const [i, unit] of units.entries()) {
+    if (bytes < Math.pow(1000, i + 1) || i === units.length - 1) {
+      return truncateDecimalZeroes((bytes / Math.pow(1000, i)).toPrecision(4)) + unit;
+    }
   }
-  if (bytes < 1e6) {
-    return truncateDecimalZeroes((bytes / 1e3).toPrecision(4)) + "KB";
+  throw new Error("unreachable code");
+}
+
+export function bytesIEC(bytes: number | Long) {
+  bytes = Number(bytes);
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  for (const [i, unit] of units.entries()) {
+    if (bytes < Math.pow(1024, i + 1) || i === units.length - 1) {
+      return truncateDecimalZeroes((bytes / Math.pow(1024, i)).toPrecision(4)) + unit;
+    }
   }
-  if (bytes < 1e9) {
-    return truncateDecimalZeroes((bytes / 1e6).toPrecision(4)) + "MB";
-  }
-  if (bytes < 1e12) {
-    return truncateDecimalZeroes((bytes / 1e9).toPrecision(4)) + "GB";
-  }
-  if (bytes < 1e15) {
-    return truncateDecimalZeroes((bytes / 1e12).toPrecision(4)) + "TB";
-  }
-  return truncateDecimalZeroes((bytes / 1e15).toPrecision(4)) + "PB";
+  throw new Error("unreachable code");
 }
 
 export function bitsPerSecond(bitsPerSecond: number | Long) {
@@ -420,6 +422,7 @@ export default {
   sentenceCase,
   percent,
   bytes,
+  bytesIEC,
   bitsPerSecond,
   count,
   truncateList,

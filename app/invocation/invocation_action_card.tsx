@@ -936,26 +936,27 @@ export default class InvocationActionCardComponent extends React.Component<Props
       <>
         <div className="metadata-title">Resource usage</div>
         <div>
-          <div>Peak memory: {format.bytes(usageStats.peakMemoryBytes)}</div>
+          <div>Peak memory: {format.bytesIEC(usageStats.peakMemoryBytes)}</div>
           <div>MilliCPU: {computeMilliCpu(this.state.actionResult!)}</div>
           {usageStats.peakFileSystemUsage?.map((fs) => (
             <div>
-              Peak disk usage: {fs.target} ({fs.fstype}): {format.bytes(fs.usedBytes)} of {format.bytes(fs.totalBytes)}
+              Peak disk usage: {fs.target} ({fs.fstype}): {format.bytesIEC(fs.usedBytes)} of{" "}
+              {format.bytesIEC(fs.totalBytes)}
             </div>
           ))}
           {usageStats.cgroupIoStats && (
             <>
-              <div>Disk bytes read: {format.bytes(usageStats.cgroupIoStats.rbytes)}</div>
+              <div>Disk bytes read: {format.bytesIEC(usageStats.cgroupIoStats.rbytes)}</div>
               <div>Disk read operations: {format.count(usageStats.cgroupIoStats.rios)}</div>
-              <div>Disk bytes written: {format.bytes(usageStats.cgroupIoStats.wbytes)}</div>
+              <div>Disk bytes written: {format.bytesIEC(usageStats.cgroupIoStats.wbytes)}</div>
               <div>Disk write operations: {format.count(usageStats.cgroupIoStats.wios)}</div>
             </>
           )}
           {usageStats.networkStats && (
             <>
-              <div>Network bytes received: {format.bytes(usageStats.networkStats.bytesReceived)}</div>
+              <div>Network bytes received: {format.bytesIEC(usageStats.networkStats.bytesReceived)}</div>
               <div>Network packets received: {format.count(usageStats.networkStats.packetsReceived)}</div>
-              <div>Network bytes sent: {format.bytes(usageStats.networkStats.bytesSent)}</div>
+              <div>Network bytes sent: {format.bytesIEC(usageStats.networkStats.bytesSent)}</div>
               <div>Network packets sent: {format.count(usageStats.networkStats.packetsSent)}</div>
             </>
           )}
@@ -1334,7 +1335,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 <div>
                                   <div>
                                     Peak memory:{" "}
-                                    {format.bytes(
+                                    {format.bytesIEC(
                                       this.state.actionResult.executionMetadata.estimatedTaskSize.estimatedMemoryBytes
                                     )}
                                   </div>
