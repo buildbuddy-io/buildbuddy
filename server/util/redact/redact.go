@@ -277,7 +277,88 @@ func redactRemoteHeaders(txt string) string {
 }
 
 func redactEnvVars(txt string) string {
-	return envVarOptionNamesRegex.ReplaceAllStringFunc(txt, RedactEnvVar)
+	// Pass 1: Find all env var flag positions
+	matches := envVarOptionNamesRegex.FindAllStringSubmatchIndex(txt, -1)
+	if len(matches) == 0 {
+		return txt
+	}
+
+	var result strings.Builder
+	lastPos := 0
+
+	for _, match := range matches {
+		matchStart := match[0]
+		matchEnd := match[1]
+		prefixEnd := match[3] // End of capture group 1 (the --flag= part)
+
+		// Copy everything before this match
+		result.WriteString(txt[lastPos:matchStart])
+
+		// Extract the matched flag
+		matchedFlag := txt[matchStart:matchEnd]
+		flagPrefix := txt[matchStart:prefixEnd]
+
+		// Check if it's a quoted value (handle these with existing logic)
+		if strings.Contains(matchedFlag, `"`) || strings.Contains(matchedFlag, `'`) {
+			result.WriteString(RedactEnvVar(matchedFlag))
+			lastPos = matchEnd
+			continue
+		}
+
+		// For unquoted values, we need to check if there's more content after what regex matched
+		// The regex matched up to first whitespace with \S+, but multiline values continue past newlines
+		valueStart := prefixEnd
+		valueEnd := matchEnd
+
+		// Scan forward from matchEnd to find if there's continuation
+		scanPos := matchEnd
+		for scanPos < len(txt) {
+			// If we hit a space or tab (but not newline), we're at end of value
+			if txt[scanPos] == ' ' || txt[scanPos] == '\t' {
+				break
+			}
+			// If we hit a newline, peek ahead
+			if txt[scanPos] == '\n' {
+				// Check what comes after the newline
+				nextPos := scanPos + 1
+				// Skip any spaces/tabs after newline
+				for nextPos < len(txt) && (txt[nextPos] == ' ' || txt[nextPos] == '\t') {
+					nextPos++
+				}
+				// If we hit another flag (--), end here
+				if nextPos+1 < len(txt) && txt[nextPos] == '-' && txt[nextPos+1] == '-' {
+					valueEnd = scanPos
+					break
+				}
+				// If we hit end of string, end here
+				if nextPos >= len(txt) {
+					valueEnd = scanPos
+					break
+				}
+				// Otherwise, the newline is part of the value - continue scanning
+				valueEnd = nextPos
+				scanPos = nextPos
+				continue
+			}
+			// Regular character, keep scanning
+			scanPos++
+			valueEnd = scanPos
+		}
+
+		// Extract the full unquoted value
+		fullValue := txt[valueStart:valueEnd]
+
+		// Redact the value
+		redacted := redactEnvVarValue(flagPrefix, fullValue)
+		result.WriteString(redacted)
+
+		lastPos = valueEnd
+	}
+
+	// Copy any remaining text
+	result.WriteString(txt[lastPos:])
+
+	return result.String()
 }
 
 // RedactEnvVar replaces the value portion of a Bazel environment variable flag
