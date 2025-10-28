@@ -121,7 +121,7 @@ func clearPrevCache(dir string, currentSubDir string) error {
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return status.InternalErrorf("failed to read directory %q: %s", dir, err)
+		return status.InternalErrorf("failed to read directory %q: %w", dir, err)
 	}
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -132,7 +132,7 @@ func clearPrevCache(dir string, currentSubDir string) error {
 		}
 		path := filepath.Join(dir, e.Name())
 		if err := os.RemoveAll(path); err != nil {
-			return status.InternalErrorf("failed to delete dir %q: %s", path, err)
+			return status.InternalErrorf("failed to delete dir %q: %w", path, err)
 		}
 	}
 	return nil
@@ -183,7 +183,7 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		}
 	} else if *clearPrevCacheOnStartup {
 		if err := clearPrevCache(*rootDirectory, *subdir); err != nil {
-			return nil, status.InternalErrorf("failed to delete cache from previous run: %s", err)
+			return nil, status.InternalErrorf("failed to delete cache from previous run: %w", err)
 		}
 	}
 
@@ -335,7 +335,7 @@ func (rc *Server) fileMetadataKey(fr *sgpb.FileRecord) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pebbleKey.Bytes(filestore.Version5)
+	return pebbleKey.Bytes(filestore.Version6)
 }
 
 func (rc *Server) fileRecordsToKeyMetas(fileRecords []*sgpb.FileRecord) ([]*sender.KeyMeta, error) {
@@ -448,7 +448,23 @@ type getMetadataResult struct {
 	atimeUpdates []keyAndLastAccessUsec
 }
 
+func (rc *Server) userGroupID(ctx context.Context) string {
+	user, err := rc.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser
+	}
+	return user.GetGroupID()
+}
+
 func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetResponse, error) {
+	groupID := rc.userGroupID(ctx)
+
+	for _, fr := range req.GetFileRecords() {
+		if fr.GetIsolation().GetGroupId() != groupID {
+			return nil, status.UnauthenticatedError("user doesn't have access to the file")
+		}
+	}
+
 	keys, err := rc.fileRecordsToKeyMetas(req.GetFileRecords())
 	if err != nil {
 		return nil, err
@@ -527,6 +543,14 @@ type findMetadataResult struct {
 }
 
 func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindResponse, error) {
+	groupID := rc.userGroupID(ctx)
+
+	for _, fr := range req.GetFileRecords() {
+		if fr.GetIsolation().GetGroupId() != groupID {
+			return nil, status.UnauthenticatedError("user doesn't have access to the file")
+		}
+	}
+
 	keys, err := rc.fileRecordsToKeyMetas(req.GetFileRecords())
 	if err != nil {
 		return nil, err
@@ -619,6 +643,14 @@ func (rc *Server) setOperationsToKeyMetas(setOperations []*mdpb.SetRequest_SetOp
 }
 
 func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetResponse, error) {
+	groupID := rc.userGroupID(ctx)
+
+	for _, op := range req.GetSetOperations() {
+		if op.GetFileMetadata().GetFileRecord().GetIsolation().GetGroupId() != groupID {
+			return nil, status.UnauthenticatedError("user doesn't have access to the file")
+		}
+	}
+
 	keys, err := rc.setOperationsToKeyMetas(req.GetSetOperations())
 	if err != nil {
 		return nil, err
@@ -672,6 +704,13 @@ func (rc *Server) deleteOperationsToKeyMetas(deleteOperations []*mdpb.DeleteRequ
 }
 
 func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.DeleteResponse, error) {
+	groupID := rc.userGroupID(ctx)
+
+	for _, op := range req.GetDeleteOperations() {
+		if op.GetFileRecord().GetIsolation().GetGroupId() != groupID {
+			return nil, status.UnauthenticatedError("user doesn't have access to the file")
+		}
+	}
 	keys, err := rc.deleteOperationsToKeyMetas(req.GetDeleteOperations())
 	if err != nil {
 		return nil, err

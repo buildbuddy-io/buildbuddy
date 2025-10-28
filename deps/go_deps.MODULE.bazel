@@ -102,8 +102,8 @@ go_deps.gazelle_override(
 )
 go_deps.gazelle_override(
     # Force a Gazelle run to ensure build targets in Bazelisk follow
-    # Gazelle naming conventions.
-    build_file_generation = "on",
+    # Gazelle naming conventions and drop unrelated loads.
+    build_file_generation = "clean",
     path = "github.com/bazelbuild/bazelisk",
 )
 go_deps.gazelle_override(

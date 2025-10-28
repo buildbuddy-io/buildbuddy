@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -18,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -60,7 +63,11 @@ type Worker struct {
 	stdoutReader *bufio.Reader
 	jsonDecoder  *json.Decoder
 
-	stop func() error
+	stop             func() error
+	workerTerminated chan struct{}
+	// Status of the worker if it crashed. It is not safe to read this value
+	// unless workerTerminated is closed.
+	workerStatus *interfaces.CommandResult
 }
 
 // Start spawns a persistent worker inside the given container using
@@ -98,7 +105,7 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-	workerTerminated := make(chan struct{})
+	w.workerTerminated = make(chan struct{})
 	w.stop = func() error {
 		// Canceling the worker context and closing stdin should terminate the
 		// worker exec process.
@@ -111,7 +118,7 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 		ctx, cancel := background.ExtendContextForFinalization(ctx, persistentWorkerShutdownTimeout)
 		defer cancel()
 		select {
-		case <-workerTerminated:
+		case <-w.workerTerminated:
 			return nil
 		case <-ctx.Done():
 			return status.DeadlineExceededError("Timed out waiting for persistent worker to shut down.")
@@ -123,7 +130,7 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 	command.Arguments = append(args.WorkerArgs, "--persistent_worker")
 
 	go func() {
-		defer close(workerTerminated)
+		defer close(w.workerTerminated)
 		defer stdinReader.Close()
 		defer stdoutWriter.Close()
 
@@ -138,13 +145,28 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 			Stderr: stderr,
 		}
 		res := w.container.Exec(ctx, command, stdio)
+		w.workerStatus = res
 		log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, args.FlagFiles, args.WorkerArgs)
 	}()
 
 	return w, nil
 }
 
-func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+func (w *Worker) Exec(ctx context.Context, command *repb.Command) (result *interfaces.CommandResult) {
+	// If supported, record stats starting from now until after we receive the
+	// work response.
+	if st, ok := w.container.(container.StatsRecorder); ok {
+		stop := st.RecordStats(ctx)
+		defer func() {
+			stats, err := stop()
+			if err != nil {
+				log.CtxWarningf(ctx, "Stats recording error: %s", err)
+			} else {
+				result.UsageStats = stats
+			}
+		}()
+	}
+
 	// Clear any stderr that might be associated with a previous request.
 	stderr := w.stderr.String()
 	w.stderr.Reset()
@@ -177,6 +199,14 @@ func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.Co
 		Arguments: expandedArguments,
 	}
 	if err := w.marshalWorkRequest(req); err != nil {
+		if errors.Is(err, syscall.EPIPE) {
+			// EPIPE probably means the worker stopped reading from stdin, which
+			// probably means it crashed. Return the worker error instead of
+			// EPIPE in this case.
+			if workerErr := w.getWorkerError(ctx); workerErr != nil {
+				err = workerErr
+			}
+		}
 		return commandutil.ErrorResult(status.UnavailableErrorf(
 			"failed to send persistent work request: %s\npersistent worker stderr:\n%s",
 			err, w.stderrDebugString()))
@@ -185,6 +215,13 @@ func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.Co
 	// Decode the response from stdout.
 	rsp := &wkpb.WorkResponse{}
 	if err := w.unmarshalWorkResponse(rsp); err != nil {
+		if err == io.EOF {
+			// EOF implies the worker exited, since we only close the stdout
+			// pipe reader after the Exec() process has completed.
+			if workerErr := w.getWorkerError(ctx); workerErr != nil {
+				err = workerErr
+			}
+		}
 		return commandutil.ErrorResult(status.UnavailableErrorf(
 			"failed to read persistent work response: %s\npersistent worker stderr:\n%s",
 			err, w.stderrDebugString()))
@@ -193,6 +230,28 @@ func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.Co
 		Stderr:   []byte(rsp.Output),
 		ExitCode: int(rsp.ExitCode),
 	}
+}
+
+func (w *Worker) getWorkerError(ctx context.Context) error {
+	// Wait up to 100ms for the worker to finish terminating. If we're calling
+	// this func, the worker most likely already crashed, but it's generally not
+	// safe to read the workerStatus field unless the workerTerminated channel
+	// is closed.
+	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+		return nil
+	case <-w.workerTerminated:
+	}
+	if w.workerStatus == nil {
+		alert.CtxUnexpectedEvent(ctx, "persistent_worker_status_nil", "Persistent worker exit status is unexpectedly nil.")
+		return nil
+	}
+	if err := w.workerStatus.Error; err != nil {
+		return status.WrapError(err, "worker crashed")
+	}
+	return fmt.Errorf("worker exited with code %d", w.workerStatus.ExitCode)
 }
 
 // Stop kills the worker process and waits for it to exit.

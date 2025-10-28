@@ -20,6 +20,9 @@ npm.npm_translate_lock(
 )
 use_repo(npm, "npm")
 
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+use_repo(node, "nodejs_toolchains")
+
 rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
 rules_ts_ext.deps(
     # TODO: Remove after the next aspect_rules_ts update.

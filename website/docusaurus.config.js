@@ -362,7 +362,7 @@ module.exports = {
             },
             {
               label: "Twitter",
-              href: "https://twitter.com/buildbuddy_io",
+              href: "https://twitter.com/buildbuddy",
             },
             {
               label: "LinkedIn",

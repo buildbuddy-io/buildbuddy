@@ -455,6 +455,125 @@ func TestTaskRouter_WorkflowGitRefRouting_DefaultRef(t *testing.T) {
 	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
 }
 
+func TestTaskRouter_PersistentWorkerRouterDisabled(t *testing.T) {
+	env := newTestEnv(t)
+
+	testProvider := openfeatureTesting.NewTestProvider()
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"remote_execution.persistent_worker_router_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "disabled",
+			Variants: map[string]any{
+				"enabled":  true,
+				"disabled": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	defer testProvider.Cleanup()
+	fp, err := experiments.NewFlagProvider("test" /*=client*/)
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	nodes := sequentiallyNumberedNodes(100)
+
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	instanceName := "test-instance"
+	cmd := &repb.Command{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "persistentWorkerKey", Value: "PW123"},
+		}},
+	}
+	// Initially, node 0 should not always be ranked first.
+	requireNotAlwaysRanked(0, nodes[0].GetExecutorHostId(), t, router, ctx, cmd, instanceName)
+
+	// Mark node 0 as having executed a task with the persistent worker key.
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, nodes[0].GetExecutorHostId())
+
+	// Node 0 should not always be ranked first since the persistent worker
+	// router is disabled, and no other routers should be applicable either. In
+	// particular, the affinity router should not be active since there are no
+	// declared output paths.
+	requireNotAlwaysRanked(0, nodes[0].GetExecutorHostId(), t, router, ctx, cmd, instanceName)
+}
+
+func TestTaskRouter_PersistentWorkerRouterEnabled(t *testing.T) {
+	env := newTestEnv(t)
+
+	testProvider := openfeatureTesting.NewTestProvider()
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"remote_execution.persistent_worker_router_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "enabled",
+			Variants: map[string]any{
+				"enabled":  true,
+				"disabled": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	defer testProvider.Cleanup()
+	fp, err := experiments.NewFlagProvider("test" /*=client*/)
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	nodes := sequentiallyNumberedNodes(100)
+
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	instanceName := "test-instance"
+	cmd := &repb.Command{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "persistentWorkerKey", Value: "PW123"},
+		}},
+		OutputPaths: []string{"/bazel-out/foo.a"},
+	}
+	// Initially, node 0 should not always be ranked first.
+	requireNotAlwaysRanked(0, nodes[0].GetExecutorHostId(), t, router, ctx, cmd, instanceName)
+
+	// Mark node 0 as having executed a task with the persistent worker key.
+	// Do this twice, to indicate that there are 2 pooled runners now available.
+	for range 2 {
+		router.MarkSucceeded(ctx, nil, cmd, instanceName, nodes[0].GetExecutorHostId())
+	}
+	// Also mark node 0 as having executed a *failed* task with the persistent
+	// worker key. We should add yet another history entry, since (e.g.) with
+	// JVM actions, the JVM worker will still be warm/useful after it compiles
+	// something with bad syntax etc.
+	router.MarkFailed(ctx, nil, cmd, instanceName, nodes[0].GetExecutorHostId())
+
+	// At this point we now assume that there are 3 persistent worker runners
+	// pooled on node 0. Call RankNodes 3 times, once for each pooled runner.
+	// Node 0 should be ranked first each time.
+	for range 3 {
+		ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
+		require.Equal(t, nodes[0].GetExecutorHostId(), ranked[0].GetExecutionNode().GetExecutorHostId())
+	}
+
+	// Since all 3 runners on node 0 are now presumed to be busy, node 0 should
+	// no longer be ranked first.
+	requireNotAlwaysRanked(0, nodes[0].GetExecutorHostId(), t, router, ctx, cmd, instanceName)
+
+	// Mark the task executed by the first 10 nodes.
+	for i := 0; i < 10; i++ {
+		router.MarkSucceeded(ctx, nil, cmd, instanceName, nodes[i].GetExecutorHostId())
+	}
+
+	// The first 10 nodes should now be preferred (but in reverse order, since
+	// the most recent should be preferred first).
+	var expectedPreferredNodes []string
+	for i := 0; i < 10; i++ {
+		expectedPreferredNodes = append(expectedPreferredNodes, nodes[i].GetExecutorHostId())
+	}
+	slices.Reverse(expectedPreferredNodes)
+	ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
+	for i := 0; i < 10; i++ {
+		require.Equal(t, expectedPreferredNodes[i], ranked[i].GetExecutionNode().GetExecutorHostId())
+	}
+	requireNonSequential(t, ranked[10:])
+}
+
 func requireNonePreferred(t *testing.T, rankedNodes []interfaces.RankedExecutionNode) {
 	t.Helper()
 	for i := 1; i < len(rankedNodes); i++ {
@@ -575,142 +694,4 @@ func (n *testNode) GetExecutorHostId() string {
 
 func (n *testNode) GetAssignableMilliCpu() int64 {
 	return n.milliCPUs
-}
-
-func TestTaskRouter_RankNodes_PersistentKeyRoutingDisabled(t *testing.T) {
-	flags.Set(t, "executor.affinity_routing_enabled", false)
-
-	testProvider := openfeatureTesting.NewTestProvider()
-	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
-		"remote_execution.enable_persistent_worker_routing": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "disabled",
-			Variants: map[string]any{
-				"enabled":  true,
-				"disabled": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-	defer testProvider.Cleanup()
-
-	env := newTestEnv(t)
-	fp, err := experiments.NewFlagProvider("test-name")
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
-
-	router := newTaskRouter(t, env)
-	ctx := withAuthUser(t, context.Background(), env, "US1")
-	cmd := &repb.Command{
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "foo", Value: "bar"},
-		},
-		Arguments:   []string{"gcc", "-c", "dbg", "foo.c"},
-		OutputPaths: []string{"/bazel-out/foo.a"},
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "persistentWorkerKey", Value: "abc1"},
-			},
-		},
-	}
-	instanceName := "test-instance"
-
-	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
-
-	nodes := sequentiallyNumberedNodes(100)
-
-	// No nodes should be preferred as affinity routing is disabled.
-	ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
-	requireSameExecutionNodes(t, nodes, ranked)
-	requireNonSequential(t, ranked)
-	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, cmd, instanceName)
-}
-
-func TestTaskRouter_RankNodes_PersistentKeyRoutingEnabled(t *testing.T) {
-	flags.Set(t, "executor.affinity_routing_enabled", false)
-
-	testProvider := openfeatureTesting.NewTestProvider()
-	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
-		"remote_execution.enable_persistent_worker_routing": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "enabled",
-			Variants: map[string]any{
-				"enabled":  true,
-				"disabled": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-	defer testProvider.Cleanup()
-
-	flags.Set(t, "executor.affinity_routing_enabled", false)
-	env := newTestEnv(t)
-	fp, err := experiments.NewFlagProvider("test-name")
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
-
-	router := newTaskRouter(t, env)
-	ctx := withAuthUser(t, context.Background(), env, "US1")
-	firstCmd := &repb.Command{
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "foo", Value: "bar"},
-		},
-		Arguments:   []string{"gcc", "-c", "dbg", "foo.c"},
-		OutputPaths: []string{"/bazel-out/foo.a"},
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "persistentWorkerKey", Value: "abc1"},
-			},
-		},
-	}
-	instanceName := "test-instance"
-
-	// No executor should be preferred.
-	nodes := sequentiallyNumberedNodes(100)
-	firstRanked := router.RankNodes(ctx, nil, firstCmd, instanceName, nodes)
-	requireNonSequential(t, firstRanked)
-	requireNonePreferred(t, firstRanked)
-
-	// Mark the task as complete by executor 1.
-	router.MarkSucceeded(ctx, nil, firstCmd, instanceName, executorHostID1)
-
-	secondCmd := &repb.Command{
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "foo", Value: "baz"},
-		},
-		Arguments:   []string{"gcc", "-c", "opt", "foo.c"},
-		OutputPaths: []string{"/bazel-out/foo.a"},
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "persistentWorkerKey", Value: "abc1"},
-			},
-		},
-	}
-
-	secondRanked := router.RankNodes(ctx, nil, secondCmd, instanceName, nodes)
-	requireNonSequential(t, secondRanked)
-	requireNonePreferred(t, secondRanked)
-
-	require.Equal(t, firstRanked, secondRanked)
-
-	// Mark the task complete by executor 2 as well.
-	router.MarkSucceeded(ctx, nil, secondCmd, instanceName, executorHostID2)
-
-	// Verify that tasks with a different first output are routed randomly.
-	thirdCmd := &repb.Command{
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "foo", Value: "bar"},
-		},
-		Arguments:   []string{"gcc", "-c", "dbg", "foo.c"},
-		OutputPaths: []string{"/bazel-out/bar.a"},
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "persistentWorkerKey", Value: "def2"},
-			},
-		},
-	}
-
-	thirdRanked := router.RankNodes(ctx, nil, thirdCmd, instanceName, nodes)
-	requireNonSequential(t, thirdRanked)
-	requireNonePreferred(t, thirdRanked)
 }

@@ -1,6 +1,6 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
@@ -16,10 +16,12 @@ go_library(
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/pebble_cache",
+        "//enterprise/server/batch_operator",
         "//enterprise/server/byte_stream_server_proxy",
         "//enterprise/server/capabilities_server_proxy",
         "//enterprise/server/content_addressable_storage_server_proxy",
         "//enterprise/server/hit_tracker_client",
+        "//enterprise/server/remote_crypter",
         "//enterprise/server/remoteauth",
         "//enterprise/server/routing/routing_action_cache_client",
         "//enterprise/server/routing/routing_byte_stream_client",

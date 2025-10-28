@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -82,6 +83,7 @@ type fakeContainer struct {
 	Isolation                  string // Fake isolation type name
 	ImageCached                bool   // Return value for IsImageCached
 	BlockPull                  bool   // PullImage blocks forever if true.
+	FakeStats                  *repb.UsageStats
 }
 
 func NewFakeContainer() *fakeContainer {
@@ -122,8 +124,19 @@ func (c *fakeContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inte
 	return c.Result
 }
 
+func (c *fakeContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
+	return c.FakeStats, nil
+}
+
 func (c *fakeContainer) Remove(ctx context.Context) error {
 	close(c.Removed)
+	return nil
+}
+
+func (c *fakeContainer) Pause(ctx context.Context) error {
+	return nil
+}
+func (c *fakeContainer) Unpause(ctx context.Context) error {
 	return nil
 }
 
@@ -143,9 +156,10 @@ func (*fakeFirecrackerContainer) Stats(context.Context) (*repb.UsageStats, error
 
 type RunnerPoolOptions struct {
 	*PoolOptions
-	MaxRunnerCount            int
-	MaxRunnerDiskSizeBytes    int64
-	MaxRunnerMemoryUsageBytes int64
+	MaxRunnerCount                 int
+	MaxTotalRunnerMemoryUsageBytes int64
+	MaxRunnerDiskSizeBytes         int64
+	MaxRunnerMemoryUsageBytes      int64
 }
 
 func newTask() *repb.ScheduledTask {
@@ -223,6 +237,7 @@ func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *RunnerPoolOptions) *
 	flags.Set(t, "executor.runner_pool.max_runner_count", cfg.MaxRunnerCount)
 	flags.Set(t, "executor.runner_pool.max_runner_disk_size_bytes", cfg.MaxRunnerDiskSizeBytes)
 	flags.Set(t, "executor.runner_pool.max_runner_memory_usage_bytes", cfg.MaxRunnerMemoryUsageBytes)
+	flags.Set(t, "executor.runner_pool.max_total_memory_usage_bytes", cfg.MaxTotalRunnerMemoryUsageBytes)
 	if cfg.PoolOptions == nil {
 		cfg.PoolOptions = &PoolOptions{}
 	}
@@ -592,6 +607,43 @@ func TestRunnerPool_ExceedMaxRunnerCount_OldestRunnerEvicted(t *testing.T) {
 	mustGetNewRunner(t, ctxUser2, pool, newTask())
 }
 
+func TestRunnerPool_ExceedMaxRunnerPoolTotalMemoryUsage_OldestRunnerEvicted(t *testing.T) {
+	env := newTestEnv(t)
+	// Set up a container provider that lets us fake memory usage
+	var nextProvidedContainer container.CommandContainer
+	provider := providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		return nextProvidedContainer, nil
+	})
+	// Set up a pool with the fake provider and a 4GiB total memory limit
+	pool := newRunnerPool(t, env, &RunnerPoolOptions{
+		PoolOptions: &PoolOptions{
+			ContainerProvider: provider,
+		},
+		MaxRunnerCount:                 1_000_000,              // ~unlimited
+		MaxTotalRunnerMemoryUsageBytes: 4 * 1024 * 1024 * 1024, // 4GiB
+		MaxRunnerDiskSizeBytes:         unlimited,
+		MaxRunnerMemoryUsageBytes:      unlimited,
+	})
+	ctxUser1 := withAuthenticatedUser(t, context.Background(), env, "US1")
+	ctxUser2 := withAuthenticatedUser(t, context.Background(), env, "US2")
+
+	c1 := NewFakeContainer()
+	nextProvidedContainer = c1
+	r1 := mustGetNewRunner(t, ctxUser1, pool, newTask())
+
+	c2 := NewFakeContainer()
+	nextProvidedContainer = c2
+	r2 := mustGetNewRunner(t, ctxUser2, pool, newTask())
+
+	// Add c1 (should take up the entire 4GiB limit)
+	c1.FakeStats = &repb.UsageStats{MemoryBytes: 4 * 1024 * 1024 * 1024} // 4Gi
+	mustAddWithoutEviction(t, ctxUser1, pool, r1)
+
+	// Add c2 (should evict c1 even though it only takes up 1 byte of memory)
+	c2.FakeStats = &repb.UsageStats{MemoryBytes: 1}
+	mustAddWithEviction(t, ctxUser2, pool, r2)
+}
+
 func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, &RunnerPoolOptions{
@@ -603,9 +655,10 @@ func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	r := mustGetNewRunner(t, ctx, pool, newTask())
+	err := os.WriteFile(path.Join(r.Workspace.Path(), "disk-usage"), []byte("disk limit"), 0o600)
+	require.NoError(t, err)
 
-	err := pool.Add(context.Background(), r)
-
+	err = pool.Add(context.Background(), r)
 	assert.True(t, status.IsResourceExhaustedError(err), "should exceed disk limit")
 	assert.Equal(t, 0, pool.PausedRunnerCount())
 }
@@ -1031,4 +1084,107 @@ func TestUnpauseThenRecycleWithoutRun(t *testing.T) {
 	assert.Equal(t, 1, pool.PausedRunnerCount(), "runner should be added to the pool")
 
 	require.Empty(t, testmetrics.CounterValues(t, metrics.UnexpectedEvent), "unexpected events logged")
+}
+
+func TestRunnerCrashedExitCodes(t *testing.T) {
+	for _, tc := range []struct {
+		name                       string
+		runnerCrashedExitCodesProp string
+		script                     string
+		wantDoNotRecycle           bool
+	}{
+		{
+			name:                       "PropEmpty/Exit0/ShouldRecyle",
+			runnerCrashedExitCodesProp: "",
+			script:                     "exit 0",
+			wantDoNotRecycle:           false,
+		},
+		{
+			name:                       "PropEmpty/Exit11/ShouldRecyle",
+			runnerCrashedExitCodesProp: "",
+			script:                     "exit 11",
+			wantDoNotRecycle:           false,
+		},
+		{
+			name:                       "PropSetTo11/Exit11/ShouldNotRecycle",
+			runnerCrashedExitCodesProp: "11",
+			script:                     "exit 11",
+			wantDoNotRecycle:           true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			pool := newRunnerPool(t, env, noLimitsCfg())
+			ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+			task := newTask()
+			cmd := task.ExecutionTask.Command
+			cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
+				Name:  "runner-crashed-exit-codes",
+				Value: tc.runnerCrashedExitCodesProp,
+			})
+			task.ExecutionTask.Command.Arguments = []string{
+				"sh", "-c", tc.script,
+			}
+			r, err := pool.Get(ctx, task)
+			require.NoError(t, err)
+			res := r.Run(ctx, &repb.IOStats{})
+			assert.Equal(t, tc.wantDoNotRecycle, res.DoNotRecycle)
+		})
+	}
+}
+
+func TestTransientErrorExitCodes(t *testing.T) {
+	for _, tc := range []struct {
+		name                        string
+		transientErrorExitCodesProp string
+		script                      string
+		wantExitCode                int
+		wantUnavailableError        bool
+	}{
+		{
+			name:                        "PropEmpty/Exit0/NoError",
+			transientErrorExitCodesProp: "",
+			script:                      "exit 0",
+			wantExitCode:                0,
+			wantUnavailableError:        false,
+		},
+		{
+			name:                        "PropEmpty/Exit11/NoError",
+			transientErrorExitCodesProp: "",
+			script:                      "exit 11",
+			wantExitCode:                11,
+			wantUnavailableError:        false,
+		},
+		{
+			name:                        "PropSetTo11/Exit11/UnavailableError",
+			transientErrorExitCodesProp: "11",
+			script:                      "exit 11",
+			wantExitCode:                commandutil.NoExitCode,
+			wantUnavailableError:        true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			pool := newRunnerPool(t, env, noLimitsCfg())
+			ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+			task := newTask()
+			cmd := task.ExecutionTask.Command
+			cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
+				Name:  "transient-error-exit-codes",
+				Value: tc.transientErrorExitCodesProp,
+			})
+			task.ExecutionTask.Command.Arguments = []string{
+				"sh", "-c", tc.script,
+			}
+			r, err := pool.Get(ctx, task)
+			require.NoError(t, err)
+			res := r.Run(ctx, &repb.IOStats{})
+			require.Equal(t, tc.wantExitCode, res.ExitCode)
+			if tc.wantUnavailableError {
+				require.True(t, status.IsUnavailableError(res.Error), "want Unavailable, got %+#v", res.Error)
+			} else {
+				require.Nil(t, res.Error)
+			}
+		})
+	}
 }

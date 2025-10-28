@@ -527,13 +527,19 @@ func (sep *StreamingEventParser) setPattern(value []string, priority int) {
 	}
 }
 func (sep *StreamingEventParser) setTags(value string, priority int) error {
-	if *tagsEnabled && sep.priority.Tags <= priority {
+	if *tagsEnabled {
 		tags, err := invocation_format.SplitAndTrimAndDedupeTags(value, true)
 		if err != nil {
 			return err
 		}
+
+		if sep.priority.Tags <= priority {
+			sep.invocation.Tags = append(sep.invocation.Tags, tags...)
+		} else {
+			sep.invocation.Tags = append(tags, sep.invocation.Tags...)
+		}
+
 		sep.priority.Tags = priority
-		sep.invocation.Tags = tags
 	}
 	return nil
 }

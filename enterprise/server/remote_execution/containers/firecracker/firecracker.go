@@ -624,7 +624,6 @@ type FirecrackerContainer struct {
 	createFromSnapshot      bool
 	supportsRemoteSnapshots bool
 	recyclingEnabled        bool
-	shouldSaveSnapshot      bool
 
 	// If set, the snapshot used to load the VM
 	snapshot *snaploader.Snapshot
@@ -808,12 +807,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey, WriteKey: writeKey}
 		c.createFromSnapshot = true
 		c.recyclingEnabled = true
-
-		// TODO(bduffany): add version info to snapshots. For example, if a
-		// breaking change is made to the vmexec API, the executor should not
-		// attempt to connect to snapshots that were created before the change.
 	}
-	c.shouldSaveSnapshot = c.supportsRemoteSnapshots || !c.createFromSnapshot || !platform.IsTrue(platform.FindEffectiveValue(task, platform.SkipResavingActionSnapshotsPropertyName))
 
 	return c, nil
 }
@@ -1026,46 +1020,11 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	vmd.SavedSnapshotVersionNumber++
 	vmd.LastExecutedTask = c.getVMTask()
 
-	// NOTE: Even if a remote snapshot is not saved, we'll still save a local snapshot and workloads
-	// should hit an executor with a local snapshot due to affinity routing on
-	// the git branch key.
-	shouldCacheRemotely := false
-	if c.supportsRemoteSnapshots {
-		loader, err := snaploader.New(c.env)
-		if err != nil {
-			return status.WrapError(err, "could not initialize snaploader when checking for remote snapshot: %s")
-		}
-
-		// We want to always save the default snapshot remotely, because it is used as
-		// a fallback for runs on other branches, and we want the latest default snapshot available
-		// to all executors.
-		// The default snapshot is the fallback key for non-default branches,
-		// so if a run does not have a fallback key, it's likely running on
-		// the default branch.
-		isLikelyDefaultSnapshot := !c.hasFallbackKeys()
-
-		savePolicy := platform.FindEffectiveValue(c.task, platform.RemoteSnapshotSavePolicyPropertyName)
-		if savePolicy == snaputil.AlwaysSaveRemoteSnapshot || isLikelyDefaultSnapshot {
-			shouldCacheRemotely = true
-		} else if savePolicy == snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable {
-			shouldCacheRemotely = !c.hasRemoteSnapshot(ctx, loader)
-		} else {
-			// By default (applies if save policy is unset or invalid) or if
-			// savePolicy=OnlySaveFirstNonDefaultRemoteSnapshot,
-			// only save a remote snapshot if a remote snapshot for the primary git branch key
-			// doesn't already exist.
-			shouldCacheRemotely = !c.hasRemoteSnapshotForKey(ctx, loader, c.SnapshotKeySet().GetBranchKey())
-		}
-		if !shouldCacheRemotely {
-			log.CtxInfof(ctx, "Not saving remote snapshot under policy %q, for keys %s", savePolicy, c.SnapshotKeySet().String())
-		}
-	}
-
 	// We always use a local manifest if it exists, so only write one if
 	// we don't want to prioritize reading a remote manifest.
 	readPolicy := platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName)
-	writeManifestLocally := !shouldCacheRemotely ||
-		!(readPolicy == "" || readPolicy == snaputil.AlwaysReadNewestSnapshot)
+	writeManifestLocally := snapshotDetails.saveLocalSnapshot && (!snapshotDetails.saveRemoteSnapshot ||
+		!(readPolicy == "" || readPolicy == snaputil.AlwaysReadNewestSnapshot))
 
 	opts := &snaploader.CacheSnapshotOptions{
 		VMMetadata:            vmd,
@@ -1075,8 +1034,8 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		InitrdImagePath:       c.executorConfig.InitrdImagePath,
 		ChunkedFiles:          map[string]*copy_on_write.COWStore{},
 		Recycled:              c.recycled,
-		CacheSnapshotRemotely: shouldCacheRemotely,
-		SkippedCacheRemotely:  c.supportsRemoteSnapshots && !shouldCacheRemotely,
+		CacheSnapshotRemotely: snapshotDetails.saveRemoteSnapshot,
+		CacheSnapshotLocally:  snapshotDetails.saveLocalSnapshot,
 		WriteManifestLocally:  writeManifestLocally,
 	}
 	if snapshotSharingEnabled {
@@ -1124,6 +1083,50 @@ func (c *FirecrackerContainer) getVMTask() *fcpb.VMMetadata_VMTask {
 		SnapshotId:            c.snapshotID, // Unique ID pertaining to this execution run
 		CompletedTimestamp:    tspb.Now(),
 	}
+}
+
+func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) bool {
+	if !c.supportsRemoteSnapshots || !c.recyclingEnabled {
+		return false
+	}
+
+	remoteSavePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
+	if remoteSavePolicy == snaputil.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
+		// We want to always save the default snapshot, because it is used as a fallback for
+		// runs on other branches, so we want it to stay up-to-date.
+		return true
+	} else if remoteSavePolicy == snaputil.OnlySaveNonDefaultSnapshotIfNoneAvailable {
+		return !c.hasRemoteSnapshot(ctx, c.loader)
+	}
+
+	// By default (applies if save policy is unset or invalid) or if
+	// savePolicy=OnlySaveFirstNonDefaultRemoteSnapshot,
+	// only save a remote snapshot if a remote snapshot for the primary git branch key
+	// doesn't already exist.
+	return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
+}
+
+func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool {
+	if !*snaputil.EnableLocalSnapshotSharing || !c.recyclingEnabled {
+		return false
+	}
+	// For RBE actions, we don't save another snapshot if one already exists.
+	if c.createFromSnapshot && !platform.IsCICommand(c.task.GetCommand(), platform.GetProto(c.task.GetAction(), c.task.GetCommand())) {
+		return false
+	}
+
+	// We don't have a separate platform property for local snapshot save policy, so we use the remote snapshot save policy,
+	// as it should be a good proxy for the user's intent on snapshot behavior.
+	savePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
+	if savePolicy == snaputil.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
+		// We want to always save the default snapshot, because it is used as a fallback for
+		// runs on other branches, so we want it to stay up-to-date.
+		return true
+	}
+	// By default (applies if save policy is unset or invalid) or if
+	// savePolicy=OnlySaveFirstNonDefaultSnapshot, only save a snapshot if one for the primary key
+	// doesn't already exist.
+	return !c.hasLocalSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
 }
 
 // LoadSnapshot loads a VM snapshot from the given snapshot digest and resumes
@@ -2305,6 +2308,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer func() {
 		// Attach VM metadata to the result
 		result.VMMetadata = c.getVMMetadata()
+		// Include whether the snapshot will be saved, so it can be displayed in the UI.
+		result.VMMetadata.SavedLocalSnapshot = c.shouldSaveLocalSnapshot(ctx)
+		result.VMMetadata.SavedRemoteSnapshot = c.shouldSaveRemoteSnapshot(ctx)
 
 		// Attach VM logs to the result
 		if result.AuxiliaryLogs == nil {
@@ -2355,8 +2361,8 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		logTail = strings.ReplaceAll(logTail, "\r\n", "\n")
 
 		if result.Error != nil {
-			if !status.IsDeadlineExceededError(result.Error) {
-				log.CtxWarningf(ctx, "Execution error occurred. VM logs: %s", string(c.vmLog.Tail()))
+			if !status.IsDeadlineExceededError(result.Error) && !status.IsCanceledError(result.Error) {
+				log.CtxWarningf(ctx, "Execution error occurred: %s. VM logs: %s", result.Error, string(c.vmLog.Tail()))
 			}
 		} else if err := c.parseOOMError(logTail); err != nil {
 			// TODO(bduffany): maybe fail the whole command if we see an OOM
@@ -2742,17 +2748,18 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	log.CtxInfof(ctx, "Pausing VM")
 
-	if c.shouldSaveSnapshot && c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
+	snapDetails := c.snapshotDetails(ctx)
+	shouldSaveSnapshot := snapDetails.saveRemoteSnapshot || snapDetails.saveLocalSnapshot
+
+	if shouldSaveSnapshot && c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
 		if err := c.reclaimMemoryWithBalloon(ctx); err != nil {
 			log.CtxErrorf(ctx, "Reclaiming memory with the balloon failed with: %s", err)
 		}
 	}
 
-	snapDetails := c.snapshotDetails()
-
 	// Before taking a snapshot, set the workspace drive to point to an empty
 	// file, so that we don't have to persist the workspace contents.
-	if c.shouldSaveSnapshot {
+	if shouldSaveSnapshot {
 		if err := c.updateWorkspaceDriveToEmptyFile(ctx); err != nil {
 			return status.WrapError(err, "update workspace drive to empty file")
 		}
@@ -2762,7 +2769,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		return err
 	}
 
-	if c.shouldSaveSnapshot {
+	if shouldSaveSnapshot {
 		// If an older snapshot is present -- nuke it since we're writing a new one.
 		if err := c.cleanupOldSnapshots(ctx, snapDetails); err != nil {
 			return err
@@ -2790,7 +2797,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		return status.WrapError(err, "unmount vbds")
 	}
 
-	if c.shouldSaveSnapshot {
+	if shouldSaveSnapshot {
 		if err := c.saveSnapshot(ctx, snapDetails); err != nil {
 			return err
 		}
@@ -2909,20 +2916,36 @@ type snapshotDetails struct {
 	snapshotType        string
 	memSnapshotName     string
 	vmStateSnapshotName string
+	saveRemoteSnapshot  bool
+	saveLocalSnapshot   bool
 }
 
-func (c *FirecrackerContainer) snapshotDetails() *snapshotDetails {
+func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) *snapshotDetails {
+	saveRemoteSnapshot := c.shouldSaveRemoteSnapshot(ctx)
+	saveLocalSnapshot := c.shouldSaveLocalSnapshot(ctx)
+
+	if c.supportsRemoteSnapshots && !saveRemoteSnapshot {
+		log.CtxInfof(ctx, "Not saving remote snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName))
+	}
+	if !saveLocalSnapshot {
+		log.CtxInfof(ctx, "Not saving local snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName))
+	}
+
 	if c.recycled {
 		return &snapshotDetails{
 			snapshotType:        diffSnapshotType,
 			memSnapshotName:     diffMemSnapshotName,
 			vmStateSnapshotName: vmStateSnapshotName,
+			saveRemoteSnapshot:  saveRemoteSnapshot,
+			saveLocalSnapshot:   saveLocalSnapshot,
 		}
 	}
 	return &snapshotDetails{
 		snapshotType:        fullSnapshotType,
 		memSnapshotName:     fullMemSnapshotName,
 		vmStateSnapshotName: vmStateSnapshotName,
+		saveRemoteSnapshot:  saveRemoteSnapshot,
+		saveLocalSnapshot:   saveLocalSnapshot,
 	}
 }
 
@@ -3137,6 +3160,13 @@ func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, load
 	})
 	return err == nil
 }
+func (c *FirecrackerContainer) hasLocalSnapshotForKey(ctx context.Context, loader snaploader.Loader, key *fcpb.SnapshotKey) bool {
+	_, err := loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
+		RemoteReadEnabled: false,
+		ReadPolicy:        platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName),
+	})
+	return err == nil
+}
 
 // hasFallbackKeys reports whether there are fallback snapshot keys.
 //
@@ -3145,6 +3175,13 @@ func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, load
 // on other branches.
 func (c *FirecrackerContainer) hasFallbackKeys() bool {
 	return len(c.snapshotKeySet.GetFallbackKeys()) > 0
+}
+
+// The default snapshot is the fallback key for non-default branches,
+// so if a run does not have a fallback key, it's likely running on
+// the default branch.
+func (c *FirecrackerContainer) isLikelyDefaultSnapshot() bool {
+	return !c.hasFallbackKeys()
 }
 
 func isExitErrorSIGTERM(err error) bool {

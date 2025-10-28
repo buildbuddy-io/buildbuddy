@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, CaseSensitive, Download, Expand, Shrink, WrapText, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CaseSensitive, Check, Copy, Download, Expand, Shrink, WrapText, X } from "lucide-react";
 import memoizeOne from "memoize-one";
 import React from "react";
 import AutoSizer from "react-virtualized-auto-sizer";
@@ -9,6 +9,7 @@ import Spinner from "../components/spinner/spinner";
 import router from "../router/router";
 import { mod } from "../util/math";
 import { Scroller } from "../util/scroller";
+import { copyTerminalText } from "./copy";
 import { Row, ROW_HEIGHT_PX } from "./row";
 import { getContent, ListData, Range, SearchQuery, toPlainText, updatedMatchIndexForSearch } from "./text";
 
@@ -48,6 +49,7 @@ interface State {
   activeMatchIndex: number;
 
   isLoadingFullLog: boolean;
+  copied: boolean;
 }
 
 /** DOM snapshot returned by the `getSnapshotBeforeUpdate` lifecycle method. */
@@ -67,6 +69,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
 
     searchQuery: { match: "", caseSensitive: false },
     activeMatchIndex: -1,
+    copied: false,
   };
 
   private terminalRef = React.createRef<HTMLDivElement>();
@@ -78,6 +81,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
   private windowKeyDownListener?: (this: Window, ev: KeyboardEvent) => any;
   private fullScreenListener?: (this: Window) => any;
   private resizeListener?: (this: Window) => any;
+  private copyResetTimeout: number | null = null;
 
   private scroller = new Scroller(() => {
     const list = this.list;
@@ -98,9 +102,9 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
 
   componentDidMount() {
     this.initialScrollToEnd();
-    window.addEventListener("keydown", (this.windowKeyDownListener = this.onWindowKeyDown.bind(this)));
-    window.addEventListener("fullscreenchange", (this.fullScreenListener = () => this.forceUpdate.bind(this)));
-    window.addEventListener("resize", (this.resizeListener = this.updateLineLengthLimit.bind(this)));
+    window.addEventListener("keydown", (this.windowKeyDownListener = (e) => this.onWindowKeyDown(e)));
+    window.addEventListener("fullscreenchange", (this.fullScreenListener = () => this.forceUpdate()));
+    window.addEventListener("resize", (this.resizeListener = () => this.updateLineLengthLimit()));
   }
 
   componentWillUnmount() {
@@ -112,6 +116,9 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
     }
     if (this.resizeListener) {
       window.removeEventListener("resize", this.resizeListener);
+    }
+    if (this.copyResetTimeout !== null) {
+      window.clearTimeout(this.copyResetTimeout);
     }
   }
 
@@ -352,6 +359,23 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
     element.click();
   }
 
+  private onCopyClick() {
+    try {
+      copyTerminalText(this.props.value);
+      if (this.copyResetTimeout !== null) {
+        window.clearTimeout(this.copyResetTimeout);
+      }
+      this.setState({ copied: true });
+      this.copyResetTimeout = window.setTimeout(() => {
+        this.copyResetTimeout = null;
+        this.setState({ copied: false });
+      }, 2000);
+    } catch (e) {
+      console.error("Failed to copy log text", e);
+      this.setState({ copied: false });
+    }
+  }
+
   render() {
     const content = this.getContent();
     const iconClass = this.props.lightTheme ? "" : "white";
@@ -439,6 +463,12 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
                 <Shrink className={`icon ${iconClass}`} />
               </button>
             )}
+            <button
+              title={this.state.copied ? "Copied" : "Copy"}
+              onClick={this.onCopyClick.bind(this)}
+              className="terminal-action active">
+              {this.state.copied ? <Check className={`icon ${iconClass}`} /> : <Copy className={`icon ${iconClass}`} />}
+            </button>
             <button
               title="Download"
               onClick={this.onDownloadClick.bind(this)}

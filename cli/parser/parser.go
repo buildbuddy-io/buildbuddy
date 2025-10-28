@@ -74,7 +74,7 @@ var (
 			parser, err := GenerateParser(flagCollection)
 			for name, d := range nativeDefinitions {
 				if err := parser.AddOptionDefinition(d); err != nil {
-					log.Warnf("Error initializing command-line parser when adding bb-specific definiton for '%s': %s", name, err)
+					log.Warnf("Error initializing command-line parser when adding bb-specific definition for '%s': %s", name, err)
 				}
 			}
 			parser.StartupOptionParser.Aliases = shortcuts.Shortcuts
@@ -106,8 +106,17 @@ type Subparser struct {
 
 func (m *Subparser) ForceAdd(d *options.Definition) {
 	m.ByName[d.Name()] = d
+	if d.HasNegative() {
+		m.ByName["no"+d.Name()] = d
+	}
 	if d.ShortName() != "" {
 		m.ByShortName[d.ShortName()] = d
+	}
+	if d.OldName() != "" {
+		m.ByName[d.OldName()] = d
+		if d.OldName() != "" {
+			m.ByName["no"+d.OldName()] = d
+		}
 	}
 }
 
@@ -117,6 +126,19 @@ func (m *Subparser) Add(d *options.Definition) error {
 	}
 	if _, ok := m.ByShortName[d.ShortName()]; ok {
 		return fmt.Errorf("Naming collision adding flag with short name %s; flag already exists with that short name.", d.ShortName())
+	}
+	if _, ok := m.ByName[d.OldName()]; ok {
+		return fmt.Errorf("Naming collision adding flag %s; flag has old name %s, but another flag already exists with that name.", d.Name(), d.OldName())
+	}
+	if d.HasNegative() {
+		if _, ok := m.ByName["no"+d.Name()]; ok {
+			return fmt.Errorf("Naming collision adding flag %s; flag has negative form %s, but a flag already exists with that name.", d.Name(), "no"+d.Name())
+		}
+		if d.OldName() != "" {
+			if _, ok := m.ByName["no"+d.OldName()]; ok {
+				return fmt.Errorf("Naming collision adding flag %s; flag has old negative form %s, but another flag already exists with that name.", d.Name(), "no"+d.OldName())
+			}
+		}
 	}
 	m.ForceAdd(d)
 	return nil
@@ -474,11 +496,6 @@ func (p *Subparser) parseLongNameOption(optName string) (options.Option, error) 
 	if d, ok := p.ByName[optName]; ok {
 		return options.NewOption(optName, v, d)
 	}
-	if boolOptName, ok := strings.CutPrefix(optName, "no"); ok {
-		if d, ok := p.ByName[boolOptName]; ok && d.HasNegative() {
-			return options.NewOption(optName, v, d)
-		}
-	}
 
 	for prefix := range options.StarlarkSkippedPrefixes {
 		if strings.HasPrefix(optName, prefix) {
@@ -531,7 +548,6 @@ func (p *Subparser) parseShortNameOption(optName string) (options.Option, error)
 	if err != nil {
 		return nil, err
 	}
-	o.UseShortName(true)
 	return o, err
 }
 

@@ -109,9 +109,9 @@ workspace selection:
 > previous execution. [...] We have observed that builds that execute the same targets as a previous
 > build are effectively no-ops using this technique
 
-## Bazel instance matching
+## Runner recycling
 
-To match remote runs to warm Bazel instances, BuildBuddy uses VM
+To match workloads to warm runners, BuildBuddy uses VM
 snapshotting powered by
 [Firecracker](https://github.com/firecracker-microvm/firecracker) on
 Linux, and a simpler runner-recycling based approach on macOS.
@@ -126,7 +126,7 @@ server is effectively kept warm between runs.
 Remote runners use a sophisticated snapshotting mechanism that minimizes the
 work that Bazel has to do on each CI run.
 
-First, VM snapshots are stored both locally on the machine that ran the
+First, VM snapshots can be stored both locally on the machine that ran the
 remote run, as well as remotely in BuildBuddy's cache. This way, if the
 original machine that ran the remote run is fully occupied with other
 workloads, subsequent runs can be executed on another machine,
@@ -173,56 +173,83 @@ the default snapshot stays up to date.
 For more technical details on our VM implementation, see our BazelCon
 talk [Reusing Bazel's Analysis Cache by Cloning Micro-VMs](https://www.youtube.com/watch?v=YycEXBlv7ZA).
 
-#### Remote snapshot save policy
+#### Recommended configuration
 
-By default, after every remote run, a snapshot is cached locally on the machine
-that ran it. Subsequent runs that are assigned to the same executor can resume
-from that snapshot. Our scheduler uses affinity routing to prioritize routing
-similar workloads to the same executor, to increase the likelihood of hitting
-a local snapshot match.
+Snapshot matching is complex and different strategies come with performance
+or cost trade-offs. More details can be found below at [Snapshot save policy](#snapshot-save-policy).
 
-Snapshots can also be cached in the remote cache. There are pros and cons to
-using remote snapshots.
+Here are the recommended platform properties for most CI use cases. They balance
+cost considerations and maintain good performance:
 
-Local snapshots cannot be guaranteed, because the executor
-that has it cached locally may be unavailable. For example if it's fully occupied
-with other workloads or is restarting during a release, subsequent remote
-runs will be executed on another machine that doesn't have access to the local
-cache. Using the remote cache increases the likelihood you will be able to access the
-latest snapshot (subject to typical remote cache eviction).
+- `remote-snapshot-save-policy=none-available`
 
-However snapshots can be quite large, and storing them in the remote cache
-can cause significant network transfer. Remote snapshot uploads and downloads
-are billed, and writing every snapshot to the remote cache may result in a
-high bill.
+For performance-sensitive or interactive workloads (like if you're using the Remote
+Bazel CLI to build interactively), we recommend the following platform properties.
+They will result in higher cache upload and download and associated costs:
 
-We support configuring the remote snapshot save policy with the `remote-snapshot-save-policy`
-platform property. Valid values are:
+- `remote-snapshot-save-policy=always`
 
-- `always`: Always save a remote snapshot.
+For Workflows, you can set platform properties using the `platform_properties` field.
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Test all targets"
+    platform_properties:
+      remote-snapshot-save-policy: none-available
+    env:
+      GIT_REPO_DEFAULT_BRANCH: main
+    # ...
+```
+
+For Remote Bazel, you can set platform properties this using the
+`--runner_exec_properties=remote-snapshot-save-policy=` flag.
+
+```bash Sample Command
+bb remote --runner_exec_properties=remote-snapshot-save-policy=none-available test //...
+```
+
+NOTE: Setting platform properties will change the snapshot key. Immediately after
+you update a platform property, you will see snapshot misses until a new default
+snapshot with the new properties is saved.
+
+#### Snapshot save policy
+
+In order to reuse a warm VM, a snapshot of the machine must be taken and cached. While
+this ensures good performance for future runs, caching snapshots can be expensive.
+
+Snapshots can be very large because they include the entirety of
+the disk and memory of the machine. For example, a VM with 16GB memory and a 50GB disk results in a 66GB
+snapshot file. Storing them in the remote cache can cause significant network transfer, and
+because cache uploads and downloads are billed, caching lots of snapshots may result in a high bill.
+
+We support configuring the snapshot save policy with the `remote-snapshot-save-policy`
+platform property. See [Recommended configuration](#recommended-configuration) for our recommendations.
+Valid values are:
+
+- `always`: Always save a snapshot.
   - For performance sensitive or interactive workloads, this will ensure the latest snapshot is
-    always saved to the remote cache and will always be accessible.
-- `first-non-default-ref`: Only the first run on a non-default ref will save a remote snapshot.
-  All runs on default refs will save a remote snapshot.
+    always saved to the cache and will always be accessible.
+- `first-non-default-ref`: Only the first run on a non-default ref will save a snapshot.
+  All runs on default refs will save a snapshot.
   - This policy is applied by default.
-  - Every run on the default branch (Ex. `main` or `master`) will save a remote snapshot.
+  - Every run on the default branch (Ex. `main` or `master`) will save a snapshot.
   - The first run on your feature branch `my-feature` can resume from the default
-    snapshot, and will save a remote snapshot for the `my-feature` ref.
+    snapshot, and will save a snapshot for the `my-feature` ref.
   - The second run on the `my-feature` branch will resume from the original `my-feature`
-    snapshot. However it will not save a remote snapshot.
+    snapshot. However it will not save a snapshot.
   - The third run on the `my-feature` branch will resume from the original `my-feature`
     snapshot. It will not resume from the second run of the `my-feature` branch, and
-    it will not save a remote snapshot.
-- `none-available`: A remote snapshot on a non-default ref will only be saved if
-  there are no remote snapshots available. If there is any fallback snapshot,
-  a remote snapshot will not be saved. All runs on default refs will save a remote snapshot.
-  - Every run on the default branch (Ex. `main` or `master`) will save a remote snapshot.
+    it will not save a snapshot.
+- `none-available`: A snapshot on a non-default ref will only be saved if
+  there are no snapshots available. If there is any fallback snapshot,
+  a snapshot will not be saved. All runs on default refs will still save a snapshot.
+  - Every run on the default branch (Ex. `main` or `master`) will save a snapshot.
   - For the first run on your feature branch `my-feature`, if there is snapshot
     for the default branch available, you will resume from it. Because you resumed
-    from a remote snapshot, a remote snapshot will not be saved.
+    from a snapshot, a snapshot will not be saved.
   - Subsequent runs on the `my-feature` branch will resume from the default snapshot,
-    because no remote snapshots were saved for the `my-feature` branch.
-  - If there is no default snapshot available, then a remote snapshot will be saved
+    because no snapshots were saved for the `my-feature` branch.
+  - If there is no default snapshot available, then a snapshot will be saved
     for the `my-feature` branch on its first run.
 
 For Workflows, you can configure this using the `platform_properties` field.
@@ -257,13 +284,18 @@ expected.
 bb remote --runner_exec_properties=remote-snapshot-save-policy=none-available test //...
 ```
 
-If you want to override the remote snapshot save policy for a specific run, you
-should use a remote header. By default, platform properties are hashed in the
+##### Overriding the snapshot save policy
+
+If you want to override the snapshot save policy for a specific run, you
+can use a remote header. For example, lets say you typically
+set a snapshot save policy where a snapshot would not be saved for a given workload, but you'd like to force a snapshot save for debug purposes.
+
+By default, platform properties are hashed in the
 snapshot key, so changing the snapshot save policy would invalidate your snapshot.
 However platform properties set in remote headers are not included in the snapshot
 key.
 
-For example, lets say you use the default `first-non-default-ref` policy, but wish
+For example, lets say you use the `first-non-default-ref` policy, but wish
 to force save a specific remote snapshot run to do some additional debugging. You
 could apply that with a command like:
 

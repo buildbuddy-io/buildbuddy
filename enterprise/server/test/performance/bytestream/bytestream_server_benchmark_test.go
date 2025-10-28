@@ -253,6 +253,7 @@ func benchmarkWrite(b *testing.B, ctx context.Context, objectSize int64, chunkSi
 				Data:         chunk,
 				WriteOffset:  int64(offset),
 			}))
+			uploadString = ""
 			offset += len(chunk)
 		}
 		require.NoError(b, stream.Send(&bspb.WriteRequest{

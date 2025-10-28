@@ -10,8 +10,10 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -46,6 +48,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/docker/go-units"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -63,6 +66,8 @@ var (
 	warmupWorkflowImages   = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
 	warmupAdditionalImages = flag.Slice[string]("executor.warmup_additional_images", []string{}, "List of container images to warm up alongside the executor default images on executor start up.")
 	maxRunnerCount         = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
+
+	runnerPoolMaxTotalMemoryUsage = flag.Int64("executor.runner_pool.max_total_memory_usage_bytes", 0, "Max total memory usage for pooled runners.")
 	// How big a runner's workspace is allowed to get before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerDiskSizeBytes    = flag.Int64("executor.runner_pool.max_runner_disk_size_bytes", 16e9, "Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB.")
@@ -137,7 +142,7 @@ type WarmupConfig struct {
 }
 
 // state indicates the current state of a taskRunner.
-type state int
+type state int32
 
 func (s state) String() string {
 	switch s {
@@ -151,6 +156,21 @@ func (s state) String() string {
 		return "removed"
 	default:
 		return "unknown"
+	}
+}
+
+func (s state) ShortString() string {
+	switch s {
+	case initial:
+		return "I"
+	case paused:
+		return "P"
+	case ready:
+		return "R"
+	case removed:
+		return "X"
+	default:
+		return "?"
 	}
 }
 
@@ -191,8 +211,10 @@ type taskRunner struct {
 
 	// task is the current task assigned to the runner.
 	task *repb.ExecutionTask
-	// State is the current state of the runner as it pertains to reuse.
-	state state
+	// State is the current state of the runner as it pertains to reuse. It is
+	// atomic because in some cases we want to print runner metadata for debug
+	// purposes but without having to hold the pool lock.
+	state atomic.Int32
 
 	worker *persistentworker.Worker
 
@@ -215,9 +237,14 @@ func (r *taskRunner) Metadata() *espb.RunnerMetadata {
 }
 
 func (r *taskRunner) String() string {
-	// Note: we don't log r.state here as this can make log statements calling
-	// this function racy. Beware of this if re-adding r.state below.
-	return fmt.Sprintf("%s:%d:%s", r.debugID, r.metadata.GetTaskNumber(), keyString(r.key))
+	return fmt.Sprintf("%s:%s:%d:%s", r.debugID, r.getState().ShortString(), r.metadata.GetTaskNumber(), keyString(r.key))
+}
+
+func (r *taskRunner) setState(s state) {
+	r.state.Store(int32(s))
+}
+func (r *taskRunner) getState() state {
+	return state(r.state.Load())
 }
 
 func (r *taskRunner) pullCredentials() (oci.Credentials, error) {
@@ -301,31 +328,46 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 	start := time.Now()
 	defer func() {
 		// Discard nonsensical PSI full-stall durations which are greater
-		// than the execution duration.
+		// than the execution duration by a significant amount.
 		// See https://bugzilla.kernel.org/show_bug.cgi?id=219194
-		// TL;DR: very rarely, the total stall duration is reported as a number
-		// which is much larger than the actual execution duration, and is
-		// sometimes exactly equal to UINT32_MAX nanoseconds, which is
-		// suspicious and suggests there is a bug in the way this number is
-		// reported.
+		// TL;DR: very rarely, a kernel bug causes UINT32_MAX to be reported
+		// instead of the actual value.
 		// Also, skip recycling in this case, because the nonsensical result
 		// will persist across tasks.
 		runDuration := time.Since(start)
 		stats := res.UsageStats
-		if cpuStallDuration := time.Duration(stats.GetCpuPressure().GetFull().GetTotal()) * time.Microsecond; cpuStallDuration > runDuration {
+		const psiCheckDurationThreshold = 1 * time.Second
+		// TODO(bduffany): remove this durationThreshold. This is needed because
+		// we technically track stats for slightly longer than the execution
+		// stage, because we reset the stats baseline relative to the last
+		// measurement, not the current value at the start of the execution. We
+		// should fix TrackExecution to take an initial baseline measurement
+		// instead, but need to fix some container implementations to support
+		// it. Podman in particular runs into a deadlock if we try to do this.
+		if cpuStallDuration := time.Duration(stats.GetCpuPressure().GetFull().GetTotal()) * time.Microsecond; cpuStallDuration > runDuration && cpuStallDuration > psiCheckDurationThreshold {
 			log.CtxWarningf(ctx, "Discarding CPU PSI stats: full-stall duration %s exceeds execution duration %s", cpuStallDuration, runDuration)
 			stats.CpuPressure = nil
 			res.DoNotRecycle = true
 		}
-		if memStallDuration := time.Duration(stats.GetMemoryPressure().GetFull().GetTotal()) * time.Microsecond; memStallDuration > runDuration {
+		if memStallDuration := time.Duration(stats.GetMemoryPressure().GetFull().GetTotal()) * time.Microsecond; memStallDuration > runDuration && memStallDuration > psiCheckDurationThreshold {
 			log.CtxWarningf(ctx, "Discarding memory PSI stats: full-stall duration %s exceeds execution duration %s", memStallDuration, runDuration)
 			stats.MemoryPressure = nil
 			res.DoNotRecycle = true
 		}
-		if ioStallDuration := time.Duration(stats.GetIoPressure().GetFull().GetTotal()) * time.Microsecond; ioStallDuration > runDuration {
+		if ioStallDuration := time.Duration(stats.GetIoPressure().GetFull().GetTotal()) * time.Microsecond; ioStallDuration > runDuration && ioStallDuration > psiCheckDurationThreshold {
 			log.CtxWarningf(ctx, "Discarding IO PSI stats: full-stall duration %s exceeds execution duration %s", ioStallDuration, runDuration)
 			stats.IoPressure = nil
 			res.DoNotRecycle = true
+		}
+		if slices.Contains(r.PlatformProperties.RunnerCrashedExitCodes, res.ExitCode) {
+			log.CtxInfof(ctx, "Exit code is in runner-crashed-exit-codes list %v - not recycling", r.PlatformProperties.RunnerCrashedExitCodes)
+			res.DoNotRecycle = true
+		}
+		if slices.Contains(r.PlatformProperties.TransientErrorExitCodes, res.ExitCode) {
+			res.Error = status.UnavailableErrorf("command exited with code %d (listed in transient-error-exit-codes)", res.ExitCode)
+			// Clear the exit code - should either return an exit code or an
+			// error but not both.
+			res.ExitCode = commandutil.NoExitCode
 		}
 
 		// Allow tasks to create a special file to skip recycling.
@@ -372,13 +414,8 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
-	//
-	// TODO(bduffany): Make this access to r.state thread-safe. The pool can be
-	// shutdown while this func is executing, which concurrently sets the runner
-	// state to "removed". This doesn't cause any known issues right now, but is
-	// error prone.
 	r.p.mu.RLock()
-	s := r.state
+	s := r.getState()
 	r.p.mu.RUnlock()
 	switch s {
 	case initial:
@@ -397,7 +434,7 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 			return commandutil.ErrorResult(err)
 		}
 		r.p.mu.Lock()
-		r.state = ready
+		r.setState(ready)
 		r.p.mu.Unlock()
 	case ready:
 	case removed:
@@ -480,8 +517,8 @@ func (r *taskRunner) shutdown(ctx context.Context) error {
 
 func (r *taskRunner) Remove(ctx context.Context) error {
 	r.p.mu.Lock()
-	s := r.state
-	r.state = removed
+	s := r.getState()
+	r.setState(removed)
 	r.p.mu.Unlock()
 	if s == removed {
 		return nil
@@ -571,9 +608,10 @@ type pool struct {
 	overrideProvider   container.Provider
 	containerProviders map[platform.ContainerType]container.Provider
 
-	maxRunnerCount            int
-	maxRunnerMemoryUsageBytes int64
-	maxRunnerDiskUsageBytes   int64
+	maxRunnerCount                 int
+	maxTotalRunnerMemoryUsageBytes int64
+	maxRunnerMemoryUsageBytes      int64
+	maxRunnerDiskUsageBytes        int64
 
 	// pendingRemovals keeps track of which runners are pending removal.
 	pendingRemovals sync.WaitGroup
@@ -677,10 +715,10 @@ func (p *pool) checkAddPreconditions(r *taskRunner) *labeledError {
 	}
 	// Note: shutdown can change the state to removed, so we need the lock to be
 	// held for this check.
-	if r.state != ready {
-		alert.UnexpectedEvent("unexpected_runner_state", "Unexpected runner state %d during add()", r.state)
+	if r.getState() != ready {
+		alert.UnexpectedEvent("unexpected_runner_state", "Unexpected runner state %d during add()", r.getState())
 		return &labeledError{
-			status.InternalErrorf("unexpected runner state %d; this should never happen", r.state),
+			status.InternalErrorf("unexpected runner state %d; this should never happen", r.getState()),
 			"unexpected_runner_state",
 		}
 	}
@@ -755,11 +793,29 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 		}
 	}
 
-	for p.pausedRunnerCount() >= p.maxRunnerCount {
+	shouldEvict := func() (bool, string) {
+		// If pooling this runner would put us over the max number of pooled
+		// runners, we need to evict a runner.
+		if p.maxRunnerCount > 0 && p.pausedRunnerCount()+1 > p.maxRunnerCount {
+			return true, fmt.Sprintf("max runner count exceeded (max=%d)", p.maxRunnerCount)
+		}
+		// If pooling this runner would put us over the total memory limit,
+		// we need to evict a runner.
+		if p.maxTotalRunnerMemoryUsageBytes > 0 && p.pausedRunnerMemoryUsageBytes()+stats.MemoryBytes > p.maxTotalRunnerMemoryUsageBytes {
+			return true, fmt.Sprintf("max runner memory usage exceeded (max=%s)", units.BytesSize(float64(p.maxTotalRunnerMemoryUsageBytes)))
+		}
+		// Otherwise, we don't need to evict.
+		return false, ""
+	}
+	for {
+		evict, reason := shouldEvict()
+		if !evict {
+			break
+		}
 		// Evict the oldest (first) paused runner to make room for the new one.
 		evictIndex := -1
 		for i, r := range p.runners {
-			if r.state == paused {
+			if r.getState() == paused {
 				evictIndex = i
 				break
 			}
@@ -772,7 +828,7 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 		}
 
 		r := p.runners[evictIndex]
-		log.Infof("Evicting runner %s (pool max count %d exceeded).", r, p.maxRunnerCount)
+		log.Infof("Evicting runner %s (%s)", r, reason)
 		p.runners = append(p.runners[:evictIndex], p.runners[evictIndex+1:]...)
 
 		metrics.RunnerPoolEvictions.Inc()
@@ -798,7 +854,7 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 	metrics.RunnerPoolCount.Inc()
 
 	// Officially mark this runner paused and ready for reuse.
-	r.state = paused
+	r.setState(paused)
 
 	return nil
 }
@@ -1124,7 +1180,8 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 	r.removeCallback = func() {
 		p.pendingRemovals.Done()
 	}
-	log.CtxInfof(ctx, "Created new %s runner %s for task", props.WorkloadIsolationType, r)
+
+	log.CtxInfof(ctx, "Created new runner for task (runner=%q, type=%s, recyclable=%v)", r, props.WorkloadIsolationType, props.RecycleRunner)
 	return r, nil
 }
 
@@ -1252,7 +1309,7 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) *taskRunner {
 
 	for i := len(p.runners) - 1; i >= 0; i-- {
 		r := p.runners[i]
-		if key.GroupId != r.key.GroupId || r.state != paused {
+		if key.GroupId != r.key.GroupId || r.getState() != paused {
 			continue
 		}
 		// Check for an exact match on the runner pool keys.
@@ -1265,7 +1322,7 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) *taskRunner {
 			continue
 		}
 
-		r.state = ready
+		r.setState(ready)
 
 		metrics.RunnerPoolCount.Dec()
 		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
@@ -1301,7 +1358,7 @@ func (p *pool) ActiveRunnerCount() int {
 func (p *pool) pausedRunnerCount() int {
 	n := 0
 	for _, r := range p.runners {
-		if r.state == paused {
+		if r.getState() == paused {
 			n++
 		}
 	}
@@ -1311,7 +1368,7 @@ func (p *pool) pausedRunnerCount() int {
 func (p *pool) pausedRunnerMemoryUsageBytes() int64 {
 	b := int64(0)
 	for _, r := range p.runners {
-		if r.state == paused {
+		if r.getState() == paused {
 			b += r.memoryUsageBytes
 		}
 	}
@@ -1329,7 +1386,7 @@ func (p *pool) Shutdown(ctx context.Context) error {
 	// grace period expiring.
 	var pausedRunners, activeRunners []*taskRunner
 	for _, r := range p.runners {
-		if r.state == paused {
+		if r.getState() == paused {
 			pausedRunners = append(pausedRunners, r)
 		} else {
 			activeRunners = append(activeRunners, r)
@@ -1348,7 +1405,6 @@ func (p *pool) Shutdown(ctx context.Context) error {
 		// to finish (if applicable). A single runner that takes a long time to
 		// upload its outputs should not block other runners from working on
 		// workspace removal in the meantime.
-		r := r
 		go func() {
 			removeResults <- r.RemoveWithTimeout(ctx)
 		}()
@@ -1414,15 +1470,21 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 		return
 	}
 	p.mu.Lock()
-	state := cr.state
+	state := cr.getState()
 	p.mu.Unlock()
 	if !finishedCleanly || cr.doNotReuse || state != ready {
 		log.CtxWarningf(ctx, "Failed to recycle runner %s due to previous execution error", cr)
+		metrics.RunnerPoolFailedRecycleAttempts.With(prometheus.Labels{
+			metrics.RunnerPoolFailedRecycleReason: "execution_error",
+		}).Inc()
 		return
 	}
 	// Clean the workspace before recycling the runner (to save on disk space).
 	if err := cr.Workspace.Clean(); err != nil {
 		log.CtxErrorf(ctx, "Failed to recycle runner %s: failed to clean workspace: %s", cr, err)
+		metrics.RunnerPoolFailedRecycleAttempts.With(prometheus.Labels{
+			metrics.RunnerPoolFailedRecycleReason: "clean_workspace_failed",
+		}).Inc()
 		return
 	}
 
@@ -1491,6 +1553,7 @@ func (p *pool) setLimits() {
 	}
 
 	p.maxRunnerCount = count
+	p.maxTotalRunnerMemoryUsageBytes = *runnerPoolMaxTotalMemoryUsage
 	p.maxRunnerMemoryUsageBytes = mem
 	p.maxRunnerDiskUsageBytes = disk
 	log.Infof(

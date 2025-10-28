@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "compactgraph",
     srcs = [
@@ -36,5 +38,3 @@ go_test(
         "@io_bazel_rules_go//go/runfiles",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

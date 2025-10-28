@@ -40,9 +40,9 @@ import (
 )
 
 var (
-	enableDownloadCompresssion = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
-	linkParallelism            = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
-	inputTreeSetupParallelism  = flag.Int("cache.client.input_tree_setup_parallelism", 1000, "Maximum number of concurrent filesystem operations to perform across all tasks when setting up the input tree structure. -1 means no limit.")
+	enableDownloadCompression = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
+	linkParallelism           = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
+	inputTreeSetupParallelism = flag.Int("cache.client.input_tree_setup_parallelism", 1000, "Maximum number of concurrent filesystem operations to perform across all tasks when setting up the input tree structure. -1 means no limit.")
 
 	initInputTreeWrangler     sync.Once
 	inputTreeWranglerInstance *inputTreeWrangler
@@ -53,6 +53,10 @@ const (
 	// Should be big enough to feed the workers when they free up.
 	// Operations will block when the queue is full.
 	inputTreeOpsQueueSize = 4000
+	// batchReadLimitBytes controls how big an object or batch can be to use
+	// the BatchReadBlobs RPC. In experiments, 2MiB blobs are 5-10% faster to
+	// read using the bytestream.Read api.
+	batchReadLimitBytes = min(2*1024*1024, rpcutil.GRPCMaxSizeBytes)
 )
 
 func groupIDStringFromContext(ctx context.Context) string {
@@ -715,8 +719,6 @@ type BatchFileFetcher struct {
 	env                     environment.Env
 	instanceName            string
 	digestFunction          repb.DigestFunction_Value
-	once                    *sync.Once
-	compress                bool
 	treeWrangler            *inputTreeWrangler
 	filesToFetch            FileMap
 	opts                    *DownloadTreeOpts
@@ -749,8 +751,6 @@ func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 		treeWrangler:            getInputTreeWrangler(env),
 		instanceName:            instanceName,
 		digestFunction:          digestFunction,
-		once:                    &sync.Once{},
-		compress:                false,
 		filesToFetch:            filesToFetch,
 		opts:                    opts,
 		onlyDownloadToFileCache: opts.RootDir == "",
@@ -758,29 +758,6 @@ func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 		remainingFetches:        remainingFetches,
 		fetchWaiters:            make(map[fetchKey][]chan struct{}),
 	}, nil
-}
-
-func (ff *BatchFileFetcher) supportsCompression() bool {
-	ff.once.Do(func() {
-		if !*enableDownloadCompresssion {
-			return
-		}
-		capabilitiesClient := ff.env.GetCapabilitiesClient()
-		if capabilitiesClient == nil {
-			log.Warningf("Download compression was enabled but no capabilities client found. Cannot verify cache server capabilities")
-			return
-		}
-		enabled, err := cachetools.SupportsCompression(ff.ctx, capabilitiesClient)
-		if err != nil {
-			log.Errorf("Error determinining if cache server supports compression: %s", err)
-		}
-		if enabled {
-			ff.compress = true
-		} else {
-			log.Debugf("Download compression was enabled but remote server did not support compression")
-		}
-	})
-	return ff.compress
 }
 
 func (ff *BatchFileFetcher) notifyFetchCompleted(fk fetchKey) {
@@ -895,7 +872,7 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 			InstanceName:   ff.instanceName,
 			DigestFunction: ff.digestFunction,
 		}
-		if ff.supportsCompression() {
+		if *enableDownloadCompression {
 			r.AcceptableCompressors = append(r.AcceptableCompressors, repb.Compressor_ZSTD)
 		}
 		return r
@@ -964,7 +941,7 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 			// fit in the batch call, so we'll have to bytestream
 			// it.
 			size := f.key.SizeBytes
-			if size > rpcutil.GRPCMaxSizeBytes || ff.env.GetContentAddressableStorageClient() == nil {
+			if size > batchReadLimitBytes || ff.env.GetContentAddressableStorageClient() == nil {
 				eg.Go(func() error {
 					if len(f.fps) == 0 {
 						return status.FailedPreconditionError("empty file pointer list for key")
@@ -982,7 +959,7 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 			// If the digest would push our current batch request
 			// size over the gRPC max, dispatch the request and
 			// start a new one.
-			if currentBatchRequestSize+size > rpcutil.GRPCMaxSizeBytes {
+			if currentBatchRequestSize+size > batchReadLimitBytes {
 				reqCopy := req
 				eg.Go(func() error {
 					return ff.batchDownloadFiles(ctx, reqCopy, opts)
@@ -1027,7 +1004,7 @@ func (ff *BatchFileFetcher) GetStats() *repb.IOStats {
 
 func (ff *BatchFileFetcher) bytestreamReadToWriter(ctx context.Context, bsClient bspb.ByteStreamClient, fileNode *repb.FileNode, w interfaces.CommittedWriteCloser) error {
 	resourceName := digest.NewCASResourceName(fileNode.Digest, ff.instanceName, ff.digestFunction)
-	if ff.supportsCompression() {
+	if *enableDownloadCompression {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
 

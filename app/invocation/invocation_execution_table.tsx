@@ -65,6 +65,14 @@ export default class InvocationExecutionTable extends React.Component<Props> {
                   mini={true}
                 />
                 <div className="invocation-execution-row-stats">
+                  {!!execution.primaryOutputPath && (
+                    <div>
+                      Primary output:{" "}
+                      <span className="primary-output" title={execution.primaryOutputPath}>
+                        {formatPrimaryOutput(execution.primaryOutputPath)}
+                      </span>
+                    </div>
+                  )}
                   <div>Executor Host ID: {execution.executedActionMetadata?.worker}</div>
                   <div>Total duration: {format.durationUsec(totalDuration(execution))}</div>
                   <div>Queued duration: {format.durationUsec(queuedDuration(execution))}</div>
@@ -102,4 +110,13 @@ function renderExecutionLabel(execution: execution_stats.Execution) {
       {joinReactNodes(nodes, <ChevronRight className="icon breadcrumb-separator" />)}
     </span>
   );
+}
+
+function formatPrimaryOutput(path: string) {
+  const segments = path.split("/").filter(Boolean);
+  if (segments.length <= 2) {
+    return path;
+  }
+  const tail = segments.slice(-2).join("/");
+  return `…/${tail}`;
 }

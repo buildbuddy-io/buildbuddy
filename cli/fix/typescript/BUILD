@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "typescript",
     srcs = ["typescript.go"],
@@ -15,5 +17,3 @@ go_library(
         "@com_github_smacker_go_tree_sitter//typescript/tsx",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

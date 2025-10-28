@@ -10,6 +10,7 @@ package parsed
 import (
 	"fmt"
 	"iter"
+	"os"
 	"os/user"
 	"path/filepath"
 	"slices"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 )
 
 type Args interface {
@@ -59,7 +61,7 @@ type Args interface {
 	// GetStartupOptions returns a slice of all the command options Args contains.
 	GetCommandOptions() []options.Option
 
-	// GetTargets returns a slice of all the bazel tagets Args contains.
+	// GetTargets returns a slice of all the bazel targets Args contains.
 	GetTargets() []*arguments.PositionalArgument
 
 	// GetExecArgs returns a slice of all the arguments bazel will forward to the
@@ -527,7 +529,7 @@ func (a *OrderedArgs) appendPositionalArgument(arg *arguments.PositionalArgument
 			a.Args = append(a.Args, &arguments.DoubleDash{})
 		} else {
 			// If there's no double dash, commandOptionInsertIndex needs to be
-			// incremented to still be len(p.Args) afer we append the argument for
+			// incremented to still be len(p.Args) after we append the argument for
 			// when we return.
 			commandOptionInsertIndex += 1
 		}
@@ -614,9 +616,17 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []strin
 				rcFiles = append(rcFiles, filepath.Join(workspaceDir, ".bazelrc"))
 			}
 		case "home_rc":
-			usr, err := user.Current()
-			if err == nil {
-				rcFiles = append(rcFiles, filepath.Join(usr.HomeDir, ".bazelrc"))
+			// Use $HOME or %USERPROFILE% to locate the home_rc file.
+			// This enables mocking $HOME in test environments.
+			//
+			// On Unix, if $HOME variable is unset, fallback to finding home directory
+			// by syscall (getpwuid), which typically parse /etc/passwd for the information.
+			if homeDir, osErr := os.UserHomeDir(); osErr != nil && homeDir != "" {
+				rcFiles = append(rcFiles, filepath.Join(homeDir, ".bazelrc"))
+			} else if currUser, userErr := user.Current(); userErr != nil && currUser.HomeDir != "" {
+				rcFiles = append(rcFiles, filepath.Join(currUser.HomeDir, ".bazelrc"))
+			} else {
+				log.Debugf("Unable to locate home_rc: %s - %s", osErr, userErr)
 			}
 		}
 	}
@@ -722,7 +732,7 @@ func (a *OrderedArgs) expandConfigs(
 	if err != nil {
 		return nil, err
 	}
-	log.Debugf("Fully expanded args: %+v", arguments.FormatAll(expanded))
+	log.Debugf("Fully expanded args: %s", shlex.Quote(arguments.FormatAll(expanded)...))
 
 	// Append to new OrderedArgs to make sure `--` is handled correctly.
 	expandedArgs := &OrderedArgs{}
@@ -781,7 +791,7 @@ func appendExpansion(
 	removeDoubleDash bool,
 ) ([]arguments.Argument, error) {
 	for _, a := range toExpand {
-		log.Debugf("Expanding '%+v'", a.Format())
+		log.Debugf("Expanding %s", shlex.Quote(a.Format()...))
 		switch a := a.(type) {
 		case *arguments.DoubleDash:
 			if removeDoubleDash {

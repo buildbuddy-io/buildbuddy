@@ -167,6 +167,24 @@ func TestGetTargetByTag(t *testing.T) {
 	assert.Equal(t, 2, len(resp.Target))
 }
 
+func TestGetTargetFailedToBuild(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	env, ctx := getEnvAndCtx(t, "user1")
+	streamFailedBuild(t, env, testInvocationID)
+
+	s := NewAPIServer(env)
+	resp, err := s.GetTarget(ctx, &apipb.GetTargetRequest{Selector: &apipb.TargetSelector{InvocationId: testInvocationID}})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 1, len(resp.Target))
+	target := resp.Target[0]
+	assert.Equal(t, "//failed/target:bar", target.GetLabel())
+	assert.Equal(t, commonpb.Status_FAILED_TO_BUILD, target.GetStatus())
+}
+
 func TestGetAction(t *testing.T) {
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
@@ -792,6 +810,28 @@ func streamBuildFromTestData(t testing.TB, te *testenv.TestEnv, ctx context.Cont
 	return iid
 }
 
+func streamFailedBuild(t *testing.T, te *testenv.TestEnv, iid string) {
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), iid)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	events := []*anypb.Any{
+		startedEvent("--remote_header='" + authutil.APIKeyHeader + "=user1'"),
+		targetConfiguredEvent("//failed/target:bar", "java_binary rule", "tag-failed"),
+		targetFailedEvent("//failed/target:bar"),
+		finishedEvent(),
+	}
+
+	for idx, evt := range events {
+		err := channel.HandleEvent(streamRequest(evt, iid, int64(idx+1)))
+		assert.NoError(t, err)
+	}
+
+	err = channel.FinalizeInvocation(iid)
+	assert.NoError(t, err)
+}
+
 func streamBuild(t *testing.T, te *testenv.TestEnv, iid string) {
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel, err := handler.OpenChannel(context.Background(), iid)
@@ -912,6 +952,36 @@ func targetCompletedEvent(label string) *anypb.Any {
 		},
 	})
 	return targetCompletedAny
+}
+
+func targetFailedEvent(label string) *anypb.Any {
+	targetFailedAny := &anypb.Any{}
+	targetFailedAny.MarshalFrom(&build_event_stream.BuildEvent{
+		Id: &build_event_stream.BuildEventId{
+			Id: &build_event_stream.BuildEventId_TargetCompleted{
+				TargetCompleted: &build_event_stream.BuildEventId_TargetCompletedId{
+					Label: label,
+					Configuration: &build_event_stream.BuildEventId_ConfigurationId{
+						Id: "config1",
+					},
+				},
+			},
+		},
+		Payload: &build_event_stream.BuildEvent_Completed{
+			Completed: &build_event_stream.TargetComplete{
+				Success: false,
+				FailureDetail: &failure_details.FailureDetail{
+					Message: "worker spawn failed",
+					Category: &failure_details.FailureDetail_Spawn{
+						Spawn: &failure_details.Spawn{
+							Code: *failure_details.Spawn_NON_ZERO_EXIT.Enum(),
+						},
+					},
+				},
+			},
+		},
+	})
+	return targetFailedAny
 }
 
 func actionCompleteEvent(label string) *anypb.Any {

@@ -90,35 +90,36 @@ const (
 	// dockerReuse is treated as an alias for recycle-runner.
 	dockerReusePropertyName = "dockerReuse"
 
-	RunnerRecyclingKey                      = "runner-recycling-key"
-	RemoteSnapshotSavePolicyPropertyName    = "remote-snapshot-save-policy"
-	SnapshotReadPolicyPropertyName          = "snapshot-read-policy"
-	RunnerRecyclingMaxWaitPropertyName      = "runner-recycling-max-wait"
-	PreserveWorkspacePropertyName           = "preserve-workspace"
-	overlayfsWorkspacePropertyName          = "overlayfs-workspace"
-	cleanWorkspaceInputsPropertyName        = "clean-workspace-inputs"
-	persistentWorkerPropertyName            = "persistent-workers"
-	persistentWorkerKeyPropertyName         = "persistentWorkerKey"
-	persistentWorkerProtocolPropertyName    = "persistentWorkerProtocol"
-	WorkflowIDPropertyName                  = "workflow-id"
-	WorkloadIsolationPropertyName           = "workload-isolation-type"
-	initDockerdPropertyName                 = "init-dockerd"
-	enableDockerdTCPPropertyName            = "enable-dockerd-tcp"
-	enableVFSPropertyName                   = "enable-vfs"
-	HostedBazelAffinityKeyPropertyName      = "hosted-bazel-affinity-key"
-	useSelfHostedExecutorsPropertyName      = "use-self-hosted-executors"
-	disableMeasuredTaskSizePropertyName     = "debug-disable-measured-task-size"
-	disablePredictedTaskSizePropertyName    = "debug-disable-predicted-task-size"
-	extraArgsPropertyName                   = "extra-args"
-	EnvOverridesPropertyName                = "env-overrides"
-	EnvOverridesBase64PropertyName          = "env-overrides-base64"
-	IncludeSecretsPropertyName              = "include-secrets"
-	DefaultTimeoutPropertyName              = "default-timeout"
-	TerminationGracePeriodPropertyName      = "termination-grace-period"
-	SnapshotKeyOverridePropertyName         = "snapshot-key-override"
-	RetryPropertyName                       = "retry"
-	SkipResavingActionSnapshotsPropertyName = "skip-resaving-action-snapshots"
-	PersistentVolumesPropertyName           = "persistent-volumes"
+	RunnerRecyclingKey                   = "runner-recycling-key"
+	RunnerRecyclingMaxWaitPropertyName   = "runner-recycling-max-wait"
+	runnerCrashedExitCodesPropertyName   = "runner-crashed-exit-codes"
+	transientErrorExitCodes              = "transient-error-exit-codes"
+	SnapshotSavePolicyPropertyName       = "remote-snapshot-save-policy"
+	SnapshotReadPolicyPropertyName       = "snapshot-read-policy"
+	PreserveWorkspacePropertyName        = "preserve-workspace"
+	overlayfsWorkspacePropertyName       = "overlayfs-workspace"
+	cleanWorkspaceInputsPropertyName     = "clean-workspace-inputs"
+	persistentWorkerPropertyName         = "persistent-workers"
+	PersistentWorkerKeyPropertyName      = "persistentWorkerKey"
+	persistentWorkerProtocolPropertyName = "persistentWorkerProtocol"
+	WorkflowIDPropertyName               = "workflow-id"
+	WorkloadIsolationPropertyName        = "workload-isolation-type"
+	initDockerdPropertyName              = "init-dockerd"
+	enableDockerdTCPPropertyName         = "enable-dockerd-tcp"
+	enableVFSPropertyName                = "enable-vfs"
+	HostedBazelAffinityKeyPropertyName   = "hosted-bazel-affinity-key"
+	useSelfHostedExecutorsPropertyName   = "use-self-hosted-executors"
+	disableMeasuredTaskSizePropertyName  = "debug-disable-measured-task-size"
+	disablePredictedTaskSizePropertyName = "debug-disable-predicted-task-size"
+	extraArgsPropertyName                = "extra-args"
+	EnvOverridesPropertyName             = "env-overrides"
+	EnvOverridesBase64PropertyName       = "env-overrides-base64"
+	IncludeSecretsPropertyName           = "include-secrets"
+	DefaultTimeoutPropertyName           = "default-timeout"
+	TerminationGracePeriodPropertyName   = "termination-grace-period"
+	SnapshotKeyOverridePropertyName      = "snapshot-key-override"
+	RetryPropertyName                    = "retry"
+	PersistentVolumesPropertyName        = "persistent-volumes"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -203,8 +204,17 @@ type Properties struct {
 	DockerNetwork             string
 	RecycleRunner             bool
 	RunnerRecyclingMaxWait    time.Duration
-	EnableVFS                 bool
-	IncludeSecrets            bool
+
+	// Exit codes indicating a runner crashed and should not be recycled since
+	// it may be corrupted in some way.
+	RunnerCrashedExitCodes []int
+
+	// Exit codes that should be translated to an Unavailable gRPC error so that
+	// they can be retried automatically by the client.
+	TransientErrorExitCodes []int
+
+	EnableVFS      bool
+	IncludeSecrets bool
 
 	// OriginalPool can be set to inform BuildBuddy about the original pool name
 	// from another remote execution platform. This allows configuring task
@@ -356,7 +366,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	//   runner recycling)
 	recycleRunner := boolProp(m, recycleRunnerPropertyName, false) ||
 		boolProp(m, dockerReusePropertyName, false) ||
-		stringProp(m, persistentWorkerKeyPropertyName, "") != ""
+		stringProp(m, PersistentWorkerKeyPropertyName, "") != ""
 	isolationType := stringProp(m, WorkloadIsolationPropertyName, "")
 
 	// Only Enable VFS if it is also enabled via flags.
@@ -428,9 +438,9 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		return nil, err
 	}
 
-	snapshotSavePolicy := stringProp(m, RemoteSnapshotSavePolicyPropertyName, "")
+	snapshotSavePolicy := stringProp(m, SnapshotSavePolicyPropertyName, "")
 	switch snapshotSavePolicy {
-	case snaputil.AlwaysSaveRemoteSnapshot, snaputil.OnlySaveFirstNonDefaultRemoteSnapshot, snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable, "":
+	case snaputil.AlwaysSaveSnapshot, snaputil.OnlySaveFirstNonDefaultSnapshot, snaputil.OnlySaveNonDefaultSnapshotIfNoneAvailable, "":
 	default:
 		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the `remote-snapshot-save-policy` platform property", snapshotSavePolicy)
 	}
@@ -473,7 +483,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		OverlayfsWorkspace:        boolProp(m, overlayfsWorkspacePropertyName, false),
 		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
 		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
-		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
+		PersistentWorkerKey:       stringProp(m, PersistentWorkerKeyPropertyName, ""),
 		PersistentWorkerProtocol:  stringProp(m, persistentWorkerProtocolPropertyName, ""),
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
 		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
@@ -487,6 +497,8 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		SnapshotReadPolicy:        snapshotReadPolicy,
 		RemoteSnapshotSavePolicy:  snapshotSavePolicy,
 		ContainerRegistryBypass:   boolProp(m, containerRegistryBypassPropertyName, false),
+		RunnerCrashedExitCodes:    intListProp(m, runnerCrashedExitCodesPropertyName),
+		TransientErrorExitCodes:   intListProp(m, transientErrorExitCodes),
 	}, nil
 }
 
@@ -810,6 +822,23 @@ func stringListProp(props map[string]string, name string) []string {
 		if item != "" {
 			vals = append(vals, item)
 		}
+	}
+	return vals
+}
+
+func intListProp(props map[string]string, name string) []int {
+	p := strings.TrimSpace(props[strings.ToLower(name)])
+	if p == "" {
+		return nil
+	}
+	vals := []int{}
+	for _, item := range strings.Split(p, ",") {
+		item := strings.TrimSpace(item)
+		i, err := strconv.Atoi(item)
+		if err != nil {
+			return nil // TODO: make this fatal
+		}
+		vals = append(vals, i)
 	}
 	return vals
 }

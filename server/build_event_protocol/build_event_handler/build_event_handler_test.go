@@ -82,10 +82,11 @@ func (s *besSequence) NextRequest(event *bspb.BuildEvent) *pepb.PublishBuildTool
 
 type FakeGitHubStatusService struct {
 	Clients []*FakeGitHubStatusClient
+	StatusReportingEnabled bool
 }
 
-func (s *FakeGitHubStatusService) GetStatusClient(accessToken string) interfaces.GitHubStatusClient {
-	client := &FakeGitHubStatusClient{AccessToken: accessToken}
+func (s *FakeGitHubStatusService) GetStatusClient() interfaces.GitHubStatusClient {
+	client := &FakeGitHubStatusClient{StatusReportingEnabled: s.StatusReportingEnabled}
 	s.Clients = append(s.Clients, client)
 	return client
 }
@@ -95,9 +96,22 @@ func (s *FakeGitHubStatusService) GetCreatedClient(t *testing.T) *FakeGitHubStat
 	return s.Clients[0]
 }
 
+func (c *FakeGitHubStatusService) HasNoStatuses() bool {
+	if len(c.Clients) == 0 {
+		return true
+	}
+	for _, c := range c.Clients {
+		if len(c.Statuses) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
 type FakeGitHubStatusClient struct {
 	AccessToken string
 	Statuses    []*FakeGitHubStatus
+	StatusReportingEnabled bool
 }
 
 type FakeGitHubStatus struct {
@@ -114,6 +128,10 @@ func (c *FakeGitHubStatusClient) CreateStatus(ctx context.Context, ownerRepo, co
 	}
 	c.Statuses = append(c.Statuses, s)
 	return nil
+}
+
+func (c *FakeGitHubStatusClient) IsStatusReportingEnabled(ctx context.Context, repoURL string) (bool, error) {
+	return c.StatusReportingEnabled, nil
 }
 
 func (c *FakeGitHubStatusClient) ConsumeStatuses() []*FakeGitHubStatus {
@@ -1400,7 +1418,7 @@ func TestBuildStatusReporting(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
-			fakeGH := &FakeGitHubStatusService{}
+			fakeGH := &FakeGitHubStatusService{StatusReportingEnabled: true}
 			te.SetGitHubStatusService(fakeGH)
 			auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 			te.SetAuthenticator(auth)
@@ -1445,7 +1463,7 @@ func TestBuildStatusReporting(t *testing.T) {
 
 			// Should not have reported any statuses yet, since we haven't
 			// handled any metadata events.
-			require.Empty(t, fakeGH.Clients)
+			require.True(t, fakeGH.HasNoStatuses())
 
 			// Handle *all but the last* metadata event - no statuses should be
 			// reported yet. We should only report a status once *all* of the
@@ -1456,7 +1474,7 @@ func TestBuildStatusReporting(t *testing.T) {
 				md = md[1:]
 				err := channel.HandleEvent(seq.NextRequest(event))
 				require.NoError(t, err)
-				require.Empty(t, fakeGH.Clients)
+				require.True(t, fakeGH.HasNoStatuses())
 			}
 
 			// Now handle the last metadata event - should report a status,
@@ -1534,7 +1552,7 @@ func TestBuildStatusReportingDisabled(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
-			fakeGH := &FakeGitHubStatusService{}
+			fakeGH := &FakeGitHubStatusService{StatusReportingEnabled: test.enableReportingForRepo}
 			te.SetGitHubStatusService(fakeGH)
 			auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 			te.SetAuthenticator(auth)
@@ -1611,10 +1629,10 @@ func TestBuildStatusReportingDisabled(t *testing.T) {
 			for _, event := range buildEvents {
 				err := channel.HandleEvent(seq.NextRequest(event))
 				require.NoError(t, err)
-				require.Empty(t, fakeGH.Clients)
+				require.True(t, fakeGH.HasNoStatuses())
 			}
 			// No statuses should've been reported.
-			require.Empty(t, fakeGH.Clients)
+			require.True(t, fakeGH.HasNoStatuses())
 
 			// Handle the Finished event - should not report a status.
 			fin := &bspb.BuildEvent{
@@ -1628,7 +1646,7 @@ func TestBuildStatusReportingDisabled(t *testing.T) {
 			}
 			err = channel.HandleEvent(seq.NextRequest(fin))
 			require.NoError(t, err)
-			require.Empty(t, fakeGH.Clients)
+			require.True(t, fakeGH.HasNoStatuses())
 		})
 	}
 }
@@ -1652,7 +1670,7 @@ func TestBuildStatusReporting_LegacyMethods(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
-			fakeGH := &FakeGitHubStatusService{}
+			fakeGH := &FakeGitHubStatusService{StatusReportingEnabled: true}
 			te.SetGitHubStatusService(fakeGH)
 			auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 			te.SetAuthenticator(auth)
@@ -1728,7 +1746,7 @@ func TestBuildStatusReporting_LegacyMethods(t *testing.T) {
 
 			// Should not have reported any statuses yet, since we haven't
 			// handled any metadata events.
-			require.Empty(t, fakeGH.Clients)
+			require.True(t, fakeGH.HasNoStatuses())
 
 			// Handle *all but the last* metadata event - no statuses should be
 			// reported yet. We should only report a status once *all* of the
@@ -1739,14 +1757,13 @@ func TestBuildStatusReporting_LegacyMethods(t *testing.T) {
 				md = md[1:]
 				err := channel.HandleEvent(seq.NextRequest(event))
 				require.NoError(t, err)
-				require.Empty(t, fakeGH.Clients)
+				require.True(t, fakeGH.HasNoStatuses())
 			}
 
 			// Now handle the last metadata event - should report a status,
 			// since all metadata events have been handled.
 			err = channel.HandleEvent(seq.NextRequest(md[0]))
 			require.NoError(t, err)
-			require.Equal(t, 1, len(fakeGH.Clients))
 			client := fakeGH.GetCreatedClient(t)
 			require.Equal(t, []*FakeGitHubStatus{
 				{

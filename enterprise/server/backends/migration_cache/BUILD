@@ -26,6 +26,7 @@ go_library(
         "//server/util/compression",
         "//server/util/disk",
         "//server/util/flag",
+        "//server/util/ioutil",
         "//server/util/log",
         "//server/util/status",
         "//server/util/tracing",

@@ -15,12 +15,12 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
     deps = [
         "//enterprise/server/bes_artifacts",
-        "//enterprise/server/build_event_publisher",
         "//enterprise/server/workflow/config",
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
+        "//server/build_event_publisher",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",

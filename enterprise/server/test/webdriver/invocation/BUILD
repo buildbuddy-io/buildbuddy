@@ -1,5 +1,7 @@
 load("//rules/webdriver:index.bzl", "go_web_test_suite")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_web_test_suite(
     name = "invocation_test",
     srcs = ["invocation_test.go"],
@@ -19,5 +21,3 @@ go_web_test_suite(
         "@com_github_stretchr_testify//require",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

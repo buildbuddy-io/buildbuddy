@@ -299,7 +299,7 @@ func (sm *Replica) lookup(db ReplicaReader, key []byte) ([]byte, error) {
 	buf, closer, err := db.Get(key)
 	if err != nil {
 		if err == pebble.ErrNotFound {
-			return nil, status.NotFoundErrorf("[%s] Key not found: %s", sm.name(), err)
+			return nil, status.NotFoundErrorf("[%s] Key not found: %w", sm.name(), err)
 		}
 		return nil, err
 	}
@@ -904,7 +904,7 @@ func (sm *Replica) fetchRanges(db ReplicaReader, req *rfpb.FetchRangesRequest) (
 	for _, kv := range scanRsp.GetKvs() {
 		rd := &rfpb.RangeDescriptor{}
 		if err := proto.Unmarshal(kv.GetValue(), rd); err != nil {
-			return nil, status.InternalErrorf("scan returned unparsable kv: %s", err)
+			return nil, status.InternalErrorf("scan returned unparsable kv: %w", err)
 		}
 		if _, ok := rangeIDSet[rd.GetRangeId()]; ok {
 			rsp.Ranges = append(rsp.Ranges, rd)
@@ -1350,7 +1350,7 @@ func (sm *Replica) commitIndexBatch(wb pebble.Batch, entryIndex uint64) error {
 	appliedIndex := uint64ToBytes(entryIndex)
 	wb.Set(sm.replicaLocalKey(constants.LastAppliedIndexKey), appliedIndex, nil)
 	if err := wb.Commit(pebble.NoSync); err != nil {
-		return status.InternalErrorf("[%s] failed to commit batch: %s", sm.name(), err)
+		return status.InternalErrorf("[%s] failed to commit batch: %w", sm.name(), err)
 	}
 	// If the batch commit was successful, update the replica's in-
 	// memory state.
@@ -1367,7 +1367,7 @@ func (sm *Replica) updateSession(wb pebble.Batch, reqSession *rfpb.Session, rspB
 	reqSession.RspData = rspBuf
 	sessionBuf, err := proto.Marshal(reqSession)
 	if err != nil {
-		return status.InternalErrorf("[%s] failed to marshal session: %s", sm.name(), err)
+		return status.InternalErrorf("[%s] failed to marshal session: %w", sm.name(), err)
 	}
 	sessionKey := keys.MakeKey(constants.SessionPrefix, reqSession.GetId())
 	wb.Set(sm.replicaLocalKey(sessionKey), sessionBuf, nil)
@@ -1381,7 +1381,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	// and the statemachine keeps progressing.
 	batchReq := &rfpb.BatchCmdRequest{}
 	if err := proto.Unmarshal(entry.Cmd, batchReq); err != nil {
-		err = status.InternalErrorf("[%s] failed to unmarshal entry.Cmd: %s", sm.name(), err)
+		err = status.InternalErrorf("[%s] failed to unmarshal entry.Cmd: %w", sm.name(), err)
 		entry.Result = errorEntry(err)
 		return entry, nil
 	}
@@ -1464,7 +1464,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 
 	rspBuf, err := proto.Marshal(batchRsp)
 	if err != nil {
-		err = status.InternalErrorf("[%s] failed to marshal batchRsp: %s", sm.name(), err)
+		err = status.InternalErrorf("[%s] failed to marshal batchRsp: %w", sm.name(), err)
 		entry.Result = errorEntry(err)
 		return entry, nil
 	}
@@ -1537,14 +1537,14 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 	startTime := time.Now()
 	db, err := sm.leaser.DB()
 	if err != nil {
-		return nil, status.InternalErrorf("[%s] failed to get pebble DB from the leaser: %s", sm.name(), err)
+		return nil, status.InternalErrorf("[%s] failed to get pebble DB from the leaser: %w", sm.name(), err)
 	}
 	defer db.Close()
 
 	for i, entry := range entries {
 		e, err := sm.singleUpdate(db, entry)
 		if err != nil {
-			return nil, status.InternalErrorf("[%s] failed to singleUpdate entry (index=%d): %s", sm.name(), entry.Index, err)
+			return nil, status.InternalErrorf("[%s] failed to singleUpdate entry (index=%d): %w", sm.name(), entry.Index, err)
 		}
 		entries[i] = e
 	}

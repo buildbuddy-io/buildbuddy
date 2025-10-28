@@ -583,7 +583,10 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 			// Note: platform must match in order to share snapshots
 			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
+				// Save a snapshot for every run.
+				{Name: platform.SnapshotSavePolicyPropertyName, Value: snaputil.AlwaysSaveSnapshot},
 			}},
+			Arguments: []string{"./buildbuddy_ci_runner"},
 		},
 	}
 	baseVM, err := firecracker.NewContainer(ctx, env, task, opts)
@@ -732,11 +735,10 @@ func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
 	}
 	task := &repb.ExecutionTask{
 		Command: &repb.Command{
-			// Note: platform must match in order to share snapshots
 			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
-				{Name: platform.SkipResavingActionSnapshotsPropertyName, Value: "true"},
 			}},
+			// Not a .buildbuddy_ci_runner command, so we shouldn't save multiple snapshots
 		},
 	}
 	baseVM, err := firecracker.NewContainer(ctx, env, task, opts)
@@ -810,32 +812,32 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 		{
 			name:               "Always save - on main",
 			branch:             "main",
-			snapshotSavePolicy: snaputil.AlwaysSaveRemoteSnapshot,
+			snapshotSavePolicy: snaputil.AlwaysSaveSnapshot,
 		},
 		{
 			name:               "Always save - on feature branch",
 			branch:             "pr-branch",
-			snapshotSavePolicy: snaputil.AlwaysSaveRemoteSnapshot,
+			snapshotSavePolicy: snaputil.AlwaysSaveSnapshot,
 		},
 		{
 			name:               "Only save first non-default snapshot - on main",
 			branch:             "main",
-			snapshotSavePolicy: snaputil.OnlySaveFirstNonDefaultRemoteSnapshot,
+			snapshotSavePolicy: snaputil.OnlySaveFirstNonDefaultSnapshot,
 		},
 		{
 			name:               "Only save first non-default snapshot - on feature branch",
 			branch:             "pr-branch",
-			snapshotSavePolicy: snaputil.OnlySaveFirstNonDefaultRemoteSnapshot,
+			snapshotSavePolicy: snaputil.OnlySaveFirstNonDefaultSnapshot,
 		},
 		{
 			name:               "Only save non-default snapshot if no snapshots available - on main",
 			branch:             "main",
-			snapshotSavePolicy: snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable,
+			snapshotSavePolicy: snaputil.OnlySaveNonDefaultSnapshotIfNoneAvailable,
 		},
 		{
 			name:               "Only save non-default snapshot if no snapshots available - on feature branch",
 			branch:             "pr-branch",
-			snapshotSavePolicy: snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable,
+			snapshotSavePolicy: snaputil.OnlySaveNonDefaultSnapshotIfNoneAvailable,
 		},
 	}
 
@@ -867,7 +869,7 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 					// Note: platform must match in order to share snapshots
 					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 						{Name: "recycle-runner", Value: "true"},
-						{Name: platform.RemoteSnapshotSavePolicyPropertyName, Value: tc.snapshotSavePolicy},
+						{Name: platform.SnapshotSavePolicyPropertyName, Value: tc.snapshotSavePolicy},
 					}},
 					Arguments: []string{"./buildbuddy_ci_runner"},
 					EnvironmentVariables: []*repb.Command_EnvironmentVariable{
@@ -935,12 +937,6 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 			res = runAndSnapshotVM(workDirForkLocalFetch, "Test Branch 2", "Main\nTest Branch 1\nTest Branch 2\n", nil, task)
 			assert.Equal(t, int64(2), res.VMMetadata.GetSavedSnapshotVersionNumber())
 
-			// Start another VM from the locally cached snapshot. The log should contain
-			// data from the most recent run, as well as the current run.
-			workDirForkLocalFetch2 := testfs.MakeDirAll(t, rootDir, "work-fork-local-fetch")
-			res = runAndSnapshotVM(workDirForkLocalFetch2, "Test Branch 3", "Main\nTest Branch 1\nTest Branch 2\nTest Branch 3\n", nil, task)
-			assert.Equal(t, int64(3), res.VMMetadata.GetSavedSnapshotVersionNumber())
-
 			// Clear the local filecache. Vms should still be able to unpause the snapshot
 			// by pulling artifacts from the remote cache
 			err = os.RemoveAll(filecacheRoot)
@@ -952,28 +948,23 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 			env.SetFileCache(fc2)
 
 			// Start a VM from the remote snapshot.
-
-			// Unless we're on the default branch or remote snapshot writes are always
-			// requested, we don't expect to see changes applied from the last
-			// couple runs that only wrote local snapshots, now that the local
-			// snapshots are gone.
 			var expectedOutput string
 			var expectedVersionNumber int64
-			if tc.branch == "main" || tc.snapshotSavePolicy == snaputil.AlwaysSaveRemoteSnapshot {
-				expectedOutput = "Main\nTest Branch 1\nTest Branch 2\nTest Branch 3\nTest Branch 4\n"
-				expectedVersionNumber = 4
-			} else if tc.snapshotSavePolicy == snaputil.OnlySaveFirstNonDefaultRemoteSnapshot {
-				expectedOutput = "Main\nTest Branch 1\nTest Branch 4\n"
+			if tc.branch == "main" || tc.snapshotSavePolicy == snaputil.AlwaysSaveSnapshot {
+				expectedOutput = "Main\nTest Branch 1\nTest Branch 2\nTest Branch 3\n"
+				expectedVersionNumber = 3
+			} else if tc.snapshotSavePolicy == snaputil.OnlySaveFirstNonDefaultSnapshot {
+				expectedOutput = "Main\nTest Branch 1\nTest Branch 3\n"
 				expectedVersionNumber = 2
-			} else if tc.snapshotSavePolicy == snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable {
-				expectedOutput = "Main\nTest Branch 4\n"
+			} else if tc.snapshotSavePolicy == snaputil.OnlySaveNonDefaultSnapshotIfNoneAvailable {
+				expectedOutput = "Main\nTest Branch 3\n"
 				expectedVersionNumber = 1
 			}
 			workDirForkRemoteFetch := testfs.MakeDirAll(t, rootDir, "work-fork-remote-fetch")
-			res = runAndSnapshotVM(workDirForkRemoteFetch, "Test Branch 4", expectedOutput, nil, task)
+			res = runAndSnapshotVM(workDirForkRemoteFetch, "Test Branch 3", expectedOutput, nil, task)
 			assert.Equal(t, expectedVersionNumber, res.VMMetadata.GetSavedSnapshotVersionNumber())
 
-			if tc.snapshotSavePolicy != snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable {
+			if tc.snapshotSavePolicy != snaputil.OnlySaveNonDefaultSnapshotIfNoneAvailable {
 				// Should still be able to start from the original snapshot if we use
 				// a snapshot key containing the original VM's snapshot ID.
 				// Note that when using a snapshot ID as the key, we only include the
@@ -1063,7 +1054,7 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 					// Note: platform must match in order to share snapshots
 					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 						{Name: "recycle-runner", Value: "true"},
-						{Name: platform.RemoteSnapshotSavePolicyPropertyName, Value: snaputil.AlwaysSaveRemoteSnapshot},
+						{Name: platform.SnapshotSavePolicyPropertyName, Value: snaputil.AlwaysSaveSnapshot},
 						{Name: platform.SnapshotReadPolicyPropertyName, Value: tc.snapshotReadPolicy},
 					}},
 					Arguments: []string{"./buildbuddy_ci_runner"},
@@ -1848,7 +1839,12 @@ func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 
 	// Make sure the container can send packets to something external of the VM
 	googleDNS := "8.8.8.8"
-	cmd := &repb.Command{Arguments: []string{"ping", "-c1", googleDNS}}
+	cmd := &repb.Command{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "recycle-runner", Value: "true"},
+		}},
+		Arguments: []string{"ping", "-c1", googleDNS},
+	}
 
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
@@ -1861,7 +1857,7 @@ func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 		},
 		ExecutorConfig: getExecutorConfig(t),
 	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Command: cmd}, opts)
 	require.NoError(t, err)
 	require.NoError(t, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage))
 	err = c.Create(ctx, opts.ActionWorkingDirectory)
@@ -2473,7 +2469,14 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 		},
 		ExecutorConfig: getExecutorConfig(t),
 	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+		},
+	}
+	c, err := firecracker.NewContainer(ctx, env, task, opts)
 	require.NoError(t, err)
 	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
 	require.NoError(t, err)
@@ -2512,8 +2515,8 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 	err = c.Pause(ctx)
 	require.NoError(t, err)
 
-	// Try resuming again, to test resuming from a snapshot of a VM which was
-	// itself loaded from snapshot.
+	// Try resuming again. RBE actions won't write new snapshots if one already exists,
+	// so this will load the original snapshot.
 	err = os.Remove(filepath.Join(workDir, "test2.sh"))
 	require.NoError(t, err)
 	testfs.WriteAllFileContents(t, workDir, map[string]string{
@@ -2525,7 +2528,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 
 	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test3.sh"}}, nil /*=stdio*/)
 	require.NoError(t, res.Error)
-	assert.Equal(t, int64(2), res.VMMetadata.GetSavedSnapshotVersionNumber())
+	assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, "world\n", string(res.Stdout))
 
@@ -2564,6 +2567,9 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{
 		Command: &repb.Command{
 			OutputPaths: []string{"preserves.txt"},
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
 		},
 	}, opts)
 	require.NoError(t, err)
@@ -2662,7 +2668,15 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 		},
 		ExecutorConfig: getExecutorConfig(t),
 	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			// Note: platform must match in order to share snapshots
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+		},
+	}
+	c, err := firecracker.NewContainer(ctx, env, task, opts)
 	if err != nil {
 		t.Fatal(err)
 	}

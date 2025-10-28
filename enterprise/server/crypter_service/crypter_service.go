@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_key_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -22,9 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/jonboulle/clockwork"
-	"go.uber.org/atomic"
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/time/rate"
 	"gorm.io/gorm"
@@ -37,21 +35,11 @@ import (
 )
 
 var (
-	keyTTL               = flag.Duration("crypter.key_ttl", 10*time.Minute, "The maximum amount of time a key can be cached without being re-verified before it is considered invalid.")
 	keyReencryptInterval = flag.Duration("crypter.key_reencrypt_interval", 6*time.Hour, "How frequently keys will be re-encrypted (to support key rotation).")
 	permittedClients     = flag.Slice("crypter.permitted_clients", []string{}, "Clients (identified by clientidentity) that are permitted to access encryption keys via RPC.")
 )
 
 const (
-	plainTextChunkSize = 1024 * 1024 // 1 MiB
-
-	// How often to check for keys that need to be refreshed.
-	keyRefreshScanFrequency = 10 * time.Second
-	// How long to wait after a failed refresh attempt before trying again.
-	keyRefreshRetryInterval = 30 * time.Second
-	keyRefreshDeadline      = 25 * time.Second
-	keyErrCacheTime         = 10 * time.Second
-
 	// How often to check for keys needing re-encryption.
 	keyReencryptCheckInterval = 15 * time.Minute
 	// Timeout for querying keys to re-encrypt.
@@ -62,154 +50,69 @@ const (
 	keyReencryptRateLimit = 50
 )
 
-// Note: there are two types of keys in the cache, one with only groupID set
-// (encryption) and one with all values set (decryption).
-type cacheKey struct {
-	groupID string
-	keyID   string
-	version int
+// TODO(vadim): pool buffers to reduce allocations
+// TODO(vadim): figure out what error codes KMS API can return
+type Crypter struct {
+	env      environment.Env
+	dbh      interfaces.DBHandle
+	kms      interfaces.KMS
+	clock    clockwork.Clock
+	cache    *crypter_key_cache.KeyCache
+	quitChan chan struct{}
 }
 
-func (ck *cacheKey) String() string {
-	if ck.keyID == "" {
-		return ck.groupID
+func Register(env *real_environment.RealEnv) error {
+	if env.GetKMS() == nil {
+		return nil
+	}
+
+	crypter, err := new(env, clockwork.NewRealClock())
+	if err != nil {
+		return err
+	}
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		crypter.Stop()
+		return nil
+	})
+	env.SetCrypter(crypter)
+	return nil
+}
+
+func new(env environment.Env, clock clockwork.Clock) (*Crypter, error) {
+	return newWithOpts(env, clock, nil)
+}
+
+func newWithOpts(env environment.Env, clock clockwork.Clock, opts *crypter_key_cache.Opts) (*Crypter, error) {
+	refreshFn := func(ctx context.Context, ck crypter_key_cache.CacheKey) ([]byte, *sgpb.EncryptionMetadata, error) {
+		return refreshKey(ctx, ck, env.GetDBHandle(), env.GetKMS())
+	}
+	var cache *crypter_key_cache.KeyCache
+	if opts == nil {
+		cache = crypter_key_cache.New(env, refreshFn, clock)
 	} else {
-		return fmt.Sprintf("%s/%s/%d", ck.groupID, ck.keyID, ck.version)
+		cache = crypter_key_cache.NewWithOpts(env, refreshFn, clock, opts)
 	}
-}
-
-type cacheEntry struct {
-	err error
-
-	mu                 sync.Mutex
-	keyMetadata        *sgpb.EncryptionMetadata
-	derivedKey         []byte
-	lastUse            time.Time
-	expiresAfter       time.Time
-	lastRefreshAttempt time.Time
-}
-
-type keyCache struct {
-	env   environment.Env
-	dbh   interfaces.DBHandle
-	kms   interfaces.KMS
-	clock clockwork.Clock
-	sf    singleflight.Group[string, *crypter.DerivedKey]
-
-	data sync.Map
-
-	mu               sync.Mutex
-	lastRefreshRun   time.Time
-	activeRefreshOps atomic.Int32
-}
-
-func newKeyCache(env environment.Env, clock clockwork.Clock) (*keyCache, error) {
-	kc := &keyCache{
-		env:   env,
-		dbh:   env.GetDBHandle(),
-		kms:   env.GetKMS(),
-		clock: clock,
+	quitChan := make(chan struct{})
+	cache.StartRefresher(quitChan)
+	c := &Crypter{
+		env:      env,
+		kms:      env.GetKMS(),
+		clock:    clock,
+		dbh:      env.GetDBHandle(),
+		cache:    cache,
+		quitChan: quitChan,
 	}
-	return kc, nil
+	c.startKeyReencryptor(quitChan)
+	return c, nil
 }
 
-func (c *keyCache) checkCacheEntry(ck cacheKey, ce *cacheEntry) {
-	ce.mu.Lock()
-	defer ce.mu.Unlock()
-
-	// If we reached the expiration and the key was not refreshed, then
-	// remove it from the cache.
-	if c.clock.Now().After(ce.expiresAfter) {
-		for i := range ce.derivedKey {
-			ce.derivedKey[i] = 0
-		}
-		c.data.Delete(ck)
-		return
-	}
-
-	// If the expiration is far into the future, don't do anything.
-	if ce.expiresAfter.Sub(c.clock.Now()) > *keyTTL/2 {
-		return
-	}
-
-	// Don't try to extend the life of the key if it hasn't been used recently.
-	if c.clock.Now().Sub(ce.lastUse) > *keyTTL/2 {
-		return
-	}
-
-	// Don't try to refresh the key if we already tried recently.
-	if c.clock.Since(ce.lastRefreshAttempt) < keyRefreshRetryInterval {
-		return
-	}
-
-	c.activeRefreshOps.Inc()
-	go func() {
-		defer c.activeRefreshOps.Dec()
-		ctx, cancel := context.WithTimeout(c.env.GetServerContext(), keyRefreshDeadline)
-		defer cancel()
-		ce.mu.Lock()
-		ce.lastRefreshAttempt = c.clock.Now()
-		ce.mu.Unlock()
-		loadedKey, err := c.refreshKey(ctx, ck, false /*=cacheErr*/)
-		if err == nil {
-			ce.mu.Lock()
-			ce.derivedKey = loadedKey.Key
-			ce.keyMetadata = loadedKey.Metadata
-			ce.expiresAfter = c.clock.Now().Add(*keyTTL)
-			ce.mu.Unlock()
-		} else {
-			log.Warningf("could not refresh key %q: %s", ck, err)
-		}
-	}()
-}
-
-func (c *keyCache) startRefresher(quitChan chan struct{}) {
-	// For the sake of testing, create the timer up front before returning
-	// from this func. That way tests are guaranteed that the timer will be
-	// fired when time is advanced using a fake clock.
-	t := c.clock.NewTimer(keyRefreshScanFrequency)
-
-	go func() {
-		for {
-			select {
-			case <-quitChan:
-				return
-			case <-t.Chan():
-				// continue with for loop
-			}
-
-			c.data.Range(func(key, value any) bool {
-				ck := key.(cacheKey)
-				ce := value.(*cacheEntry)
-				c.checkCacheEntry(ck, ce)
-				return true
-			})
-
-			c.mu.Lock()
-			c.lastRefreshRun = c.clock.Now()
-			t.Reset(keyRefreshScanFrequency)
-			c.mu.Unlock()
-		}
-	}()
-}
-
-func (c *keyCache) testGetLastRefreshRun() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.lastRefreshRun
-}
-
-func (c *keyCache) testGetActiveRefreshOps() int32 {
-	return c.activeRefreshOps.Load()
-}
-
-func (c *keyCache) derivedKey(groupID string, key *tables.EncryptionKeyVersion) ([]byte, error) {
-	bbmk, err := c.kms.FetchMasterKey()
+func derivedKey(groupID string, key *tables.EncryptionKeyVersion, kms interfaces.KMS) ([]byte, error) {
+	bbmk, err := kms.FetchMasterKey()
 	if err != nil {
 		return nil, err
 	}
 
-	gmk, err := c.kms.FetchKey(key.GroupKeyURI)
+	gmk, err := kms.FetchKey(key.GroupKeyURI)
 	if err != nil {
 		return nil, err
 	}
@@ -240,51 +143,34 @@ func (c *keyCache) derivedKey(groupID string, key *tables.EncryptionKeyVersion) 
 	return derivedKey, nil
 }
 
-func (c *keyCache) cacheAdd(ck cacheKey, ce *cacheEntry) {
-	ce.lastUse = c.clock.Now()
-	c.data.Store(ck, ce)
-}
-
-func (c *keyCache) cacheGet(ck cacheKey) (*cacheEntry, bool) {
-	v, ok := c.data.Load(ck)
-	if !ok {
-		return nil, false
-	}
-	e := v.(*cacheEntry)
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.lastUse = c.clock.Now()
-	return e, true
-}
-
-func (c *keyCache) refreshKeySingleAttempt(ctx context.Context, ck cacheKey) ([]byte, *sgpb.EncryptionMetadata, error) {
+func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, dbh interfaces.DBHandle, kms interfaces.KMS) ([]byte, *sgpb.EncryptionMetadata, error) {
 	var query string
 	var args []interface{}
-	if ck.keyID != "" {
+	if ck.KeyID != "" {
 		query = `
 			SELECT * FROM "EncryptionKeyVersions" ekv
 			JOIN "EncryptionKeys" ek ON ekv.encryption_key_id = ek.encryption_key_id
 			WHERE ek.group_id = ? 
 			AND ekv.encryption_key_id = ? AND ekv.version = ?
 		`
-		args = []interface{}{ck.groupID, ck.keyID, ck.version}
+		args = []interface{}{ck.GroupID, ck.KeyID, ck.Version}
 	} else {
 		query = `
 			SELECT * FROM "EncryptionKeyVersions" ekv
 			JOIN "EncryptionKeys" ek ON ekv.encryption_key_id = ek.encryption_key_id
 			WHERE ek.group_id = ?
 		`
-		args = []interface{}{ck.groupID}
+		args = []interface{}{ck.GroupID}
 	}
 
 	ekv := &tables.EncryptionKeyVersion{}
-	if err := c.dbh.NewQuery(ctx, "crypter_refresh_key").Raw(query, args...).Take(ekv); err != nil {
+	if err := dbh.NewQuery(ctx, "crypter_refresh_key").Raw(query, args...).Take(ekv); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil, status.NotFoundError("no key available")
 		}
 		return nil, nil, err
 	}
-	key, err := c.derivedKey(ck.groupID, ekv)
+	key, err := derivedKey(ck.GroupID, ekv, kms)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -292,145 +178,11 @@ func (c *keyCache) refreshKeySingleAttempt(ctx context.Context, ck cacheKey) ([]
 		EncryptionKeyId: ekv.EncryptionKeyID,
 		Version:         int64(ekv.Version),
 	}
-	c.cacheAdd(ck, &cacheEntry{
-		expiresAfter: c.clock.Now().Add(*keyTTL),
-		keyMetadata:  md,
-		derivedKey:   key,
-	})
 	return key, md, nil
 }
 
-func (c *keyCache) refreshKeyWithRetries(ctx context.Context, ck cacheKey, cacheError bool) (*crypter.DerivedKey, error) {
-	var lastErr error
-	opts := retry.DefaultOptions()
-	opts.Clock = c.clock
-	retrier := retry.New(ctx, opts)
-	for retrier.Next() {
-		key, md, err := c.refreshKeySingleAttempt(ctx, ck)
-		// TODO(vadim): figure out if there are other KMS errors we can treat as immediate failures
-		if err == nil || status.IsNotFoundError(err) {
-			return &crypter.DerivedKey{Key: key, Metadata: md}, err
-		}
-		lastErr = err
-	}
-	if cacheError {
-		c.cacheAdd(ck, &cacheEntry{
-			err:          lastErr,
-			expiresAfter: c.clock.Now().Add(keyErrCacheTime),
-		})
-	}
-	return nil, status.UnavailableErrorf("exhausted attempts to refresh key, last error: %s", lastErr)
-}
-
-func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey, cacheError bool) (*crypter.DerivedKey, error) {
-	v, _, err := c.sf.Do(ctx, ck.String(), func(ctx context.Context) (*crypter.DerivedKey, error) {
-		metrics.EncryptionKeyRefreshCount.Inc()
-		k, err := c.refreshKeyWithRetries(ctx, ck, cacheError)
-		if err != nil {
-			metrics.EncryptionKeyRefreshFailureCount.Inc()
-		}
-		return k, err
-	})
-	return v, err
-}
-
-func (c *keyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*crypter.DerivedKey, error) {
-	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var ck cacheKey
-	if em != nil {
-		if em.GetEncryptionKeyId() == "" {
-			return nil, status.FailedPreconditionError("metadata does not contain a valid key ID")
-		}
-		if em.GetVersion() == 0 {
-			return nil, status.FailedPreconditionError("metadata does not contain a valid key version")
-		}
-		ck = cacheKey{groupID: u.GetGroupID(), keyID: em.GetEncryptionKeyId(), version: int(em.GetVersion())}
-	} else {
-		ck = cacheKey{groupID: u.GetGroupID()}
-	}
-
-	e, ok := c.cacheGet(ck)
-	if ok {
-		e.mu.Lock()
-		defer e.mu.Unlock()
-		if e.err != nil {
-			return nil, e.err
-		}
-		return &crypter.DerivedKey{Key: e.derivedKey, Metadata: e.keyMetadata}, nil
-	}
-
-	// If obtaining the key fails, cache the error.
-	loadedKey, err := c.refreshKey(ctx, ck, true /*=cacheErr*/)
-	if err != nil {
-		log.Warningf("could not refresh key: %s", err)
-		return nil, err
-	}
-	return loadedKey, nil
-}
-
-func (c *keyCache) encryptionKey(ctx context.Context) (*crypter.DerivedKey, error) {
-	return c.loadKey(ctx, nil)
-}
-
-func (c *keyCache) decryptionKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*crypter.DerivedKey, error) {
-	if em == nil {
-		return nil, status.FailedPreconditionError("encryption metadata cannot be nil")
-	}
-	return c.loadKey(ctx, em)
-}
-
-// TODO(vadim): pool buffers to reduce allocations
-// TODO(vadim): figure out what error codes KMS API can return
-type Crypter struct {
-	env      environment.Env
-	dbh      interfaces.DBHandle
-	kms      interfaces.KMS
-	clock    clockwork.Clock
-	cache    *keyCache
-	quitChan chan struct{}
-}
-
-func Register(env *real_environment.RealEnv) error {
-	if env.GetKMS() == nil {
-		return nil
-	}
-
-	crypter, err := New(env, clockwork.NewRealClock())
-	if err != nil {
-		return err
-	}
-	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		crypter.Stop()
-		return nil
-	})
-	env.SetCrypter(crypter)
-	return nil
-}
-
-func New(env environment.Env, clock clockwork.Clock) (*Crypter, error) {
-	cache, err := newKeyCache(env, clock)
-	if err != nil {
-		return nil, err
-	}
-	quitChan := make(chan struct{})
-	cache.startRefresher(quitChan)
-	c := &Crypter{
-		env:      env,
-		kms:      env.GetKMS(),
-		clock:    clock,
-		dbh:      env.GetDBHandle(),
-		cache:    cache,
-		quitChan: quitChan,
-	}
-	c.startKeyReencryptor(quitChan)
-	return c, nil
-}
-
 func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser, groupID string, chunkSize int) (*crypter.Encryptor, error) {
-	loadedKey, err := c.cache.encryptionKey(ctx)
+	loadedKey, err := c.cache.EncryptionKey(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +190,7 @@ func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Di
 }
 
 func (c *Crypter) ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, error) {
-	loadedKey, err := c.cache.encryptionKey(ctx)
+	loadedKey, err := c.cache.EncryptionKey(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -450,11 +202,11 @@ func (c *Crypter) NewEncryptor(ctx context.Context, digest *repb.Digest, w inter
 	if err != nil {
 		return nil, err
 	}
-	return c.newEncryptorWithChunkSize(ctx, digest, w, u.GetGroupID(), plainTextChunkSize)
+	return c.newEncryptorWithChunkSize(ctx, digest, w, u.GetGroupID(), crypter.PlainTextChunkSize)
 }
 
 func (c *Crypter) newDecryptorWithChunkSize(ctx context.Context, digest *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata, groupID string, chunkSize int) (*crypter.Decryptor, error) {
-	loadedKey, err := c.cache.decryptionKey(ctx, em)
+	loadedKey, err := c.cache.DecryptionKey(ctx, em)
 	if err != nil {
 		return nil, err
 	}
@@ -466,7 +218,7 @@ func (c *Crypter) NewDecryptor(ctx context.Context, digest *repb.Digest, r io.Re
 	if err != nil {
 		return nil, err
 	}
-	return c.newDecryptorWithChunkSize(ctx, digest, r, em, u.GetGroupID(), plainTextChunkSize)
+	return c.newDecryptorWithChunkSize(ctx, digest, r, em, u.GetGroupID(), crypter.PlainTextChunkSize)
 }
 
 type encryptionKeyVersionWithGroupID struct {
@@ -630,11 +382,11 @@ func (c *Crypter) Stop() {
 }
 
 func (c *Crypter) testGetLastCacheRefreshRun() time.Time {
-	return c.cache.testGetLastRefreshRun()
+	return c.cache.TestGetLastRefreshRun()
 }
 
 func (c *Crypter) testGetCacheActiveRefreshOps() int32 {
-	return c.cache.testGetActiveRefreshOps()
+	return c.cache.TestGetActiveRefreshOps()
 }
 
 func buildKeyURI(kmsConfig *enpb.KMSConfig) (string, error) {
@@ -869,13 +621,13 @@ func (c *Crypter) GetEncryptionKey(ctx context.Context, req *enpb.GetEncryptionK
 
 	var loadedKey *crypter.DerivedKey
 	if req.GetMetadata().GetVersion() == 0 {
-		loadedKey, err = c.cache.encryptionKey(ctx)
+		loadedKey, err = c.cache.EncryptionKey(ctx)
 	} else {
 		metadata := sgpb.EncryptionMetadata{
 			EncryptionKeyId: req.GetMetadata().GetId(),
 			Version:         req.GetMetadata().GetVersion(),
 		}
-		loadedKey, err = c.cache.decryptionKey(ctx, &metadata)
+		loadedKey, err = c.cache.DecryptionKey(ctx, &metadata)
 	}
 	if err != nil {
 		return nil, err

@@ -14,6 +14,9 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 # COMMON FLAGS #
 ################
 
+# Use a mirror for all source archives referenced by the BCR to protect against checksum changes and upstream outages.
+common --module_mirrors=https://bcr.cloudflaremirrors.com
+
 # Avoid being broken by version requirement changes in transitive deps.
 common --check_direct_dependencies=error
 
@@ -52,6 +55,8 @@ common --noslim_profile
 # TODO(sluongng): make Bazel writes this to output_base automatically
 common --execution_log_compact_file=bazel_compact_exec_log.binpb.zst
 
+# Disable https://github.com/aspect-build/tools_telemetry.
+common --repo_env=DO_NOT_TRACK=1
 
 #############################
 # TESTING/DEVELOPMENT FLAGS #
@@ -191,17 +196,11 @@ common:cache --config=cache-shared
 common:cache --remote_cache=grpcs://buildbuddy.remote.buildbuddy.io
 
 # Target+Exec Platforms configuration
-common:workspace-target-darwin-arm64 --platforms=@buildbuddy_toolchain//:platform_darwin_arm64
-common:workspace-target-darwin-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_darwin_arm64
-common:workspace-target-linux-x86 --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
-common:workspace-target-linux-x86 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
-common:workspace-target-linux-arm64 --platforms=@buildbuddy_toolchain//:platform_linux_arm64
-common:workspace-target-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_arm64
-common:bzlmod-target-darwin-arm64 --platforms=@buildbuddy_toolchain//:platform_darwin_arm64
-common:bzlmod-target-darwin-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_darwin_arm64
+common:bzlmod-target-darwin-arm64 --platforms=@toolchains_buildbuddy//platforms:darwin_arm64
+common:bzlmod-target-darwin-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:darwin_arm64
 common:bzlmod-target-linux-x86 --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:bzlmod-target-linux-x86 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
-common:bzlmod-target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:linux_arm64
+common:bzlmod-target-linux-arm64 --platforms=@toolchains_buildbuddy//platform:linux_arm64
 common:bzlmod-target-linux-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
 
 common:download-minimal --remote_download_minimal
@@ -369,4 +368,6 @@ common:mac-workflows --build_metadata=TAGS=mac-workflow
 
 # Build fully static binaries linked against musl on Linux.
 common:static --platforms=//platforms:linux_x86_64_musl
+common:static --extra_toolchains=@musl_toolchains_hub//:all
 common:static-arm64 --platforms=//platforms:linux_arm64_musl
+common:static-arm64 --extra_toolchains=@musl_toolchains_hub//:all

@@ -976,7 +976,7 @@ func TestSignal(t *testing.T) {
 	assert.Empty(t, string(res.Stderr))
 }
 
-func TestNetwork_Enabled(t *testing.T) {
+func TestNetworking(t *testing.T) {
 	setupNetworking(t)
 
 	// Note: busybox has ping, but it fails with 'permission denied (are you
@@ -987,102 +987,92 @@ func TestNetwork_Enabled(t *testing.T) {
 	// (Note that podman has this same issue.)
 	image := netToolsImage(t)
 
-	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	for _, tc := range []struct {
+		name                       string
+		defaultNetworkFlag         string
+		dockerNetworkProp          string
+		expectExternalConnectivity bool
+	}{
+		{
+			name:                       "default enabled",
+			expectExternalConnectivity: true,
+		},
+		{
+			name:                       "enabled explicitly via prop",
+			dockerNetworkProp:          "bridge",
+			expectExternalConnectivity: true,
+		},
+		{
+			name:                       "disabled via flag",
+			defaultNetworkFlag:         "off",
+			expectExternalConnectivity: false,
+		},
+		{
+			name:                       "disabled via flag but overridden via prop",
+			defaultNetworkFlag:         "off",
+			dockerNetworkProp:          "bridge",
+			expectExternalConnectivity: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := testenv.GetTestEnv(t)
+			installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-	flags.Set(t, "executor.network_stats_enabled", true)
+			runtimeRoot := testfs.MakeTempDir(t)
+			flags.Set(t, "executor.network_stats_enabled", true)
+			flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+			if tc.defaultNetworkFlag != "" {
+				flags.Set(t, "executor.oci.default_network_mode", tc.defaultNetworkFlag)
+			}
 
-	buildRoot := testfs.MakeTempDir(t)
-	cacheRoot := testfs.MakeTempDir(t)
+			buildRoot := testfs.MakeTempDir(t)
+			cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
-	require.NoError(t, err)
-	wd := testfs.MakeDirAll(t, buildRoot, "work")
+			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+			require.NoError(t, err)
+			wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		err := c.Remove(ctx)
-		require.NoError(t, err)
-	})
+			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+				ContainerImage: image,
+				DockerNetwork:  tc.dockerNetworkProp,
+			}})
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				err := c.Remove(ctx)
+				require.NoError(t, err)
+			})
 
-	// Run
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-ec", `
-			ping -c1 -W1 $(hostname)
-			ping -c1 -W2 8.8.8.8
-			ping -c1 -W2 google.com
-		`},
+			// Run
+			cmd := &repb.Command{
+				Arguments: []string{"sh", "-c", `
+					# Should still have a loopback device available.
+					if ping -c1 -W1 $(hostname) >&2 ; then
+						echo PING_LOOPBACK_OK=true
+					else
+						echo PING_LOOPBACK_OK=false
+					fi
+					if ping -c1 -W2 8.8.8.8 >&2 ; then
+						echo PING_EXTERNAL_OK=true
+					else
+						echo PING_EXTERNAL_OK=false
+					fi
+				`},
+			}
+			res := c.Run(ctx, cmd, wd, oci.Credentials{})
+			require.NoError(t, res.Error)
+			t.Logf("stderr: %s", string(res.Stderr))
+			if tc.expectExternalConnectivity {
+				assert.Equal(t, "PING_LOOPBACK_OK=true\nPING_EXTERNAL_OK=true\n", string(res.Stdout))
+				assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+				assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
+			} else {
+				assert.Equal(t, "PING_LOOPBACK_OK=true\nPING_EXTERNAL_OK=false\n", string(res.Stdout))
+				assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesSent())
+				assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesReceived())
+			}
+		})
 	}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{})
-	require.NoError(t, res.Error)
-	t.Logf("stdout: %s", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
-	assert.Equal(t, 0, res.ExitCode)
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
-}
-
-func TestNetwork_Disabled(t *testing.T) {
-	setupNetworking(t)
-
-	// Note: busybox has ping, but it fails with 'permission denied (are you
-	// root?)' This is fixed by adding CAP_NET_RAW but we don't want to do this.
-	// So just use the net-tools image which doesn't have this issue for
-	// whatever reason (presumably it's some difference in the ping
-	// implementation) - it's enough to just set `net.ipv4.ping_group_range`.
-	// (Note that podman has this same issue.)
-	image := netToolsImage(t)
-
-	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
-
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-	flags.Set(t, "executor.network_stats_enabled", true)
-
-	buildRoot := testfs.MakeTempDir(t)
-	cacheRoot := testfs.MakeTempDir(t)
-
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
-	require.NoError(t, err)
-	wd := testfs.MakeDirAll(t, buildRoot, "work")
-
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-		DockerNetwork:  "off",
-	}})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		err := c.Remove(ctx)
-		require.NoError(t, err)
-	})
-
-	// Run
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-ec", `
-			# Should still have a loopback device available.
-			ping -c1 -W1 $(hostname)
-
-			if ping -c1 -W2 8.8.8.8 2>/dev/null; then
-				echo >&2 'Should not be able to ping external network'
-				exit 1
-			fi
-		`},
-	}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{})
-	require.NoError(t, res.Error)
-	t.Logf("stdout: %s", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
-	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesSent())
-	assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesReceived())
 }
 
 func TestUser(t *testing.T) {
@@ -1510,7 +1500,8 @@ func TestPersistentWorker(t *testing.T) {
 	require.NoError(t, err)
 
 	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
+		ContainerImage:      image,
+		PersistentWorkerKey: "abc123",
 	}})
 	require.NoError(t, err)
 
@@ -1552,6 +1543,9 @@ func TestPersistentWorker(t *testing.T) {
 
 	assert.Equal(t, "test-output", string(res.Stderr))
 	assert.Equal(t, 42, res.ExitCode)
+	// Should report non-zero CPU and memory usage.
+	assert.Greater(t, res.UsageStats.GetCpuNanos(), int64(0))
+	assert.Greater(t, res.UsageStats.GetPeakMemoryBytes(), int64(0))
 
 	// Pause container and stop worker
 	err = c.Pause(ctx)
@@ -1560,7 +1554,7 @@ func TestPersistentWorker(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestPersistentWorker_WorkerCrashes(t *testing.T) {
+func TestPersistentWorker_WorkerCrashesBeforeReadingRequest(t *testing.T) {
 	setupNetworking(t)
 
 	image := busyboxImage(t)
@@ -1585,7 +1579,69 @@ func TestPersistentWorker_WorkerCrashes(t *testing.T) {
 	require.NoError(t, err)
 
 	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
+		ContainerImage:      image,
+		PersistentWorkerKey: "abc123",
+	}})
+	require.NoError(t, err)
+
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, ws.Path())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Start worker (Exec) but don't attempt to read any work requests - just
+	// crash immediately.
+	worker, err := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+		Arguments: []string{
+			// Crash immediately
+			"sh", "-c", `echo >&2 "Crashing!" && kill -KILL $$`,
+		},
+	})
+	require.NoError(t, err)
+	defer worker.Stop()
+
+	// Send work request.
+	// The command doesn't matter - the test worker always just returns a fixed
+	// response.
+	res := worker.Exec(ctx, &repb.Command{})
+
+	require.Error(t, res.Error)
+	const sigkillExitCode = 128 + int(syscall.SIGKILL)
+	require.Contains(t, res.Error.Error(), fmt.Sprintf("worker exited with code %d", sigkillExitCode))
+}
+
+func TestPersistentWorker_WorkerCrashesAfterReadingRequest(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	// Create workspace with testworker binary
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	ws, err := workspace.New(env, buildRoot, &workspace.Opts{Preserve: true})
+	require.NoError(t, err)
+	testworkerPath, err := runfiles.Rlocation(testworkerRlocationpath)
+	require.NoError(t, err)
+	testfs.CopyFile(t, testworkerPath, ws.Path(), "testworker")
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage:      image,
+		PersistentWorkerKey: "abc123",
 	}})
 	require.NoError(t, err)
 
@@ -1616,6 +1672,7 @@ func TestPersistentWorker_WorkerCrashes(t *testing.T) {
 	res := worker.Exec(ctx, &repb.Command{})
 
 	require.Error(t, res.Error)
+	require.Contains(t, res.Error.Error(), "worker exited with code 1")
 	require.Contains(t, res.Error.Error(), "test-stderr-message")
 }
 

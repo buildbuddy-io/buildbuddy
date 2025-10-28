@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"google.golang.org/grpc/metadata"
@@ -34,6 +35,14 @@ var (
 	// and the "server" usage label when a usage-generating request terminates at this server.
 	serverName string
 )
+
+func DisableUsageTracking(ctx context.Context) context.Context {
+	if ClientOrigin() != interfaces.ClientIdentityInternalOrigin || ServerName() != interfaces.ClientIdentityCacheProxy {
+		alert.CtxUnexpectedEvent(ctx, "unexpected-tracking-disablement", "Tried to disable usage tracking from an unsupported origin: %s %s", ClientOrigin(), ServerName())
+		return ctx
+	}
+	return metadata.AppendToOutgoingContext(ctx, SkipUsageTrackingHeaderName, SkipUsageTrackingEnabledValue)
+}
 
 func LabelsForUsageRecording(ctx context.Context, server string) (*tables.UsageLabels, error) {
 	return &tables.UsageLabels{

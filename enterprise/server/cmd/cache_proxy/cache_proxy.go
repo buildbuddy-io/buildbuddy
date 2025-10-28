@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
@@ -13,10 +15,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/batch_operator"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_action_cache_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_byte_stream_client"
@@ -50,10 +54,11 @@ import (
 )
 
 var (
-	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
-	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	sslPort        = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
-	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
+	listen          = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	port            = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
+	sslPort         = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
+	monitoringPort  = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
+	httpProxyTarget = flag.String("http_proxy_target", "", "The HTTP target to forward unknown HTTP requests to.")
 
 	serverType = flag.String("server_type", "cache-proxy", "The server type to match on health checks")
 
@@ -100,6 +105,9 @@ func main() {
 	env.SetAuthenticator(authenticator)
 
 	hit_tracker_client.Register(env)
+	if err := remote_crypter.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	// Configure a local cache.
 	if err := pebble_cache.Register(env); err != nil {
@@ -129,6 +137,19 @@ func main() {
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 	env.GetMux().Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	env.GetMux().Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
+
+	if *httpProxyTarget != "" {
+		httpProxyUrl, err := url.Parse(*httpProxyTarget)
+		if err != nil {
+			log.Fatalf("Could not parse http proxy url: %v", err)
+		}
+		proxy := httputil.NewSingleHostReverseProxy(httpProxyUrl)
+
+		// Fallback to forward any unmatched HTTP routes to the proxy target.
+		env.GetMux().Handle("/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			proxy.ServeHTTP(w, req)
+		}))
+	}
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
@@ -244,7 +265,9 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 			log.Fatalf("Error initializing routing service: %s", err.Error())
 		}
 
-		ac, err := routing_action_cache_client.New(env)
+		noopRouter := batch_operator.NewNoopDigestOperator()
+
+		ac, err := routing_action_cache_client.New(env, noopRouter, noopRouter, noopRouter)
 		if err != nil {
 			log.Fatalf("Error initializing routing action cache client: %s", err.Error())
 		}
@@ -262,7 +285,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 		}
 		env.SetByteStreamClient(bs)
 
-		cas, err := routing_content_addressable_storage_client.New(env)
+		cas, err := routing_content_addressable_storage_client.New(env, noopRouter, noopRouter, noopRouter, noopRouter)
 		if err != nil {
 			log.Fatalf("Error initializing routing CAS client: %s", err.Error())
 		}

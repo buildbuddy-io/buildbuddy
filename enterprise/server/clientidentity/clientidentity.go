@@ -36,7 +36,7 @@ type Service struct {
 
 	clock clockwork.Clock
 
-	mu               sync.Mutex
+	mu               sync.RWMutex
 	cachedHeader     string
 	cachedHeaderTime time.Time
 }
@@ -65,6 +65,18 @@ type claims struct {
 	interfaces.ClientIdentity
 }
 
+// Clears the client-identity from the outgoing gRPC context.
+func ClearIdentity(ctx context.Context) context.Context {
+	ctx = context.WithValue(ctx, validatedIdentityContextKey, nil)
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if ok {
+		md = md.Copy()
+		delete(md, authutil.ClientIdentityHeaderName)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
+	return ctx
+}
+
 func (s *Service) IdentityHeader(si *interfaces.ClientIdentity, expiration time.Duration) (string, error) {
 	expirationTime := s.clock.Now().Add(expiration)
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, &claims{
@@ -74,21 +86,37 @@ func (s *Service) IdentityHeader(si *interfaces.ClientIdentity, expiration time.
 	return t.SignedString(s.signingKey)
 }
 
-func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, error) {
+func (s *Service) getCachedHeader() (string, error) {
+	s.mu.RLock()
+	headerTime := s.cachedHeaderTime
+	header := s.cachedHeader
+	s.mu.RUnlock()
+	if s.clock.Since(headerTime) < cachedHeaderExpiration {
+		return header, nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Check again in case it was updated while we were waiting for the lock.
 	if s.clock.Since(s.cachedHeaderTime) < cachedHeaderExpiration {
-		return metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, s.cachedHeader), nil
+		return s.cachedHeader, nil
 	}
 	header, err := s.IdentityHeader(&interfaces.ClientIdentity{
 		Origin: *origin,
 		Client: *client,
 	}, *expiration)
 	if err != nil {
-		return ctx, err
+		return "", err
 	}
 	s.cachedHeader = header
 	s.cachedHeaderTime = s.clock.Now()
+	return header, nil
+}
+
+func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, error) {
+	header, err := s.getCachedHeader()
+	if err != nil {
+		return ctx, err
+	}
 	return metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, header), nil
 }
 

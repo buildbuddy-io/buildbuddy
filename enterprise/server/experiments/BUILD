@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "experiments",
     srcs = ["experiments.go"],
@@ -17,8 +19,6 @@ go_library(
         "@com_github_open_feature_go_sdk_contrib_providers_flagd//pkg",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
     name = "experiments_test",

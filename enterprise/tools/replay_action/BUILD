@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "replay_action_lib",
     srcs = ["replay_action.go"],
@@ -7,7 +9,6 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//enterprise/server/backends/pebble_cache",
-        "//enterprise/server/build_event_publisher",
         "//enterprise/server/clientidentity",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
@@ -18,6 +19,7 @@ go_library(
         "//proto:command_line_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
+        "//server/build_event_publisher",
         "//server/nullauth",
         "//server/real_environment",
         "//server/remote_cache/action_cache_server",
@@ -56,5 +58,3 @@ go_binary(
     embed = [":replay_action_lib"],
     visibility = ["//visibility:public"],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

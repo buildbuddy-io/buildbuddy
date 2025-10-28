@@ -74,7 +74,7 @@ func scanRangeDescriptors(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header
 	for _, kv := range kvs {
 		rd := &rfpb.RangeDescriptor{}
 		if err := proto.Unmarshal(kv.GetValue(), rd); err != nil {
-			return nil, status.InternalErrorf("scan returned unparsable kv (key=%q): %s", kv.GetKey(), err)
+			return nil, status.InternalErrorf("scan returned unparsable kv (key=%q): %w", kv.GetKey(), err)
 		}
 		res = append(res, rd)
 	}
@@ -91,7 +91,7 @@ func scanPartitionDescriptors(ctx context.Context, c rfspb.ApiClient, h *rfpb.He
 	for _, kv := range kvs {
 		pd := &rfpb.PartitionDescriptor{}
 		if err := proto.Unmarshal(kv.GetValue(), pd); err != nil {
-			return nil, status.InternalErrorf("scan returned unparsable kv (key=%q): %s", kv.GetKey(), err)
+			return nil, status.InternalErrorf("scan returned unparsable kv (key=%q): %w", kv.GetKey(), err)
 		}
 		res = append(res, pd)
 	}

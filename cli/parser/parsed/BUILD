@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "parsed",
     srcs = ["parsed.go"],
@@ -11,7 +13,6 @@ go_library(
         "//cli/parser/bazelrc",
         "//cli/parser/options",
         "//server/util/lib/set",
+        "//server/util/shlex",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

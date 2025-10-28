@@ -23,6 +23,13 @@ const (
 	// key-derivation function in crypter_service.
 	EncryptedDataHeaderVersion = 1
 
+	// The chunk size to use for encrypting plain text data. Encryption is done
+	// in pieces, with data written in chunks up to this size and then flushed
+	// by the crypter. Input data larger than this size will be split across
+	// chunks. Larger values here will use more memory, but generate fewer
+	// encrypted chunks, whereas smaller values will do the opposite.
+	PlainTextChunkSize = 1024 * 1024 // 1 MiB
+
 	encryptedDataHeaderSignature = "BB"
 	nonceSize                    = chacha20poly1305.NonceSizeX
 	encryptedChunkOverhead       = nonceSize + chacha20poly1305.Overhead

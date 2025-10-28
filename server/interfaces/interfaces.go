@@ -247,11 +247,12 @@ type BuildEventHandler interface {
 }
 
 type GitHubStatusService interface {
-	GetStatusClient(accessToken string) GitHubStatusClient
+	GetStatusClient() GitHubStatusClient
 }
 
 type GitHubStatusClient interface {
 	CreateStatus(ctx context.Context, ownerRepo, commitSHA string, payload *github.RepoStatus) error
+	IsStatusReportingEnabled(ctx context.Context, repoURL string) (bool, error)
 }
 
 // A Blobstore must allow for reading, writing, and deleting blobs.
@@ -682,6 +683,7 @@ type GitHubApp interface {
 
 	LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.LinkRepoResponse, error)
 	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
+	UpdateRepoSettings(context.Context, *ghpb.UpdateRepoSettingsRequest) (*ghpb.UpdateRepoSettingsResponse, error)
 
 	GetAccessibleGitHubRepos(context.Context, *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error)
 
@@ -1091,9 +1093,9 @@ type Runner interface {
 
 type CacheRoutingService interface {
 	GetCacheRoutingConfig(ctx context.Context) (*ropb.CacheRoutingConfig, error)
-	GetPrimaryCASClient(ctx context.Context) (repb.ContentAddressableStorageClient, error)
-	GetPrimaryACClient(ctx context.Context) (repb.ActionCacheClient, error)
-	GetPrimaryBSClient(ctx context.Context) (bspb.ByteStreamClient, error)
+	GetCASClients(ctx context.Context) (repb.ContentAddressableStorageClient, repb.ContentAddressableStorageClient, error)
+	GetACClients(ctx context.Context) (repb.ActionCacheClient, repb.ActionCacheClient, error)
+	GetBSClients(ctx context.Context) (bspb.ByteStreamClient, bspb.ByteStreamClient, error)
 	GetPrimaryCapabilitiesClient(ctx context.Context) (repb.CapabilitiesClient, error)
 }
 

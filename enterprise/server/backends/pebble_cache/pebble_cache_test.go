@@ -1994,14 +1994,14 @@ func TestUnspecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
 	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
 
 	// Confirm that a newly-created pebble database with an unspecified key
-	// version is written at the highest available key version.
+	// version is written at version 5.
 	activeKeyVersion := int64(filestore.UnspecifiedKeyVersion)
 	options.ActiveKeyVersion = &activeKeyVersion
 	pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
 	versionMetadata, err := pc.DatabaseVersionMetadata()
 	require.NoError(t, err)
-	require.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MinVersion)
-	require.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MaxVersion)
+	require.Equal(t, int64(filestore.Version5), versionMetadata.MinVersion)
+	require.Equal(t, int64(filestore.Version5), versionMetadata.MaxVersion)
 
 	require.NoError(t, pc.Stop())
 }
@@ -2133,7 +2133,6 @@ func TestMigrateVersions(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
-
 	digests := make([]*repb.Digest, 0)
 	{
 		// Set the active key version to 0 and write some data at this
@@ -2159,46 +2158,48 @@ func TestMigrateVersions(t *testing.T) {
 		pc.Stop()
 	}
 
-	{
-		// Now set the active key version to 1 (to trigger a migration)
-		// and set the migration QPS low enough to ensure that
-		// migrations are happening during our reads.
-		flags.Set(t, "cache.pebble.migration_qps_limit", 1000)
-		activeKeyVersion := int64(1)
-		options.ActiveKeyVersion = &activeKeyVersion
-		pc2, err := pebble_cache.NewPebbleCache(te, options)
-		require.NoError(t, err)
+	for i := 1; i < int(filestore.MaxKeyVersion); i++ {
+		t.Run(fmt.Sprintf("key_migration_to_v%d", i), func(t *testing.T) {
+			// Now set the active key version to i (to trigger a migration)
+			// and set the migration QPS low enough to ensure that
+			// migrations are happening during our reads.
+			flags.Set(t, "cache.pebble.migration_qps_limit", 1000)
+			activeKeyVersion := int64(i)
+			options.ActiveKeyVersion = &activeKeyVersion
+			pc2, err := pebble_cache.NewPebbleCache(te, options)
+			require.NoError(t, err)
 
-		pc2.Start()
-		defer pc2.Stop()
-		startTime := time.Now()
-		j := 0
-		for {
-			if time.Since(startTime) > 2*time.Second {
-				break
+			pc2.Start()
+			defer pc2.Stop()
+			startTime := time.Now()
+			j := 0
+			for {
+				if time.Since(startTime) > 2*time.Second {
+					break
+				}
+
+				i := j % len(digests)
+				d := digests[i]
+				j += 1
+
+				remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
+				resourceName := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+
+				exists, err := pc2.Contains(ctx, resourceName)
+				require.NoError(t, err)
+				require.True(t, exists)
+
+				rbuf, err := pc2.Get(ctx, resourceName)
+				require.NoError(t, err)
+
+				// Compute a digest for the bytes returned.
+				d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+				require.NoError(t, err)
+				if d.GetHash() != d2.GetHash() {
+					require.Failf(t, "Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+				}
 			}
-
-			i := j % len(digests)
-			d := digests[i]
-			j += 1
-
-			remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
-			resourceName := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
-
-			exists, err := pc2.Contains(ctx, resourceName)
-			require.NoError(t, err)
-			require.True(t, exists)
-
-			rbuf, err := pc2.Get(ctx, resourceName)
-			require.NoError(t, err)
-
-			// Compute a digest for the bytes returned.
-			d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
-			require.NoError(t, err)
-			if d.GetHash() != d2.GetHash() {
-				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
-			}
-		}
+		})
 	}
 }
 

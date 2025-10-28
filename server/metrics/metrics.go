@@ -964,6 +964,15 @@ var (
 		LookasideCacheLookupStatus,
 	})
 
+	LookasideCacheLookupBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "lookaside_cache_lookup_bytes",
+		Help:      "Total number bytes served from the Lookaside Cache by hit/miss status.",
+	}, []string{
+		LookasideCacheLookupStatus,
+	})
+
 	// This metric is in milliseconds because Grafana heatmaps don't display
 	// microsecond durations nicely when they can contain large durations.
 	LookasideCacheEvictionAgeMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -1508,16 +1517,6 @@ var (
 		ChunkSource,
 	})
 
-	// TODO(Maggie): Delete after evaluating the results
-	COWSnapshotSkippedRemoteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "firecracker",
-		Name:      "cow_snapshot_skipped_remote_bytes",
-		Help:      "The number of uncompressed bytes that were not written to the remote cache due to only writing locally.",
-	}, []string{
-		FileName,
-	})
-
 	COWSnapshotMemoryMappedBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
@@ -1965,7 +1964,7 @@ var (
 	// #### Examples
 	//
 	// ```promql
-	// # Median request duration for successfuly processed (2xx) requests.
+	// # Median request duration for successfully processed (2xx) requests.
 	// # Other status codes may be associated with early-exits and are
 	// # likely to add too much noise.
 	// histogram_quantile(

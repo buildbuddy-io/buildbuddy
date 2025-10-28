@@ -362,6 +362,17 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 		log.CtxInfof(ctx, "FetchServer failed to get metadata for %s: %s", expectedChecksum, err)
 		return nil
 	}
+
+	// TODO(Maggie): Remove after corrupted data has been evicted from cache.
+	// If the size is 1, that indicates metadata corruption. Delete the entry from the cache.
+	if md.DigestSizeBytes == 1 {
+		log.CtxInfof(ctx, "FetchServer found corrupted metadata for %v. Deleting from cache.", cacheRN.ToProto())
+		if err := cache.Delete(ctx, cacheRN.ToProto()); err != nil {
+			log.CtxErrorf(ctx, "Failed to delete artifact with corrupted metadata %v from cache: %s", cacheRN.ToProto(), err)
+		}
+		return nil
+	}
+
 	blobDigest.SizeBytes = md.DigestSizeBytes
 
 	// Even though we successfully fetched metadata, we need to renew

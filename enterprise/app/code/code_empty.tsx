@@ -39,7 +39,7 @@ export default class CodeEmptyStateComponent extends React.Component<{}, State> 
 
     rpcService.service.getLinkedGitHubRepos({}).then((response) => {
       console.log(response);
-      this.setState({ linkedRepos: response.repoUrls });
+      this.setState({ linkedRepos: response.repos.map((repo) => repo.repoUrl) });
     });
 
     return;

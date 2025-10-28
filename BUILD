@@ -22,70 +22,10 @@ write_file(
         json.encode_indent(
             {
                 "exhaustive": {
-                    "exclude_files": {
-                        "external[\\\\,\\/]": "third_party",
-                    },
                     "analyzer_flags": {
                         "default-signifies-exhaustive": "true",
                     },
                 },
-            } | {
-                analyzer: {
-                    "exclude_files": {
-                        "external[\\\\,\\/]": "third_party",
-                        ".*\\.pb\\.go": "Auto-generated proto files",
-                        # TODO(sluongng): this should be fixed on rules_go side
-                        # https://github.com/bazelbuild/rules_go/issues/3619
-                        "cgo[\\\\,\\/]github.com[\\\\,\\/]shirou[\\\\,\\/]gopsutil[\\\\,\\/]": "third_party cgo",
-                    },
-                }
-                for analyzer in ANALYZERS + [
-                    "appends",
-                    "asmdecl",
-                    "assign",
-                    "atomicalign",
-                    "bools",
-                    "buildtag",
-                    # "cgocall",
-                    "composites",
-                    "copylocks",
-                    "deepequalerrors",
-                    "defers",
-                    "directive",
-                    "errorsas",
-                    # Noisy and is not part of 'go vet'
-                    # "fieldalignment",
-                    "framepointer",
-                    "hostport",
-                    "httpmux",
-                    "httpresponse",
-                    "ifaceassert",
-                    "loopclosure",
-                    "lostcancel",
-                    "nilfunc",
-                    "nilness",
-                    "printf",
-                    "reflectvaluecompare",
-                    # Everyone shadows `err`
-                    # "shadow",
-                    "shift",
-                    "sigchanyzer",
-                    "slog",
-                    "sortslice",
-                    "stdmethods",
-                    "stdversion",
-                    "stringintconv",
-                    "structtag",
-                    "testinggoroutine",
-                    "tests",
-                    "timeformat",
-                    "unmarshal",
-                    "unreachable",
-                    "unsafeptr",
-                    "unusedresult",
-                    "unusedwrite",
-                    "waitgroup",
-                ]
             },
         ),
     ],
@@ -224,9 +164,9 @@ buildifier(
     name = "buildifier",
 )
 
-go_sdk_tool(
+alias(
     name = "go",
-    goroot_relative_path = "bin/go",
+    actual = "@io_bazel_rules_go//go",
 )
 
 # Example usage: "bazel run //:gofmt -- -w ."

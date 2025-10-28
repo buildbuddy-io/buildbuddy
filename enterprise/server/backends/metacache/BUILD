@@ -1,0 +1,61 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "metacache",
+    srcs = ["metacache.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/metacache",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//enterprise/server/filestore",
+        "//proto:metadata_go_proto",
+        "//proto:metadata_service_go_proto",
+        "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
+        "//proto:storage_go_proto",
+        "//server/environment",
+        "//server/interfaces",
+        "//server/metrics",
+        "//server/remote_cache/content_addressable_storage_server",
+        "//server/remote_cache/digest",
+        "//server/util/authutil",
+        "//server/util/bytebufferpool",
+        "//server/util/compression",
+        "//server/util/disk",
+        "//server/util/ioutil",
+        "//server/util/log",
+        "//server/util/status",
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_prometheus_client_golang//prometheus",
+    ],
+)
+
+package(default_visibility = ["//enterprise:__subpackages__"])
+
+go_test(
+    name = "metacache_test",
+    srcs = ["metacache_test.go"],
+    deps = [
+        ":metacache",
+        "//enterprise/server/backends/kms",
+        "//enterprise/server/crypter_service",
+        "//enterprise/server/filestore",
+        "//enterprise/server/testutil/mockmetadata",
+        "//proto:metadata_service_go_proto",
+        "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
+        "//server/environment",
+        "//server/interfaces",
+        "//server/real_environment",
+        "//server/rpc/interceptors",
+        "//server/tables",
+        "//server/testutil/mockgcs",
+        "//server/testutil/testauth",
+        "//server/testutil/testdigest",
+        "//server/testutil/testenv",
+        "//server/testutil/testfs",
+        "//server/util/prefix",
+        "//server/util/testing/flags",
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_stretchr_testify//require",
+    ],
+)

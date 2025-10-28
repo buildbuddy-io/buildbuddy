@@ -75,12 +75,15 @@ var (
 	runtimeRoot             = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
 	dns                     = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
 	netPoolSize             = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	defaultNetworkMode      = flag.String("executor.oci.default_network_mode", "", "Default network mode: either 'bridge' or 'off'. Can be overridden per-action with the 'dockerNetwork' platform property.")
 	enableLxcfs             = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
 	capAdd                  = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
 	mounts                  = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
 	devices                 = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
 	enablePersistentVolumes = flag.Bool("executor.oci.enable_persistent_volumes", false, "Enables persistent volumes that can be shared between actions within a group. Only supported for OCI isolation type.")
+	enableTini              = flag.Bool("executor.oci.enable_tini", false, "If true, run all OCI containers with tini as pid 1.")
 	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
+	minPIDsLimit            = flag.Int64("executor.oci.min_pids_limit", 0, "Min value to use for pids.max (PID limit). The scheduler may set a higher value for larger tasks. This can be used for rare cases where the scheduler does not provide a high enough limit.")
 	cgroupMemoryCushion     = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
@@ -217,6 +220,10 @@ type provider struct {
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, error) {
+	if !slices.Contains([]string{"", "bridge", "off"}, *defaultNetworkMode) {
+		return nil, fmt.Errorf("unsupported 'executor.oci.default_network_mode' setting %q", *defaultNetworkMode)
+	}
+
 	// Enable masquerading on the host if it isn't enabled already.
 	if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
 		return nil, status.WrapError(err, "enable masquerading")
@@ -353,6 +360,11 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 }
 
 func (p *provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	networkMode := args.Props.DockerNetwork
+	if networkMode == "" {
+		networkMode = *defaultNetworkMode
+	}
+
 	container := &ociContainer{
 		env:            p.env,
 		runtime:        p.runtime,
@@ -364,15 +376,16 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		networkPool:    p.networkPool,
 		lxcfsMount:     p.lxcfsMount,
 
-		blockDevice:       args.BlockDevice,
-		cgroupParent:      args.CgroupParent,
-		cgroupSettings:    &scpb.CgroupSettings{},
-		imageRef:          args.Props.ContainerImage,
-		networkEnabled:    args.Props.DockerNetwork != "off",
-		tiniEnabled:       args.Props.DockerInit,
-		user:              args.Props.DockerUser,
-		forceRoot:         args.Props.DockerForceRoot,
-		persistentVolumes: args.Props.PersistentVolumes,
+		blockDevice:        args.BlockDevice,
+		cgroupParent:       args.CgroupParent,
+		cgroupSettings:     &scpb.CgroupSettings{},
+		imageRef:           args.Props.ContainerImage,
+		networkEnabled:     networkMode != "off",
+		isPersistentWorker: args.Props.PersistentWorkerKey != "",
+		tiniEnabled:        args.Props.DockerInit || *enableTini,
+		user:               args.Props.DockerUser,
+		forceRoot:          args.Props.DockerForceRoot,
+		persistentVolumes:  args.Props.PersistentVolumes,
 
 		milliCPU:    args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
 		memoryBytes: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(),
@@ -409,6 +422,7 @@ type ociContainer struct {
 	network                *networking.ContainerNetwork
 	lxcfsMount             string
 	releaseCPUs            func()
+	isPersistentWorker     bool
 
 	imageRef       string
 	networkEnabled bool
@@ -418,6 +432,9 @@ type ociContainer struct {
 	milliCPU    int64 // milliCPU allocation from task size
 	memoryBytes int64 // memory allocation from task size in bytes
 }
+
+// Assert [*ociContainer] implements [container.StatsRecorder].
+var _ container.StatsRecorder = (*ociContainer)(nil)
 
 // Returns the OCI bundle directory for the container.
 func (c *ociContainer) bundlePath() string {
@@ -673,9 +690,26 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 	}
 	args = append(args, c.cid)
 
+	// If this Exec() is running a long-lived persistent worker, then don't
+	// start the stats polling loop. Instead, the caller is responsible for
+	// tracking stats separately by wrapping each work request with RecordStats.
+	// This way, we only record stats while work requests are in progress.
+	if c.isPersistentWorker {
+		return c.invokeRuntime(ctx, cmd, stdio, 1*time.Microsecond, args...)
+	}
 	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
 		return c.invokeRuntime(ctx, cmd, stdio, 1*time.Microsecond, args...)
 	})
+}
+
+func (c *ociContainer) RecordStats(ctx context.Context) func() (*repb.UsageStats, error) {
+	stop := c.stats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
+		return c.cgroupPaths.Stats(ctx, c.cid, c.blockDevice)
+	})
+	return func() (*repb.UsageStats, error) {
+		stop()
+		return c.stats.TaskStats(), nil
+	}
 }
 
 func (c *ociContainer) Signal(ctx context.Context, sig syscall.Signal) error {
@@ -890,6 +924,9 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	c.cgroupSettings.NumaNode = proto.Int32(int32(numaNode))
 	if *enableCgroupMemoryLimit && c.memoryBytes > 0 {
 		c.cgroupSettings.MemoryLimitBytes = proto.Int64(c.memoryBytes + int64(float64(c.memoryBytes)*(*cgroupMemoryCushion)))
+	}
+	if c.cgroupSettings.PidsMax != nil && *minPIDsLimit > 0 {
+		c.cgroupSettings.PidsMax = proto.Int64(max(c.cgroupSettings.GetPidsMax(), *minPIDsLimit))
 	}
 
 	path := c.cgroupPath()

@@ -39,10 +39,6 @@ const (
 	// re-authentication with the remote registry is required.
 	defaultImageCacheTokenTTL = 15 * time.Minute
 
-	// Time window over which to measure CPU usage when exporting the milliCPU
-	// used metric.
-	cpuUsageUpdateInterval = 1 * time.Second
-
 	// Exit code used when returning an error instead of an actual exit code.
 	// TODO: fix circular dependency with commandutil and reference that const
 	// instead.
@@ -314,7 +310,7 @@ func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
 	if lifetimeStats.GetMemoryBytes() > s.peakMemoryUsageBytes {
 		s.peakMemoryUsageBytes = lifetimeStats.GetMemoryBytes()
 	}
-	if *recordUsageTimelines {
+	if *recordUsageTimelines && s.timeline != nil {
 		s.updateTimeline(s.clock().Now())
 	}
 }
@@ -430,6 +426,13 @@ type CommandContainer interface {
 	// stdin of the executed process. If stdout is non-nil, the stdout of the
 	// executed process will be written to the stdout writer rather than being
 	// written to the command result's stdout field (same for stderr).
+	//
+	// Implementations should populate UsageStats for the execution. If stats
+	// are reported, they must reflect only the particular command executed.
+	//
+	// Implementations should NOT record usage stats for long-lived persistent
+	// worker executions, and should instead implement [StatsTracker] so that
+	// stats can be tracked while each work request is being fulfilled.
 	Exec(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult
 
 	// Signal sends the given signal to all containerized processes.
@@ -460,6 +463,17 @@ type CommandContainer interface {
 	// container is paused, for the purposes of computing resources used for
 	// pooled runners.
 	Stats(ctx context.Context) (*repb.UsageStats, error)
+}
+
+// StatsRecorder is an optional interface implemented by a [CommandContainer]
+// that allows tracking usage stats outside of normal execution.
+//
+// Specifically, this can be used to report stats for persistent worker
+// requests, in which tasks are executed by writing work requests to stdin then
+// reading work requests from stdout, rather than calling Exec or Run (which
+// would normally be responsible for reporting stats).
+type StatsRecorder interface {
+	RecordStats(ctx context.Context) (stop func() (*repb.UsageStats, error))
 }
 
 // VM is an interface implemented by containers backed by VMs (i.e. just
@@ -787,6 +801,14 @@ func (t *TracedCommandContainer) Remove(ctx context.Context) error {
 	t.removed = true
 
 	return t.Delegate.Remove(ctx)
+}
+
+func (t *TracedCommandContainer) RecordStats(ctx context.Context) func() (*repb.UsageStats, error) {
+	if st, ok := t.Delegate.(StatsRecorder); ok {
+		return st.RecordStats(ctx)
+	} else {
+		return func() (*repb.UsageStats, error) { return nil, nil }
+	}
 }
 
 func (t *TracedCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {

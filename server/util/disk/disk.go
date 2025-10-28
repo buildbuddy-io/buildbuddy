@@ -18,6 +18,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -319,21 +320,26 @@ func (w *writeMover) Commit() error {
 }
 
 func (w *writeMover) Close() error {
-	releaseQuota, err := reserveFileWriterQuota(w.ctx)
-	if err != nil {
-		return err
+	// Try to reserve quota for the temp file close and delete, but we will
+	// do both either way. Otherwise we would leak temp files.
+	releaseQuota, _ := reserveFileWriterQuota(w.ctx)
+	if releaseQuota != nil {
+		defer releaseQuota()
 	}
-	defer releaseQuota()
 	if !w.tmpFileIsClosed {
 		w.File.Close()
 	}
 	if err := RemoveIfExists(w.File.Name()); err != nil {
-		log.Warningf("Failed to delete %s: %s", w.File.Name(), err)
+		alert.CtxUnexpectedEvent(w.ctx, "failed_to_delete_tmp_file", "Failed to delete %s: %s", w.File.Name(), err)
 	}
 	return nil
 }
 
 func FileWriter(ctx context.Context, fullPath string) (interfaces.CommittedWriteCloser, error) {
+	return FileWriterWithTmpDir(ctx, filepath.Dir(fullPath), fullPath)
+}
+
+func FileWriterWithTmpDir(ctx context.Context, tmpDir, fullPath string) (interfaces.CommittedWriteCloser, error) {
 	releaseQuota, err := reserveFileWriterQuota(ctx)
 	if err != nil {
 		return nil, err
@@ -348,7 +354,7 @@ func FileWriter(ctx context.Context, fullPath string) (interfaces.CommittedWrite
 		return nil, err
 	}
 
-	tmpFileName := fullPath + fmt.Sprintf(".%s.tmp", randStr)
+	tmpFileName := filepath.Join(tmpDir, filepath.Base(fullPath)+fmt.Sprintf(".%s.tmp", randStr))
 	f, err := os.OpenFile(tmpFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err

@@ -47,8 +47,13 @@ const (
 )
 
 var (
-	envVarOptionNames      = []string{"action_env", "client_env", "host_action_env", "repo_env", "test_env"}
-	envVarOptionNamesRegex *regexp.Regexp
+	envVarOptionNames         = []string{"action_env", "client_env", "host_action_env", "repo_env", "test_env"}
+	envVarOptionNamesRegex    *regexp.Regexp
+	envVarDoubleQuotedPattern = regexp.MustCompile(`(?s)^(--[^=]+=)"(.*?)"$`)
+	envVarSingleQuotedPattern = regexp.MustCompile(`(?s)^(--[^=]+=)'(.*?)'$`)
+	envVarUnquotedPattern     = regexp.MustCompile(`^(--[^=]+=)(\S+)$`)
+	envVarAnyPattern          = regexp.MustCompile(`(?s)^(--[^=]+=)(.*)$`)
+	envVarAssignmentRegex     = regexp.MustCompile(`^([^=]+)=`)
 
 	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
@@ -109,7 +114,13 @@ func init() {
 	for i, n := range envVarOptionNames {
 		escaped[i] = regexp.QuoteMeta(n)
 	}
-	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(escaped, "|") + `)=\w+=)[^\s]*`)
+	// Match env var flags with values that can be:
+	// - Single-quoted (including multiline): '--flag=VAR_NAME=...' becomes '--flag=VAR_NAME=<REDACTED>'
+	// - Double-quoted (including multiline): "--flag=VAR_NAME=..." becomes "--flag=VAR_NAME=<REDACTED>"
+	// - Unquoted (single line only): --flag=VAR_NAME=value becomes --flag=VAR_NAME=<REDACTED>
+	// Note: The quotes wrap the entire VAR_NAME=value part, not just the value
+	// Capture group 1: --flag_name= (without the env var name)
+	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(escaped, "|") + `)=)(?:'[^']*'|"[^"]*"|\S+)`)
 }
 
 func stripURLSecrets(input string) string {
@@ -217,7 +228,7 @@ func stripExplicitCommandLineFromCmdLine(tokens []string) {
 
 func stripNonAllowedEnvVars(tokens []string) {
 	for i, token := range tokens {
-		tokens[i] = envVarOptionNamesRegex.ReplaceAllString(token, "${1}<REDACTED>")
+		tokens[i] = redactEnvVars(token)
 	}
 }
 
@@ -266,7 +277,37 @@ func redactRemoteHeaders(txt string) string {
 }
 
 func redactEnvVars(txt string) string {
-	return envVarOptionNamesRegex.ReplaceAllString(txt, "${1}<REDACTED>")
+	return envVarOptionNamesRegex.ReplaceAllStringFunc(txt, RedactEnvVar)
+}
+
+// RedactEnvVar replaces the value portion of a Bazel environment variable flag
+// (e.g. `--action_env=FOO=bar`) with the redaction placeholder while preserving the
+// surrounding flag structure, including quotes. This helper is invoked for the
+// env var options listed in envVarOptionNames (action_env, client_env, host_action_env,
+// repo_env, test_env) and handles both quoted and unquoted `VAR=value` payloads,
+// including multiline quoted values.
+func RedactEnvVar(flag string) string {
+	if matches := envVarDoubleQuotedPattern.FindStringSubmatch(flag); matches != nil {
+		return redactEnvVarValue(matches[1], matches[2])
+	}
+	if matches := envVarSingleQuotedPattern.FindStringSubmatch(flag); matches != nil {
+		return redactEnvVarValue(matches[1], matches[2])
+	}
+	if matches := envVarUnquotedPattern.FindStringSubmatch(flag); matches != nil {
+		return redactEnvVarValue(matches[1], matches[2])
+	}
+	if matches := envVarAnyPattern.FindStringSubmatch(flag); matches != nil {
+		return matches[1] + redactedPlaceholder
+	}
+	return flag
+}
+
+func redactEnvVarValue(flagName, value string) string {
+	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
+		varName := assignment[1]
+		return flagName + varName + "=" + redactedPlaceholder
+	}
+	return flagName + redactedPlaceholder
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {

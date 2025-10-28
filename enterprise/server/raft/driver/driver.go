@@ -1405,7 +1405,7 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 	if op := change.removeDataOp; op != nil {
 		c, err := rq.apiClient.GetForReplica(ctx, op.replDesc)
 		if err != nil {
-			err = status.WrapErrorf(err, "unable to remove data on c%dn%d due to failure to get api client: %s", op.replDesc.GetRangeId(), op.replDesc.GetReplicaId(), err)
+			err = status.WrapErrorf(err, "unable to remove data on c%dn%d due to failure to get api client", op.replDesc.GetRangeId(), op.replDesc.GetReplicaId())
 			rq.log.Error(err.Error())
 			return err
 		}

@@ -936,26 +936,27 @@ export default class InvocationActionCardComponent extends React.Component<Props
       <>
         <div className="metadata-title">Resource usage</div>
         <div>
-          <div>Peak memory: {format.bytes(usageStats.peakMemoryBytes)}</div>
+          <div>Peak memory: {format.bytesIEC(usageStats.peakMemoryBytes)}</div>
           <div>MilliCPU: {computeMilliCpu(this.state.actionResult!)}</div>
           {usageStats.peakFileSystemUsage?.map((fs) => (
             <div>
-              Peak disk usage: {fs.target} ({fs.fstype}): {format.bytes(fs.usedBytes)} of {format.bytes(fs.totalBytes)}
+              Peak disk usage: {fs.target} ({fs.fstype}): {format.bytesIEC(fs.usedBytes)} of{" "}
+              {format.bytesIEC(fs.totalBytes)}
             </div>
           ))}
           {usageStats.cgroupIoStats && (
             <>
-              <div>Disk bytes read: {format.bytes(usageStats.cgroupIoStats.rbytes)}</div>
+              <div>Disk bytes read: {format.bytesIEC(usageStats.cgroupIoStats.rbytes)}</div>
               <div>Disk read operations: {format.count(usageStats.cgroupIoStats.rios)}</div>
-              <div>Disk bytes written: {format.bytes(usageStats.cgroupIoStats.wbytes)}</div>
+              <div>Disk bytes written: {format.bytesIEC(usageStats.cgroupIoStats.wbytes)}</div>
               <div>Disk write operations: {format.count(usageStats.cgroupIoStats.wios)}</div>
             </>
           )}
           {usageStats.networkStats && (
             <>
-              <div>Network bytes received: {format.bytes(usageStats.networkStats.bytesReceived)}</div>
+              <div>Network bytes received: {format.bytesIEC(usageStats.networkStats.bytesReceived)}</div>
               <div>Network packets received: {format.count(usageStats.networkStats.packetsReceived)}</div>
-              <div>Network bytes sent: {format.bytes(usageStats.networkStats.bytesSent)}</div>
+              <div>Network bytes sent: {format.bytesIEC(usageStats.networkStats.bytesSent)}</div>
               <div>Network packets sent: {format.count(usageStats.networkStats.packetsSent)}</div>
             </>
           )}
@@ -1236,86 +1237,93 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 {vmMetadata.snapshotId && (
                                   <div className="snapshot-id-container">
                                     <div className="snapshot-id-details">
-                                      <div className="metadata-title">Saved to snapshot ID</div>
-                                      <div className="metadata-detail">{vmMetadata.snapshotId}</div>
+                                      {vmMetadata.savedLocalSnapshot || vmMetadata.savedRemoteSnapshot ? (
+                                        <>
+                                          <div className="metadata-title">Saved to snapshot ID</div>
+                                          <div className="metadata-detail">{vmMetadata.snapshotId}</div>
+                                        </>
+                                      ) : (
+                                        <div className="metadata-title">No snapshot saved for this run</div>
+                                      )}
                                     </div>
                                     <div>
-                                      {vmMetadata.snapshotKey && (
-                                        <div className="invocation-menu-container">
-                                          <a
-                                            className="invalidate-button"
-                                            onClick={() => this.setState({ showInvalidateSnapshotModal: true })}>
-                                            Invalidate VM snapshot
-                                          </a>
-                                          <OutlinedButton
-                                            title="Snapshot options"
-                                            className="snapshot-more-button"
-                                            onClick={() => this.setState({ showSnapshotMenu: true })}>
-                                            <MoreVertical />
-                                          </OutlinedButton>
-                                          <Popup
-                                            isOpen={this.state.showSnapshotMenu}
-                                            onRequestClose={() => this.setState({ showSnapshotMenu: false })}>
-                                            <Menu className="workflow-dropdown-menu">
-                                              <MenuItem onClick={this.onClickCopySnapshotKey.bind(this, vmMetadata)}>
-                                                Copy snapshot key
-                                              </MenuItem>
-                                              <MenuItem
-                                                onClick={this.onClickCopyRemoteBazelCommand.bind(
-                                                  this,
-                                                  vmMetadata,
-                                                  this.state.actionResult.executionMetadata
-                                                )}>
-                                                Copy Remote Bazel command to run commands in snapshot
-                                              </MenuItem>
-                                            </Menu>
-                                          </Popup>
-                                          <Modal
-                                            isOpen={this.state.showInvalidateSnapshotModal}
-                                            onRequestClose={() =>
-                                              this.setState({
-                                                showInvalidateSnapshotModal: false,
-                                                isMenuOpen: false,
-                                              })
-                                            }>
-                                            <Dialog>
-                                              <DialogHeader>
-                                                <DialogTitle>Confirm invalidate VM snapshot</DialogTitle>
-                                              </DialogHeader>
-                                              <DialogBody>
-                                                <p>
-                                                  Are you sure you want to invalidate the VM snapshot used for this
-                                                  action?
-                                                </p>
-                                                <p>
-                                                  A new VM, instead of a recycled VM, will be used for the next run of
-                                                  this action, which may result in longer execution time.
-                                                </p>
-                                              </DialogBody>
-                                              <DialogFooter>
-                                                <DialogFooterButtons>
-                                                  <OutlinedButton
-                                                    onClick={() =>
-                                                      this.setState({
-                                                        showInvalidateSnapshotModal: false,
-                                                        isMenuOpen: false,
-                                                      })
-                                                    }>
-                                                    Cancel
-                                                  </OutlinedButton>
-                                                  <Button
-                                                    onClick={this.onClickInvalidateSnapshot.bind(
-                                                      this,
-                                                      vmMetadata.snapshotKey
-                                                    )}>
-                                                    Invalidate
-                                                  </Button>
-                                                </DialogFooterButtons>
-                                              </DialogFooter>
-                                            </Dialog>
-                                          </Modal>
-                                        </div>
-                                      )}
+                                      {vmMetadata.snapshotKey &&
+                                        (vmMetadata.savedLocalSnapshot || vmMetadata.savedRemoteSnapshot) && (
+                                          <div className="invocation-menu-container">
+                                            <a
+                                              className="invalidate-button"
+                                              onClick={() => this.setState({ showInvalidateSnapshotModal: true })}>
+                                              Invalidate VM snapshot
+                                            </a>
+                                            <OutlinedButton
+                                              title="Snapshot options"
+                                              className="snapshot-more-button"
+                                              onClick={() => this.setState({ showSnapshotMenu: true })}>
+                                              <MoreVertical />
+                                            </OutlinedButton>
+                                            <Popup
+                                              isOpen={this.state.showSnapshotMenu}
+                                              onRequestClose={() => this.setState({ showSnapshotMenu: false })}>
+                                              <Menu className="workflow-dropdown-menu">
+                                                <MenuItem onClick={this.onClickCopySnapshotKey.bind(this, vmMetadata)}>
+                                                  Copy snapshot key
+                                                </MenuItem>
+                                                <MenuItem
+                                                  onClick={this.onClickCopyRemoteBazelCommand.bind(
+                                                    this,
+                                                    vmMetadata,
+                                                    this.state.actionResult.executionMetadata
+                                                  )}>
+                                                  Copy Remote Bazel command to run commands in snapshot
+                                                </MenuItem>
+                                              </Menu>
+                                            </Popup>
+                                            <Modal
+                                              isOpen={this.state.showInvalidateSnapshotModal}
+                                              onRequestClose={() =>
+                                                this.setState({
+                                                  showInvalidateSnapshotModal: false,
+                                                  isMenuOpen: false,
+                                                })
+                                              }>
+                                              <Dialog>
+                                                <DialogHeader>
+                                                  <DialogTitle>Confirm invalidate VM snapshot</DialogTitle>
+                                                </DialogHeader>
+                                                <DialogBody>
+                                                  <p>
+                                                    Are you sure you want to invalidate the VM snapshot used for this
+                                                    action?
+                                                  </p>
+                                                  <p>
+                                                    A new VM, instead of a recycled VM, will be used for the next run of
+                                                    this action, which may result in longer execution time.
+                                                  </p>
+                                                </DialogBody>
+                                                <DialogFooter>
+                                                  <DialogFooterButtons>
+                                                    <OutlinedButton
+                                                      onClick={() =>
+                                                        this.setState({
+                                                          showInvalidateSnapshotModal: false,
+                                                          isMenuOpen: false,
+                                                        })
+                                                      }>
+                                                      Cancel
+                                                    </OutlinedButton>
+                                                    <Button
+                                                      onClick={this.onClickInvalidateSnapshot.bind(
+                                                        this,
+                                                        vmMetadata.snapshotKey
+                                                      )}>
+                                                      Invalidate
+                                                    </Button>
+                                                  </DialogFooterButtons>
+                                                </DialogFooter>
+                                              </Dialog>
+                                            </Modal>
+                                          </div>
+                                        )}
                                     </div>
                                   </div>
                                 )}
@@ -1327,7 +1335,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 <div>
                                   <div>
                                     Peak memory:{" "}
-                                    {format.bytes(
+                                    {format.bytesIEC(
                                       this.state.actionResult.executionMetadata.estimatedTaskSize.estimatedMemoryBytes
                                     )}
                                   </div>

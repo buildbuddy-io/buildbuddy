@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "metadata",
     srcs = ["metadata.go"],
@@ -62,6 +64,7 @@ go_test(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/proto",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
@@ -69,5 +72,3 @@ go_test(
         "@org_golang_x_sync//errgroup",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])
