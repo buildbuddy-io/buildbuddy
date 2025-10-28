@@ -868,3 +868,139 @@ func TestUpdateUser(t *testing.T) {
 	require.NoError(t, err)
 	verifyRole(t, updatedUser, role.Admin.String())
 }
+
+func TestRoleSelectionAppRoleAssignmentsComplex(t *testing.T) {
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US300",
+		SubID:  "SubID300",
+		Email:  "user300@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US300")
+	apiKey, _ := prepareGroup(t, userCtx, env)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	newUser := &scim.UserResource{
+		Schemas:  []string{scim.UserResourceSchema},
+		UserName: "user301@org1.io",
+		Roles: []scim.RoleResource{
+			{Primary: false, Value: strings.ToUpper(role.Developer.String())},
+			{Primary: false, Value: role.Writer.String()},
+		},
+		Name: scim.NameResource{
+			GivenName:  "AppRole",
+			FamilyName: "Complex",
+		},
+		Emails: []scim.EmailResource{{Primary: true, Value: "user301@org1.io"}},
+		Active: true,
+	}
+	body, err := json.Marshal(newUser)
+	require.NoError(t, err)
+
+	code, body := tc.Post(baseURL+"/scim/Users", body)
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+	createdUser := scim.UserResource{}
+	err = json.Unmarshal(body, &createdUser)
+	require.NoError(t, err)
+	verifyRole(t, createdUser, role.Writer.String())
+
+	code, body = tc.Get(baseURL + "/scim/Users/" + createdUser.ID)
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+	ur := scim.UserResource{}
+	err = json.Unmarshal(body, &ur)
+	require.NoError(t, err)
+	verifyRole(t, ur, role.Writer.String())
+
+	u, err := udb.GetUserByID(userCtx, createdUser.ID)
+	require.NoError(t, err)
+	require.Len(t, u.Groups, 1)
+	require.Equal(t, role.Writer.String(), role.Role(*u.Groups[0].Role).String())
+}
+
+func TestRoleSelectionAssertiveAppRoleAssignmentsComplex(t *testing.T) {
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US400",
+		SubID:  "SubID400",
+		Email:  "user400@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US400")
+	apiKey, _ := prepareGroup(t, userCtx, env)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// Provision baseline user.
+	createReq := &scim.UserResource{
+		Schemas:  []string{scim.UserResourceSchema},
+		UserName: "user401@org1.io",
+		Active:   true,
+		Name: scim.NameResource{
+			GivenName:  "Assertive",
+			FamilyName: "Payload",
+		},
+		Emails: []scim.EmailResource{{Primary: true, Value: "user401@org1.io"}},
+	}
+	body, err := json.Marshal(createReq)
+	require.NoError(t, err)
+	code, body := tc.Post(baseURL+"/scim/Users", body)
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+	createdUser := scim.UserResource{}
+	err = json.Unmarshal(body, &createdUser)
+	require.NoError(t, err)
+	verifyRole(t, createdUser, role.Developer.String())
+
+	patchReq := &scim.PatchResource{
+		Schemas: []string{scim.PatchResourceSchema},
+		Operations: []scim.OperationResource{
+			{
+				Op:   "replace",
+				Path: scim.RolesAttribute,
+				Value: []map[string]any{
+					{"value": role.Developer.String(), "display": "Developer", "type": "appRole", "primary": false},
+					{"value": role.Writer.String(), "display": "Writer", "type": "appRole", "primary": false},
+				},
+			},
+		},
+	}
+	body, err = json.Marshal(patchReq)
+	require.NoError(t, err)
+	code, body = tc.Patch(baseURL+"/scim/Users/"+createdUser.ID, body)
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+	updatedUser := scim.UserResource{}
+	err = json.Unmarshal(body, &updatedUser)
+	require.NoError(t, err)
+	verifyRole(t, updatedUser, role.Writer.String())
+
+	code, body = tc.Get(baseURL + "/scim/Users/" + createdUser.ID)
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+	updatedUser = scim.UserResource{}
+	err = json.Unmarshal(body, &updatedUser)
+	require.NoError(t, err)
+	verifyRole(t, updatedUser, role.Writer.String())
+
+	u, err := udb.GetUserByID(userCtx, createdUser.ID)
+	require.NoError(t, err)
+	require.Len(t, u.Groups, 1)
+	require.Equal(t, role.Writer.String(), role.Role(*u.Groups[0].Role).String())
+}
