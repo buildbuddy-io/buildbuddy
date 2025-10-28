@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	clickhouseVersion   = "24.3"
+	clickhouseVersion   = "25.3"
 	containerNamePrefix = "buildbuddy-test-clickhouse-"
 )
 
