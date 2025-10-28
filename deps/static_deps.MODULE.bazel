@@ -1,5 +1,3 @@
-bazel_dep(name = "redis", version = "5.0.4")
-
 install_static_dependencies_ext = use_extension(":deps.bzl", "install_static_dependencies_ext")
 use_repo(
     install_static_dependencies_ext,
