@@ -29,7 +29,7 @@ export default class FooterComponent extends React.Component {
             Slack
           </a>
         )}
-        <a href="https://twitter.com/buildbuddy_io" target="_blank">
+        <a href="https://twitter.com/buildbuddy" target="_blank">
           Twitter
         </a>
         <a href="https://github.com/buildbuddy-io/buildbuddy/" target="_blank">
