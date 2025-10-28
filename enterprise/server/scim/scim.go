@@ -43,6 +43,7 @@ const (
 	FamilyNameAttribute = "name.familyName"
 	UserNameAttribute   = "userName"
 	RoleAttribute       = `roles[primary eq "True"].value`
+	RolesAttribute      = "roles"
 )
 
 type NameResource struct {
@@ -411,19 +412,64 @@ func (s *SCIMServer) getUser(ctx context.Context, r *http.Request, g *tables.Gro
 }
 
 func mapRole(ur *UserResource) (role.Role, error) {
-	roleName := ur.Role
-	if roleName == "" {
-		if len(ur.Roles) > 1 {
-			return 0, status.InvalidArgumentErrorf("multiple roles are not supported")
-		}
-		if len(ur.Roles) == 1 {
-			roleName = ur.Roles[0].Value
-		}
+	roleName := strings.ToLower(strings.TrimSpace(ur.Role))
+	if roleName != "" {
+		return role.Parse(roleName)
 	}
-	if roleName == "" {
+
+	var candidates []role.Role
+
+	for _, rr := range ur.Roles {
+		value := strings.ToLower(strings.TrimSpace(rr.Value))
+		if value == "" {
+			continue
+		}
+		parsedRole, err := role.Parse(value)
+		if err != nil {
+			return 0, err
+		}
+		candidates = append(candidates, parsedRole)
+	}
+	if len(candidates) == 0 {
 		return role.Default, nil
 	}
-	return role.Parse(roleName)
+
+	return highestPriorityRole(candidates), nil
+}
+
+func highestPriorityRole(roles []role.Role) role.Role {
+	// Prioritize higher-privilege assignments
+	priority := []role.Role{
+		role.Admin,
+		role.Writer,
+		role.Developer,
+		role.Reader,
+	}
+
+	for _, p := range priority {
+		for _, r := range roles {
+			if r == p {
+				return r
+			}
+		}
+	}
+
+	return role.Default
+}
+
+func parseRoleResources(value any) ([]RoleResource, error) {
+	if value == nil {
+		return nil, nil
+	}
+	serialized, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var resources []RoleResource
+	if err := json.Unmarshal(serialized, &resources); err != nil {
+		return nil, err
+	}
+	return resources, nil
 }
 
 func roleUpdateRequest(userID string, userRole role.Role, addUserToGroup bool) ([]*grpb.UpdateGroupUsersRequest_Update, error) {
@@ -564,7 +610,8 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 	}
 
 	deleteUser := false
-	var newRole *string
+	var resolvedRole role.Role
+	var resolvedRoleSet bool
 
 	handleAttr := func(name string, value any) error {
 		switch name {
@@ -591,7 +638,28 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 			if !ok {
 				return status.InvalidArgumentErrorf("expected string attribute for role but got %T", value)
 			}
-			newRole = &v
+			parsedRole, err := role.Parse(strings.ToLower(strings.TrimSpace(v)))
+			if err != nil {
+				return err
+			}
+			resolvedRole = parsedRole
+			resolvedRoleSet = true
+		case RolesAttribute:
+			resources, err := parseRoleResources(value)
+			if err != nil {
+				return err
+			}
+			temp := &UserResource{Roles: resources}
+			roleValue, err := mapRole(temp)
+			if err != nil {
+				return err
+			}
+			parsed := roleValue.String()
+			if parsed == "" {
+				return status.InvalidArgumentError("could not determine role from roles attribute")
+			}
+			resolvedRole = roleValue
+			resolvedRoleSet = true
 		case UserNameAttribute:
 			v, ok := value.(string)
 			if !ok {
@@ -642,14 +710,14 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 		}
 		ur.Active = false
 	} else {
-		if newRole != nil {
-			ur.Role = *newRole
-			ur.Roles = []RoleResource{{Primary: true, Value: *newRole}}
-			userRole, err := mapRole(ur)
-			if err != nil {
-				return nil, err
+		if resolvedRoleSet {
+			roleName := resolvedRole.String()
+			if roleName == "" {
+				return nil, status.InvalidArgumentError("could not determine user role")
 			}
-			roleUpdate, err := roleUpdateRequest(id, userRole, false /*=addUserToGroup*/)
+			ur.Role = roleName
+			ur.Roles = []RoleResource{{Primary: true, Value: roleName}}
+			roleUpdate, err := roleUpdateRequest(id, resolvedRole, false /*=addUserToGroup*/)
 			if err != nil {
 				return nil, err
 			}
@@ -703,6 +771,10 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 		if err != nil {
 			return nil, err
 		}
+		roleName := userRole.String()
+		if roleName == "" {
+			return nil, status.InvalidArgumentError("could not determine user role")
+		}
 		roleUpdate, err := roleUpdateRequest(id, userRole, false /*=addUserToGroup*/)
 		if err != nil {
 			return nil, err
@@ -710,7 +782,8 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 		if err := s.env.GetUserDB().UpdateGroupUsers(ctx, g.GroupID, roleUpdate); err != nil {
 			return nil, err
 		}
-		updatedUser.Role = ur.Role
+		updatedUser.Role = roleName
+		updatedUser.Roles = []RoleResource{{Primary: true, Value: roleName}}
 	}
 	return updatedUser, nil
 }
