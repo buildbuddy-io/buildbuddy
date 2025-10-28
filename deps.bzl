@@ -47,30 +47,6 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
 
     http_file(
-        name = "com_github_redis_redis-redis-server-v6.2.1-linux-x86_64",
-        executable = True,
-        sha256 = "6d9c268fa0f696c3fc71b3656936c777d02b3b1c6637674ac3173facaefa4a77",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/redis/redis-server-6.2.1-linux-x86_64"],
-    )
-    http_file(
-        name = "com_github_redis_redis-redis-server-v6.2.1-linux-arm64",
-        executable = True,
-        sha256 = "c381660c79dcbe4835a243bab8a0d3c3ee5dc502c1b4a47f1761bd8f9e7be240",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/redis/redis-server-6.2.1-linux-arm64"],
-    )
-    http_file(
-        name = "com_github_redis_redis-redis-server-v6.2.6-darwin-arm64",
-        executable = True,
-        sha256 = "a70261f7a3f455a9a7c9d845299d487a86c1faef2af1605b94f39db44c098e69",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/redis/redis-server-6.2.6-darwin-arm64"],
-    )
-    http_file(
-        name = "com_github_redis_redis-redis-server-v6.2.6-darwin-x86_64",
-        executable = True,
-        sha256 = "398bcf2be83a30249ec81259c87a7fc5c3bf511ff9b222ed517d8e52c99733c6",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/redis/redis-server-6.2.6-darwin-x86_64"],
-    )
-    http_file(
         name = "io_bazel_bazel-5.3.2-darwin-arm64",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-darwin-arm64"],
         sha256 = "d3ce116379b835e2a0ae16b924a485c48330db434b192f090c8f875238e584cb",
