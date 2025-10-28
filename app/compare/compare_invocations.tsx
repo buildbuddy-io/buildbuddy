@@ -83,18 +83,22 @@ const FACETS = [
   { name: "Fetch count", facet: (i?: InvocationModel) => `${i?.getFetchURLs().length}` },
   {
     name: "Explicit command line",
-    facet: (i?: InvocationModel) => i?.optionsParsed?.explicitCmdLine.join("\n"),
+    facet: (i?: InvocationModel) => i?.getExplicitCommandLineOptions().join("\n"),
     type: "flag",
   },
-  { name: "Full command line", facet: (i?: InvocationModel) => i?.optionsParsed?.cmdLine.join("\n"), type: "flag" },
+  {
+    name: "Full command line",
+    facet: (i?: InvocationModel) => i?.getEffectiveCommandLineOptions().join("\n"),
+    type: "flag",
+  },
   {
     name: "Explicit startup options",
-    facet: (i?: InvocationModel) => i?.optionsParsed?.explicitStartupOptions.join("\n"),
+    facet: (i?: InvocationModel) => i?.getExplicitStartupOptions().join("\n"),
     type: "flag",
   },
   {
     name: "Full startup options",
-    facet: (i?: InvocationModel) => i?.optionsParsed?.startupOptions.join("\n"),
+    facet: (i?: InvocationModel) => i?.getEffectiveStartupOptions().join("\n"),
     type: "flag",
   },
   {
