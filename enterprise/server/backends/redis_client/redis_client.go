@@ -101,6 +101,9 @@ func RegisterRemoteExecutionRedisClient(env *real_environment.RealEnv) error {
 	if opts == nil {
 		return nil
 	}
+	if fp := env.GetExperimentFlagProvider(); fp != nil {
+		opts.MigrationConfig = redisutil.NewMigrationConfig(fp, "redis_migration.remote_execution")
+	}
 	redisClient, err := redisutil.NewClientWithOpts(opts, env.GetHealthChecker(), "remote_execution_redis")
 	if err != nil {
 		return status.InternalErrorf("Failed to create Remote Execution redis client: %s", err)
@@ -113,6 +116,9 @@ func RegisterDefault(env *real_environment.RealEnv) error {
 	opts := DefaultRedisClientOpts()
 	if opts == nil {
 		return nil
+	}
+	if fp := env.GetExperimentFlagProvider(); fp != nil {
+		opts.MigrationConfig = redisutil.NewMigrationConfig(fp, "redis_migration.default")
 	}
 	rdb, err := redisutil.NewClientWithOpts(opts, env.GetHealthChecker(), "default_redis")
 	if err != nil {

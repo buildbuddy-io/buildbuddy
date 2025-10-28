@@ -7,6 +7,7 @@ go_library(
     srcs = ["redisutil.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil",
     deps = [
+        "//enterprise/server/experiments",
         "//server/interfaces",
         "//server/util/log",
         "//server/util/random",

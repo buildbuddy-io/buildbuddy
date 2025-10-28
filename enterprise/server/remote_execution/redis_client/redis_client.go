@@ -44,6 +44,9 @@ func RegisterRemoteExecutionRedisPubSubClient(env *real_environment.RealEnv) err
 		}
 		return status.InternalErrorf("Invalid Remote Execution Redis config.")
 	}
+	if fp := env.GetExperimentFlagProvider(); fp != nil {
+		opts.MigrationConfig = redisutil.NewMigrationConfig(fp, "redis_migration.remote_execution_pubsub")
+	}
 	// This Redis client is used for potentially long running blocking operations.
 	// We ideally would not want to  have an upper bound on the # of connections but the redis client library
 	// does not  provide such an option so we  set the pool size to a high value to prevent this redis client

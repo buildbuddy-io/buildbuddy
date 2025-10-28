@@ -2,6 +2,7 @@ package experiments
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
@@ -155,6 +156,42 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 func WithContext(key string, value interface{}) Option {
 	return func(o *Options) {
 		o.attributes[key] = value
+	}
+}
+
+// ObjectToStruct is a utility function to get a struct from an object returned
+// by [interfaces.ExperimentFlagProvider.Object] or
+// [interfaces.ExperimentFlagProvider.ObjectDetails].
+//
+// It uses an intermediate JSON conversion, so `json` tags on struct fields can
+// be used to control how the object fields map to struct fields.
+func ObjectToStruct(object map[string]any, dest any) error {
+	b, err := json.Marshal(object)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+	if err := json.Unmarshal(b, dest); err != nil {
+		return fmt.Errorf("unmarshal: %w", err)
+	}
+	return nil
+}
+
+func (fp *FlagProvider) Subscribe(ch chan<- struct{}) (stop func()) {
+	f := func(details openfeature.EventDetails) {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+	h := openfeature.EventCallback(&f)
+	// Subscribe to config change events.
+	openfeature.AddHandler(openfeature.ProviderConfigChange, h)
+	// Transitioning from not-ready to ready may cause experiment state to
+	// change; subscribe to that event too.
+	openfeature.AddHandler(openfeature.ProviderReady, h)
+	return func() {
+		openfeature.RemoveHandler(openfeature.ProviderConfigChange, h)
+		openfeature.RemoveHandler(openfeature.ProviderReady, h)
 	}
 }
 

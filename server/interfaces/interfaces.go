@@ -1839,6 +1839,12 @@ type ExperimentFlagProvider interface {
 	Float64Details(ctx context.Context, flagName string, defaultValue float64, opts ...any) (float64, ExperimentFlagDetails)
 	Int64Details(ctx context.Context, flagName string, defaultValue int64, opts ...any) (int64, ExperimentFlagDetails)
 	ObjectDetails(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) (map[string]any, ExperimentFlagDetails)
+
+	// Subscribe registers a channel that will receive a value whenever the
+	// experiment config changes. The given function should be called to
+	// unsubscribe from changes. Config changes are published in a non-blocking
+	// fashion, so the channel should be buffered.
+	Subscribe(ch chan<- struct{}) (stop func())
 }
 
 // ExperimentFlagDetails contains details about the flag evaluation.
