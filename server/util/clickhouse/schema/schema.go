@@ -378,6 +378,7 @@ func (t *TestTargetStatus) TableName() string {
 }
 
 func (t *TestTargetStatus) TableOptions() string {
+	// return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, repo_url, commit_sha, label, invocation_uuid)", getEngine())
 	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, repo_url, commit_sha, label, invocation_uuid) SETTINGS deduplicate_merge_projection_mode = 'rebuild'", getEngine())
 }
 
