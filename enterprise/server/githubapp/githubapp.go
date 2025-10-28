@@ -271,9 +271,6 @@ func (s *GitHubAppService) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetL
 	`, u.GetGroupID())
 	res := &ghpb.GetLinkedReposResponse{}
 	err = db.ScanEach(rq, func(ctx context.Context, row *tables.GitRepository) error {
-		// TODO(Maggie): Clean up after BE change is deployed
-		res.RepoUrls = append(res.RepoUrls, row.RepoURL)
-
 		res.Repos = append(res.Repos, &ghpb.GitRepository{
 			RepoUrl:                  row.RepoURL,
 			UseDefaultWorkflowConfig: row.UseDefaultWorkflowConfig,
