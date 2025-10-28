@@ -742,6 +742,43 @@ func TestRedactTxt(t *testing.T) {
 				"line3' --action_env=ANOTHER_VAR=another_value",
 			expected: "--test_env=SIMPLE_VAR=<REDACTED> --test_env=MULTILINE_SECRET=<REDACTED> --action_env=ANOTHER_VAR=<REDACTED>",
 		},
+		{
+			name: "multiline environment variable - action_env double quoted with shell newlines",
+			txt: "--action_env=\"MULTILINE_SECRET=one\n" +
+				"secret\n" +
+				"per\n" +
+				"line\"",
+			expected: "--action_env=MULTILINE_SECRET=<REDACTED>",
+		},
+		{
+			name: "multiline environment variable - action_env single quoted with shell newlines",
+			txt: "--action_env='MULTILINE_SECRET=one\n" +
+				"secret\n" +
+				"per\n" +
+				"line'",
+			expected: "--action_env=MULTILINE_SECRET=<REDACTED>",
+		},
+		{
+			name: "bazel build command with multiline action_env",
+			txt: "bazel build //server/util/status --action_env=\"MULTILINE_SECRET=one\nsecret\nper\nline\"",
+			expected: "bazel build //server/util/status --action_env=MULTILINE_SECRET=<REDACTED>",
+		},
+		{
+			name: "multiline environment variable - action_env unquoted (shell expanded)",
+			txt: "bazel build //server/util/status --action_env=MULTILINE_SECRET=one\n" +
+				"secret\n" +
+				"per\n" +
+				"line",
+			expected: "bazel build //server/util/status --action_env=MULTILINE_SECRET=<REDACTED>",
+		},
+		{
+			name: "multiline environment variable - unquoted with following flag",
+			txt: "--action_env=MULTILINE_SECRET=one\n" +
+				"secret\n" +
+				"per\n" +
+				"line --some_other_flag=value",
+			expected: "--action_env=MULTILINE_SECRET=<REDACTED> --some_other_flag=value",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			redacted := redact.RedactText(tc.txt)
