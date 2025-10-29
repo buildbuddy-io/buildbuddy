@@ -529,11 +529,18 @@ PRIVATEKEYDATA
 	assert.NotContains(t, optionsParsed.ExplicitCmdLine[2], "OPENSSH PRIVATE KEY")
 }
 
-func TestRedactCmdLine_MultilineEnvVar(t *testing.T) {
-	tokens := []string{
-		"bazel",
-		"build",
-		`--action_env=MULTILINE_VAR=this value has spaces
+func TestRedactCmdLine(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		input  []string
+		expect []string
+	}{
+		{
+			name: "multi line env var",
+			input: []string{
+				"bazel",
+				"build",
+				`--action_env=MULTILINE_VAR=this value has spaces
 and multiple
 lines,
 oddly.
@@ -541,25 +548,116 @@ it even has a
 -----BEGIN OPENSSH PRIVATE KEY-----
 PRIVATEKEYDATA
 -----END OPENSSH PRIVATE KEY-----`,
+			},
+			expect: []string{
+				"bazel",
+				"build",
+				"--action_env=MULTILINE_VAR=<REDACTED>",
+			},
+		},
+		{
+			name: "single line env var",
+			input: []string{
+				"bazel",
+				"test",
+				"--action_env=API_KEY=secret",
+			},
+			expect: []string{
+				"bazel",
+				"test",
+				"--action_env=API_KEY=<REDACTED>",
+			},
+		},
+		{
+			name: "quoted env var",
+			input: []string{
+				"bazel",
+				`--client_env="FOO=bar baz"`,
+			},
+			expect: []string{
+				"bazel",
+				`--client_env="FOO=<REDACTED>"`,
+			},
+		},
+		{
+			name: "remote headers",
+			input: []string{
+				"bazel",
+				"--remote_header=harmless_string_that_should_be_redacted_anyhow",
+				"--remote_cache_header=harmless_string_that_should_be_redacted_anyhow",
+				"--remote_exec_header=harmless_string_that_should_be_redacted_anyhow",
+				"--remote_downloader_header=harmless_string_that_should_be_redacted_anyhow",
+				"--bes_header=harmless_string_that_should_be_redacted_anyhow",
+			},
+			expect: []string{
+				"bazel",
+				"--remote_header=<REDACTED>",
+				"--remote_cache_header=<REDACTED>",
+				"--remote_exec_header=<REDACTED>",
+				"--remote_downloader_header=<REDACTED>",
+				"--bes_header=<REDACTED>",
+			},
+		},
+		{
+			name: "explicit command line",
+			input: []string{
+				"bazel",
+				`--build_metadata=EXPLICIT_COMMAND_LINE=["SECRET"]`,
+			},
+			expect: []string{
+				"bazel",
+				"",
+			},
+		},
+		{
+			name: "known multi flag url secret",
+			input: []string{
+				"--build_metadata=PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:password@domain,BAZ=",
+			},
+			expect: []string{
+				"--build_metadata=PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:<REDACTED>@domain,BAZ=",
+			},
+		},
+		{
+			name: "flag with url secret",
+			input: []string{
+				"bazel",
+				"--some_other_flag=url://username:password@foo",
+			},
+			expect: []string{
+				"bazel",
+				"--some_other_flag=url://username:<REDACTED>@foo",
+			},
+		},
+		{
+			name: "plain token url secret",
+			input: []string{
+				"bazel",
+				"url://username:password@foo",
+			},
+			expect: []string{
+				"bazel",
+				"url://username:<REDACTED>@foo",
+			},
+		},
+		{
+			name: "safe tokens unchanged",
+			input: []string{
+				"bazel",
+				"--flag=@repo//package",
+			},
+			expect: []string{
+				"bazel",
+				"--flag=@repo//package",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tokens := append([]string(nil), tc.input...)
+			redact.RedactCmdLine(tokens)
+			require.Equal(t, tc.expect, tokens)
+		})
 	}
-
-	redact.RedactCmdLine(tokens)
-
-	require.Len(t, tokens, 3)
-	assert.Equal(t, "--action_env=MULTILINE_VAR=<REDACTED>", tokens[2])
-}
-
-func TestRedactCmdLine_SingleLineEnvVar(t *testing.T) {
-	tokens := []string{
-		"bazel",
-		"test",
-		"--action_env=API_KEY=secret",
-	}
-
-	redact.RedactCmdLine(tokens)
-
-	require.Len(t, tokens, 3)
-	assert.Equal(t, "--action_env=API_KEY=<REDACTED>", tokens[2])
 }
 
 func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
