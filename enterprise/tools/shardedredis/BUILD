@@ -7,12 +7,12 @@ go_library(
     srcs = ["shardedredis.go"],
     data = [
         ":redis.conf",
-        "//enterprise/server/testutil/testredis:redis-server_crossplatform",
+        "@redis//:redis-server",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/shardedredis",
     visibility = ["//visibility:private"],
     x_defs = {
-        "redisRlocationpath": "$(rlocationpath //enterprise/server/testutil/testredis:redis-server_crossplatform)",
+        "redisRlocationpath": "$(rlocationpath @redis//:redis-server)",
         "configRlocationpath": "$(rlocationpath :redis.conf)",
     },
     deps = [
