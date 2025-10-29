@@ -376,7 +376,8 @@ func ACCopy(ctx context.Context, router interfaces.CacheRoutingService, copyOper
 			ActionDigest:   d,
 		}
 
-		// TODO(jdhollen): The call could enclose the result hash from primary and just fetch from secondary?
+		// TODO(jdhollen): The operator could enclose the result hash from
+		// primary and just fetch from secondary (unless a copy is actually needed).
 		// Get the action result from both caches, compare digests.
 		primaryResult, err := primary.GetActionResult(ctx, initialReq)
 		if err != nil {
@@ -408,6 +409,7 @@ func ACCopy(ctx context.Context, router interfaces.CacheRoutingService, copyOper
 		for _, d := range primaryResult.OutputDirectories {
 			dc := d
 			g.Go(func() error {
+				// TODO(jdhollen): Batch these up for real and/or check local proxy cache.
 				blobs, err := primaryCAS.BatchReadBlobs(gCtx, &repb.BatchReadBlobsRequest{
 					InstanceName:   b.InstanceName,
 					DigestFunction: b.DigestFunction,
