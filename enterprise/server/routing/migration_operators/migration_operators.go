@@ -339,6 +339,7 @@ func GetTreeMirrorOperator(ctx context.Context, router interfaces.CacheRoutingSe
 }
 
 func ACReadAndVerify(ctx context.Context, router interfaces.CacheRoutingService, groupID string, b *batch_operator.DigestBatch) error {
+	ctx = usageutil.DisableUsageTracking(ctx)
 	_, secondary, err := router.GetACClients(ctx)
 	if err != nil {
 		return err
