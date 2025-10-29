@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,6 +31,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 func streamRequest(anyEvent *anypb.Any, iid string, sequenceNumer int64) *pepb.PublishBuildToolEventStreamRequest {
@@ -749,18 +751,30 @@ PRIVATEKEYDATA
 	invocation, err := build_event_handler.LookupInvocation(te, ctx, testInvocationID)
 	assert.NoError(t, err)
 
-	var found bool
 	const expected = "--action_env=MULTILINE_VAR=<REDACTED>"
+	var actual *bspb.OptionsParsed
 	for _, event := range invocation.Event {
 		if optionsParsed := event.GetBuildEvent().GetOptionsParsed(); optionsParsed != nil {
-			require.Len(t, optionsParsed.CmdLine, 3)
-			require.Len(t, optionsParsed.ExplicitCmdLine, 3)
-			assert.Equal(t, expected, optionsParsed.CmdLine[2])
-			assert.Equal(t, expected, optionsParsed.ExplicitCmdLine[2])
-			found = true
+			actual = optionsParsed
+			break
 		}
 	}
-	assert.True(t, found, "expected an OptionsParsed event in invocation")
+	require.NotNil(t, actual, "expected an OptionsParsed event in invocation")
+
+	require.Len(t, actual.CmdLine, 3)
+	require.Len(t, actual.ExplicitCmdLine, 3)
+
+	expectedOptions := &bspb.OptionsParsed{
+		CmdLine: []string{"bazel", "build", expected},
+		ExplicitCmdLine: []string{
+			"bazel",
+			"build",
+			expected,
+		},
+	}
+	if diff := cmp.Diff(expectedOptions, actual, protocmp.Transform()); diff != "" {
+		t.Fatalf("unexpected redacted options parsed (-want +got):\n%s", diff)
+	}
 
 	txt, err := prototext.Marshal(invocation)
 	require.NoError(t, err)
