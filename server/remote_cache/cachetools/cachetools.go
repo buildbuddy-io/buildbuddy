@@ -52,7 +52,7 @@ const (
 	// batchUploadLimitBytes controls how big an object or batch can be in a
 	// BatchUploadBlobs RPC. In experiments, 2MiB blobs are 5-10% faster to
 	// upload using the bytestream.Write api.
-	batchUploadLimitBytes = min(2*1024*1024, rpcutil.GRPCMaxSizeBytes)
+	BatchUploadLimitBytes = min(2*1024*1024, rpcutil.GRPCMaxSizeBytes)
 )
 
 var (
@@ -617,7 +617,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		compressor = repb.Compressor_ZSTD
 	}
 
-	if d.GetSizeBytes() > batchUploadLimitBytes {
+	if d.GetSizeBytes() > BatchUploadLimitBytes {
 		resourceName := digest.NewCASResourceName(d, ul.instanceName, ul.digestFunction)
 		resourceName.SetCompressor(compressor)
 
@@ -644,7 +644,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		b = compression.CompressZstd(nil, b)
 	}
 	additionalSize := int64(len(b))
-	if ul.unsentBatchSize+additionalSize > batchUploadLimitBytes {
+	if ul.unsentBatchSize+additionalSize > BatchUploadLimitBytes {
 		ul.flushCurrentBatch()
 	}
 	ul.unsentBatchReq.Requests = append(ul.unsentBatchReq.Requests, &repb.BatchUpdateBlobsRequest_Request{
