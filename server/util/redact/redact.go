@@ -630,6 +630,9 @@ func NewStreamingRedactor(env environment.Env) *StreamingRedactor {
 	}
 }
 
+// RedactMetadata walks the provided BuildEvent and redacts sensitive metadata
+// in-place, replacing secrets with "<REDACTED>". Callers needing the original
+// content should clone the event before invoking this method.
 func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 	switch p := event.Payload.(type) {
 	case *bespb.BuildEvent_Progress:
@@ -758,6 +761,9 @@ func RedactCommand(cmd string) (string, error) {
 	return strings.Join(cmdTokens, " "), nil
 }
 
+// RedactAPIKey scrubs BuildBuddy API keys from the provided BuildEvent by
+// rewriting matching values in-place. Clone the event first if the original data
+// must be preserved.
 func (r *StreamingRedactor) RedactAPIKey(ctx context.Context, event *bespb.BuildEvent) error {
 	apiKey, ok := ctx.Value("x-buildbuddy-api-key").(string)
 	if !ok || apiKey == "" {
@@ -840,6 +846,9 @@ func reflectRedactAPIKey(value reflect.Value, apiKey string) *reflect.Value {
 	}
 }
 
+// RedactAPIKeysWithSlowRegexp redacts API keys by converting the event to text
+// and back again. It mutates the supplied BuildEvent; clone first if the original
+// event must be preserved.
 func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, event *bespb.BuildEvent) error {
 	eventBytes, err := prototext.Marshal(event)
 	if err != nil {
