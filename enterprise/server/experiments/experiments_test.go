@@ -96,6 +96,13 @@ func TestPrimitiveFlags(t *testing.T) {
 	require.Equal(t, int64(1), fp.Int64(ctx, "int_flag", 0))
 	require.Equal(t, 99.9999999, fp.Float64(ctx, "float_flag", 1.0))
 	require.Equal(t, map[string]any{"foo": "foo value"}, fp.Object(ctx, "object_flag", nil))
+	type ObjStruct struct {
+		Foo string `json:"foo"`
+	}
+	var obj ObjStruct
+	err = experiments.ObjectToStruct(fp.Object(ctx, "object_flag", nil), &obj)
+	require.NoError(t, err)
+	require.Equal(t, ObjStruct{Foo: "foo value"}, obj)
 
 	b, d := fp.BooleanDetails(ctx, "bool_flag", false)
 	require.True(t, b)
