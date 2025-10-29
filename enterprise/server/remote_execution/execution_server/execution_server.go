@@ -582,6 +582,12 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	return s.execute(req, stream)
 }
 
+type TeeExperimentConfig struct {
+	Rate         *float64 `json:"rate"`
+	Pool         *string  `json:"pool"`
+	InstanceName *string  `json:"instance-name"`
+}
+
 func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID string, req *repb.ExecuteRequest, action *repb.Action) error {
 	if *teeInstanceNamePrefix == "" {
 		return nil
@@ -596,22 +602,13 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 	if len(m) == 0 {
 		return nil
 	}
-
-	teeRate, ok := m["rate"].(float64)
-	if !ok {
-		alert.CtxUnexpectedEvent(ctx, "tee_invalid_rate", "rate was not a float")
+	var config TeeExperimentConfig
+	if err := experiments.ObjectToStruct(m, &config); err != nil {
 		return nil
 	}
-
-	teePool, ok := m["pool"].(string)
-	if !ok {
-		alert.CtxUnexpectedEvent(ctx, "tee_invalid_pool", "pool was not a string")
-		return nil
-	}
-
-	teeInstanceName, ok := m["instance-name"].(string)
-	if !ok {
-		alert.CtxUnexpectedEvent(ctx, "tee_invalid_instance_name", "instance name was not a string")
+	// All config fields are required
+	if config.Rate == nil || config.Pool == nil || config.InstanceName == nil {
+		alert.CtxUnexpectedEvent(ctx, "tee_invalid_config", "missing required tee experiment config fields: %+#v", config)
 		return nil
 	}
 
@@ -619,7 +616,7 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 	if s.teeLimiters == nil {
 		s.teeLimiters = make(map[string]*rate.Limiter)
 	}
-	limit := rate.Limit(teeRate)
+	limit := rate.Limit(*config.Rate)
 	limiter := s.teeLimiters[details.Variant()]
 	if limiter == nil {
 		limiter = rate.NewLimiter(limit, 1 /*=burst*/)
@@ -640,13 +637,13 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 
 		log.CtxInfof(ctx, "Teeing execution corresponding to original execution %q", originalExecutionID)
 		teeReq := proto.Clone(req).(*repb.ExecuteRequest)
-		teeReq.InstanceName = *teeInstanceNamePrefix + teeInstanceName
+		teeReq.InstanceName = *teeInstanceNamePrefix + *config.InstanceName
 
 		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {
 			return
 		}
-		md["x-buildbuddy-platform.pool"] = []string{teePool}
+		md["x-buildbuddy-platform.pool"] = []string{*config.Pool}
 		ctx = metadata.NewIncomingContext(ctx, md)
 
 		r := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
