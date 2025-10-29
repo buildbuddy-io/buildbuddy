@@ -22,12 +22,12 @@ When developers use the BuildBuddy CLI (`bb`) or the CI runner, the wrapper augm
 
 ## 3. Server Ingestion and Redaction
 
-* The build-event handler service reads each BEP event and runs it through the streaming redactor before anything is persisted.
+* The build event handler service reads each BEP event and runs it through the streaming redactor before anything is persisted.
 * The redactor strips secrets (API keys, remote headers, URL credentials, disallowed `--client_env`) and removes the sentinel `--build_metadata=EXPLICIT_COMMAND_LINE=…` flag so only user-visible args remain.
 * The accumulator component keeps track of the most recent `OptionsParsed` payload and other metadata while the invocation is streamed.
-* When the invocation is finalized, sanitized events are written to blob storage and the invocation row is updated. Any subsequent call to the build-event server’s `GetInvocation` entry point re-runs redaction if the stored stream predates standard redactions.
+* When the invocation is finalized, sanitized events are written to blob storage and the invocation row is updated. Any subsequent call to the build event server’s `GetInvocation` entry point re-runs redaction if the stored stream predates standard redactions.
 
-> Tests in the build-event handler package construct synthetic BEP sequences to assert that headers, env vars, and metadata are redacted end-to-end.
+> Tests in the build event handler package construct synthetic BEP sequences to assert that headers, env vars, and metadata are redacted end-to-end.
 
 ## 4. Serving the Invocation to the Web App
 
