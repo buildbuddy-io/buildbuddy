@@ -589,7 +589,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (region)(rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_sum{ job=\"executor-workflows\"}[5m])) / 1000000000",
+          "expr": "sum by (region)(increase(buildbuddy_remote_execution_file_cache_added_file_size_bytes_sum{ job=\"executor-workflows\"}[5m])) / 1000000000",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
