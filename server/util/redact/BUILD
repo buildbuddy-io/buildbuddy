@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
-        "//server/environment",
         "//server/util/flag",
         "//server/util/git",
         "//server/util/status",
@@ -25,7 +24,6 @@ go_test(
         ":redact",
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
-        "//server/testutil/testenv",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

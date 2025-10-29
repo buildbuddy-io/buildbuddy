@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/shlex"
@@ -568,13 +567,11 @@ func parseAllowedEnv(optionsDescription string) []string {
 // StreamingRedactor processes a stream of build events and redacts them as they are
 // received by the event handler.
 type StreamingRedactor struct {
-	env            environment.Env
 	allowedEnvVars []string
 }
 
-func NewStreamingRedactor(env environment.Env) *StreamingRedactor {
+func NewStreamingRedactor() *StreamingRedactor {
 	return &StreamingRedactor{
-		env:            env,
 		allowedEnvVars: defaultAllowedEnvVars,
 	}
 }
