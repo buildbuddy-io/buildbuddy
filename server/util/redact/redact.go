@@ -226,6 +226,9 @@ func stripExplicitCommandLineFromCmdLine(tokens []string) {
 	}
 }
 
+// RedactCmdLine mutates the provided tokenized command line by redacting URL
+// credentials, remote headers, explicit command line payloads, and environment
+// variable flags that are not explicitly allowed.
 func RedactCmdLine(tokens []string) {
 	stripURLSecretsFromCmdLine(tokens)
 	stripRemoteHeadersFromCmdLine(tokens)
@@ -270,16 +273,22 @@ func redactRemoteHeaders(txt string) string {
 	return txt
 }
 
+// redactEnvVars locates env var flags within an arbitrary string and replaces
+// their values with the redaction placeholder.
 func redactEnvVars(txt string) string {
 	return envVarOptionNamesRegex.ReplaceAllStringFunc(txt, RedactEnvVar)
 }
 
+// stripNonAllowedEnvVars replaces the payload of env var flags in-place unless
+// the variable name is explicitly permitted.
 func stripNonAllowedEnvVars(tokens []string) {
 	for i, token := range tokens {
 		tokens[i] = redactEnvVarToken(token)
 	}
 }
 
+// redactEnvVarToken returns the redacted version of a single env var flag token.
+// Flags that are not env var options are returned untouched.
 func redactEnvVarToken(token string) string {
 	for _, option := range envVarOptionNames {
 		prefix := "--" + option + "="
@@ -291,6 +300,8 @@ func redactEnvVarToken(token string) string {
 	return token
 }
 
+// redactEnvVarPayload redacts the value portion of an env var payload, preserving
+// the surrounding quoting when present.
 func redactEnvVarPayload(payload string) string {
 	if len(payload) == 0 {
 		return redactedPlaceholder
@@ -307,6 +318,8 @@ func redactEnvVarPayload(payload string) string {
 	return redactEnvVarAssignment(payload)
 }
 
+// redactEnvVarAssignment redacts the value of a VAR=value assignment while
+// preserving the variable name prefix when present.
 func redactEnvVarAssignment(value string) string {
 	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
 		varName := assignment[1]
@@ -337,6 +350,9 @@ func RedactEnvVar(flag string) string {
 	return flag
 }
 
+// redactEnvVarValue rewrites an env var flag prefix plus payload so the payload
+// becomes VAR=<REDACTED> when a VAR= is detected and otherwise collapses to the
+// placeholder.
 func redactEnvVarValue(flagName, value string) string {
 	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
 		varName := assignment[1]
