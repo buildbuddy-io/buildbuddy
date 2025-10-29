@@ -14,10 +14,12 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/rpcutil",
         "//server/util/status",
         "//server/util/usageutil",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
