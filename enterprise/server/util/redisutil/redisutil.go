@@ -3,19 +3,24 @@ package redisutil
 import (
 	"context"
 	"crypto/tls"
-	"flag"
 	"fmt"
 	"net/url"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/cespare/xxhash/v2"
+	"github.com/dgryski/go-rendezvous"
 	"github.com/go-redis/redis/extra/redisotel/v8"
 	"github.com/go-redis/redis/v8"
 )
@@ -25,6 +30,8 @@ var (
 		"redis_command_buffer_flush_period", 250*time.Millisecond,
 		"How long to wait between flushing buffered redis commands. "+
 			"Setting this to 0 will disable buffering at the cost of higher redis QPS.")
+
+	shardConfigReloadInterval = flag.Duration("redis_sharding_config_reload_interval", 1*time.Minute, "How often to re-check the experiment config for redis shard configuration changes.", flag.Internal)
 )
 
 // ConfigureLogging configures the Redis library to use our logger.
@@ -145,6 +152,10 @@ type Opts struct {
 	IdleCheckFrequency time.Duration
 
 	TLSConfig *tls.Config
+
+	// MigrationConfig allows configuring migrations for sharded redis setups.
+	// Use [NewMigrationConfig] to get an instance.
+	MigrationConfig *MigrationConfig
 }
 
 func (o *Opts) toSimpleOpts() (*redis.Options, error) {
@@ -200,6 +211,156 @@ func (o *Opts) toRingOpts() (*redis.RingOptions, error) {
 	return opts, nil
 }
 
+type MigrationConfig struct {
+	fp interfaces.ExperimentFlagProvider
+
+	// If nonempty, this is the default value for the enabled shards. If empty,
+	// all shards will be enabled.
+	defaultEnabledAddrs []string
+
+	// experimentName is the experiment that determines which shards are
+	// enabled. If the experiment evaluates to an empty slice (e.g. if the
+	// experiment is not configured yet), then defaultEnabledAddrs is used. The
+	// experiment flag must evaluate to an object matching the shape of
+	// [MigrationExperimentConfig].
+	experimentName string
+}
+
+type MigrationExperimentConfig struct {
+	EnabledAddrs []string `json:"enabled_addrs"`
+}
+
+func NewMigrationConfig(fp interfaces.ExperimentFlagProvider, allAddrs, defaultEnabledAddrs []string, experimentName string) *MigrationConfig {
+	if len(defaultEnabledAddrs) == 0 {
+		defaultEnabledAddrs = allAddrs
+	}
+	return &MigrationConfig{
+		fp:                  fp,
+		defaultEnabledAddrs: defaultEnabledAddrs,
+		experimentName:      experimentName,
+	}
+}
+
+func (m *MigrationConfig) loadEnabledAddrs() []string {
+	expMap := m.fp.Object(context.TODO(), m.experimentName, nil)
+	if len(expMap) == 0 {
+		return m.defaultEnabledAddrs
+	}
+	expStruct := &MigrationExperimentConfig{}
+	if err := experiments.ObjectToStruct(expMap, expStruct); err != nil {
+		log.Errorf("Failed to unmarshal enabled shards experiment object: %s", err)
+		return m.defaultEnabledAddrs
+	}
+	if len(expStruct.EnabledAddrs) == 0 {
+		return m.defaultEnabledAddrs
+	}
+	return expStruct.EnabledAddrs
+}
+
+// getConsistentHashProvider returns a redis hash function provider that filters
+// to the currently enabled shards in the experiment config.
+func getConsistentHashProvider(ctx context.Context, clientName string, migrationConfig *MigrationConfig, shardNameToAddr map[string]string) func(shards []string) redis.ConsistentHash {
+	// The consistent hash uses shard names - build a reverse mapping.
+	addrToShardName := make(map[string]string, len(shardNameToAddr))
+	for k, v := range shardNameToAddr {
+		addrToShardName[v] = k
+	}
+	shardNamesFromAddrs := func(enabledAddrs []string) []string {
+		out := make([]string, 0, len(enabledAddrs))
+		for _, addr := range enabledAddrs {
+			out = append(out, addrToShardName[addr])
+		}
+		return out
+	}
+
+	var enabledShards atomic.Value // *[]string
+	{
+		s := shardNamesFromAddrs(migrationConfig.defaultEnabledAddrs)
+		enabledShards.Store(&s)
+	}
+	log.CtxInfof(ctx, "Configured enabled redis shards for %s: %v", clientName, migrationConfig.defaultEnabledAddrs)
+
+	// In the background, reconfigure the enabled shards whenever the experiment
+	// config changes.
+	go func() {
+		configChanged := make(chan struct{}, 1)
+		unsubscribe := migrationConfig.fp.Subscribe(configChanged)
+		defer unsubscribe()
+		// As a backup, poll as well.
+		ticker := time.NewTicker(*shardConfigReloadInterval)
+		defer ticker.Stop()
+		// Also ensure that we load once initially.
+		initialLoad := make(chan struct{}, 1)
+		initialLoad <- struct{}{}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-initialLoad:
+			case <-ticker.C:
+			case <-configChanged:
+			}
+			enabledAddrs := migrationConfig.loadEnabledAddrs()
+			slices.Sort(enabledAddrs)
+			s := shardNamesFromAddrs(enabledAddrs)
+			// If the slice contents have changed, store a new slice pointer in
+			// enabledShards, which will cause the rendezvous hashes below to be
+			// invalidated and rebuilt.
+			if !slices.Equal(s, *enabledShards.Load().(*[]string)) {
+				log.CtxInfof(ctx, "Reconfigured enabled redis shards for %s: %v", clientName, enabledAddrs)
+				enabledShards.Store(&s)
+			}
+		}
+	}()
+	// Return a hash function provider that filters the shard list to the
+	// currently enabled shards, then hashes keys only to the enabled shards.
+	// Internally, it rebuilds the consistent hash whenever the enabled shards
+	// list changes.
+	return func(shards []string) redis.ConsistentHash {
+		type hash struct {
+			*rendezvous.Rendezvous
+			enabledShards *[]string
+		}
+		var h atomic.Value // *hash
+		h.Store(&hash{})
+		getHashWithEnabledShardsOnly := func() *hash {
+			// Check whether the hash needs to be rebuilt to reflect the
+			// enabled shards list.
+			enabledShardsPtr, _ := enabledShards.Load().(*[]string)
+			hVal := h.Load().(*hash)
+			if enabledShardsPtr == hVal.enabledShards {
+				// Current hash is up to date; return it.
+				return hVal
+			}
+			// Hash is out of date and needs to be rebuilt. Build a new hash
+			// from the shards list, filtering to enabled shards only.
+			enabled := *enabledShardsPtr
+			shards := slices.Clone(shards)
+			shards = slices.DeleteFunc(shards, func(s string) bool {
+				return !slices.Contains(enabled, s)
+			})
+			// NOTE: this hash construction exactly matches what go-redis does
+			// in its default NewConsistentHash implementation.
+			hVal = &hash{
+				Rendezvous:    rendezvous.New(shards, xxhash.Sum64String),
+				enabledShards: enabledShardsPtr,
+			}
+			h.Store(hVal)
+			return hVal
+		}
+		return consistentHashFunc(func(key string) string {
+			hash := getHashWithEnabledShardsOnly()
+			shardName := hash.Lookup(key)
+			return shardName
+		})
+	}
+}
+
+// consistentHashFunc implements [redis.ConsistentHash] by just calling the func.
+type consistentHashFunc func(key string) string
+
+func (f consistentHashFunc) Get(key string) string { return f(key) }
+
 func NewClientWithOpts(opts *Opts, checker interfaces.HealthChecker, healthCheckName string) (redis.UniversalClient, error) {
 	var redisClient redis.UniversalClient
 	if len(opts.Addrs) <= 1 {
@@ -212,6 +373,9 @@ func NewClientWithOpts(opts *Opts, checker interfaces.HealthChecker, healthCheck
 		ringOpts, err := opts.toRingOpts()
 		if err != nil {
 			return nil, err
+		}
+		if opts.MigrationConfig != nil {
+			ringOpts.NewConsistentHash = getConsistentHashProvider(context.TODO(), healthCheckName, opts.MigrationConfig, ringOpts.Addrs)
 		}
 		redisClient = redis.NewRing(ringOpts)
 	}
