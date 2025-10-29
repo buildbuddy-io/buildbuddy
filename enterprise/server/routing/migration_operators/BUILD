@@ -35,6 +35,7 @@ go_test(
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/util/flagutil",
+        "//server/util/proto",
         "//server/util/status",
         "//server/util/usageutil",
         "@com_github_stretchr_testify//require",
