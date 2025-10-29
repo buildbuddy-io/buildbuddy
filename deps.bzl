@@ -31,9 +31,9 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'package(default_visibility = ["//visibility:public"])',
             'filegroup(name = "firecracker", srcs = ["firecracker-{release}"])',
             'filegroup(name = "jailer", srcs = ["jailer-{release}"])',
-        ]).format(release = "v1.11.0-with_move_clock_reset_patch-20251013-b0b60411d22e5be83016474705f45504554db659"),
-        sha256 = "12814a607e18b2e844494df88b08f3b6195f6e890add6a156d5fb54ead2ca10b",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-v1.11.0-with_move_clock_reset_patch.tgz"],
+        ]).format(release = "v1.13.0-with_clock_reset_patch-20251029-d33011c6788153a8a601e1b7000466c1ff1ecfc7"),
+        sha256 = "d08f5245fcb84c59bdb060385e3058f4667765afbea5c3cbfcb969d570d624bf",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-v1.13.0-with_clock_reset_patch.tgz"],
     )
     http_archive(
         name = "com_github_firecracker_microvm_firecracker_arm64",
