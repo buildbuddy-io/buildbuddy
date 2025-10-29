@@ -1570,6 +1570,9 @@ func TestACCopy_Success_SameDigests(t *testing.T) {
 	require.Nil(t, acSecondary.lastUpdateRequest) // No update should have been called
 }
 
+// When the secondary cache has a different ActionResult for the specified
+// action digest, we should sync whatever files are needed and overwrite the
+// old ActionResult.
 func TestACCopy_Success_DifferentDigests(t *testing.T) {
 	ctx := context.Background()
 
