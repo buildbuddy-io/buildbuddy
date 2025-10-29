@@ -162,15 +162,15 @@ PR base branch `users-api`:
 1. If that doesn't exist, we'll look for a snapshot for the `main`
    branch (the repo's default branch).
 1. If that doesn't exist, we'll look for a snapshot on any branch.
-   1.If all of that fails, only then do we boot a new VM from scratch.
+1. If all of that fails, only then do we boot a new VM from scratch.
 1. When the remote run finishes and we save a
    snapshot, we only overwrite the snapshot for the `users-ui` branch,
    meaning that the `users-api` and `main` branch snapshots will not be
    affected.
 
 **NOTE:** We recommend always running Workflows on your default branch, so that this
-snapshot matching strategy works optimally. This can be accomplished by triggering a Workflow on every push to the default branch. This ensures that workflow runs on new branches
-will always have a good snapshot to start from. Otherwise, if there is not a snapshot to resume from, new workloads will always start from new slow runners.
+snapshot matching strategy works optimally. This can be accomplished by triggering a Workflow on every push to the default branch. This ensures that Workflow runs on new branches
+will always have a good snapshot to start from. Otherwise, if there is not a snapshot to resume from, new workloads will always start from new slow runners and may incur higher snapshot write costs.
 
 For more technical details on our VM implementation, see our BazelCon
 talk [Reusing Bazel's Analysis Cache by Cloning Micro-VMs](https://www.youtube.com/watch?v=YycEXBlv7ZA).
@@ -351,7 +351,7 @@ traditional Bazel remote executors.
 
 We recommend always running remote workloads on your default branch, so that the
 [snapshot matching strategy works optimally](#firecracker-vms-linux-only). This can be accomplished by triggering a run on every push to the default branch. This ensures that runs on new branches
-will always have a good snapshot to start from. Otherwise, if there is not a snapshot to resume from, new workloads will always start from new slow runners.
+will always have a good snapshot to start from. Otherwise, if there is not a snapshot to resume from, new workloads will always start from new slow runners and may incur higher snapshot write costs.
 
 ## Getting started
 

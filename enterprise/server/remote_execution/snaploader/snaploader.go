@@ -164,10 +164,8 @@ func gitRefs(task *repb.ExecutionTask) (branchRef string, fallbackRefs []string)
 		}
 	}
 
-	if platform.IsTrue(platform.FindEffectiveValue(task, platform.UniversalSnapshotFallbackPropertyName)) {
-		// As a last resort, fallback to a snapshot from any branch.
-		fallbackRefs = append(fallbackRefs, "")
-	}
+	// As a last resort, fallback to a snapshot from any branch.
+	fallbackRefs = append(fallbackRefs, "")
 
 	return branchRef, fallbackRefs
 }
@@ -357,10 +355,6 @@ type CacheSnapshotOptions struct {
 	// even if there is a newer manifest for the snapshot key available in the
 	// remote cache.
 	WriteManifestLocally bool
-
-	// Whether to write a ref-agnostic snapshot. If enabled, snapshots from any branch
-	// will be able to start from this universal snapshot as a last-resort fallback.
-	CacheUniversalSnapshot bool
 }
 
 type UnpackedSnapshot struct {
@@ -465,7 +459,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	if err != nil {
 		return nil, err
 	}
-	if err := validateRemoteManifest(key, manifest); err != nil {
+	if err := l.validateManifest(key, manifest); err != nil {
 		return nil, err
 	}
 	log.CtxInfof(ctx, "Using remote manifest")
@@ -496,11 +490,13 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 	return l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir, true /*remoteEnabled*/)
 }
 
-func (l *FileCacheLoader) validateRemoteManifest(key *fcpb.SnapshotKey, manifest *fcpb.SnapshotManifest) error {
+func (l *FileCacheLoader) validateManifest(key *fcpb.SnapshotKey, manifest *fcpb.SnapshotManifest) error {
 	isUniversalSnapshot := key.Ref == ""
 	if !isUniversalSnapshot {
 		return nil
 	}
+	// TODO: Ref might be unset for RBE actions, and also for remote bazel if the env vars aren't set
+	// by the API. This might break things for them.
 	snapshotSaveTime := manifest.VmMetadata.GetLastExecutedTask().GetCompletedTimestamp().AsTime()
 	now := l.env.GetClock().Now()
 	if now.Sub(snapshotSaveTime) > snaputil.MaxUniversalSnapshotAge {
@@ -542,6 +538,10 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 	manifest, err := l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir, false /*remoteEnabled*/)
 	if err != nil {
 		return nil, status.WrapError(err, "parse local snapshot manifest")
+	}
+
+	if err := l.validateManifest(key, manifest); err != nil {
+		return nil, err
 	}
 
 	// Check whether all artifacts in the manifest are available. This helps
@@ -876,24 +876,18 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	}
 
 	// Cache a universal snapshot without a ref. This can be used as a last-resort fallback for a run without any other snapshots.
-	//
-	// We want to do this even if we don't write a manifest for the actual key (i.e. if opts.WriteManifestLocally = false).
-	// We might not want to write a local manifest so that we always look for remote manifests to get the latest snapshot available.
-	// But we may still want to write it as a universal snapshot for other workloads to fall back to.
-	if opts.CacheUniversalSnapshot {
-		universalKey := key.CloneVT()
-		universalKey.Ref = ""
+	universalKey := key.CloneVT()
+	universalKey.Ref = ""
 
-		universalD, err := LocalManifestKey(gid, universalKey)
-		if err != nil {
-			return err
-		}
-		universalManifestNode := &repb.FileNode{Digest: universalD}
-		if _, err := l.env.GetFileCache().Write(ctx, universalManifestNode, b); err != nil {
-			return err
-		}
-		log.CtxInfof(ctx, "Updated local universal snapshot manifest %s", snapshotDebugString(ctx, l.env, universalKey, false /*remote*/, "" /*=snapshotID*/))
+	universalD, err := LocalManifestKey(gid, universalKey)
+	if err != nil {
+		return err
 	}
+	universalManifestNode := &repb.FileNode{Digest: universalD}
+	if _, err := l.env.GetFileCache().Write(ctx, universalManifestNode, b); err != nil {
+		return err
+	}
+	log.CtxInfof(ctx, "Updated local universal snapshot manifest %s", snapshotDebugString(ctx, l.env, universalKey, false /*remote*/, "" /*=snapshotID*/))
 
 	return nil
 }

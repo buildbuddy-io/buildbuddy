@@ -1193,7 +1193,6 @@ func TestFirecracker_SnapshotSharing_UniversalFallback(t *testing.T) {
 					// Note: platform must match in order to share snapshots
 					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 						{Name: "recycle-runner", Value: "true"},
-						{Name: platform.UniversalSnapshotFallbackPropertyName, Value: tc.universalSnapshotEnabled},
 					}},
 					Arguments: []string{"./buildbuddy_ci_runner"},
 					EnvironmentVariables: []*repb.Command_EnvironmentVariable{
@@ -1227,8 +1226,8 @@ func TestFirecracker_SnapshotSharing_UniversalFallback(t *testing.T) {
 				fakeClock.Advance(snaputil.MaxUniversalSnapshotAge + 1*time.Hour)
 			}
 
-			// pr-2 tries to resume from a snapshot. Should only succeed if unviersal
-			// snapshot fallbacks are enabled.
+			// pr-2 tries to resume from a snapshot. Should only succeed if the universal
+			// snapshot is still valid.
 			taskPR2 := taskTemplate.CloneVT()
 			taskPR2.Command.EnvironmentVariables = append(taskPR2.Command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
 				Name: "GIT_BRANCH", Value: "pr-2",
