@@ -529,6 +529,39 @@ PRIVATEKEYDATA
 	assert.NotContains(t, optionsParsed.ExplicitCmdLine[2], "OPENSSH PRIVATE KEY")
 }
 
+func TestRedactCmdLine_MultilineEnvVar(t *testing.T) {
+	tokens := []string{
+		"bazel",
+		"build",
+		`--action_env=MULTILINE_VAR=this value has spaces
+and multiple
+lines,
+oddly.
+it even has a
+-----BEGIN OPENSSH PRIVATE KEY-----
+PRIVATEKEYDATA
+-----END OPENSSH PRIVATE KEY-----`,
+	}
+
+	redact.RedactCmdLine(tokens)
+
+	require.Len(t, tokens, 3)
+	assert.Equal(t, "--action_env=MULTILINE_VAR=<REDACTED>", tokens[2])
+}
+
+func TestRedactCmdLine_SingleLineEnvVar(t *testing.T) {
+	tokens := []string{
+		"bazel",
+		"test",
+		"--action_env=API_KEY=secret",
+	}
+
+	redact.RedactCmdLine(tokens)
+
+	require.Len(t, tokens, 3)
+	assert.Equal(t, "--action_env=API_KEY=<REDACTED>", tokens[2])
+}
+
 func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	buildMetadata := &bespb.BuildMetadata{

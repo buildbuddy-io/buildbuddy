@@ -226,13 +226,7 @@ func stripExplicitCommandLineFromCmdLine(tokens []string) {
 	}
 }
 
-func stripNonAllowedEnvVars(tokens []string) {
-	for i, token := range tokens {
-		tokens[i] = redactEnvVars(token)
-	}
-}
-
-func redactCmdLine(tokens []string) {
+func RedactCmdLine(tokens []string) {
 	stripURLSecretsFromCmdLine(tokens)
 	stripRemoteHeadersFromCmdLine(tokens)
 	stripExplicitCommandLineFromCmdLine(tokens)
@@ -280,6 +274,47 @@ func redactEnvVars(txt string) string {
 	return envVarOptionNamesRegex.ReplaceAllStringFunc(txt, RedactEnvVar)
 }
 
+func stripNonAllowedEnvVars(tokens []string) {
+	for i, token := range tokens {
+		tokens[i] = redactEnvVarToken(token)
+	}
+}
+
+func redactEnvVarToken(token string) string {
+	for _, option := range envVarOptionNames {
+		prefix := "--" + option + "="
+		if strings.HasPrefix(token, prefix) {
+			payload := token[len(prefix):]
+			return prefix + redactEnvVarPayload(payload)
+		}
+	}
+	return token
+}
+
+func redactEnvVarPayload(payload string) string {
+	if len(payload) == 0 {
+		return redactedPlaceholder
+	}
+	quote := payload[0]
+	if quote == '"' || quote == '\'' {
+		if len(payload) >= 2 && payload[len(payload)-1] == quote {
+			inner := payload[1 : len(payload)-1]
+			return string(quote) + redactEnvVarAssignment(inner) + string(quote)
+		}
+		inner := payload[1:]
+		return string(quote) + redactEnvVarAssignment(inner)
+	}
+	return redactEnvVarAssignment(payload)
+}
+
+func redactEnvVarAssignment(value string) string {
+	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
+		varName := assignment[1]
+		return varName + "=" + redactedPlaceholder
+	}
+	return redactedPlaceholder
+}
+
 // RedactEnvVar replaces the value portion of a Bazel environment variable flag
 // (e.g. `--action_env=FOO=bar`) with the redaction placeholder while preserving the
 // surrounding flag structure, including quotes. This helper is invoked for the
@@ -297,7 +332,7 @@ func RedactEnvVar(flag string) string {
 		return redactEnvVarValue(matches[1], matches[2])
 	}
 	if matches := envVarAnyPattern.FindStringSubmatch(flag); matches != nil {
-		return matches[1] + redactedPlaceholder
+		return redactEnvVarValue(matches[1], matches[2])
 	}
 	return flag
 }
@@ -334,7 +369,7 @@ func stripRepoURLCredentialsFromBuildMetadata(metadata *bespb.BuildMetadata) {
 	if m, ok := metadata.Metadata[explicitCommandLineName]; ok {
 		var commandLine []string
 		_ = json.Unmarshal([]byte(m), &commandLine)
-		redactCmdLine(commandLine)
+		RedactCmdLine(commandLine)
 		commandLineJSON, _ := json.Marshal(commandLine)
 		metadata.Metadata[explicitCommandLineName] = string(commandLineJSON)
 	}
@@ -608,8 +643,8 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 		}
 	case *bespb.BuildEvent_OptionsParsed:
 		{
-			redactCmdLine(p.OptionsParsed.CmdLine)
-			redactCmdLine(p.OptionsParsed.ExplicitCmdLine)
+			RedactCmdLine(p.OptionsParsed.CmdLine)
+			RedactCmdLine(p.OptionsParsed.ExplicitCmdLine)
 		}
 	case *bespb.BuildEvent_WorkspaceStatus:
 		{
@@ -703,7 +738,7 @@ func RedactCommand(cmd string) (string, error) {
 	if err != nil {
 		return "", status.WrapError(err, "split command")
 	}
-	redactCmdLine(cmdTokens)
+	RedactCmdLine(cmdTokens)
 	return strings.Join(cmdTokens, " "), nil
 }
 
