@@ -3183,6 +3183,16 @@ var (
 		CacheNameLabel,
 	})
 
+	PebbleCachePebbleBlockCacheRequestsCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_block_cache_requests_count",
+		Help:      "The number of block cache requests by hit/miss status.",
+	}, []string{
+		CacheNameLabel,
+		CacheHitMissStatus,
+	})
+
 	PebbleCacheWriteStallCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
