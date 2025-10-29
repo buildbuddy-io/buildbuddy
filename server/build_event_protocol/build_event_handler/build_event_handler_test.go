@@ -772,9 +772,7 @@ PRIVATEKEYDATA
 			expected,
 		},
 	}
-	if diff := cmp.Diff(expectedOptions, actual, protocmp.Transform()); diff != "" {
-		t.Fatalf("unexpected redacted options parsed (-want +got):\n%s", diff)
-	}
+	require.Empty(t, cmp.Diff(expectedOptions, actual, protocmp.Transform()))
 
 	txt, err := prototext.Marshal(invocation)
 	require.NoError(t, err)
