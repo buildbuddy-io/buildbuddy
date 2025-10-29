@@ -86,7 +86,11 @@ func run() error {
 			return fmt.Errorf("create buffer: %w", err)
 		}
 		port := *basePort + i
-		args := []string{configPath, "--port", strconv.Itoa(port)}
+		args := []string{
+			configPath,
+			"--save", "", // Disable persistence
+			"--port", strconv.Itoa(port),
+		}
 		// Forward residual args to redis server
 		args = append(args, flag.Args()...)
 		cmd := exec.Command(redisPath, args...)
