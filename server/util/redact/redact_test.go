@@ -491,6 +491,44 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 		optionsParsed.ExplicitCmdLine)
 }
 
+func TestRedactMetadata_OptionsParsed_RedactsMultilineEnvVar(t *testing.T) {
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	const multiLineValue = `this value has spaces
+and multiple
+lines,
+oddly.
+it even has a
+-----BEGIN OPENSSH PRIVATE KEY-----
+PRIVATEKEYDATA
+-----END OPENSSH PRIVATE KEY-----`
+	flagValue := "--action_env=MULTILINE_VAR=" + multiLineValue
+	optionsParsed := &bespb.OptionsParsed{
+		CmdLine: []string{
+			"bazel",
+			"build",
+			flagValue,
+		},
+		ExplicitCmdLine: []string{
+			"bazel",
+			"build",
+			flagValue,
+		},
+	}
+
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: optionsParsed},
+	})
+	require.NoError(t, err)
+
+	expected := "--action_env=MULTILINE_VAR=<REDACTED>"
+	require.Len(t, optionsParsed.CmdLine, 3)
+	require.Len(t, optionsParsed.ExplicitCmdLine, 3)
+	assert.Equal(t, expected, optionsParsed.CmdLine[2])
+	assert.Equal(t, expected, optionsParsed.ExplicitCmdLine[2])
+	assert.NotContains(t, optionsParsed.CmdLine[2], "OPENSSH PRIVATE KEY")
+	assert.NotContains(t, optionsParsed.ExplicitCmdLine[2], "OPENSSH PRIVATE KEY")
+}
+
 func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	buildMetadata := &bespb.BuildMetadata{
