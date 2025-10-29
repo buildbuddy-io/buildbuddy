@@ -33,7 +33,7 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
     let sandboxTeardown = this.props.durationByNameMap.get("sandbox.delete") ?? 0;
     let inputMapping = this.props.durationByNameMap.get("AbstractSpawnStrategy.getInputMapping") ?? 0;
     let merkleTree =
-      // Bazel 9+ (https://github.com/bazelbuild/bazel/pull/27427)
+      // Bazel 9+ (https://github.com/bazelbuild/bazel/commit/14840856986f21b54330e352b83d687825648889)
       (this.props.durationByNameMap.get("MerkleTreeComputer.buildForSpawn") ?? 0) +
       // Bazel 8 and below
       (this.props.durationByNameMap.get("MerkleTree.build(ActionInput)") ?? 0);
