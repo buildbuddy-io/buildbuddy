@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,6 +31,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 func streamRequest(anyEvent *anypb.Any, iid string, sequenceNumer int64) *pepb.PublishBuildToolEventStreamRequest {
@@ -81,7 +83,7 @@ func (s *besSequence) NextRequest(event *bspb.BuildEvent) *pepb.PublishBuildTool
 }
 
 type FakeGitHubStatusService struct {
-	Clients []*FakeGitHubStatusClient
+	Clients                []*FakeGitHubStatusClient
 	StatusReportingEnabled bool
 }
 
@@ -109,8 +111,8 @@ func (c *FakeGitHubStatusService) HasNoStatuses() bool {
 }
 
 type FakeGitHubStatusClient struct {
-	AccessToken string
-	Statuses    []*FakeGitHubStatus
+	AccessToken            string
+	Statuses               []*FakeGitHubStatus
 	StatusReportingEnabled bool
 }
 
@@ -685,6 +687,97 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 	assert.NotContains(t, string(txt), "githubToken", "URL secrets should not appear in invocation")
 	assert.Contains(t, string(txt), "--client_env=FOO_ALLOWED=public_env_value", "Values of allowed env vars should not be redacted")
 	assert.Contains(t, string(txt), "--client_env=FOO_SECRET=<REDACTED>", "Values of non-allowed env vars should be redacted")
+}
+
+func TestHandleEventRedactsMultilineEnvVar(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(startedEvent("", &bspb.BuildEventId_OptionsParsed{}), testInvocationID, 1)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	const multiLineValue = `this value has spaces
+and multiple
+lines,
+oddly.
+it even has a
+-----BEGIN OPENSSH PRIVATE KEY-----
+PRIVATEKEYDATA
+-----END OPENSSH PRIVATE KEY-----`
+	flagValue := "--action_env=MULTILINE_VAR=" + multiLineValue
+	optionsParsed := &bspb.OptionsParsed{
+		CmdLine: []string{
+			"bazel",
+			"build",
+			flagValue,
+		},
+		ExplicitCmdLine: []string{
+			"bazel",
+			"build",
+			flagValue,
+		},
+	}
+	optionsParsedAny := &anypb.Any{}
+	err = optionsParsedAny.MarshalFrom(&bspb.BuildEvent{
+		Payload: &bspb.BuildEvent_OptionsParsed{OptionsParsed: optionsParsed},
+		Id:      &bspb.BuildEventId{Id: &bspb.BuildEventId_OptionsParsed{}},
+	})
+	require.NoError(t, err)
+
+	request = &pepb.PublishBuildToolEventStreamRequest{
+		OrderedBuildEvent: &pepb.OrderedBuildEvent{
+			StreamId:       &bepb.StreamId{InvocationId: testInvocationID},
+			SequenceNumber: 2,
+			Event: &bepb.BuildEvent{
+				Event: &bepb.BuildEvent_BazelEvent{BazelEvent: optionsParsedAny},
+			},
+		},
+	}
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	err = channel.FinalizeInvocation(testInvocationID)
+	assert.NoError(t, err)
+
+	invocation, err := build_event_handler.LookupInvocation(te, ctx, testInvocationID)
+	assert.NoError(t, err)
+
+	const expected = "--action_env=MULTILINE_VAR=<REDACTED>"
+	var actual *bspb.OptionsParsed
+	for _, event := range invocation.Event {
+		if optionsParsed := event.GetBuildEvent().GetOptionsParsed(); optionsParsed != nil {
+			actual = optionsParsed
+			break
+		}
+	}
+	require.NotNil(t, actual, "expected an OptionsParsed event in invocation")
+
+	require.Len(t, actual.CmdLine, 3)
+	require.Len(t, actual.ExplicitCmdLine, 3)
+
+	expectedOptions := &bspb.OptionsParsed{
+		CmdLine: []string{"bazel", "build", expected},
+		ExplicitCmdLine: []string{
+			"bazel",
+			"build",
+			expected,
+		},
+	}
+	require.Empty(t, cmp.Diff(expectedOptions, actual, protocmp.Transform()))
+
+	txt, err := prototext.Marshal(invocation)
+	require.NoError(t, err)
+	assert.NotContains(t, string(txt), "OPENSSH PRIVATE KEY")
+	assert.Contains(t, string(txt), expected)
 }
 
 func TestHandleEventWithUsageTracking(t *testing.T) {

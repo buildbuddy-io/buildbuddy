@@ -83,10 +83,12 @@ go_test(
         "//server/util/authutil",
         "//server/util/protofile",
         "//server/util/testing/flags",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//encoding/prototext",
+        "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/anypb",
     ],
 )

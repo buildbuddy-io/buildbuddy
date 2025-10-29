@@ -226,13 +226,10 @@ func stripExplicitCommandLineFromCmdLine(tokens []string) {
 	}
 }
 
-func stripNonAllowedEnvVars(tokens []string) {
-	for i, token := range tokens {
-		tokens[i] = redactEnvVars(token)
-	}
-}
-
-func redactCmdLine(tokens []string) {
+// RedactCmdLine mutates the provided tokenized command line by redacting URL
+// credentials, remote headers, explicit command line payloads, and environment
+// variable flags that are not explicitly allowed.
+func RedactCmdLine(tokens []string) {
 	stripURLSecretsFromCmdLine(tokens)
 	stripRemoteHeadersFromCmdLine(tokens)
 	stripExplicitCommandLineFromCmdLine(tokens)
@@ -276,8 +273,64 @@ func redactRemoteHeaders(txt string) string {
 	return txt
 }
 
+// redactEnvVars locates env var flags within an arbitrary string and replaces
+// their values with "<REDACTED>". For example, it transforms
+// "build --action_env=FOO=bar" into "build --action_env=FOO=<REDACTED>".
 func redactEnvVars(txt string) string {
 	return envVarOptionNamesRegex.ReplaceAllStringFunc(txt, RedactEnvVar)
+}
+
+// stripNonAllowedEnvVars replaces the payload of env var flags in-place unless
+// the variable name is explicitly permitted. Given ["--action_env=SECRET=top"],
+// the slice becomes ["--action_env=SECRET=<REDACTED>"].
+func stripNonAllowedEnvVars(tokens []string) {
+	for i, token := range tokens {
+		tokens[i] = redactEnvVarToken(token)
+	}
+}
+
+// redactEnvVarToken returns the redacted version of a single env var flag token.
+// For example, "--client_env=FOO=bar" becomes "--client_env=FOO=<REDACTED>".
+// Flags that are not env var options are returned untouched.
+func redactEnvVarToken(token string) string {
+	for _, option := range envVarOptionNames {
+		prefix := "--" + option + "="
+		if strings.HasPrefix(token, prefix) {
+			payload := token[len(prefix):]
+			return prefix + redactEnvVarPayload(payload)
+		}
+	}
+	return token
+}
+
+// redactEnvVarPayload redacts the value portion of an env var payload, preserving
+// the surrounding quoting when present. For instance, `"FOO=bar baz"` becomes
+// `"FOO=<REDACTED>"` and `'FOO=bar'` becomes `'FOO=<REDACTED>'`.
+func redactEnvVarPayload(payload string) string {
+	if len(payload) == 0 {
+		return redactedPlaceholder
+	}
+	quote := payload[0]
+	if quote == '"' || quote == '\'' {
+		if len(payload) >= 2 && payload[len(payload)-1] == quote {
+			inner := payload[1 : len(payload)-1]
+			return string(quote) + redactEnvVarAssignment(inner) + string(quote)
+		}
+		inner := payload[1:]
+		return string(quote) + redactEnvVarAssignment(inner)
+	}
+	return redactEnvVarAssignment(payload)
+}
+
+// redactEnvVarAssignment redacts the value of a VAR=value assignment while
+// preserving the variable name prefix when present. Example: "FOO=bar" ->
+// "FOO=<REDACTED>".
+func redactEnvVarAssignment(value string) string {
+	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
+		varName := assignment[1]
+		return varName + "=" + redactedPlaceholder
+	}
+	return redactedPlaceholder
 }
 
 // RedactEnvVar replaces the value portion of a Bazel environment variable flag
@@ -285,7 +338,8 @@ func redactEnvVars(txt string) string {
 // surrounding flag structure, including quotes. This helper is invoked for the
 // env var options listed in envVarOptionNames (action_env, client_env, host_action_env,
 // repo_env, test_env) and handles both quoted and unquoted `VAR=value` payloads,
-// including multiline quoted values.
+// including multiline quoted values. For example, it rewrites
+// `--action_env='FOO=bar baz'` to `--action_env='FOO=<REDACTED>'`.
 func RedactEnvVar(flag string) string {
 	if matches := envVarDoubleQuotedPattern.FindStringSubmatch(flag); matches != nil {
 		return redactEnvVarValue(matches[1], matches[2])
@@ -297,11 +351,15 @@ func RedactEnvVar(flag string) string {
 		return redactEnvVarValue(matches[1], matches[2])
 	}
 	if matches := envVarAnyPattern.FindStringSubmatch(flag); matches != nil {
-		return matches[1] + redactedPlaceholder
+		return redactEnvVarValue(matches[1], matches[2])
 	}
 	return flag
 }
 
+// redactEnvVarValue rewrites an env var flag prefix plus payload so the payload
+// becomes VAR=<REDACTED> when a VAR= is detected and otherwise collapses to the
+// placeholder. Example input: "--client_env=" as the prefix with
+// `FOO=bar baz` becomes "--client_env=FOO=<REDACTED>".
 func redactEnvVarValue(flagName, value string) string {
 	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
 		varName := assignment[1]
@@ -334,7 +392,7 @@ func stripRepoURLCredentialsFromBuildMetadata(metadata *bespb.BuildMetadata) {
 	if m, ok := metadata.Metadata[explicitCommandLineName]; ok {
 		var commandLine []string
 		_ = json.Unmarshal([]byte(m), &commandLine)
-		redactCmdLine(commandLine)
+		RedactCmdLine(commandLine)
 		commandLineJSON, _ := json.Marshal(commandLine)
 		metadata.Metadata[explicitCommandLineName] = string(commandLineJSON)
 	}
@@ -579,6 +637,9 @@ func NewStreamingRedactor(env environment.Env) *StreamingRedactor {
 	}
 }
 
+// RedactMetadata walks the provided BuildEvent and redacts sensitive metadata
+// in-place, replacing secrets with "<REDACTED>". Callers needing the original
+// content should clone the event before invoking this method.
 func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 	switch p := event.Payload.(type) {
 	case *bespb.BuildEvent_Progress:
@@ -608,8 +669,8 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 		}
 	case *bespb.BuildEvent_OptionsParsed:
 		{
-			redactCmdLine(p.OptionsParsed.CmdLine)
-			redactCmdLine(p.OptionsParsed.ExplicitCmdLine)
+			RedactCmdLine(p.OptionsParsed.CmdLine)
+			RedactCmdLine(p.OptionsParsed.ExplicitCmdLine)
 		}
 	case *bespb.BuildEvent_WorkspaceStatus:
 		{
@@ -703,10 +764,13 @@ func RedactCommand(cmd string) (string, error) {
 	if err != nil {
 		return "", status.WrapError(err, "split command")
 	}
-	redactCmdLine(cmdTokens)
+	RedactCmdLine(cmdTokens)
 	return strings.Join(cmdTokens, " "), nil
 }
 
+// RedactAPIKey scrubs BuildBuddy API keys from the provided BuildEvent by
+// rewriting matching values in-place. Clone the event first if the original data
+// must be preserved.
 func (r *StreamingRedactor) RedactAPIKey(ctx context.Context, event *bespb.BuildEvent) error {
 	apiKey, ok := ctx.Value("x-buildbuddy-api-key").(string)
 	if !ok || apiKey == "" {
@@ -789,6 +853,9 @@ func reflectRedactAPIKey(value reflect.Value, apiKey string) *reflect.Value {
 	}
 }
 
+// RedactAPIKeysWithSlowRegexp redacts API keys by converting the event to text
+// and back again. It mutates the supplied BuildEvent; clone first if the original
+// event must be preserved.
 func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, event *bespb.BuildEvent) error {
 	eventBytes, err := prototext.Marshal(event)
 	if err != nil {
