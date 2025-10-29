@@ -36,7 +36,7 @@ const (
 	clusterName = "bb_clickhouse_cluster_local"
 
 	zookeeperImage        = "docker.io/zookeeper:3.8"
-	clickhouseServerImage = "clickhouse/clickhouse-server:23.8"
+	clickhouseServerImage = "clickhouse/clickhouse-server:25.3"
 
 	// Base port number for client connections.
 	// The replica number is added to this, starting from 1.
@@ -208,6 +208,8 @@ services:
     container_name: "clickhouse` + fmt.Sprint(r) + `"
     user: "` + user + `"
     volumes: ` + mustMarshalJSON(v) + `
+    environment:
+      - "CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1"
     env_file: ` + mustMarshalJSON(envFiles) + `
     depends_on:
       - zookeeper
