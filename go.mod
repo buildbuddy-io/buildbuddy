@@ -149,8 +149,8 @@ require (
 	golang.org/x/oauth2 v0.32.0
 	golang.org/x/sync v0.17.0
 	golang.org/x/sys v0.37.0
-	golang.org/x/text v0.30.0
 	golang.org/x/telemetry v0.0.0-20251028164327-d7a2859f34e8
+	golang.org/x/text v0.30.0
 	golang.org/x/time v0.12.0
 	golang.org/x/tools v0.38.0
 	google.golang.org/api v0.247.0
