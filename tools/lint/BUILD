@@ -28,6 +28,7 @@ go_library(
         "//server/util/log",
         "@io_bazel_rules_go//go/runfiles",
         "@org_golang_x_sync//errgroup",
+        "@org_golang_x_telemetry//counter",
     ],
 )
 
