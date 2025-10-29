@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +18,7 @@ import (
 )
 
 func TestRedactPasswordsInURLs(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
@@ -151,7 +153,7 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redactor := redact.NewStreamingRedactor()
+			redactor := redact.NewStreamingRedactor(te)
 			err := redactor.RedactMetadata(tc.event)
 			require.NoError(t, err)
 			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
@@ -203,6 +205,7 @@ func TestRedactEnvVar(t *testing.T) {
 }
 
 func TestRedactEntireSections(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
@@ -242,7 +245,7 @@ func TestRedactEntireSections(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redactor := redact.NewStreamingRedactor()
+			redactor := redact.NewStreamingRedactor(te)
 			err := redactor.RedactMetadata(tc.event)
 			require.NoError(t, err)
 			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
@@ -251,6 +254,7 @@ func TestRedactEntireSections(t *testing.T) {
 }
 
 func TestRedactRemoteHeaders(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
@@ -312,7 +316,7 @@ func TestRedactRemoteHeaders(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redactor := redact.NewStreamingRedactor()
+			redactor := redact.NewStreamingRedactor(te)
 			err := redactor.RedactMetadata(tc.event)
 			require.NoError(t, err)
 			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
@@ -321,6 +325,7 @@ func TestRedactRemoteHeaders(t *testing.T) {
 }
 
 func TestRemoveRepoURLCredentials(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
@@ -365,7 +370,7 @@ func TestRemoveRepoURLCredentials(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redactor := redact.NewStreamingRedactor()
+			redactor := redact.NewStreamingRedactor(te)
 			err := redactor.RedactMetadata(tc.event)
 			require.NoError(t, err)
 			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
@@ -399,7 +404,7 @@ func structuredCommandLineEvent(option *clpb.Option) *bespb.BuildEvent {
 }
 
 func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
-	redactor := redact.NewStreamingRedactor()
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	// Started event specified which env vars shouldn't be redacted.
 	buildStarted := &bespb.BuildStarted{
 		OptionsDescription: "--build_metadata='ALLOW_ENV=FOO_ALLOWED,BAR_ALLOWED_PATTERN_*'",
@@ -449,7 +454,7 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 }
 
 func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testing.T) {
-	redactor := redact.NewStreamingRedactor()
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	optionsParsed := &bespb.OptionsParsed{
 		CmdLine: []string{
 			"--flag=@repo//package",
@@ -656,7 +661,7 @@ PRIVATEKEYDATA
 }
 
 func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor()
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	buildMetadata := &bespb.BuildMetadata{
 		Metadata: map[string]string{
 			"ALLOW_ENV":             "SHELL",
@@ -676,7 +681,7 @@ func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
 }
 
 func TestRedactMetadata_WorkspaceStatus_StripsRepoURLCredentials(t *testing.T) {
-	redactor := redact.NewStreamingRedactor()
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	workspaceStatus := &bespb.WorkspaceStatus{
 		Item: []*bespb.WorkspaceStatus_Item{
 			{Key: "REPO_URL", Value: "https://USERNAME:PASSWORD@github.com/buildbuddy-io/metadata_repo_url"},
@@ -731,7 +736,7 @@ func TestRedactAPIKey(t *testing.T) {
 			},
 		}}},
 	}
-	redactor := redact.NewStreamingRedactor()
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	ctx := context.WithValue(context.Background(), "x-buildbuddy-api-key", apiKey)
 
 	for _, e := range events {
@@ -810,7 +815,7 @@ func TestRedactRunResidual(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redactor := redact.NewStreamingRedactor()
+			redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 
 			chunkList := &clpb.ChunkList{
 				Chunk: tc.given,
@@ -952,7 +957,7 @@ func TestRedactAPIKeys(t *testing.T) {
 					},
 				},
 			}
-			redactor := redact.NewStreamingRedactor()
+			redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 			err := redactor.RedactAPIKeysWithSlowRegexp(context.TODO(), event)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, event.GetProgress().GetStdout())
