@@ -158,6 +158,26 @@ func WithContext(key string, value interface{}) Option {
 	}
 }
 
+func (fp *FlagProvider) Subscribe(ch chan<- struct{}) (stop func()) {
+	f := func(details openfeature.EventDetails) {
+		log.Debugf("Update: %+v", details)
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+	h := openfeature.EventCallback(&f)
+	// Subscribe to config change events.
+	openfeature.AddHandler(openfeature.ProviderConfigChange, h)
+	// Transitioning from not-ready to ready may cause experiment state to
+	// change; subscribe to that event too.
+	openfeature.AddHandler(openfeature.ProviderReady, h)
+	return func() {
+		openfeature.RemoveHandler(openfeature.ProviderConfigChange, h)
+		openfeature.RemoveHandler(openfeature.ProviderReady, h)
+	}
+}
+
 // Boolean extracts the evaluationContext from ctx, applies any option
 // overrides, and returns the Boolean value for flagName, or defaultValue if no
 // experiment provider is configured.

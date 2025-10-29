@@ -28,6 +28,7 @@ go_test(
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/testutil/testfs",
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/random",
