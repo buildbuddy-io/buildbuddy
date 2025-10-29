@@ -190,7 +190,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 		ctx:            ctx,
 		pw:             nil,
 		beValues:       buildEventAccumulator,
-		redactor:       redact.NewStreamingRedactor(b.env),
+		redactor:       redact.NewStreamingRedactor(),
 		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
 		targetTracker:  target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		collector:      b.env.GetMetricsCollector(),
@@ -1570,7 +1570,7 @@ func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.E
 	var redactor *redact.StreamingRedactor
 	if invRedactionFlags&redact.RedactionFlagStandardRedactions != redact.RedactionFlagStandardRedactions {
 		// only redact if we hadn't redacted enough, only parse again if we redact
-		redactor = redact.NewStreamingRedactor(env)
+		redactor = redact.NewStreamingRedactor()
 	}
 	beValues := accumulator.NewBEValues(inv)
 	structuredCommandLines := []*command_line.CommandLine{}
