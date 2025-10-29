@@ -274,13 +274,15 @@ func redactRemoteHeaders(txt string) string {
 }
 
 // redactEnvVars locates env var flags within an arbitrary string and replaces
-// their values with the redaction placeholder.
+// their values with "<REDACTED>". For example, it transforms
+// "build --action_env=FOO=bar" into "build --action_env=FOO=<REDACTED>".
 func redactEnvVars(txt string) string {
 	return envVarOptionNamesRegex.ReplaceAllStringFunc(txt, RedactEnvVar)
 }
 
 // stripNonAllowedEnvVars replaces the payload of env var flags in-place unless
-// the variable name is explicitly permitted.
+// the variable name is explicitly permitted. Given ["--action_env=SECRET=top"],
+// the slice becomes ["--action_env=SECRET=<REDACTED>"].
 func stripNonAllowedEnvVars(tokens []string) {
 	for i, token := range tokens {
 		tokens[i] = redactEnvVarToken(token)
@@ -288,6 +290,7 @@ func stripNonAllowedEnvVars(tokens []string) {
 }
 
 // redactEnvVarToken returns the redacted version of a single env var flag token.
+// For example, "--client_env=FOO=bar" becomes "--client_env=FOO=<REDACTED>".
 // Flags that are not env var options are returned untouched.
 func redactEnvVarToken(token string) string {
 	for _, option := range envVarOptionNames {
@@ -301,7 +304,8 @@ func redactEnvVarToken(token string) string {
 }
 
 // redactEnvVarPayload redacts the value portion of an env var payload, preserving
-// the surrounding quoting when present.
+// the surrounding quoting when present. For instance, `"FOO=bar baz"` becomes
+// `"FOO=<REDACTED>"` and `'FOO=bar'` becomes `'FOO=<REDACTED>'`.
 func redactEnvVarPayload(payload string) string {
 	if len(payload) == 0 {
 		return redactedPlaceholder
@@ -319,7 +323,8 @@ func redactEnvVarPayload(payload string) string {
 }
 
 // redactEnvVarAssignment redacts the value of a VAR=value assignment while
-// preserving the variable name prefix when present.
+// preserving the variable name prefix when present. Example: "FOO=bar" ->
+// "FOO=<REDACTED>".
 func redactEnvVarAssignment(value string) string {
 	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
 		varName := assignment[1]
@@ -333,7 +338,8 @@ func redactEnvVarAssignment(value string) string {
 // surrounding flag structure, including quotes. This helper is invoked for the
 // env var options listed in envVarOptionNames (action_env, client_env, host_action_env,
 // repo_env, test_env) and handles both quoted and unquoted `VAR=value` payloads,
-// including multiline quoted values.
+// including multiline quoted values. For example, it rewrites
+// `--action_env='FOO=bar baz'` to `--action_env='FOO=<REDACTED>'`.
 func RedactEnvVar(flag string) string {
 	if matches := envVarDoubleQuotedPattern.FindStringSubmatch(flag); matches != nil {
 		return redactEnvVarValue(matches[1], matches[2])
@@ -352,7 +358,8 @@ func RedactEnvVar(flag string) string {
 
 // redactEnvVarValue rewrites an env var flag prefix plus payload so the payload
 // becomes VAR=<REDACTED> when a VAR= is detected and otherwise collapses to the
-// placeholder.
+// placeholder. Example input: "--client_env=" as the prefix with
+// `FOO=bar baz` becomes "--client_env=FOO=<REDACTED>".
 func redactEnvVarValue(flagName, value string) string {
 	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
 		varName := assignment[1]
