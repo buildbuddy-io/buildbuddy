@@ -14,7 +14,6 @@ go_library(
         "//proto:storage_go_proto",
         "//server/environment",
         "//server/interfaces",
-        "//server/metrics",
         "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",
         "//server/util/authutil",
@@ -25,7 +24,6 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
-        "@com_github_prometheus_client_golang//prometheus",
     ],
 )
 

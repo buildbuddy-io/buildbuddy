@@ -2237,56 +2237,6 @@ func (cdcw *cdcWriter) Metadata() *sgpb.StorageMetadata {
 	}
 }
 
-// zstdCompressor compresses bytes before writing them to the nested writer
-type zstdCompressor struct {
-	cacheName string
-
-	interfaces.CommittedWriteCloser
-	compressBuf     []byte
-	poolCompressBuf []byte // Buffer we must return to the pool on close.
-	bufferPool      *bytebufferpool.VariableSizePool
-
-	numDecompressedBytes int
-	numCompressedBytes   int
-}
-
-func NewZstdCompressor(cacheName string, wc interfaces.CommittedWriteCloser, bp *bytebufferpool.VariableSizePool, digestSize int64) *zstdCompressor {
-	compressBuf := bp.Get(digestSize)
-	return &zstdCompressor{
-		cacheName:            cacheName,
-		CommittedWriteCloser: wc,
-		compressBuf:          compressBuf,
-		poolCompressBuf:      compressBuf,
-		bufferPool:           bp,
-	}
-}
-
-func (z *zstdCompressor) Write(decompressedBytes []byte) (int, error) {
-	// CompressZstd can allocate a new buffer if the given compressBuf is not large enough
-	// to fit the compressed bytes.
-	z.compressBuf = compression.CompressZstd(z.compressBuf, decompressedBytes)
-	compressedBytesWritten, err := z.CommittedWriteCloser.Write(z.compressBuf)
-	if err != nil {
-		return 0, err
-	}
-
-	z.numDecompressedBytes += len(decompressedBytes)
-	z.numCompressedBytes += compressedBytesWritten
-
-	// Return the size of the original buffer even though a different compressed buffer size may have been written,
-	// or clients will return a short write error
-	return len(decompressedBytes), nil
-}
-
-func (z *zstdCompressor) Close() error {
-	metrics.CompressionRatio.
-		With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: z.cacheName}).
-		Observe(float64(z.numCompressedBytes) / float64(z.numDecompressedBytes))
-
-	z.bufferPool.Put(z.poolCompressBuf)
-	return z.CommittedWriteCloser.Close()
-}
-
 func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	if spn.IsRecording() {
@@ -2403,7 +2353,7 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 	}
 
 	if shouldCompress {
-		return NewZstdCompressor(p.name, wc, p.bufferPool, fileRecord.GetDigest().GetSizeBytes()), nil
+		return compression.NewZstdCompressor(p.name, wc, p.bufferPool, fileRecord.GetDigest().GetSizeBytes()), nil
 	}
 	return wc, nil
 }
@@ -3234,21 +3184,6 @@ func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool 
 	}
 }
 
-// compressionReader helps manage resources associated with a compression.NewZstdCompressingReader
-type compressionReader struct {
-	io.ReadCloser
-	readBuf     []byte
-	compressBuf []byte
-	bufferPool  *bytebufferpool.VariableSizePool
-}
-
-func (r *compressionReader) Close() error {
-	err := r.ReadCloser.Close()
-	r.bufferPool.Put(r.readBuf)
-	r.bufferPool.Put(r.compressBuf)
-	return err
-}
-
 // newChunkedReader returns a reader to read chunked content.
 // When shouldDecompress is true, the content read is decompressed.
 func (p *PebbleCache) newChunkedReader(ctx context.Context, chunkedMD *sgpb.StorageMetadata_ChunkedMetadata, shouldDecompress bool) (io.ReadCloser, error) {
@@ -3411,12 +3346,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 			p.bufferPool.Put(compressBuf)
 			return nil, err
 		}
-		return &compressionReader{
-			ReadCloser:  cr,
-			readBuf:     readBuf,
-			compressBuf: compressBuf,
-			bufferPool:  p.bufferPool,
-		}, err
+		return compression.NewBufferedCompressionReader(cr, readBuf, compressBuf, p.bufferPool), err
 	}
 
 	return reader, nil
