@@ -743,17 +743,24 @@ PRIVATEKEYDATA
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
-	expected := "--action_env=MULTILINE_VAR=<REDACTED>"
-	require.Len(t, optionsParsed.CmdLine, 3)
-	require.Len(t, optionsParsed.ExplicitCmdLine, 3)
-	assert.Equal(t, expected, optionsParsed.CmdLine[2])
-	assert.Equal(t, expected, optionsParsed.ExplicitCmdLine[2])
-
 	err = channel.FinalizeInvocation(testInvocationID)
 	assert.NoError(t, err)
 
 	invocation, err := build_event_handler.LookupInvocation(te, ctx, testInvocationID)
 	assert.NoError(t, err)
+
+	var found bool
+	const expected = "--action_env=MULTILINE_VAR=<REDACTED>"
+	for _, event := range invocation.Event {
+		if optionsParsed := event.GetBuildEvent().GetOptionsParsed(); optionsParsed != nil {
+			require.Len(t, optionsParsed.CmdLine, 3)
+			require.Len(t, optionsParsed.ExplicitCmdLine, 3)
+			assert.Equal(t, expected, optionsParsed.CmdLine[2])
+			assert.Equal(t, expected, optionsParsed.ExplicitCmdLine[2])
+			found = true
+		}
+	}
+	assert.True(t, found, "expected an OptionsParsed event in invocation")
 
 	txt, err := prototext.Marshal(invocation)
 	require.NoError(t, err)
