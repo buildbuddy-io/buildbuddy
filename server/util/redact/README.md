@@ -2,21 +2,23 @@
 
 This note traces how a Bazel command typed by an engineer flows through BuildBuddy and ends up on the **explicit** and **effective** command-line panels of the invocation details page.
 
-## 1. Capturing the Original Command
+## 1. What Bazel Emits
 
-* Entry point: the BuildBuddy CLI (`bb`) and CI runner.
-* Right before Bazelisk starts, the CLI captures `os.Args`, serializes them to JSON, and appends `--build_metadata=EXPLICIT_COMMAND_LINE=<json>` (`cli/cmd/bb/bb.go`, `cli/metadata/metadata.go`). Additional default metadata (repo URL, branch, etc.) is added unless a workspace status script already supplies it.
-
-## 2. Bazel Emits Build-Event Protocol Events
-
-Once the shell hands control to Bazel, the command-line information is represented in several BEP events:
+Regardless of whether developers invoke `bazel`, `bazelisk`, or the `bb` wrapper, Bazel itself is responsible for the command-line information that appears in the Build Event Protocol. After the user’s shell finishes parsing, Bazel streams these events:
 
 * `OptionsParsed.cmd_line` – Bazel’s *effective* command line (startup flags + rc expansions + overrides).
 * `OptionsParsed.explicit_cmd_line` – The tokenized args the client passed on the command line after shell parsing. Quotes are gone, but tokens that included spaces remain whole.
 * Structured command line – emitted under `BuildEvent_StructuredCommandLine`; provides the executable name and any “residual” args.
-* The CLI-provided `EXPLICIT_COMMAND_LINE` build metadata lets wrappers preserve the user-visible argv even after they mutate the Bazel command.
 
-These events are streamed to BuildBuddy over gRPC as part of the Publish Build Tool Event stream.
+These events, along with other metadata, are streamed to BuildBuddy over gRPC as part of the Publish Build Tool Event stream.
+
+## 2. Additional Metadata from the `bb` CLI
+
+When developers use the BuildBuddy CLI (`bb`) or the CI runner, the wrapper augments Bazel’s own data:
+
+* Right before Bazelisk starts, the CLI captures `os.Args`, serializes them to JSON, and appends `--build_metadata=EXPLICIT_COMMAND_LINE=<json>` (`cli/cmd/bb/bb.go`, `cli/metadata/metadata.go`).
+* Additional default metadata (repo URL, branch, etc.) is added unless a workspace status script already supplies it.
+* The CLI-provided `EXPLICIT_COMMAND_LINE` build metadata lets wrappers preserve the user-visible argv even after they mutate the Bazel command.
 
 ## 3. Server Ingestion and Redaction
 
@@ -45,8 +47,8 @@ Both strings are displayed alongside copy buttons in `app/invocation/invocation_
 
 ## 6. Summary
 
-* **Capture** – CLI records argv and stores a JSON copy in build metadata.
-* **Emit** – Bazel’s BEP `OptionsParsed` event reports both explicit and effective argv lists.
+* **Emit (Bazel)** – `OptionsParsed` and structured command-line events describe both explicit and effective argv lists once the shell has tokenized them.
+* **Augment (bb)** – When present, the BuildBuddy CLI records argv and stores a JSON copy in build metadata.
 * **Redact** – Server removes secrets and redundant metadata before persisting events.
 * **Model** – Web client hydrates an `InvocationModel` from the sanitized events.
 * **Render** – UI reconstructs shell-safe strings for explicit and effective command lines.
