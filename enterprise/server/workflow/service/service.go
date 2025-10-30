@@ -764,7 +764,10 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 	if err != nil {
 		return nil, err
 	}
-	repos := linkedRepos.GetRepoUrls()
+	var repos []string
+	for _, repo := range linkedRepos.GetRepos() {
+		repos = append(repos, repo.RepoUrl)
+	}
 	if len(repos) == 0 {
 		// Fall back to legacy workflow registrations.
 		repos = []string{}
