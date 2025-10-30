@@ -37,7 +37,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -246,6 +245,13 @@ func (c Credentials) Equals(o Credentials) bool {
 	return c.Username == o.Username && c.Password == o.Password
 }
 
+func (c Credentials) toOCICacheCredentials() ocicache.Credentials {
+	return ocicache.Credentials{
+		Username: c.Username,
+		Password: c.Password,
+	}
+}
+
 type tagToDigestEntry struct {
 	nameWithDigest string
 	expiration     time.Time
@@ -374,6 +380,29 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		return nil, status.InternalErrorf("error creating puller: %s", err)
 	}
 
+	acClient := r.env.GetActionCacheClient()
+	bsClient := r.env.GetByteStreamClient()
+	cache := ocicache.NewOCICache(bsClient, acClient).WithRemoteFetcher(func(ctx context.Context, ref gcrname.Digest, _ ocicache.Credentials) (io.ReadCloser, string, int64, error) {
+		layer, err := puller.Layer(ctx, ref)
+		if err != nil {
+			return nil, "", 0, err
+		}
+		mt, err := layer.MediaType()
+		if err != nil {
+			return nil, "", 0, err
+		}
+		upstream, err := layer.Compressed()
+		if err != nil {
+			return nil, "", 0, err
+		}
+		size, err := layer.Size()
+		if err != nil {
+			upstream.Close()
+			return nil, "", 0, err
+		}
+		return upstream, string(mt), size, nil
+	})
+
 	useCache := false
 	if *useCachePercent >= 100 {
 		useCache = true
@@ -390,10 +419,10 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 				OS:           platform.GetOs(),
 				Variant:      platform.GetVariant(),
 			},
-			r.env.GetActionCacheClient(),
-			r.env.GetByteStreamClient(),
+			acClient,
+			cache,
 			puller,
-			credentials.bypassRegistry,
+			credentials,
 		)
 	}
 
@@ -427,8 +456,11 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 // then falls back to fetching from the upstream remote registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool) (gcr.Image, error) {
+func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, cache *ocicache.OCICache, puller *remote.Puller, creds Credentials) (gcr.Image, error) {
 	canUseCache := !isAnonymousUser(ctx)
+	if cache == nil {
+		canUseCache = false
+	}
 	if !canUseCache {
 		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", digestOrTagRef)
 	}
@@ -438,13 +470,13 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		// For now, we cannot bypass the registry for tag references,
 		// since cached manifest AC entries need the resolved digest as part of
 		// the key. Log a warning in this case.
-		if !hasDigest && bypassRegistry {
+		if !hasDigest && creds.bypassRegistry {
 			log.CtxWarningf(ctx, "Cannot bypass registry for tag reference %q (need to make a registry request to resolve tag to digest)", digestOrTagRef)
 		}
 		// Make a HEAD request for the manifest. This does two things:
 		// - Authenticates with the registry (if not bypassing)
 		// - Resolves the tag to a digest (if not already present)
-		if !hasDigest || !bypassRegistry {
+		if !hasDigest || !creds.bypassRegistry {
 			var err error
 			desc, err = puller.Head(ctx, digestOrTagRef)
 			if err != nil {
@@ -487,9 +519,9 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				mc.GetRaw(),
 				platform,
 				acClient,
-				bsClient,
+				cache,
 				puller,
-				bypassRegistry,
+				creds,
 			)
 		}
 	}
@@ -523,16 +555,16 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		remoteDesc.Manifest,
 		platform,
 		acClient,
-		bsClient,
+		cache,
 		puller,
-		bypassRegistry,
+		creds,
 	)
 }
 
 // imageFromDescriptorAndManifest returns an Image from the given manifest (if the manifest is an image manifest),
 // finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
 // and otherwise returns an error.
-func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool) (gcr.Image, error) {
+func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, cache *ocicache.OCICache, puller *remote.Puller, creds Credentials) (gcr.Image, error) {
 	if desc.MediaType.IsSchema1() {
 		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
 	}
@@ -553,9 +585,9 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 			ref,
 			platform,
 			acClient,
-			bsClient,
+			cache,
 			puller,
-			bypassRegistry,
+			creds,
 		)
 	}
 
@@ -565,8 +597,9 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 		desc,
 		rawManifest,
 		acClient,
-		bsClient,
+		cache,
 		puller,
+		creds,
 	), nil
 }
 
@@ -662,15 +695,16 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 	return t.inner.RoundTrip(in)
 }
 
-func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller) *imageFromRawManifest {
+func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, cache *ocicache.OCICache, puller *remote.Puller, creds Credentials) *imageFromRawManifest {
 	i := &imageFromRawManifest{
 		repo:        repo,
 		desc:        desc,
 		rawManifest: rawManifest,
 		ctx:         ctx,
 		acClient:    acClient,
-		bsClient:    bsClient,
+		cache:       cache,
 		puller:      puller,
+		creds:       creds,
 	}
 	i.fetchRawConfigOnce = sync.OnceValues(func() ([]byte, error) {
 		manifest, err := i.Manifest()
@@ -711,8 +745,9 @@ type imageFromRawManifest struct {
 
 	ctx      context.Context
 	acClient repb.ActionCacheClient
-	bsClient bspb.ByteStreamClient
+	cache    *ocicache.OCICache
 	puller   *remote.Puller
+	creds    Credentials
 
 	fetchRawConfigOnce func() ([]byte, error)
 }
@@ -851,56 +886,63 @@ func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
 
 func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	canUseCache := !isAnonymousUser(l.image.ctx)
+	cache := l.image.cache
 	if !canUseCache {
 		log.CtxInfof(l.image.ctx, "Anonymous user request, skipping layer cache for %s:%s", l.image.repo, l.image.desc.Digest)
 	}
-	if canUseCache {
-		rc, err := l.fetchLayerFromCache()
-		if err != nil && !status.IsNotFoundError(err) {
-			log.CtxWarningf(l.image.ctx, "Error fetching layer from cache: %s", err)
-		}
-		if rc != nil && err == nil {
+	if canUseCache && cache != nil {
+		ref := l.repo.Digest(l.digest.String())
+		cacheForLayer := cache.WithRemoteFetcher(func(ctx context.Context, ref gcrname.Digest, _ ocicache.Credentials) (io.ReadCloser, string, int64, error) {
+			layer, err := l.createRemoteLayer()
+			if err != nil {
+				return nil, "", 0, err
+			}
+			rc, err := layer.Compressed()
+			if err != nil {
+				return nil, "", 0, err
+			}
+
+			mediaType := ""
+			if l.desc != nil {
+				mediaType = string(l.desc.MediaType)
+			}
+			if mediaType == "" {
+				mt, err := layer.MediaType()
+				if err != nil {
+					rc.Close()
+					return nil, "", 0, err
+				}
+				mediaType = string(mt)
+			}
+
+			size := int64(0)
+			if l.desc != nil {
+				size = l.desc.Size
+			}
+			if size == 0 {
+				sz, err := layer.Size()
+				if err != nil {
+					rc.Close()
+					return nil, "", 0, err
+				}
+				size = sz
+			}
+
+			return rc, mediaType, size, nil
+		})
+
+		rc, err := cacheForLayer.TeeBlob(l.image.ctx, ref, l.image.creds.toOCICacheCredentials())
+		if err == nil {
 			return rc, nil
 		}
+		log.CtxWarningf(l.image.ctx, "Falling back to remote layer fetch for %s: %s", ref, err)
 	}
 
 	remoteLayer, err := l.createRemoteLayer()
 	if err != nil {
 		return nil, err
 	}
-	upstream, err := remoteLayer.Compressed()
-	if err != nil {
-		return nil, err
-	}
-
-	if canUseCache {
-		mediaType, err := l.MediaType()
-		if err != nil {
-			log.CtxWarningf(l.image.ctx, "Could not get media type for layer: %s", err)
-			return upstream, nil
-		}
-		contentLength, err := l.Size()
-		if err != nil {
-			log.CtxWarningf(l.image.ctx, "Could not get size for layer: %s", err)
-			return upstream, nil
-		}
-		rc, err := ocicache.NewBlobReadThroughCacher(
-			l.image.ctx,
-			upstream,
-			l.image.bsClient,
-			l.image.acClient,
-			l.repo,
-			l.digest,
-			string(mediaType),
-			contentLength,
-		)
-		if err != nil {
-			return upstream, nil
-		}
-		return rc, nil
-	}
-
-	return upstream, nil
+	return remoteLayer.Compressed()
 }
 
 // Uncompressed fetches the compressed bytes from the upstream server
@@ -933,35 +975,6 @@ func (l *layerFromDigest) MediaType() (types.MediaType, error) {
 		return "", err
 	}
 	return remoteLayer.MediaType()
-}
-
-func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
-	metadata, err := ocicache.FetchBlobMetadataFromCache(
-		l.image.ctx,
-		l.image.bsClient,
-		l.image.acClient,
-		l.repo,
-		l.digest,
-	)
-	if err != nil {
-		return nil, err
-	}
-	pr, pw := io.Pipe()
-	go func() {
-		defer pw.Close()
-		err := ocicache.FetchBlobFromCache(
-			l.image.ctx,
-			pw,
-			l.image.bsClient,
-			l.digest,
-			metadata.GetContentLength(),
-		)
-		if err != nil {
-			log.Warningf("Error fetching blob from cache: %s", err)
-			pw.CloseWithError(err)
-		}
-	}()
-	return pr, nil
 }
 
 func isAnonymousUser(ctx context.Context) bool {

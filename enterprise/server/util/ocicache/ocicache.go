@@ -54,18 +54,38 @@ func (c Credentials) IsEmpty() bool {
 	return c.Username == "" && c.Password == ""
 }
 
+type remoteFetcher func(ctx context.Context, ref gcrname.Digest, creds Credentials) (io.ReadCloser, string, int64, error)
+
 // OCICache coordinates reading and populating OCI blobs in the CAS.
 type OCICache struct {
-	bsClient bspb.ByteStreamClient
-	acClient repb.ActionCacheClient
+	bsClient    bspb.ByteStreamClient
+	acClient    repb.ActionCacheClient
+	fetchRemote remoteFetcher
 }
 
 // NewOCICache returns an OCICache backed by the provided CAS clients.
 func NewOCICache(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) *OCICache {
-	return &OCICache{
+	return (&OCICache{
 		bsClient: bsClient,
 		acClient: acClient,
+	}).WithRemoteFetcher(defaultRemoteFetcher)
+}
+
+// WithRemoteFetcher configures a custom function used to fetch blobs from the
+// upstream registry when they are not present in the cache.
+func (c *OCICache) WithRemoteFetcher(fetcher remoteFetcher) *OCICache {
+	if c == nil {
+		return nil
 	}
+	clone := &OCICache{
+		bsClient:    c.bsClient,
+		acClient:    c.acClient,
+		fetchRemote: c.fetchRemote,
+	}
+	if fetcher != nil {
+		clone.fetchRemote = fetcher
+	}
+	return clone
 }
 
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
@@ -506,6 +526,34 @@ func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader
 	return WriteBlobToCache(ctx, tr, bsClient, acClient, repo, hash, contentType, contentLength)
 }
 
+func defaultRemoteFetcher(ctx context.Context, ref gcrname.Digest, creds Credentials) (io.ReadCloser, string, int64, error) {
+	remoteOpts := []remote.Option{remote.WithContext(ctx)}
+	if !creds.IsEmpty() {
+		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Basic{
+			Username: creds.Username,
+			Password: creds.Password,
+		}))
+	}
+
+	layer, err := remote.Layer(ref, remoteOpts...)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	mediaType, err := layer.MediaType()
+	if err != nil {
+		return nil, "", 0, err
+	}
+	contentLength, err := layer.Size()
+	if err != nil {
+		return nil, "", 0, err
+	}
+	upstream, err := layer.Compressed()
+	if err != nil {
+		return nil, "", 0, err
+	}
+	return upstream, string(mediaType), contentLength, nil
+}
+
 // TeeBlob returns a reader for the requested blob, writing bytes into the CAS
 // as they are consumed. If the blob is already cached it is streamed directly
 // from the cache; otherwise it is fetched from the upstream registry using the
@@ -536,27 +584,11 @@ func (c *OCICache) TeeBlob(ctx context.Context, ref gcrname.Digest, creds Creden
 		return nil, err
 	}
 
-	remoteOpts := []remote.Option{remote.WithContext(ctx)}
-	if !creds.IsEmpty() {
-		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Basic{
-			Username: creds.Username,
-			Password: creds.Password,
-		}))
+	if c.fetchRemote == nil {
+		return nil, status.UnimplementedError("no remote fetcher configured")
 	}
 
-	layer, err := remote.Layer(ref, remoteOpts...)
-	if err != nil {
-		return nil, err
-	}
-	mediaType, err := layer.MediaType()
-	if err != nil {
-		return nil, err
-	}
-	contentLength, err := layer.Size()
-	if err != nil {
-		return nil, err
-	}
-	upstream, err := layer.Compressed()
+	upstream, mediaType, contentLength, err := c.fetchRemote(ctx, ref, creds)
 	if err != nil {
 		return nil, err
 	}
@@ -568,7 +600,7 @@ func (c *OCICache) TeeBlob(ctx context.Context, ref gcrname.Digest, creds Creden
 		c.acClient,
 		repo,
 		hash,
-		string(mediaType),
+		mediaType,
 		contentLength,
 	)
 	if err != nil {
