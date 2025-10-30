@@ -11,6 +11,67 @@ jobs:
     runs-on: windows-2025
     if: "!contains(github.event.head_commit.message, 'ci skip')"
     steps:
+      # Setup DevDrive for CoW testing.
+      # Inspired by https://github.com/samypr100/setup-dev-drive/
+      - name: Setup DevDrive for CoW testing
+        shell: pwsh
+        run: |
+          # Create VHD on writable location for CoW testing
+          $vhdPath = "C:\buildbuddy-devdrive.vhdx"
+          $driveSize = 20GB
+          $driveFormat = "ReFS"
+          Write-Host "Creating VHD for CoW testing at $vhdPath"
+          try {
+            # Create VHD file
+            Write-Host "Creating VHD ($driveSize bytes)..."
+            $vhd = New-VHD -Path $vhdPath -SizeBytes $driveSize -Dynamic
+            Write-Host "✓ VHD created successfully"
+            # Mount VHD and get disk info
+            Write-Host "Mounting VHD..."
+            $disk = $vhd | Mount-VHD -Passthru
+            Write-Host "✓ VHD mounted, Disk Number: $($disk.DiskNumber)"
+            # Initialize disk
+            Write-Host "Initializing disk..."
+            $init = $disk | Initialize-Disk -PartitionStyle GPT -PassThru
+            Write-Host "✓ Disk initialized with GPT partition style"
+            # Create partition with maximum size and assign the next available drive letter
+            Write-Host "Creating partition..."
+            $partition = $init | New-Partition -UseMaximumSize -AssignDriveLetter
+            if (-not $partition.DriveLetter) {
+              throw "Failed to assign drive letter to DevDrive partition"
+            }
+            $driveLetter = $partition.DriveLetter
+            Write-Host "✓ Partition created with drive letter: ${driveLetter}:"
+            # Format as ReFS (without -DevDrive parameter)
+            Write-Host "Formatting as $driveFormat..."
+            $volume = $partition | Format-Volume -FileSystem $driveFormat -Force -Confirm:$false
+            Write-Host "✓ Volume formatted as $driveFormat"
+            # Enable DevDrive support system-wide
+            Write-Host "Enabling DevDrive support..."
+            fsutil devdrv enable | Out-Host
+            # Set drive as trusted
+            Write-Host "Setting ${driveLetter}: as trusted..."
+            fsutil devdrv trust "${driveLetter}:" | Out-Host
+            # Verify configuration
+            Write-Host "Drive status verification:"
+            fsutil devdrv query "${driveLetter}:" | Out-Host
+            # Test write access
+            $testFile = "${driveLetter}:\devdrive-test.txt"
+            "DevDrive test file" | Out-File -FilePath $testFile -Encoding utf8
+            if (Test-Path $testFile) {
+              Write-Host "✓ Drive write test successful"
+              Remove-Item $testFile -Force
+            }
+            # Export environment variables
+            echo "DEVDRIVE_PATH=${driveLetter}:" >> $env:GITHUB_ENV
+            echo "DEVDRIVE_VHD_PATH=$vhdPath" >> $env:GITHUB_ENV
+            Write-Host "🎉 CoW drive setup completed successfully at ${driveLetter}:"
+          } catch {
+            Write-Error "❌ CoW drive setup failed: $($_.Exception.Message)"
+            Write-Host "Error details: $($_.ScriptStackTrace)"
+            exit 1
+          }
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -35,6 +96,7 @@ jobs:
       #     } else {
       #         Write-Host "Error: Directory not found: $vs2022Path"
       #     }
+      #     exit 1
 
       - name: Build & test
         env:
@@ -71,6 +133,26 @@ jobs:
                    //enterprise/server/remote_execution/workspace:workspace_test `
                    //enterprise/server/util/procstats:procstats_test `
                    //server/util/fastcopy:fastcopy_test
+
+      # Uncomment the following line to run the fastcopy benchmark test.
+      # - name: Run fastcopy Go benchmarks (NTFS vs DevDrive)
+      #   shell: pwsh
+      #   run: |
+      #     $authArgs = @()
+      #     $apiKey = '${{ secrets.BUILDBUDDY_ORG_API_KEY }}'
+      #     if ($apiKey) {
+      #       $authArgs = @("--remote_header=x-buildbuddy-api-key=$apiKey")
+      #     }
+      #     # Run dedicated benchmark test target that embeds bench args, per repo pattern.
+      #     bazelisk --output_user_root=C:/0 `
+      #              --windows_enable_symlinks `
+      #              test `
+      #              --config=untrusted-ci-windows `
+      #              --test_tag_filters=performance `
+      #              --test_output=all `
+      #              @authArgs `
+      #              -- `
+      #              //server/util/fastcopy:fastcopy_benchmark_test
 
       - name: Save caches
         uses: ./.github/actions/cache-save
