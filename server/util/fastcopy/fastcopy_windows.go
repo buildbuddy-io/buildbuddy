@@ -129,11 +129,19 @@ func reflink(source, destination string) error {
 		}
 	}
 
+	// Determine remaining bytes after cloning 1GiB chunks. If none remain we are done.
+	remaining := fileSize - offset
+	if remaining == 0 {
+		reflinkWasSuccessful = true
+		return nil
+	}
+
 	// Clone remaining contents less than 1GiB.
 	// First try with 64KiB round up, then fallback to 4KiB.
 	var tailErr error
 	for _, cloneRegionSize := range reFSClusterSizes {
-		if err := callDuplicateExtentsToFile(dst, src, offset, roundUp(fileSize-offset, cloneRegionSize)); err != nil {
+		cloneSize := roundUp(remaining, cloneRegionSize)
+		if err := callDuplicateExtentsToFile(dst, src, offset, cloneSize); err != nil {
 			tailErr = errors.Join(tailErr, fmt.Errorf("failed to call DuplicateExtentsToFile with size %d: %w", cloneRegionSize, err))
 			continue
 		}
