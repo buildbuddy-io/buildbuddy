@@ -118,7 +118,9 @@ genrule(
 go_test(
     name = "firecracker_test",
     timeout = "long",
-    srcs = ["firecracker_test.go"],
+    srcs = [
+        "firecracker_test.go",
+    ],
     args = [
         "--executor.enable_local_snapshot_sharing=true",
         "--executor.enable_remote_snapshot_sharing=true",
@@ -151,6 +153,7 @@ go_test(
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/platform",
+        "//enterprise/server/remote_execution/snaploader",
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/testutil/testcontainer",
@@ -165,6 +168,7 @@ go_test(
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/content_addressable_storage_server",
+        "//server/remote_cache/digest",
         "//server/resources",
         "//server/rpc/interceptors",
         "//server/testutil/testauth",
@@ -180,6 +184,7 @@ go_test(
         "//server/util/random",
         "//server/util/status",
         "//server/util/testing/flags",
+        "//server/util/tracing",
         "@com_github_google_go_cmp//cmp",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_stretchr_testify//assert",
