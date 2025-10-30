@@ -2162,7 +2162,7 @@ func TestTreeCacheLookaside(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
-		rn.InstanceName = content_addressable_storage_server.TreeCacheRemoteInstanceName
+		rn.InstanceName = digest.TreeCacheRemoteInstanceName
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}

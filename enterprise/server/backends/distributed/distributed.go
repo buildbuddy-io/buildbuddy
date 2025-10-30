@@ -18,8 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -370,7 +368,7 @@ func (t *teeReadCloser) Close() error {
 }
 
 func isTreeCacheResource(r *rspb.ResourceName) bool {
-	return r.GetCacheType() == rspb.CacheType_AC && strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName)
+	return r.GetCacheType() == rspb.CacheType_AC && strings.HasPrefix(r.GetInstanceName(), digest.TreeCacheRemoteInstanceName)
 }
 
 // lookasideKey returns the resource's key in the lookaside cache and true,
@@ -1241,6 +1239,11 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
 }
 
+// Below, in Get(), this value is the max initial allocatable buffer size.
+// Set it somewhat conservatively so that we're not DOSed by someone crafting
+// remote_instance_names that match this just to use memory.
+const maxInitialByteBufferSize = (1024 * 1024 * 4)
+
 func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) {
 	r, err := c.distributedReader(ctx, rn, 0, 0, "Get" /*=metricsLabel*/)
 	if err != nil {
@@ -1248,7 +1251,8 @@ func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) 
 	}
 	defer r.Close()
 
-	buf := cachetools.GetBuffer(rn)
+	bufSize := digest.SafeBufferSize(rn, maxInitialByteBufferSize)
+	buf := bytes.NewBuffer(make([]byte, 0, bufSize))
 	_, err = io.Copy(buf, r)
 	return buf.Bytes(), err
 }

@@ -15,7 +15,6 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
-        "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/authutil",
         "//server/util/bytebufferpool",

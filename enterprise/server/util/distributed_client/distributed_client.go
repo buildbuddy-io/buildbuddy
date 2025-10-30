@@ -313,7 +313,7 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 	}
 	defer reader.Close()
 
-	bufSize := int64(safeBufferSize(rn, readBufSizeBytes))
+	bufSize := int64(digest.SafeBufferSize(rn, readBufSizeBytes))
 	copyBuf := c.bufPool.Get(bufSize)
 	defer c.bufPool.Put(copyBuf)
 
@@ -690,13 +690,6 @@ func (wc *streamWriteCloser) Close() error {
 	return nil
 }
 
-func safeBufferSize(r *rspb.ResourceName, maxSize int) int {
-	if r.GetCacheType() != rspb.CacheType_CAS || r.GetDigest().GetSizeBytes() <= 0 {
-		return 4096 * 4 // low / safe / default
-	}
-	return min(int(r.GetDigest().GetSizeBytes()), maxSize)
-}
-
 func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
@@ -723,7 +716,7 @@ func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 		stream:      stream,
 		r:           r,
 	}
-	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, safeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), nil
+	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), nil
 }
 
 func (c *Proxy) SendHeartbeat(ctx context.Context, peer string) error {

@@ -44,8 +44,6 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const TreeCacheRemoteInstanceName = "_bb_treecache_"
-
 var (
 	enableTreeCaching         = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
 	treeCacheSeed             = flag.String("cache.tree_cache_seed", "treecache-09032024", "If set, hash this with digests before caching / reading from tree cache")
@@ -437,7 +435,7 @@ func makeTreeCachePointer(directoryNode *rspb.ResourceName, digestFunction repb.
 	if err != nil {
 		return nil, err
 	}
-	instanceName := fmt.Sprintf("%s/%d", TreeCacheRemoteInstanceName, d.GetSizeBytes())
+	instanceName := fmt.Sprintf("%s/%d", digest.TreeCacheRemoteInstanceName, d.GetSizeBytes())
 	// N.B: This is a AC digest, not a CAS one like the pointer below.
 	return digest.NewResourceName(d, instanceName, rspb.CacheType_AC, digestFunction), nil
 }
@@ -447,7 +445,7 @@ func makeTreeCacheDigest(digestFunction repb.DigestFunction_Value, buf []byte) (
 	if err != nil {
 		return nil, err
 	}
-	instanceName := fmt.Sprintf("%s/%d", TreeCacheRemoteInstanceName, d.GetSizeBytes())
+	instanceName := fmt.Sprintf("%s/%d", digest.TreeCacheRemoteInstanceName, d.GetSizeBytes())
 	// N.B: This is a CAS digest, not an AC one like the pointer above.
 	return digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction), nil
 }
@@ -456,7 +454,7 @@ func makeTreeCacheActionResult(blob *rspb.ResourceName) ([]byte, error) {
 	ar := &repb.ActionResult{
 		OutputFiles: []*repb.OutputFile{
 			{
-				Path:   TreeCacheRemoteInstanceName,
+				Path:   digest.TreeCacheRemoteInstanceName,
 				Digest: blob.GetDigest(),
 			},
 		},
@@ -622,7 +620,7 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 	if pointerBuf, err := s.cache.Get(ctx, treeCachePointer.ToProto()); err == nil {
 		ar := &repb.ActionResult{}
 		if err := proto.Unmarshal(pointerBuf, ar); err == nil {
-			if len(ar.OutputFiles) >= 1 && ar.OutputFiles[0].Path == TreeCacheRemoteInstanceName {
+			if len(ar.OutputFiles) >= 1 && ar.OutputFiles[0].Path == digest.TreeCacheRemoteInstanceName {
 				treeCacheRN := digest.NewResourceName(ar.OutputFiles[0].Digest, treeCachePointer.GetInstanceName(), rspb.CacheType_CAS, treeCachePointer.GetDigestFunction())
 				children, bytesRead, err := s.lookupCachedTreeNodeInCAS(ctx, treeCacheRN)
 				if err == nil {

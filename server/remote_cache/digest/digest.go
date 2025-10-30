@@ -42,6 +42,8 @@ const (
 
 	uploadResourceName resourceNameType = iota
 	downloadResourceName
+
+	TreeCacheRemoteInstanceName = "_bb_treecache_"
 )
 
 var (
@@ -72,6 +74,28 @@ func ResourceNameFromProto(in *rspb.ResourceName) *ResourceName {
 	return &ResourceName{
 		rn: rn,
 	}
+}
+
+// The median and average AC results are less than 4KiB: go/action-result-size
+const actionCacheByteBufferSize = (1024 * 4)
+
+// SafeBufferSize returns
+//   - a size between 0 - the given maxSize for CAS entries and Tree Cache entries
+//   - 4Kib for AC entries besides Tree Cache entries.
+func SafeBufferSize(rn *rspb.ResourceName, maxSize int) int {
+	if rn.GetCacheType() == rspb.CacheType_CAS {
+		// Clamp the size between 0 and 10MB, to protect from invalid and
+		// malicious requests.
+		return min(maxSize, max(0, int(rn.GetDigest().GetSizeBytes())))
+	} else if strings.HasPrefix(rn.GetInstanceName(), TreeCacheRemoteInstanceName) {
+		// If this is a TreeCache entry that we wrote; pull the size
+		// from the remote instance name.
+		parts := strings.Split(rn.GetInstanceName(), "/")
+		if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
+			return min(s, maxSize)
+		}
+	}
+	return actionCacheByteBufferSize
 }
 
 func CASResourceNameFromProto(in *rspb.ResourceName) (*CASResourceName, error) {

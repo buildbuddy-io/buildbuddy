@@ -1,6 +1,7 @@
 package metacache
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
@@ -11,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
@@ -36,6 +36,9 @@ const (
 	// CompressorBufSizeBytes is the buffer size we use for each chunk when compressing data
 	// It should be relatively large to get a good compression ratio bc each chunk is compressed independently
 	CompressorBufSizeBytes = 4e6 // 4 MB
+
+	// The max size of the read buffer, used to protect from invalid and malicious requests.
+	maxReadBufferSize = 1024 * 1024 * 4
 )
 
 type Options struct {
@@ -421,7 +424,7 @@ func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	}
 	defer rc.Close()
 
-	buf := cachetools.GetBuffer(r)
+	buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
 	_, err = io.Copy(buf, rc)
 	return buf.Bytes(), err
 }
@@ -566,12 +569,8 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 	}
 
 	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
-		bufSize := int64(CompressorBufSizeBytes)
-		resourceSize := r.GetDigest().GetSizeBytes()
-		if resourceSize > 0 && resourceSize < bufSize {
-			bufSize = resourceSize
-		}
-		return compression.NewBufferedZstdCompressingReader(reader, c.bufferPool, bufSize)
+		bufSize := digest.SafeBufferSize(r, CompressorBufSizeBytes)
+		return compression.NewBufferedZstdCompressingReader(reader, c.bufferPool, int64(bufSize))
 	}
 
 	return reader, nil

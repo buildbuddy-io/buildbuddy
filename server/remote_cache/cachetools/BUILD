@@ -12,7 +12,6 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
-        "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",
         "//server/util/bytebufferpool",
         "//server/util/compression",

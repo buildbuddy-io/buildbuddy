@@ -26,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
@@ -160,6 +159,8 @@ const (
 	SamplerSleepDuration  = 1 * time.Second
 
 	SamplerIterRefreshPeriod = 5 * time.Minute
+
+	maxReadBufferSize = 10_000_000
 )
 
 type sizeUpdateOp int
@@ -1728,7 +1729,8 @@ func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 		return nil, err
 	}
 	defer rc.Close()
-	buf := cachetools.GetBuffer(r)
+	bufSize := digest.SafeBufferSize(r, maxReadBufferSize)
+	buf := bytes.NewBuffer(make([]byte, 0, bufSize))
 	_, err = io.Copy(buf, rc)
 	return buf.Bytes(), err
 }
@@ -1751,7 +1753,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 			return nil, err
 		}
 
-		buf := bytes.NewBuffer(make([]byte, 0, bufferSize(r)))
+		buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
 		_, copyErr := io.Copy(buf, rc)
 		closeErr := rc.Close()
 		if copyErr != nil {
@@ -3372,13 +3374,9 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	}
 
 	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
-		bufSize := int64(CompressorBufSizeBytes)
-		resourceSize := r.GetDigest().GetSizeBytes()
-		if resourceSize > 0 && resourceSize < bufSize {
-			bufSize = resourceSize
-		}
+		bufSize := digest.SafeBufferSize(r, CompressorBufSizeBytes)
 
-		return compression.NewBufferedZstdCompressingReader(reader, p.bufferPool, bufSize)
+		return compression.NewBufferedZstdCompressingReader(reader, p.bufferPool, int64(bufSize))
 	}
 
 	return reader, nil
