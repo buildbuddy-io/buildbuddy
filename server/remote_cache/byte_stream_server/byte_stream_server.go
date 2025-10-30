@@ -152,14 +152,11 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	// is in charge of compressing it
 	var counter *ioutil.Counter
 	if r.GetCompressor() == repb.Compressor_ZSTD && !passthroughCompressionEnabled {
-		rbuf := s.bufferPool.Get(bufSize)
-		defer s.bufferPool.Put(rbuf)
-		cbuf := s.bufferPool.Get(bufSize)
-		defer s.bufferPool.Put(cbuf)
-
 		// Counter for the number of bytes from the original reader containing decompressed bytes
 		counter = &ioutil.Counter{}
-		reader, err = compression.NewZstdCompressingReader(io.NopCloser(io.TeeReader(reader, counter)), rbuf, cbuf)
+		rc := io.NopCloser(io.TeeReader(reader, counter))
+
+		reader, err = compression.NewBufferedZstdCompressingReader(rc, s.bufferPool, bufSize)
 		if err != nil {
 			return status.InternalErrorf("Failed to compress blob: %s", err)
 		}

@@ -32,6 +32,19 @@ func (discardWriteCloser) Close() error {
 	return nil
 }
 
+type readCloser struct {
+	io.Reader
+	io.Closer
+}
+
+// LimitReadCloser returns a readCloser with a LimitReader.
+func LimitReadCloser(reader io.ReadCloser, limit int64) io.ReadCloser {
+	return &readCloser{
+		io.LimitReader(reader, limit),
+		reader,
+	}
+}
+
 type CloseFunc func() error
 type CommitFunc func(int64) error
 

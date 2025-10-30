@@ -432,3 +432,35 @@ func (p *ZstdDecoderPool) Put(ref *DecoderRef) error {
 	p.pool.Put(ref)
 	return nil
 }
+
+// bufPoolCompressingReader helps manage resources associated with a compression.NewZstdCompressingReader
+type bufPoolCompressingReader struct {
+	io.ReadCloser
+	readBuf     []byte
+	compressBuf []byte
+	bufferPool  *bytebufferpool.VariableSizePool
+}
+
+func (r *bufPoolCompressingReader) Close() error {
+	err := r.ReadCloser.Close()
+	r.bufferPool.Put(r.readBuf)
+	r.bufferPool.Put(r.compressBuf)
+	return err
+}
+
+func NewBufferedZstdCompressingReader(reader io.ReadCloser, bufferPool *bytebufferpool.VariableSizePool, bufSize int64) (io.ReadCloser, error) {
+	readBuf := bufferPool.Get(bufSize)
+	compressBuf := bufferPool.Get(bufSize)
+	cr, err := NewZstdCompressingReader(reader, readBuf, compressBuf)
+	if err != nil {
+		bufferPool.Put(readBuf)
+		bufferPool.Put(compressBuf)
+		return nil, err
+	}
+	return &bufPoolCompressingReader{
+		ReadCloser:  cr,
+		readBuf:     readBuf,
+		compressBuf: compressBuf,
+		bufferPool:  bufferPool,
+	}, nil
+}

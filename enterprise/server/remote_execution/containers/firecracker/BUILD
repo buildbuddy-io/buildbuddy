@@ -119,7 +119,6 @@ go_test(
     name = "firecracker_test",
     timeout = "long",
     srcs = [
-        "firecracker_performance_test.go",
         "firecracker_test.go",
     ],
     args = [

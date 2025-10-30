@@ -2,6 +2,7 @@ package experiments
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
@@ -148,6 +149,24 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 	return evalContext
 }
 
+// ObjectToStruct is a utility function to get a Go struct from an object
+// returned by [interfaces.ExperimentFlagProvider.Object] or
+// [interfaces.ExperimentFlagProvider.ObjectDetails].
+//
+// It uses an intermediate JSON conversion, so any `json` tags on struct fields
+// can be used to control how the object fields are unmarshaled into struct
+// fields.
+func ObjectToStruct(object map[string]any, dest any) error {
+	b, err := json.Marshal(object)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+	if err := json.Unmarshal(b, dest); err != nil {
+		return fmt.Errorf("unmarshal: %w", err)
+	}
+	return nil
+}
+
 // WithContext adds the provided key and value into the experiment context when
 // the flag is evaluated. This allows selectively enabling flags only when they
 // make sense. For example, you might want to only enable a certain performance
@@ -155,6 +174,26 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 func WithContext(key string, value interface{}) Option {
 	return func(o *Options) {
 		o.attributes[key] = value
+	}
+}
+
+func (fp *FlagProvider) Subscribe(ch chan<- struct{}) (stop func()) {
+	f := func(details openfeature.EventDetails) {
+		log.Debugf("Update: %+v", details)
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+	h := openfeature.EventCallback(&f)
+	// Subscribe to config change events.
+	openfeature.AddHandler(openfeature.ProviderConfigChange, h)
+	// Transitioning from not-ready to ready may cause experiment state to
+	// change; subscribe to that event too.
+	openfeature.AddHandler(openfeature.ProviderReady, h)
+	return func() {
+		openfeature.RemoveHandler(openfeature.ProviderConfigChange, h)
+		openfeature.RemoveHandler(openfeature.ProviderReady, h)
 	}
 }
 

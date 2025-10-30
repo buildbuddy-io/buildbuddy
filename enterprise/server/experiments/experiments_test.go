@@ -7,12 +7,15 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -96,6 +99,13 @@ func TestPrimitiveFlags(t *testing.T) {
 	require.Equal(t, int64(1), fp.Int64(ctx, "int_flag", 0))
 	require.Equal(t, 99.9999999, fp.Float64(ctx, "float_flag", 1.0))
 	require.Equal(t, map[string]any{"foo": "foo value"}, fp.Object(ctx, "object_flag", nil))
+	type ObjStruct struct {
+		Foo string `json:"foo"`
+	}
+	var obj ObjStruct
+	err = experiments.ObjectToStruct(fp.Object(ctx, "object_flag", nil), &obj)
+	require.NoError(t, err)
+	require.Equal(t, ObjStruct{Foo: "foo value"}, obj)
 
 	b, d := fp.BooleanDetails(ctx, "bool_flag", false)
 	require.True(t, b)
@@ -362,4 +372,56 @@ func TestTargetingGroupID(t *testing.T) {
 		s := fp.String(ctx, "test_flag", "")
 		require.Equal(t, "default", s)
 	})
+}
+
+func TestSubscribe(t *testing.T) {
+	ctx := context.Background()
+
+	const testFlags = `{
+	  "$schema": "https://flagd.dev/schema/v0/flags.json",
+	  "flags": {
+	    "test_flag": {
+	      "state": "ENABLED",
+	      "variants": {
+	        "default": "FOO"
+	      },
+	      "defaultVariant": "default"
+	    }
+	  }
+	}
+	`
+
+	offlineFlagPath := writeFlagConfig(t, testFlags)
+	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	openfeature.SetProviderAndWait(provider)
+
+	fp, err := experiments.NewFlagProvider("test-name")
+	require.NoError(t, err)
+
+	ch := make(chan struct{}, 4)
+	unsubscribe := fp.Subscribe(ch)
+	defer unsubscribe()
+
+	// Drain any initial updates on the channel (the implementation may or may
+	// not choose to send initial updates)
+	for {
+		select {
+		case <-ch:
+			continue
+		case <-time.After(100 * time.Millisecond):
+		}
+		break
+	}
+
+	// Write a change to the config.
+	updatedFlags := strings.Replace(testFlags, "FOO", "BAR", 1)
+	testfs.WriteFile(t, "", offlineFlagPath, updatedFlags)
+
+	// An update should be sent on the channel now that the config has changed.
+	<-ch
+
+	// The flag should evaluate to the new value after we're notified of the
+	// change.
+	flagVal := fp.String(ctx, "test_flag", "")
+	require.Equal(t, "BAR", flagVal)
 }
