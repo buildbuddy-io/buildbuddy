@@ -132,12 +132,6 @@ func (r *compressionReader) Close() error {
 	return err
 }
 
-// TODO(tylerw): move to ioutil
-type readCloser struct {
-	io.Reader
-	io.Closer
-}
-
 func (c *Cache) encryptionEnabled(ctx context.Context) (bool, error) {
 	if !authutil.EncryptionEnabled(ctx, c.env.GetAuthenticator()) {
 		return false, nil
@@ -607,7 +601,7 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 			}
 		}
 		if uncompressedLimit != 0 {
-			reader = &readCloser{io.LimitReader(reader, uncompressedLimit), reader}
+			reader = ioutil.LimitReadCloser(reader, uncompressedLimit)
 		}
 	}
 
