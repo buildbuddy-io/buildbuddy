@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -201,6 +202,62 @@ func TestBlobUploader(t *testing.T) {
 	err = up.Close()
 	require.Error(t, err)
 	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
+	err = up.Close()
+	require.Error(t, err)
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+}
+
+func TestOCICacheTeeBlobStreamsAndCaches(t *testing.T) {
+	te := setupTestEnv(t)
+
+	reg := testregistry.Run(t, testregistry.Opts{})
+	t.Cleanup(func() {
+		_ = reg.Shutdown(context.Background())
+	})
+
+	files := map[string][]byte{
+		"/layer/content": []byte("hello from tee blob"),
+	}
+	imageName := "tee-blob-test"
+	imageAddr, img := reg.PushNamedImageWithFiles(t, imageName, files)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+
+	compressed, err := layer.Compressed()
+	require.NoError(t, err)
+	expected, err := io.ReadAll(compressed)
+	require.NoError(t, err)
+	require.NoError(t, compressed.Close())
+
+	ref, err := gcrname.NewDigest(imageAddr + "@" + layerDigest.String())
+	require.NoError(t, err)
+
+	cache := ocicache.NewOCICache(te.GetByteStreamClient(), te.GetActionCacheClient())
+	ctx := context.Background()
+
+	reader, err := cache.TeeBlob(ctx, ref, ocicache.Credentials{})
+	require.NoError(t, err)
+	got, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.NoError(t, reader.Close())
+	require.Equal(t, expected, got)
+
+	// Shut down the upstream registry to ensure subsequent reads are served from cache.
+	require.NoError(t, reg.Shutdown(context.Background()))
+
+	reader, err = cache.TeeBlob(ctx, ref, ocicache.Credentials{})
+	require.NoError(t, err)
+	got, err = io.ReadAll(reader)
+	require.NoError(t, err)
+	require.NoError(t, reader.Close())
+	require.Equal(t, expected, got)
 }
 
 func TestBlobUploader_PartialWriteFails(t *testing.T) {

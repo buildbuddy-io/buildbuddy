@@ -20,8 +20,10 @@ import (
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	"github.com/google/go-containerregistry/pkg/authn"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -39,6 +41,32 @@ const (
 
 	cacheDigestFunction = repb.DigestFunction_SHA256
 )
+
+// Credentials encapsulates optional registry credentials used to authenticate
+// requests to upstream registries.
+type Credentials struct {
+	Username string
+	Password string
+}
+
+// IsEmpty reports whether the credential set contains any authentication data.
+func (c Credentials) IsEmpty() bool {
+	return c.Username == "" && c.Password == ""
+}
+
+// OCICache coordinates reading and populating OCI blobs in the CAS.
+type OCICache struct {
+	bsClient bspb.ByteStreamClient
+	acClient repb.ActionCacheClient
+}
+
+// NewOCICache returns an OCICache backed by the provided CAS clients.
+func NewOCICache(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) *OCICache {
+	return &OCICache{
+		bsClient: bsClient,
+		acClient: acClient,
+	}
+}
 
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
 	arRN, err := manifestACKey(repo, hash)
@@ -476,4 +504,76 @@ func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader
 	}
 	tr := io.TeeReader(upstream, w)
 	return WriteBlobToCache(ctx, tr, bsClient, acClient, repo, hash, contentType, contentLength)
+}
+
+// TeeBlob returns a reader for the requested blob, writing bytes into the CAS
+// as they are consumed. If the blob is already cached it is streamed directly
+// from the cache; otherwise it is fetched from the upstream registry using the
+// provided credentials and written back to the cache.
+func (c *OCICache) TeeBlob(ctx context.Context, ref gcrname.Digest, creds Credentials) (io.ReadCloser, error) {
+	if c == nil || c.bsClient == nil || c.acClient == nil {
+		return nil, status.FailedPreconditionError("OCICache requires configured ByteStream and ActionCache clients")
+	}
+
+	repo := ref.Context()
+	hash, err := gcr.NewHash(ref.DigestStr())
+	if err != nil {
+		return nil, status.WrapError(err, "invalid digest reference")
+	}
+
+	metadata, err := FetchBlobMetadataFromCache(ctx, c.bsClient, c.acClient, repo, hash)
+	if err == nil {
+		pr, pw := io.Pipe()
+		go func() {
+			defer pw.Close()
+			if fetchErr := FetchBlobFromCache(ctx, pw, c.bsClient, hash, metadata.GetContentLength()); fetchErr != nil {
+				pw.CloseWithError(fetchErr)
+			}
+		}()
+		return pr, nil
+	}
+	if !status.IsNotFoundError(err) {
+		return nil, err
+	}
+
+	remoteOpts := []remote.Option{remote.WithContext(ctx)}
+	if !creds.IsEmpty() {
+		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Basic{
+			Username: creds.Username,
+			Password: creds.Password,
+		}))
+	}
+
+	layer, err := remote.Layer(ref, remoteOpts...)
+	if err != nil {
+		return nil, err
+	}
+	mediaType, err := layer.MediaType()
+	if err != nil {
+		return nil, err
+	}
+	contentLength, err := layer.Size()
+	if err != nil {
+		return nil, err
+	}
+	upstream, err := layer.Compressed()
+	if err != nil {
+		return nil, err
+	}
+
+	rc, err := NewBlobReadThroughCacher(
+		ctx,
+		upstream,
+		c.bsClient,
+		c.acClient,
+		repo,
+		hash,
+		string(mediaType),
+		contentLength,
+	)
+	if err != nil {
+		upstream.Close()
+		return nil, err
+	}
+	return rc, nil
 }
