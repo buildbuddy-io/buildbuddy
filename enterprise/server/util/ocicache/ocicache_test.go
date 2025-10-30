@@ -21,6 +21,7 @@ import (
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 )
 
 func TestCacheSecret(t *testing.T) {
@@ -393,4 +394,152 @@ func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, repo 
 	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff(layerBuf, out.Bytes()))
+}
+
+func TestOCICache_TeeBlob(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "oci_cache_tee_blob", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	cache := ocicache.NewOCICache(bsClient, acClient)
+	upstream := io.NopCloser(bytes.NewReader(layerBuf))
+
+	ref := ocicache.BlobReference{
+		Repo:          repo,
+		Hash:          hash,
+		ContentType:   types.MediaType(contentType),
+		ContentLength: contentLength,
+	}
+
+	tee, err := cache.TeeBlob(ctx, upstream, ref)
+	require.NoError(t, err)
+
+	readout, err := io.ReadAll(tee)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(layerBuf, readout))
+
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
+	err = tee.Close()
+	require.NoError(t, err)
+
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+}
+
+func TestOCICache_TeeBlob_PartialReadPreventsCommit(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "oci_cache_tee_blob_partial", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	cache := ocicache.NewOCICache(bsClient, acClient)
+	upstream := io.NopCloser(bytes.NewReader(layerBuf))
+
+	ref := ocicache.BlobReference{
+		Repo:          repo,
+		Hash:          hash,
+		ContentType:   types.MediaType(contentType),
+		ContentLength: contentLength,
+	}
+
+	tee, err := cache.TeeBlob(ctx, upstream, ref)
+	require.NoError(t, err)
+
+	readbuf := make([]byte, 256)
+	n, err := tee.Read(readbuf)
+	require.NoError(t, err)
+	require.Equal(t, 256, n)
+
+	err = tee.Close()
+	require.NoError(t, err)
+
+	blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
+}
+
+func TestOCICache_TeeBlob_ReturnsEOF(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "oci_cache_tee_blob_eof", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	cache := ocicache.NewOCICache(bsClient, acClient)
+	upstream := io.NopCloser(bytes.NewReader(layerBuf))
+
+	ref := ocicache.BlobReference{
+		Repo:          repo,
+		Hash:          hash,
+		ContentType:   types.MediaType(contentType),
+		ContentLength: contentLength,
+	}
+
+	tee, err := cache.TeeBlob(ctx, upstream, ref)
+	require.NoError(t, err)
+
+	readout := &bytes.Buffer{}
+	readbuf := make([]byte, 128)
+	for {
+		n, err := tee.Read(readbuf)
+		if err != nil {
+			require.ErrorIs(t, err, io.EOF)
+			fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+			break
+		}
+		require.Greater(t, n, 0)
+		blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
+		_, err = readout.Write(readbuf[:n])
+		require.NoError(t, err)
+	}
+	require.Empty(t, cmp.Diff(layerBuf, readout.Bytes()))
+
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
+	err = tee.Close()
+	require.NoError(t, err)
+
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+}
+
+func TestOCICache_TeeBlob_MultipleBlobs(t *testing.T) {
+	te := setupTestEnv(t)
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	cache := ocicache.NewOCICache(bsClient, acClient)
+
+	// Create and cache multiple blobs using the same cache instance
+	for i := 0; i < 3; i++ {
+		layerBuf, repo, hash, contentType := createLayer(t, "oci_cache_tee_blob_multi", 512)
+		contentLength := int64(len(layerBuf))
+
+		upstream := io.NopCloser(bytes.NewReader(layerBuf))
+		ref := ocicache.BlobReference{
+			Repo:          repo,
+			Hash:          hash,
+			ContentType:   types.MediaType(contentType),
+			ContentLength: contentLength,
+		}
+
+		tee, err := cache.TeeBlob(ctx, upstream, ref)
+		require.NoError(t, err)
+
+		readout, err := io.ReadAll(tee)
+		require.NoError(t, err)
+		require.Empty(t, cmp.Diff(layerBuf, readout))
+
+		err = tee.Close()
+		require.NoError(t, err)
+
+		fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+	}
 }

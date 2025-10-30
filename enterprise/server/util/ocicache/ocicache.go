@@ -22,6 +22,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -39,6 +40,42 @@ const (
 
 	cacheDigestFunction = repb.DigestFunction_SHA256
 )
+
+// OCICache provides caching functionality for OCI registry blobs and manifests.
+type OCICache struct {
+	bsClient bspb.ByteStreamClient
+	acClient repb.ActionCacheClient
+}
+
+// NewOCICache creates a new OCICache instance.
+func NewOCICache(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) *OCICache {
+	return &OCICache{
+		bsClient: bsClient,
+		acClient: acClient,
+	}
+}
+
+// BlobReference contains all the information needed to identify and cache an OCI blob.
+type BlobReference struct {
+	Repo          gcrname.Repository
+	Hash          gcr.Hash
+	ContentType   types.MediaType
+	ContentLength int64
+}
+
+// TeeBlob wraps an upstream ReadCloser and writes the blob to the cache as it's being read.
+// It returns a ReadCloser that transparently caches the blob data while streaming.
+// Any errors writing to the cache are logged and ignored, ensuring the read operation continues.
+func (c *OCICache) TeeBlob(ctx context.Context, upstream io.ReadCloser, ref BlobReference) (io.ReadCloser, error) {
+	cache, err := NewBlobUploader(ctx, c.bsClient, c.acClient, ref.Repo, ref.Hash, string(ref.ContentType), ref.ContentLength)
+	if err != nil {
+		return nil, err
+	}
+	return &readThroughCacher{
+		rc:    upstream,
+		cache: cache,
+	}, nil
+}
 
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
 	arRN, err := manifestACKey(repo, hash)
