@@ -214,6 +214,11 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 		experimental.BufferPool(mem.DefaultBufferPool()),
 		grpc.MaxRecvMsgSize(MaxRecvMsgSizeBytes()),
 		KeepaliveEnforcementPolicy(),
+		// Bazel may require up to 100 concurrent streams per connection as per
+		// https://github.com/bazelbuild/bazel/blob/76dfcc5fe9599d381f69943d3fa8fc4c064035ac/src/main/java/com/google/devtools/build/lib/remote/RemoteModule.java#L503
+		// Experiments show that lowering that value to 50 in Bazel still results in the limit
+		// being hit, so we set it to a higher value than 200 here to be safe.
+		grpc.MaxConcurrentStreams(300),
 	}
 }
 
