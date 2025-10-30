@@ -99,6 +99,8 @@ var (
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
 	debugDisableCgroup      = flag.Bool("debug_disable_cgroup", false, "Disable firecracker cgroup setup.")
+
+	alwaysCreateFullSnapshots = flag.Bool("always_create_full_snapshots", false, "Always create full snapshots, even if the VM was recycled.")
 )
 
 //go:embed guest_api_hash.sha256
@@ -1015,10 +1017,10 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		memSnapshotPath = baseMemSnapshotPath
 	}
 
-	// If we're creating a snapshot for the first time, create a COWStore from
-	// the initial full snapshot. (If we have a diff snapshot, then we already
+	// If we have a full snapshot file, create a COWStore from it.
+	// (If we have a diff snapshot, then we already
 	// updated the memoryStore in mergeDiffSnapshot above).
-	if snapshotSharingEnabled && c.memoryStore == nil {
+	if snapshotSharingEnabled && (c.memoryStore == nil || *alwaysCreateFullSnapshots) {
 		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
 		memoryStore, err := c.convertToCOW(ctx, memSnapshotPath, memChunkDir)
 		if err != nil {
@@ -1411,7 +1413,16 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	start := time.Now()
-	if err := os.Mkdir(chunkDir, 0755); err != nil {
+
+	if _, err := os.Stat(chunkDir); err == nil {
+		if err := os.RemoveAll(chunkDir); err != nil {
+			return nil, status.WrapError(err, "remove old chunk dir")
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	if err := os.MkdirAll(chunkDir, 0755); err != nil {
 		return nil, status.WrapError(err, "make chunk dir")
 	}
 	// Use vmCtx for the COW since IO may be done outside of the task ctx.
@@ -2959,7 +2970,7 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) *snapshotDet
 		log.CtxInfof(ctx, "Not saving local snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName))
 	}
 
-	if c.recycled {
+	if c.recycled && !*alwaysCreateFullSnapshots {
 		return &snapshotDetails{
 			snapshotType:        diffSnapshotType,
 			memSnapshotName:     diffMemSnapshotName,
