@@ -3249,11 +3249,6 @@ func (r *compressionReader) Close() error {
 	return err
 }
 
-type readCloser struct {
-	io.Reader
-	io.Closer
-}
-
 // newChunkedReader returns a reader to read chunked content.
 // When shouldDecompress is true, the content read is decompressed.
 func (p *PebbleCache) newChunkedReader(ctx context.Context, chunkedMD *sgpb.StorageMetadata_ChunkedMetadata, shouldDecompress bool) (io.ReadCloser, error) {
@@ -3396,7 +3391,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 			}
 		}
 		if uncompressedLimit != 0 {
-			reader = &readCloser{io.LimitReader(reader, uncompressedLimit), reader}
+			reader = ioutil.LimitReadCloser(reader, uncompressedLimit)
 		}
 	}
 
