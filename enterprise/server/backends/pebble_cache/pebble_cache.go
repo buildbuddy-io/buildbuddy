@@ -3234,21 +3234,6 @@ func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool 
 	}
 }
 
-// compressionReader helps manage resources associated with a compression.NewZstdCompressingReader
-type compressionReader struct {
-	io.ReadCloser
-	readBuf     []byte
-	compressBuf []byte
-	bufferPool  *bytebufferpool.VariableSizePool
-}
-
-func (r *compressionReader) Close() error {
-	err := r.ReadCloser.Close()
-	r.bufferPool.Put(r.readBuf)
-	r.bufferPool.Put(r.compressBuf)
-	return err
-}
-
 // newChunkedReader returns a reader to read chunked content.
 // When shouldDecompress is true, the content read is decompressed.
 func (p *PebbleCache) newChunkedReader(ctx context.Context, chunkedMD *sgpb.StorageMetadata_ChunkedMetadata, shouldDecompress bool) (io.ReadCloser, error) {
@@ -3402,21 +3387,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 			bufSize = resourceSize
 		}
 
-		readBuf := p.bufferPool.Get(bufSize)
-		compressBuf := p.bufferPool.Get(bufSize)
-
-		cr, err := compression.NewZstdCompressingReader(reader, readBuf, compressBuf)
-		if err != nil {
-			p.bufferPool.Put(readBuf)
-			p.bufferPool.Put(compressBuf)
-			return nil, err
-		}
-		return &compressionReader{
-			ReadCloser:  cr,
-			readBuf:     readBuf,
-			compressBuf: compressBuf,
-			bufferPool:  p.bufferPool,
-		}, err
+		return compression.NewBufferedZstdCompressingReader(reader, p.bufferPool, bufSize)
 	}
 
 	return reader, nil

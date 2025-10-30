@@ -116,22 +116,6 @@ func (z *zstdCompressor) Close() error {
 	return z.CommittedWriteCloser.Close()
 }
 
-// TODO(tylerw): move to util/compression
-// compressionReader helps manage resources associated with a compression.NewZstdCompressingReader
-type compressionReader struct {
-	io.ReadCloser
-	readBuf     []byte
-	compressBuf []byte
-	bufferPool  *bytebufferpool.VariableSizePool
-}
-
-func (r *compressionReader) Close() error {
-	err := r.ReadCloser.Close()
-	r.bufferPool.Put(r.readBuf)
-	r.bufferPool.Put(r.compressBuf)
-	return err
-}
-
 func (c *Cache) encryptionEnabled(ctx context.Context) (bool, error) {
 	if !authutil.EncryptionEnabled(ctx, c.env.GetAuthenticator()) {
 		return false, nil
@@ -611,22 +595,7 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 		if resourceSize > 0 && resourceSize < bufSize {
 			bufSize = resourceSize
 		}
-
-		readBuf := c.bufferPool.Get(bufSize)
-		compressBuf := c.bufferPool.Get(bufSize)
-
-		cr, err := compression.NewZstdCompressingReader(reader, readBuf, compressBuf)
-		if err != nil {
-			c.bufferPool.Put(readBuf)
-			c.bufferPool.Put(compressBuf)
-			return nil, err
-		}
-		return &compressionReader{
-			ReadCloser:  cr,
-			readBuf:     readBuf,
-			compressBuf: compressBuf,
-			bufferPool:  c.bufferPool,
-		}, err
+		return compression.NewBufferedZstdCompressingReader(reader, c.bufferPool, bufSize)
 	}
 
 	return reader, nil
