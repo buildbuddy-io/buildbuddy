@@ -62,7 +62,7 @@ var (
 	filecacheTreeSalt           = flag.String("cache.filecache_tree_salt", "20250304", "A salt to invalidate filecache tree hashes, if/when needed.")
 	requestCachedSubtreeDigests = flag.Bool("cache.request_cached_subtree_digests", true, "If true, GetTree requests will set send_cached_subtree_digests.")
 
-	uploadBufPool = bytebufferpool.FixedSize(uploadBufSizeBytes)
+	uploadBufPool = bytebufferpool.VariableSize(uploadBufSizeBytes)
 )
 
 func retryOptions(name string) *retry.Options {
@@ -255,6 +255,14 @@ func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.Di
 	return computeDigest(f, instanceName, digestFunction)
 }
 
+func bufferSize(r *digest.CASResourceName) int64 {
+	bufSize := int64(uploadBufSizeBytes)
+	if r.GetDigest().GetSizeBytes() > 0 && r.GetDigest().GetSizeBytes() < bufSize {
+		bufSize = r.GetDigest().GetSizeBytes()
+	}
+	return bufSize
+}
+
 func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
 	if bsClient == nil {
 		return nil, 0, status.FailedPreconditionError("ByteStreamClient not configured")
@@ -267,14 +275,10 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		return nil, 0, err
 	}
 
+	bufSize := bufferSize(r)
 	var rc io.ReadCloser = io.NopCloser(in)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		rbuf, cbuf := uploadBufPool.Get(), uploadBufPool.Get()
-		defer func() {
-			uploadBufPool.Put(rbuf)
-			uploadBufPool.Put(cbuf)
-		}()
-		reader, err := compression.NewZstdCompressingReader(rc, rbuf, cbuf)
+		reader, err := compression.NewBufferedZstdCompressingReader(rc, uploadBufPool, bufSize)
 		if err != nil {
 			return nil, 0, status.InternalErrorf("Failed to compress blob: %s", err)
 		}
@@ -282,7 +286,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	}
 	defer rc.Close()
 
-	buf := uploadBufPool.Get()
+	buf := uploadBufPool.Get(bufSize)
 	defer uploadBufPool.Put(buf)
 	bytesUploaded := int64(0)
 	sender := rpcutil.NewSender(ctx, stream)
@@ -1294,6 +1298,8 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	if err != nil {
 		return nil, err
 	}
+
+	bufSize := bufferSize(r)
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		return &UploadWriter{
@@ -1301,10 +1307,10 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 			stream:       stream,
 			sender:       sender,
 			uploadString: r.NewUploadString(),
-			buf:          uploadBufPool.Get(),
+			buf:          uploadBufPool.Get(bufSize),
 
 			useZstd: true,
-			cbuf:    uploadBufPool.Get(),
+			cbuf:    uploadBufPool.Get(bufSize),
 		}, nil
 	}
 	return &UploadWriter{
@@ -1312,6 +1318,6 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 		stream:       stream,
 		sender:       sender,
 		uploadString: r.NewUploadString(),
-		buf:          uploadBufPool.Get(),
+		buf:          uploadBufPool.Get(bufSize),
 	}, nil
 }
