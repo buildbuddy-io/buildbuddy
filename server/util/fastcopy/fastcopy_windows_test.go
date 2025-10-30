@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	// In Windows Github Actions, we setup a DevDrive at D:.
+	// In Windows Github Actions, we setup a DevDrive at E:.
 	// See .github/workflows/build-executor-win.yaml for details.
-	DevDrivePath = "D:"
+	DevDrivePath = "E:"
 
 	// FILE_SUPPORTS_BLOCK_REFCOUNTING indicates the file system supports block cloning
 	// Reference:

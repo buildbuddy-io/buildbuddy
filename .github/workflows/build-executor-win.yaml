@@ -34,9 +34,12 @@ jobs:
             Write-Host "Initializing disk..."
             $init = $disk | Initialize-Disk -PartitionStyle GPT -PassThru
             Write-Host "✓ Disk initialized with GPT partition style"
-            # Create partition with maximum size and assign D: drive
+            # Create partition with maximum size and assign the next available drive letter
             Write-Host "Creating partition..."
-            $partition = $init | New-Partition -DriveLetter D -UseMaximumSize
+            $partition = $init | New-Partition -UseMaximumSize -AssignDriveLetter
+            if (-not $partition.DriveLetter) {
+              throw "Failed to assign drive letter to DevDrive partition"
+            }
             $driveLetter = $partition.DriveLetter
             Write-Host "✓ Partition created with drive letter: ${driveLetter}:"
             # Format as ReFS (without -DevDrive parameter)
