@@ -163,6 +163,10 @@ func gitRefs(task *repb.ExecutionTask) (branchRef string, fallbackRefs []string)
 			fallbackRefs = append(fallbackRefs, v)
 		}
 	}
+
+	// As a last resort, fallback to a snapshot from any branch.
+	fallbackRefs = append(fallbackRefs, "")
+
 	return branchRef, fallbackRefs
 }
 
@@ -451,8 +455,15 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	}
 
 	// Fall back to fetching remote manifest.
-	log.CtxInfof(ctx, "Fetching remote manifest")
-	return l.fetchRemoteManifest(ctx, key)
+	manifest, err := l.fetchRemoteManifest(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if err := l.validateManifest(key, manifest); err != nil {
+		return nil, err
+	}
+	log.CtxInfof(ctx, "Using remote manifest")
+	return manifest, nil
 }
 
 // fetchRemoteManifest fetches the most recent snapshot manifest from the remote
@@ -477,6 +488,21 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 	}
 	tmpDir := l.env.GetFileCache().TempDir()
 	return l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir, true /*remoteEnabled*/)
+}
+
+func (l *FileCacheLoader) validateManifest(key *fcpb.SnapshotKey, manifest *fcpb.SnapshotManifest) error {
+	isUniversalSnapshot := key.Ref == ""
+	if !isUniversalSnapshot {
+		return nil
+	}
+	// TODO: Ref might be unset for RBE actions, and also for remote bazel if the env vars aren't set
+	// by the API. This might break things for them.
+	snapshotSaveTime := manifest.VmMetadata.GetLastExecutedTask().GetCompletedTimestamp().AsTime()
+	now := l.env.GetClock().Now()
+	if now.Sub(snapshotSaveTime) > snaputil.MaxUniversalSnapshotAge {
+		return status.NotFoundErrorf("universal snapshot is too old - it was created at %v", snapshotSaveTime)
+	}
+	return nil
 }
 
 func (l *FileCacheLoader) GetLocalManifestACResult(ctx context.Context, manifestDigest *repb.Digest) (*repb.ActionResult, error) {
@@ -512,6 +538,10 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 	manifest, err := l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir, false /*remoteEnabled*/)
 	if err != nil {
 		return nil, status.WrapError(err, "parse local snapshot manifest")
+	}
+
+	if err := l.validateManifest(key, manifest); err != nil {
+		return nil, err
 	}
 
 	// Check whether all artifacts in the manifest are available. This helps
@@ -785,9 +815,23 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 			}
 			log.CtxInfof(ctx, "Cached remote snapshot manifest %s", snapshotDebugString(ctx, l.env, snapshotSpecificKey, true /*remote*/, snapshotID))
 		}
+
+		// Cache a universal snapshot without a ref. This can be used as a last-resort fallback for a run without any other snapshots.
+		universalKey := key.CloneVT()
+		universalKey.Ref = ""
+		universalD, err := RemoteManifestKey(universalKey)
+		if err != nil {
+			return err
+		}
+		universalACDigest := digest.NewACResourceName(universalD, universalKey.InstanceName, repb.DigestFunction_BLAKE3)
+		if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), universalACDigest, ar); err != nil {
+			return err
+		}
+		log.CtxInfof(ctx, "Updated remote universal snapshot manifest %s", snapshotDebugString(ctx, l.env, universalKey, true /*remote*/, "" /*=snapshotID*/))
 	}
 
-	if !opts.WriteManifestLocally || !opts.CacheSnapshotLocally {
+	// If we didn't cache the snapshot itself locally, we shouldn't cache the manifest.
+	if !opts.CacheSnapshotLocally {
 		return nil
 	}
 
@@ -795,38 +839,55 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	if err != nil {
 		return err
 	}
-	d, err := LocalManifestKey(gid, key)
+
+	if opts.WriteManifestLocally {
+		d, err := LocalManifestKey(gid, key)
+		if err != nil {
+			return err
+		}
+		manifestNode := &repb.FileNode{Digest: d}
+		if _, err := l.env.GetFileCache().Write(ctx, manifestNode, b); err != nil {
+			return err
+		}
+		log.CtxInfof(ctx, "Updated local master snapshot manifest %s", snapshotDebugString(ctx, l.env, key, false /*remote*/, "" /*=snapshotID*/))
+
+		// Cache snapshot manifest for this specific snapshot ID
+		if opts.VMMetadata.GetSnapshotId() != "" {
+			snapshotID := opts.VMMetadata.GetSnapshotId()
+			snapshotSpecificKey := &fcpb.SnapshotKey{
+				InstanceName: key.InstanceName,
+				SnapshotId:   snapshotID,
+			}
+
+			snapshotSpecificManifestKey, err := LocalManifestKey(gid, snapshotSpecificKey)
+			if err != nil {
+				log.Warningf("Failed to generate snapshot specific local manifest key for snapshot ID %s: %s", snapshotID, err)
+				return nil
+			}
+
+			snapshotSpecificManifestNode := &repb.FileNode{Digest: snapshotSpecificManifestKey}
+			if _, err := l.env.GetFileCache().Write(ctx, snapshotSpecificManifestNode, b); err != nil {
+				log.Warningf("Failed to cache local snapshot specific manifest for snapshot ID %s: %s", snapshotID, err)
+				return nil
+			}
+
+			log.CtxInfof(ctx, "Cached local snapshot manifest %s", snapshotDebugString(ctx, l.env, snapshotSpecificKey, false /*remote*/, snapshotID))
+		}
+	}
+
+	// Cache a universal snapshot without a ref. This can be used as a last-resort fallback for a run without any other snapshots.
+	universalKey := key.CloneVT()
+	universalKey.Ref = ""
+
+	universalD, err := LocalManifestKey(gid, universalKey)
 	if err != nil {
 		return err
 	}
-	manifestNode := &repb.FileNode{Digest: d}
-	if _, err := l.env.GetFileCache().Write(ctx, manifestNode, b); err != nil {
+	universalManifestNode := &repb.FileNode{Digest: universalD}
+	if _, err := l.env.GetFileCache().Write(ctx, universalManifestNode, b); err != nil {
 		return err
 	}
-	log.CtxInfof(ctx, "Updated local master snapshot manifest %s", snapshotDebugString(ctx, l.env, key, false /*remote*/, "" /*=snapshotID*/))
-
-	// Cache snapshot manifest for this specific snapshot ID
-	if opts.VMMetadata.GetSnapshotId() != "" {
-		snapshotID := opts.VMMetadata.GetSnapshotId()
-		snapshotSpecificKey := &fcpb.SnapshotKey{
-			InstanceName: key.InstanceName,
-			SnapshotId:   snapshotID,
-		}
-
-		snapshotSpecificManifestKey, err := LocalManifestKey(gid, snapshotSpecificKey)
-		if err != nil {
-			log.Warningf("Failed to generate snapshot specific local manifest key for snapshot ID %s: %s", snapshotID, err)
-			return nil
-		}
-
-		snapshotSpecificManifestNode := &repb.FileNode{Digest: snapshotSpecificManifestKey}
-		if _, err := l.env.GetFileCache().Write(ctx, snapshotSpecificManifestNode, b); err != nil {
-			log.Warningf("Failed to cache local snapshot specific manifest for snapshot ID %s: %s", snapshotID, err)
-			return nil
-		}
-
-		log.CtxInfof(ctx, "Cached local snapshot manifest %s", snapshotDebugString(ctx, l.env, snapshotSpecificKey, false /*remote*/, snapshotID))
-	}
+	log.CtxInfof(ctx, "Updated local universal snapshot manifest %s", snapshotDebugString(ctx, l.env, universalKey, false /*remote*/, "" /*=snapshotID*/))
 
 	return nil
 }

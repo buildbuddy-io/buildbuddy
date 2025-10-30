@@ -187,6 +187,7 @@ go_test(
         "//server/util/testing/flags",
         "//server/util/tracing",
         "@com_github_google_go_cmp//cmp",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
