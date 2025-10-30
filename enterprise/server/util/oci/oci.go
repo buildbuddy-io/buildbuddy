@@ -671,6 +671,7 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		acClient:    acClient,
 		bsClient:    bsClient,
 		puller:      puller,
+		ociCache:    ocicache.NewOCICache(bsClient, acClient),
 	}
 	i.fetchRawConfigOnce = sync.OnceValues(func() ([]byte, error) {
 		manifest, err := i.Manifest()
@@ -713,6 +714,7 @@ type imageFromRawManifest struct {
 	acClient repb.ActionCacheClient
 	bsClient bspb.ByteStreamClient
 	puller   *remote.Puller
+	ociCache *ocicache.OCICache
 
 	fetchRawConfigOnce func() ([]byte, error)
 }
@@ -884,15 +886,15 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 			log.CtxWarningf(l.image.ctx, "Could not get size for layer: %s", err)
 			return upstream, nil
 		}
-		rc, err := ocicache.NewBlobReadThroughCacher(
+		rc, err := l.image.ociCache.TeeBlob(
 			l.image.ctx,
 			upstream,
-			l.image.bsClient,
-			l.image.acClient,
-			l.repo,
-			l.digest,
-			string(mediaType),
-			contentLength,
+			ocicache.BlobReference{
+				Repo:          l.repo,
+				Hash:          l.digest,
+				ContentType:   mediaType,
+				ContentLength: contentLength,
+			},
 		)
 		if err != nil {
 			return upstream, nil
