@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/compression",
     visibility = ["//visibility:public"],
     deps = [
-        "//server/interfaces",
         "//server/metrics",
         "//server/util/bytebufferpool",
         "//server/util/log",

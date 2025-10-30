@@ -6,7 +6,6 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -434,66 +433,7 @@ func (p *ZstdDecoderPool) Put(ref *DecoderRef) error {
 	return nil
 }
 
-// ZstdCompressor compresses bytes before writing them to the nested writer
-type ZstdCompressor struct {
-	cacheName string
-
-	interfaces.CommittedWriteCloser
-	compressBuf     []byte
-	poolCompressBuf []byte // Buffer we must return to the pool on close.
-	bufferPool      *bytebufferpool.VariableSizePool
-
-	numDecompressedBytes int
-	numCompressedBytes   int
-}
-
-func NewZstdCompressor(cacheName string, wc interfaces.CommittedWriteCloser, bp *bytebufferpool.VariableSizePool, digestSize int64) *ZstdCompressor {
-	compressBuf := bp.Get(digestSize)
-	return &ZstdCompressor{
-		cacheName:            cacheName,
-		CommittedWriteCloser: wc,
-		compressBuf:          compressBuf,
-		poolCompressBuf:      compressBuf,
-		bufferPool:           bp,
-	}
-}
-
-func (z *ZstdCompressor) Write(decompressedBytes []byte) (int, error) {
-	// CompressZstd can allocate a new buffer if the given compressBuf is not large enough
-	// to fit the compressed bytes.
-	z.compressBuf = CompressZstd(z.compressBuf, decompressedBytes)
-	compressedBytesWritten, err := z.CommittedWriteCloser.Write(z.compressBuf)
-	if err != nil {
-		return 0, err
-	}
-
-	z.numDecompressedBytes += len(decompressedBytes)
-	z.numCompressedBytes += compressedBytesWritten
-
-	// Return the size of the original buffer even though a different compressed buffer size may have been written,
-	// or clients will return a short write error
-	return len(decompressedBytes), nil
-}
-
-func (z *ZstdCompressor) Close() error {
-	metrics.CompressionRatio.
-		With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: z.cacheName}).
-		Observe(float64(z.numCompressedBytes) / float64(z.numDecompressedBytes))
-
-	z.bufferPool.Put(z.poolCompressBuf)
-	return z.CommittedWriteCloser.Close()
-}
-
-func NewBufferedCompressionReader(reader io.ReadCloser, readBuf []byte, compressBuf []byte, bufferPool *bytebufferpool.VariableSizePool) io.ReadCloser {
-	return &compressionReader{
-		ReadCloser:  reader,
-		readBuf:     readBuf,
-		compressBuf: compressBuf,
-		bufferPool:  bufferPool,
-	}
-}
-
-// compressionReader helps manage resources associated with a NewZstdCompressingReader
+// compressionReader helps manage resources associated with a compression.NewZstdCompressingReader
 type compressionReader struct {
 	io.ReadCloser
 	readBuf     []byte
@@ -506,4 +446,21 @@ func (r *compressionReader) Close() error {
 	r.bufferPool.Put(r.readBuf)
 	r.bufferPool.Put(r.compressBuf)
 	return err
+}
+
+func NewBufferedCompressionReader(reader io.ReadCloser, bufferPool *bytebufferpool.VariableSizePool, bufSize int64) (io.ReadCloser, error) {
+	readBuf := bufferPool.Get(bufSize)
+	compressBuf := bufferPool.Get(bufSize)
+	cr, err := NewZstdCompressingReader(reader, readBuf, compressBuf)
+	if err != nil {
+		bufferPool.Put(readBuf)
+		bufferPool.Put(compressBuf)
+		return nil, err
+	}
+	return &compressionReader{
+		ReadCloser:  cr,
+		readBuf:     readBuf,
+		compressBuf: compressBuf,
+		bufferPool:  bufferPool,
+	}, nil
 }
