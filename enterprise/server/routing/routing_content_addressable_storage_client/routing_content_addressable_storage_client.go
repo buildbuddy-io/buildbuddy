@@ -3,6 +3,7 @@ package routing_content_addressable_storage_client
 import (
 	"context"
 	"math/rand/v2"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -114,19 +115,30 @@ func (r *RoutingCASClient) FindMissingBlobs(ctx context.Context, req *repb.FindM
 }
 
 func (r *RoutingCASClient) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest, opts ...grpc.CallOption) (*repb.BatchUpdateBlobsResponse, error) {
-	primaryClient, _, err := r.router.GetCASClients(ctx)
+	primaryClient, secondaryClient, err := r.router.GetCASClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary CAS client: %s", err)
 	}
+	c, err := r.router.GetCacheRoutingConfig(ctx)
+	if err != nil {
+		// This should never happen, but if it does, we at least know where the
+		// primary request should go, so let's send that.
+		log.CtxWarningf(ctx, "Failed to fetch routing config: %s", err)
+		return primaryClient.BatchUpdateBlobs(ctx, req, opts...)
+	}
+
+	singleRandValue := rand.Float64()
+	dualWrite := singleRandValue < c.GetDualWriteFraction()
+	if dualWrite && secondaryClient != nil {
+		var wg sync.WaitGroup
+		wg.Go(func() { secondaryClient.BatchUpdateBlobs(ctx, req, opts...) })
+		defer wg.Wait()
+		return primaryClient.BatchUpdateBlobs(ctx, req, opts...)
+	}
+
 	rsp, err := primaryClient.BatchUpdateBlobs(ctx, req, opts...)
 	if err != nil {
 		return rsp, err
-	}
-
-	c, err := r.router.GetCacheRoutingConfig(ctx)
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to fetch routing config: %s", err)
-		return rsp, nil
 	}
 
 	if rand.Float64() < c.GetBackgroundCopyFraction() {
@@ -145,6 +157,7 @@ func (r *RoutingCASClient) BatchReadBlobs(ctx context.Context, req *repb.BatchRe
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary CAS client: %s", err)
 	}
+
 	rsp, err := primaryClient.BatchReadBlobs(ctx, req, opts...)
 	if err != nil {
 		return rsp, err
