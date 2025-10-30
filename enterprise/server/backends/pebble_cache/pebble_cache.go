@@ -3387,7 +3387,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 			bufSize = resourceSize
 		}
 
-		return compression.NewBufferedCompressionReader(reader, p.bufferPool, bufSize)
+		return compression.NewBufferedZstdCompressingReader(reader, p.bufferPool, bufSize)
 	}
 
 	return reader, nil

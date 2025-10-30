@@ -595,7 +595,7 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 		if resourceSize > 0 && resourceSize < bufSize {
 			bufSize = resourceSize
 		}
-		return compression.NewBufferedCompressionReader(reader, c.bufferPool, bufSize)
+		return compression.NewBufferedZstdCompressingReader(reader, c.bufferPool, bufSize)
 	}
 
 	return reader, nil
