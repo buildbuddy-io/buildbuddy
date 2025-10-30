@@ -3267,7 +3267,7 @@ func TestFirecrackerStressIO(t *testing.T) {
 }
 
 func Benchmark_PausePerformance(b *testing.B) {
-	for _, memorySizeMb := range []int64{500, 1000, 2000, 4000} {
+	for _, memorySizeMb := range []int64{500, 1000, 2000, 4000, 8000} {
 		b.Run(fmt.Sprintf("memory_size_%d_mb", memorySizeMb), func(b *testing.B) {
 			ctx := context.Background()
 
