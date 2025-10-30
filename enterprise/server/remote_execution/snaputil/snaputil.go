@@ -43,6 +43,8 @@ const (
 	// We rely on this name to locate the memory file in snapshots. Do not
 	// change!
 	MemoryFileName = "memory"
+
+	DefaultMaxStaleFallbackSnapshotAge = 24 * time.Hour
 )
 
 // ChunkSource represents how a snapshot chunk was initialized
