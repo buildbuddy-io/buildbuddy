@@ -273,9 +273,18 @@ func TestReadThroughCacher(t *testing.T) {
 	ctx := context.Background()
 	bsClient := te.GetByteStreamClient()
 	acClient := te.GetActionCacheClient()
-	r := io.NopCloser(bytes.NewReader(layerBuf))
 
-	cacher, err := ocicache.NewBlobReadThroughCacher(ctx, r, bsClient, acClient, repo, hash, contentType, contentLength)
+	cache := ocicache.NewOCICache(bsClient, acClient)
+	upstream := io.NopCloser(bytes.NewReader(layerBuf))
+
+	ref := ocicache.BlobReference{
+		Repo:          repo,
+		Hash:          hash,
+		ContentType:   types.MediaType(contentType),
+		ContentLength: contentLength,
+	}
+
+	cacher, err := cache.TeeBlob(ctx, upstream, ref)
 	require.NoError(t, err)
 
 	readout, err := io.ReadAll(cacher)
@@ -298,9 +307,18 @@ func TestReadThroughCacher_PartialReadPreventsCommit(t *testing.T) {
 	ctx := context.Background()
 	bsClient := te.GetByteStreamClient()
 	acClient := te.GetActionCacheClient()
-	rc := io.NopCloser(bytes.NewReader(layerBuf))
 
-	cacher, err := ocicache.NewBlobReadThroughCacher(ctx, rc, bsClient, acClient, repo, hash, contentType, contentLength)
+	cache := ocicache.NewOCICache(bsClient, acClient)
+	upstream := io.NopCloser(bytes.NewReader(layerBuf))
+
+	ref := ocicache.BlobReference{
+		Repo:          repo,
+		Hash:          hash,
+		ContentType:   types.MediaType(contentType),
+		ContentLength: contentLength,
+	}
+
+	cacher, err := cache.TeeBlob(ctx, upstream, ref)
 	require.NoError(t, err)
 
 	readbuf := make([]byte, 256)
@@ -322,9 +340,18 @@ func TestReadThroughCacher_ReturnsEOF(t *testing.T) {
 	ctx := context.Background()
 	bsClient := te.GetByteStreamClient()
 	acClient := te.GetActionCacheClient()
-	r := io.NopCloser(bytes.NewReader(layerBuf))
 
-	cacher, err := ocicache.NewBlobReadThroughCacher(ctx, r, bsClient, acClient, repo, hash, contentType, contentLength)
+	cache := ocicache.NewOCICache(bsClient, acClient)
+	upstream := io.NopCloser(bytes.NewReader(layerBuf))
+
+	ref := ocicache.BlobReference{
+		Repo:          repo,
+		Hash:          hash,
+		ContentType:   types.MediaType(contentType),
+		ContentLength: contentLength,
+	}
+
+	cacher, err := cache.TeeBlob(ctx, upstream, ref)
 	require.NoError(t, err)
 
 	readout := &bytes.Buffer{}
