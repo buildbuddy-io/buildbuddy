@@ -18,6 +18,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
+        "//server/remote_cache/cachetools",
         "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",
         "//server/resources",

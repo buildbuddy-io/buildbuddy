@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
@@ -1727,19 +1728,9 @@ func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 		return nil, err
 	}
 	defer rc.Close()
-	buf := bytes.NewBuffer(make([]byte, 0, bufferSize(r)))
+	buf := cachetools.GetBuffer(r)
 	_, err = io.Copy(buf, rc)
 	return buf.Bytes(), err
-}
-
-func bufferSize(r *rspb.ResourceName) int {
-	if r.GetCacheType() != rspb.CacheType_CAS {
-		// The median and average AC results are less than 4KiB: go/action-result-size
-		return 4 * 1024
-	}
-	// Clamp the size between 0 and 10MB, to protect from invalid and
-	// malicious requests.
-	return min(10_000_000, max(0, int(r.GetDigest().GetSizeBytes())))
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -138,6 +140,36 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 		return status.DataLossErrorf("Downloaded content (hash %q) did not match expected (hash %q)", computedDigest, r.GetDigest().GetHash())
 	}
 	return nil
+}
+
+// maxInitialByteBufferSize is the max initial allocatable buffer size.
+// Set it somewhat conservatively so that we're not DOSed by someone crafting
+// remote_instance_names that match this just to use memory.
+const maxInitialByteBufferSize = (1024 * 1024 * 4)
+
+// The median and average AC results are less than 4KiB: go/action-result-size
+const actionCacheByteBufferSize = (1024 * 4)
+
+func GetBuffer(rn *rspb.ResourceName) *bytes.Buffer {
+	var buf *bytes.Buffer
+	if rn.GetCacheType() == rspb.CacheType_CAS {
+		// Clamp the size between 0 and 10MB, to protect from invalid and
+		// malicious requests.
+		size := min(10_000_000, max(0, int(rn.GetDigest().GetSizeBytes())))
+		buf = bytes.NewBuffer(make([]byte, 0, size))
+	} else if strings.HasPrefix(rn.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
+		// If this is a TreeCache entry that we wrote; pull the size
+		// from the remote instance name.
+		parts := strings.Split(rn.GetInstanceName(), "/")
+		if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
+			buf = bytes.NewBuffer(make([]byte, 0, min(s, maxInitialByteBufferSize)))
+		} else {
+			buf = bytes.NewBuffer(make([]byte, 0, actionCacheByteBufferSize))
+		}
+	} else {
+		buf = bytes.NewBuffer(make([]byte, 0, actionCacheByteBufferSize))
+	}
+	return buf
 }
 
 func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, out io.Writer) error {
