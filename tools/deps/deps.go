@@ -35,4 +35,7 @@ import (
 
 	// Used by cli/explain/compactgraph/testdata/generate to generate test data.
 	_ "github.com/otiai10/copy"
+
+	// Used indirectly through a data dependency by //tools/lint on gomimports
+	_ "golang.org/x/telemetry/counter"
 )

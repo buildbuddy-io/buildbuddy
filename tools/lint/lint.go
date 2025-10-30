@@ -16,8 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"golang.org/x/sync/errgroup"
-
-	_ "golang.org/x/telemetry/counter"
 )
 
 var (
