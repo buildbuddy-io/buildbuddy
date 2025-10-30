@@ -2,6 +2,7 @@ package experiments
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
@@ -146,6 +147,24 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 
 	evalContext := openfeature.NewEvaluationContext(options.targetingKey, options.attributes)
 	return evalContext
+}
+
+// ObjectToStruct is a utility function to get a Go struct from an object
+// returned by [interfaces.ExperimentFlagProvider.Object] or
+// [interfaces.ExperimentFlagProvider.ObjectDetails].
+//
+// It uses an intermediate JSON conversion, so any `json` tags on struct fields
+// can be used to control how the object fields are unmarshaled into struct
+// fields.
+func ObjectToStruct(object map[string]any, dest any) error {
+	b, err := json.Marshal(object)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+	if err := json.Unmarshal(b, dest); err != nil {
+		return fmt.Errorf("unmarshal: %w", err)
+	}
+	return nil
 }
 
 // WithContext adds the provided key and value into the experiment context when
