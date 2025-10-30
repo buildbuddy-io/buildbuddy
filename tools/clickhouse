@@ -16,7 +16,7 @@ Example:
 : "${BB_CLICKHOUSE_PORT:=9000}"
 : "${BB_CLICKHOUSE_HTTP_PORT:=8123}"
 # Clickhouse image to use
-: "${BB_CLICKHOUSE_IMAGE:=mirror.gcr.io/clickhouse/clickhouse-server:23.8}"
+: "${BB_CLICKHOUSE_IMAGE:=mirror.gcr.io/clickhouse/clickhouse-server:25.3}"
 
 # Start clickhouse server if not already running.
 docker="$BB_CLICKHOUSE_CONTAINER_RUNNER"
@@ -41,6 +41,7 @@ start_clickhouse() {
     --name=bb-clickhouse-local \
     --publish="$BB_CLICKHOUSE_PORT:9000" \
     --publish="$BB_CLICKHOUSE_HTTP_PORT:8123" \
+    --env="CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1" \
     --volume="/tmp/${USER}_clickhouse_data:/var/lib/clickhouse" \
     "$BB_CLICKHOUSE_IMAGE" >/dev/null
 }

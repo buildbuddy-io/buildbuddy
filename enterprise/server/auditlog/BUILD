@@ -34,7 +34,7 @@ go_test(
         "test.workload-isolation-type": "firecracker",
         "test.init-dockerd": "true",
         "test.recycle-runner": "true",
-        "test.runner-recycling-key": "clickhouse",
+        "test.runner-recycling-key": "clickhouse25.3",
     },
     tags = ["docker"],
     deps = [

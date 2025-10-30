@@ -9,7 +9,7 @@ go_web_test_suite(
         "test.workload-isolation-type": "firecracker",
         "test.init-dockerd": "true",
         "test.recycle-runner": "true",
-        "test.runner-recycling-key": "clickhouse",
+        "test.runner-recycling-key": "clickhouse25.3",
         "test.EstimatedComputeUnits": "8",
     },
     shard_count = 2,
