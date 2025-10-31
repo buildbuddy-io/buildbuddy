@@ -435,7 +435,7 @@ func makeTreeCachePointer(directoryNode *rspb.ResourceName, digestFunction repb.
 	if err != nil {
 		return nil, err
 	}
-	instanceName := fmt.Sprintf("%s/%d", digest.TreeCacheRemoteInstanceName, d.GetSizeBytes())
+	instanceName := digest.GetTreeCacheInstanceName(d)
 	// N.B: This is a AC digest, not a CAS one like the pointer below.
 	return digest.NewResourceName(d, instanceName, rspb.CacheType_AC, digestFunction), nil
 }
@@ -445,7 +445,7 @@ func makeTreeCacheDigest(digestFunction repb.DigestFunction_Value, buf []byte) (
 	if err != nil {
 		return nil, err
 	}
-	instanceName := fmt.Sprintf("%s/%d", digest.TreeCacheRemoteInstanceName, d.GetSizeBytes())
+	instanceName := digest.GetTreeCacheInstanceName(d)
 	// N.B: This is a CAS digest, not an AC one like the pointer above.
 	return digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction), nil
 }
