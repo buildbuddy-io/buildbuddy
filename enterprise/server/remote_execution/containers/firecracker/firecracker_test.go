@@ -166,7 +166,7 @@ type envOpts struct {
 	runProxy         bool
 }
 
-func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEnv {
+func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEnv {
 	err := networking.Configure(ctx)
 	require.NoError(t, err)
 	testnetworking.Setup(t)
@@ -285,7 +285,7 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	return env
 }
 
-func runProxyServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *testing.T) {
+func runProxyServers(ctx context.Context, proxyEnv *testenv.TestEnv, t testing.TB) {
 	server, err := byte_stream_server.NewByteStreamServer(proxyEnv)
 	require.NoError(t, err)
 	acServer, err := action_cache_server.NewActionCacheServer(proxyEnv)
@@ -294,7 +294,7 @@ func runProxyServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *testing.
 	proxyEnv.SetLocalActionCacheServer(acServer)
 }
 
-func executorRootDir(t *testing.T) string {
+func executorRootDir(t testing.TB) string {
 	// When running this test on the bare executor pool, ensure the jailer root
 	// is under /buildbuddy so that it's on the same device as the executor data
 	// dir (with action workspaces and filecache).
@@ -313,7 +313,7 @@ func executorRootDir(t *testing.T) string {
 	return testfs.MakeTempSymlink(t, "/tmp", "buildbuddy-*-jailer", testfs.MakeTempDir(t))
 }
 
-func getExecutorConfig(t *testing.T) *firecracker.ExecutorConfig {
+func getExecutorConfig(t testing.TB) *firecracker.ExecutorConfig {
 	root := executorRootDir(t)
 	buildRoot := filepath.Join(root, "build")
 	cacheRoot := filepath.Join(root, "cache")
@@ -3253,6 +3253,110 @@ func TestFirecrackerStressIO(t *testing.T) {
 	}
 	err := eg.Wait()
 	assert.NoError(t, err)
+}
+
+func Benchmark_PausePerformance(b *testing.B) {
+	for _, memorySizeMb := range []int64{500, 1000, 2000, 4000, 8000} {
+		b.Run(fmt.Sprintf("memory_size_%d_mb", memorySizeMb), func(b *testing.B) {
+			ctx := context.Background()
+
+			env := getTestEnv(ctx, b, envOpts{})
+			env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+			rootDir := testfs.MakeTempDir(b)
+			workDir := testfs.MakeDirAll(b, rootDir, "work")
+
+			cfg := getExecutorConfig(b)
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         "gcr.io/flame-public/stress-ng-alpine@sha256:b3c26074348e7eecff6415f992dcac443947b1f36298b746b962ca677405fcbf",
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:            2,
+					MemSizeMb:          memorySizeMb,
+					EnableNetworking:   true,
+					ScratchDiskSizeMb:  500,
+					GuestKernelVersion: cfg.GuestKernelVersion,
+					FirecrackerVersion: cfg.FirecrackerVersion,
+					GuestApiVersion:    cfg.GuestAPIVersion,
+				},
+				ExecutorConfig: cfg,
+			}
+			task := &repb.ExecutionTask{
+				Command: &repb.Command{
+					// Note: platform must match in order to share snapshots
+					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+					}},
+					Arguments: []string{"./buildbuddy_ci_runner"},
+				},
+			}
+
+			c, err := firecracker.NewContainer(ctx, env, task, opts)
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage); err != nil {
+				b.Fatalf("unable to pull image: %s", err)
+			}
+
+			if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+				b.Fatalf("unable to Create container: %s", err)
+			}
+			b.Cleanup(func() {
+				if err := c.Remove(ctx); err != nil {
+					b.Fatal(err)
+				}
+			})
+
+			mbToWrite := .7 * float64(memorySizeMb)
+			cmd := &repb.Command{
+				// Dirty about 70% of the memory in the VM, which is roughly what we see from Bazel builds.
+				//
+				// stress-ng typically frees the allocated memory when the command returns, but we want the memory
+				// to still be dirty while we take the snapshot.
+				// We double-fork stress-ng (& & twice) to fully detach the process from its parent process.
+				// The stress-ng process gets reparented to the init process (PID 1).
+				// This prevents RunWithProcessTreeCleanup from killing it when the Exec command returns,
+				// allowing stress-ng to continue running while we take the snapshot.
+				//
+				// We also redirect I/O to /dev/null so there is no corruption when the pipes
+				// are closed by RunWithProcessTreeCleanup.
+				Arguments: []string{"sh", "-c", `
+cd /root
+if [ ! -f /tmp/stress_ng_running ]; then
+	(stress-ng --vm 2 --vm-bytes ` + fmt.Sprint(mbToWrite) + `M  --vm-method all  --vm-keep --timeout 3h </dev/null >/dev/null 2>&1 &) &
+	touch /tmp/stress_ng_running
+fi
+sleep 5
+free -h
+		`},
+			}
+
+			// Generate one full snapshot outside of the loop. Within the loop, it will always create a diff snapshot.
+			res := c.Exec(ctx, cmd, nil /*=stdio*/)
+			require.NoError(b, res.Error)
+			log.Infof("Initial run output: %s", string(res.Stdout))
+			err = c.Pause(ctx)
+			require.NoError(b, err)
+			err = c.Unpause(ctx)
+			require.NoError(b, err)
+
+			b.ResetTimer()
+			for range b.N {
+				b.StopTimer()
+				res = c.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(b, res.Error)
+				b.StartTimer()
+				err = c.Pause(ctx)
+				b.StopTimer()
+				require.NoError(b, err)
+				err = c.Unpause(ctx)
+				require.NoError(b, err)
+			}
+			log.Infof("Final output: %s", string(res.Stdout))
+			assert.Equal(b, int64(b.N), res.VMMetadata.GetSavedSnapshotVersionNumber())
+		})
+	}
 }
 
 func TestBazelBuild(t *testing.T) {

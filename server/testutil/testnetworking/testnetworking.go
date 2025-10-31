@@ -20,7 +20,7 @@ import (
 
 // Setup sets up the test to be able to call networking functions.
 // It skips the test if the required net tools aren't available.
-func Setup(t *testing.T) {
+func Setup(t testing.TB) {
 	// Ensure ip tools are in PATH
 	os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin:/sbin")
 
