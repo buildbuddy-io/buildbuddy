@@ -1299,7 +1299,6 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 		return nil, err
 	}
 
-	bufSize := bufferSize(r)
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		return &UploadWriter{
@@ -1307,10 +1306,9 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 			stream:       stream,
 			sender:       sender,
 			uploadString: r.NewUploadString(),
-			buf:          uploadBufPool.Get(bufSize),
-
-			useZstd: true,
-			cbuf:    uploadBufPool.Get(bufSize),
+			buf:          uploadBufPool.Get(uploadBufSizeBytes),
+			useZstd:      true,
+			cbuf:         uploadBufPool.Get(uploadBufSizeBytes),
 		}, nil
 	}
 	return &UploadWriter{
@@ -1318,6 +1316,6 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 		stream:       stream,
 		sender:       sender,
 		uploadString: r.NewUploadString(),
-		buf:          uploadBufPool.Get(bufSize),
+		buf:          uploadBufPool.Get(uploadBufSizeBytes),
 	}, nil
 }
