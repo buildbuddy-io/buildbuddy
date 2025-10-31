@@ -1,4 +1,16 @@
 actions:
+  - name: M
+    container_image: ubuntu-22.04
+    resource_requests:
+      disk: 2GB
+    steps:
+      - run: "echo HI"
+  - name: L
+    container_image: ubuntu-22.04
+    resource_requests:
+      disk: 2GB
+    steps:
+      - run: "echo HI"
   - name: Test
     container_image: ubuntu-22.04
     resource_requests:

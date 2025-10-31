@@ -832,7 +832,8 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 		}
 		actionQStr, actionQArgs := q.Build()
 		actionHistoryQArgs = append(actionHistoryQArgs, actionQArgs...)
-		actionHistoryQStrs = append(actionHistoryQStrs, "("+actionQStr+")")
+		// Wrap as a subquery to support ORDER BY and LIMIT in SQLite UNION queries
+		actionHistoryQStrs = append(actionHistoryQStrs, "SELECT * FROM ("+actionQStr+")")
 		summary := &wfpb.ActionHistory_Summary{
 			TotalRuns:       row.TotalRuns,
 			SuccessfulRuns:  row.SuccessfulRuns,
@@ -852,6 +853,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 	if len(actionHistoryQStrs) == 0 {
 		return &wfpb.GetWorkflowHistoryResponse{}, nil
 	}
+	// Join all queries with UNION ALL
 	finalActionHistoryQStr := strings.Join(actionHistoryQStrs, " UNION ALL ")
 
 	rq = ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_query_history").Raw(
@@ -902,7 +904,8 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 		for action := range workflows[repoUrl] {
 			actions = append(actions, action)
 		}
-		sort.Strings(actions)
+		log.Warningf("actions: %v", actions)
+		sort.Sort(sort.Reverse(sort.StringSlice(actions)))
 		for _, action := range actions {
 			wfHistory.ActionHistory = append(wfHistory.ActionHistory, workflows[repoUrl][action])
 		}
