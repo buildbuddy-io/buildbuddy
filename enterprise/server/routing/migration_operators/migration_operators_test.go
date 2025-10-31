@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/stretchr/testify/require"
@@ -272,15 +273,43 @@ func (m *mockCASClient) BatchReadBlobs(ctx context.Context, req *repb.BatchReadB
 	// Create responses for each digest
 	responses := make([]*repb.BatchReadBlobsResponse_Response, len(req.Digests))
 	for i, digest := range req.Digests {
-		// Generate test data based on digest hash
-		dataSize := digest.SizeBytes
-		if m.forceWrongSizeData {
-			dataSize = 1 // Always return 1 byte regardless of expected size
+		var data []byte
+
+		// Check if this looks like a tree digest (starts with 't' characters)
+		if strings.HasPrefix(digest.Hash, "tttt") {
+			// Create a proper Tree proto for tree digests
+			tree := &repb.Tree{
+				Root: &repb.Directory{
+					Files: []*repb.FileNode{
+						{Name: "tree_file1.txt", Digest: digestProto(strings.Repeat("a", 64), 100)},
+						{Name: "tree_file2.txt", Digest: digestProto(strings.Repeat("b", 64), 200)},
+					},
+				},
+				Children: []*repb.Directory{
+					{
+						Files: []*repb.FileNode{
+							{Name: "child_file.txt", Digest: digestProto(strings.Repeat("c", 64), 300)},
+						},
+					},
+				},
+			}
+			var err error
+			data, err = proto.Marshal(tree)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// Generate test data based on digest hash for non-tree digests
+			dataSize := digest.SizeBytes
+			if m.forceWrongSizeData {
+				dataSize = 1 // Always return 1 byte regardless of expected size
+			}
+			data = make([]byte, dataSize)
+			for j := range data {
+				data[j] = byte(digest.Hash[0])
+			}
 		}
-		data := make([]byte, dataSize)
-		for j := range data {
-			data[j] = byte(digest.Hash[0])
-		}
+
 		responses[i] = &repb.BatchReadBlobsResponse_Response{
 			Digest:     digest,
 			Data:       data,
@@ -328,13 +357,61 @@ func (m *mockCASClient) SplitBlob(ctx context.Context, req *repb.SplitBlobReques
 	return nil, status.UnimplementedError("SplitBlob not implemented")
 }
 
+type mockACClient struct {
+	actionResults           map[string]*repb.ActionResult // key is action digest hash
+	err                     error
+	lastCtx                 context.Context                 // Capture context for verification
+	lastGetRequest          *repb.GetActionResultRequest    // Capture last GetActionResult request
+	lastUpdateRequest       *repb.UpdateActionResultRequest // Capture last UpdateActionResult request
+	getActionResultError    error                           // Separate error for GetActionResult calls
+	updateActionResultError error                           // Separate error for UpdateActionResult calls
+}
+
+func (m *mockACClient) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	m.lastCtx = ctx
+	m.lastGetRequest = req
+	if m.getActionResultError != nil {
+		return nil, m.getActionResultError
+	}
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	result, exists := m.actionResults[req.ActionDigest.Hash]
+	if !exists {
+		return nil, status.NotFoundError("ActionResult not found")
+	}
+	return result, nil
+}
+
+func (m *mockACClient) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	m.lastCtx = ctx
+	m.lastUpdateRequest = req
+	if m.updateActionResultError != nil {
+		return nil, m.updateActionResultError
+	}
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	// Store the action result
+	if m.actionResults == nil {
+		m.actionResults = make(map[string]*repb.ActionResult)
+	}
+	m.actionResults[req.ActionDigest.Hash] = req.ActionResult
+	return req.ActionResult, nil
+}
+
 type mockRouter struct {
 	primary      bspb.ByteStreamClient
 	secondary    bspb.ByteStreamClient
 	casPrimary   repb.ContentAddressableStorageClient
 	casSecondary repb.ContentAddressableStorageClient
+	acPrimary    repb.ActionCacheClient
+	acSecondary  repb.ActionCacheClient
 	err          error
 	casErr       error
+	acErr        error
 }
 
 func (m *mockRouter) GetCacheRoutingConfig(ctx context.Context) (*ropb.CacheRoutingConfig, error) {
@@ -349,7 +426,10 @@ func (m *mockRouter) GetCASClients(ctx context.Context) (repb.ContentAddressable
 }
 
 func (m *mockRouter) GetACClients(ctx context.Context) (repb.ActionCacheClient, repb.ActionCacheClient, error) {
-	return nil, nil, status.UnimplementedError("GetACClients not implemented")
+	if m.acErr != nil {
+		return nil, nil, m.acErr
+	}
+	return m.acPrimary, m.acSecondary, nil
 }
 
 func (m *mockRouter) GetBSClients(ctx context.Context) (bspb.ByteStreamClient, bspb.ByteStreamClient, error) {
@@ -1319,4 +1399,452 @@ func TestGetTreeMirrorOperator_GetTreeError(t *testing.T) {
 	err := migration_operators.GetTreeMirrorOperator(ctx, router, copyOperator, "test-group", batch)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "get tree failed")
+}
+
+func TestACReadAndVerify_Success(t *testing.T) {
+	ctx := context.Background()
+
+	// Create test action digests
+	actionDigest1 := digestProto(strings.Repeat("1", 64), 100)
+	actionDigest2 := digestProto(strings.Repeat("2", 64), 200)
+
+	// Create mock action results
+	actionResult1 := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{Path: "output1.txt", Digest: digestProto(strings.Repeat("a", 64), 50)},
+		},
+	}
+	actionResult2 := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{Path: "output2.txt", Digest: digestProto(strings.Repeat("b", 64), 75)},
+		},
+	}
+
+	acSecondary := &mockACClient{
+		actionResults: map[string]*repb.ActionResult{
+			actionDigest1.Hash: actionResult1,
+			actionDigest2.Hash: actionResult2,
+		},
+	}
+
+	router := &mockRouter{
+		acSecondary: acSecondary,
+	}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{actionDigest1, actionDigest2},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err := migration_operators.ACReadAndVerify(ctx, router, "test-group", batch)
+	require.NoError(t, err)
+
+	// Verify usage tracking is disabled for AC secondary calls
+	verifyUsageTrackingDisabled(t, acSecondary.lastCtx)
+
+	// Verify that GetActionResult was called for each digest
+	require.NotNil(t, acSecondary.lastGetRequest)
+	// Last request should be for the second digest
+	require.Equal(t, actionDigest2, acSecondary.lastGetRequest.ActionDigest)
+	require.Equal(t, "test-instance", acSecondary.lastGetRequest.InstanceName)
+	require.Equal(t, repb.DigestFunction_SHA256, acSecondary.lastGetRequest.DigestFunction)
+}
+
+func TestACReadAndVerify_NotFound(t *testing.T) {
+	ctx := context.Background()
+
+	actionDigest := digestProto(strings.Repeat("1", 64), 100)
+
+	acSecondary := &mockACClient{
+		actionResults: map[string]*repb.ActionResult{}, // Empty - no action results
+	}
+
+	router := &mockRouter{
+		acSecondary: acSecondary,
+	}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{actionDigest},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err := migration_operators.ACReadAndVerify(ctx, router, "test-group", batch)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ActionResult not found")
+}
+
+func TestACReadAndVerify_GetACClientsError(t *testing.T) {
+	ctx := context.Background()
+
+	router := &mockRouter{
+		acErr: status.InternalError("get ac clients failed"),
+	}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err := migration_operators.ACReadAndVerify(ctx, router, "test-group", batch)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "get ac clients failed")
+}
+
+func TestACReadAndVerify_GetActionResultError(t *testing.T) {
+	ctx := context.Background()
+
+	actionDigest := digestProto(strings.Repeat("1", 64), 100)
+
+	acSecondary := &mockACClient{
+		getActionResultError: status.InternalError("get action result failed"),
+	}
+
+	router := &mockRouter{
+		acSecondary: acSecondary,
+	}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{actionDigest},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err := migration_operators.ACReadAndVerify(ctx, router, "test-group", batch)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "get action result failed")
+}
+
+func TestACCopy_Success_SameDigests(t *testing.T) {
+	ctx := context.Background()
+
+	actionDigest := digestProto(strings.Repeat("1", 64), 100)
+	actionResultDigest := digestProto(strings.Repeat("r", 64), 150)
+
+	// Create action result with output files
+	actionResult := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{Path: "output1.txt", Digest: digestProto(strings.Repeat("a", 64), 50)},
+			{Path: "output2.txt", Digest: digestProto(strings.Repeat("b", 64), 75)},
+		},
+		ActionResultDigest: actionResultDigest,
+	}
+
+	acPrimary := &mockACClient{
+		actionResults: map[string]*repb.ActionResult{
+			actionDigest.Hash: actionResult,
+		},
+	}
+	acSecondary := &mockACClient{
+		actionResults: map[string]*repb.ActionResult{
+			actionDigest.Hash: actionResult, // Same result exists in secondary
+		},
+	}
+
+	casPrimary := &mockCASClient{}
+	copyOperator := &mockBatchOperator{enqueueSuccess: true}
+
+	router := &mockRouter{
+		acPrimary:   acPrimary,
+		acSecondary: acSecondary,
+		casPrimary:  casPrimary,
+	}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{actionDigest},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err := migration_operators.ACCopy(ctx, router, copyOperator, "test-group", batch)
+	require.NoError(t, err)
+
+	// Verify usage tracking is disabled
+	verifyUsageTrackingDisabled(t, acPrimary.lastCtx)
+	verifyUsageTrackingDisabled(t, acSecondary.lastCtx)
+
+	// Since the digests are the same, no copy should be performed
+	require.Len(t, copyOperator.enqueueCalls, 0)
+	require.Nil(t, acSecondary.lastUpdateRequest) // No update should have been called
+}
+
+// When the secondary cache has a different ActionResult for the specified
+// action digest, we should sync whatever files are needed and overwrite the
+// old ActionResult.
+func TestACCopy_Success_DifferentDigests(t *testing.T) {
+	ctx := context.Background()
+
+	actionDigest := digestProto(strings.Repeat("1", 64), 100)
+	primaryResultDigest := digestProto(strings.Repeat("p", 64), 150)
+	secondaryResultDigest := digestProto(strings.Repeat("s", 64), 150)
+
+	// Create action results with different digests
+	primaryActionResult := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{Path: "output1.txt", Digest: digestProto(strings.Repeat("a", 64), 50)},
+			{Path: "output2.txt", Digest: digestProto(strings.Repeat("b", 64), 75)},
+		},
+		ActionResultDigest: primaryResultDigest,
+	}
+
+	secondaryActionResult := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{Path: "old_output.txt", Digest: digestProto(strings.Repeat("x", 64), 25)},
+		},
+		ActionResultDigest: secondaryResultDigest,
+	}
+
+	acPrimary := &mockACClient{
+		actionResults: map[string]*repb.ActionResult{
+			actionDigest.Hash: primaryActionResult,
+		},
+	}
+	acSecondary := &mockACClient{
+		actionResults: map[string]*repb.ActionResult{
+			actionDigest.Hash: secondaryActionResult, // Different result in secondary
+		},
+	}
+
+	casPrimary := &mockCASClient{}
+	copyOperator := &mockBatchOperator{enqueueSuccess: true}
+
+	router := &mockRouter{
+		acPrimary:   acPrimary,
+		acSecondary: acSecondary,
+		casPrimary:  casPrimary,
+	}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{actionDigest},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err := migration_operators.ACCopy(ctx, router, copyOperator, "test-group", batch)
+	require.NoError(t, err)
+
+	// Verify usage tracking is disabled
+	verifyUsageTrackingDisabled(t, acPrimary.lastCtx)
+	verifyUsageTrackingDisabled(t, acSecondary.lastCtx)
+	// CAS client not called for this test since there are no output directories
+
+	// Copy should be performed for output files
+	require.Len(t, copyOperator.enqueueCalls, 1)
+	require.Equal(t, "test-instance", copyOperator.enqueueCalls[0].instanceName)
+	require.Equal(t, repb.DigestFunction_SHA256, copyOperator.enqueueCalls[0].digestFunction)
+
+	// Should copy the output file digests
+	expectedDigests := []*repb.Digest{
+		digestProto(strings.Repeat("a", 64), 50),
+		digestProto(strings.Repeat("b", 64), 75),
+	}
+	require.Len(t, copyOperator.enqueueCalls[0].digests, 2)
+	require.Contains(t, copyOperator.enqueueCalls[0].digests, expectedDigests[0])
+	require.Contains(t, copyOperator.enqueueCalls[0].digests, expectedDigests[1])
+
+	// UpdateActionResult should be called
+	require.NotNil(t, acSecondary.lastUpdateRequest)
+	require.Equal(t, actionDigest, acSecondary.lastUpdateRequest.ActionDigest)
+	require.Equal(t, primaryActionResult, acSecondary.lastUpdateRequest.ActionResult)
+}
+
+func TestACCopy_Success_WithOutputDirectories(t *testing.T) {
+	ctx := context.Background()
+
+	actionDigest := digestProto(strings.Repeat("1", 64), 100)
+	primaryResultDigest := digestProto(strings.Repeat("p", 64), 150)
+
+	// Create action result with output directories
+	primaryActionResult := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{Path: "output1.txt", Digest: digestProto(strings.Repeat("a", 64), 50)},
+		},
+		OutputDirectories: []*repb.OutputDirectory{
+			{Path: "outdir", TreeDigest: digestProto(strings.Repeat("t", 64), 300)},
+		},
+		ActionResultDigest: primaryResultDigest,
+	}
+
+	acPrimary := &mockACClient{
+		actionResults: map[string]*repb.ActionResult{
+			actionDigest.Hash: primaryActionResult,
+		},
+	}
+	acSecondary := &mockACClient{
+		actionResults: map[string]*repb.ActionResult{}, // No result in secondary
+	}
+
+	casPrimary := &mockCASClient{}
+	copyOperator := &mockBatchOperator{enqueueSuccess: true}
+
+	router := &mockRouter{
+		acPrimary:   acPrimary,
+		acSecondary: acSecondary,
+		casPrimary:  casPrimary,
+	}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{actionDigest},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err := migration_operators.ACCopy(ctx, router, copyOperator, "test-group", batch)
+	require.NoError(t, err)
+
+	// Verify usage tracking is disabled
+	verifyUsageTrackingDisabled(t, acPrimary.lastCtx)
+	verifyUsageTrackingDisabled(t, acSecondary.lastCtx)
+	verifyUsageTrackingDisabled(t, casPrimary.lastCtx)
+
+	// Copy should be performed for output files (directories are handled by expanding the tree)
+	require.Len(t, copyOperator.enqueueCalls, 1)
+
+	// Should copy the output file digest and files from the tree
+	foundDigests := copyOperator.enqueueCalls[0].digests
+	expectedFileDigest := digestProto(strings.Repeat("a", 64), 50)
+	require.Contains(t, foundDigests, expectedFileDigest)
+
+	// Should also have files from the expanded tree (from mock BatchReadBlobs response for tree digest)
+	expectedTreeFile1 := digestProto(strings.Repeat("a", 64), 100) // tree_file1.txt
+	expectedTreeFile2 := digestProto(strings.Repeat("b", 64), 200) // tree_file2.txt
+	expectedTreeFile3 := digestProto(strings.Repeat("c", 64), 300) // child_file.txt
+	require.Contains(t, foundDigests, expectedTreeFile1)
+	require.Contains(t, foundDigests, expectedTreeFile2)
+	require.Contains(t, foundDigests, expectedTreeFile3)
+
+	// UpdateActionResult should be called
+	require.NotNil(t, acSecondary.lastUpdateRequest)
+	require.Equal(t, actionDigest, acSecondary.lastUpdateRequest.ActionDigest)
+	require.Equal(t, primaryActionResult, acSecondary.lastUpdateRequest.ActionResult)
+}
+
+func TestACCopy_GetACClientsError(t *testing.T) {
+	ctx := context.Background()
+
+	router := &mockRouter{
+		acErr: status.InternalError("get ac clients failed"),
+	}
+
+	copyOperator := &mockBatchOperator{enqueueSuccess: true}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err := migration_operators.ACCopy(ctx, router, copyOperator, "test-group", batch)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "get ac clients failed")
+}
+
+func TestACCopy_GetCASClientsError(t *testing.T) {
+	ctx := context.Background()
+
+	acPrimary := &mockACClient{}
+	acSecondary := &mockACClient{}
+
+	router := &mockRouter{
+		acPrimary:   acPrimary,
+		acSecondary: acSecondary,
+		casErr:      status.InternalError("get cas clients failed"),
+	}
+
+	copyOperator := &mockBatchOperator{enqueueSuccess: true}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err := migration_operators.ACCopy(ctx, router, copyOperator, "test-group", batch)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "get cas clients failed")
+}
+
+func TestACCopy_PrimaryGetActionResultError(t *testing.T) {
+	ctx := context.Background()
+
+	actionDigest := digestProto(strings.Repeat("1", 64), 100)
+
+	acPrimary := &mockACClient{
+		getActionResultError: status.InternalError("primary get failed"),
+	}
+	acSecondary := &mockACClient{}
+
+	casPrimary := &mockCASClient{}
+	copyOperator := &mockBatchOperator{enqueueSuccess: true}
+
+	router := &mockRouter{
+		acPrimary:   acPrimary,
+		acSecondary: acSecondary,
+		casPrimary:  casPrimary,
+	}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{actionDigest},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err := migration_operators.ACCopy(ctx, router, copyOperator, "test-group", batch)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "primary get failed")
+}
+
+func TestACCopy_UpdateActionResultError(t *testing.T) {
+	ctx := context.Background()
+
+	actionDigest := digestProto(strings.Repeat("1", 64), 100)
+	primaryResultDigest := digestProto(strings.Repeat("p", 64), 150)
+	secondaryResultDigest := digestProto(strings.Repeat("s", 64), 150)
+
+	primaryActionResult := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{Path: "output1.txt", Digest: digestProto(strings.Repeat("a", 64), 50)},
+		},
+		ActionResultDigest: primaryResultDigest,
+	}
+
+	secondaryActionResult := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{Path: "old_output.txt", Digest: digestProto(strings.Repeat("x", 64), 25)},
+		},
+		ActionResultDigest: secondaryResultDigest,
+	}
+
+	acPrimary := &mockACClient{
+		actionResults: map[string]*repb.ActionResult{
+			actionDigest.Hash: primaryActionResult,
+		},
+	}
+	acSecondary := &mockACClient{
+		actionResults: map[string]*repb.ActionResult{
+			actionDigest.Hash: secondaryActionResult,
+		},
+		updateActionResultError: status.InternalError("update failed"),
+	}
+
+	casPrimary := &mockCASClient{}
+	copyOperator := &mockBatchOperator{enqueueSuccess: true}
+
+	router := &mockRouter{
+		acPrimary:   acPrimary,
+		acSecondary: acSecondary,
+		casPrimary:  casPrimary,
+	}
+
+	batch := &batch_operator.DigestBatch{
+		InstanceName:   "test-instance",
+		Digests:        []*repb.Digest{actionDigest},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err := migration_operators.ACCopy(ctx, router, copyOperator, "test-group", batch)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "update failed")
 }

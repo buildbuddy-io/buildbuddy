@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/batch_operator"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
@@ -265,9 +264,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 			log.Fatalf("Error initializing routing service: %s", err.Error())
 		}
 
-		noopRouter := batch_operator.NewNoopDigestOperator()
-
-		ac, err := routing_action_cache_client.New(env, noopRouter, noopRouter, noopRouter)
+		ac, err := routing_action_cache_client.New(env)
 		if err != nil {
 			log.Fatalf("Error initializing routing action cache client: %s", err.Error())
 		}
