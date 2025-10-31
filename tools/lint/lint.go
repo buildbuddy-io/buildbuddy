@@ -13,6 +13,7 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"golang.org/x/sync/errgroup"
@@ -100,9 +101,17 @@ func runBBFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []s
 	if !fix {
 		cmd.Args = append(cmd.Args, "--diff")
 	}
-	cmd.Stdout = stdout
+	stdoutCounter := &ioutil.Counter{}
+	cmd.Stdout = io.MultiWriter(stdout, stdoutCounter)
 	cmd.Stderr = stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run bb fix: %w", err)
+	}
+	// In diff mode, fail if the diff is non-empty.
+	if !fix && stdoutCounter.Count() > 0 {
+		return fmt.Errorf("bb fix found lint errors")
+	}
+	return nil
 }
 
 func runFixGoDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {

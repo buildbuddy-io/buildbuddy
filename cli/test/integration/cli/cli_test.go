@@ -361,13 +361,16 @@ func TestQueryFile(t *testing.T) {
 	require.NoErrorf(t, err, "output: %s", string(b))
 }
 
-func TestFix(t *testing.T) {
+func TestFixDiff(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
-
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"MODULE.bazel": `module(  name = "cli_test"    )`,
+	})
 	cmd := testcli.Command(t, ws, "fix", "--diff")
-	b, err := testcli.CombinedOutput(cmd)
-
-	require.NoError(t, err, "output:\n%s", string(b))
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	// TODO: a non-empty diff probably *should* return an error (exit code 1)
+	require.NoError(t, err, "stdout: %q\nstderr: %q", string(stdout), string(stderr))
+	require.NotEmpty(t, string(stdout))
 }
 
 func TestCLIDoesNotRestartBazelServer(t *testing.T) {

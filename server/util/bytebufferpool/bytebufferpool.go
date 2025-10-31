@@ -7,22 +7,22 @@ import (
 	"sync"
 )
 
-type FixedSizePool struct {
+type fixedSizePool struct {
 	pool sync.Pool
 }
 
-func (p *FixedSizePool) Get() []byte {
+func (p *fixedSizePool) Get() []byte {
 	return *(p.pool.Get().(*[]byte))
 }
 
-func (p *FixedSizePool) Put(buf []byte) {
+func (p *fixedSizePool) Put(buf []byte) {
 	p.pool.Put(&buf)
 }
 
-// FixedSize returns a byte buffer pool with fixed size buffers. This is a
+// fixedSize returns a byte buffer pool with fixed size buffers. This is a
 // type-safe wrapper around sync.Pool.
-func FixedSize(bufferSize int) *FixedSizePool {
-	return &FixedSizePool{
+func fixedSize(bufferSize int) *fixedSizePool {
+	return &fixedSizePool{
 		sync.Pool{
 			New: func() any {
 				buf := make([]byte, bufferSize)
@@ -37,7 +37,7 @@ type VariableSizePool struct {
 	// is indexed by the exponent.
 	// index 0 containing a pool of 2^0 capacity slices, index 1 containing 2^1
 	// capacity slices and so forth.
-	pools []*FixedSizePool
+	pools []*fixedSizePool
 }
 
 // VariableSize returns a byte buffer pool that can be used when the buffer
@@ -47,7 +47,7 @@ func VariableSize(maxBufferSize int) *VariableSizePool {
 	bp := &VariableSizePool{}
 	for size := 1; ; size *= 2 {
 		size := size
-		bp.pools = append(bp.pools, FixedSize(size))
+		bp.pools = append(bp.pools, fixedSize(size))
 		if size >= maxBufferSize {
 			break
 		}

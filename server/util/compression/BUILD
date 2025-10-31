@@ -20,6 +20,7 @@ go_test(
     deps = [
         ":compression",
         "//server/testutil/testdigest",
+        "//server/util/bytebufferpool",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
     ],

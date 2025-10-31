@@ -4,15 +4,9 @@ module(
 )
 
 include("//deps:bazel_dep.MODULE.bazel")
-
 include("//deps:docker.MODULE.bazel")
-
 include("//deps:go_deps.MODULE.bazel")
-
 include("//deps:oci.MODULE.bazel")
-
 include("//deps:static_deps.MODULE.bazel")
-
 include("//deps:toolchains.MODULE.bazel")
-
 include("//deps:web.MODULE.bazel")
