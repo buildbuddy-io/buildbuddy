@@ -97,6 +97,25 @@ func Output(cmd *exec.Cmd) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
+// SplitOutput runs the command and returns stdout and stderr in separate
+// buffers. It allows streaming CLI outputs for debugging purposes.
+func SplitOutput(cmd *exec.Cmd) (stdout, stderr []byte, _ error) {
+	stdoutBuf := bytes.NewBuffer(nil)
+	var stdoutW io.Writer = stdoutBuf
+	if *streamOutputs {
+		stdoutW = io.MultiWriter(stdoutW, os.Stderr)
+	}
+	stderrBuf := bytes.NewBuffer(nil)
+	var stderrW io.Writer = stderrBuf
+	if *streamOutputs {
+		stderrW = io.MultiWriter(stderrW, os.Stderr)
+	}
+	cmd.Stdout = stdoutW
+	cmd.Stderr = stderrW
+	err := cmd.Run()
+	return stdoutBuf.Bytes(), stderrBuf.Bytes(), err
+}
+
 // CombinedOutput is like cmd.CombinedOutput() except that it allows streaming
 // CLI outputs for debugging purposes.
 func CombinedOutput(cmd *exec.Cmd) ([]byte, error) {
