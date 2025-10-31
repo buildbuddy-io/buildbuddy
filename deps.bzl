@@ -394,32 +394,6 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://github.com/rootless-containers/rootlesskit/releases/download/v2.3.5/rootlesskit-aarch64.tar.gz"],
         sha256 = "478c14c3195bf989cd9a8e6bd129d227d5d88f1c11418967ffdc84a0072cc7a2",
     )
-
-    http_archive(
-        name = "com_github_containerd_containerd-linux-amd64",
-        strip_prefix = "bin",
-        build_file_content = "\n".join([
-            'package(default_visibility = ["//visibility:public"])',
-            'filegroup(name = "containerd.bin", srcs = ["containerd"])',
-            'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
-            'filegroup(name = "ctr.bin", srcs = ["ctr"])',
-        ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v2.1.1/containerd-2.1.1-linux-amd64.tar.gz"],
-        sha256 = "918e88fd393c28c89424e6535df0546ca36c1dfa7d8a5d685dee70b449380a9b",
-    )
-    http_archive(
-        name = "com_github_containerd_containerd-linux-arm64",
-        strip_prefix = "bin",
-        build_file_content = "\n".join([
-            'package(default_visibility = ["//visibility:public"])',
-            'filegroup(name = "containerd.bin", srcs = ["containerd"])',
-            'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
-            'filegroup(name = "ctr.bin", srcs = ["ctr"])',
-        ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v2.1.1/containerd-2.1.1-linux-arm64.tar.gz"],
-        sha256 = "4e3c8c0c2e61438bb393a9ea6bb94f8f56b559ec3243d7b1a2943117bca4dcb4",
-    )
-
     http_archive(
         name = "cloudprober",
         build_file_content = "exports_files([\"cloudprober\"])",
