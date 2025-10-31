@@ -275,7 +275,7 @@ func getConsistentHashProvider(ctx context.Context, clientName string, migration
 
 	var enabledShards atomic.Value // *[]string
 	{
-		s := shardNamesFromAddrs(migrationConfig.defaultEnabledAddrs)
+		s := shardNamesFromAddrs(migrationConfig.loadEnabledAddrs())
 		enabledShards.Store(&s)
 	}
 	log.CtxInfof(ctx, "Configured enabled redis shards for %s: %v", clientName, migrationConfig.defaultEnabledAddrs)
@@ -289,14 +289,10 @@ func getConsistentHashProvider(ctx context.Context, clientName string, migration
 		// As a backup, poll as well.
 		ticker := time.NewTicker(*shardConfigReloadInterval)
 		defer ticker.Stop()
-		// Also ensure that we load once initially.
-		initialLoad := make(chan struct{}, 1)
-		initialLoad <- struct{}{}
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-initialLoad:
 			case <-ticker.C:
 			case <-configChanged:
 			}
