@@ -255,14 +255,6 @@ func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.Di
 	return computeDigest(f, instanceName, digestFunction)
 }
 
-func bufferSize(r *digest.CASResourceName) int64 {
-	bufSize := int64(uploadBufSizeBytes)
-	if r.GetDigest().GetSizeBytes() > 0 && r.GetDigest().GetSizeBytes() < bufSize {
-		bufSize = r.GetDigest().GetSizeBytes()
-	}
-	return bufSize
-}
-
 func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
 	if bsClient == nil {
 		return nil, 0, status.FailedPreconditionError("ByteStreamClient not configured")
@@ -275,7 +267,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		return nil, 0, err
 	}
 
-	bufSize := bufferSize(r)
+	bufSize := digest.SafeBufferSize(r, uploadBufSizeBytes)
 	var rc io.ReadCloser = io.NopCloser(in)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		reader, err := compression.NewBufferedZstdCompressingReader(rc, uploadBufPool, bufSize)
