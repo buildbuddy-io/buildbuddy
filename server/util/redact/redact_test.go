@@ -151,6 +151,33 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 				},
 			}}},
 		},
+		{
+			name: "redact passwords in json key urls without host",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stdout: fileWithURI("https://_json_key_base64:eyJmb28iOiJiYXIifQ=="),
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stdout: fileWithURI("https://_json_key_base64:<REDACTED>"),
+			}}},
+		},
+		{
+			name: "redact passwords in urls in progress event stdout",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Progress{Progress: &bespb.Progress{
+				Stdout: "ERROR: loading failure: https://_json_key_base64:bXlmYWtlYmFzZTY0ZW5jb2RlZGpzb25rZXlkYXRh@us-central1-python.pkg.dev/project/repo",
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Progress{Progress: &bespb.Progress{
+				Stdout: "ERROR: loading failure: https://_json_key_base64:<REDACTED>@us-central1-python.pkg.dev/project/repo",
+			}}},
+		},
+		{
+			name: "redact passwords in inline byte files",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stderr: fileWithInlineBytes("https://username:supersecret@host.invalid/resource"),
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stderr: fileWithInlineBytes("https://username:<REDACTED>@host.invalid/resource"),
+			}}},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			redactor := redact.NewStreamingRedactor(te)
@@ -382,6 +409,13 @@ func fileWithURI(uri string) *bespb.File {
 	return &bespb.File{
 		Name: "foo.txt",
 		File: &bespb.File_Uri{Uri: uri},
+	}
+}
+
+func fileWithInlineBytes(contents string) *bespb.File {
+	return &bespb.File{
+		Name: "foo.txt",
+		File: &bespb.File_Contents{Contents: []byte(contents)},
 	}
 }
 
@@ -910,6 +944,21 @@ func TestRedactTxt(t *testing.T) {
 				"line2\n" +
 				"line3' --action_env=ANOTHER_VAR=another_value",
 			expected: "--test_env=SIMPLE_VAR=<REDACTED> --test_env=MULTILINE_SECRET=<REDACTED> --action_env=ANOTHER_VAR=<REDACTED>",
+		},
+		{
+			name:     "url with json_key_base64 username",
+			txt:      []byte("https://_json_key_base64:bXlmYWtlYmFzZTY0ZW5jb2RlZGpzb25rZXlkYXRh@us-central1-python.pkg.dev"),
+			expected: []byte("https://_json_key_base64:<REDACTED>@us-central1-python.pkg.dev"),
+		},
+		{
+			name:     "url with json_key_base64 in command args with escaped quotes",
+			txt:      []byte(`--extra_pip_args "{\"arg\":[\"--index-url\",\"https://_json_key_base64:bXlmYWtlYmFzZTY0ZW5jb2RlZGpzb25rZXk=@us-central1-python.pkg.dev/project/repo/simple/\",\"--trusted-host\",\"us-central1-python.pkg.dev\"]}"`),
+			expected: []byte(`--extra_pip_args "{\"arg\":[\"--index-url\",\"https://_json_key_base64:<REDACTED>@us-central1-python.pkg.dev/project/repo/simple/\",\"--trusted-host\",\"us-central1-python.pkg.dev\"]}"`),
+		},
+		{
+			name:     "url with underscore in username",
+			txt:      []byte("https://my_user_name:secretpassword123@github.com/repo.git"),
+			expected: []byte("https://my_user_name:<REDACTED>@github.com/repo.git"),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

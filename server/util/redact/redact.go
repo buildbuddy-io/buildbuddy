@@ -55,7 +55,7 @@ var (
 	envVarAnyPattern          = regexp.MustCompile(`(?s)^(--[^=]+=)(.*)$`)
 	envVarAssignmentRegex     = regexp.MustCompile(`^([^=]+)=`)
 
-	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
+	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)?`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
 
 	// There are some flags that contain multiple sub-flags which are
@@ -372,6 +372,8 @@ func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
 	switch p := file.GetFile().(type) {
 	case *bespb.File_Uri:
 		p.Uri = stripURLSecrets(p.Uri)
+	case *bespb.File_Contents:
+		p.Contents = stripURLSecretsBytes(p.Contents)
 	}
 	return file
 }
@@ -644,6 +646,8 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 	switch p := event.Payload.(type) {
 	case *bespb.BuildEvent_Progress:
 		{
+			p.Progress.Stdout = stripURLSecrets(p.Progress.GetStdout())
+			p.Progress.Stderr = stripURLSecrets(p.Progress.GetStderr())
 		}
 	case *bespb.BuildEvent_Aborted:
 		{
