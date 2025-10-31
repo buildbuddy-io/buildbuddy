@@ -24,6 +24,7 @@ go_library(
     },
     deps = [
         "//server/util/flag",
+        "//server/util/ioutil",
         "//server/util/lockingbuffer",
         "//server/util/log",
         "@io_bazel_rules_go//go/runfiles",

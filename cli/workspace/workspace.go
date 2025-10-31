@@ -25,7 +25,12 @@ var (
 	pathErr  error
 	basename string
 
-	WorkspaceIndicatorFiles = []string{WorkspaceFileName, WorkspaceAltFileName, ModuleFileName}
+	WorkspaceIndicatorFiles = []string{
+		// Prioritize MODULE if both MODULE and WORKSPACE exist, since MODULE is
+		// newer.
+		ModuleFileName,
+		WorkspaceFileName, WorkspaceAltFileName,
+	}
 )
 
 // Path returns the current Bazel workspace path by traversing upwards until

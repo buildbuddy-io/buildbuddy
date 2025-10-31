@@ -7,8 +7,5 @@ go_library(
     srcs = ["translate.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/translate",
     visibility = ["//visibility:public"],
-    deps = [
-        "//cli/translate/js",
-        "//cli/translate/yaml",
-    ],
+    deps = ["//cli/translate/js"],
 )

@@ -125,7 +125,7 @@ func walk(moduleOrWorkspaceFile string) error {
 			if d.IsDir() {
 				// Don't recurse into hidden directories such as .git or .ijwb
 				// (IntelliJ).
-				if strings.HasPrefix(d.Name(), ".") {
+				if d.Name() != "." && strings.HasPrefix(d.Name(), ".") {
 					return filepath.SkipDir
 				} else {
 					return nil
