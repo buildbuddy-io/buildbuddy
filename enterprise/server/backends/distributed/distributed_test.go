@@ -13,7 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -2162,7 +2162,7 @@ func TestTreeCacheLookaside(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
-		rn.InstanceName = content_addressable_storage_server.TreeCacheRemoteInstanceName
+		rn.InstanceName = digest.TreeCacheRemoteInstanceName
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}

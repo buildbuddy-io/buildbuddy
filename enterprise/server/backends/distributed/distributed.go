@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -370,7 +368,7 @@ func (t *teeReadCloser) Close() error {
 }
 
 func isTreeCacheResource(r *rspb.ResourceName) bool {
-	return r.GetCacheType() == rspb.CacheType_AC && strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName)
+	return r.GetCacheType() == rspb.CacheType_AC && strings.HasPrefix(r.GetInstanceName(), digest.TreeCacheRemoteInstanceName)
 }
 
 // lookasideKey returns the resource's key in the lookaside cache and true,
@@ -1253,22 +1251,8 @@ func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) 
 	}
 	defer r.Close()
 
-	var buf *bytes.Buffer
-	if rn.GetCacheType() == rspb.CacheType_CAS {
-		// If this is a CAS object, size the buffer to fit exactly.
-		buf = bytes.NewBuffer(make([]byte, 0, int(rn.GetDigest().GetSizeBytes())))
-	} else if strings.HasPrefix(rn.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
-		// If this is a TreeCache entry that we wrote; pull the size
-		// from the remote instance name.
-		parts := strings.Split(rn.GetInstanceName(), "/")
-		if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
-			buf = bytes.NewBuffer(make([]byte, 0, min(s, maxInitialByteBufferSize)))
-		} else {
-			buf = new(bytes.Buffer)
-		}
-	} else {
-		buf = new(bytes.Buffer)
-	}
+	bufSize := digest.SafeBufferSize(rn, maxInitialByteBufferSize)
+	buf := bytes.NewBuffer(make([]byte, 0, bufSize))
 	_, err = io.Copy(buf, r)
 	return buf.Bytes(), err
 }

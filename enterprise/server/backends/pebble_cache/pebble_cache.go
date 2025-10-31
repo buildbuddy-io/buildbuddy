@@ -159,6 +159,8 @@ const (
 	SamplerSleepDuration  = 1 * time.Second
 
 	SamplerIterRefreshPeriod = 5 * time.Minute
+
+	maxReadBufferSize = 10_000_000
 )
 
 type sizeUpdateOp int
@@ -1727,19 +1729,10 @@ func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 		return nil, err
 	}
 	defer rc.Close()
-	buf := bytes.NewBuffer(make([]byte, 0, bufferSize(r)))
+	bufSize := digest.SafeBufferSize(r, maxReadBufferSize)
+	buf := bytes.NewBuffer(make([]byte, 0, bufSize))
 	_, err = io.Copy(buf, rc)
 	return buf.Bytes(), err
-}
-
-func bufferSize(r *rspb.ResourceName) int {
-	if r.GetCacheType() != rspb.CacheType_CAS {
-		// The median and average AC results are less than 4KiB: go/action-result-size
-		return 4 * 1024
-	}
-	// Clamp the size between 0 and 10MB, to protect from invalid and
-	// malicious requests.
-	return min(10_000_000, max(0, int(r.GetDigest().GetSizeBytes())))
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -1760,7 +1753,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 			return nil, err
 		}
 
-		buf := bytes.NewBuffer(make([]byte, 0, bufferSize(r)))
+		buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
 		_, copyErr := io.Copy(buf, rc)
 		closeErr := rc.Close()
 		if copyErr != nil {
@@ -3381,13 +3374,9 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	}
 
 	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
-		bufSize := int64(CompressorBufSizeBytes)
-		resourceSize := r.GetDigest().GetSizeBytes()
-		if resourceSize > 0 && resourceSize < bufSize {
-			bufSize = resourceSize
-		}
+		bufSize := digest.SafeBufferSize(r, CompressorBufSizeBytes)
 
-		return compression.NewBufferedZstdCompressingReader(reader, p.bufferPool, bufSize)
+		return compression.NewBufferedZstdCompressingReader(reader, p.bufferPool, int64(bufSize))
 	}
 
 	return reader, nil

@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
@@ -38,6 +36,9 @@ const (
 	// CompressorBufSizeBytes is the buffer size we use for each chunk when compressing data
 	// It should be relatively large to get a good compression ratio bc each chunk is compressed independently
 	CompressorBufSizeBytes = 4e6 // 4 MB
+
+	// The max size of the read buffer, used to protect from invalid and malicious requests.
+	maxReadBufferSize = 1024 * 1024 * 4
 )
 
 type Options struct {
@@ -416,11 +417,6 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	return missing, nil
 }
 
-// Below, in Get(), this value is the max initial allocatable buffer size.
-// Set it somewhat conservatively so that we're not DOSed by someone crafting
-// remote_instance_names that match this just to use memory.
-const maxInitialByteBufferSize = (1024 * 1024 * 4)
-
 func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	rc, err := c.Reader(ctx, r, 0, 0)
 	if err != nil {
@@ -428,24 +424,7 @@ func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	}
 	defer rc.Close()
 
-	var buf *bytes.Buffer
-
-	// TODO(tylerw): move this function to cachetools or something?
-	if r.GetCacheType() == rspb.CacheType_CAS {
-		// If this is a CAS object, size the buffer to fit exactly.
-		buf = bytes.NewBuffer(make([]byte, 0, int(r.GetDigest().GetSizeBytes())))
-	} else if strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
-		// If this is a TreeCache entry that we wrote; pull the size
-		// from the remote instance name.
-		parts := strings.Split(r.GetInstanceName(), "/")
-		if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
-			buf = bytes.NewBuffer(make([]byte, 0, min(s, maxInitialByteBufferSize)))
-		} else {
-			buf = new(bytes.Buffer)
-		}
-	} else {
-		buf = new(bytes.Buffer)
-	}
+	buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
 	_, err = io.Copy(buf, rc)
 	return buf.Bytes(), err
 }
@@ -590,12 +569,8 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 	}
 
 	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
-		bufSize := int64(CompressorBufSizeBytes)
-		resourceSize := r.GetDigest().GetSizeBytes()
-		if resourceSize > 0 && resourceSize < bufSize {
-			bufSize = resourceSize
-		}
-		return compression.NewBufferedZstdCompressingReader(reader, c.bufferPool, bufSize)
+		bufSize := digest.SafeBufferSize(r, CompressorBufSizeBytes)
+		return compression.NewBufferedZstdCompressingReader(reader, c.bufferPool, int64(bufSize))
 	}
 
 	return reader, nil

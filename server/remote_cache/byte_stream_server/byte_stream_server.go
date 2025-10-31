@@ -143,10 +143,7 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	}
 	defer reader.Close()
 
-	bufSize := int64(readBufSizeBytes)
-	if r.GetDigest().GetSizeBytes() > 0 && r.GetDigest().GetSizeBytes() < bufSize {
-		bufSize = r.GetDigest().GetSizeBytes()
-	}
+	bufSize := int64(digest.SafeBufferSize(r.ToProto(), readBufSizeBytes))
 
 	// If the cache doesn't support the requested compression, it will cache decompressed bytes and the server
 	// is in charge of compressing it
@@ -162,7 +159,6 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		}
 		defer reader.Close()
 	}
-
 	copyBuf := s.bufferPool.Get(bufSize)
 	defer s.bufferPool.Put(copyBuf)
 
