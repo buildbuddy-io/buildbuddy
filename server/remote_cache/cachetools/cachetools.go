@@ -1172,7 +1172,7 @@ func (uw *UploadWriter) Write(p []byte) (int, error) {
 // flush sends a WriteRequest to the CAS if the internal buffer is full
 // or if this is the last write (finish=true).
 func (uw *UploadWriter) flush(finish bool) error {
-	if !finish && uw.bytesBuffered < uploadBufSizeBytes {
+	if !finish && uw.bytesBuffered < len(uw.buf) {
 		return nil
 	}
 	data := uw.buf[:uw.bytesBuffered]
@@ -1291,6 +1291,7 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 		return nil, err
 	}
 
+	bufSize := int64(digest.SafeBufferSize(r.ToProto(), uploadBufSizeBytes))
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		return &UploadWriter{
@@ -1298,9 +1299,9 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 			stream:       stream,
 			sender:       sender,
 			uploadString: r.NewUploadString(),
-			buf:          uploadBufPool.Get(uploadBufSizeBytes),
+			buf:          uploadBufPool.Get(bufSize),
 			useZstd:      true,
-			cbuf:         uploadBufPool.Get(uploadBufSizeBytes),
+			cbuf:         uploadBufPool.Get(bufSize),
 		}, nil
 	}
 	return &UploadWriter{
@@ -1308,6 +1309,6 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 		stream:       stream,
 		sender:       sender,
 		uploadString: r.NewUploadString(),
-		buf:          uploadBufPool.Get(uploadBufSizeBytes),
+		buf:          uploadBufPool.Get(bufSize),
 	}, nil
 }
