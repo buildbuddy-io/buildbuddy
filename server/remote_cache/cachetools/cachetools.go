@@ -267,7 +267,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		return nil, 0, err
 	}
 
-	bufSize := digest.SafeBufferSize(r, uploadBufSizeBytes)
+	bufSize := int64(digest.SafeBufferSize(r.ToProto(), uploadBufSizeBytes))
 	var rc io.ReadCloser = io.NopCloser(in)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		reader, err := compression.NewBufferedZstdCompressingReader(rc, uploadBufPool, bufSize)
