@@ -34,7 +34,7 @@ var (
 	executionTrendsEnabled         = flag.Bool("app.enable_execution_trends", true, "If enabled, fill execution trend stats in GetTrendResponse")
 	invocationPercentilesEnabled   = flag.Bool("app.enable_invocation_stat_percentiles", true, "If enabled, provide percentile breakdowns for invocation stats in GetTrendResponse")
 	useTimezoneInHeatmapQueries    = flag.Bool("app.use_timezone_in_heatmap_queries", true, "If enabled, use timezone instead of 'timezone offset' to compute day boundaries in heatmap queries.")
-	invocationSummaryAvailableUsec = flag.Int64("app.invocation_summary_available_usec", 0, "The timstamp when the invocation summary is available in the DB")
+	invocationSummaryAvailableUsec = flag.Int64("app.invocation_summary_available_usec", 0, "The timestamp when the invocation summary is available in the DB")
 	tagsInDrilldowns               = flag.Bool("app.fetch_tags_drilldown_data", true, "If enabled, DrilldownType_TAG_DRILLDOWN_TYPE can be returned in GetStatDrilldownRequests")
 	finerTimeBuckets               = flag.Bool("app.finer_time_buckets", false, "If enabled, split trends and drilldowns into smaller time buckets when the user has a smaller date range selected.")
 	targetTrendsEnabled            = flag.Bool("app.enable_target_trends", true, "Enables GetTargetTrends, which returns execution data aggregated by Bazel target.")
