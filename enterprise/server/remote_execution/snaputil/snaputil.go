@@ -43,6 +43,11 @@ const (
 	// We rely on this name to locate the memory file in snapshots. Do not
 	// change!
 	MemoryFileName = "memory"
+
+	// Max age of a universal snapshot.
+	// Under the `none-available` snapshot write policy, we may never update the universal snapshot,
+	// so we set a max age to prevent it from getting too stale and being used forever.
+	MaxUniversalSnapshotAge = 24 * time.Hour
 )
 
 // ChunkSource represents how a snapshot chunk was initialized
