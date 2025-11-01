@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -23,8 +24,6 @@ var (
 	// either for streaming decompression using ReadFrom or batch decompression
 	// using DecodeAll. The returned decoders *must not* be closed.
 	zstdDecoderPool = NewZstdDecoderPool()
-
-	bufPool = bytebufferpool.VariableSize(4e6) // 4MB
 
 	// These are used a bunch and the labels are constant so just do it once.
 	zstdCompressedBytesMetric   = metrics.BytesCompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"})
@@ -51,15 +50,19 @@ func CompressZstd(dst []byte, src []byte) []byte {
 // and writes zstd-compressed bytes to the underlying writer.
 type ZstdCompressingWriter struct {
 	// The number of compressed bytes written to the underlying writer, so far.
-	CompressedBytesWritten int
+	CompressedBytesWritten   int
+	DecompressedBytesWritten int
 
-	writer         io.Writer
+	interfaces.CommittedWriteCloser
 	buffer         []byte
 	buffered       int
 	compressBuffer []byte
 	returnBuffers  func()
 	err            error
 	closed         bool
+
+	bufferPool *bytebufferpool.VariableSizePool
+	observer   prometheus.Observer
 }
 
 // Flush compresses any buffered data and writes it to the underlying writer. It
@@ -82,8 +85,9 @@ func (c *ZstdCompressingWriter) Flush() error {
 
 func (c *ZstdCompressingWriter) writeCompressed(p []byte) error {
 	c.compressBuffer = CompressZstd(c.compressBuffer, p)
-	n, err := c.writer.Write(c.compressBuffer)
+	n, err := c.CommittedWriteCloser.Write(c.compressBuffer)
 	c.CompressedBytesWritten += n
+	c.DecompressedBytesWritten += len(p)
 	if err == nil && n < len(c.compressBuffer) {
 		c.err = io.ErrShortWrite
 	}
@@ -162,28 +166,33 @@ func (c *ZstdCompressingWriter) Close() error {
 	if c.closed {
 		return nil
 	}
-	err := c.Flush()
+	if c.observer != nil {
+		c.observer.Observe(float64(c.CompressedBytesWritten) / float64(c.DecompressedBytesWritten))
+	}
+	flushErr := c.Flush()
+	closeErr := c.CommittedWriteCloser.Close()
 	c.returnBuffers()
 	c.closed = true
-	return err
+	return errors.Join(flushErr, closeErr)
 }
 
 // NewZstdCompressingWriter returns a new ZstdCompressingWriter. bufSize must be
 // > 0 and determines how much data is buffered before being compressed and
 // written out. Larger buffer sizes generally result in better compression
 // ratios, but will be capped to an implementation-defined maximum.
-func NewZstdCompressingWriter(writer io.Writer, bufSize int64) (*ZstdCompressingWriter, error) {
+func NewZstdCompressingWriter(cwc interfaces.CommittedWriteCloser, bufferPool *bytebufferpool.VariableSizePool, bufSize int64, observer prometheus.Observer) (*ZstdCompressingWriter, error) {
 	if bufSize <= 0 {
 		return nil, errors.New("bufSize must be > 0")
 	}
-	a, b := bufPool.Get(bufSize), bufPool.Get(bufSize)
+	a, b := bufferPool.Get(bufSize), bufferPool.Get(bufSize)
 	return &ZstdCompressingWriter{
-		writer:         writer,
-		buffer:         a,
-		compressBuffer: b,
+		CommittedWriteCloser: cwc,
+		buffer:               a,
+		compressBuffer:       b,
+		observer:             observer,
 		returnBuffers: func() {
-			bufPool.Put(a)
-			bufPool.Put(b)
+			bufferPool.Put(a)
+			bufferPool.Put(b)
 		},
 	}, nil
 }

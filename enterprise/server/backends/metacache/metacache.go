@@ -70,53 +70,6 @@ func New(env environment.Env, opts Options) (*Cache, error) {
 	}, nil
 }
 
-// zstdCompressor compresses bytes before writing them to the nested writer
-type zstdCompressor struct {
-	cacheName string
-
-	interfaces.CommittedWriteCloser
-	compressBuf []byte
-	bufferPool  *bytebufferpool.VariableSizePool
-
-	numDecompressedBytes int
-	numCompressedBytes   int
-}
-
-// TODO(tylerw): move to util/compression
-func NewZstdCompressor(cacheName string, wc interfaces.CommittedWriteCloser, bp *bytebufferpool.VariableSizePool, digestSize int64) *zstdCompressor {
-	compressBuf := bp.Get(digestSize)
-	return &zstdCompressor{
-		cacheName:            cacheName,
-		CommittedWriteCloser: wc,
-		compressBuf:          compressBuf,
-		bufferPool:           bp,
-	}
-}
-
-func (z *zstdCompressor) Write(decompressedBytes []byte) (int, error) {
-	z.compressBuf = compression.CompressZstd(z.compressBuf, decompressedBytes)
-	compressedBytesWritten, err := z.CommittedWriteCloser.Write(z.compressBuf)
-	if err != nil {
-		return 0, err
-	}
-
-	z.numDecompressedBytes += len(decompressedBytes)
-	z.numCompressedBytes += compressedBytesWritten
-
-	// Return the size of the original buffer even though a different compressed buffer size may have been written,
-	// or clients will return a short write error
-	return len(decompressedBytes), nil
-}
-
-func (z *zstdCompressor) Close() error {
-	metrics.CompressionRatio.
-		With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: z.cacheName}).
-		Observe(float64(z.numCompressedBytes) / float64(z.numDecompressedBytes))
-
-	z.bufferPool.Put(z.compressBuf)
-	return z.CommittedWriteCloser.Close()
-}
-
 func (c *Cache) encryptionEnabled(ctx context.Context) (bool, error) {
 	if !authutil.EncryptionEnabled(ctx, c.env.GetAuthenticator()) {
 		return false, nil
@@ -358,7 +311,8 @@ func (c *Cache) writerWithSizeHint(ctx context.Context, r *rspb.ResourceName, si
 		return nil, err
 	}
 	if shouldCompress {
-		return NewZstdCompressor(c.opts.Name, wc, c.bufferPool, fileRecord.GetDigest().GetSizeBytes()), nil
+		o := metrics.CompressionRatio.With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: c.opts.Name})
+		return compression.NewZstdCompressingWriter(wc, c.bufferPool, fileRecord.GetDigest().GetSizeBytes(), o)
 	}
 	return wc, nil
 }

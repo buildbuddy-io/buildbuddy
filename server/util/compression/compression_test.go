@@ -11,16 +11,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 )
 
 const (
-	compressBufferSize = 128 * 1024
+	readBufferSize  = 128 * 1024
+	compressBufSize = 4e6
 )
 
 var (
-	bufPool = bytebufferpool.VariableSize(compressBufferSize)
+	bufPool = bytebufferpool.VariableSize(max(readBufferSize, compressBufSize))
 )
 
 func TestLossless(t *testing.T) {
@@ -99,7 +101,7 @@ func compressWithCompressZstd(t *testing.T, src []byte) []byte {
 }
 
 func compressWithNewBufferedZstdCompressingReader(t *testing.T, src []byte) []byte {
-	bufSize := int64(compressBufferSize)
+	bufSize := int64(readBufferSize)
 	if l := int64(len(src)); l < bufSize {
 		bufSize = l
 	}
@@ -116,7 +118,8 @@ func compressWithNewBufferedZstdCompressingReader(t *testing.T, src []byte) []by
 
 func compressWithNewZstdCompressingWriter(t *testing.T, src []byte) []byte {
 	var out bytes.Buffer
-	w, err := compression.NewZstdCompressingWriter(&out, 10*int64(len(src)))
+	wc := ioutil.NewCustomCommitWriteCloser(&out)
+	w, err := compression.NewZstdCompressingWriter(wc, bufPool, 10*int64(len(src)), nil /*observer*/)
 	require.NoError(t, err)
 	n, err := w.Write(src)
 	require.NoError(t, err)
@@ -253,7 +256,7 @@ func TestCompressingReader_HoldErrors(t *testing.T) {
 }
 
 func TestCompressingWriter_EmptyBuffer(t *testing.T) {
-	_, err := compression.NewZstdCompressingWriter(nil, 0)
+	_, err := compression.NewZstdCompressingWriter(nil, bufPool, 0, nil /*observer*/)
 	require.Error(t, err)
 }
 
@@ -262,7 +265,7 @@ func TestCompressingWriter_BufferSizes(t *testing.T) {
 	size := int64(len(src))
 	for _, bufSize := range []int64{1, size - 1, size, size + 1, 2 * size} {
 		var out bytes.Buffer
-		w, err := compression.NewZstdCompressingWriter(&out, bufSize)
+		w, err := compression.NewZstdCompressingWriter(ioutil.NewCustomCommitWriteCloser(&out), bufPool, bufSize, nil /*observer*/)
 		require.NoError(t, err)
 		n, err := w.Write(src)
 		require.NoError(t, err)
@@ -286,7 +289,7 @@ func TestCompressingWriter_BufferSizes(t *testing.T) {
 func TestCompressingWriter_Flush(t *testing.T) {
 	src := []byte{1, 2, 3, 4, 5}
 	var out bytes.Buffer
-	w, err := compression.NewZstdCompressingWriter(&out, 2*int64(len(src)))
+	w, err := compression.NewZstdCompressingWriter(ioutil.NewCustomCommitWriteCloser(&out), bufPool, 2*int64(len(src)), nil /*observer*/)
 	require.NoError(t, err)
 	n, err := w.Write(src)
 	require.NoError(t, err)
@@ -308,7 +311,7 @@ func TestCompressingWriter_Flush(t *testing.T) {
 func TestCompressingWriter_ReadFrom(t *testing.T) {
 	src := []byte{1, 2, 3, 4, 5}
 	var out bytes.Buffer
-	w, err := compression.NewZstdCompressingWriter(&out, int64(len(src)))
+	w, err := compression.NewZstdCompressingWriter(ioutil.NewCustomCommitWriteCloser(&out), bufPool, int64(len(src)), nil /*observer*/)
 	require.NoError(t, err)
 
 	// Write 2 bytes with Write
@@ -334,7 +337,7 @@ func TestCompressingWriter_ReadFrom(t *testing.T) {
 func TestCompressingWriter_HoldsErrors(t *testing.T) {
 	src := []byte{1, 2, 3, 4, 5}
 	out := &erroringWriter{}
-	w, err := compression.NewZstdCompressingWriter(out, int64(len(src)))
+	w, err := compression.NewZstdCompressingWriter(ioutil.NewCustomCommitWriteCloser(out), bufPool, int64(len(src)), nil /*observer*/)
 	require.NoError(t, err)
 	_, err = w.Write(src)
 	require.Equal(t, "error #1", err.Error())
