@@ -335,6 +335,17 @@ const (
 	ClientNameLabel = "client_name"
 
 	BatchOperatorName = "operator_name"
+
+	// The index of a gRPC connection in a gRPC connection pool
+	ConnectionIndexLabel = "connection_id"
+
+	GRPCTargetLabel = "target"
+
+	// Unique identifier for a gRPC client connection pool. For
+	// disambiguating between multiple pools connecting to the same target.
+	GRPCPoolIDLabel = "pool_id"
+
+	GRPCMethodLabel = "grpc_method"
 )
 
 // Label value constants
@@ -3470,6 +3481,19 @@ var (
 		Subsystem: "disk",
 		Name:      "file_writer_in_progress_ops",
 		Help:      "Number of started, but not yet finished, FileWriter operations. This number includes operations that are blocked on the concurrency limiter.",
+	})
+
+	// Custom gRPC metrics
+	PendingClientRPCsPerConnection = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "client_rpcs_per_connection",
+		Help:      "A gauge measuring the number of pending RPCs per gRPC client connection, broken down by target, connection pool, and gRPC method.",
+	}, []string{
+		GRPCTargetLabel,
+		GRPCPoolIDLabel,
+		GRPCMethodLabel,
+		ConnectionIndexLabel,
 	})
 )
 
