@@ -34,6 +34,7 @@ const (
 	// but experiments in dev show that 256KiB is better. Values smaller than
 	// 256KiB or larger than 1MiB are both slower and allocate more bytes.
 	readBufSizeBytes = 256 * 1024
+	compressBufSize  = 4e6 // 4MB
 )
 
 var (
@@ -69,7 +70,7 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	return &ByteStreamServer{
 		env:        env,
 		cache:      cache,
-		bufferPool: bytebufferpool.VariableSize(readBufSizeBytes),
+		bufferPool: bytebufferpool.VariableSize(max(readBufSizeBytes, compressBufSize)),
 		warner:     bazel_deprecation.NewWarner(env),
 	}, nil
 }
@@ -352,7 +353,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		// If the cache supports compression but the request isn't compressed,
 		// wrap the cache writer in a compressor. This is faster than sending
 		// uncompressed data to the cache and letting it compress it.
-		compressor, err := compression.NewZstdCompressingWriter(committedWriteCloser, r.GetDigest().GetSizeBytes())
+		compressor, err := compression.NewZstdCompressingWriter(committedWriteCloser, s.bufferPool, r.GetDigest().GetSizeBytes())
 		if err != nil {
 			return nil, err
 		}
