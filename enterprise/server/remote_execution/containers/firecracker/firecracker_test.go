@@ -706,6 +706,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	err = c.Pause(ctx)
 	require.NoError(t, err)
 }
+
 func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
@@ -1131,6 +1132,140 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 
 			// Resume from snapshot on executor 1.
 			resumeFromSnapshot(getEnvWithFC(fc), workDir1, "Resume", tc.expectedOutputAfterResume)
+		})
+	}
+}
+
+func TestFirecracker_SnapshotSharing_ReadPolicy_FallbackSnapshot(t *testing.T) {
+	tests := []struct {
+		name                      string
+		snapshotReadPolicy        string
+		expectedOutputAfterResume string
+	}{
+		{
+			name:               "Always read newest",
+			snapshotReadPolicy: snaputil.AlwaysReadNewestSnapshot,
+			// We always expect to resume from the newest main snapshot.
+			expectedOutputAfterResume: "MainExecutor1\nMainExecutor2\nPR2Executor1\n",
+		},
+		{
+			name:               "By default, always read newest",
+			snapshotReadPolicy: "",
+			// We always expect to resume from the newest main snapshot.
+			expectedOutputAfterResume: "MainExecutor1\nMainExecutor2\nPR2Executor1\n",
+		},
+		{
+			name:               "Local first",
+			snapshotReadPolicy: snaputil.ReadLocalSnapshotFirst,
+			// Even though a newer main snapshot was written on executor 2, we should
+			// start from the local main snapshot on executor 1.
+			expectedOutputAfterResume: "MainExecutor1\nPR2Executor1\n",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			cfg := getExecutorConfig(t)
+			rootDir1 := testfs.MakeTempDir(t)
+			rootDir2 := testfs.MakeTempDir(t)
+
+			// Both "executors" should use the same remote cache, but have different
+			// local filecaches.
+			env := getTestEnv(ctx, t, envOpts{})
+			env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+
+			filecacheRoot1 := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(filecacheRoot1, fileCacheSize/2, false)
+			require.NoError(t, err)
+			fc.WaitForDirectoryScanToComplete()
+			filecacheRoot2 := testfs.MakeTempDir(t)
+			fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize/2, false)
+			require.NoError(t, err)
+			fc2.WaitForDirectoryScanToComplete()
+
+			getEnvWithFC := func(fc interfaces.FileCache) *testenv.TestEnv {
+				env.SetFileCache(fc)
+				return env
+			}
+
+			var containersToCleanup []*firecracker.FirecrackerContainer
+			t.Cleanup(func() {
+				for _, vm := range containersToCleanup {
+					err := vm.Remove(ctx)
+					assert.NoError(t, err)
+				}
+			})
+
+			instanceName := "test-instance-name"
+			prBranchTask := &repb.ExecutionTask{
+				Command: &repb.Command{
+					// Note: platform must match in order to share snapshots
+					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+						{Name: platform.SnapshotSavePolicyPropertyName, Value: snaputil.AlwaysSaveSnapshot},
+						{Name: platform.SnapshotReadPolicyPropertyName, Value: tc.snapshotReadPolicy},
+					}},
+					Arguments: []string{"./buildbuddy_ci_runner"},
+					EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+						{Name: "GIT_BRANCH", Value: "pr-branch"},
+						{Name: "GIT_REPO_DEFAULT_BRANCH", Value: "main"},
+					},
+				},
+				ExecuteRequest: &repb.ExecuteRequest{
+					InstanceName: instanceName,
+				},
+			}
+			mainBranchTask := prBranchTask.CloneVT()
+			mainBranchTask.Command.EnvironmentVariables = []*repb.Command_EnvironmentVariable{
+				{Name: "GIT_BRANCH", Value: "main"},
+			}
+			prBranchTask2 := prBranchTask.CloneVT()
+			prBranchTask2.Command.EnvironmentVariables = []*repb.Command_EnvironmentVariable{
+				{Name: "GIT_BRANCH", Value: "pr-branch-2"},
+				{Name: "GIT_REPO_DEFAULT_BRANCH", Value: "main"},
+			}
+			opts := firecracker.ContainerOpts{
+				ContainerImage: busyboxImage,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+					EnableNetworking:  false,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: cfg,
+			}
+
+			runAndSnapshotVM := func(env *testenv.TestEnv, workDir string, task *repb.ExecutionTask, stringToLog string, expectedOutput string) {
+				opts.ActionWorkingDirectory = workDir
+				vm, err := firecracker.NewContainer(ctx, env, task, opts)
+				require.NoError(t, err)
+				containersToCleanup = append(containersToCleanup, vm)
+				require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage))
+				err = vm.Create(ctx, workDir)
+				require.NoError(t, err)
+				cmd := appendToLog(stringToLog)
+				res := vm.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(t, res.Error)
+				require.Equal(t, expectedOutput, string(res.Stdout))
+				err = vm.Pause(ctx)
+				require.NoError(t, err)
+			}
+
+			// Save a main snapshot from executor 1.
+			workDir1 := testfs.MakeDirAll(t, rootDir1, "executor-1")
+			runAndSnapshotVM(getEnvWithFC(fc), workDir1, mainBranchTask, "MainExecutor1", "MainExecutor1\n")
+
+			// On a PR branch, resume from the fallback main snapshot on executor 1.
+			runAndSnapshotVM(getEnvWithFC(fc), workDir1, prBranchTask, "PRExecutor1", "MainExecutor1\nPRExecutor1\n")
+
+			// Save a main snapshot from executor 2.
+			workDir2 := testfs.MakeDirAll(t, rootDir2, "executor-2")
+			runAndSnapshotVM(getEnvWithFC(fc2), workDir2, mainBranchTask, "MainExecutor2", "MainExecutor1\nMainExecutor2\n")
+
+			// On a new PR branch on executor 1, resume from the fallback main snapshot.
+			// Depending on the read policy, it should either resume from the local main snapshot or the newest remote main snapshot.
+			runAndSnapshotVM(getEnvWithFC(fc), workDir1, prBranchTask2, "PR2Executor1", tc.expectedOutputAfterResume)
 		})
 	}
 }

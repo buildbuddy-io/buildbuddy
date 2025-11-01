@@ -39,6 +39,7 @@ go_test(
         ":snaploader",
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/filecache",
+        "//enterprise/server/remote_execution/snaputil",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",

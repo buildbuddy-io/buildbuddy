@@ -18,6 +18,7 @@ go_library(
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/snaploader",
+        "//enterprise/server/remote_execution/snaputil",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
