@@ -3357,8 +3357,8 @@ func snapshotReadPolicy(task *repb.ExecutionTask) (string, error) {
 	policy := platform.FindEffectiveValue(task, platform.SnapshotReadPolicyPropertyName)
 	switch policy {
 	case "":
-		// By default, always read the newest snapshot
-		return snaputil.AlwaysReadNewestSnapshot, nil
+		// By default, prefer local snapshots.
+		return snaputil.ReadLocalSnapshotFirst, nil
 	case snaputil.ReadLocalSnapshotOnly, snaputil.ReadLocalSnapshotFirst, snaputil.AlwaysReadNewestSnapshot:
 		return policy, nil
 	default:
