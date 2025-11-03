@@ -407,13 +407,24 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 		return nil, err
 	}
 
-	vmlinuxRunfileLocation6_1, err := runfiles.Rlocation(vmlinux6_1RunfilePath)
-	if err != nil {
-		return nil, err
-	}
-	guestKernelPath6_1, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation6_1, buildRootDir, 0755)
-	if err != nil {
-		return nil, err
+	var guestKernelPath6_1 string
+	var guestKernelDigest6_1 *repb.Digest
+	// TODO: build a 6.1 kernel for arm64, then remove this conditional.
+	if vmlinux6_1RunfilePath != "" {
+		vmlinuxRunfileLocation6_1, err := runfiles.Rlocation(vmlinux6_1RunfilePath)
+		if err != nil {
+			return nil, err
+		}
+		p, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation6_1, buildRootDir, 0755)
+		if err != nil {
+			return nil, err
+		}
+		guestKernelPath6_1 = p
+		d, err := digest.ComputeForFile(guestKernelPath6_1, repb.DigestFunction_SHA256)
+		if err != nil {
+			return nil, err
+		}
+		guestKernelDigest6_1 = d
 	}
 	vmlinuxRunfileLocation5_15, err := runfiles.Rlocation(vmlinuxRunfilePath)
 	if err != nil {
@@ -435,10 +446,6 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 		return nil, err
 	}
 	guestKernelDigest5_15, err := digest.ComputeForFile(guestKernelPath5_15, repb.DigestFunction_SHA256)
-	if err != nil {
-		return nil, err
-	}
-	guestKernelDigest6_1, err := digest.ComputeForFile(guestKernelPath6_1, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
 	}
@@ -3333,7 +3340,7 @@ func workspacePathsToExtract(task *repb.ExecutionTask) []string {
 }
 
 func (c *FirecrackerContainer) shouldUpgradeGuestKernel() bool {
-	return slices.Contains(c.task.Experiments, "upgrade-fc-guest-kernel")
+	return c.executorConfig.GuestKernelImagePath6_1 != "" && slices.Contains(c.task.Experiments, "upgrade-fc-guest-kernel")
 }
 
 func snapshotReadPolicy(task *repb.ExecutionTask) (string, error) {
