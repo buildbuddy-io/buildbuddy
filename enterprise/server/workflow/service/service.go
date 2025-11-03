@@ -833,7 +833,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 		actionQStr, actionQArgs := q.Build()
 		actionHistoryQArgs = append(actionHistoryQArgs, actionQArgs...)
 		// Wrap as a subquery to support ORDER BY and LIMIT in SQLite UNION queries.
-		actionHistoryQStrs = append(actionHistoryQStrs, "SELECT * FROM ("+actionQStr+")")
+		actionHistoryQStrs = append(actionHistoryQStrs, "(SELECT * FROM ("+actionQStr+"))")
 		summary := &wfpb.ActionHistory_Summary{
 			TotalRuns:       row.TotalRuns,
 			SuccessfulRuns:  row.SuccessfulRuns,
