@@ -179,7 +179,7 @@ type Decryptor struct {
 	bufLen int
 }
 
-func NewDecryptor(ctx context.Context, key *DerivedKey, digest *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata, groupID string, chunkSize int) (*Decryptor, error) {
+func NewDecryptor(ctx context.Context, key *DerivedKey, digest *repb.Digest, r io.ReadCloser, groupID string, chunkSize int) (*Decryptor, error) {
 	ciph, err := getCipher(key.Key)
 	if err != nil {
 		return nil, err

@@ -44,7 +44,7 @@ func TestEncryptDecrypt(t *testing.T) {
 				// not affect the final result.
 				testdata.WriteInRandomChunks(t, e, testData)
 
-				d, err := crypter.NewDecryptor(t.Context(), key, digest, io.NopCloser(out), e.Metadata(), groupID, 1024)
+				d, err := crypter.NewDecryptor(t.Context(), key, digest, io.NopCloser(out), groupID, 1024)
 				require.NoError(t, err)
 				decrypted, err := io.ReadAll(d)
 
@@ -77,7 +77,7 @@ func TestDecryptWrongKey(t *testing.T) {
 
 	// Decrypting using a different key should not work.
 	secondKey := &crypter.DerivedKey{Key: []byte(strings.Repeat("f", 32))}
-	d, err := crypter.NewDecryptor(t.Context(), secondKey, digest, io.NopCloser(out), e.Metadata(), groupID, 1024)
+	d, err := crypter.NewDecryptor(t.Context(), secondKey, digest, io.NopCloser(out), groupID, 1024)
 	require.NoError(t, err)
 	_, err = io.ReadAll(d)
 
@@ -101,20 +101,20 @@ func TestDecryptWrongDigest(t *testing.T) {
 	// not affect the final result.
 	testdata.WriteInRandomChunks(t, e, testData)
 
-	d, err := crypter.NewDecryptor(t.Context(), key, digest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata(), groupID, 1024)
+	d, err := crypter.NewDecryptor(t.Context(), key, digest, io.NopCloser(bytes.NewReader(out.Bytes())), groupID, 1024)
 	require.NoError(t, err)
 	decrypted, err := io.ReadAll(d)
 	require.NoError(t, err)
 	require.Equal(t, decrypted, testData)
 
 	wrongHashDigest := &repb.Digest{Hash: "badhash", SizeBytes: digest.SizeBytes}
-	d, err = crypter.NewDecryptor(t.Context(), key, wrongHashDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata(), groupID, 1024)
+	d, err = crypter.NewDecryptor(t.Context(), key, wrongHashDigest, io.NopCloser(bytes.NewReader(out.Bytes())), groupID, 1024)
 	require.NoError(t, err)
 	_, err = io.ReadAll(d)
 	require.ErrorContains(t, err, "authentication failed")
 
 	wrongSizeDigest := &repb.Digest{Hash: digest.Hash, SizeBytes: 9999999999999999}
-	d, err = crypter.NewDecryptor(t.Context(), key, wrongSizeDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata(), groupID, 1024)
+	d, err = crypter.NewDecryptor(t.Context(), key, wrongSizeDigest, io.NopCloser(bytes.NewReader(out.Bytes())), groupID, 1024)
 	require.NoError(t, err)
 	_, err = io.ReadAll(d)
 	require.ErrorContains(t, err, "authentication failed")

@@ -148,7 +148,7 @@ func (c *RemoteCrypter) NewDecryptor(ctx context.Context, d *repb.Digest, r io.R
 	if err != nil {
 		return nil, err
 	}
-	return crypter.NewDecryptor(ctx, loadedKey, d, r, em, u.GetGroupID(), crypter.PlainTextChunkSize)
+	return crypter.NewDecryptor(ctx, loadedKey, d, r, u.GetGroupID(), crypter.PlainTextChunkSize)
 }
 
 func (c *RemoteCrypter) GetEncryptionKey(ctx context.Context, req *enpb.GetEncryptionKeyRequest) (*enpb.GetEncryptionKeyResponse, error) {

@@ -210,7 +210,7 @@ func (c *Crypter) newDecryptorWithChunkSize(ctx context.Context, digest *repb.Di
 	if err != nil {
 		return nil, err
 	}
-	return crypter.NewDecryptor(ctx, loadedKey, digest, r, em, groupID, chunkSize)
+	return crypter.NewDecryptor(ctx, loadedKey, digest, r, groupID, chunkSize)
 }
 
 func (c *Crypter) NewDecryptor(ctx context.Context, digest *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata) (interfaces.Decryptor, error) {
