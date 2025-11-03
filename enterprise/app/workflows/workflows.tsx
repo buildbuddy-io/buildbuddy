@@ -211,6 +211,18 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       return <div className="loading" />;
     }
     const isAdmin = this.props.user.isGroupAdmin();
+    const sortedRepos = (this.state.reposResponse?.repos ?? []).sort((a, b) => {
+      // Put repos with workflow history first.
+      const aHasHistory = this.renderActionList(a.repoUrl) != null;
+      const bHasHistory = this.renderActionList(b.repoUrl) != null;
+
+      if (aHasHistory !== bHasHistory) {
+        return aHasHistory ? -1 : 1;
+      }
+
+      // Then sort by repo URL.
+      return a.repoUrl.localeCompare(b.repoUrl);
+    });
     return (
       <div className="workflows-page">
         <div className="shelf">
@@ -256,7 +268,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
           {Boolean(this.state.workflowsResponse?.workflow?.length || this.state.reposResponse?.repos?.length) && (
             <div className="workflows-list">
               {/* Render linked repositories */}
-              {this.state.reposResponse?.repos?.map((repo) => (
+              {sortedRepos.map((repo) => (
                 <>
                   <RepoItem
                     user={this.props.user}
