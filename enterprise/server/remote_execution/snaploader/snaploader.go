@@ -1239,6 +1239,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 		ChunkedFiles:          map[string]*copy_on_write.COWStore{rootfsFileName: cow},
 		Recycled:              false,
 		CacheSnapshotRemotely: remoteEnabled,
+		CacheSnapshotLocally:  true,
 		WriteManifestLocally:  !remoteEnabled,
 	}
 	if err := l.CacheSnapshot(ctx, key.GetBranchKey(), opts); err != nil {

@@ -198,6 +198,10 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 		}
 	}
 
+	if !shouldCacheRemotely {
+		return 0, nil
+	}
+
 	if *VerboseLogging {
 		start := time.Now()
 		log.CtxDebugf(ctx, "Uploading snapshot artifact: instance=%q file=%s hash=%s", remoteInstanceName, StripChroot(path), d.GetHash())
