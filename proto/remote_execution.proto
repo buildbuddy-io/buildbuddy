@@ -130,6 +130,14 @@ service Execution {
   // operation completes, and then respond with the completed operation. The
   // server MAY choose to stream additional updates as execution progresses,
   // such as to provide an update as to the state of the execution.
+  //
+  // In addition to the cases describe for Execute, the WaitExecution method
+  // may fail as follows:
+  //
+  // * `NOT_FOUND`: The operation no longer exists due to any of a transient
+  //   condition, an unknown operation name, or if the server implements the
+  //   Operations API DeleteOperation method and it was called for the current
+  //   execution. The client should call `Execute` to retry.
   rpc WaitExecution(WaitExecutionRequest) returns (stream google.longrunning.Operation) {
     option (google.api.http) = { post: "/v2/{name=operations/**}:waitExecution" body: "*" };
   }
@@ -454,7 +462,7 @@ service ContentAddressableStorage {
   // returns a list of the chunk digests. Using this list, a client can check
   // which chunks are locally available and just fetch the missing ones. The
   // desired blob can be assembled by concatenating the fetched chunks in the
-  // order of the digests from the list.
+  // order of the digests in the list.
   //
   // This rpc can be used to reduce the required data to download a large blob
   // from CAS if chunks from earlier downloads of a different version of this
@@ -468,31 +476,29 @@ service ContentAddressableStorage {
   //  2. Concatenating the blob chunks in the order of the digest list returned
   //     by the server results in the original blob.
   //
-  // Servers MAY implement this functionality, but MUST declare whether they
-  // support it or not by setting the
+  // Servers which implement this functionality MUST declare that they support
+  // it by setting the
   // [CacheCapabilities.blob_split_support][build.bazel.remote.execution.v2.CacheCapabilities.blob_split_support]
   // field accordingly.
   //
-  // Clients MAY use this functionality, it is just an optimization to reduce
-  // download network traffic, when downloading large blobs from the CAS.
-  // However, clients MUST first check the server capabilities, whether blob
-  // splitting is supported by the server.
+  // Clients MUST check that the server supports this capability, before using
+  // it.
   //
-  // Clients SHOULD verify whether the digest of the blob assembled by the
-  // fetched chunks results in the requested blob digest.
+  // Clients SHOULD verify that the digest of the blob assembled by the fetched
+  // chunks is equal to the requested blob digest.
   //
-  // Since the generated chunks are stored as blobs, they underlie the same
-  // lifetimes as other blobs. In particular, the chunk lifetimes are
-  // independent from the lifetime of the original blob:
-  //  * A blob and any chunk derived from it may be evicted from the CAS at
+  // The lifetimes of the generated chunk blobs MAY be independent of the
+  // lifetime of the original blob. In particular:
+  //  * A blob and any chunk derived from it MAY be evicted from the CAS at
   //    different times.
-  //  * A call to Split extends the lifetime of the original blob, and sets
-  //    the lifetimes of the resulting chunks (or extends the lifetimes of
-  //    already-existing chunks).
-  //  * Touching a chunk extends its lifetime, but does not extend the
-  //    lifetime of the original blob.
-  //  * Touching the original blob extends its lifetime, but does not extend
-  //    the lifetimes of chunks derived from it.
+  //  * A call to [SplitBlob][build.bazel.remote.execution.v2.ContentAddressableStorage.SplitBlob]
+  //    extends the lifetime of the original blob, and sets the lifetimes of
+  //    the resulting chunks (or extends the lifetimes of already-existing
+  //    chunks).
+  //  * Touching a chunk extends its lifetime, but the server MAY choose not
+  //    to extend the lifetime of the original blob.
+  //  * Touching the original blob extends its lifetime, but the server MAY
+  //    choose not to extend the lifetimes of chunks derived from it.
   //
   // When blob splitting and splicing is used at the same time, the clients and
   // the server SHOULD agree out-of-band upon a chunking algorithm used by both
@@ -505,9 +511,7 @@ service ContentAddressableStorage {
   // * `RESOURCE_EXHAUSTED`: There is insufficient disk quota to store the blob
   //   chunks.
   rpc SplitBlob(SplitBlobRequest) returns (SplitBlobResponse) {
-    option (google.api.http) = {
-      get: "/v2/{instance_name=**}/blobs/{blob_digest.hash}/{blob_digest.size_bytes}:splitBlob"
-    };
+    option (google.api.http) = { get: "/v2/{instance_name=**}/blobs/{blob_digest.hash}/{blob_digest.size_bytes}:splitBlob" };
   }
 
   // Splice a blob from chunks.
@@ -524,24 +528,21 @@ service ContentAddressableStorage {
   // then use this API to instruct the server to splice the original blob from
   // the remotely available blob chunks.
   //
-  // Servers MAY implement this functionality, but MUST declare whether they
-  // support it or not by setting the
+  // Servers which implement this functionality MUST declare that they support
+  // it by setting the
   // [CacheCapabilities.blob_splice_support][build.bazel.remote.execution.v2.CacheCapabilities.blob_splice_support]
   // field accordingly.
   //
-  // Clients MAY use this functionality, it is just an optimization to reduce
-  // upload traffic, when uploading large blobs to the CAS. However, clients
-  // MUST first check the server capabilities, whether blob splicing is
-  // supported by the server.
+  // Clients MUST check that the server supports this capability, before using
+  // it.
   //
   // In order to ensure data consistency of the CAS, the server MUST only add
-  // entries to the CAS under a hash the server verified itself. In particular,
-  // it MUST NOT trust the result hash provided by the client. The server MAY
-  // accept a request as no-op if the client-provided result hash is already in
-  // CAS; the life time of that blob is then extended as usual. If the
-  // client-provided result is not in CAS, the server SHOULD verify the result
-  // hash sent by the client and reject requests where a different splice result
-  // is obtained.
+  // blobs to the CAS after verifying their digests. In particular, servers MUST NOT
+  // trust digests provided by the client. The server MAY accept a request as no-op
+  // if the client-specified blob is already in CAS; the lifetime of that blob SHOULD
+  // be extended as usual. If the client-specified blob is not already in the CAS,
+  // the server SHOULD verify that the digest of the newly created blob matches the
+  // digest specified by the client, and reject the request if they differ.
   //
   // When blob splitting and splicing is used at the same time, the clients and
   // the server SHOULD agree out-of-band upon a chunking algorithm used by both
@@ -556,10 +557,7 @@ service ContentAddressableStorage {
   // * `INVALID_ARGUMENT`: The digest of the spliced blob is different from the
   //   provided expected digest.
   rpc SpliceBlob(SpliceBlobRequest) returns (SpliceBlobResponse) {
-    option (google.api.http) = {
-      post: "/v2/{instance_name=**}/blobs:spliceBlob"
-      body: "*"
-    };
+    option (google.api.http) = { post: "/v2/{instance_name=**}/blobs:spliceBlob" body: "*" };
   }
 }
 
@@ -758,7 +756,7 @@ message Command {
   // to execution, even if they are not explicitly part of the input root.
   //
   // DEPRECATED since v2.1: Use `output_paths` instead.
-  repeated string output_files = 3 [deprecated = true];
+  repeated string output_files = 3 [ deprecated = true ];
 
   // A list of the output directories that the client expects to retrieve from
   // the action. Only the listed directories will be returned (an entire
@@ -789,7 +787,7 @@ message Command {
   // if they are not explicitly part of the input root.
   //
   // DEPRECATED since 2.1: Use `output_paths` instead.
-  repeated string output_directories = 4 [deprecated = true];
+  repeated string output_directories = 4 [ deprecated = true ];
 
   // A list of the output paths that the client expects to retrieve from the
   // action. Only the listed paths will be returned to the client as output.
@@ -829,7 +827,7 @@ message Command {
   // DEPRECATED as of v2.2: platform properties are now specified directly in
   // the action. See documentation note in the
   // [Action][build.bazel.remote.execution.v2.Action] for migration.
-  Platform platform = 5 [deprecated = true];
+  Platform platform = 5 [ deprecated = true ];
 
   // The working directory, relative to the input root, for the command to run
   // in. It must be a directory which exists in the input tree. If it is left
@@ -1257,7 +1255,7 @@ message ActionResult {
   //
   // DEPRECATED as of v2.1. Servers that wish to be compatible with v2.0 API
   // should still populate this field in addition to `output_symlinks`.
-  repeated OutputSymlink output_file_symlinks = 10;
+  repeated OutputSymlink output_file_symlinks = 10 [ deprecated = true ];
 
   // New in v2.1: this field will only be populated if the command
   // `output_paths` field was used, and not the pre v2.1 `output_files` or
@@ -1357,7 +1355,7 @@ message ActionResult {
   //
   // DEPRECATED as of v2.1. Servers that wish to be compatible with v2.0 API
   // should still populate this field in addition to `output_symlinks`.
-  repeated OutputSymlink output_directory_symlinks = 11 [deprecated = true];
+  repeated OutputSymlink output_directory_symlinks = 11 [ deprecated = true ];
 
   // The exit code of the command.
   int32 exit_code = 4;
@@ -2452,7 +2450,7 @@ message ToolDetails {
 //
 // * name: `build.bazel.remote.execution.v2.requestmetadata-bin`
 // * contents: the base64 encoded binary `RequestMetadata` message.
-// Note: the gRPC library serializes binary headers encoded in base 64 by
+// Note: the gRPC library serializes binary headers encoded in base64 by
 // default (https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md#requests).
 // Therefore, if the gRPC library is used to pass/retrieve this
 // metadata, the user may ignore the base64 encoding and assume it is simply

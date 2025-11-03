@@ -54,9 +54,9 @@ func NewCapabilitiesServer(env environment.Env, supportCAS, supportRemoteExec, s
 
 func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
 	c := repb.ServerCapabilities{
-		// Support bazel 2.0 -> 2.3
+		// Support bazel 2.0 -> 2.11
 		LowApiVersion:  &smpb.SemVer{Major: int32(2)},
-		HighApiVersion: &smpb.SemVer{Major: int32(2), Minor: int32(3)},
+		HighApiVersion: &smpb.SemVer{Major: int32(2), Minor: int32(11)},
 	}
 	var compressors []repb.Compressor_Value
 	if s.supportZstd {
