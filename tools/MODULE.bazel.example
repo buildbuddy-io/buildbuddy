@@ -1,0 +1,19 @@
+# Example MODULE.bazel configuration for dev_qa tests
+#
+# Add this to your root MODULE.bazel file to enable the dev QA integration tests
+
+# Add rules_bazel_integration_test dependency
+bazel_dep(name = "rules_bazel_integration_test", version = "0.34.0")
+
+# Configure Bazel binaries for integration testing
+bazel_binaries = use_extension(
+    "@rules_bazel_integration_test//:extensions.bzl",
+    "bazel_binaries",
+)
+
+# Download the Bazel version to use for running the dev QA tests
+# This is the version of Bazel that will execute the tests against external repos
+bazel_binaries.download(version = "7.4.0")
+
+# Make the bazel_binaries repository available
+use_repo(bazel_binaries, "bazel_binaries")

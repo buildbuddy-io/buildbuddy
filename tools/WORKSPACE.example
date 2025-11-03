@@ -1,0 +1,34 @@
+# Example WORKSPACE configuration for dev_qa tests (legacy, non-bzlmod)
+#
+# Add this to your root WORKSPACE file to enable the dev QA integration tests
+
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# Add rules_bazel_integration_test
+http_archive(
+    name = "rules_bazel_integration_test",
+    sha256 = "80cd42b7e8e4ec8e156a4e3c39950646e998afa61a2e0887c72423d635a50ef5",
+    urls = [
+        "https://github.com/bazel-contrib/rules_bazel_integration_test/releases/download/v0.34.0/rules_bazel_integration_test.v0.34.0.tar.gz",
+    ],
+)
+
+# Load dependencies for rules_bazel_integration_test
+load("@rules_bazel_integration_test//bazel_integration_test:deps.bzl", "bazel_integration_test_rules_dependencies")
+
+bazel_integration_test_rules_dependencies()
+
+# Load additional dependencies
+load("@cgrindel_bazel_starlib//:deps.bzl", "bazel_starlib_dependencies")
+
+bazel_starlib_dependencies()
+
+load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
+
+bazel_skylib_workspace()
+
+# Configure Bazel binaries for integration testing
+load("@rules_bazel_integration_test//bazel_integration_test:defs.bzl", "bazel_binaries")
+
+# Download the Bazel version to use for running the dev QA tests
+bazel_binaries(versions = ["7.4.0"])
