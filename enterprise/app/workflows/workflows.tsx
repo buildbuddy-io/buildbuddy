@@ -194,11 +194,11 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       .finally(() => this.setState({ repoToInvalidate: null }));
   }
 
-  renderActionList(repoUrl: string): JSX.Element | null {
-    const history = this.state.workflowHistoryResponse?.workflowHistory.find(
-      (h: workflow.GetWorkflowHistoryResponse.WorkflowHistory) => h.repoUrl === repoUrl
-    );
-
+  renderActionList(
+    workflowHistoryMap: Map<string, workflow.GetWorkflowHistoryResponse.WorkflowHistory>,
+    repoUrl: string
+  ): JSX.Element | null {
+    const history = workflowHistoryMap.get(repoUrl);
     if (history && history.actionHistory.length > 0) {
       return <ActionListComponent repoUrl={history.repoUrl} history={history.actionHistory}></ActionListComponent>;
     } else {
@@ -211,6 +211,24 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       return <div className="loading" />;
     }
     const isAdmin = this.props.user.isGroupAdmin();
+    const workflowHistory = new Map<string, workflow.GetWorkflowHistoryResponse.WorkflowHistory>();
+    for (const h of this.state.workflowHistoryResponse?.workflowHistory ?? []) {
+      workflowHistory.set(h.repoUrl, h);
+    }
+    const sortedRepos = (this.state.reposResponse?.repos ?? []).sort((a, b) => {
+      // Put repos with workflow history first.
+      const aHistory = workflowHistory.get(a.repoUrl);
+      const aHasHistory = aHistory && aHistory.actionHistory.length > 0;
+      const bHistory = workflowHistory.get(b.repoUrl);
+      const bHasHistory = bHistory && bHistory.actionHistory.length > 0;
+
+      if (aHasHistory !== bHasHistory) {
+        return aHasHistory ? -1 : 1;
+      }
+
+      // Then sort by repo URL.
+      return a.repoUrl.localeCompare(b.repoUrl);
+    });
     return (
       <div className="workflows-page">
         <div className="shelf">
@@ -256,7 +274,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
           {Boolean(this.state.workflowsResponse?.workflow?.length || this.state.reposResponse?.repos?.length) && (
             <div className="workflows-list">
               {/* Render linked repositories */}
-              {this.state.reposResponse?.repos?.map((repo) => (
+              {sortedRepos.map((repo) => (
                 <>
                   <RepoItem
                     user={this.props.user}
@@ -264,7 +282,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     useDefaultWorkflowConfig={repo.useDefaultWorkflowConfig}
                     onClickUnlinkItem={() => this.setState({ repoToUnlink: repo.repoUrl })}
                     onClickInvalidateAllItem={() => this.setState({ repoToInvalidate: repo.repoUrl })}
-                    history={this.renderActionList(repo.repoUrl)}
+                    history={this.renderActionList(workflowHistory, repo.repoUrl)}
                   />
                 </>
               ))}
@@ -280,7 +298,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     onClickInvalidateAllItem={null} /* Not implemented for legacy workflows */
                     history={null}
                   />
-                  {workflow.repoUrl && this.renderActionList(workflow.repoUrl)}
+                  {workflow.repoUrl && this.renderActionList(workflowHistory, workflow.repoUrl)}
                 </>
               ))}
             </div>
