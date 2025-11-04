@@ -20,8 +20,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
 
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
 	mdspb "github.com/buildbuddy-io/buildbuddy/proto/metadata_service"
@@ -333,6 +335,13 @@ func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 }
 
 func (c *Cache) writerWithSizeHint(ctx context.Context, r *rspb.ResourceName, sizeHint int64) (interfaces.CommittedWriteCloser, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	if spn.IsRecording() {
+		spn.SetAttributes(
+			attribute.String("digest_hash", r.GetDigest().GetHash()),
+			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
+	}
+	defer spn.End()
 	// If data is not already compressed, return a writer that will compress
 	// it before writing.
 	// N.B. We only compress data *over* a given size, because compressing
@@ -394,6 +403,8 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces
 }
 
 func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	req := &mdpb.FindRequest{
 		FileRecords: make([]*sgpb.FileRecord, len(resources)),
 	}
@@ -468,6 +479,13 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 
 // Low level interface used for seeking and stream-writing.
 func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64) (io.ReadCloser, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	if spn.IsRecording() {
+		spn.SetAttributes(
+			attribute.String("digest_hash", r.GetDigest().GetHash()),
+			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
+	}
 	fileRecord, err := c.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
@@ -479,7 +497,7 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 	}
 	if len(mds) != 1 {
 		log.Errorf("File record %v found multiple metadatas: %v", fileRecord, mds)
-		return nil, status.InternalErrorf("only one metadata record should match query")
+		return nil, status.InternalError("only one metadata record should match query")
 	}
 	md := mds[0]
 
@@ -516,7 +534,7 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 			return nil, err
 		}
 		if !encryptionEnabled {
-			return nil, status.NotFoundErrorf("decryption key not available")
+			return nil, status.NotFoundError("decryption key not available")
 		}
 	}
 

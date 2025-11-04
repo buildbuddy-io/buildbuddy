@@ -3313,7 +3313,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 			return nil, err
 		}
 		if !encryptionEnabled {
-			return nil, status.NotFoundErrorf("decryption key not available")
+			return nil, status.NotFoundError("decryption key not available")
 		}
 	}
 
