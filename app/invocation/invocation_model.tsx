@@ -11,6 +11,7 @@ import { command_line } from "../../proto/command_line_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { options } from "../../proto/option_filters_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
 import { tools } from "../../proto/spawn_ts_proto";
@@ -876,7 +877,7 @@ export default class InvocationModel {
       }
     }
 
-    return this.commandLineOptionsToShellCommand(this.optionsParsed?.explicitCmdLine ?? []);
+    return this.commandLineOptionsToShellCommand(this.getExplicitCommandLineOptions());
   }
 
   /**
@@ -887,7 +888,39 @@ export default class InvocationModel {
    * false, from its default value of true).
    */
   effectiveCommandLine() {
-    return this.commandLineOptionsToShellCommand(this.optionsParsed?.cmdLine ?? []);
+    return this.commandLineOptionsToShellCommand(this.getEffectiveCommandLineOptions());
+  }
+
+  getExplicitCommandLineOptions(): string[] {
+    const explicitOptions = this.getStructuredOptionCombinedForms("original", "command options");
+    if (explicitOptions.length) {
+      return explicitOptions;
+    }
+    return (this.optionsParsed?.explicitCmdLine || []).filter((option) => Boolean(option));
+  }
+
+  getEffectiveCommandLineOptions(): string[] {
+    const canonicalOptions = this.getStructuredOptionCombinedForms("canonical", "command options");
+    if (canonicalOptions.length) {
+      return canonicalOptions;
+    }
+    return (this.optionsParsed?.cmdLine || []).filter((option) => Boolean(option));
+  }
+
+  getExplicitStartupOptions(): string[] {
+    const explicitStartup = this.getStructuredOptionCombinedForms("original", "startup options");
+    if (explicitStartup.length) {
+      return explicitStartup;
+    }
+    return (this.optionsParsed?.explicitStartupOptions || []).filter((option) => Boolean(option));
+  }
+
+  getEffectiveStartupOptions(): string[] {
+    const canonicalStartup = this.getStructuredOptionCombinedForms("canonical", "startup options");
+    if (canonicalStartup.length) {
+      return canonicalStartup;
+    }
+    return (this.optionsParsed?.startupOptions || []).filter((option) => Boolean(option));
   }
 
   /**
@@ -917,6 +950,23 @@ export default class InvocationModel {
       return [];
     }
     return ["--", ...residual];
+  }
+
+  private getStructuredCommandLineByLabel(label: string): command_line.CommandLine | undefined {
+    return this.structuredCommandLine.find((commandLine) => commandLine.commandLineLabel === label);
+  }
+
+  private getStructuredOptionCombinedForms(label: string, sectionLabel: string): string[] {
+    const commandLine = this.getStructuredCommandLineByLabel(label);
+    if (!commandLine?.sections?.length) {
+      return [];
+    }
+    return commandLine.sections
+      .filter((section) => section.sectionLabel === sectionLabel)
+      .flatMap((section) => section.optionList?.option || [])
+      .filter((option) => option?.combinedForm)
+      .filter((option) => !(option.metadataTags || []).includes(options.OptionMetadataTag.HIDDEN))
+      .map((option) => option.combinedForm);
   }
 
   private commandLineOptionsToShellCommand(options: string[]) {
