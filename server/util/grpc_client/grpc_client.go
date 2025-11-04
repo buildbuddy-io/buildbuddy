@@ -139,8 +139,8 @@ func (p *ClientConnPool) Invoke(ctx context.Context, method string, args any, re
 	conn := p.getConn()
 	gauge := metrics.PendingClientRPCsPerConnection.WithLabelValues(p.targetForLogging, p.id, method, conn.index)
 	gauge.Inc()
-	err := conn.Invoke(ctx, method, args, reply, opts...)
-	gauge.Dec()
+	defer gauge.Dec()
+	return conn.Invoke(ctx, method, args, reply, opts...)
 	return err
 }
 
