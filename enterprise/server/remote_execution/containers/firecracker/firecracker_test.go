@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -3390,6 +3391,7 @@ func TestFirecrackerStressIO(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// This benchmark is slow and not run by default on CI. Use bench.sh to run it locally.
 func Benchmark_PausePerformance(b *testing.B) {
 	for _, memorySizeMb := range []int64{500, 1000, 2000, 4000, 8000} {
 		b.Run(fmt.Sprintf("memory_size_%d_mb", memorySizeMb), func(b *testing.B) {
@@ -3402,7 +3404,7 @@ func Benchmark_PausePerformance(b *testing.B) {
 
 			cfg := getExecutorConfig(b)
 			opts := firecracker.ContainerOpts{
-				ContainerImage:         "gcr.io/flame-public/stress-ng-alpine@sha256:b3c26074348e7eecff6415f992dcac443947b1f36298b746b962ca677405fcbf",
+				ContainerImage:         ubuntuImage,
 				ActionWorkingDirectory: workDir,
 				VMConfiguration: &fcpb.VMConfiguration{
 					NumCpus:            2,
@@ -3443,38 +3445,29 @@ func Benchmark_PausePerformance(b *testing.B) {
 				}
 			})
 
-			mbToWrite := .7 * float64(memorySizeMb)
-			cmd := &repb.Command{
-				// Dirty about 70% of the memory in the VM, which is roughly what we see from Bazel builds.
-				//
-				// stress-ng typically frees the allocated memory when the command returns, but we want the memory
-				// to still be dirty while we take the snapshot.
-				// We double-fork stress-ng (& & twice) to fully detach the process from its parent process.
-				// The stress-ng process gets reparented to the init process (PID 1).
-				// This prevents RunWithProcessTreeCleanup from killing it when the Exec command returns,
-				// allowing stress-ng to continue running while we take the snapshot.
-				//
-				// We also redirect I/O to /dev/null so there is no corruption when the pipes
-				// are closed by RunWithProcessTreeCleanup.
+			mbToWrite := int(.7 * float64(memorySizeMb))
+			initialCmd := &repb.Command{
+				// Mount a RAM-based filesystem to /tmp/randomdata to simulate memory usage.
 				Arguments: []string{"sh", "-c", `
-cd /root
-if [ ! -f /tmp/stress_ng_running ]; then
-	(stress-ng --vm 2 --vm-bytes ` + fmt.Sprint(mbToWrite) + `M  --vm-method all  --vm-keep --timeout 3h </dev/null >/dev/null 2>&1 &) &
-	touch /tmp/stress_ng_running
-fi
-sleep 5
-free -h
+mkdir /tmp/randomdata && mount -t tmpfs -o size=` + strconv.Itoa(mbToWrite) + `M tmpfs /tmp/randomdata
 		`},
 			}
 
 			// Generate one full snapshot outside of the loop. Within the loop, it will always create a diff snapshot.
-			res := c.Exec(ctx, cmd, nil /*=stdio*/)
+			res := c.Exec(ctx, initialCmd, nil /*=stdio*/)
 			require.NoError(b, res.Error)
-			log.Infof("Initial run output: %s", string(res.Stdout))
 			err = c.Pause(ctx)
 			require.NoError(b, err)
 			err = c.Unpause(ctx)
 			require.NoError(b, err)
+
+			cmd := &repb.Command{
+				// Dirty about 70% of the memory in the VM, which is roughly what we see from Bazel builds.
+				Arguments: []string{"sh", "-c", `
+rm /tmp/randomdata/data; dd if=/dev/urandom of=/tmp/randomdata/data bs=1M count=` + strconv.Itoa(mbToWrite) + `
+free -h
+		`},
+			}
 
 			b.ResetTimer()
 			for range b.N {
