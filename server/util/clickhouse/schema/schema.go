@@ -228,6 +228,8 @@ type Execution struct {
 	ExecutionPriority      int32
 	RequestedIsolationType string
 	EffectiveIsolationType string `gorm:"type:LowCardinality(String)"` // This values comes from the executor
+	RequestedPool          string
+	EffectivePool          string `gorm:"type:LowCardinality(String)"`
 
 	// Runner metadata
 	RunnerID            string
@@ -323,6 +325,8 @@ func (e *Execution) AdditionalFields() []string {
 		"ExecutionPriority",
 		"RequestedIsolationType",
 		"EffectiveIsolationType",
+		"RequestedPool",
+		"EffectivePool",
 		"RunnerID",
 		"RunnerTaskNumber",
 		"PlatformHash",
