@@ -111,7 +111,7 @@ nogo(
 
 gazelle_binary(
     name = "bb_gazelle_binary",
-    languages = DEFAULT_LANGUAGES + ["@bazel_gazelle//language/bazel/visibility"],
+    languages = DEFAULT_LANGUAGES,
 )
 
 ## Ignore generated proto files
