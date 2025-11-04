@@ -62,7 +62,9 @@ type ZstdCompressingWriter struct {
 	closed         bool
 
 	bufferPool *bytebufferpool.VariableSizePool
-	observer   prometheus.Observer
+
+	// observer of the compression ratio.
+	observer prometheus.Observer
 }
 
 // Flush compresses any buffered data and writes it to the underlying writer. It
@@ -187,7 +189,8 @@ func (c *ZstdCompressingWriter) Close() error {
 // NewZstdCompressingWriter returns a new ZstdCompressingWriter. bufSize must be
 // > 0 and determines how much data is buffered before being compressed and
 // written out. Larger buffer sizes generally result in better compression
-// ratios, but will be capped to an implementation-defined maximum.
+// ratios, but will be capped to an implementation-defined maximum. The observer
+// is an observer of the compression ratio.
 func NewZstdCompressingWriter(cwc interfaces.CommittedWriteCloser, bufferPool *bytebufferpool.VariableSizePool, bufSize int64, observer prometheus.Observer) (*ZstdCompressingWriter, error) {
 	if bufSize <= 0 {
 		return nil, errors.New("bufSize must be > 0")
