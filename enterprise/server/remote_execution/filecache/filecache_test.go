@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
@@ -361,9 +362,9 @@ func TestScanWithConcurrentAdd(t *testing.T) {
 func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
+	scratchDir := testfs.MakeTempDir(t)
 
-	baseDir := testfs.MakeTempDir(t)
-
+	var unprefixedNodes []*repb.FileNode
 	{
 		fc, err := filecache.NewFileCache(fcDir, 4096*10, false)
 		if err != nil {
@@ -375,58 +376,119 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		for i := 0; i < len(nodes); i++ {
 			rn, buf := testdigest.RandomCASResourceBuf(t, 4096)
 			name := rn.GetDigest().GetHash()
-			writeFileContent(t, baseDir, name, string(buf), false /*executable*/)
-			node := nodeFromString(name, false)
-			err = fc.AddFile(ctx, node, filepath.Join(baseDir, name))
+			writeFileContent(t, scratchDir, name, string(buf), false /*executable*/)
+			node := &repb.FileNode{Digest: rn.GetDigest()}
+			err = fc.AddFile(ctx, node, filepath.Join(scratchDir, name))
 			require.NoError(t, err)
+			nodes[i] = node
 		}
 		log.Printf("Done adding initial files")
+		unprefixedNodes = nodes
 	}
+
+	var prefixLength4Nodes []*repb.FileNode
 	{
+		// Enable subdir prefixing with prefix length 4.
 		flags.Set(t, "executor.include_subdir_prefix", true)
+		flags.Set(t, "executor.subdir_prefix_length", 4)
 		log.Printf("Scanning old files")
-		// Recreate filecache and wait for it to scan exsting files.
-		// Ensure that they are still present.
+		// Recreate filecache and wait for it to scan existing files.
 		fc, err := filecache.NewFileCache(fcDir, 4096*10, false)
 		if err != nil {
 			t.Fatal(err)
 		}
 		fc.WaitForDirectoryScanToComplete()
 
+		// Ensure that the files from the previous iteration (without subdir
+		// prefixing enabled) are still present.
+		for _, n := range unprefixedNodes {
+			exists := fc.ContainsFile(ctx, n)
+			require.True(t, exists, "file %s should still exist", n.GetDigest().GetHash())
+			linkPath := filepath.Join(scratchDir, strconv.Itoa(rand.Intn(1e12)))
+			ok := fc.FastLinkFile(ctx, n, linkPath)
+			require.True(t, ok, "file %s should be linkable", n.GetDigest().GetHash())
+			require.FileExists(t, linkPath)
+			actualDigest, err := digest.ComputeForFile(linkPath, repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			require.Equal(t, n.GetDigest().GetHash(), actualDigest.GetHash())
+		}
+
+		// Add new files to the cache.
 		nodes := make([]*repb.FileNode, 10)
 		for i := 0; i < len(nodes); i++ {
 			rn, buf := testdigest.RandomCASResourceBuf(t, 4096)
 			name := rn.GetDigest().GetHash()
-			writeFileContent(t, baseDir, name, string(buf), false /*executable*/)
-			node := nodeFromString(name, false)
-			err = fc.AddFile(ctx, node, filepath.Join(baseDir, name))
+			writeFileContent(t, scratchDir, name, string(buf), false /*executable*/)
+			node := &repb.FileNode{Digest: rn.GetDigest()}
+			err = fc.AddFile(ctx, node, filepath.Join(scratchDir, name))
 			require.NoError(t, err)
+			nodes[i] = node
 		}
-	}
-	{
-		fileSizeSum := int64(0)
-		walkFn := func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				return nil
-			}
-			info, err := os.Stat(path)
-			if err != nil {
-				return err
-			}
-			sizeOnDisk, err := disk.EstimatedFileDiskUsage(info)
-			if err != nil {
-				return err
-			}
-			fileSizeSum += sizeOnDisk
-			return nil
+		prefixLength4Nodes = nodes
+
+		// The old unprefixed files should all have been evicted.
+		for _, n := range unprefixedNodes {
+			exists := fc.ContainsFile(ctx, n)
+			require.False(t, exists, "file %s should still exist", n.GetDigest().GetHash())
+			linkPath := filepath.Join(scratchDir, strconv.Itoa(rand.Intn(1e12)))
+			ok := fc.FastLinkFile(ctx, n, linkPath)
+			require.False(t, ok, "file %s should not be linkable", n.GetDigest().GetHash())
+			require.NoFileExists(t, linkPath)
 		}
 
-		err := filepath.WalkDir(fcDir, walkFn)
-		require.NoError(t, err)
-		require.Equal(t, int64(4096*10), fileSizeSum)
+		// The disk usage should be the size of the new files.
+		require.Equal(t, int64(4096*10), fileDiskUsageRecursive(t, fcDir))
+	}
+	{
+		// Now *decrease* the subdir prefix length from 4 -> 2; should be able
+		// to repopulate the cache as well as evict old files in this situtation
+		// as well.
+		flags.Set(t, "executor.include_subdir_prefix", true)
+		flags.Set(t, "executor.subdir_prefix_length", 2)
+		log.Printf("Scanning old files")
+
+		fc, err := filecache.NewFileCache(fcDir, 4096*10, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fc.WaitForDirectoryScanToComplete()
+
+		// Ensure that the files from the previous iteration (prefix length 4)
+		// are still present.
+		for _, n := range prefixLength4Nodes {
+			exists := fc.ContainsFile(ctx, n)
+			require.True(t, exists, "file %s should still exist", n.GetDigest().GetHash())
+			linkPath := filepath.Join(scratchDir, strconv.Itoa(rand.Intn(1e12)))
+			ok := fc.FastLinkFile(ctx, n, linkPath)
+			require.True(t, ok, "file %s should be linkable", n.GetDigest().GetHash())
+			require.FileExists(t, linkPath)
+			actualDigest, err := digest.ComputeForFile(linkPath, repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			require.Equal(t, n.GetDigest().GetHash(), actualDigest.GetHash())
+		}
+
+		// Add new files to the cache.
+		for range 10 {
+			rn, buf := testdigest.RandomCASResourceBuf(t, 4096)
+			name := rn.GetDigest().GetHash()
+			writeFileContent(t, scratchDir, name, string(buf), false /*executable*/)
+			node := &repb.FileNode{Digest: rn.GetDigest()}
+			err = fc.AddFile(ctx, node, filepath.Join(scratchDir, name))
+			require.NoError(t, err)
+		}
+
+		// The old files should all have been evicted.
+		for _, n := range prefixLength4Nodes {
+			exists := fc.ContainsFile(ctx, n)
+			require.False(t, exists, "file %s should not exist", n.GetDigest().GetHash())
+			linkPath := filepath.Join(scratchDir, strconv.Itoa(rand.Intn(1e12)))
+			ok := fc.FastLinkFile(ctx, n, linkPath)
+			require.False(t, ok, "file %s should not be linkable", n.GetDigest().GetHash())
+			require.NoFileExists(t, linkPath)
+		}
+
+		// The disk usage should be the size of the new files.
+		require.Equal(t, int64(4096*10), fileDiskUsageRecursive(t, fcDir))
 	}
 }
 
@@ -698,4 +760,31 @@ func nodeFromString(s string, executable bool) *repb.FileNode {
 		},
 		IsExecutable: executable,
 	}
+}
+
+// Sums estimated disk usage from files only.
+func fileDiskUsageRecursive(t *testing.T, path string) int64 {
+	var sum int64
+	walkFn := func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		sizeOnDisk, err := disk.EstimatedFileDiskUsage(info)
+		if err != nil {
+			return err
+		}
+		sum += sizeOnDisk
+		return nil
+	}
+
+	err := filepath.WalkDir(path, walkFn)
+	require.NoError(t, err)
+	return sum
 }
