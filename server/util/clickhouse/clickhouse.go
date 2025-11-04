@@ -360,6 +360,8 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) *s
 		RunnerID:                           in.GetRunnerId(),
 		PlatformHash:                       in.GetPlatformHash(),
 		PersistentWorkerKey:                in.GetPersistentWorkerKey(),
+		RequestedPool:                      in.GetRequestedPool(),
+		EffectivePool:                      in.GetEffectivePool(),
 	}
 }
 

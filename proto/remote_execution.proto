@@ -2886,4 +2886,8 @@ message StoredExecution {
 
   // Experiments used by this execution.
   repeated string experiments = 61;
+
+  // The requested pool name from platform properties, before resolution to effective pool.
+  string requested_pool = 77;
+  string effective_pool = 78;
 }
