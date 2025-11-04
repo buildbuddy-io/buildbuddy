@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net/http"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -393,4 +394,102 @@ func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, repo 
 	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff(layerBuf, out.Bytes()))
+}
+
+func TestTeeBlob_CacheHit(t *testing.T) {
+	te := setupTestEnv(t)
+	ctx := context.Background()
+
+	// Create a test layer and write it to cache
+	layerBuf, repo, hash, contentType := createLayer(t, "teeblob_cache_hit", 1024)
+	contentLength := int64(len(layerBuf))
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	// Write blob to cache
+	err := ocicache.WriteBlobToCache(ctx, bytes.NewReader(layerBuf), bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	// Create OCI cache and test TeeBlob
+	ociCache := ocicache.NewOCICache(bsClient, &http.Client{})
+	reference := repo.Digest(hash.String()).String()
+
+	rc, err := ociCache.TeeBlob(ctx, reference, "")
+	require.NoError(t, err)
+	require.NotNil(t, rc)
+	defer rc.Close()
+
+	// Read the blob and verify it matches
+	result, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(layerBuf, result))
+}
+
+func TestTeeBlob_CacheMiss(t *testing.T) {
+	te := setupTestEnv(t)
+	ctx := context.Background()
+
+	// Create a test layer (but don't write to cache)
+	_, repo, hash, _ := createLayer(t, "teeblob_cache_miss", 1024)
+
+	// Create OCI cache
+	bsClient := te.GetByteStreamClient()
+	ociCache := ocicache.NewOCICache(bsClient, &http.Client{})
+
+	// Use a reference that won't be in cache and will fail on upstream
+	reference := repo.Digest(hash.String()).String()
+
+	rc, err := ociCache.TeeBlob(ctx, reference, "")
+	require.NoError(t, err)
+	require.NotNil(t, rc)
+	defer rc.Close()
+
+	// Read the blob - this should return an error since it's not in cache
+	// and the upstream registry is not reachable
+	_, err = io.ReadAll(rc)
+	require.Error(t, err)
+}
+
+func TestTeeBlob_InvalidReference(t *testing.T) {
+	te := setupTestEnv(t)
+	ctx := context.Background()
+
+	bsClient := te.GetByteStreamClient()
+	ociCache := ocicache.NewOCICache(bsClient, &http.Client{})
+
+	// Invalid reference format
+	rc, err := ociCache.TeeBlob(ctx, "not-a-valid-reference!@#$", "")
+	require.Error(t, err)
+	require.Nil(t, rc)
+	require.Contains(t, err.Error(), "invalid reference")
+}
+
+func TestTeeBlob_TagNotDigest(t *testing.T) {
+	te := setupTestEnv(t)
+	ctx := context.Background()
+
+	bsClient := te.GetByteStreamClient()
+	ociCache := ocicache.NewOCICache(bsClient, &http.Client{})
+
+	// Use a tag instead of digest
+	reference := "buildbuddy.io/test:latest"
+	rc, err := ociCache.TeeBlob(ctx, reference, "")
+	require.Error(t, err)
+	require.Nil(t, rc)
+	require.Contains(t, err.Error(), "must be a digest")
+}
+
+func TestTeeBlob_InvalidDigest(t *testing.T) {
+	te := setupTestEnv(t)
+	ctx := context.Background()
+
+	bsClient := te.GetByteStreamClient()
+	ociCache := ocicache.NewOCICache(bsClient, &http.Client{})
+
+	// Use an invalid digest format
+	reference := "buildbuddy.io/test@invalid:abcd"
+	rc, err := ociCache.TeeBlob(ctx, reference, "")
+	require.Error(t, err)
+	require.Nil(t, rc)
+	require.Contains(t, err.Error(), "invalid reference")
 }
