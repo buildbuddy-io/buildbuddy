@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"net/url"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -17,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -486,27 +486,34 @@ type OCICache interface {
 	// The reference should be in the format: registry/repository@sha256:hash
 	// Returns an io.ReadCloser for the blob content.
 	// When fetching from upstream, TeeBlob automatically caches the blob to the CAS.
-	TeeBlob(ctx context.Context, reference, authHeader string) (io.ReadCloser, error)
+	// Authentication and transport are handled by the LayerFetcher provided to NewOCICache.
+	TeeBlob(ctx context.Context, reference string) (io.ReadCloser, error)
+}
+
+// LayerFetcher provides a way to fetch layers from an upstream registry.
+// The reference must be a digest reference (not a tag).
+type LayerFetcher interface {
+	Layer(context.Context, gcrname.Digest) (gcr.Layer, error)
 }
 
 // ociCache implements the OCICache interface.
 type ociCache struct {
-	bsClient   bspb.ByteStreamClient
-	acClient   repb.ActionCacheClient
-	httpClient *http.Client
+	bsClient     bspb.ByteStreamClient
+	acClient     repb.ActionCacheClient
+	layerFetcher LayerFetcher
 }
 
 // NewOCICache creates a new OCICache instance.
-func NewOCICache(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, httpClient *http.Client) OCICache {
+func NewOCICache(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, layerFetcher LayerFetcher) OCICache {
 	return &ociCache{
-		bsClient:   bsClient,
-		acClient:   acClient,
-		httpClient: httpClient,
+		bsClient:     bsClient,
+		acClient:     acClient,
+		layerFetcher: layerFetcher,
 	}
 }
 
 // TeeBlob reads the blob from the CAS, falling back to the upstream registry if not present.
-func (c *ociCache) TeeBlob(ctx context.Context, reference, authHeader string) (io.ReadCloser, error) {
+func (c *ociCache) TeeBlob(ctx context.Context, reference string) (io.ReadCloser, error) {
 	// Parse the reference to extract repository and digest information
 	ref, err := gcrname.ParseReference(reference)
 	if err != nil {
@@ -551,13 +558,50 @@ func (c *ociCache) TeeBlob(ctx context.Context, reference, authHeader string) (i
 			log.CtxDebugf(ctx, "Error fetching blob metadata from cache: %s", metaErr)
 		}
 
-		// Fetch from upstream registry and cache as we stream
-		upstreamReader, contentType, contentLength, upstreamErr := c.fetchFromUpstreamWithMetadata(ctx, ref, authHeader, hash)
-		if upstreamErr != nil {
-			pw.CloseWithError(upstreamErr)
+		// Fetch layer from upstream using the layer fetcher (which handles auth and transport)
+		remoteLayer, layerErr := c.layerFetcher.Layer(ctx, digest)
+		if layerErr != nil {
+			// Preserve specific error types (auth failures, not found, etc.) so callers
+			// can distinguish them from transient unavailability
+			if t, ok := layerErr.(*transport.Error); ok {
+				switch t.StatusCode {
+				case http.StatusUnauthorized, http.StatusForbidden:
+					pw.CloseWithError(status.PermissionDeniedErrorf("not authorized to fetch layer: %s", layerErr))
+				case http.StatusNotFound:
+					pw.CloseWithError(status.NotFoundErrorf("layer not found: %s", layerErr))
+				default:
+					pw.CloseWithError(status.UnavailableErrorf("failed to fetch layer from upstream: %s", layerErr))
+				}
+			} else {
+				// For non-transport errors, wrap as unavailable
+				pw.CloseWithError(status.UnavailableErrorf("failed to fetch layer from upstream: %s", layerErr))
+			}
+			return
+		}
+
+		// Get the compressed blob content
+		upstreamReader, readerErr := remoteLayer.Compressed()
+		if readerErr != nil {
+			pw.CloseWithError(status.UnavailableErrorf("failed to get compressed layer: %s", readerErr))
 			return
 		}
 		defer upstreamReader.Close()
+
+		// Get metadata about the layer
+		size, sizeErr := remoteLayer.Size()
+		if sizeErr != nil {
+			log.CtxWarningf(ctx, "Failed to get layer size: %s", sizeErr)
+			size = 0
+		}
+
+		mediaType, mediaTypeErr := remoteLayer.MediaType()
+		if mediaTypeErr != nil {
+			log.CtxWarningf(ctx, "Failed to get layer media type: %s", mediaTypeErr)
+		}
+		contentType := string(mediaType)
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
 
 		// Wrap with read-through cacher to cache as we stream
 		cachedReader, cacheErr := newBlobReadThroughCacher(
@@ -568,7 +612,7 @@ func (c *ociCache) TeeBlob(ctx context.Context, reference, authHeader string) (i
 			ref.Context(),
 			hash,
 			contentType,
-			contentLength,
+			size,
 		)
 		if cacheErr != nil {
 			log.CtxWarningf(ctx, "Error creating read-through cacher: %s", cacheErr)
@@ -590,45 +634,4 @@ func (c *ociCache) TeeBlob(ctx context.Context, reference, authHeader string) (i
 	}()
 
 	return pr, nil
-}
-
-// fetchFromUpstreamWithMetadata fetches the blob from the upstream registry and returns metadata.
-func (c *ociCache) fetchFromUpstreamWithMetadata(ctx context.Context, ref gcrname.Reference, authHeader string, hash gcr.Hash) (io.ReadCloser, string, int64, error) {
-	// Build the upstream URL
-	u := &url.URL{
-		Scheme: ref.Context().Scheme(),
-		Host:   ref.Context().RegistryStr(),
-		Path:   "/v2/" + ref.Context().RepositoryStr() + "/blobs/" + ref.Identifier(),
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, "", 0, status.UnavailableErrorf("could not create upstream request: %s", err)
-	}
-
-	if authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, "", 0, status.UnavailableErrorf("upstream request failed: %s", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		return nil, "", 0, status.UnavailableErrorf("upstream returned status %d", resp.StatusCode)
-	}
-
-	contentType := resp.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
-	contentLength := resp.ContentLength
-	if contentLength < 0 {
-		contentLength = 0
-	}
-
-	return resp.Body, contentType, contentLength, nil
 }

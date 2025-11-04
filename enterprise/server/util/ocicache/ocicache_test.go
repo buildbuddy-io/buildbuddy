@@ -3,8 +3,8 @@ package ocicache_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
-	"net/http"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -23,6 +23,14 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
+
+// mockLayerFetcher is a mock implementation of LayerFetcher for testing.
+// It returns an error to simulate upstream being unavailable.
+type mockLayerFetcher struct{}
+
+func (m *mockLayerFetcher) Layer(ctx context.Context, digest gcrname.Digest) (gcr.Layer, error) {
+	return nil, fmt.Errorf("layer not found in mock upstream")
+}
 
 func TestCacheSecret(t *testing.T) {
 	for _, tc := range []struct {
@@ -235,10 +243,10 @@ func TestTeeBlob_CacheHit(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create OCI cache and test TeeBlob
-	ociCache := ocicache.NewOCICache(bsClient, acClient, &http.Client{})
+	ociCache := ocicache.NewOCICache(bsClient, acClient, &mockLayerFetcher{})
 	reference := repo.Digest(hash.String()).String()
 
-	rc, err := ociCache.TeeBlob(ctx, reference, "")
+	rc, err := ociCache.TeeBlob(ctx, reference)
 	require.NoError(t, err)
 	require.NotNil(t, rc)
 	defer rc.Close()
@@ -259,12 +267,12 @@ func TestTeeBlob_CacheMiss(t *testing.T) {
 	// Create OCI cache
 	bsClient := te.GetByteStreamClient()
 	acClient := te.GetActionCacheClient()
-	ociCache := ocicache.NewOCICache(bsClient, acClient, &http.Client{})
+	ociCache := ocicache.NewOCICache(bsClient, acClient, &mockLayerFetcher{})
 
 	// Use a reference that won't be in cache and will fail on upstream
 	reference := repo.Digest(hash.String()).String()
 
-	rc, err := ociCache.TeeBlob(ctx, reference, "")
+	rc, err := ociCache.TeeBlob(ctx, reference)
 	require.NoError(t, err)
 	require.NotNil(t, rc)
 	defer rc.Close()
@@ -281,10 +289,10 @@ func TestTeeBlob_InvalidReference(t *testing.T) {
 
 	bsClient := te.GetByteStreamClient()
 	acClient := te.GetActionCacheClient()
-	ociCache := ocicache.NewOCICache(bsClient, acClient, &http.Client{})
+	ociCache := ocicache.NewOCICache(bsClient, acClient, &mockLayerFetcher{})
 
 	// Invalid reference format
-	rc, err := ociCache.TeeBlob(ctx, "not-a-valid-reference!@#$", "")
+	rc, err := ociCache.TeeBlob(ctx, "not-a-valid-reference!@#$")
 	require.Error(t, err)
 	require.Nil(t, rc)
 	require.Contains(t, err.Error(), "invalid reference")
@@ -296,11 +304,11 @@ func TestTeeBlob_TagNotDigest(t *testing.T) {
 
 	bsClient := te.GetByteStreamClient()
 	acClient := te.GetActionCacheClient()
-	ociCache := ocicache.NewOCICache(bsClient, acClient, &http.Client{})
+	ociCache := ocicache.NewOCICache(bsClient, acClient, &mockLayerFetcher{})
 
 	// Use a tag instead of digest
 	reference := "buildbuddy.io/test:latest"
-	rc, err := ociCache.TeeBlob(ctx, reference, "")
+	rc, err := ociCache.TeeBlob(ctx, reference)
 	require.Error(t, err)
 	require.Nil(t, rc)
 	require.Contains(t, err.Error(), "must be a digest")
@@ -312,11 +320,11 @@ func TestTeeBlob_InvalidDigest(t *testing.T) {
 
 	bsClient := te.GetByteStreamClient()
 	acClient := te.GetActionCacheClient()
-	ociCache := ocicache.NewOCICache(bsClient, acClient, &http.Client{})
+	ociCache := ocicache.NewOCICache(bsClient, acClient, &mockLayerFetcher{})
 
 	// Use an invalid digest format
 	reference := "buildbuddy.io/test@invalid:abcd"
-	rc, err := ociCache.TeeBlob(ctx, reference, "")
+	rc, err := ociCache.TeeBlob(ctx, reference)
 	require.Error(t, err)
 	require.Nil(t, rc)
 	require.Contains(t, err.Error(), "invalid reference")
@@ -340,10 +348,10 @@ func TestTeeBlob_PartialRead(t *testing.T) {
 	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 
 	// Create OCI cache and test TeeBlob with partial read
-	ociCache := ocicache.NewOCICache(bsClient, acClient, &http.Client{})
+	ociCache := ocicache.NewOCICache(bsClient, acClient, &mockLayerFetcher{})
 	reference := repo.Digest(hash.String()).String()
 
-	rc, err := ociCache.TeeBlob(ctx, reference, "")
+	rc, err := ociCache.TeeBlob(ctx, reference)
 	require.NoError(t, err)
 	require.NotNil(t, rc)
 
@@ -377,10 +385,10 @@ func TestTeeBlob_FullReadWithChunks(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create OCI cache and test TeeBlob with chunked reads
-	ociCache := ocicache.NewOCICache(bsClient, acClient, &http.Client{})
+	ociCache := ocicache.NewOCICache(bsClient, acClient, &mockLayerFetcher{})
 	reference := repo.Digest(hash.String()).String()
 
-	rc, err := ociCache.TeeBlob(ctx, reference, "")
+	rc, err := ociCache.TeeBlob(ctx, reference)
 	require.NoError(t, err)
 	require.NotNil(t, rc)
 

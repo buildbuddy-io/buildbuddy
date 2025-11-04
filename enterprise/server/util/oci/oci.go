@@ -676,10 +676,7 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 }
 
 func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, credentials Credentials) *imageFromRawManifest {
-	httpClient := &http.Client{
-		Transport: http.DefaultTransport,
-	}
-	ociCache := ocicache.NewOCICache(bsClient, acClient, httpClient)
+	ociCache := ocicache.NewOCICache(bsClient, acClient, puller)
 
 	i := &imageFromRawManifest{
 		repo:        repo,
@@ -885,9 +882,8 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 
 	// Use TeeBlob which handles cache read with fallback to upstream
 	reference := l.repo.Digest(l.digest.String()).String()
-	authHeader := l.image.credentials.ToAuthHeader()
 
-	return l.image.ociCache.TeeBlob(l.image.ctx, reference, authHeader)
+	return l.image.ociCache.TeeBlob(l.image.ctx, reference)
 }
 
 // Uncompressed fetches the compressed bytes from the upstream server
