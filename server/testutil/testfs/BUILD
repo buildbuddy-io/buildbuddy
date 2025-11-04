@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testfs",
     visibility = ["//visibility:public"],
     deps = [
-        "//server/util/log",
         "//server/util/random",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
