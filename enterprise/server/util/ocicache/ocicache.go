@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net/http"
+	"net/url"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -476,4 +478,117 @@ func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader
 	}
 	tr := io.TeeReader(upstream, w)
 	return WriteBlobToCache(ctx, tr, bsClient, acClient, repo, hash, contentType, contentLength)
+}
+
+// OCICache provides an interface for reading OCI blobs from the CAS with fallback to upstream registry.
+type OCICache interface {
+	// TeeBlob reads the blob from the CAS, falling back to the upstream registry if not present.
+	// The reference should be in the format: registry/repository@sha256:hash
+	// Returns an io.ReadCloser for the blob content.
+	TeeBlob(ctx context.Context, reference, authHeader string) (io.ReadCloser, error)
+}
+
+// ociCache implements the OCICache interface.
+type ociCache struct {
+	bsClient   bspb.ByteStreamClient
+	httpClient *http.Client
+}
+
+// NewOCICache creates a new OCICache instance.
+func NewOCICache(bsClient bspb.ByteStreamClient, httpClient *http.Client) OCICache {
+	return &ociCache{
+		bsClient:   bsClient,
+		httpClient: httpClient,
+	}
+}
+
+// TeeBlob reads the blob from the CAS, falling back to the upstream registry if not present.
+func (c *ociCache) TeeBlob(ctx context.Context, reference, authHeader string) (io.ReadCloser, error) {
+	// Parse the reference to extract repository and digest information
+	ref, err := gcrname.ParseReference(reference)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid reference %q: %s", reference, err)
+	}
+
+	// Extract the digest from the reference
+	digest, ok := ref.(gcrname.Digest)
+	if !ok {
+		return nil, status.InvalidArgumentErrorf("reference %q must be a digest, not a tag", reference)
+	}
+
+	hash, err := gcr.NewHash(digest.DigestStr())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid digest in reference %q: %s", reference, err)
+	}
+
+	// Create a pipe for streaming the blob content
+	pr, pw := io.Pipe()
+
+	go func() {
+		defer pw.Close()
+
+		// Try to read from CAS first
+		// We use a dummy size of 1 since the exact size is not required for reading from CAS
+		err := FetchBlobFromCache(ctx, pw, c.bsClient, hash, 1)
+		if err == nil {
+			// CAS hit - blob was successfully fetched
+			blobHit(ctx)
+			return
+		}
+
+		// CAS miss or error - fall back to upstream
+		if status.IsNotFoundError(err) {
+			blobMiss(ctx)
+		} else {
+			log.CtxWarningf(ctx, "Error fetching blob from CAS: %s", err)
+		}
+
+		// Fetch from upstream registry
+		upstreamReader, upstreamErr := c.fetchFromUpstream(ctx, ref, authHeader, hash)
+		if upstreamErr != nil {
+			pw.CloseWithError(upstreamErr)
+			return
+		}
+		defer upstreamReader.Close()
+
+		// Copy the upstream content to the pipe
+		_, copyErr := io.Copy(pw, upstreamReader)
+		if copyErr != nil {
+			pw.CloseWithError(copyErr)
+			return
+		}
+	}()
+
+	return pr, nil
+}
+
+// fetchFromUpstream fetches the blob from the upstream registry.
+func (c *ociCache) fetchFromUpstream(ctx context.Context, ref gcrname.Reference, authHeader string, hash gcr.Hash) (io.ReadCloser, error) {
+	// Build the upstream URL
+	u := &url.URL{
+		Scheme: ref.Context().Scheme(),
+		Host:   ref.Context().RegistryStr(),
+		Path:   "/v2/" + ref.Context().RepositoryStr() + "/blobs/" + ref.Identifier(),
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not create upstream request: %s", err)
+	}
+
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, status.UnavailableErrorf("upstream request failed: %s", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, status.UnavailableErrorf("upstream returned status %d", resp.StatusCode)
+	}
+
+	return resp.Body, nil
 }
