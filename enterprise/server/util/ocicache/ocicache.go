@@ -324,11 +324,11 @@ func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStream
 	return writeBlobMetadataToCache(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
 }
 
-// NewBlobUploader creates a CommittedWriteCloser that writes OCI blobs to the CAS.
+// newBlobUploader creates a CommittedWriteCloser that writes OCI blobs to the CAS.
 //
 // Once contentLength bytes have been written, the blobUploader will commit the blob.
 // It is an error to attempt to Write after commit, and to write more than contentLength bytes.
-func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) (interfaces.CommittedWriteCloser, error) {
+func newBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) (interfaces.CommittedWriteCloser, error) {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -401,12 +401,12 @@ func (b *blobUploader) Close() error {
 	return b.uw.Close()
 }
 
-// NewBlobReadThroughCacher creates a ReadCloser that will write bytes to the CAS as they are read from the input ReadCloser.
+// newBlobReadThroughCacher creates a ReadCloser that will write bytes to the CAS as they are read from the input ReadCloser.
 // Any errors writing to the CAS will be logged and ignored.
 //
 // Closing the ReadThroughCacher closes the input ReadCloser and the underlying BlobUploader.
-func NewBlobReadThroughCacher(ctx context.Context, rc io.ReadCloser, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) (io.ReadCloser, error) {
-	cache, err := NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
+func newBlobReadThroughCacher(ctx context.Context, rc io.ReadCloser, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) (io.ReadCloser, error) {
+	cache, err := newBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
 	if err != nil {
 		return nil, err
 	}
@@ -560,7 +560,7 @@ func (c *ociCache) TeeBlob(ctx context.Context, reference, authHeader string) (i
 		defer upstreamReader.Close()
 
 		// Wrap with read-through cacher to cache as we stream
-		cachedReader, cacheErr := NewBlobReadThroughCacher(
+		cachedReader, cacheErr := newBlobReadThroughCacher(
 			ctx,
 			upstreamReader,
 			c.bsClient,

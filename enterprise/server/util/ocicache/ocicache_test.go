@@ -163,67 +163,6 @@ func TestWriteAndFetchBlob(t *testing.T) {
 	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 }
 
-func TestBlobUploader(t *testing.T) {
-	te := setupTestEnv(t)
-
-	layerBuf, repo, hash, contentType := createLayer(t, "blob_uploader", 1024)
-	contentLength := int64(len(layerBuf))
-	ctx := context.Background()
-	bsClient := te.GetByteStreamClient()
-	acClient := te.GetActionCacheClient()
-
-	up, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
-	require.NoError(t, err)
-
-	written, err := up.Write(layerBuf[:256])
-	require.NoError(t, err)
-	require.Equal(t, 256, written)
-	blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
-
-	written, err = up.Write(layerBuf[256:])
-	require.NoError(t, err)
-	require.Equal(t, len(layerBuf)-256, written)
-	blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
-
-	err = up.Commit()
-	require.NoError(t, err)
-	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
-
-	// Second commit fails, but can still fetch blob.
-	err = up.Commit()
-	require.Error(t, err)
-	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
-
-	err = up.Close()
-	require.NoError(t, err)
-	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
-
-	// Second close fails, but can still fetch blob.
-	err = up.Close()
-	require.Error(t, err)
-	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
-}
-
-func TestBlobUploader_PartialWriteFails(t *testing.T) {
-	te := setupTestEnv(t)
-
-	layerBuf, repo, hash, contentType := createLayer(t, "blob_uploader_partial_write", 1024)
-	contentLength := int64(len(layerBuf))
-	ctx := context.Background()
-	bsClient := te.GetByteStreamClient()
-	acClient := te.GetActionCacheClient()
-
-	up, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
-	require.NoError(t, err)
-	written, err := up.Write(layerBuf[:256])
-	require.NoError(t, err)
-	require.Equal(t, 256, written)
-	err = up.Close()
-	require.NoError(t, err)
-
-	blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
-}
-
 func blobDoesNotExist(t *testing.T, ctx context.Context, te *testenv.TestEnv, repo gcrname.Repository, hash gcr.Hash, contentLength int64) {
 	bsClient := te.GetByteStreamClient()
 	acClient := te.GetActionCacheClient()
@@ -234,121 +173,6 @@ func blobDoesNotExist(t *testing.T, ctx context.Context, te *testenv.TestEnv, re
 	out := &bytes.Buffer{}
 	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
 	require.Error(t, err)
-}
-
-func TestBlobUploader_BlobExists(t *testing.T) {
-	te := setupTestEnv(t)
-
-	layerBuf, repo, hash, contentType := createLayer(t, "blob_uploader_blob_exists", 1024)
-	contentLength := int64(len(layerBuf))
-	ctx := context.Background()
-	bsClient := te.GetByteStreamClient()
-	acClient := te.GetActionCacheClient()
-
-	for i := 0; i < 2; i++ {
-		up, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
-		require.NoError(t, err)
-
-		written, err := up.Write(layerBuf)
-		require.NoError(t, err)
-		require.Equal(t, len(layerBuf), written)
-
-		err = up.Commit()
-		require.NoError(t, err)
-
-		fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
-
-		err = up.Close()
-		require.NoError(t, err)
-
-		fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
-	}
-}
-
-func TestReadThroughCacher(t *testing.T) {
-	te := setupTestEnv(t)
-
-	layerBuf, repo, hash, contentType := createLayer(t, "read_through_cacher", 1024)
-	contentLength := int64(len(layerBuf))
-	ctx := context.Background()
-	bsClient := te.GetByteStreamClient()
-	acClient := te.GetActionCacheClient()
-	r := io.NopCloser(bytes.NewReader(layerBuf))
-
-	cacher, err := ocicache.NewBlobReadThroughCacher(ctx, r, bsClient, acClient, repo, hash, contentType, contentLength)
-	require.NoError(t, err)
-
-	readout, err := io.ReadAll(cacher)
-	require.NoError(t, err)
-	require.Empty(t, cmp.Diff(layerBuf, readout))
-
-	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
-
-	err = cacher.Close()
-	require.NoError(t, err)
-
-	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
-}
-
-func TestReadThroughCacher_PartialReadPreventsCommit(t *testing.T) {
-	te := setupTestEnv(t)
-
-	layerBuf, repo, hash, contentType := createLayer(t, "read_through_cacher_partial_read", 1024)
-	contentLength := int64(len(layerBuf))
-	ctx := context.Background()
-	bsClient := te.GetByteStreamClient()
-	acClient := te.GetActionCacheClient()
-	rc := io.NopCloser(bytes.NewReader(layerBuf))
-
-	cacher, err := ocicache.NewBlobReadThroughCacher(ctx, rc, bsClient, acClient, repo, hash, contentType, contentLength)
-	require.NoError(t, err)
-
-	readbuf := make([]byte, 256)
-	n, err := cacher.Read(readbuf)
-	require.NoError(t, err)
-	require.Equal(t, 256, n)
-
-	err = cacher.Close()
-	require.NoError(t, err)
-
-	blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
-}
-
-func TestReadThroughCacher_ReturnsEOF(t *testing.T) {
-	te := setupTestEnv(t)
-
-	layerBuf, repo, hash, contentType := createLayer(t, "read_through_cacher", 1024)
-	contentLength := int64(len(layerBuf))
-	ctx := context.Background()
-	bsClient := te.GetByteStreamClient()
-	acClient := te.GetActionCacheClient()
-	r := io.NopCloser(bytes.NewReader(layerBuf))
-
-	cacher, err := ocicache.NewBlobReadThroughCacher(ctx, r, bsClient, acClient, repo, hash, contentType, contentLength)
-	require.NoError(t, err)
-
-	readout := &bytes.Buffer{}
-	readbuf := make([]byte, 128)
-	for {
-		n, err := cacher.Read(readbuf)
-		if err != nil {
-			require.ErrorIs(t, err, io.EOF)
-			fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
-			break
-		}
-		require.Greater(t, n, 0)
-		blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
-		_, err = readout.Write(readbuf[:n])
-		require.NoError(t, err)
-	}
-	require.Empty(t, cmp.Diff(layerBuf, readout.Bytes()))
-
-	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
-
-	err = cacher.Close()
-	require.NoError(t, err)
-
-	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 }
 
 func createLayer(t *testing.T, imageName string, filesize int64) ([]byte, gcrname.Repository, gcr.Hash, string) {
@@ -496,4 +320,93 @@ func TestTeeBlob_InvalidDigest(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, rc)
 	require.Contains(t, err.Error(), "invalid reference")
+}
+
+func TestTeeBlob_PartialRead(t *testing.T) {
+	te := setupTestEnv(t)
+	ctx := context.Background()
+
+	// Create a test layer and write it to cache
+	layerBuf, repo, hash, contentType := createLayer(t, "teeblob_partial_read", 1024)
+	contentLength := int64(len(layerBuf))
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	// Write blob to cache
+	err := ocicache.WriteBlobToCache(ctx, bytes.NewReader(layerBuf), bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	// Verify blob is in cache
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
+	// Create OCI cache and test TeeBlob with partial read
+	ociCache := ocicache.NewOCICache(bsClient, acClient, &http.Client{})
+	reference := repo.Digest(hash.String()).String()
+
+	rc, err := ociCache.TeeBlob(ctx, reference, "")
+	require.NoError(t, err)
+	require.NotNil(t, rc)
+
+	// Read only part of the blob
+	readbuf := make([]byte, 256)
+	n, err := rc.Read(readbuf)
+	require.NoError(t, err)
+	require.Equal(t, 256, n)
+	require.Empty(t, cmp.Diff(layerBuf[:256], readbuf))
+
+	// Close without reading the rest
+	err = rc.Close()
+	require.NoError(t, err)
+
+	// Verify blob is still in cache (since it was already cached before TeeBlob)
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+}
+
+func TestTeeBlob_FullReadWithChunks(t *testing.T) {
+	te := setupTestEnv(t)
+	ctx := context.Background()
+
+	// Create a test layer and write it to cache
+	layerBuf, repo, hash, contentType := createLayer(t, "teeblob_full_read_chunks", 1024)
+	contentLength := int64(len(layerBuf))
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	// Write blob to cache
+	err := ocicache.WriteBlobToCache(ctx, bytes.NewReader(layerBuf), bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	// Create OCI cache and test TeeBlob with chunked reads
+	ociCache := ocicache.NewOCICache(bsClient, acClient, &http.Client{})
+	reference := repo.Digest(hash.String()).String()
+
+	rc, err := ociCache.TeeBlob(ctx, reference, "")
+	require.NoError(t, err)
+	require.NotNil(t, rc)
+
+	// Read the blob in chunks
+	readout := &bytes.Buffer{}
+	readbuf := make([]byte, 128)
+	for {
+		n, err := rc.Read(readbuf)
+		if err != nil {
+			require.ErrorIs(t, err, io.EOF)
+			break
+		}
+		require.Greater(t, n, 0)
+		_, err = readout.Write(readbuf[:n])
+		require.NoError(t, err)
+	}
+
+	// Verify we read the entire blob correctly
+	require.Empty(t, cmp.Diff(layerBuf, readout.Bytes()))
+
+	// Verify blob is still in cache
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
+	err = rc.Close()
+	require.NoError(t, err)
+
+	// Verify blob is still in cache after close
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 }
