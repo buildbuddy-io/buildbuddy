@@ -411,7 +411,7 @@ func TestTeeBlob_CacheHit(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create OCI cache and test TeeBlob
-	ociCache := ocicache.NewOCICache(bsClient, &http.Client{})
+	ociCache := ocicache.NewOCICache(bsClient, acClient, &http.Client{})
 	reference := repo.Digest(hash.String()).String()
 
 	rc, err := ociCache.TeeBlob(ctx, reference, "")
@@ -434,7 +434,8 @@ func TestTeeBlob_CacheMiss(t *testing.T) {
 
 	// Create OCI cache
 	bsClient := te.GetByteStreamClient()
-	ociCache := ocicache.NewOCICache(bsClient, &http.Client{})
+	acClient := te.GetActionCacheClient()
+	ociCache := ocicache.NewOCICache(bsClient, acClient, &http.Client{})
 
 	// Use a reference that won't be in cache and will fail on upstream
 	reference := repo.Digest(hash.String()).String()
@@ -455,7 +456,8 @@ func TestTeeBlob_InvalidReference(t *testing.T) {
 	ctx := context.Background()
 
 	bsClient := te.GetByteStreamClient()
-	ociCache := ocicache.NewOCICache(bsClient, &http.Client{})
+	acClient := te.GetActionCacheClient()
+	ociCache := ocicache.NewOCICache(bsClient, acClient, &http.Client{})
 
 	// Invalid reference format
 	rc, err := ociCache.TeeBlob(ctx, "not-a-valid-reference!@#$", "")
@@ -469,7 +471,8 @@ func TestTeeBlob_TagNotDigest(t *testing.T) {
 	ctx := context.Background()
 
 	bsClient := te.GetByteStreamClient()
-	ociCache := ocicache.NewOCICache(bsClient, &http.Client{})
+	acClient := te.GetActionCacheClient()
+	ociCache := ocicache.NewOCICache(bsClient, acClient, &http.Client{})
 
 	// Use a tag instead of digest
 	reference := "buildbuddy.io/test:latest"
@@ -484,7 +487,8 @@ func TestTeeBlob_InvalidDigest(t *testing.T) {
 	ctx := context.Background()
 
 	bsClient := te.GetByteStreamClient()
-	ociCache := ocicache.NewOCICache(bsClient, &http.Client{})
+	acClient := te.GetActionCacheClient()
+	ociCache := ocicache.NewOCICache(bsClient, acClient, &http.Client{})
 
 	// Use an invalid digest format
 	reference := "buildbuddy.io/test@invalid:abcd"

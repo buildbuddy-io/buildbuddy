@@ -679,7 +679,7 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 	httpClient := &http.Client{
 		Transport: http.DefaultTransport,
 	}
-	ociCache := ocicache.NewOCICache(bsClient, httpClient)
+	ociCache := ocicache.NewOCICache(bsClient, acClient, httpClient)
 
 	i := &imageFromRawManifest{
 		repo:        repo,

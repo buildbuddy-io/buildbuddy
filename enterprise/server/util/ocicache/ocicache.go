@@ -485,19 +485,22 @@ type OCICache interface {
 	// TeeBlob reads the blob from the CAS, falling back to the upstream registry if not present.
 	// The reference should be in the format: registry/repository@sha256:hash
 	// Returns an io.ReadCloser for the blob content.
+	// When fetching from upstream, TeeBlob automatically caches the blob to the CAS.
 	TeeBlob(ctx context.Context, reference, authHeader string) (io.ReadCloser, error)
 }
 
 // ociCache implements the OCICache interface.
 type ociCache struct {
 	bsClient   bspb.ByteStreamClient
+	acClient   repb.ActionCacheClient
 	httpClient *http.Client
 }
 
 // NewOCICache creates a new OCICache instance.
-func NewOCICache(bsClient bspb.ByteStreamClient, httpClient *http.Client) OCICache {
+func NewOCICache(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, httpClient *http.Client) OCICache {
 	return &ociCache{
 		bsClient:   bsClient,
+		acClient:   acClient,
 		httpClient: httpClient,
 	}
 }
@@ -527,32 +530,59 @@ func (c *ociCache) TeeBlob(ctx context.Context, reference, authHeader string) (i
 	go func() {
 		defer pw.Close()
 
-		// Try to read from CAS first
-		// We use a dummy size of 1 since the exact size is not required for reading from CAS
-		err := FetchBlobFromCache(ctx, pw, c.bsClient, hash, 1)
-		if err == nil {
-			// CAS hit - blob was successfully fetched
-			blobHit(ctx)
-			return
+		// Try to get metadata first to know the blob size
+		metadata, metaErr := FetchBlobMetadataFromCache(ctx, c.bsClient, c.acClient, ref.Context(), hash)
+		if metaErr == nil {
+			// Metadata found - try to read the blob from CAS
+			err := FetchBlobFromCache(ctx, pw, c.bsClient, hash, metadata.GetContentLength())
+			if err == nil {
+				// CAS hit - blob was successfully fetched
+				blobHit(ctx)
+				return
+			}
+			// Blob not in CAS even though metadata exists - fall through to upstream fetch
+			log.CtxWarningf(ctx, "Blob metadata found but blob not in CAS: %s", err)
 		}
 
-		// CAS miss or error - fall back to upstream
-		if status.IsNotFoundError(err) {
+		// Cache miss or error - fall back to upstream
+		if status.IsNotFoundError(metaErr) {
 			blobMiss(ctx)
-		} else {
-			log.CtxWarningf(ctx, "Error fetching blob from CAS: %s", err)
+		} else if metaErr != nil {
+			log.CtxDebugf(ctx, "Error fetching blob metadata from cache: %s", metaErr)
 		}
 
-		// Fetch from upstream registry
-		upstreamReader, upstreamErr := c.fetchFromUpstream(ctx, ref, authHeader, hash)
+		// Fetch from upstream registry and cache as we stream
+		upstreamReader, contentType, contentLength, upstreamErr := c.fetchFromUpstreamWithMetadata(ctx, ref, authHeader, hash)
 		if upstreamErr != nil {
 			pw.CloseWithError(upstreamErr)
 			return
 		}
 		defer upstreamReader.Close()
 
-		// Copy the upstream content to the pipe
-		_, copyErr := io.Copy(pw, upstreamReader)
+		// Wrap with read-through cacher to cache as we stream
+		cachedReader, cacheErr := NewBlobReadThroughCacher(
+			ctx,
+			upstreamReader,
+			c.bsClient,
+			c.acClient,
+			ref.Context(),
+			hash,
+			contentType,
+			contentLength,
+		)
+		if cacheErr != nil {
+			log.CtxWarningf(ctx, "Error creating read-through cacher: %s", cacheErr)
+			// Fall back to direct copy without caching
+			_, copyErr := io.Copy(pw, upstreamReader)
+			if copyErr != nil {
+				pw.CloseWithError(copyErr)
+			}
+			return
+		}
+		defer cachedReader.Close()
+
+		// Copy the cached reader content to the pipe
+		_, copyErr := io.Copy(pw, cachedReader)
 		if copyErr != nil {
 			pw.CloseWithError(copyErr)
 			return
@@ -562,8 +592,8 @@ func (c *ociCache) TeeBlob(ctx context.Context, reference, authHeader string) (i
 	return pr, nil
 }
 
-// fetchFromUpstream fetches the blob from the upstream registry.
-func (c *ociCache) fetchFromUpstream(ctx context.Context, ref gcrname.Reference, authHeader string, hash gcr.Hash) (io.ReadCloser, error) {
+// fetchFromUpstreamWithMetadata fetches the blob from the upstream registry and returns metadata.
+func (c *ociCache) fetchFromUpstreamWithMetadata(ctx context.Context, ref gcrname.Reference, authHeader string, hash gcr.Hash) (io.ReadCloser, string, int64, error) {
 	// Build the upstream URL
 	u := &url.URL{
 		Scheme: ref.Context().Scheme(),
@@ -573,7 +603,7 @@ func (c *ociCache) fetchFromUpstream(ctx context.Context, ref gcrname.Reference,
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, status.UnavailableErrorf("could not create upstream request: %s", err)
+		return nil, "", 0, status.UnavailableErrorf("could not create upstream request: %s", err)
 	}
 
 	if authHeader != "" {
@@ -582,13 +612,23 @@ func (c *ociCache) fetchFromUpstream(ctx context.Context, ref gcrname.Reference,
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, status.UnavailableErrorf("upstream request failed: %s", err)
+		return nil, "", 0, status.UnavailableErrorf("upstream request failed: %s", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return nil, status.UnavailableErrorf("upstream returned status %d", resp.StatusCode)
+		return nil, "", 0, status.UnavailableErrorf("upstream returned status %d", resp.StatusCode)
 	}
 
-	return resp.Body, nil
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	contentLength := resp.ContentLength
+	if contentLength < 0 {
+		contentLength = 0
+	}
+
+	return resp.Body, contentType, contentLength, nil
 }
