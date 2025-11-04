@@ -9,7 +9,6 @@ genrule(
     cmd_bash = "touch $@",
 )
 
-# gazelle:ignore
 go_library(
     name = "bundle",
     srcs = ["bundle.go"],
@@ -26,7 +25,7 @@ go_library(
         "//conditions:default": [
             ":empty",  # embed fails with no embedsrcs
         ],
-    }),
+    }),  # keep
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport",
     visibility = ["//visibility:public"],
     deps = [
