@@ -8,10 +8,20 @@ app:
   user_owned_keys_enabled: true
   streaming_http_enabled: true
   invocation_log_streaming_enabled: true
+  enable_read_from_olap_db: true
+  enable_execution_trends: true
+  enable_write_to_olap_db: true
+  enable_write_executions_to_olap_db: true
+  enable_write_test_target_statuses_to_olap_db: true
+  enable_read_target_statuses_from_olap_db: true
+  execution_search_enabled: true
+  audit_logs_enabled: true
+  audit_logs_ui_enabled: true
+  olap_invocation_search_enabled: true
 database:
   data_source: "sqlite3:///tmp/${USER}-buildbuddy-enterprise.db"
-#olap_database:
-#data_source: "clickhouse://default:@127.0.0.1:9000/buildbuddy_local"
+olap_database: # requires `tools/clickhouse` to be running
+  data_source: "clickhouse://default:@127.0.0.1:9000/buildbuddy_local"
 storage:
   ttl_seconds: 86400 # One day in seconds.
   disk:
@@ -33,3 +43,6 @@ auth:
 github:
   client_id: "${BB_DEV_GITHUB_CLIENT_ID}"
   client_secret: "${BB_DEV_GITHUB_CLIENT_SECRET}"
+remote_execution:
+  default_pool_name: tfrench-pool
+  olap_reads_enabled: true

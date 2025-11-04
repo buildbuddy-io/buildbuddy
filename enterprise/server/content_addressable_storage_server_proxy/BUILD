@@ -51,4 +51,7 @@ go_test(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
     ],
+    exec_properties = {
+        "Pool": "tfrench-pool",
+    },
 )
