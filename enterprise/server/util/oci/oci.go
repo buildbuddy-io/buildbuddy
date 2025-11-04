@@ -3,6 +3,7 @@ package oci
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"math/rand"
@@ -246,6 +247,17 @@ func (c Credentials) Equals(o Credentials) bool {
 	return c.Username == o.Username && c.Password == o.Password
 }
 
+// ToAuthHeader converts credentials to an HTTP Authorization header value.
+// Returns an empty string if credentials are empty.
+func (c Credentials) ToAuthHeader() string {
+	if c.IsEmpty() {
+		return ""
+	}
+	auth := c.Username + ":" + c.Password
+	encoded := base64.StdEncoding.EncodeToString([]byte(auth))
+	return "Basic " + encoded
+}
+
 type tagToDigestEntry struct {
 	nameWithDigest string
 	expiration     time.Time
@@ -393,7 +405,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 			r.env.GetActionCacheClient(),
 			r.env.GetByteStreamClient(),
 			puller,
-			credentials.bypassRegistry,
+			credentials,
 		)
 	}
 
@@ -427,7 +439,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 // then falls back to fetching from the upstream remote registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool) (gcr.Image, error) {
+func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, credentials Credentials) (gcr.Image, error) {
 	canUseCache := !isAnonymousUser(ctx)
 	if !canUseCache {
 		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", digestOrTagRef)
@@ -438,13 +450,13 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		// For now, we cannot bypass the registry for tag references,
 		// since cached manifest AC entries need the resolved digest as part of
 		// the key. Log a warning in this case.
-		if !hasDigest && bypassRegistry {
+		if !hasDigest && credentials.bypassRegistry {
 			log.CtxWarningf(ctx, "Cannot bypass registry for tag reference %q (need to make a registry request to resolve tag to digest)", digestOrTagRef)
 		}
 		// Make a HEAD request for the manifest. This does two things:
 		// - Authenticates with the registry (if not bypassing)
 		// - Resolves the tag to a digest (if not already present)
-		if !hasDigest || !bypassRegistry {
+		if !hasDigest || !credentials.bypassRegistry {
 			var err error
 			desc, err = puller.Head(ctx, digestOrTagRef)
 			if err != nil {
@@ -489,7 +501,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				acClient,
 				bsClient,
 				puller,
-				bypassRegistry,
+				credentials,
 			)
 		}
 	}
@@ -525,14 +537,14 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		acClient,
 		bsClient,
 		puller,
-		bypassRegistry,
+		credentials,
 	)
 }
 
 // imageFromDescriptorAndManifest returns an Image from the given manifest (if the manifest is an image manifest),
 // finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
 // and otherwise returns an error.
-func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool) (gcr.Image, error) {
+func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, credentials Credentials) (gcr.Image, error) {
 	if desc.MediaType.IsSchema1() {
 		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
 	}
@@ -555,7 +567,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 			acClient,
 			bsClient,
 			puller,
-			bypassRegistry,
+			credentials,
 		)
 	}
 
@@ -567,6 +579,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 		acClient,
 		bsClient,
 		puller,
+		credentials,
 	), nil
 }
 
@@ -662,7 +675,12 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 	return t.inner.RoundTrip(in)
 }
 
-func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller) *imageFromRawManifest {
+func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, credentials Credentials) *imageFromRawManifest {
+	httpClient := &http.Client{
+		Transport: http.DefaultTransport,
+	}
+	ociCache := ocicache.NewOCICache(bsClient, httpClient)
+
 	i := &imageFromRawManifest{
 		repo:        repo,
 		desc:        desc,
@@ -671,6 +689,8 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		acClient:    acClient,
 		bsClient:    bsClient,
 		puller:      puller,
+		credentials: credentials,
+		ociCache:    ociCache,
 	}
 	i.fetchRawConfigOnce = sync.OnceValues(func() ([]byte, error) {
 		manifest, err := i.Manifest()
@@ -709,10 +729,12 @@ type imageFromRawManifest struct {
 	desc        gcr.Descriptor
 	rawManifest []byte
 
-	ctx      context.Context
-	acClient repb.ActionCacheClient
-	bsClient bspb.ByteStreamClient
-	puller   *remote.Puller
+	ctx         context.Context
+	acClient    repb.ActionCacheClient
+	bsClient    bspb.ByteStreamClient
+	puller      *remote.Puller
+	credentials Credentials
+	ociCache    ocicache.OCICache
 
 	fetchRawConfigOnce func() ([]byte, error)
 }
@@ -853,54 +875,19 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	canUseCache := !isAnonymousUser(l.image.ctx)
 	if !canUseCache {
 		log.CtxInfof(l.image.ctx, "Anonymous user request, skipping layer cache for %s:%s", l.image.repo, l.image.desc.Digest)
-	}
-	if canUseCache {
-		rc, err := l.fetchLayerFromCache()
-		if err != nil && !status.IsNotFoundError(err) {
-			log.CtxWarningf(l.image.ctx, "Error fetching layer from cache: %s", err)
+		// Fall back to direct remote layer fetch
+		remoteLayer, err := l.createRemoteLayer()
+		if err != nil {
+			return nil, err
 		}
-		if rc != nil && err == nil {
-			return rc, nil
-		}
+		return remoteLayer.Compressed()
 	}
 
-	remoteLayer, err := l.createRemoteLayer()
-	if err != nil {
-		return nil, err
-	}
-	upstream, err := remoteLayer.Compressed()
-	if err != nil {
-		return nil, err
-	}
+	// Use TeeBlob which handles cache read with fallback to upstream
+	reference := l.repo.Digest(l.digest.String()).String()
+	authHeader := l.image.credentials.ToAuthHeader()
 
-	if canUseCache {
-		mediaType, err := l.MediaType()
-		if err != nil {
-			log.CtxWarningf(l.image.ctx, "Could not get media type for layer: %s", err)
-			return upstream, nil
-		}
-		contentLength, err := l.Size()
-		if err != nil {
-			log.CtxWarningf(l.image.ctx, "Could not get size for layer: %s", err)
-			return upstream, nil
-		}
-		rc, err := ocicache.NewBlobReadThroughCacher(
-			l.image.ctx,
-			upstream,
-			l.image.bsClient,
-			l.image.acClient,
-			l.repo,
-			l.digest,
-			string(mediaType),
-			contentLength,
-		)
-		if err != nil {
-			return upstream, nil
-		}
-		return rc, nil
-	}
-
-	return upstream, nil
+	return l.image.ociCache.TeeBlob(l.image.ctx, reference, authHeader)
 }
 
 // Uncompressed fetches the compressed bytes from the upstream server
@@ -933,35 +920,6 @@ func (l *layerFromDigest) MediaType() (types.MediaType, error) {
 		return "", err
 	}
 	return remoteLayer.MediaType()
-}
-
-func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
-	metadata, err := ocicache.FetchBlobMetadataFromCache(
-		l.image.ctx,
-		l.image.bsClient,
-		l.image.acClient,
-		l.repo,
-		l.digest,
-	)
-	if err != nil {
-		return nil, err
-	}
-	pr, pw := io.Pipe()
-	go func() {
-		defer pw.Close()
-		err := ocicache.FetchBlobFromCache(
-			l.image.ctx,
-			pw,
-			l.image.bsClient,
-			l.digest,
-			metadata.GetContentLength(),
-		)
-		if err != nil {
-			log.Warningf("Error fetching blob from cache: %s", err)
-			pw.CloseWithError(err)
-		}
-	}()
-	return pr, nil
 }
 
 func isAnonymousUser(ctx context.Context) bool {
