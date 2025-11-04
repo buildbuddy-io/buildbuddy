@@ -190,6 +190,10 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	return err
 }
 
+type flusher interface {
+	Flush() error
+}
+
 // writeHandler enapsulates an on-going ByteStream write to a cache,
 // freeing the caller of having to manage writing and committing-to the cache
 // tracking cache hits, verifying checksums, etc. Here is how it must be used:
@@ -212,9 +216,10 @@ type writeHandler struct {
 	bytesUploadedFromClient int
 	transferTimer           interfaces.TransferTimer
 
-	bufioCloser    io.Closer
-	cacheCommitter interfaces.Committer
-	cacheCloser    io.Closer
+	compressorFlusher flusher
+	bufioCloser       io.Closer
+	cacheCommitter    interfaces.Committer
+	cacheCloser       io.Closer
 
 	checksum           *Checksum
 	resourceName       *digest.CASResourceName
@@ -359,6 +364,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		}
 		ws.writer = io.MultiWriter(compressor, ws.checksum)
 		ws.bufioCloser = compressor
+		ws.compressorFlusher = compressor
 	}
 
 	return ws, nil
@@ -385,6 +391,15 @@ func (w *writeHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error
 }
 
 func (w *writeHandler) commit() error {
+	// We need to flush the buffer in the compressor before closing it.
+	if w.compressorFlusher != nil {
+		defer func() {
+			w.compressorFlusher = nil
+		}()
+		if err := w.compressorFlusher.Flush(); err != nil {
+			return err
+		}
+	}
 	if w.bufioCloser != nil {
 		defer func() {
 			w.bufioCloser = nil

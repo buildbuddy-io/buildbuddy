@@ -95,6 +95,14 @@ func (c *ZstdCompressingWriter) writeCompressed(p []byte) error {
 	return c.err
 }
 
+func (c *ZstdCompressingWriter) Commit() error {
+	err := c.Flush()
+	if err != nil {
+		return err
+	}
+	return c.CommittedWriteCloser.Commit()
+}
+
 func (c *ZstdCompressingWriter) Write(p []byte) (int, error) {
 	if c.closed {
 		return 0, errors.New("ZstdCompressingWriter.Write used after Close")
@@ -122,6 +130,7 @@ func (c *ZstdCompressingWriter) Write(p []byte) (int, error) {
 		c.buffered += n
 		if c.buffered == len(c.buffer) {
 			if err := c.Flush(); err != nil {
+				log.Infof("flush")
 				return total, err
 			}
 		}
@@ -169,11 +178,10 @@ func (c *ZstdCompressingWriter) Close() error {
 	if c.observer != nil {
 		c.observer.Observe(float64(c.CompressedBytesWritten) / float64(c.DecompressedBytesWritten))
 	}
-	flushErr := c.Flush()
-	closeErr := c.CommittedWriteCloser.Close()
+	err := c.CommittedWriteCloser.Close()
 	c.returnBuffers()
 	c.closed = true
-	return errors.Join(flushErr, closeErr)
+	return err
 }
 
 // NewZstdCompressingWriter returns a new ZstdCompressingWriter. bufSize must be
