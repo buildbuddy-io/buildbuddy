@@ -1226,9 +1226,19 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	maxFallbackAgeStr := platform.FindEffectiveValue(c.task, platform.MaxStaleFallbackSnapshotAgePropertyName)
+	maxFallbackAge := snaputil.DefaultMaxStaleFallbackSnapshotAge
+	if maxFallbackAgeStr != "" {
+		d, err := time.ParseDuration(maxFallbackAgeStr)
+		if err != nil {
+			return status.InvalidArgumentErrorf("invalid max fallback snapshot age %s: %s", maxFallbackAgeStr, err)
+		}
+		maxFallbackAge = d
+	}
 	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
-		RemoteReadEnabled: c.supportsRemoteSnapshots,
-		ReadPolicy:        readPolicy,
+		RemoteReadEnabled:           c.supportsRemoteSnapshots,
+		ReadPolicy:                  readPolicy,
+		MaxStaleFallbackSnapshotAge: maxFallbackAge,
 	})
 	if err != nil {
 		return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))

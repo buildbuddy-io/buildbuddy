@@ -176,18 +176,22 @@ talk [Reusing Bazel's Analysis Cache by Cloning Micro-VMs](https://www.youtube.c
 #### Recommended configuration
 
 Snapshot matching is complex and different strategies come with performance
-or cost trade-offs. More details can be found below at [Snapshot save policy](#snapshot-save-policy).
+or cost trade-offs. More details can be found below at [Snapshot save policy](#snapshot-save-policy)
+and [Snapshot read policy](#snapshot-read-policy).
 
 Here are the recommended platform properties for most CI use cases. They balance
 cost considerations and maintain good performance:
 
 - `remote-snapshot-save-policy=none-available`
+- `snapshot-read-policy=local-first`
+- `max-stale-fallback-snapshot-age=1d`
 
 For performance-sensitive or interactive workloads (like if you're using the Remote
 Bazel CLI to build interactively), we recommend the following platform properties.
 They will result in higher cache upload and download and associated costs:
 
 - `remote-snapshot-save-policy=always`
+- `snapshot-read-policy=newest`
 
 For Workflows, you can set platform properties using the `platform_properties` field.
 
@@ -252,14 +256,17 @@ Valid values are:
   - If there is no default snapshot available, then a snapshot will be saved
     for the `my-feature` branch on its first run.
 
-For Workflows, you can configure this using the `platform_properties` field.
+See [Recommended configuration](#recommended-configuration) for details on how to
+apply these properties.
 
-NOTE: If your workflow is triggered by a GitHub webhook event, the `GIT_REPO_DEFAULT_BRANCH`
-environment variable will be set automatically. We use this to determine whether
-the Workflow is running on a default ref. If you plan to manually dispatch
-a Workflow with the ExecuteWorkflow API or our UI, you must manually set this
-environment variable in your Workflow config (as shown below) for this to work as
-expected.
+NOTE: This property relies on the `GIT_REPO_DEFAULT_BRANCH` environment variable
+to be set (it should be set to something like `main` or `master` depending on your
+repo's default branch).
+
+If your workflow was triggered by a GitHub webhook event or the Remote Bazel CLI,
+this environment variable will be set automatically. If you plan to manually
+dispatch a Workflow with the ExecuteWorkflow API or our UI, or a Remote Bazel
+command with the Run API, you must manually set this environment variable.
 
 ```yaml title="buildbuddy.yaml"
 actions:
@@ -313,6 +320,60 @@ to this command to force save a remote snapshot.
 ```bash Sample Command
 bb remote --remote_run_header=x-buildbuddy-platform.remote-snapshot-save-policy=always --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}' --script='echo "Just running this to force save a remote snapshot."'
 ```
+
+#### Snapshot read policy
+
+When looking for a snapshot, we look in the following order:
+
+1. Search for a local snapshot on the same branch of the current run.
+2. Search for a remote snapshot on the same branch.
+3. Search for a local snapshot on a fallback branch (typically the default branch, like
+   `main` or `master`).
+4. Search for a remote snapshot on a fallback branch.
+
+Due to their size, reading remote snapshots can result in high cache download.
+
+We support configuring the snapshot read policy with the `snapshot-read-policy`
+platform property. Valid values are:
+
+- `newest`: Always read the newest snapshot available.
+  - For performance-sensitve or interactive workloads, this will ensure the
+    most recently updated snapshot is used.
+  - This could be a local or remote snapshot.
+- `local-first`: Use a local snapshot if available.
+  - This is more economical, because remote cache reads are billed at a higher rate.
+  - This may mean that even if a newer remote snapshot exists, a more stale local
+    snapshot may be used.
+  - This can be used in conjunction with the platform property `max-stale-fallback-snapshot-age`,
+    which is described in more detail below.
+- `local-only`: Only use local snapshots.
+  - This may result in more snapshot misses, and more runs will start from clean runners.
+  - Local snapshots may become unusable if the executor that has it cached locally
+    is fully occupied with other workloads or is restarting during a release.
+    Whereas remote snapshots are usable no matter the underlying executor.
+
+Snapshot reads are also configurable with the `max-stale-fallback-snapshot-age`
+platform property. Valid values are durations like `12h` or `1d`.
+
+This platform sets a limit on the max age of a fallback snapshot to prevent using very stale local snapshots that may cause performance degradation. The system will then fetch a newer remote snapshot.
+
+For example, let's say you set `snapshot-read-policy=local-first` and
+`max-stale-fallback-snapshot-age=1d`.
+
+- The first run on your feature branch `my-feature` runs on Machine A and resumes from a fallback
+  snapshot on the default branch `main`. There is no local snapshot for `main`
+  available, so it will fetch a remote snapshot. It will cache this `main` snapshot
+  locally (`Main A`).
+- A `main` workflow runs on another machine, and saves a newly updated `main`
+  snapshot to the remote cache (`Main B`).
+- 20 minutes later, the first run of another feature branch `feature-2` runs on Machine A and
+  resumes from a fallback snapshot on `main`. It will resume from the local snapshot
+  `Main A` due to the snapshot read policy `local-first`, even though a more recent
+  snapshot on `main` exists in the remote cache (`Main B`).
+- 1 day 20 minutes later, the first run of another feature branch `feature-3`
+  runs on Machine A and resumes from a fallback snapshot on `main`. This time,
+  the local snapshot `Main A` is too stale, because the max fallback age was set to `1d`.
+  It will fetch and resume from the remote snapshot `Main B`.
 
 ### Runner recycling (macOS only)
 
