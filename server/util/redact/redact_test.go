@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
@@ -18,7 +17,6 @@ import (
 )
 
 func TestRedactPasswordsInURLs(t *testing.T) {
-	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
@@ -205,7 +203,6 @@ func TestRedactEnvVar(t *testing.T) {
 }
 
 func TestRedactEntireSections(t *testing.T) {
-	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
@@ -254,7 +251,6 @@ func TestRedactEntireSections(t *testing.T) {
 }
 
 func TestRedactRemoteHeaders(t *testing.T) {
-	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
@@ -325,7 +321,6 @@ func TestRedactRemoteHeaders(t *testing.T) {
 }
 
 func TestRemoveRepoURLCredentials(t *testing.T) {
-	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
