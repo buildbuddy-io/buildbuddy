@@ -281,7 +281,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		casRN.SetCompressor(r.GetCompressor())
 	}
 	compressData := false
-	if casRN.GetCompressor() == repb.Compressor_IDENTITY && s.cache.SupportsCompressor(repb.Compressor_ZSTD) && r.GetDigest().GetSizeBytes() >= 100 {
+	if casRN.GetCompressor() == repb.Compressor_IDENTITY && s.cache.SupportsCompressor(repb.Compressor_ZSTD) && r.GetDigest().GetSizeBytes() >= *compression.MinBytesAutoZstdCompression {
 		casRN.SetCompressor(repb.Compressor_ZSTD)
 		compressData = true
 	}
