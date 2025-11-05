@@ -299,7 +299,8 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	log.CtxInfof(ctx, "Authenticating with registry %q", imageRef.Context().RegistryStr())
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	cacher, err := ocicache.NewOCITeeCacher(r.env.GetActionCacheClient(), r.env.GetByteStreamClient(), remoteOpts...)
+	// Authenticate doesn't need caching, just needs to verify access
+	cacher, err := ocicache.NewOCITeeCacher(false, r.env.GetActionCacheClient(), r.env.GetByteStreamClient(), remoteOpts...)
 	if err != nil {
 		return status.InternalErrorf("error creating cacher: %s", err)
 	}
@@ -342,7 +343,8 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 	}
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	cacher, err := ocicache.NewOCITeeCacher(r.env.GetActionCacheClient(), r.env.GetByteStreamClient(), remoteOpts...)
+	// ResolveImageDigest just needs to lookup tag->digest mapping, doesn't need layer caching
+	cacher, err := ocicache.NewOCITeeCacher(false, r.env.GetActionCacheClient(), r.env.GetByteStreamClient(), remoteOpts...)
 	if err != nil {
 		return "", status.InternalErrorf("error creating cacher: %s", err)
 	}
@@ -374,17 +376,17 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	}
 	log.CtxInfof(ctx, "Resolving image %q", imageRef)
 
-	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	cacher, err := ocicache.NewOCITeeCacher(r.env.GetActionCacheClient(), r.env.GetByteStreamClient(), remoteOpts...)
-	if err != nil {
-		return nil, status.InternalErrorf("error creating cacher: %s", err)
-	}
-
 	useCache := false
 	if *useCachePercent >= 100 {
 		useCache = true
 	} else if *useCachePercent > 0 && *useCachePercent < 100 {
 		useCache = rand.Intn(100) < *useCachePercent
+	}
+
+	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+	cacher, err := ocicache.NewOCITeeCacher(useCache, r.env.GetActionCacheClient(), r.env.GetByteStreamClient(), remoteOpts...)
+	if err != nil {
+		return nil, status.InternalErrorf("error creating cacher: %s", err)
 	}
 
 	if useCache {

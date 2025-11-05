@@ -65,11 +65,13 @@ type ociTeeCacher struct {
 	puller   *remote.Puller
 	acClient repb.ActionCacheClient
 	bsClient bspb.ByteStreamClient
+	useCache bool
 }
 
 // NewOCITeeCacher creates a new OCITeeCacher that fetches OCI resources from an upstream registry
 // and tees data to/from the cache.
-func NewOCITeeCacher(acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, opts ...remote.Option) (OCITeeCacher, error) {
+// If useCache is false, caching is disabled and all requests go directly to the upstream registry.
+func NewOCITeeCacher(useCache bool, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, opts ...remote.Option) (OCITeeCacher, error) {
 	puller, err := remote.NewPuller(opts...)
 	if err != nil {
 		return nil, err
@@ -78,6 +80,7 @@ func NewOCITeeCacher(acClient repb.ActionCacheClient, bsClient bspb.ByteStreamCl
 		puller:   puller,
 		acClient: acClient,
 		bsClient: bsClient,
+		useCache: useCache,
 	}, nil
 }
 
@@ -86,9 +89,15 @@ func (c *ociTeeCacher) Head(ctx context.Context, ref gcrname.Reference) (*gcr.De
 }
 
 func (c *ociTeeCacher) Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error) {
-	// Check if user is anonymous - skip cache for anonymous users
-	if IsAnonymousUser(ctx) {
-		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", ref)
+	// Check if caching is enabled and user has permissions
+	// Caching requires BOTH the flag to be enabled AND the user to not be anonymous
+	canUseCache := c.useCache && !IsAnonymousUser(ctx)
+	if !canUseCache {
+		if !c.useCache {
+			log.CtxDebugf(ctx, "Cache disabled, skipping manifest cache for %s", ref)
+		} else {
+			log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", ref)
+		}
 		return c.puller.Get(ctx, ref)
 	}
 
@@ -164,6 +173,7 @@ func (c *ociTeeCacher) LayerFromDescriptor(ctx context.Context, ref gcrname.Dige
 		ref:         ref,
 		desc:        &desc,
 		parentImage: parentImage,
+		useCache:    c.useCache,
 	}
 	// Use sync.OnceValues for thread-safe lazy initialization
 	cl.getUpstreamOnce = sync.OnceValues(func() (gcr.Layer, error) {
@@ -186,6 +196,7 @@ type cachedLayer struct {
 	ref         gcrname.Digest
 	desc        *gcr.Descriptor // optional - when provided, avoids HTTP HEAD requests
 	parentImage gcr.Image       // optional - when provided, used for DiffID lookup from config
+	useCache    bool            // whether caching is enabled
 
 	// getUpstreamOnce ensures thread-safe lazy initialization of upstream layer
 	getUpstreamOnce func() (gcr.Layer, error)
@@ -248,10 +259,15 @@ func (l *cachedLayer) Uncompressed() (io.ReadCloser, error) {
 }
 
 func (l *cachedLayer) Compressed() (io.ReadCloser, error) {
-	// Check if user is anonymous - skip cache for anonymous users
-	canUseCache := !IsAnonymousUser(l.ctx)
+	// Check if caching is enabled and user has permissions
+	// Caching requires BOTH the flag to be enabled AND the user to not be anonymous
+	canUseCache := l.useCache && !IsAnonymousUser(l.ctx)
 	if !canUseCache {
-		log.CtxInfof(l.ctx, "Anonymous user request, skipping layer cache for %s@%s", l.repo, l.digest)
+		if !l.useCache {
+			log.CtxDebugf(l.ctx, "Cache disabled, skipping layer cache for %s@%s", l.repo, l.digest)
+		} else {
+			log.CtxInfof(l.ctx, "Anonymous user request, skipping layer cache for %s@%s", l.repo, l.digest)
+		}
 	}
 
 	// Try to fetch from cache first
