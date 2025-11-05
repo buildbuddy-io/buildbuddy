@@ -4,13 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
 	"runtime"
-	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
@@ -29,10 +27,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -341,22 +337,6 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		return nil, status.InternalErrorf("error creating cacher: %s", err)
 	}
 
-	if useCache {
-		return fetchImageFromCacheOrRemote(
-			ctx,
-			imageRef,
-			gcr.Platform{
-				Architecture: platform.GetArch(),
-				OS:           platform.GetOs(),
-				Variant:      platform.GetVariant(),
-			},
-			r.env.GetActionCacheClient(),
-			r.env.GetByteStreamClient(),
-			cacher,
-			credentials.bypassRegistry,
-		)
-	}
-
 	remoteDesc, err := cacher.Get(ctx, imageRef)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
@@ -365,13 +345,56 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
-	// Image() should resolve both images and image indices to an appropriate image
+	gcrPlatform := gcr.Platform{
+		Architecture: platform.GetArch(),
+		OS:           platform.GetOs(),
+		Variant:      platform.GetVariant(),
+	}
+
+	// For cached manifests, we need to handle platform resolution manually because
+	// the cached remote.Descriptor doesn't have the internal state needed by Image().
+	if useCache && remoteDesc.MediaType.IsIndex() {
+		// Parse the index manifest
+		indexManifest, err := gcr.ParseIndexManifest(bytes.NewReader(remoteDesc.Manifest))
+		if err != nil {
+			return nil, status.UnknownErrorf("error parsing index manifest: %s", err)
+		}
+
+		// Find the child manifest for this platform
+		childDesc, err := ocimanifest.FindFirstImageManifest(*indexManifest, gcrPlatform)
+		if err != nil {
+			return nil, status.UnknownErrorf("could not find child image for platform in index: %s", err)
+		}
+
+		// Fetch the platform-specific child image using the same cacher to avoid extra /v2/ requests
+		childRef := imageRef.Context().Digest(childDesc.Digest.String())
+		childRemoteDesc, err := cacher.Get(ctx, childRef)
+		if err != nil {
+			if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+				return nil, status.PermissionDeniedErrorf("not authorized to retrieve child manifest: %s", err)
+			}
+			return nil, status.UnavailableErrorf("could not retrieve child manifest from remote: %s", err)
+		}
+
+		childImg, err := childRemoteDesc.Image()
+		if err != nil {
+			return nil, status.UnknownErrorf("could not get image from child manifest descriptor: %s", err)
+		}
+
+		// Wrap with caching support
+		return &cachedImage{
+			Image:  childImg,
+			ctx:    ctx,
+			repo:   imageRef.Context(),
+			cacher: cacher,
+		}, nil
+	}
+
+	// For non-cached descriptors or non-index manifests, use Image() which handles
+	// platform resolution automatically.
 	img, err := remoteDesc.Image()
 	if err != nil {
 		switch remoteDesc.MediaType {
-		// This is an "image index", a meta-manifest that contains a list of
-		// {platform props, manifest hash} properties to allow client to decide
-		// which manifest they want to use based on platform.
 		case types.OCIImageIndex, types.DockerManifestList:
 			return nil, status.UnknownErrorf("could not get image in image index from descriptor: %s", err)
 		case types.OCIManifestSchema1, types.DockerManifestSchema2:
@@ -380,78 +403,84 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 			return nil, status.UnknownErrorf("descriptor has unknown media type %q, oci error: %s", remoteDesc.MediaType, err)
 		}
 	}
+
+	// Wrap with caching support if enabled
+	if useCache {
+		return &cachedImage{
+			Image:  img,
+			ctx:    ctx,
+			repo:   imageRef.Context(),
+			cacher: cacher,
+		}, nil
+	}
+
 	return img, nil
 }
 
-// fetchImageFromCacheOrRemote fetches the manifest for the given image reference.
-// The cacher handles tag-to-digest resolution, cache checking, and falling back to the upstream registry.
-// If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
-// to fetch a child image matching the given platform.
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, cacher ocicache.OCITeeCacher, bypassRegistry bool) (gcr.Image, error) {
-	// Get() handles both tags and digests:
-	// - For tags: checks mapper for cached tag->digest, then checks AC for manifest
-	// - For digests: checks AC for manifest directly
-	// Falls back to upstream registry on cache miss
-	remoteDesc, err := cacher.Get(ctx, digestOrTagRef)
-	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
-	}
+// cachedImage wraps a gcr.Image and intercepts layer operations to add caching support.
+// It delegates platform resolution and manifest parsing to the underlying Image (which comes
+// from remote.Descriptor.Image()), but overrides layer-fetching methods to use the BuildBuddy cache.
+type cachedImage struct {
+	gcr.Image // Embed the underlying image for delegation
 
-	return imageFromDescriptorAndManifest(
-		ctx,
-		digestOrTagRef.Context(),
-		remoteDesc.Descriptor,
-		remoteDesc.Manifest,
-		platform,
-		acClient,
-		bsClient,
-		cacher,
-		bypassRegistry,
-	)
+	ctx    context.Context
+	repo   gcrname.Repository
+	cacher ocicache.OCITeeCacher
 }
 
-// imageFromDescriptorAndManifest returns an Image from the given manifest (if the manifest is an image manifest),
-// finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
-// and otherwise returns an error.
-func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, cacher ocicache.OCITeeCacher, bypassRegistry bool) (gcr.Image, error) {
-	if desc.MediaType.IsSchema1() {
-		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
+// Layers overrides the embedded Image's Layers() method to add caching support.
+func (ci *cachedImage) Layers() ([]gcr.Layer, error) {
+	manifest, err := ci.Image.Manifest()
+	if err != nil {
+		return nil, err
 	}
 
-	if desc.MediaType.IsIndex() {
-		indexManifest, err := gcr.ParseIndexManifest(bytes.NewReader(rawManifest))
+	layers := make([]gcr.Layer, len(manifest.Layers))
+	for i, layerDesc := range manifest.Layers {
+		ref := ci.repo.Digest(layerDesc.Digest.String())
+		layer, err := ci.cacher.LayerFromDescriptor(ci.ctx, ref, layerDesc, ci.Image)
 		if err != nil {
-			return nil, status.UnknownErrorf("error parsing index manifest: %s", err)
+			return nil, err
 		}
+		layers[i] = layer
+	}
+	return layers, nil
+}
 
-		desc, err := ocimanifest.FindFirstImageManifest(*indexManifest, platform)
-		if err != nil {
-			return nil, status.UnknownErrorf("Could not find child image for platform in index: %s", err)
-		}
-		ref := repo.Digest(desc.Digest.String())
-		return fetchImageFromCacheOrRemote(
-			ctx,
-			ref,
-			platform,
-			acClient,
-			bsClient,
-			cacher,
-			bypassRegistry,
-		)
+// LayerByDigest overrides the embedded Image's LayerByDigest() method to add caching support.
+func (ci *cachedImage) LayerByDigest(digest gcr.Hash) (gcr.Layer, error) {
+	// Get the layer descriptor from the manifest if available
+	manifest, err := ci.Image.Manifest()
+	if err != nil {
+		return nil, err
 	}
 
-	return newImageFromRawManifest(
-		ctx,
-		repo,
-		desc,
-		rawManifest,
-		acClient,
-		bsClient,
-		cacher,
-	), nil
+	// Find the descriptor for this digest
+	var layerDesc *gcr.Descriptor
+	for _, desc := range manifest.Layers {
+		if desc.Digest == digest {
+			layerDesc = &desc
+			break
+		}
+	}
+
+	ref := ci.repo.Digest(digest.String())
+	if layerDesc != nil {
+		// Use LayerFromDescriptor when we have the descriptor (avoids extra HTTP requests)
+		return ci.cacher.LayerFromDescriptor(ci.ctx, ref, *layerDesc, ci.Image)
+	}
+	// Fall back to Layer() if descriptor not found in manifest
+	return ci.cacher.Layer(ci.ctx, ref)
+}
+
+// LayerByDiffID overrides the embedded Image's LayerByDiffID() method to add caching support.
+func (ci *cachedImage) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error) {
+	// Convert DiffID to blob digest using the image config
+	digest, err := partial.DiffIDToBlob(ci.Image, diffID)
+	if err != nil {
+		return nil, err
+	}
+	return ci.LayerByDigest(digest)
 }
 
 func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, credentials Credentials) []remote.Option {
@@ -530,139 +559,4 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 		}
 	}
 	return t.inner.RoundTrip(in)
-}
-
-func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, cacher ocicache.OCITeeCacher) *imageFromRawManifest {
-	i := &imageFromRawManifest{
-		repo:        repo,
-		desc:        desc,
-		rawManifest: rawManifest,
-		ctx:         ctx,
-		acClient:    acClient,
-		bsClient:    bsClient,
-		cacher:      cacher,
-	}
-	i.fetchRawConfigOnce = sync.OnceValues(func() ([]byte, error) {
-		manifest, err := i.Manifest()
-		if err != nil {
-			return nil, err
-		}
-		if manifest.Config.Data != nil {
-			return manifest.Config.Data, nil
-		}
-		ref := i.repo.Digest(manifest.Config.Digest.String())
-		layer, err := i.cacher.Layer(i.ctx, ref)
-		if err != nil {
-			return nil, err
-		}
-
-		rc, err := layer.Uncompressed()
-		if err != nil {
-			return nil, err
-		}
-		defer rc.Close()
-		return io.ReadAll(rc)
-	})
-	return i
-}
-
-var _ gcr.Image = (*imageFromRawManifest)(nil)
-
-// imageFromRawManifest implements the go-containerregistry Image interface.
-// It allows us to construct an Image from a raw manifest from either the cache
-// or an upstream remote registry.
-// It also allows us to read layers from and write layers to the cache.
-type imageFromRawManifest struct {
-	repo        gcrname.Repository
-	desc        gcr.Descriptor
-	rawManifest []byte
-
-	ctx      context.Context
-	acClient repb.ActionCacheClient
-	bsClient bspb.ByteStreamClient
-	cacher   ocicache.OCITeeCacher
-
-	fetchRawConfigOnce func() ([]byte, error)
-}
-
-func (i *imageFromRawManifest) Digest() (gcr.Hash, error) {
-	return i.desc.Digest, nil
-}
-
-func (i *imageFromRawManifest) RawManifest() ([]byte, error) {
-	return i.rawManifest, nil
-}
-
-func (i *imageFromRawManifest) Manifest() (*gcr.Manifest, error) {
-	rawManifest, err := i.RawManifest()
-	if err != nil {
-		return nil, err
-	}
-	manifest, err := gcr.ParseManifest(bytes.NewReader(rawManifest))
-	if err != nil {
-		return nil, err
-	}
-	return manifest, nil
-}
-
-func (i *imageFromRawManifest) MediaType() (types.MediaType, error) {
-	return i.desc.MediaType, nil
-}
-
-func (i *imageFromRawManifest) Size() (int64, error) {
-	return i.desc.Size, nil
-}
-
-// RawConfigFile looks for the raw config file bytes
-// in the rawConfigFile field, then in the manifest's Config section,
-// then from the upstream registry.
-func (i *imageFromRawManifest) RawConfigFile() ([]byte, error) {
-	return i.fetchRawConfigOnce()
-}
-
-func (i *imageFromRawManifest) ConfigFile() (*gcr.ConfigFile, error) {
-	rawConfigFile, err := i.RawConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	return gcr.ParseConfigFile(bytes.NewReader(rawConfigFile))
-}
-
-func (i *imageFromRawManifest) ConfigName() (gcr.Hash, error) {
-	manifest, err := i.Manifest()
-	if err != nil {
-		return gcr.Hash{}, err
-	}
-	return manifest.Config.Digest, nil
-}
-
-func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
-	m, err := i.Manifest()
-	if err != nil {
-		return nil, err
-	}
-	layers := make([]gcr.Layer, 0, len(m.Layers))
-	for _, layerDesc := range m.Layers {
-		ref := i.repo.Digest(layerDesc.Digest.String())
-		layer, err := i.cacher.LayerFromDescriptor(i.ctx, ref, layerDesc, i)
-		if err != nil {
-			return nil, err
-		}
-		layers = append(layers, layer)
-	}
-	return layers, nil
-}
-
-func (i *imageFromRawManifest) LayerByDigest(digest gcr.Hash) (gcr.Layer, error) {
-	ref := i.repo.Digest(digest.String())
-	return i.cacher.Layer(i.ctx, ref)
-}
-
-func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error) {
-	digest, err := partial.DiffIDToBlob(i, diffID)
-	if err != nil {
-		return nil, err
-	}
-	ref := i.repo.Digest(digest.String())
-	return i.cacher.Layer(i.ctx, ref)
 }
