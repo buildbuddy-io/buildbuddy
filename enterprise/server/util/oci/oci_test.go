@@ -848,7 +848,6 @@ func TestResolve_Concurrency(t *testing.T) {
 		http.MethodGet + " /v2/": 1,
 		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":                 1,
 		http.MethodGet + " /v2/" + imageName + "_image/manifests/" + imageDigest.String(): 1,
-		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String():   1,
 		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():    1,
 	}
 	for digest, _ := range pushedDigestToFiles {
