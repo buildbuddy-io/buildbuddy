@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -43,6 +42,8 @@ const (
 var (
 	poolSize                       = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
 	enableGoogleDefaultCredentials = flag.Bool("grpc_client.enable_google_default_credentials", false, "Whether to enable Google default credentials for all outgoing RPCs.", flag.Internal)
+
+	id = atomic.Int32{}
 )
 
 type clientConn struct {
@@ -266,7 +267,7 @@ func DialSimpleWithPoolSize(target string, poolSize int, extraOptions ...grpc.Di
 		return nil, err
 	}
 
-	return &ClientConnPool{targetForLogging: target, id: uuid.New(), conns: conns}, nil
+	return &ClientConnPool{targetForLogging: target, id: strconv.Itoa(int(id.Add(1))), conns: conns}, nil
 }
 
 // DialSimpleWithoutPooling is a variant of DialSimple that disables connection
