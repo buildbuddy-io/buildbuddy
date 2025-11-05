@@ -22,6 +22,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -39,6 +40,45 @@ const (
 
 	cacheDigestFunction = repb.DigestFunction_SHA256
 )
+
+// OCITeeCacher is an interface for fetching OCI blobs and manifests from an upstream registry.
+// Implementations may tee data to/from a cache while fetching from the upstream.
+type OCITeeCacher interface {
+	// Head makes a HEAD request to fetch metadata about a manifest.
+	Head(ctx context.Context, ref gcrname.Reference) (*gcr.Descriptor, error)
+	// Get fetches a manifest from the upstream registry.
+	Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error)
+	// Layer fetches a layer (blob) from the upstream registry.
+	Layer(ctx context.Context, ref gcrname.Digest) (gcr.Layer, error)
+}
+
+// ociTeeCacher implements OCITeeCacher by wrapping a remote.Puller.
+type ociTeeCacher struct {
+	puller *remote.Puller
+}
+
+// NewOCITeeCacher creates a new OCITeeCacher that fetches OCI resources from an upstream registry.
+func NewOCITeeCacher(opts ...remote.Option) (OCITeeCacher, error) {
+	puller, err := remote.NewPuller(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &ociTeeCacher{
+		puller: puller,
+	}, nil
+}
+
+func (c *ociTeeCacher) Head(ctx context.Context, ref gcrname.Reference) (*gcr.Descriptor, error) {
+	return c.puller.Head(ctx, ref)
+}
+
+func (c *ociTeeCacher) Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error) {
+	return c.puller.Get(ctx, ref)
+}
+
+func (c *ociTeeCacher) Layer(ctx context.Context, ref gcrname.Digest) (gcr.Layer, error) {
+	return c.puller.Layer(ctx, ref)
+}
 
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
 	arRN, err := manifestACKey(repo, hash)
