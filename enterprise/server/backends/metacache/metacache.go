@@ -441,7 +441,30 @@ func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	return nil, status.UnimplementedError("not yet")
+	// TODO: optimize this. We can read multiple resources in one call.
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
+	for _, r := range resources {
+		rc, err := c.Reader(ctx, r, 0, 0)
+		if err != nil {
+			if status.IsNotFoundError(err) || os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
+		_, copyErr := io.Copy(buf, rc)
+		closeErr := rc.Close()
+		if copyErr != nil {
+			log.Warningf("[%s] GetMulti encountered error when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), copyErr)
+			continue
+		}
+		if closeErr != nil {
+			log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), closeErr)
+			continue
+		}
+		foundMap[r.GetDigest()] = buf.Bytes()
+	}
+	return foundMap, nil
 }
 
 func (c *Cache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
