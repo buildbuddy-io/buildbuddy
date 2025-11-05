@@ -430,6 +430,7 @@ func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	// TODO: optimize this. We can read multiple resources in one call.
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	for _, r := range resources {
 		rc, err := c.Reader(ctx, r, 0, 0)
