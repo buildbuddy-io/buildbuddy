@@ -431,78 +431,33 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	return img, nil
 }
 
-// fetchImageFromCacheOrRemote first tries to fetch the manifest for the given image reference from the cache,
-// then falls back to fetching from the upstream remote registry.
+// fetchImageFromCacheOrRemote fetches the manifest for the given image reference.
+// The cacher handles checking the cache and falling back to the upstream registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
 func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, cacher ocicache.OCITeeCacher, bypassRegistry bool) (gcr.Image, error) {
-	canUseCache := !isAnonymousUser(ctx)
-	if !canUseCache {
-		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", digestOrTagRef)
-	}
-	if canUseCache {
-		var desc *gcr.Descriptor
-		digest, hasDigest := getDigest(digestOrTagRef)
-		// For now, we cannot bypass the registry for tag references,
-		// since cached manifest AC entries need the resolved digest as part of
-		// the key. Log a warning in this case.
-		if !hasDigest && bypassRegistry {
-			log.CtxWarningf(ctx, "Cannot bypass registry for tag reference %q (need to make a registry request to resolve tag to digest)", digestOrTagRef)
-		}
-		// Make a HEAD request for the manifest. This does two things:
-		// - Authenticates with the registry (if not bypassing)
-		// - Resolves the tag to a digest (if not already present)
-		if !hasDigest || !bypassRegistry {
-			var err error
-			desc, err = cacher.Head(ctx, digestOrTagRef)
-			if err != nil {
-				if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-					return nil, status.PermissionDeniedErrorf("cannot access image manifest: %s", err)
-				}
-				return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
-			}
-			digest = desc.Digest
-		}
+	// If this is a tag reference, we need to resolve it to a digest first.
+	// Check if we need to make a HEAD request to resolve the tag, or if we can
+	// skip it (when bypassing registry and we have a digest).
+	var refToFetch gcrname.Reference = digestOrTagRef
+	_, hasDigest := digestOrTagRef.(gcrname.Digest)
 
-		mc, err := ocicache.FetchManifestFromAC(
-			ctx,
-			acClient,
-			digestOrTagRef.Context(),
-			digest,
-			digestOrTagRef,
-		)
-		if err != nil && !status.IsNotFoundError(err) {
-			log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)
-		}
-		if mc != nil && err == nil {
-			// If we skipped fetching the manifest descriptor (because the
-			// reference already contained a resolved digest), then build a
-			// descriptor from the cached manifest entry. We aren't populating
-			// all of the descriptor fields here, but this should still
-			// represent a complete manifest descriptor (the implementation of
-			// [cacher.Head] only sets these fields as well).
-			if desc == nil {
-				desc = &gcr.Descriptor{
-					Digest:    digest,
-					Size:      int64(len(mc.GetRaw())),
-					MediaType: types.MediaType(mc.GetContentType()),
-				}
+	// If we don't have a digest OR we're not bypassing the registry, we need
+	// to make a HEAD request to resolve the tag and/or authenticate.
+	if !hasDigest || !bypassRegistry {
+		desc, err := cacher.Head(ctx, digestOrTagRef)
+		if err != nil {
+			if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+				return nil, status.PermissionDeniedErrorf("cannot access image manifest: %s", err)
 			}
-			return imageFromDescriptorAndManifest(
-				ctx,
-				digestOrTagRef.Context(),
-				*desc,
-				mc.GetRaw(),
-				platform,
-				acClient,
-				bsClient,
-				cacher,
-				bypassRegistry,
-			)
+			return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
 		}
+		// Use the digest reference for fetching the manifest
+		refToFetch = digestOrTagRef.Context().Digest(desc.Digest.String())
 	}
 
-	remoteDesc, err := cacher.Get(ctx, digestOrTagRef)
+	// Fetch manifest (cacher handles cache check + fallback to upstream)
+	remoteDesc, err := cacher.Get(ctx, refToFetch)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
@@ -510,20 +465,6 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
-	if canUseCache {
-		err := ocicache.WriteManifestToAC(
-			ctx,
-			remoteDesc.Manifest,
-			acClient,
-			digestOrTagRef.Context(),
-			remoteDesc.Digest,
-			string(remoteDesc.MediaType),
-			digestOrTagRef,
-		)
-		if err != nil {
-			log.CtxWarningf(ctx, "Could not write manifest to cache: %s", err)
-		}
-	}
 	return imageFromDescriptorAndManifest(
 		ctx,
 		digestOrTagRef.Context(),
@@ -612,20 +553,6 @@ func RuntimePlatform() *rgpb.Platform {
 		Arch: runtime.GOARCH,
 		Os:   runtime.GOOS,
 	}
-}
-
-// getDigest returns the digest from the given reference, if it contains one.
-// Otherwise, it returns (nil, false).
-func getDigest(ref gcrname.Reference) (gcr.Hash, bool) {
-	d, ok := ref.(gcrname.Digest)
-	if !ok {
-		return gcr.Hash{}, false
-	}
-	hash, err := gcr.NewHash(d.DigestStr())
-	if err != nil {
-		return gcr.Hash{}, false
-	}
-	return hash, true
 }
 
 // verify that mirrorTransport implements the RoundTripper interface.

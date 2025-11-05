@@ -9,6 +9,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -23,6 +25,7 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -78,11 +81,84 @@ func (c *ociTeeCacher) Head(ctx context.Context, ref gcrname.Reference) (*gcr.De
 }
 
 func (c *ociTeeCacher) Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error) {
-	return c.puller.Get(ctx, ref)
+	// Check if user is anonymous - skip cache for anonymous users
+	if isAnonymousUser(ctx) {
+		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", ref)
+		return c.puller.Get(ctx, ref)
+	}
+
+	// Extract digest from reference (Get should only be called with digest references)
+	digest, hasDigest := getDigest(ref)
+	if !hasDigest {
+		// If caller passes a tag, just fetch from upstream without caching
+		// (tag resolution should happen at a higher level)
+		return c.puller.Get(ctx, ref)
+	}
+
+	// Try to fetch manifest from cache
+	mc, err := FetchManifestFromAC(ctx, c.acClient, ref.Context(), digest, ref)
+	if err != nil && !status.IsNotFoundError(err) {
+		log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)
+	}
+
+	// Cache hit - reconstruct descriptor from cached manifest
+	if mc != nil && err == nil {
+		desc := &gcr.Descriptor{
+			Digest:    digest,
+			Size:      int64(len(mc.GetRaw())),
+			MediaType: types.MediaType(mc.GetContentType()),
+		}
+		return &remote.Descriptor{
+			Descriptor: *desc,
+			Manifest:   mc.GetRaw(),
+		}, nil
+	}
+
+	// Cache miss - fetch from upstream registry
+	remoteDesc, err := c.puller.Get(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	// Write manifest to cache for next time
+	err = WriteManifestToAC(
+		ctx,
+		remoteDesc.Manifest,
+		c.acClient,
+		ref.Context(),
+		remoteDesc.Digest,
+		string(remoteDesc.MediaType),
+		ref,
+	)
+	if err != nil {
+		log.CtxWarningf(ctx, "Could not write manifest to cache: %s", err)
+	}
+
+	return remoteDesc, nil
 }
 
 func (c *ociTeeCacher) Layer(ctx context.Context, ref gcrname.Digest) (gcr.Layer, error) {
 	return c.puller.Layer(ctx, ref)
+}
+
+// isAnonymousUser checks if the request context belongs to an anonymous user.
+func isAnonymousUser(ctx context.Context) bool {
+	_, err := claims.ClaimsFromContext(ctx)
+	return authutil.IsAnonymousUserError(err)
+}
+
+// getDigest returns the digest from the given reference, if it contains one.
+// Otherwise, it returns (nil, false).
+func getDigest(ref gcrname.Reference) (gcr.Hash, bool) {
+	d, ok := ref.(gcrname.Digest)
+	if !ok {
+		return gcr.Hash{}, false
+	}
+	hash, err := gcr.NewHash(d.DigestStr())
+	if err != nil {
+		return gcr.Hash{}, false
+	}
+	return hash, true
 }
 
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
