@@ -1,4 +1,4 @@
-package migration_cache
+package cache_config
 
 import (
 	"time"
