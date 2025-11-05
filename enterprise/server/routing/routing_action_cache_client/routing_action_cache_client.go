@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	acMigrationOpTimeout = flag.Duration("cache_proxy.migration.cas_timeout", 60*time.Second, "Timeout for CAS operations that happen during cache migrations.")
+	acMigrationOpTimeout = flag.Duration("cache_proxy.migration.ac_timeout", 60*time.Second, "Timeout for AC operations that happen during cache migrations.")
 )
 
 type RoutingACClient struct {
