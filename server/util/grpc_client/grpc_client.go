@@ -43,8 +43,8 @@ var (
 	poolSize                       = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
 	enableGoogleDefaultCredentials = flag.Bool("grpc_client.enable_google_default_credentials", false, "Whether to enable Google default credentials for all outgoing RPCs.", flag.Internal)
 
-	mu  sync.Mutex
-	ids = map[string]int{}
+	idsMu sync.Mutex
+	ids   = map[string]int{}
 )
 
 type clientConn struct {
@@ -271,10 +271,10 @@ func DialSimpleWithPoolSize(target string, poolSize int, extraOptions ...grpc.Di
 
 	// Increment an index per-target to disambiguate between multiple
 	// connection pools to the same target.
-	mu.Lock()
+	idsMu.Lock()
 	id := ids[target]
 	ids[target] = id + 1
-	mu.Unlock()
+	idsMu.Unlock()
 
 	return &ClientConnPool{targetForLogging: target, id: strconv.Itoa(id), conns: conns}, nil
 }
