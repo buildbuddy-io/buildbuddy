@@ -54,17 +54,22 @@ type OCITeeCacher interface {
 
 // ociTeeCacher implements OCITeeCacher by wrapping a remote.Puller.
 type ociTeeCacher struct {
-	puller *remote.Puller
+	puller   *remote.Puller
+	acClient repb.ActionCacheClient
+	bsClient bspb.ByteStreamClient
 }
 
-// NewOCITeeCacher creates a new OCITeeCacher that fetches OCI resources from an upstream registry.
-func NewOCITeeCacher(opts ...remote.Option) (OCITeeCacher, error) {
+// NewOCITeeCacher creates a new OCITeeCacher that fetches OCI resources from an upstream registry
+// and tees data to/from the cache.
+func NewOCITeeCacher(acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, opts ...remote.Option) (OCITeeCacher, error) {
 	puller, err := remote.NewPuller(opts...)
 	if err != nil {
 		return nil, err
 	}
 	return &ociTeeCacher{
-		puller: puller,
+		puller:   puller,
+		acClient: acClient,
+		bsClient: bsClient,
 	}, nil
 }
 

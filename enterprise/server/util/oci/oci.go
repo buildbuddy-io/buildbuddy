@@ -301,7 +301,7 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	log.CtxInfof(ctx, "Authenticating with registry %q", imageRef.Context().RegistryStr())
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	cacher, err := ocicache.NewOCITeeCacher(remoteOpts...)
+	cacher, err := ocicache.NewOCITeeCacher(r.env.GetActionCacheClient(), r.env.GetByteStreamClient(), remoteOpts...)
 	if err != nil {
 		return status.InternalErrorf("error creating cacher: %s", err)
 	}
@@ -344,7 +344,7 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 	}
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	cacher, err := ocicache.NewOCITeeCacher(remoteOpts...)
+	cacher, err := ocicache.NewOCITeeCacher(r.env.GetActionCacheClient(), r.env.GetByteStreamClient(), remoteOpts...)
 	if err != nil {
 		return "", status.InternalErrorf("error creating cacher: %s", err)
 	}
@@ -377,7 +377,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	log.CtxInfof(ctx, "Resolving image %q", imageRef)
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	cacher, err := ocicache.NewOCITeeCacher(remoteOpts...)
+	cacher, err := ocicache.NewOCITeeCacher(r.env.GetActionCacheClient(), r.env.GetByteStreamClient(), remoteOpts...)
 	if err != nil {
 		return nil, status.InternalErrorf("error creating cacher: %s", err)
 	}
