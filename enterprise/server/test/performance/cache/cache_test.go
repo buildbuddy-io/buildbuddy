@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
@@ -123,7 +124,7 @@ func getDiskCache(t testing.TB, env environment.Env) interfaces.Cache {
 }
 
 func getMigrationCache(t testing.TB, env environment.Env, src, dest interfaces.Cache) interfaces.Cache {
-	config := &migration_cache.MigrationConfig{
+	config := &cache_config.MigrationConfig{
 		CopyChanBufferSize:             200,
 		MaxCopiesPerSec:                100,
 		NumCopyWorkers:                 1,
