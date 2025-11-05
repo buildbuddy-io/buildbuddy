@@ -158,11 +158,8 @@ func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 	defer cancel()
 	conn := p.getConn()
 	gauge := metrics.PendingClientRPCsPerConnection.WithLabelValues(p.targetForLogging, p.id, method, conn.index)
-	decFn := func(_ error) {
-		decOnce := sync.Once{}
-		decOnce.Do(func() { gauge.Dec() })
-	}
-	opts = append(opts, grpc.OnFinish(decFn))
+	decFn := sync.OnceFunc(func() { gauge.Dec() })
+	opts = append(opts, grpc.OnFinish(func(_ error) { decFn() }))
 	stream, err := conn.NewStream(ctx, desc, method, opts...)
 	if err != nil {
 		return stream, err
