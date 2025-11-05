@@ -1403,7 +1403,7 @@ func TestReadWrite(t *testing.T) {
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
 	for _, testSize := range testSizes {
-		t.Run(fmt.Sprintf("size%d", testSize), func(t *testing.T) {
+		t.Run(fmt.Sprintf("size=%d", testSize), func(t *testing.T) {
 			r, buf := testdigest.RandomCASResourceBuf(t, testSize)
 			w, err := mc.Writer(ctx, r)
 			require.NoError(t, err)
