@@ -43,7 +43,8 @@ var (
 	poolSize                       = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
 	enableGoogleDefaultCredentials = flag.Bool("grpc_client.enable_google_default_credentials", false, "Whether to enable Google default credentials for all outgoing RPCs.", flag.Internal)
 
-	id = atomic.Int32{}
+	mu  sync.Mutex
+	ids = map[string]int{}
 )
 
 type clientConn struct {
@@ -157,7 +158,11 @@ func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 	defer cancel()
 	conn := p.getConn()
 	gauge := metrics.PendingClientRPCsPerConnection.WithLabelValues(p.targetForLogging, p.id, method, conn.index)
-	opts = append(opts, grpc.OnFinish(func(_ error) { gauge.Dec() }))
+	decFn := func(_ error) {
+		decOnce := sync.Once{}
+		decOnce.Do(func() { gauge.Dec() })
+	}
+	opts = append(opts, grpc.OnFinish(decFn))
 	stream, err := conn.NewStream(ctx, desc, method, opts...)
 	if err != nil {
 		return stream, err
@@ -267,7 +272,14 @@ func DialSimpleWithPoolSize(target string, poolSize int, extraOptions ...grpc.Di
 		return nil, err
 	}
 
-	return &ClientConnPool{targetForLogging: target, id: strconv.Itoa(int(id.Add(1))), conns: conns}, nil
+	// Increment an index per-target to disambiguate between multiple
+	// connection pools to the same target.
+	mu.Lock()
+	id := ids[target]
+	ids[target] = id + 1
+	mu.Unlock()
+
+	return &ClientConnPool{targetForLogging: target, id: strconv.Itoa(id), conns: conns}, nil
 }
 
 // DialSimpleWithoutPooling is a variant of DialSimple that disables connection
