@@ -408,6 +408,8 @@ export function getDimensionName(d: stat_filter.Dimension): string {
         return "Target";
       case stat_filter.ExecutionDimensionType.ACTION_MNEMONIC_EXECUTION_DIMENSION:
         return "Mnemonic";
+      case stat_filter.ExecutionDimensionType.EFFECTIVE_POOL_EXECUTION_DIMENSION:
+        return "Pool";
     }
   } else if (d.invocation) {
     switch (d.invocation) {

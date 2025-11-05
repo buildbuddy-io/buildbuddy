@@ -167,6 +167,10 @@ export function encodeActionMnemonicUrlParam(actionMnemonic: string): string {
   return `e3|${actionMnemonic.length}|${actionMnemonic}`;
 }
 
+export function encodeEffectivePoolUrlParam(effectivePool: string): string {
+  return `e4|${effectivePool.length}|${effectivePool}`;
+}
+
 export function getTotal(stats: stats.ITrendStat[], fn: (stat: stats.ITrendStat) => number): number {
   return stats.map(fn).reduce((a, b) => a + b, 0);
 }
