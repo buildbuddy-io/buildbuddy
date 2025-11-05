@@ -82,7 +82,7 @@ func (c *ociTeeCacher) Head(ctx context.Context, ref gcrname.Reference) (*gcr.De
 
 func (c *ociTeeCacher) Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error) {
 	// Check if user is anonymous - skip cache for anonymous users
-	if isAnonymousUser(ctx) {
+	if IsAnonymousUser(ctx) {
 		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", ref)
 		return c.puller.Get(ctx, ref)
 	}
@@ -141,8 +141,8 @@ func (c *ociTeeCacher) Layer(ctx context.Context, ref gcrname.Digest) (gcr.Layer
 	return c.puller.Layer(ctx, ref)
 }
 
-// isAnonymousUser checks if the request context belongs to an anonymous user.
-func isAnonymousUser(ctx context.Context) bool {
+// IsAnonymousUser checks if the request context belongs to an anonymous user.
+func IsAnonymousUser(ctx context.Context) bool {
 	_, err := claims.ClaimsFromContext(ctx)
 	return authutil.IsAnonymousUserError(err)
 }

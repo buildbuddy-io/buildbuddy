@@ -18,8 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -785,20 +783,46 @@ func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
 }
 
 func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
-	canUseCache := !isAnonymousUser(l.image.ctx)
+	// Check if user is anonymous - skip cache for anonymous users
+	canUseCache := !ocicache.IsAnonymousUser(l.image.ctx)
 	if !canUseCache {
 		log.CtxInfof(l.image.ctx, "Anonymous user request, skipping layer cache for %s:%s", l.image.repo, l.image.desc.Digest)
 	}
+
+	// Try to fetch from cache first
 	if canUseCache {
-		rc, err := l.fetchLayerFromCache()
+		metadata, err := ocicache.FetchBlobMetadataFromCache(
+			l.image.ctx,
+			l.image.bsClient,
+			l.image.acClient,
+			l.repo,
+			l.digest,
+		)
 		if err != nil && !status.IsNotFoundError(err) {
-			log.CtxWarningf(l.image.ctx, "Error fetching layer from cache: %s", err)
+			log.CtxWarningf(l.image.ctx, "Error fetching layer metadata from cache: %s", err)
 		}
-		if rc != nil && err == nil {
-			return rc, nil
+		if metadata != nil && err == nil {
+			// Stream blob data from cache
+			pr, pw := io.Pipe()
+			go func() {
+				defer pw.Close()
+				err := ocicache.FetchBlobFromCache(
+					l.image.ctx,
+					pw,
+					l.image.bsClient,
+					l.digest,
+					metadata.GetContentLength(),
+				)
+				if err != nil {
+					log.Warningf("Error fetching blob from cache: %s", err)
+					pw.CloseWithError(err)
+				}
+			}()
+			return pr, nil
 		}
 	}
 
+	// Cache miss - fetch from upstream
 	remoteLayer, err := l.createRemoteLayer()
 	if err != nil {
 		return nil, err
@@ -808,17 +832,28 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		return nil, err
 	}
 
+	// Wrap with write-through cacher if caching is enabled
 	if canUseCache {
-		mediaType, err := l.MediaType()
-		if err != nil {
-			log.CtxWarningf(l.image.ctx, "Could not get media type for layer: %s", err)
-			return upstream, nil
+		// Get metadata from descriptor if available, otherwise from remote layer
+		var mediaType types.MediaType
+		var contentLength int64
+		if l.desc != nil {
+			mediaType = l.desc.MediaType
+			contentLength = l.desc.Size
+		} else {
+			var err error
+			mediaType, err = l.MediaType()
+			if err != nil {
+				log.CtxWarningf(l.image.ctx, "Could not get media type for layer: %s", err)
+				return upstream, nil
+			}
+			contentLength, err = l.Size()
+			if err != nil {
+				log.CtxWarningf(l.image.ctx, "Could not get size for layer: %s", err)
+				return upstream, nil
+			}
 		}
-		contentLength, err := l.Size()
-		if err != nil {
-			log.CtxWarningf(l.image.ctx, "Could not get size for layer: %s", err)
-			return upstream, nil
-		}
+
 		rc, err := ocicache.NewBlobReadThroughCacher(
 			l.image.ctx,
 			upstream,
@@ -830,6 +865,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 			contentLength,
 		)
 		if err != nil {
+			log.CtxWarningf(l.image.ctx, "Could not create read-through cacher: %s", err)
 			return upstream, nil
 		}
 		return rc, nil
@@ -868,38 +904,4 @@ func (l *layerFromDigest) MediaType() (types.MediaType, error) {
 		return "", err
 	}
 	return remoteLayer.MediaType()
-}
-
-func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
-	metadata, err := ocicache.FetchBlobMetadataFromCache(
-		l.image.ctx,
-		l.image.bsClient,
-		l.image.acClient,
-		l.repo,
-		l.digest,
-	)
-	if err != nil {
-		return nil, err
-	}
-	pr, pw := io.Pipe()
-	go func() {
-		defer pw.Close()
-		err := ocicache.FetchBlobFromCache(
-			l.image.ctx,
-			pw,
-			l.image.bsClient,
-			l.digest,
-			metadata.GetContentLength(),
-		)
-		if err != nil {
-			log.Warningf("Error fetching blob from cache: %s", err)
-			pw.CloseWithError(err)
-		}
-	}()
-	return pr, nil
-}
-
-func isAnonymousUser(ctx context.Context) bool {
-	_, err := claims.ClaimsFromContext(ctx)
-	return authutil.IsAnonymousUserError(err)
 }
