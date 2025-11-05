@@ -641,9 +641,7 @@ func TestAllowPrivateIPs(t *testing.T) {
 }
 
 // TestResolve_WithCache resolves images and indexes and validates the number of requests made to the upstream registry.
-// Manifest caching is implemented for digest references. Tag-to-digest caching integration is a TODO.
 func TestResolve_WithCache(t *testing.T) {
-	t.Skip("Tag-to-digest caching integration is not yet complete - manifest caching works for digest refs")
 	for _, tc := range []resolveTestCase{
 		{
 			name: "resolving an existing image without credentials succeeds",
@@ -725,9 +723,9 @@ func TestResolve_WithCache(t *testing.T) {
 				// layer contents.
 				expected := map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":             1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/latest":              1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(): 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":                 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/" + imageDigest.String(): 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String():     1,
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 
