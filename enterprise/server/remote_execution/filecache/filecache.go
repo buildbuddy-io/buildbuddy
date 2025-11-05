@@ -48,7 +48,8 @@ const (
 
 var (
 	enableAlwaysClone   = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
-	includeSubdirPrefix = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by the first 4 chars of file digest")
+	includeSubdirPrefix = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
+	subdirPrefixLength  = flag.Int("executor.subdir_prefix_length", 2, "The length of the subdir prefix to use if include_subdir_prefix is true.")
 )
 
 // fileCache implements a fixed-size, filesystem backed, LRU cache.
@@ -167,7 +168,7 @@ func filecachePath(rootDir, key string) string {
 	// Don't use filepath.Join since it's relatively slow and allocates more.
 	if *includeSubdirPrefix {
 		groupDir, file := filepath.Split(key)
-		return rootDir + "/" + groupDir + file[:4] + "/" + file
+		return rootDir + "/" + groupDir + file[:*subdirPrefixLength] + "/" + file
 	}
 	return rootDir + "/" + key
 }
