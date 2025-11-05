@@ -384,31 +384,15 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 }
 
 // fetchImageFromCacheOrRemote fetches the manifest for the given image reference.
-// The cacher handles checking the cache and falling back to the upstream registry.
+// The cacher handles tag-to-digest resolution, cache checking, and falling back to the upstream registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
 func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, cacher ocicache.OCITeeCacher, bypassRegistry bool) (gcr.Image, error) {
-	// If this is a tag reference, we need to resolve it to a digest first.
-	var refToFetch gcrname.Reference = digestOrTagRef
-	_, hasDigest := digestOrTagRef.(gcrname.Digest)
-
-	// Only make HEAD request for tag references (to resolve tag->digest).
-	// For digest references, we can skip HEAD and go directly to Get(),
-	// which will check the AC cache first before making any HTTP requests.
-	if !hasDigest {
-		desc, err := cacher.Head(ctx, digestOrTagRef)
-		if err != nil {
-			if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-				return nil, status.PermissionDeniedErrorf("cannot access image manifest: %s", err)
-			}
-			return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
-		}
-		// Use the digest reference for fetching the manifest
-		refToFetch = digestOrTagRef.Context().Digest(desc.Digest.String())
-	}
-
-	// Fetch manifest (cacher handles cache check + fallback to upstream)
-	remoteDesc, err := cacher.Get(ctx, refToFetch)
+	// Get() handles both tags and digests:
+	// - For tags: checks mapper for cached tag->digest, then checks AC for manifest
+	// - For digests: checks AC for manifest directly
+	// Falls back to upstream registry on cache miss
+	remoteDesc, err := cacher.Get(ctx, digestOrTagRef)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)

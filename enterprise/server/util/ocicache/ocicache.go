@@ -62,9 +62,8 @@ type tagToDigestEntry struct {
 
 // tagToDigestMapper caches tag-to-digest mappings to avoid repeated HEAD requests.
 type tagToDigestMapper struct {
-	lru   *lru.LRU[tagToDigestEntry]
-	mu    sync.RWMutex
-	clock clockwork.Clock
+	lru *lru.LRU[tagToDigestEntry]
+	mu  sync.RWMutex
 }
 
 var (
@@ -73,33 +72,32 @@ var (
 )
 
 // getTagToDigestMapper returns the singleton mapper, initializing it if needed.
-func getTagToDigestMapper(clock clockwork.Clock) *tagToDigestMapper {
+func getTagToDigestMapper() *tagToDigestMapper {
 	initMapperOnce.Do(func() {
-		globalTagToDigestMapper = newTagToDigestMapper(clock)
+		globalTagToDigestMapper = newTagToDigestMapper()
 	})
 	return globalTagToDigestMapper
 }
 
-// newTagToDigestMapper creates a new tag-to-digest mapper with the given clock.
-func newTagToDigestMapper(clock clockwork.Clock) *tagToDigestMapper {
+// newTagToDigestMapper creates a new tag-to-digest mapper.
+func newTagToDigestMapper() *tagToDigestMapper {
 	lruCache, err := lru.NewLRU[tagToDigestEntry](&lru.Config[tagToDigestEntry]{
 		SizeFn:  func(_ tagToDigestEntry) int64 { return 1 },
 		MaxSize: tagToDigestMaxEntries,
 	})
 	if err != nil {
 		log.Errorf("Failed to initialize tag-to-digest mapper: %s", err)
-		return &tagToDigestMapper{clock: clock}
+		return &tagToDigestMapper{}
 	}
 	return &tagToDigestMapper{
-		lru:   lruCache,
-		clock: clock,
+		lru: lruCache,
 	}
 }
 
 // get retrieves a non-expired digest for the given tag.
 // Returns the digest and true if found and not expired, or empty string and false otherwise.
 // Automatically removes expired entries.
-func (m *tagToDigestMapper) get(key string) (string, bool) {
+func (m *tagToDigestMapper) get(clock clockwork.Clock, key string) (string, bool) {
 	if m == nil || m.lru == nil {
 		return "", false
 	}
@@ -112,8 +110,8 @@ func (m *tagToDigestMapper) get(key string) (string, bool) {
 		return "", false
 	}
 
-	// Check expiration
-	if m.clock.Now().After(entry.expiration) {
+	// Check expiration using the provided clock
+	if clock.Now().After(entry.expiration) {
 		// Expired - remove it
 		m.mu.Lock()
 		m.lru.Remove(key)
@@ -125,14 +123,14 @@ func (m *tagToDigestMapper) get(key string) (string, bool) {
 }
 
 // add stores a digest for the given tag with automatic expiration.
-func (m *tagToDigestMapper) add(key string, digest string) {
+func (m *tagToDigestMapper) add(clock clockwork.Clock, key string, digest string) {
 	if m == nil || m.lru == nil {
 		return
 	}
 
 	entry := tagToDigestEntry{
 		digest:     digest,
-		expiration: m.clock.Now().Add(tagToDigestTTL),
+		expiration: clock.Now().Add(tagToDigestTTL),
 	}
 
 	m.mu.Lock()
@@ -185,8 +183,8 @@ func (c *ociTeeCacher) Head(ctx context.Context, ref gcrname.Reference) (*gcr.De
 
 	// Check mapper for tag references
 	if !isDigest {
-		mapper := getTagToDigestMapper(c.clock)
-		if digestStr, ok := mapper.get(ref.String()); ok {
+		mapper := getTagToDigestMapper()
+		if digestStr, ok := mapper.get(c.clock, ref.String()); ok {
 			// Mapper hit - return descriptor without HTTP request
 			digest, err := gcr.NewHash(digestStr)
 			if err == nil {
@@ -204,8 +202,8 @@ func (c *ociTeeCacher) Head(ctx context.Context, ref gcrname.Reference) (*gcr.De
 
 	// Store mapping for tag references
 	if !isDigest {
-		mapper := getTagToDigestMapper(c.clock)
-		mapper.add(ref.String(), desc.Digest.String())
+		mapper := getTagToDigestMapper()
+		mapper.add(c.clock, ref.String(), desc.Digest.String())
 	}
 
 	return desc, nil
@@ -229,8 +227,9 @@ func (c *ociTeeCacher) Get(ctx context.Context, ref gcrname.Reference) (*remote.
 
 	// If it's a tag, try to resolve using the mapper
 	if !hasDigest {
-		mapper := getTagToDigestMapper(c.clock)
-		if digestStr, ok := mapper.get(ref.String()); ok {
+		mapper := getTagToDigestMapper()
+		log.CtxDebugf(ctx, "Checking tag-to-digest mapper for key: %s", ref.String())
+		if digestStr, ok := mapper.get(c.clock, ref.String()); ok {
 			log.CtxDebugf(ctx, "Tag-to-digest mapping hit for %s -> %s", ref, digestStr)
 			// Convert to digest reference for AC lookup
 			digestHash, err := gcr.NewHash(digestStr)
@@ -239,6 +238,8 @@ func (c *ociTeeCacher) Get(ctx context.Context, ref gcrname.Reference) (*remote.
 				hasDigest = true
 				ref = ref.Context().Digest(digestStr)
 			}
+		} else {
+			log.CtxDebugf(ctx, "Tag-to-digest mapping miss for key: %s", ref.String())
 		}
 	}
 
@@ -272,8 +273,8 @@ func (c *ociTeeCacher) Get(ctx context.Context, ref gcrname.Reference) (*remote.
 
 	// If original was a tag, populate the mapper
 	if _, wasDigest := getDigest(originalRef); !wasDigest {
-		mapper := getTagToDigestMapper(c.clock)
-		mapper.add(originalRef.String(), remoteDesc.Descriptor.Digest.String())
+		mapper := getTagToDigestMapper()
+		mapper.add(c.clock, originalRef.String(), remoteDesc.Descriptor.Digest.String())
 		log.CtxDebugf(ctx, "Stored tag-to-digest mapping: %s -> %s", originalRef, remoteDesc.Descriptor.Digest)
 	}
 
