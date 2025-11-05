@@ -2282,12 +2282,12 @@ func (z *zstdCompressor) Close() error {
 
 func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	if spn.IsRecording() {
 		spn.SetAttributes(
 			attribute.String("digest_hash", r.GetDigest().GetHash()),
 			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
 	}
-	defer spn.End()
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -3313,7 +3313,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 			return nil, err
 		}
 		if !encryptionEnabled {
-			return nil, status.NotFoundErrorf("decryption key not available")
+			return nil, status.NotFoundError("decryption key not available")
 		}
 	}
 
