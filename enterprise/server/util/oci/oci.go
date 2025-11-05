@@ -613,13 +613,11 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		if manifest.Config.Data != nil {
 			return manifest.Config.Data, nil
 		}
-		layer := newLayerFromDigest(
-			i.repo,
-			manifest.Config.Digest,
-			i,
-			i.cacher,
-			nil,
-		)
+		ref := i.repo.Digest(manifest.Config.Digest.String())
+		layer, err := i.cacher.Layer(i.ctx, ref)
+		if err != nil {
+			return nil, err
+		}
 
 		rc, err := layer.Uncompressed()
 		if err != nil {
@@ -708,27 +706,19 @@ func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
 	}
 	layers := make([]gcr.Layer, 0, len(m.Layers))
 	for _, layerDesc := range m.Layers {
-		layer := newLayerFromDigest(
-			i.repo,
-			layerDesc.Digest,
-			i,
-			i.cacher,
-			&layerDesc,
-		)
-
+		ref := i.repo.Digest(layerDesc.Digest.String())
+		layer, err := i.cacher.LayerFromDescriptor(i.ctx, ref, layerDesc, i)
+		if err != nil {
+			return nil, err
+		}
 		layers = append(layers, layer)
 	}
 	return layers, nil
 }
 
 func (i *imageFromRawManifest) LayerByDigest(digest gcr.Hash) (gcr.Layer, error) {
-	return newLayerFromDigest(
-		i.repo,
-		digest,
-		i,
-		i.cacher,
-		nil,
-	), nil
+	ref := i.repo.Digest(digest.String())
+	return i.cacher.Layer(i.ctx, ref)
 }
 
 func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error) {
@@ -736,172 +726,6 @@ func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error)
 	if err != nil {
 		return nil, err
 	}
-	return newLayerFromDigest(
-		i.repo,
-		digest,
-		i,
-		i.cacher,
-		nil,
-	), nil
-}
-
-func newLayerFromDigest(repo gcrname.Repository, digest gcr.Hash, image *imageFromRawManifest, cacher ocicache.OCITeeCacher, desc *gcr.Descriptor) *layerFromDigest {
-	return &layerFromDigest{
-		repo:   repo,
-		digest: digest,
-		image:  image,
-		cacher: cacher,
-		desc:   desc,
-		createRemoteLayer: sync.OnceValues(func() (gcr.Layer, error) {
-			ref := repo.Digest(digest.String())
-			return cacher.Layer(image.ctx, ref)
-		}),
-	}
-}
-
-var _ gcr.Layer = (*layerFromDigest)(nil)
-
-// layerFromDigest implements the go-containerregistry Layer interface.
-// It allows us to read layers from and write layers to the cache.
-type layerFromDigest struct {
-	repo   gcrname.Repository
-	digest gcr.Hash
-	image  *imageFromRawManifest
-
-	cacher ocicache.OCITeeCacher
-	desc   *gcr.Descriptor
-
-	createRemoteLayer func() (gcr.Layer, error)
-}
-
-func (l *layerFromDigest) Digest() (gcr.Hash, error) {
-	return l.digest, nil
-}
-
-func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
-	return partial.BlobToDiffID(l.image, l.digest)
-}
-
-func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
-	// Check if user is anonymous - skip cache for anonymous users
-	canUseCache := !ocicache.IsAnonymousUser(l.image.ctx)
-	if !canUseCache {
-		log.CtxInfof(l.image.ctx, "Anonymous user request, skipping layer cache for %s:%s", l.image.repo, l.image.desc.Digest)
-	}
-
-	// Try to fetch from cache first
-	if canUseCache {
-		metadata, err := ocicache.FetchBlobMetadataFromCache(
-			l.image.ctx,
-			l.image.bsClient,
-			l.image.acClient,
-			l.repo,
-			l.digest,
-		)
-		if err != nil && !status.IsNotFoundError(err) {
-			log.CtxWarningf(l.image.ctx, "Error fetching layer metadata from cache: %s", err)
-		}
-		if metadata != nil && err == nil {
-			// Stream blob data from cache
-			pr, pw := io.Pipe()
-			go func() {
-				defer pw.Close()
-				err := ocicache.FetchBlobFromCache(
-					l.image.ctx,
-					pw,
-					l.image.bsClient,
-					l.digest,
-					metadata.GetContentLength(),
-				)
-				if err != nil {
-					log.Warningf("Error fetching blob from cache: %s", err)
-					pw.CloseWithError(err)
-				}
-			}()
-			return pr, nil
-		}
-	}
-
-	// Cache miss - fetch from upstream
-	remoteLayer, err := l.createRemoteLayer()
-	if err != nil {
-		return nil, err
-	}
-	upstream, err := remoteLayer.Compressed()
-	if err != nil {
-		return nil, err
-	}
-
-	// Wrap with write-through cacher if caching is enabled
-	if canUseCache {
-		// Get metadata from descriptor if available, otherwise from remote layer
-		var mediaType types.MediaType
-		var contentLength int64
-		if l.desc != nil {
-			mediaType = l.desc.MediaType
-			contentLength = l.desc.Size
-		} else {
-			var err error
-			mediaType, err = l.MediaType()
-			if err != nil {
-				log.CtxWarningf(l.image.ctx, "Could not get media type for layer: %s", err)
-				return upstream, nil
-			}
-			contentLength, err = l.Size()
-			if err != nil {
-				log.CtxWarningf(l.image.ctx, "Could not get size for layer: %s", err)
-				return upstream, nil
-			}
-		}
-
-		rc, err := ocicache.NewBlobReadThroughCacher(
-			l.image.ctx,
-			upstream,
-			l.image.bsClient,
-			l.image.acClient,
-			l.repo,
-			l.digest,
-			string(mediaType),
-			contentLength,
-		)
-		if err != nil {
-			log.CtxWarningf(l.image.ctx, "Could not create read-through cacher: %s", err)
-			return upstream, nil
-		}
-		return rc, nil
-	}
-
-	return upstream, nil
-}
-
-// Uncompressed fetches the compressed bytes from the upstream server
-// and returns a ReadCloser that decompresses as it reads.
-func (l *layerFromDigest) Uncompressed() (io.ReadCloser, error) {
-	cl, err := partial.CompressedToLayer(l)
-	if err != nil {
-		return nil, err
-	}
-	return cl.Uncompressed()
-}
-
-func (l *layerFromDigest) Size() (int64, error) {
-	if l.desc != nil {
-		return l.desc.Size, nil
-	}
-	remoteLayer, err := l.createRemoteLayer()
-	if err != nil {
-		return 0, err
-	}
-	return remoteLayer.Size()
-}
-
-func (l *layerFromDigest) MediaType() (types.MediaType, error) {
-	if l.desc != nil {
-		return l.desc.MediaType, nil
-	}
-	remoteLayer, err := l.createRemoteLayer()
-	if err != nil {
-		return "", err
-	}
-	return remoteLayer.MediaType()
+	ref := i.repo.Digest(digest.String())
+	return i.cacher.Layer(i.ctx, ref)
 }

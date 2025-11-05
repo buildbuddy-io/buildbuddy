@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -24,6 +25,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -53,6 +55,9 @@ type OCITeeCacher interface {
 	Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error)
 	// Layer fetches a layer (blob) from the upstream registry.
 	Layer(ctx context.Context, ref gcrname.Digest) (gcr.Layer, error)
+	// LayerFromDescriptor fetches a layer with a known descriptor, avoiding extra HTTP requests.
+	// The parentImage is used to look up DiffID from the image config without fetching the layer blob.
+	LayerFromDescriptor(ctx context.Context, ref gcrname.Digest, desc gcr.Descriptor, parentImage gcr.Image) (gcr.Layer, error)
 }
 
 // ociTeeCacher implements OCITeeCacher by wrapping a remote.Puller.
@@ -139,6 +144,200 @@ func (c *ociTeeCacher) Get(ctx context.Context, ref gcrname.Reference) (*remote.
 
 func (c *ociTeeCacher) Layer(ctx context.Context, ref gcrname.Digest) (gcr.Layer, error) {
 	return c.puller.Layer(ctx, ref)
+}
+
+func (c *ociTeeCacher) LayerFromDescriptor(ctx context.Context, ref gcrname.Digest, desc gcr.Descriptor, parentImage gcr.Image) (gcr.Layer, error) {
+	// Parse the digest from the reference
+	hash, hasDigest := getDigest(ref)
+	if !hasDigest {
+		// Should not happen - LayerFromDescriptor should only be called with digest references
+		return c.puller.Layer(ctx, ref)
+	}
+
+	cl := &cachedLayer{
+		ctx:         ctx,
+		bsClient:    c.bsClient,
+		acClient:    c.acClient,
+		puller:      c.puller,
+		repo:        ref.Context(),
+		digest:      hash,
+		ref:         ref,
+		desc:        &desc,
+		parentImage: parentImage,
+	}
+	// Use sync.OnceValues for thread-safe lazy initialization
+	cl.getUpstreamOnce = sync.OnceValues(func() (gcr.Layer, error) {
+		return c.puller.Layer(ctx, ref)
+	})
+	return cl, nil
+}
+
+// cachedLayer implements gcr.Layer with caching support.
+// It checks the CAS for cached layer data, fetches from upstream on cache miss,
+// and writes through to the CAS as data is read from upstream.
+type cachedLayer struct {
+	ctx      context.Context
+	bsClient bspb.ByteStreamClient
+	acClient repb.ActionCacheClient
+	puller   *remote.Puller
+
+	repo        gcrname.Repository
+	digest      gcr.Hash
+	ref         gcrname.Digest
+	desc        *gcr.Descriptor // optional - when provided, avoids HTTP HEAD requests
+	parentImage gcr.Image       // optional - when provided, used for DiffID lookup from config
+
+	// getUpstreamOnce ensures thread-safe lazy initialization of upstream layer
+	getUpstreamOnce func() (gcr.Layer, error)
+}
+
+func (l *cachedLayer) getUpstreamLayer() (gcr.Layer, error) {
+	return l.getUpstreamOnce()
+}
+
+func (l *cachedLayer) Digest() (gcr.Hash, error) {
+	return l.digest, nil
+}
+
+func (l *cachedLayer) DiffID() (gcr.Hash, error) {
+	// If we have a parent image, use partial.BlobToDiffID to look up DiffID from
+	// the image's config file without fetching the layer blob
+	if l.parentImage != nil {
+		return partial.BlobToDiffID(l.parentImage, l.digest)
+	}
+	// Otherwise, delegate to upstream layer
+	upstream, err := l.getUpstreamLayer()
+	if err != nil {
+		return gcr.Hash{}, err
+	}
+	return upstream.DiffID()
+}
+
+func (l *cachedLayer) Size() (int64, error) {
+	// Use descriptor if available to avoid HTTP requests
+	if l.desc != nil {
+		return l.desc.Size, nil
+	}
+	upstream, err := l.getUpstreamLayer()
+	if err != nil {
+		return 0, err
+	}
+	return upstream.Size()
+}
+
+func (l *cachedLayer) MediaType() (types.MediaType, error) {
+	// Use descriptor if available to avoid HTTP requests
+	if l.desc != nil {
+		return l.desc.MediaType, nil
+	}
+	upstream, err := l.getUpstreamLayer()
+	if err != nil {
+		return "", err
+	}
+	return upstream.MediaType()
+}
+
+func (l *cachedLayer) Uncompressed() (io.ReadCloser, error) {
+	// Use partial.CompressedToLayer to decompress on-the-fly
+	// This automatically benefits from caching since it calls Compressed()
+	cl, err := partial.CompressedToLayer(l)
+	if err != nil {
+		return nil, err
+	}
+	return cl.Uncompressed()
+}
+
+func (l *cachedLayer) Compressed() (io.ReadCloser, error) {
+	// Check if user is anonymous - skip cache for anonymous users
+	canUseCache := !IsAnonymousUser(l.ctx)
+	if !canUseCache {
+		log.CtxInfof(l.ctx, "Anonymous user request, skipping layer cache for %s@%s", l.repo, l.digest)
+	}
+
+	// Try to fetch from cache first
+	if canUseCache {
+		metadata, err := FetchBlobMetadataFromCache(
+			l.ctx,
+			l.bsClient,
+			l.acClient,
+			l.repo,
+			l.digest,
+		)
+		if err != nil && !status.IsNotFoundError(err) {
+			log.CtxWarningf(l.ctx, "Error fetching layer metadata from cache: %s", err)
+		}
+		if metadata != nil && err == nil {
+			// Cache hit - stream blob data from cache
+			pr, pw := io.Pipe()
+			go func() {
+				defer pw.Close()
+				err := FetchBlobFromCache(
+					l.ctx,
+					pw,
+					l.bsClient,
+					l.digest,
+					metadata.GetContentLength(),
+				)
+				if err != nil {
+					log.Warningf("Error fetching blob from cache: %s", err)
+					pw.CloseWithError(err)
+				}
+			}()
+			return pr, nil
+		}
+	}
+
+	// Cache miss or cache disabled - fetch from upstream
+	upstream, err := l.getUpstreamLayer()
+	if err != nil {
+		return nil, err
+	}
+
+	// Wrap with write-through cacher if caching is enabled
+	if canUseCache {
+		// Get metadata from descriptor if available, otherwise from upstream layer
+		var mediaType types.MediaType
+		var contentLength int64
+		if l.desc != nil {
+			mediaType = l.desc.MediaType
+			contentLength = l.desc.Size
+		} else {
+			var err error
+			mediaType, err = upstream.MediaType()
+			if err != nil {
+				log.CtxWarningf(l.ctx, "Could not get media type for layer: %s", err)
+				return upstream.Compressed()
+			}
+			contentLength, err = upstream.Size()
+			if err != nil {
+				log.CtxWarningf(l.ctx, "Could not get size for layer: %s", err)
+				return upstream.Compressed()
+			}
+		}
+
+		upstreamReader, err := upstream.Compressed()
+		if err != nil {
+			return nil, err
+		}
+
+		rc, err := NewBlobReadThroughCacher(
+			l.ctx,
+			upstreamReader,
+			l.bsClient,
+			l.acClient,
+			l.repo,
+			l.digest,
+			string(mediaType),
+			contentLength,
+		)
+		if err != nil {
+			log.CtxWarningf(l.ctx, "Could not create read-through cacher: %s", err)
+			return upstreamReader, nil
+		}
+		return rc, nil
+	}
+
+	return upstream.Compressed()
 }
 
 // IsAnonymousUser checks if the request context belongs to an anonymous user.
