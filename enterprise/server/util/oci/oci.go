@@ -883,7 +883,15 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	// Use TeeBlob which handles cache read with fallback to upstream
 	reference := l.repo.Digest(l.digest.String()).String()
 
-	return l.image.ociCache.TeeBlob(l.image.ctx, reference)
+	// Pass size and mediaType from descriptor if available
+	var size int64
+	var mediaType string
+	if l.desc != nil {
+		size = l.desc.Size
+		mediaType = string(l.desc.MediaType)
+	}
+
+	return l.image.ociCache.TeeBlob(l.image.ctx, reference, size, mediaType)
 }
 
 // Uncompressed fetches the compressed bytes from the upstream server

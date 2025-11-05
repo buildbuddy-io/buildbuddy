@@ -487,7 +487,9 @@ type OCICache interface {
 	// Returns an io.ReadCloser for the blob content.
 	// When fetching from upstream, TeeBlob automatically caches the blob to the CAS.
 	// Authentication and transport are handled by the LayerFetcher provided to NewOCICache.
-	TeeBlob(ctx context.Context, reference string) (io.ReadCloser, error)
+	// The size and mediaType parameters are used when caching the blob; if size is 0 or mediaType is empty,
+	// they will be queried from the remote layer.
+	TeeBlob(ctx context.Context, reference string, size int64, mediaType string) (io.ReadCloser, error)
 }
 
 // LayerFetcher provides a way to fetch layers from an upstream registry.
@@ -513,7 +515,7 @@ func NewOCICache(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient
 }
 
 // TeeBlob reads the blob from the CAS, falling back to the upstream registry if not present.
-func (c *ociCache) TeeBlob(ctx context.Context, reference string) (io.ReadCloser, error) {
+func (c *ociCache) TeeBlob(ctx context.Context, reference string, size int64, mediaType string) (io.ReadCloser, error) {
 	// Parse the reference to extract repository and digest information
 	ref, err := gcrname.ParseReference(reference)
 	if err != nil {
@@ -587,20 +589,26 @@ func (c *ociCache) TeeBlob(ctx context.Context, reference string) (io.ReadCloser
 		}
 		defer upstreamReader.Close()
 
-		// Get metadata about the layer
-		size, sizeErr := remoteLayer.Size()
-		if sizeErr != nil {
-			log.CtxWarningf(ctx, "Failed to get layer size: %s", sizeErr)
-			size = 0
+		// Use provided size and mediaType if available, otherwise query from remote layer
+		if size == 0 {
+			var sizeErr error
+			size, sizeErr = remoteLayer.Size()
+			if sizeErr != nil {
+				log.CtxWarningf(ctx, "Failed to get layer size: %s", sizeErr)
+				size = 0
+			}
 		}
 
-		mediaType, mediaTypeErr := remoteLayer.MediaType()
-		if mediaTypeErr != nil {
-			log.CtxWarningf(ctx, "Failed to get layer media type: %s", mediaTypeErr)
-		}
-		contentType := string(mediaType)
+		contentType := mediaType
 		if contentType == "" {
-			contentType = "application/octet-stream"
+			mt, mediaTypeErr := remoteLayer.MediaType()
+			if mediaTypeErr != nil {
+				log.CtxWarningf(ctx, "Failed to get layer media type: %s", mediaTypeErr)
+			}
+			contentType = string(mt)
+			if contentType == "" {
+				contentType = "application/octet-stream"
+			}
 		}
 
 		// Wrap with read-through cacher to cache as we stream
