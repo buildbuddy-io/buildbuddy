@@ -336,12 +336,12 @@ func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 
 func (c *Cache) writerWithSizeHint(ctx context.Context, r *rspb.ResourceName, sizeHint int64) (interfaces.CommittedWriteCloser, error) {
 	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	if spn.IsRecording() {
 		spn.SetAttributes(
 			attribute.String("digest_hash", r.GetDigest().GetHash()),
 			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
 	}
-	defer spn.End()
 	// If data is not already compressed, return a writer that will compress
 	// it before writing.
 	// N.B. We only compress data *over* a given size, because compressing
