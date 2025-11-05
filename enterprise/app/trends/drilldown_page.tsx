@@ -36,6 +36,7 @@ import HeatmapComponent, { HeatmapSelection } from "./heatmap";
 const DD_SELECTED_METRIC_URL_PARAM: string = "ddMetric";
 const DD_SELECTED_AREA_URL_PARAM = "ddSelection";
 const DD_ZOOM_URL_PARAM: string = "ddZoom";
+const EMPTY_LABEL = "(empty)";
 
 function convertMetricUrlParam(param: string): MetricOption | undefined {
   const metric = decodeMetricUrlParam(param);
@@ -568,46 +569,48 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   handleBarClick(d: stats.DrilldownType, e?: CategoricalChartState) {
-    if (!e || !e.activeLabel) {
+    if (!e || !e.activePayload || e.activePayload.length === 0) {
       return;
     }
+    const originalLabel = (e.activePayload[0].payload as stats.DrilldownEntry).label || "";
+
     switch (d) {
       case stats.DrilldownType.USER_DRILLDOWN_TYPE:
-        this.navigateForBarClick("user", e.activeLabel);
+        this.navigateForBarClick("user", originalLabel);
         return;
       case stats.DrilldownType.HOSTNAME_DRILLDOWN_TYPE:
-        this.navigateForBarClick("host", e.activeLabel);
+        this.navigateForBarClick("host", originalLabel);
         return;
       case stats.DrilldownType.REPO_URL_DRILLDOWN_TYPE:
-        this.navigateForBarClick("repo", e.activeLabel);
+        this.navigateForBarClick("repo", originalLabel);
         return;
       case stats.DrilldownType.COMMIT_SHA_DRILLDOWN_TYPE:
-        this.navigateForBarClick("commit", e.activeLabel);
+        this.navigateForBarClick("commit", originalLabel);
         return;
       case stats.DrilldownType.BRANCH_DRILLDOWN_TYPE:
-        this.navigateForBarClick("branch", e.activeLabel);
+        this.navigateForBarClick("branch", originalLabel);
         return;
       case stats.DrilldownType.PATTERN_DRILLDOWN_TYPE:
         if (capabilities.config.patternFilterEnabled) {
-          this.navigateForBarClick("pattern", e.activeLabel);
+          this.navigateForBarClick("pattern", originalLabel);
         }
         return;
       case stats.DrilldownType.TAG_DRILLDOWN_TYPE:
         if (capabilities.config.tagsUiEnabled) {
-          this.navigateForBarClick("tag", e.activeLabel);
+          this.navigateForBarClick("tag", originalLabel);
         }
         return;
       case stats.DrilldownType.WORKER_DRILLDOWN_TYPE:
-        this.navigateDimensionBarClick(encodeWorkerUrlParam(e.activeLabel));
+        this.navigateDimensionBarClick(encodeWorkerUrlParam(originalLabel));
         return;
       case stats.DrilldownType.TARGET_LABEL_DRILLDOWN_TYPE:
-        this.navigateDimensionBarClick(encodeTargetLabelUrlParam(e.activeLabel));
+        this.navigateDimensionBarClick(encodeTargetLabelUrlParam(originalLabel));
         return;
       case stats.DrilldownType.ACTION_MNEMONIC_DRILLDOWN_TYPE:
-        this.navigateDimensionBarClick(encodeActionMnemonicUrlParam(e.activeLabel));
+        this.navigateDimensionBarClick(encodeActionMnemonicUrlParam(originalLabel));
         return;
       case stats.DrilldownType.EFFECTIVE_POOL_DRILLDOWN_TYPE:
-        this.navigateDimensionBarClick(encodeEffectivePoolUrlParam(e.activeLabel));
+        this.navigateDimensionBarClick(encodeEffectivePoolUrlParam(originalLabel));
         return;
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
       case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
@@ -656,15 +659,24 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     }
   }
 
-  renderCustomTooltip(drilldownType: string, p: TooltipProps<any, any>) {
+  formatDrilldownLabel(drilldownType: stats.DrilldownType, label: string): string {
+    if (!label || label === "") {
+      return EMPTY_LABEL;
+    }
+    return label;
+  }
+
+  renderCustomTooltip(drilldownType: string, drilldownTypeEnum: stats.DrilldownType, p: TooltipProps<any, any>) {
     if (!this.state.drilldownData) {
       return null;
     }
     if (p.active && p.payload && p.payload.length > 0) {
+      const originalLabel = (p.payload[0].payload as stats.DrilldownEntry).label || "";
+      const formattedLabel = this.formatDrilldownLabel(drilldownTypeEnum, originalLabel);
       return (
         <div className="trend-chart-hover">
           <div>
-            {drilldownType}: {p.label}
+            {drilldownType}: {formattedLabel}
           </div>
           <div>
             Base:{" "}
@@ -887,14 +899,19 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                                   <CartesianGrid strokeDasharray="3 3" />
                                   <XAxis
                                     interval="preserveStart"
-                                    dataKey={(entry: stats.DrilldownEntry) => entry.label}
+                                    height={30}
+                                    dataKey="label"
+                                    tickFormatter={(label: string) => {
+                                      return this.formatDrilldownLabel(chart.drilldownType, label);
+                                    }}
                                   />
                                   <Tooltip
                                     allowEscapeViewBox={{ x: true, y: true }}
                                     wrapperStyle={{ zIndex: 1 }}
                                     content={this.renderCustomTooltip.bind(
                                       this,
-                                      this.formatDrilldownType(chart.drilldownType)
+                                      this.formatDrilldownType(chart.drilldownType),
+                                      chart.drilldownType
                                     )}
                                   />
                                   <Bar

@@ -106,7 +106,7 @@ function parseDimensionType(stringValue: string): stat_filter.Dimension | undefi
 export function getDimensionParamFromFilters(filters: stat_filter.DimensionFilter[]): string {
   const filterStrings = filters
     .map((f) => {
-      if (!(f.dimension?.execution || f.dimension?.invocation) || !f.value) {
+      if (!(f.dimension?.execution || f.dimension?.invocation) || f.value === undefined || f.value === null) {
         return undefined;
       }
       let dimensionName = "";
@@ -146,7 +146,7 @@ export function getFiltersFromDimensionParam(dimensionParamValue: string): stat_
     }
     dimensionParamValue = dimensionParamValue.substring(separatorIndex + 1);
     separatorIndex = dimensionParamValue.indexOf("|");
-    if (separatorIndex == -1 || separatorIndex + 1 === dimensionParamValue.length) {
+    if (separatorIndex == -1) {
       break;
     }
 
