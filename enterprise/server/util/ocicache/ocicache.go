@@ -5,7 +5,9 @@ import (
 	"context"
 	"io"
 	"sync"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -16,8 +18,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -44,7 +48,97 @@ const (
 	maxManifestSize = 10000000
 
 	cacheDigestFunction = repb.DigestFunction_SHA256
+
+	// Tag-to-digest mapper configuration
+	tagToDigestTTL        = 15 * time.Minute
+	tagToDigestMaxEntries = 1000
 )
+
+// tagToDigestEntry represents a cached tag-to-digest mapping with expiration.
+type tagToDigestEntry struct {
+	digest     string
+	expiration time.Time
+}
+
+// tagToDigestMapper caches tag-to-digest mappings to avoid repeated HEAD requests.
+type tagToDigestMapper struct {
+	lru   *lru.LRU[tagToDigestEntry]
+	mu    sync.RWMutex
+	clock clockwork.Clock
+}
+
+var (
+	globalTagToDigestMapper *tagToDigestMapper
+	initMapperOnce          sync.Once
+)
+
+// getTagToDigestMapper returns the singleton mapper, initializing it if needed.
+func getTagToDigestMapper(clock clockwork.Clock) *tagToDigestMapper {
+	initMapperOnce.Do(func() {
+		globalTagToDigestMapper = newTagToDigestMapper(clock)
+	})
+	return globalTagToDigestMapper
+}
+
+// newTagToDigestMapper creates a new tag-to-digest mapper with the given clock.
+func newTagToDigestMapper(clock clockwork.Clock) *tagToDigestMapper {
+	lruCache, err := lru.NewLRU[tagToDigestEntry](&lru.Config[tagToDigestEntry]{
+		SizeFn:  func(_ tagToDigestEntry) int64 { return 1 },
+		MaxSize: tagToDigestMaxEntries,
+	})
+	if err != nil {
+		log.Errorf("Failed to initialize tag-to-digest mapper: %s", err)
+		return &tagToDigestMapper{clock: clock}
+	}
+	return &tagToDigestMapper{
+		lru:   lruCache,
+		clock: clock,
+	}
+}
+
+// get retrieves a non-expired digest for the given tag.
+// Returns the digest and true if found and not expired, or empty string and false otherwise.
+// Automatically removes expired entries.
+func (m *tagToDigestMapper) get(key string) (string, bool) {
+	if m == nil || m.lru == nil {
+		return "", false
+	}
+
+	m.mu.RLock()
+	entry, ok := m.lru.Get(key)
+	m.mu.RUnlock()
+
+	if !ok {
+		return "", false
+	}
+
+	// Check expiration
+	if m.clock.Now().After(entry.expiration) {
+		// Expired - remove it
+		m.mu.Lock()
+		m.lru.Remove(key)
+		m.mu.Unlock()
+		return "", false
+	}
+
+	return entry.digest, true
+}
+
+// add stores a digest for the given tag with automatic expiration.
+func (m *tagToDigestMapper) add(key string, digest string) {
+	if m == nil || m.lru == nil {
+		return
+	}
+
+	entry := tagToDigestEntry{
+		digest:     digest,
+		expiration: m.clock.Now().Add(tagToDigestTTL),
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lru.Add(key, entry)
+}
 
 // OCITeeCacher is an interface for fetching OCI blobs and manifests from an upstream registry.
 // Implementations may tee data to/from a cache while fetching from the upstream.
@@ -66,26 +160,55 @@ type ociTeeCacher struct {
 	acClient repb.ActionCacheClient
 	bsClient bspb.ByteStreamClient
 	useCache bool
+	clock    clockwork.Clock
 }
 
 // NewOCITeeCacher creates a new OCITeeCacher that fetches OCI resources from an upstream registry
 // and tees data to/from the cache.
 // If useCache is false, caching is disabled and all requests go directly to the upstream registry.
-func NewOCITeeCacher(useCache bool, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, opts ...remote.Option) (OCITeeCacher, error) {
+func NewOCITeeCacher(useCache bool, env environment.Env, opts ...remote.Option) (OCITeeCacher, error) {
 	puller, err := remote.NewPuller(opts...)
 	if err != nil {
 		return nil, err
 	}
 	return &ociTeeCacher{
 		puller:   puller,
-		acClient: acClient,
-		bsClient: bsClient,
+		acClient: env.GetActionCacheClient(),
+		bsClient: env.GetByteStreamClient(),
 		useCache: useCache,
+		clock:    env.GetClock(),
 	}, nil
 }
 
 func (c *ociTeeCacher) Head(ctx context.Context, ref gcrname.Reference) (*gcr.Descriptor, error) {
-	return c.puller.Head(ctx, ref)
+	_, isDigest := ref.(gcrname.Digest)
+
+	// Check mapper for tag references
+	if !isDigest {
+		mapper := getTagToDigestMapper(c.clock)
+		if digestStr, ok := mapper.get(ref.String()); ok {
+			// Mapper hit - return descriptor without HTTP request
+			digest, err := gcr.NewHash(digestStr)
+			if err == nil {
+				log.CtxDebugf(ctx, "Tag-to-digest mapping hit: %s -> %s", ref, digestStr)
+				return &gcr.Descriptor{Digest: digest}, nil
+			}
+		}
+	}
+
+	// Mapper miss or digest reference - make HEAD request
+	desc, err := c.puller.Head(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	// Store mapping for tag references
+	if !isDigest {
+		mapper := getTagToDigestMapper(c.clock)
+		mapper.add(ref.String(), desc.Digest.String())
+	}
+
+	return desc, nil
 }
 
 func (c *ociTeeCacher) Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error) {
@@ -101,37 +224,57 @@ func (c *ociTeeCacher) Get(ctx context.Context, ref gcrname.Reference) (*remote.
 		return c.puller.Get(ctx, ref)
 	}
 
-	// Extract digest from reference (Get should only be called with digest references)
+	originalRef := ref
 	digest, hasDigest := getDigest(ref)
+
+	// If it's a tag, try to resolve using the mapper
 	if !hasDigest {
-		// If caller passes a tag, just fetch from upstream without caching
-		// (tag resolution should happen at a higher level)
-		return c.puller.Get(ctx, ref)
-	}
-
-	// Try to fetch manifest from cache
-	mc, err := FetchManifestFromAC(ctx, c.acClient, ref.Context(), digest, ref)
-	if err != nil && !status.IsNotFoundError(err) {
-		log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)
-	}
-
-	// Cache hit - reconstruct descriptor from cached manifest
-	if mc != nil && err == nil {
-		desc := &gcr.Descriptor{
-			Digest:    digest,
-			Size:      int64(len(mc.GetRaw())),
-			MediaType: types.MediaType(mc.GetContentType()),
+		mapper := getTagToDigestMapper(c.clock)
+		if digestStr, ok := mapper.get(ref.String()); ok {
+			log.CtxDebugf(ctx, "Tag-to-digest mapping hit for %s -> %s", ref, digestStr)
+			// Convert to digest reference for AC lookup
+			digestHash, err := gcr.NewHash(digestStr)
+			if err == nil {
+				digest = digestHash
+				hasDigest = true
+				ref = ref.Context().Digest(digestStr)
+			}
 		}
-		return &remote.Descriptor{
-			Descriptor: *desc,
-			Manifest:   mc.GetRaw(),
-		}, nil
 	}
 
-	// Cache miss - fetch from upstream registry
+	// Try AC if we have a digest (either original or from mapper)
+	if hasDigest {
+		mc, err := FetchManifestFromAC(ctx, c.acClient, ref.Context(), digest, ref)
+		if err != nil && !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)
+		}
+
+		if mc != nil && err == nil {
+			log.CtxInfof(ctx, "OCI cache manifest hit %s (original ref %q)", ref, originalRef)
+			desc := &gcr.Descriptor{
+				Digest:    digest,
+				Size:      int64(len(mc.GetRaw())),
+				MediaType: types.MediaType(mc.GetContentType()),
+			}
+			return &remote.Descriptor{
+				Descriptor: *desc,
+				Manifest:   mc.GetRaw(),
+			}, nil
+		}
+	}
+
+	// AC miss or no digest - fetch from upstream
+	// Use resolved digest ref if we have it, otherwise original tag ref
 	remoteDesc, err := c.puller.Get(ctx, ref)
 	if err != nil {
 		return nil, err
+	}
+
+	// If original was a tag, populate the mapper
+	if _, wasDigest := getDigest(originalRef); !wasDigest {
+		mapper := getTagToDigestMapper(c.clock)
+		mapper.add(originalRef.String(), remoteDesc.Descriptor.Digest.String())
+		log.CtxDebugf(ctx, "Stored tag-to-digest mapping: %s -> %s", originalRef, remoteDesc.Descriptor.Digest)
 	}
 
 	// Write manifest to cache for next time
@@ -142,7 +285,7 @@ func (c *ociTeeCacher) Get(ctx context.Context, ref gcrname.Reference) (*remote.
 		ref.Context(),
 		remoteDesc.Digest,
 		string(remoteDesc.MediaType),
-		ref,
+		originalRef,
 	)
 	if err != nil {
 		log.CtxWarningf(ctx, "Could not write manifest to cache: %s", err)
