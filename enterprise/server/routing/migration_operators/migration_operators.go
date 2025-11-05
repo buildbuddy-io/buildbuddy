@@ -5,15 +5,18 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/batch_operator"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -333,4 +336,122 @@ func GetTreeMirrorOperator(ctx context.Context, router interfaces.CacheRoutingSe
 	digests := slices.Collect(maps.Values(digestsToCheckAndCopy))
 	copyOperator.Enqueue(ctx, b.InstanceName, digests, b.DigestFunction)
 	return anyErr
+}
+
+func ACReadAndVerify(ctx context.Context, router interfaces.CacheRoutingService, groupID string, b *batch_operator.DigestBatch) error {
+	ctx = usageutil.DisableUsageTracking(ctx)
+	_, secondary, err := router.GetACClients(ctx)
+	if err != nil {
+		return err
+	}
+	anyErr := error(nil)
+	for _, d := range b.Digests {
+		// Verification happens server-side, so all reads technically verify.
+		_, err := secondary.GetActionResult(ctx, &repb.GetActionResultRequest{
+			InstanceName:   b.InstanceName,
+			DigestFunction: b.DigestFunction,
+			ActionDigest:   d,
+		})
+		if err != nil {
+			anyErr = err
+		}
+	}
+	return anyErr
+}
+
+func ACCopy(ctx context.Context, router interfaces.CacheRoutingService, copyOperator batch_operator.DigestOperator, groupID string, b *batch_operator.DigestBatch) error {
+	ctx = usageutil.DisableUsageTracking(ctx)
+	primary, secondary, err := router.GetACClients(ctx)
+	if err != nil {
+		return err
+	}
+	primaryCAS, _, err := router.GetCASClients(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, d := range b.Digests {
+		initialReq := &repb.GetActionResultRequest{
+			InstanceName:   b.InstanceName,
+			DigestFunction: b.DigestFunction,
+			ActionDigest:   d,
+		}
+
+		// TODO(jdhollen): The operator could enclose the result hash from
+		// primary and just fetch from secondary (unless a copy is actually needed).
+		// Get the action result from both caches, compare digests.
+		primaryResult, err := primary.GetActionResult(ctx, initialReq)
+		if err != nil {
+			return err
+		}
+		// Ignore any error here, we'll just try to copy through the result from the primary.
+		secondaryResult, _ := secondary.GetActionResult(ctx, initialReq)
+
+		if primaryResult.GetActionResultDigest().GetHash() == secondaryResult.GetActionResultDigest().GetHash() {
+			// Secondary already has this action result and we just touched everything in its cache - nothing to do!
+			continue
+		}
+
+		// Copy every required file from the action to the secondary cache.
+		outputFileDigests := make([]*repb.Digest, 0, len(primaryResult.OutputFiles))
+		mu := &sync.Mutex{}
+		appendDigest := func(d *repb.Digest) {
+			if d != nil && d.GetSizeBytes() > 0 {
+				mu.Lock()
+				outputFileDigests = append(outputFileDigests, d)
+				mu.Unlock()
+			}
+		}
+		for _, f := range primaryResult.OutputFiles {
+			appendDigest(f.GetDigest())
+		}
+
+		g, gCtx := errgroup.WithContext(ctx)
+		for _, d := range primaryResult.OutputDirectories {
+			dc := d
+			g.Go(func() error {
+				// TODO(jdhollen): Batch these up for real and/or check local proxy cache.
+				blobs, err := primaryCAS.BatchReadBlobs(gCtx, &repb.BatchReadBlobsRequest{
+					InstanceName:   b.InstanceName,
+					DigestFunction: b.DigestFunction,
+					Digests:        []*repb.Digest{dc.GetTreeDigest()},
+				})
+				if err != nil {
+					return err
+				}
+				if len(blobs.Responses) < 1 || len(blobs.Responses[0].GetData()) == 0 {
+					return status.InternalErrorf("Blob disappeared while trying to copy ActionResult: %s", dc.GetTreeDigest().GetHash())
+				}
+				tree := &repb.Tree{}
+				if err := proto.Unmarshal(blobs.Responses[0].GetData(), tree); err != nil {
+					return err
+				}
+				for _, f := range tree.GetRoot().GetFiles() {
+					appendDigest(f.GetDigest())
+				}
+				for _, dir := range tree.GetChildren() {
+					for _, f := range dir.GetFiles() {
+						appendDigest(f.GetDigest())
+					}
+				}
+				return nil
+			})
+		}
+		if err := g.Wait(); err != nil {
+			return err
+		}
+
+		copyOperator.Enqueue(ctx, b.InstanceName, outputFileDigests, b.DigestFunction)
+
+		_, err = secondary.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
+			InstanceName:   b.InstanceName,
+			DigestFunction: b.DigestFunction,
+			ActionDigest:   d,
+			ActionResult:   primaryResult,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
