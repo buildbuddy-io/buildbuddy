@@ -28,6 +28,7 @@ go_library(
         "//enterprise/server/backends/gcs_cache",
         "//enterprise/server/backends/kms",
         "//enterprise/server/backends/memcache",
+        "//enterprise/server/backends/metacache",
         "//enterprise/server/backends/migration_cache",
         "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/backends/prom",
