@@ -1,6 +1,7 @@
 package metacache_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockgcs"
@@ -319,5 +321,51 @@ func TestEncryption(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func randomDigests(t *testing.T, sizes ...int64) map[*rspb.ResourceName][]byte {
+	m := make(map[*rspb.ResourceName][]byte)
+	for _, size := range sizes {
+		rn, buf := testdigest.RandomCASResourceBuf(t, size)
+		m[rn] = buf
+	}
+	return m
+}
+
+func TestMultiGetSet(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+	clock := clockwork.NewFakeClock()
+
+	options := metacache.Options{
+		Name: "TestGetSet",
+
+		MaxInlineFileSizeBytes:      1000,
+		MinBytesAutoZstdCompression: 100,
+
+		GCSTTLDays: 1,
+	}
+	bc := runMetacache(t, te, clock, options)
+
+	digests := randomDigests(t, 10, 20, 11, 30, 1024, 40)
+	err := bc.SetMulti(ctx, digests)
+	require.NoError(t, err)
+
+	resourceNames := make([]*rspb.ResourceName, 0, len(digests))
+	for d := range digests {
+		resourceNames = append(resourceNames, d)
+	}
+
+	m, err := bc.GetMulti(ctx, resourceNames)
+	require.NoError(t, err)
+	for rn := range digests {
+		d := rn.GetDigest()
+		rbuf, ok := m[d]
+		require.True(t, ok, "Multi-get failed to return expected digest: %q", d.GetHash())
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		require.Equal(t, d.GetHash(), d2.GetHash(), "d=%v; d2=%v", d, d2)
 	}
 }

@@ -73,9 +73,15 @@ func (s *schedulerServerMock) GetPoolInfo(_ context.Context, os, arch, requested
 	if poolType == interfaces.PoolTypeSelfHosted {
 		groupID = selfHostedPoolGroupID
 	}
+
+	effectivePool := requestedPool
+	if effectivePool == "" {
+		effectivePool = "default-pool"
+	}
 	return &interfaces.PoolInfo{
 		GroupID:      groupID,
 		IsSelfHosted: poolType == interfaces.PoolTypeSelfHosted,
+		Name:         effectivePool,
 	}, nil
 }
 func (s *schedulerServerMock) GetSharedExecutorPoolGroupID() string {
@@ -511,6 +517,11 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			redisRestart:           true,
 		},
+		{
+			name:                   "DefaultPool",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			useDefaultPool:         true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			testExecuteAndPublishOperation(t, test)
@@ -529,6 +540,7 @@ type publishTest struct {
 	exitCode                 int32
 	publishMoreMetadata      bool
 	redisRestart             bool
+	useDefaultPool           bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -559,16 +571,20 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	for k, v := range test.platformOverrides {
 		clientCtx = metadata.AppendToOutgoingContext(clientCtx, "x-buildbuddy-platform."+k, v)
 	}
+	platformProperties := []*repb.Platform_Property{
+		{Name: "EstimatedComputeUnits", Value: "2.5"},
+		{Name: "EstimatedFreeDiskBytes", Value: "1000"},
+		{Name: "EstimatedCPU", Value: "1.5"},
+		{Name: "EstimatedMemory", Value: "2000"},
+		{Name: "workload-isolation-type", Value: "oci"},
+	}
+	if !test.useDefaultPool {
+		platformProperties = append(platformProperties, &repb.Platform_Property{Name: "pool", Value: "test-pool"})
+	}
 	arn := uploadAction(clientCtx, t, env, instanceName, digestFunction, &repb.Action{
 		Timeout:    &durationpb.Duration{Seconds: 10},
 		DoNotCache: test.doNotCache,
-		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
-			{Name: "EstimatedComputeUnits", Value: "2.5"},
-			{Name: "EstimatedFreeDiskBytes", Value: "1000"},
-			{Name: "EstimatedCPU", Value: "1.5"},
-			{Name: "EstimatedMemory", Value: "2000"},
-			{Name: "workload-isolation-type", Value: "oci"},
-		}},
+		Platform:   &repb.Platform{Properties: platformProperties},
 	})
 	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
 		InstanceName:   arn.GetInstanceName(),
@@ -619,6 +635,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			SkipCacheLookup: true, // This is only used for writing to clickhouse
 			ExecutionPolicy: &repb.ExecutionPolicy{Priority: 999},
 		}
+		effectivePool := "test-pool"
+		if test.useDefaultPool {
+			effectivePool = "default-pool"
+		}
 		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
 			TaskSize: &scpb.TaskSize{EstimatedFreeDiskBytes: 1001},
 			MeasuredTaskSize: &scpb.TaskSize{
@@ -632,6 +652,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 				EstimatedFreeDiskBytes: 3003,
 			},
 			ExecutorGroupId: executorGroupID,
+			Pool:            effectivePool,
 		}
 		usageStats.Timeline = &repb.UsageTimeline{
 			StartTime: tspb.New(workerStartTime),
@@ -655,8 +676,13 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			Full: &repb.PSI_Metrics{Total: 2030},
 		}
 	} else {
+		effectivePool := "test-pool"
+		if test.useDefaultPool {
+			effectivePool = "default-pool"
+		}
 		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
 			ExecutorGroupId: executorGroupID,
+			Pool:            effectivePool,
 		}
 	}
 	auxAny, err := anypb.New(aux)
@@ -781,6 +807,13 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		QueuedTimestampUsec:          queuedTime.UnixMicro(),
 		WorkerStartTimestampUsec:     workerStartTime.UnixMicro(),
 		WorkerCompletedTimestampUsec: workerEndTime.UnixMicro(),
+	}
+	if test.useDefaultPool {
+		expectedExecution.RequestedPool = ""
+		expectedExecution.EffectivePool = "default-pool"
+	} else {
+		expectedExecution.RequestedPool = "test-pool"
+		expectedExecution.EffectivePool = "test-pool"
 	}
 	if test.publishMoreMetadata {
 		expectedExecution.ExecutionPriority = 999

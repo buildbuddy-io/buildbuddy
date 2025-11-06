@@ -23,8 +23,10 @@ go_library(
         "//server/util/ioutil",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/tracing",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
+        "@io_opentelemetry_go_otel//attribute",
     ],
 )
 
@@ -45,6 +47,7 @@ go_test(
         "//server/environment",
         "//server/interfaces",
         "//server/real_environment",
+        "//server/remote_cache/digest",
         "//server/rpc/interceptors",
         "//server/tables",
         "//server/testutil/mockgcs",

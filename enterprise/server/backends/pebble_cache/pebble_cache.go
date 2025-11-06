@@ -97,7 +97,7 @@ var (
 	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 50, "QPS limit for data version migration")
 
 	// Compression related flags
-	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", 100, "Blobs larger than this will be zstd compressed before written to disk.")
+	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", DefaultMinBytesAutoZstdCompression, "Blobs larger than this will be zstd compressed before written to disk.")
 
 	// Chunking related flags
 	averageChunkSizeBytes = flag.Int("cache.pebble.average_chunk_size_bytes", 0, "Average size of chunks that's stored in the cache. Disabled if 0.")
@@ -114,15 +114,16 @@ var (
 	// Default values for Options
 	// (It is valid for these options to be 0, so we use ptrs to indicate whether they're set.
 	// Their defaults must be vars so we can take their addresses)
-	DefaultAtimeUpdateThreshold     = 10 * time.Minute
-	DefaultAtimeBufferSize          = 100000
-	DefaultNumAtimeUpdateWorkers    = 16
-	DefaultSampleBufferSize         = 8000
-	DefaultSamplesPerBatch          = 10000
-	DefaultSamplerIterRefreshPeriod = 5 * time.Minute
-	DefaultDeleteBufferSize         = 20
-	DefaultNumDeleteWorkers         = 16
-	DefaultMinEvictionAge           = 6 * time.Hour
+	DefaultAtimeUpdateThreshold        = 10 * time.Minute
+	DefaultAtimeBufferSize             = 100000
+	DefaultNumAtimeUpdateWorkers       = 16
+	DefaultSampleBufferSize            = 8000
+	DefaultSamplesPerBatch             = 10000
+	DefaultSamplerIterRefreshPeriod    = 5 * time.Minute
+	DefaultDeleteBufferSize            = 20
+	DefaultNumDeleteWorkers            = 16
+	DefaultMinEvictionAge              = 6 * time.Hour
+	DefaultMinBytesAutoZstdCompression = int64(100)
 
 	DefaultName         = "pebble_cache"
 	DefaultMaxSizeBytes = cache_config.MaxSizeBytes()
@@ -178,7 +179,7 @@ type Options struct {
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
 
-	MinBytesAutoZstdCompression int64
+	MinBytesAutoZstdCompression *int64
 
 	MaxSizeBytes           int64
 	BlockCacheSizeBytes    int64
@@ -346,7 +347,7 @@ func Register(env *real_environment.RealEnv) error {
 		BlockCacheSizeBytes:         *blockCacheSizeBytesFlag,
 		MaxSizeBytes:                cache_config.MaxSizeBytes(),
 		MaxInlineFileSizeBytes:      *maxInlineFileSizeBytesFlag,
-		MinBytesAutoZstdCompression: *minBytesAutoZstdCompression,
+		MinBytesAutoZstdCompression: minBytesAutoZstdCompression,
 		AtimeUpdateThreshold:        atimeUpdateThresholdFlag,
 		AtimeBufferSize:             atimeBufferSizeFlag,
 		NumAtimeUpdateWorkers:       numAtimeUpdateWorkers,
@@ -470,6 +471,9 @@ func SetOptionDefaults(opts *Options) {
 	if opts.GCSTTLDays == nil || *opts.GCSTTLDays == 0 {
 		var ttlInDays int64 = 0
 		opts.GCSTTLDays = &ttlInDays
+	}
+	if opts.MinBytesAutoZstdCompression == nil {
+		opts.MinBytesAutoZstdCompression = &DefaultMinBytesAutoZstdCompression
 	}
 }
 
@@ -667,7 +671,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		accesses:                    make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
 		evictors:                    make([]*partitionEvictor, len(opts.Partitions)),
 		bufferPool:                  bytebufferpool.VariableSize(CompressorBufSizeBytes),
-		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
+		minBytesAutoZstdCompression: *opts.MinBytesAutoZstdCompression,
 		metricsCollector:            mc,
 		includeMetadataSize:         opts.IncludeMetadataSize,
 		minGCSFileSizeBytes:         *opts.MinGCSFileSizeBytes,
@@ -2282,12 +2286,12 @@ func (z *zstdCompressor) Close() error {
 
 func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	if spn.IsRecording() {
 		spn.SetAttributes(
 			attribute.String("digest_hash", r.GetDigest().GetHash()),
 			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
 	}
-	defer spn.End()
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -3313,7 +3317,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 			return nil, err
 		}
 		if !encryptionEnabled {
-			return nil, status.NotFoundErrorf("decryption key not available")
+			return nil, status.NotFoundError("decryption key not available")
 		}
 	}
 

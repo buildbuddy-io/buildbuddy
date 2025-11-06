@@ -1404,53 +1404,55 @@ func TestReadWrite(t *testing.T) {
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
 	for _, testSize := range testSizes {
-		r, buf := testdigest.RandomCASResourceBuf(t, testSize)
-		w, err := mc.Writer(ctx, r)
-		require.NoError(t, err)
+		t.Run(fmt.Sprintf("size=%d", testSize), func(t *testing.T) {
+			r, buf := testdigest.RandomCASResourceBuf(t, testSize)
+			w, err := mc.Writer(ctx, r)
+			require.NoError(t, err)
 
-		_, err = w.Write(buf)
-		require.NoError(t, err)
+			_, err = w.Write(buf)
+			require.NoError(t, err)
 
-		err = w.Commit()
-		require.NoError(t, err)
+			err = w.Commit()
+			require.NoError(t, err)
 
-		err = w.Close()
-		require.NoError(t, err)
+			err = w.Close()
+			require.NoError(t, err)
 
-		reader, err := mc.Reader(ctx, r, 0, 0)
-		require.NoError(t, err)
+			reader, err := mc.Reader(ctx, r, 0, 0)
+			require.NoError(t, err)
 
-		actualBuf := make([]byte, len(buf))
-		n, err := reader.Read(actualBuf)
-		require.NoError(t, err)
-		require.Equal(t, int(testSize), n)
-		require.True(t, bytes.Equal(buf, actualBuf))
+			actualBuf := make([]byte, len(buf))
+			n, err := reader.Read(actualBuf)
+			require.NoError(t, err)
+			require.Equal(t, int(testSize), n)
+			require.True(t, bytes.Equal(buf, actualBuf))
 
-		err = reader.Close()
-		require.NoError(t, err)
+			err = reader.Close()
+			require.NoError(t, err)
 
-		// Verify data was written to both caches
-		srcReader, err := srcCache.Reader(ctx, r, 0, 0)
-		require.NoError(t, err)
+			// Verify data was written to both caches
+			srcReader, err := srcCache.Reader(ctx, r, 0, 0)
+			require.NoError(t, err)
 
-		actualBuf, err = ioutil.ReadAll(srcReader)
-		require.NoError(t, err)
-		require.Equal(t, int(testSize), len(actualBuf))
-		require.True(t, bytes.Equal(buf, actualBuf))
+			actualBuf, err = ioutil.ReadAll(srcReader)
+			require.NoError(t, err)
+			require.Equal(t, int(testSize), len(actualBuf))
+			require.True(t, bytes.Equal(buf, actualBuf))
 
-		err = srcReader.Close()
-		require.NoError(t, err)
+			err = srcReader.Close()
+			require.NoError(t, err)
 
-		destReader, err := destCache.Reader(ctx, r, 0, 0)
-		require.NoError(t, err)
+			destReader, err := destCache.Reader(ctx, r, 0, 0)
+			require.NoError(t, err)
 
-		actualBuf, err = ioutil.ReadAll(destReader)
-		require.NoError(t, err)
-		require.Equal(t, int(testSize), len(actualBuf))
-		require.True(t, bytes.Equal(buf, actualBuf))
+			actualBuf, err = ioutil.ReadAll(destReader)
+			require.NoError(t, err)
+			require.Equal(t, int(testSize), len(actualBuf))
+			require.True(t, bytes.Equal(buf, actualBuf))
 
-		err = destReader.Close()
-		require.NoError(t, err)
+			err = destReader.Close()
+			require.NoError(t, err)
+		})
 	}
 }
 

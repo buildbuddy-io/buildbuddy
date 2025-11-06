@@ -210,7 +210,7 @@ func (s *ExecutionServer) pubSubChannelForExecutionID(executionID string) *pubsu
 	return s.streamPubSub.UnmonitoredChannel(redisKeyForTaskStatusStream(executionID))
 }
 
-func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invocationID string, command *repb.Command, stage repb.ExecutionStage_Value) error {
+func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invocationID string, command *repb.Command, stage repb.ExecutionStage_Value, requestedPool string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -253,6 +253,7 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 		executionProto.TargetLabel = rmd.GetTargetId()
 		executionProto.ActionMnemonic = rmd.GetActionMnemonic()
 		executionProto.OutputPath = primaryOutputPath(command)
+		executionProto.RequestedPool = requestedPool
 		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executionProto); err != nil {
 			log.CtxErrorf(ctx, "Failed to write execution update to redis: %s", err)
 		}
@@ -409,6 +410,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.RequestedMemoryBytes = properties.EstimatedMemoryBytes
 				executionProto.RequestedMilliCpu = properties.EstimatedMilliCPU
 				executionProto.RequestedFreeDiskBytes = properties.EstimatedFreeDiskBytes
+				executionProto.RequestedPool = properties.Pool
 			}
 
 			schedulingMeta := auxMeta.GetSchedulingMetadata()
@@ -420,6 +422,9 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
 			executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
 			executionProto.SelfHosted = schedulingMeta == nil || (schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID())
+			if schedulingMeta != nil {
+				executionProto.EffectivePool = schedulingMeta.GetPool()
+			}
 
 			request := auxMeta.GetExecuteRequest()
 			executionProto.SkipCacheLookup = request.GetSkipCacheLookup()
@@ -718,17 +723,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		rmd.ToolDetails = nil
 	}
 
-	if err := s.insertExecution(ctx, executionID, invocationID, command, repb.ExecutionStage_UNKNOWN); err != nil {
-		return nil, status.UnavailableErrorf("create execution: %s", err)
-	}
-
-	// Don't associate teed requests with the original invocation.
-	if !opts.teedRequest {
-		if err := s.insertInvocationLink(ctx, executionID, invocationID, sipb.StoredInvocationLink_NEW); err != nil {
-			return nil, status.UnavailableErrorf("link execution to invocation: %s", err)
-		}
-	}
-
 	executionTask := &repb.ExecutionTask{
 		ExecuteRequest:  req,
 		InvocationId:    invocationID,
@@ -754,6 +748,17 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	props, err := platform.ParseProperties(executionTask)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := s.insertExecution(ctx, executionID, invocationID, command, repb.ExecutionStage_UNKNOWN, props.Pool); err != nil {
+		return nil, status.UnavailableErrorf("create execution: %s", err)
+	}
+
+	// Don't associate teed requests with the original invocation.
+	if !opts.teedRequest {
+		if err := s.insertInvocationLink(ctx, executionID, invocationID, sipb.StoredInvocationLink_NEW); err != nil {
+			return nil, status.UnavailableErrorf("link execution to invocation: %s", err)
+		}
 	}
 
 	// Check permissions for server admin-only properties.

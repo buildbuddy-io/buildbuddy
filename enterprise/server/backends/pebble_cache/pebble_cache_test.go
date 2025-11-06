@@ -563,6 +563,9 @@ func TestMetadata(t *testing.T) {
 
 	averageChunkSizeBytesParam := []int{0, 64 * 4}
 
+	// Turn off automatic compression
+	minBytesAutoZstdCompression := int64(math.MaxInt64)
+
 	testCases := []struct {
 		name       string
 		cacheType  rspb.CacheType
@@ -598,7 +601,7 @@ func TestMetadata(t *testing.T) {
 			RootDirectory:               testfs.MakeTempDir(t),
 			MaxSizeBytes:                maxSizeBytes,
 			MaxInlineFileSizeBytes:      100,
-			MinBytesAutoZstdCompression: math.MaxInt64, // Turn off automatic compression
+			MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 			AverageChunkSizeBytes:       averageChunkSizeBytes,
 		}
 		pc, err := pebble_cache.NewPebbleCache(te, options)
@@ -1607,7 +1610,7 @@ func TestLRU(t *testing.T) {
 				AtimeUpdateThreshold:        pointer(time.Duration(0)), // update atime on every access
 				AtimeBufferSize:             pointer(0),                // blocking channel of atime updates
 				MinEvictionAge:              pointer(time.Duration(0)), // no min eviction age
-				MinBytesAutoZstdCompression: maxSizeBytes,
+				MinBytesAutoZstdCompression: &maxSizeBytes,
 				MaxInlineFileSizeBytes:      tc.maxInlineFileSizeBytes,
 				AverageChunkSizeBytes:       tc.averageChunkSizeBytes,
 				ActiveKeyVersion:            pointer(int64(5)),
@@ -3196,6 +3199,9 @@ func dirSizeFiles(path string) (int64, error) {
 }
 
 func TestCacheStaysBelowConfiguredSize(t *testing.T) {
+	// minBytesAutoZstdCompression setting so that we don't compress anything.
+	minBytesAutoZstdCompression := int64(math.MaxInt64)
+
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
@@ -3217,7 +3223,7 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 				MinEvictionAge:              pointer(time.Duration(0)),
 				AtimeUpdateThreshold:        pointer(time.Duration(0)),
 				AtimeBufferSize:             pointer(0),
-				MinBytesAutoZstdCompression: math.MaxInt64, // don't compress anything.
+				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 			},
 		},
 		{
@@ -3228,8 +3234,8 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 				MinEvictionAge:              pointer(time.Duration(0)),
 				AtimeUpdateThreshold:        pointer(time.Duration(0)),
 				AtimeBufferSize:             pointer(0),
-				MinBytesAutoZstdCompression: math.MaxInt64, // don't compress anything.
-				MaxInlineFileSizeBytes:      -1,            // don't inline anything.
+				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
+				MaxInlineFileSizeBytes:      -1, // don't inline anything.
 			},
 		},
 		{
@@ -3240,7 +3246,7 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 				MinEvictionAge:              pointer(time.Duration(0)),
 				AtimeUpdateThreshold:        pointer(time.Duration(0)),
 				AtimeBufferSize:             pointer(0),
-				MinBytesAutoZstdCompression: math.MaxInt64, // don't compress anything.
+				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 				IncludeMetadataSize:         true,
 			},
 		},
@@ -3252,7 +3258,7 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 				MinEvictionAge:              pointer(time.Duration(0)),
 				AtimeUpdateThreshold:        pointer(time.Duration(0)),
 				AtimeBufferSize:             pointer(0),
-				MinBytesAutoZstdCompression: math.MaxInt64, // don't compress anything.
+				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 				IncludeMetadataSize:         true,
 
 				Clock:                  clock,
