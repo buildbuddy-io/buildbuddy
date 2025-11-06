@@ -142,6 +142,12 @@ func probeCAS(ctx context.Context, casClient repb.ContentAddressableStorageClien
 	}
 	log.Infof("[CAS] Generated %d test blobs", numBlobs)
 
+	// Build map of digest hash -> original payload for verification
+	expectedBlobs := make(map[string][]byte, numBlobs)
+	for i, digest := range digests {
+		expectedBlobs[digest.GetHash()] = blobs[i]
+	}
+
 	// Test FindMissingBlobs (should report all as missing initially)
 	log.Infof("[CAS] Checking for missing blobs...")
 	findReq := &repb.FindMissingBlobsRequest{
@@ -211,13 +217,19 @@ func probeCAS(ctx context.Context, casClient repb.ContentAddressableStorageClien
 		return status.DataLossError(fmt.Sprintf("expected %d responses, got %d", numBlobs, len(batchReadResp)))
 	}
 
-	// Verify data integrity for each blob
-	for i, resp := range batchReadResp {
+	// Verify data integrity for each blob using digest hash as key
+	for _, resp := range batchReadResp {
 		if resp.Err != nil {
 			return status.UnknownErrorf("blob download failed: %s", resp.Err)
 		}
-		if !bytes.Equal(resp.Data, blobs[i]) {
-			return status.DataLossError(fmt.Sprintf("blob %d data mismatch", i))
+
+		expectedData, ok := expectedBlobs[resp.Digest.GetHash()]
+		if !ok {
+			return status.DataLossError(fmt.Sprintf("unexpected blob with hash %s", resp.Digest.GetHash()))
+		}
+
+		if !bytes.Equal(resp.Data, expectedData) {
+			return status.DataLossError(fmt.Sprintf("blob %s data mismatch", resp.Digest.GetHash()))
 		}
 	}
 	log.Infof("[CAS] Downloaded and verified %d blobs successfully", numBlobs)
