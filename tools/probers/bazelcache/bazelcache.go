@@ -6,10 +6,8 @@ import (
 	"bytes"
 	"context"
 	"flag"
-	"io"
+	"fmt"
 	"os"
-	"reflect"
-	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -38,7 +36,47 @@ var (
 	casClient repb.ContentAddressableStorageClient
 )
 
-func TestByteStream(t *testing.T) {
+// testRunner implements the minimal interface needed for require assertions
+type testRunner struct {
+	name   string
+	failed bool
+}
+
+func (t *testRunner) Errorf(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "FAIL: %s: "+format+"\n", append([]interface{}{t.name}, args...)...)
+	t.failed = true
+}
+
+func (t *testRunner) FailNow() {
+	t.failed = true
+	panic("test failed")
+}
+
+func (t *testRunner) Helper() {}
+
+func (t *testRunner) Logf(format string, args ...interface{}) {
+	fmt.Printf("%s: "+format+"\n", append([]interface{}{t.name}, args...)...)
+}
+
+func (t *testRunner) Run(name string, f func(t *testRunner)) bool {
+	subtest := &testRunner{name: t.name + "/" + name}
+	defer func() {
+		if r := recover(); r != nil {
+			if subtest.failed {
+				t.failed = true
+			} else {
+				panic(r)
+			}
+		}
+	}()
+	f(subtest)
+	if subtest.failed {
+		t.failed = true
+	}
+	return !subtest.failed
+}
+
+func TestByteStream(t *testRunner) {
 	digestGenerator := digest.RandomGenerator(time.Now().UnixNano())
 	d, buf, err := digestGenerator.RandomDigestBuf(*blobSize)
 	require.NoError(t, err, "failed to generate random data")
@@ -52,12 +90,12 @@ func TestByteStream(t *testing.T) {
 	}
 
 	for _, scenario := range scenarios {
-		t.Run(scenario.name, func(t *testing.T) {
+		t.Run(scenario.name, func(t *testRunner) {
 			resourceName := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256)
 			resourceName.SetCompressor(scenario.compressor)
 
 			reader := bytes.NewReader(buf)
-			_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, resourceName, reader)
+			_, _, err := cachetools.UploadFromReader(ctx, bsClient, resourceName, reader)
 			require.NoError(t, err, "failed to upload blob")
 
 			var downloadBuf bytes.Buffer
@@ -69,7 +107,7 @@ func TestByteStream(t *testing.T) {
 	}
 }
 
-func TestActionCache(t *testing.T) {
+func TestActionCache(t *testRunner) {
 	digestGenerator := digest.RandomGenerator(time.Now().UnixNano())
 	actionDigest, _, err := digestGenerator.RandomDigestBuf(100)
 	require.NoError(t, err, "failed to generate random digest")
@@ -102,7 +140,7 @@ func TestActionCache(t *testing.T) {
 	require.Equal(t, actionResult.GetStderrRaw(), retrievedResult.GetStderrRaw(), "stderr mismatch")
 }
 
-func TestCAS(t *testing.T) {
+func TestCAS(t *testRunner) {
 	digestGenerator := digest.RandomGenerator(time.Now().UnixNano())
 	numBlobs := 3
 
@@ -115,7 +153,7 @@ func TestCAS(t *testing.T) {
 	}
 
 	for _, scenario := range scenarios {
-		t.Run(scenario.name, func(t *testing.T) {
+		t.Run(scenario.name, func(t *testRunner) {
 			var digests []*repb.Digest
 			var blobs [][]byte
 			for i := 0; i < numBlobs; i++ {
@@ -137,6 +175,7 @@ func TestCAS(t *testing.T) {
 			}
 			findResp, err := casClient.FindMissingBlobs(ctx, findReq)
 			require.NoError(t, err, "failed to find missing blobs")
+			_ = findResp // Used later
 
 			var requests []*repb.BatchUpdateBlobsRequest_Request
 			for i, d := range digests {
@@ -195,11 +234,14 @@ func TestCAS(t *testing.T) {
 	}
 }
 
-func TestMain(m *testing.M) {
+func main() {
+	flag.Parse()
+
 	if *cacheTarget == "" {
 		log.Fatalf("--cache_target is required")
 	}
 
+	// Setup connection and clients
 	log.Infof("Connecting to cache at %s", *cacheTarget)
 	var err error
 	conn, err = grpc_client.DialSimple(*cacheTarget)
@@ -217,51 +259,38 @@ func TestMain(m *testing.M) {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
 
-	os.Exit(m.Run())
-}
+	// Run tests
+	tests := []struct {
+		name string
+		fn   func(*testRunner)
+	}{
+		{"TestByteStream", TestByteStream},
+		{"TestActionCache", TestActionCache},
+		{"TestCAS", TestCAS},
+	}
 
-func main() {
-	flag.Parse()
+	failed := false
+	for _, test := range tests {
+		t := &testRunner{name: test.name}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					if !t.failed {
+						panic(r)
+					}
+				}
+			}()
+			test.fn(t)
+		}()
+		if t.failed {
+			failed = true
+		} else {
+			log.Infof("PASS: %s", test.name)
+		}
+	}
 
-	m := testing.MainStart(&testDeps{}, []testing.InternalTest{
-		{Name: "TestByteStream", F: TestByteStream},
-		{Name: "TestActionCache", F: TestActionCache},
-		{Name: "TestCAS", F: TestCAS},
-	}, nil, nil, nil)
-
-	TestMain(m)
-}
-
-// testDeps implements testing.testDeps interface
-type testDeps struct{}
-
-func (testDeps) MatchString(pat, str string) (bool, error)       { return true, nil }
-func (testDeps) StartCPUProfile(w io.Writer) error               { return nil }
-func (testDeps) StopCPUProfile()                                 {}
-func (testDeps) WriteProfileTo(string, io.Writer, int) error     { return nil }
-func (testDeps) ImportPath() string                              { return "" }
-func (testDeps) StartTestLog(io.Writer)                          {}
-func (testDeps) StopTestLog() error                              { return nil }
-func (testDeps) SetPanicOnExit0(bool)                            {}
-func (testDeps) CheckCorpus([]any, []reflect.Type) error         { return nil }
-func (testDeps) ResetCoverage()                                  {}
-func (testDeps) SnapshotCoverage()                               {}
-func (testDeps) InitRuntimeCoverage() (mode string, tearDown func(string, string) (string, error), snapcov func() float64) {
-	return
-}
-func (testDeps) CoordinateFuzzing(time.Duration, int64, time.Duration, int64, int, []corpusEntry, []reflect.Type, string, string) error {
-	return nil
-}
-func (testDeps) RunFuzzWorker(func(corpusEntry) error) error { return nil }
-func (testDeps) ReadCorpus(string, []reflect.Type) ([]corpusEntry, error) {
-	return nil, nil
-}
-
-type corpusEntry = struct {
-	Parent     string
-	Path       string
-	Data       []byte
-	Values     []any
-	Generation int
-	IsSeed     bool
+	if failed {
+		os.Exit(1)
+	}
+	log.Infof("All tests passed")
 }
