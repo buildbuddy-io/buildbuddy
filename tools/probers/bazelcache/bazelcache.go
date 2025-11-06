@@ -56,19 +56,15 @@ func TestByteStream(t *testing.T) {
 			resourceName := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256)
 			resourceName.SetCompressor(scenario.compressor)
 
-			t.Logf("Uploading %d bytes (digest: %s/%d)", len(buf), d.GetHash(), d.GetSizeBytes())
 			reader := bytes.NewReader(buf)
 			_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, resourceName, reader)
 			require.NoError(t, err, "failed to upload blob")
-			t.Logf("Upload successful: %d bytes", bytesUploaded)
 
-			t.Logf("Downloading blob...")
 			var downloadBuf bytes.Buffer
 			err = cachetools.GetBlob(ctx, bsClient, resourceName, &downloadBuf)
 			require.NoError(t, err, "failed to download blob")
 
 			require.Equal(t, buf, downloadBuf.Bytes(), "downloaded data doesn't match uploaded data")
-			t.Logf("Download successful and verified: %d bytes", downloadBuf.Len())
 		})
 	}
 }
@@ -84,7 +80,6 @@ func TestActionCache(t *testing.T) {
 		StderrRaw: []byte("test stderr"),
 	}
 
-	t.Logf("Storing ActionResult (action digest: %s/%d)", actionDigest.GetHash(), actionDigest.GetSizeBytes())
 	updateReq := &repb.UpdateActionResultRequest{
 		InstanceName:   *instanceName,
 		ActionDigest:   actionDigest,
@@ -93,9 +88,7 @@ func TestActionCache(t *testing.T) {
 	}
 	_, err = acClient.UpdateActionResult(ctx, updateReq)
 	require.NoError(t, err, "failed to update action result")
-	t.Logf("ActionResult stored successfully")
 
-	t.Logf("Retrieving ActionResult...")
 	getReq := &repb.GetActionResultRequest{
 		ActionDigest:   actionDigest,
 		InstanceName:   *instanceName,
@@ -107,7 +100,6 @@ func TestActionCache(t *testing.T) {
 	require.Equal(t, actionResult.GetExitCode(), retrievedResult.GetExitCode(), "exit code mismatch")
 	require.Equal(t, actionResult.GetStdoutRaw(), retrievedResult.GetStdoutRaw(), "stdout mismatch")
 	require.Equal(t, actionResult.GetStderrRaw(), retrievedResult.GetStderrRaw(), "stderr mismatch")
-	t.Logf("ActionResult retrieved and verified successfully")
 }
 
 func TestCAS(t *testing.T) {
@@ -124,7 +116,6 @@ func TestCAS(t *testing.T) {
 
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
-			// Generate test blobs
 			var digests []*repb.Digest
 			var blobs [][]byte
 			for i := 0; i < numBlobs; i++ {
@@ -133,16 +124,12 @@ func TestCAS(t *testing.T) {
 				digests = append(digests, d)
 				blobs = append(blobs, buf)
 			}
-			t.Logf("Generated %d test blobs", numBlobs)
 
-			// Build map for verification
 			expectedBlobs := make(map[string][]byte, numBlobs)
 			for i, d := range digests {
 				expectedBlobs[d.GetHash()] = blobs[i]
 			}
 
-			// Test FindMissingBlobs
-			t.Logf("Checking for missing blobs...")
 			findReq := &repb.FindMissingBlobsRequest{
 				InstanceName:   *instanceName,
 				DigestFunction: repb.DigestFunction_SHA256,
@@ -150,9 +137,7 @@ func TestCAS(t *testing.T) {
 			}
 			findResp, err := casClient.FindMissingBlobs(ctx, findReq)
 			require.NoError(t, err, "failed to find missing blobs")
-			t.Logf("Missing blobs before upload: %d", len(findResp.GetMissingBlobDigests()))
 
-			// Prepare batch upload requests
 			var requests []*repb.BatchUpdateBlobsRequest_Request
 			for i, d := range digests {
 				data := blobs[i]
@@ -166,8 +151,6 @@ func TestCAS(t *testing.T) {
 				})
 			}
 
-			// Upload using BatchUpdateBlobs
-			t.Logf("Uploading blobs via BatchUpdateBlobs...")
 			batchUpdateReq := &repb.BatchUpdateBlobsRequest{
 				InstanceName:   *instanceName,
 				DigestFunction: repb.DigestFunction_SHA256,
@@ -176,21 +159,14 @@ func TestCAS(t *testing.T) {
 			batchUpdateResp, err := casClient.BatchUpdateBlobs(ctx, batchUpdateReq)
 			require.NoError(t, err, "failed to batch update blobs")
 
-			// Check all uploads succeeded
 			for _, resp := range batchUpdateResp.GetResponses() {
 				require.Equal(t, int32(0), resp.GetStatus().GetCode(), "blob upload failed: %s", resp.GetStatus().GetMessage())
 			}
-			t.Logf("Uploaded %d blobs successfully", len(batchUpdateResp.GetResponses()))
 
-			// Verify upload with FindMissingBlobs
-			t.Logf("Verifying blobs are no longer missing...")
 			findResp, err = casClient.FindMissingBlobs(ctx, findReq)
 			require.NoError(t, err, "failed to find missing blobs after upload")
 			require.Equal(t, 0, len(findResp.GetMissingBlobDigests()), "expected 0 missing blobs after upload")
-			t.Logf("All blobs present after upload")
 
-			// Download using BatchReadBlobs
-			t.Logf("Downloading blobs via BatchReadBlobs...")
 			batchReadReq := &repb.BatchReadBlobsRequest{
 				InstanceName:   *instanceName,
 				DigestFunction: repb.DigestFunction_SHA256,
@@ -215,7 +191,6 @@ func TestCAS(t *testing.T) {
 				require.True(t, ok, "unexpected blob with hash %s", resp.Digest.GetHash())
 				require.Equal(t, expectedData, resp.Data, "blob %s data mismatch", resp.Digest.GetHash())
 			}
-			t.Logf("Downloaded and verified %d blobs successfully", numBlobs)
 		})
 	}
 }
