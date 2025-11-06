@@ -35,10 +35,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.78.2
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.19
 	github.com/aws/smithy-go v1.22.3
-	github.com/bazelbuild/bazel-gazelle v0.45.0
+	github.com/bazelbuild/bazel-gazelle v0.46.0
 	github.com/bazelbuild/bazelisk v1.25.1-0.20250219134847-cdb99bfb1b7d
-	github.com/bazelbuild/buildtools v0.0.0-20250826111327-4006b543a694
-	github.com/bazelbuild/rules_go v0.58.2
+	github.com/bazelbuild/buildtools v0.0.0-20250930140053-2eb4fccefb52
+	github.com/bazelbuild/rules_go v0.58.3
 	github.com/bazelbuild/rules_webtesting v0.2.1-0.20250212231324-7a1c88f61e35
 	github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
@@ -220,7 +220,7 @@ require (
 	github.com/bgentry/go-netrc v0.0.0-20140422174119-9fd32a8b3d3d // indirect
 	github.com/bits-and-blooms/bitset v1.14.3 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
-	github.com/bmatcuk/doublestar/v4 v4.7.1 // indirect
+	github.com/bmatcuk/doublestar/v4 v4.9.1 // indirect
 	github.com/bufbuild/protocompile v0.5.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/chzyer/readline v1.5.1 // indirect
