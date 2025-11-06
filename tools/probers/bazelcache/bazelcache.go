@@ -28,8 +28,6 @@ var (
 	blobSize     = flag.Int64("blob_size", 100_000, "Size of test blobs in bytes")
 )
 
-// Helper functions
-
 func verifyBlobIntegrity(downloaded, expected []byte) error {
 	if !bytes.Equal(downloaded, expected) {
 		return status.DataLossError("downloaded data doesn't match uploaded data")
@@ -64,14 +62,12 @@ func generateTestBlobs(gen *digest.Generator, count int, size int64) ([]*repb.Di
 func probeByteStream(ctx context.Context, bsClient bspb.ByteStreamClient) error {
 	log.Infof("[ByteStream] Starting probe...")
 
-	// Generate random test data once
 	digestGenerator := digest.RandomGenerator(time.Now().UnixNano())
 	d, buf, err := digestGenerator.RandomDigestBuf(*blobSize)
 	if err != nil {
 		return status.UnknownErrorf("failed to generate random data: %s", err)
 	}
 
-	// Test scenarios
 	scenarios := []struct {
 		name       string
 		compressor repb.Compressor_Value
@@ -83,13 +79,9 @@ func probeByteStream(ctx context.Context, bsClient bspb.ByteStreamClient) error 
 	for _, scenario := range scenarios {
 		log.Infof("[ByteStream] Testing %s...", scenario.name)
 
-		// Create resource name with appropriate compressor
 		resourceName := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256)
-		if scenario.compressor != repb.Compressor_IDENTITY {
-			resourceName.SetCompressor(scenario.compressor)
-		}
+		resourceName.SetCompressor(scenario.compressor)
 
-		// Upload
 		log.Infof("[ByteStream] Uploading %d bytes (digest: %s/%d)", len(buf), d.GetHash(), d.GetSizeBytes())
 		reader := bytes.NewReader(buf)
 		_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, resourceName, reader)
@@ -98,15 +90,12 @@ func probeByteStream(ctx context.Context, bsClient bspb.ByteStreamClient) error 
 		}
 		log.Infof("[ByteStream] Upload successful: %d bytes", bytesUploaded)
 
-		// Download
 		log.Infof("[ByteStream] Downloading blob...")
 		var downloadBuf bytes.Buffer
-		err = cachetools.GetBlob(ctx, bsClient, resourceName, &downloadBuf)
-		if err != nil {
+		if err := cachetools.GetBlob(ctx, bsClient, resourceName, &downloadBuf); err != nil {
 			return status.UnknownErrorf("failed to download %s blob: %s", scenario.name, err)
 		}
 
-		// Verify data integrity (cachetools.GetBlob auto-decompresses)
 		if err := verifyBlobIntegrity(downloadBuf.Bytes(), buf); err != nil {
 			return status.UnknownErrorf("%s: %s", scenario.name, err)
 		}
@@ -119,21 +108,18 @@ func probeByteStream(ctx context.Context, bsClient bspb.ByteStreamClient) error 
 func probeActionCache(ctx context.Context, acClient repb.ActionCacheClient) error {
 	log.Infof("[ActionCache] Starting probe...")
 
-	// Generate a random action digest
 	digestGenerator := digest.RandomGenerator(time.Now().UnixNano())
 	actionDigest, _, err := digestGenerator.RandomDigestBuf(100)
 	if err != nil {
 		return status.UnknownErrorf("failed to generate random digest: %s", err)
 	}
 
-	// Create a simple ActionResult
 	actionResult := &repb.ActionResult{
 		ExitCode:  0,
 		StdoutRaw: []byte("test stdout"),
 		StderrRaw: []byte("test stderr"),
 	}
 
-	// Store ActionResult
 	log.Infof("[ActionCache] Storing ActionResult (action digest: %s/%d)", actionDigest.GetHash(), actionDigest.GetSizeBytes())
 	updateReq := &repb.UpdateActionResultRequest{
 		InstanceName:   *instanceName,
@@ -147,7 +133,6 @@ func probeActionCache(ctx context.Context, acClient repb.ActionCacheClient) erro
 	}
 	log.Infof("[ActionCache] ActionResult stored successfully")
 
-	// Retrieve ActionResult
 	log.Infof("[ActionCache] Retrieving ActionResult...")
 	getReq := &repb.GetActionResultRequest{
 		ActionDigest:   actionDigest,
@@ -159,7 +144,6 @@ func probeActionCache(ctx context.Context, acClient repb.ActionCacheClient) erro
 		return status.UnknownErrorf("failed to get action result: %s", err)
 	}
 
-	// Verify the retrieved result
 	if retrievedResult.GetExitCode() != actionResult.GetExitCode() {
 		return status.DataLossError("exit code mismatch")
 	}
@@ -180,20 +164,17 @@ func testCASBatchOperations(ctx context.Context, casClient repb.ContentAddressab
 		compressorName = compressor.String()
 	}
 
-	// Generate test blobs
 	digests, blobs, err := generateTestBlobs(gen, numBlobs, 1024)
 	if err != nil {
 		return err
 	}
 	log.Infof("[CAS] Generated %d test blobs for %s test", numBlobs, compressorName)
 
-	// Build map of digest hash -> original payload for verification
 	expectedBlobs := make(map[string][]byte, numBlobs)
 	for i, d := range digests {
 		expectedBlobs[d.GetHash()] = blobs[i]
 	}
 
-	// Test FindMissingBlobs (should report all as missing initially)
 	log.Infof("[CAS] Checking for missing blobs (%s)...", compressorName)
 	findReq := &repb.FindMissingBlobsRequest{
 		InstanceName:   *instanceName,
@@ -206,7 +187,6 @@ func testCASBatchOperations(ctx context.Context, casClient repb.ContentAddressab
 	}
 	log.Infof("[CAS] Missing blobs before upload: %d", len(findResp.GetMissingBlobDigests()))
 
-	// Prepare batch upload requests
 	var requests []*repb.BatchUpdateBlobsRequest_Request
 	for i, d := range digests {
 		data := blobs[i]
@@ -220,7 +200,6 @@ func testCASBatchOperations(ctx context.Context, casClient repb.ContentAddressab
 		})
 	}
 
-	// Upload using BatchUpdateBlobs
 	log.Infof("[CAS] Uploading blobs via BatchUpdateBlobs (%s)...", compressorName)
 	batchUpdateReq := &repb.BatchUpdateBlobsRequest{
 		InstanceName:   *instanceName,
@@ -272,7 +251,6 @@ func testCASBatchOperations(ctx context.Context, casClient repb.ContentAddressab
 		return status.DataLossError(fmt.Sprintf("expected %d responses, got %d", numBlobs, len(batchReadResp)))
 	}
 
-	// Verify data integrity for each blob using digest hash as key
 	for _, resp := range batchReadResp {
 		if resp.Err != nil {
 			return status.UnknownErrorf("blob download failed: %s", resp.Err)
@@ -298,12 +276,10 @@ func probeCAS(ctx context.Context, casClient repb.ContentAddressableStorageClien
 	digestGenerator := digest.RandomGenerator(time.Now().UnixNano())
 	numBlobs := 3
 
-	// Test uncompressed batch operations
 	if err := testCASBatchOperations(ctx, casClient, digestGenerator, numBlobs, repb.Compressor_IDENTITY); err != nil {
 		return err
 	}
 
-	// Test with zstd compression
 	log.Infof("[CAS] Testing with zstd compression...")
 	if err := testCASBatchOperations(ctx, casClient, digestGenerator, numBlobs, repb.Compressor_ZSTD); err != nil {
 		return err
@@ -317,7 +293,6 @@ func runProbe() error {
 		return status.InvalidArgumentError("--cache_target is required")
 	}
 
-	// Connect to cache
 	log.Infof("Connecting to cache at %s", *cacheTarget)
 	conn, err := grpc_client.DialSimple(*cacheTarget)
 	if err != nil {
@@ -325,18 +300,15 @@ func runProbe() error {
 	}
 	defer conn.Close()
 
-	// Create clients
 	bsClient := bspb.NewByteStreamClient(conn)
 	acClient := repb.NewActionCacheClient(conn)
 	casClient := repb.NewContentAddressableStorageClient(conn)
 
-	// Setup context with API key if provided
 	ctx := context.Background()
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
 
-	// Run probes
 	if err := probeByteStream(ctx, bsClient); err != nil {
 		return err
 	}
@@ -356,8 +328,7 @@ func runProbe() error {
 func main() {
 	flag.Parse()
 
-	err := runProbe()
-	if err != nil {
+	if err := runProbe(); err != nil {
 		log.Fatalf("Probe failed: %s", err)
 	}
 }
