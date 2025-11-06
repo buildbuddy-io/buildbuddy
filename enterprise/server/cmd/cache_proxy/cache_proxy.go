@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_service"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
@@ -40,12 +41,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/grpc"
 
+	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -214,9 +217,22 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 
 	// Start and register internal servers first because the external proxy
 	// services rely on the internal servers.
-	if err := registerInternalServices(env); err != nil {
+	internalServer, err := grpc_server.New(env, grpc_server.InternalGRPCPort(), false, grpcServerConfig)
+	if err != nil {
 		return err
 	}
+	if err := registerInternalServices(env, internalServer.GetServer()); err != nil {
+		return err
+	}
+	if err := internalServer.Start(); err != nil {
+		return err
+	}
+
+	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.InternalGRPCPort()))
+	if err != nil {
+		return status.InternalErrorf("CacheProxy: error starting local bytestream gRPC server: %s", err.Error())
+	}
+	env.SetLocalByteStreamClient(bspb.NewByteStreamClient(conn))
 
 	s, err := grpc_server.New(env, grpc_server.GRPCPort(), false, grpcServerConfig)
 	if err != nil {
@@ -313,19 +329,28 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	if err := content_addressable_storage_server_proxy.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
+	if err := scratchspace.Init(); err != nil {
+		log.Fatalf("Failed to initialize temp storage directory: %s", err)
+	}
+	if err := fetch_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+
 	repb.RegisterActionCacheServer(grpcServer, env.GetActionCacheServer())
 	bspb.RegisterByteStreamServer(grpcServer, env.GetByteStreamServer())
 	repb.RegisterContentAddressableStorageServer(grpcServer, env.GetCASServer())
 	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
+	rapb.RegisterFetchServer(grpcServer, env.GetFetchServer())
 	log.Infof("Cache proxy proxying requests to %s", *remoteCache)
 }
 
-func registerInternalServices(env *real_environment.RealEnv) error {
+func registerInternalServices(env *real_environment.RealEnv, grpcServer *grpc.Server) error {
 	localBSS, err := byte_stream_server.NewByteStreamServer(env)
 	if err != nil {
 		return status.InternalErrorf("CacheProxy: error starting local bytestream server: %s", err.Error())
 	}
 	env.SetLocalByteStreamServer(localBSS)
+	bspb.RegisterByteStreamServer(grpcServer, localBSS)
 
 	localCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	if err != nil {
