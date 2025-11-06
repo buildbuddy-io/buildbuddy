@@ -6,7 +6,10 @@ import (
 	"bytes"
 	"context"
 	"flag"
-	"fmt"
+	"io"
+	"os"
+	"reflect"
+	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -14,7 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -26,93 +29,54 @@ var (
 	instanceName = flag.String("instance_name", "", "Remote instance name")
 	apiKey       = flag.String("api_key", "", "API key for authentication")
 	blobSize     = flag.Int64("blob_size", 100_000, "Size of test blobs in bytes")
+
+	// Test infrastructure
+	conn      *grpc_client.ClientConnPool
+	ctx       context.Context
+	bsClient  bspb.ByteStreamClient
+	acClient  repb.ActionCacheClient
+	casClient repb.ContentAddressableStorageClient
 )
 
-func verifyBlobIntegrity(downloaded, expected []byte) error {
-	if !bytes.Equal(downloaded, expected) {
-		return status.DataLossError("downloaded data doesn't match uploaded data")
-	}
-	return nil
-}
-
-func verifyBatchUploadSuccess(responses []*repb.BatchUpdateBlobsResponse_Response) error {
-	for _, resp := range responses {
-		if resp.GetStatus().GetCode() != 0 {
-			return status.UnknownErrorf("blob upload failed: %s", resp.GetStatus().GetMessage())
-		}
-	}
-	return nil
-}
-
-func generateTestBlobs(gen *digest.Generator, count int, size int64) ([]*repb.Digest, [][]byte, error) {
-	var digests []*repb.Digest
-	var blobs [][]byte
-
-	for i := 0; i < count; i++ {
-		d, buf, err := gen.RandomDigestBuf(size)
-		if err != nil {
-			return nil, nil, status.UnknownErrorf("failed to generate random data: %s", err)
-		}
-		digests = append(digests, d)
-		blobs = append(blobs, buf)
-	}
-	return digests, blobs, nil
-}
-
-func probeByteStream(ctx context.Context, bsClient bspb.ByteStreamClient) error {
-	log.Infof("[ByteStream] Starting probe...")
-
+func TestByteStream(t *testing.T) {
 	digestGenerator := digest.RandomGenerator(time.Now().UnixNano())
 	d, buf, err := digestGenerator.RandomDigestBuf(*blobSize)
-	if err != nil {
-		return status.UnknownErrorf("failed to generate random data: %s", err)
-	}
+	require.NoError(t, err, "failed to generate random data")
 
 	scenarios := []struct {
 		name       string
 		compressor repb.Compressor_Value
 	}{
 		{"uncompressed", repb.Compressor_IDENTITY},
-		{"zstd compressed", repb.Compressor_ZSTD},
+		{"zstd", repb.Compressor_ZSTD},
 	}
 
 	for _, scenario := range scenarios {
-		log.Infof("[ByteStream] Testing %s...", scenario.name)
+		t.Run(scenario.name, func(t *testing.T) {
+			resourceName := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256)
+			resourceName.SetCompressor(scenario.compressor)
 
-		resourceName := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256)
-		resourceName.SetCompressor(scenario.compressor)
+			t.Logf("Uploading %d bytes (digest: %s/%d)", len(buf), d.GetHash(), d.GetSizeBytes())
+			reader := bytes.NewReader(buf)
+			_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, resourceName, reader)
+			require.NoError(t, err, "failed to upload blob")
+			t.Logf("Upload successful: %d bytes", bytesUploaded)
 
-		log.Infof("[ByteStream] Uploading %d bytes (digest: %s/%d)", len(buf), d.GetHash(), d.GetSizeBytes())
-		reader := bytes.NewReader(buf)
-		_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, resourceName, reader)
-		if err != nil {
-			return status.UnknownErrorf("failed to upload %s blob: %s", scenario.name, err)
-		}
-		log.Infof("[ByteStream] Upload successful: %d bytes", bytesUploaded)
+			t.Logf("Downloading blob...")
+			var downloadBuf bytes.Buffer
+			err = cachetools.GetBlob(ctx, bsClient, resourceName, &downloadBuf)
+			require.NoError(t, err, "failed to download blob")
 
-		log.Infof("[ByteStream] Downloading blob...")
-		var downloadBuf bytes.Buffer
-		if err := cachetools.GetBlob(ctx, bsClient, resourceName, &downloadBuf); err != nil {
-			return status.UnknownErrorf("failed to download %s blob: %s", scenario.name, err)
-		}
-
-		if err := verifyBlobIntegrity(downloadBuf.Bytes(), buf); err != nil {
-			return status.UnknownErrorf("%s: %s", scenario.name, err)
-		}
-		log.Infof("[ByteStream] Download successful and verified: %d bytes", downloadBuf.Len())
+			require.Equal(t, buf, downloadBuf.Bytes(), "downloaded data doesn't match uploaded data")
+			t.Logf("Download successful and verified: %d bytes", downloadBuf.Len())
+		})
 	}
-
-	return nil
 }
 
-func probeActionCache(ctx context.Context, acClient repb.ActionCacheClient) error {
-	log.Infof("[ActionCache] Starting probe...")
-
+func TestActionCache(t *testing.T) {
 	digestGenerator := digest.RandomGenerator(time.Now().UnixNano())
 	actionDigest, _, err := digestGenerator.RandomDigestBuf(100)
-	if err != nil {
-		return status.UnknownErrorf("failed to generate random digest: %s", err)
-	}
+	require.NoError(t, err, "failed to generate random digest")
 
 	actionResult := &repb.ActionResult{
 		ExitCode:  0,
@@ -120,7 +84,7 @@ func probeActionCache(ctx context.Context, acClient repb.ActionCacheClient) erro
 		StderrRaw: []byte("test stderr"),
 	}
 
-	log.Infof("[ActionCache] Storing ActionResult (action digest: %s/%d)", actionDigest.GetHash(), actionDigest.GetSizeBytes())
+	t.Logf("Storing ActionResult (action digest: %s/%d)", actionDigest.GetHash(), actionDigest.GetSizeBytes())
 	updateReq := &repb.UpdateActionResultRequest{
 		InstanceName:   *instanceName,
 		ActionDigest:   actionDigest,
@@ -128,207 +92,201 @@ func probeActionCache(ctx context.Context, acClient repb.ActionCacheClient) erro
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
 	_, err = acClient.UpdateActionResult(ctx, updateReq)
-	if err != nil {
-		return status.UnknownErrorf("failed to update action result: %s", err)
-	}
-	log.Infof("[ActionCache] ActionResult stored successfully")
+	require.NoError(t, err, "failed to update action result")
+	t.Logf("ActionResult stored successfully")
 
-	log.Infof("[ActionCache] Retrieving ActionResult...")
+	t.Logf("Retrieving ActionResult...")
 	getReq := &repb.GetActionResultRequest{
 		ActionDigest:   actionDigest,
 		InstanceName:   *instanceName,
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
 	retrievedResult, err := acClient.GetActionResult(ctx, getReq)
-	if err != nil {
-		return status.UnknownErrorf("failed to get action result: %s", err)
-	}
+	require.NoError(t, err, "failed to get action result")
 
-	if retrievedResult.GetExitCode() != actionResult.GetExitCode() {
-		return status.DataLossError("exit code mismatch")
-	}
-	if !bytes.Equal(retrievedResult.GetStdoutRaw(), actionResult.GetStdoutRaw()) {
-		return status.DataLossError("stdout mismatch")
-	}
-	if !bytes.Equal(retrievedResult.GetStderrRaw(), actionResult.GetStderrRaw()) {
-		return status.DataLossError("stderr mismatch")
-	}
-	log.Infof("[ActionCache] ActionResult retrieved and verified successfully")
-
-	return nil
+	require.Equal(t, actionResult.GetExitCode(), retrievedResult.GetExitCode(), "exit code mismatch")
+	require.Equal(t, actionResult.GetStdoutRaw(), retrievedResult.GetStdoutRaw(), "stdout mismatch")
+	require.Equal(t, actionResult.GetStderrRaw(), retrievedResult.GetStderrRaw(), "stderr mismatch")
+	t.Logf("ActionResult retrieved and verified successfully")
 }
 
-func testCASBatchOperations(ctx context.Context, casClient repb.ContentAddressableStorageClient, gen *digest.Generator, numBlobs int, compressor repb.Compressor_Value) error {
-	compressorName := "uncompressed"
-	if compressor != repb.Compressor_IDENTITY {
-		compressorName = compressor.String()
-	}
-
-	digests, blobs, err := generateTestBlobs(gen, numBlobs, 1024)
-	if err != nil {
-		return err
-	}
-	log.Infof("[CAS] Generated %d test blobs for %s test", numBlobs, compressorName)
-
-	expectedBlobs := make(map[string][]byte, numBlobs)
-	for i, d := range digests {
-		expectedBlobs[d.GetHash()] = blobs[i]
-	}
-
-	log.Infof("[CAS] Checking for missing blobs (%s)...", compressorName)
-	findReq := &repb.FindMissingBlobsRequest{
-		InstanceName:   *instanceName,
-		DigestFunction: repb.DigestFunction_SHA256,
-		BlobDigests:    digests,
-	}
-	findResp, err := casClient.FindMissingBlobs(ctx, findReq)
-	if err != nil {
-		return status.UnknownErrorf("failed to find missing blobs: %s", err)
-	}
-	log.Infof("[CAS] Missing blobs before upload: %d", len(findResp.GetMissingBlobDigests()))
-
-	var requests []*repb.BatchUpdateBlobsRequest_Request
-	for i, d := range digests {
-		data := blobs[i]
-		if compressor != repb.Compressor_IDENTITY {
-			data = compression.CompressZstd(nil, blobs[i])
-		}
-		requests = append(requests, &repb.BatchUpdateBlobsRequest_Request{
-			Digest:     d,
-			Data:       data,
-			Compressor: compressor,
-		})
-	}
-
-	log.Infof("[CAS] Uploading blobs via BatchUpdateBlobs (%s)...", compressorName)
-	batchUpdateReq := &repb.BatchUpdateBlobsRequest{
-		InstanceName:   *instanceName,
-		DigestFunction: repb.DigestFunction_SHA256,
-		Requests:       requests,
-	}
-	batchUpdateResp, err := casClient.BatchUpdateBlobs(ctx, batchUpdateReq)
-	if err != nil {
-		return status.UnknownErrorf("failed to batch update blobs: %s", err)
-	}
-
-	// Check all uploads succeeded
-	if err := verifyBatchUploadSuccess(batchUpdateResp.GetResponses()); err != nil {
-		return err
-	}
-	log.Infof("[CAS] Uploaded %d blobs successfully", len(batchUpdateResp.GetResponses()))
-
-	// Verify upload with FindMissingBlobs (should report none missing)
-	log.Infof("[CAS] Verifying blobs are no longer missing...")
-	findResp, err = casClient.FindMissingBlobs(ctx, findReq)
-	if err != nil {
-		return status.UnknownErrorf("failed to find missing blobs after upload: %s", err)
-	}
-	if len(findResp.GetMissingBlobDigests()) != 0 {
-		return status.DataLossError(fmt.Sprintf("expected 0 missing blobs after upload, got %d", len(findResp.GetMissingBlobDigests())))
-	}
-	log.Infof("[CAS] All blobs present after upload")
-
-	// Download using BatchReadBlobs
-	log.Infof("[CAS] Downloading blobs via BatchReadBlobs (%s)...", compressorName)
-	batchReadReq := &repb.BatchReadBlobsRequest{
-		InstanceName:   *instanceName,
-		DigestFunction: repb.DigestFunction_SHA256,
-		Digests:        digests,
-	}
-	if compressor != repb.Compressor_IDENTITY {
-		batchReadReq.AcceptableCompressors = []repb.Compressor_Value{
-			repb.Compressor_IDENTITY,
-			compressor,
-		}
-	}
-
-	batchReadResp, err := cachetools.BatchReadBlobs(ctx, casClient, batchReadReq)
-	if err != nil {
-		return status.UnknownErrorf("failed to batch read blobs: %s", err)
-	}
-
-	if len(batchReadResp) != numBlobs {
-		return status.DataLossError(fmt.Sprintf("expected %d responses, got %d", numBlobs, len(batchReadResp)))
-	}
-
-	for _, resp := range batchReadResp {
-		if resp.Err != nil {
-			return status.UnknownErrorf("blob download failed: %s", resp.Err)
-		}
-
-		expectedData, ok := expectedBlobs[resp.Digest.GetHash()]
-		if !ok {
-			return status.DataLossError(fmt.Sprintf("unexpected blob with hash %s", resp.Digest.GetHash()))
-		}
-
-		if err := verifyBlobIntegrity(resp.Data, expectedData); err != nil {
-			return status.DataLossError(fmt.Sprintf("blob %s: %s", resp.Digest.GetHash(), err))
-		}
-	}
-	log.Infof("[CAS] Downloaded and verified %d blobs successfully (%s)", numBlobs, compressorName)
-
-	return nil
-}
-
-func probeCAS(ctx context.Context, casClient repb.ContentAddressableStorageClient) error {
-	log.Infof("[CAS] Starting probe...")
-
+func TestCAS(t *testing.T) {
 	digestGenerator := digest.RandomGenerator(time.Now().UnixNano())
 	numBlobs := 3
 
-	if err := testCASBatchOperations(ctx, casClient, digestGenerator, numBlobs, repb.Compressor_IDENTITY); err != nil {
-		return err
+	scenarios := []struct {
+		name       string
+		compressor repb.Compressor_Value
+	}{
+		{"uncompressed", repb.Compressor_IDENTITY},
+		{"zstd", repb.Compressor_ZSTD},
 	}
 
-	log.Infof("[CAS] Testing with zstd compression...")
-	if err := testCASBatchOperations(ctx, casClient, digestGenerator, numBlobs, repb.Compressor_ZSTD); err != nil {
-		return err
-	}
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			// Generate test blobs
+			var digests []*repb.Digest
+			var blobs [][]byte
+			for i := 0; i < numBlobs; i++ {
+				d, buf, err := digestGenerator.RandomDigestBuf(1024)
+				require.NoError(t, err, "failed to generate random data")
+				digests = append(digests, d)
+				blobs = append(blobs, buf)
+			}
+			t.Logf("Generated %d test blobs", numBlobs)
 
-	return nil
+			// Build map for verification
+			expectedBlobs := make(map[string][]byte, numBlobs)
+			for i, d := range digests {
+				expectedBlobs[d.GetHash()] = blobs[i]
+			}
+
+			// Test FindMissingBlobs
+			t.Logf("Checking for missing blobs...")
+			findReq := &repb.FindMissingBlobsRequest{
+				InstanceName:   *instanceName,
+				DigestFunction: repb.DigestFunction_SHA256,
+				BlobDigests:    digests,
+			}
+			findResp, err := casClient.FindMissingBlobs(ctx, findReq)
+			require.NoError(t, err, "failed to find missing blobs")
+			t.Logf("Missing blobs before upload: %d", len(findResp.GetMissingBlobDigests()))
+
+			// Prepare batch upload requests
+			var requests []*repb.BatchUpdateBlobsRequest_Request
+			for i, d := range digests {
+				data := blobs[i]
+				if scenario.compressor != repb.Compressor_IDENTITY {
+					data = compression.CompressZstd(nil, blobs[i])
+				}
+				requests = append(requests, &repb.BatchUpdateBlobsRequest_Request{
+					Digest:     d,
+					Data:       data,
+					Compressor: scenario.compressor,
+				})
+			}
+
+			// Upload using BatchUpdateBlobs
+			t.Logf("Uploading blobs via BatchUpdateBlobs...")
+			batchUpdateReq := &repb.BatchUpdateBlobsRequest{
+				InstanceName:   *instanceName,
+				DigestFunction: repb.DigestFunction_SHA256,
+				Requests:       requests,
+			}
+			batchUpdateResp, err := casClient.BatchUpdateBlobs(ctx, batchUpdateReq)
+			require.NoError(t, err, "failed to batch update blobs")
+
+			// Check all uploads succeeded
+			for _, resp := range batchUpdateResp.GetResponses() {
+				require.Equal(t, int32(0), resp.GetStatus().GetCode(), "blob upload failed: %s", resp.GetStatus().GetMessage())
+			}
+			t.Logf("Uploaded %d blobs successfully", len(batchUpdateResp.GetResponses()))
+
+			// Verify upload with FindMissingBlobs
+			t.Logf("Verifying blobs are no longer missing...")
+			findResp, err = casClient.FindMissingBlobs(ctx, findReq)
+			require.NoError(t, err, "failed to find missing blobs after upload")
+			require.Equal(t, 0, len(findResp.GetMissingBlobDigests()), "expected 0 missing blobs after upload")
+			t.Logf("All blobs present after upload")
+
+			// Download using BatchReadBlobs
+			t.Logf("Downloading blobs via BatchReadBlobs...")
+			batchReadReq := &repb.BatchReadBlobsRequest{
+				InstanceName:   *instanceName,
+				DigestFunction: repb.DigestFunction_SHA256,
+				Digests:        digests,
+			}
+			if scenario.compressor != repb.Compressor_IDENTITY {
+				batchReadReq.AcceptableCompressors = []repb.Compressor_Value{
+					repb.Compressor_IDENTITY,
+					scenario.compressor,
+				}
+			}
+
+			batchReadResp, err := cachetools.BatchReadBlobs(ctx, casClient, batchReadReq)
+			require.NoError(t, err, "failed to batch read blobs")
+			require.Equal(t, numBlobs, len(batchReadResp), "unexpected number of responses")
+
+			// Verify data integrity
+			for _, resp := range batchReadResp {
+				require.NoError(t, resp.Err, "blob download failed")
+
+				expectedData, ok := expectedBlobs[resp.Digest.GetHash()]
+				require.True(t, ok, "unexpected blob with hash %s", resp.Digest.GetHash())
+				require.Equal(t, expectedData, resp.Data, "blob %s data mismatch", resp.Digest.GetHash())
+			}
+			t.Logf("Downloaded and verified %d blobs successfully", numBlobs)
+		})
+	}
 }
 
-func runProbe() error {
+func TestMain(m *testing.M) {
 	if *cacheTarget == "" {
-		return status.InvalidArgumentError("--cache_target is required")
+		log.Fatalf("--cache_target is required")
 	}
 
 	log.Infof("Connecting to cache at %s", *cacheTarget)
-	conn, err := grpc_client.DialSimple(*cacheTarget)
+	var err error
+	conn, err = grpc_client.DialSimple(*cacheTarget)
 	if err != nil {
-		return status.UnavailableErrorf("failed to connect to cache: %s", err)
+		log.Fatalf("failed to connect to cache: %s", err)
 	}
 	defer conn.Close()
 
-	bsClient := bspb.NewByteStreamClient(conn)
-	acClient := repb.NewActionCacheClient(conn)
-	casClient := repb.NewContentAddressableStorageClient(conn)
+	bsClient = bspb.NewByteStreamClient(conn)
+	acClient = repb.NewActionCacheClient(conn)
+	casClient = repb.NewContentAddressableStorageClient(conn)
 
-	ctx := context.Background()
+	ctx = context.Background()
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
 
-	if err := probeByteStream(ctx, bsClient); err != nil {
-		return err
-	}
-
-	if err := probeActionCache(ctx, acClient); err != nil {
-		return err
-	}
-
-	if err := probeCAS(ctx, casClient); err != nil {
-		return err
-	}
-
-	log.Infof("All probes passed successfully!")
-	return nil
+	os.Exit(m.Run())
 }
 
 func main() {
 	flag.Parse()
 
-	if err := runProbe(); err != nil {
-		log.Fatalf("Probe failed: %s", err)
-	}
+	m := testing.MainStart(&testDeps{}, []testing.InternalTest{
+		{Name: "TestByteStream", F: TestByteStream},
+		{Name: "TestActionCache", F: TestActionCache},
+		{Name: "TestCAS", F: TestCAS},
+	}, nil, nil, nil)
+
+	TestMain(m)
+}
+
+// testDeps implements testing.testDeps interface
+type testDeps struct{}
+
+func (testDeps) MatchString(pat, str string) (bool, error)       { return true, nil }
+func (testDeps) StartCPUProfile(w io.Writer) error               { return nil }
+func (testDeps) StopCPUProfile()                                 {}
+func (testDeps) WriteProfileTo(string, io.Writer, int) error     { return nil }
+func (testDeps) ImportPath() string                              { return "" }
+func (testDeps) StartTestLog(io.Writer)                          {}
+func (testDeps) StopTestLog() error                              { return nil }
+func (testDeps) SetPanicOnExit0(bool)                            {}
+func (testDeps) CheckCorpus([]any, []reflect.Type) error         { return nil }
+func (testDeps) ResetCoverage()                                  {}
+func (testDeps) SnapshotCoverage()                               {}
+func (testDeps) InitRuntimeCoverage() (mode string, tearDown func(string, string) (string, error), snapcov func() float64) {
+	return
+}
+func (testDeps) CoordinateFuzzing(time.Duration, int64, time.Duration, int64, int, []corpusEntry, []reflect.Type, string, string) error {
+	return nil
+}
+func (testDeps) RunFuzzWorker(func(corpusEntry) error) error { return nil }
+func (testDeps) ReadCorpus(string, []reflect.Type) ([]corpusEntry, error) {
+	return nil, nil
+}
+
+type corpusEntry = struct {
+	Parent     string
+	Path       string
+	Data       []byte
+	Values     []any
+	Generation int
+	IsSeed     bool
 }

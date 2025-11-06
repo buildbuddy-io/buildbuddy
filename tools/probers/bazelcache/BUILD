@@ -12,8 +12,9 @@ go_library(
         "//server/util/compression",
         "//server/util/grpc_client",
         "//server/util/log",
-        "//server/util/status",
+        "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
     ],
 )
