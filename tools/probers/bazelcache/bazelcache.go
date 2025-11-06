@@ -85,17 +85,11 @@ func probeByteStream(ctx context.Context, bsClient bspb.ByteStreamClient) error 
 		return status.UnknownErrorf("failed to download compressed blob: %s", err)
 	}
 
-	// Decompress and verify
-	decompressedData, err := compression.DecompressZstd(nil, compressedDownloadBuf.Bytes())
-	if err != nil {
-		return status.UnknownErrorf("failed to decompress data: %s", err)
+	// Verify data integrity (cachetools.GetBlob auto-decompresses for us)
+	if !bytes.Equal(buf, compressedDownloadBuf.Bytes()) {
+		return status.DataLossError("compressed round-trip data doesn't match original data")
 	}
-
-	if !bytes.Equal(buf, decompressedData) {
-		return status.DataLossError("decompressed data doesn't match original data")
-	}
-	log.Infof("[ByteStream] Compressed download successful and verified: %d compressed bytes, %d uncompressed bytes (%.1f%% compression)",
-		compressedDownloadBuf.Len(), len(decompressedData), 100.0*(1.0-float64(compressedDownloadBuf.Len())/float64(len(decompressedData))))
+	log.Infof("[ByteStream] Compressed download successful and verified: %d bytes", compressedDownloadBuf.Len())
 
 	return nil
 }
