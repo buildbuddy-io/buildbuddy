@@ -28,13 +28,14 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
+	oss_cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
 
 var (
-	cacheMigrationConfig = flag.Struct("cache.migration", MigrationConfig{}, "Config to specify the details of a cache migration")
+	cacheMigrationConfig = flag.Struct("cache.migration", cache_config.MigrationConfig{}, "Config to specify the details of a cache migration")
 )
 
 type MigrationCache struct {
@@ -89,7 +90,7 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
+func NewMigrationCache(env environment.Env, migrationConfig *cache_config.MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
 	return &MigrationCache{
 		env: env,
 		defaultConfigDoNotUseDirectly: config{
@@ -110,7 +111,7 @@ func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, sr
 	}
 }
 
-func validateCacheConfig(config CacheConfig) error {
+func validateCacheConfig(config cache_config.CacheConfig) error {
 	if config.PebbleConfig != nil && config.DiskConfig != nil {
 		return status.FailedPreconditionError("only one cache config can be set")
 	} else if config.PebbleConfig == nil && config.DiskConfig == nil {
@@ -120,7 +121,7 @@ func validateCacheConfig(config CacheConfig) error {
 	return nil
 }
 
-func getCacheFromConfig(env environment.Env, cfg CacheConfig) (interfaces.Cache, error) {
+func getCacheFromConfig(env environment.Env, cfg cache_config.CacheConfig) (interfaces.Cache, error) {
 	err := validateCacheConfig(cfg)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("error validating migration cache config: %s", err)
@@ -143,17 +144,17 @@ func getCacheFromConfig(env environment.Env, cfg CacheConfig) (interfaces.Cache,
 	return nil, status.FailedPreconditionErrorf("error getting cache from migration config: no valid cache types")
 }
 
-func diskCacheFromConfig(env environment.Env, cfg *DiskCacheConfig) (*disk_cache.DiskCache, error) {
+func diskCacheFromConfig(env environment.Env, cfg *cache_config.DiskCacheConfig) (*disk_cache.DiskCache, error) {
 	opts := &disk_cache.Options{
 		RootDirectory:     cfg.RootDirectory,
 		Partitions:        cfg.Partitions,
 		PartitionMappings: cfg.PartitionMappings,
 		UseV2Layout:       cfg.UseV2Layout,
 	}
-	return disk_cache.NewDiskCache(env, opts, cache_config.MaxSizeBytes())
+	return disk_cache.NewDiskCache(env, opts, oss_cache_config.MaxSizeBytes())
 }
 
-func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble_cache.PebbleCache, error) {
+func pebbleCacheFromConfig(env environment.Env, cfg *cache_config.PebbleCacheConfig) (*pebble_cache.PebbleCache, error) {
 	opts := &pebble_cache.Options{
 		Name:                        cfg.Name,
 		RootDirectory:               cfg.RootDirectory,

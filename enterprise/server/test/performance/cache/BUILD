@@ -11,6 +11,7 @@ go_test(
     ],
     tags = ["performance"],
     deps = [
+        "//enterprise/server/backends/cache_config",
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/migration_cache",
         "//enterprise/server/backends/pebble_cache",

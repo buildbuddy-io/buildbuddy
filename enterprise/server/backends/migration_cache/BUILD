@@ -4,12 +4,10 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "migration_cache",
-    srcs = [
-        "config.go",
-        "migration_cache.go",
-    ],
+    srcs = ["migration_cache.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache",
     deps = [
+        "//enterprise/server/backends/cache_config",
         "//enterprise/server/backends/pebble_cache",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
@@ -24,7 +22,6 @@ go_library(
         "//server/util/background",
         "//server/util/claims",
         "//server/util/compression",
-        "//server/util/disk",
         "//server/util/flag",
         "//server/util/ioutil",
         "//server/util/log",
@@ -42,6 +39,7 @@ go_test(
     srcs = ["migration_cache_test.go"],
     deps = [
         ":migration_cache",
+        "//enterprise/server/backends/cache_config",
         "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/experiments",
         "//proto:remote_execution_go_proto",
