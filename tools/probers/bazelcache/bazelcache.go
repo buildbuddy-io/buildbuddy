@@ -26,15 +26,12 @@ var (
 	apiKey       = flag.String("api_key", "", "API key for authentication")
 	blobSize     = flag.Int64("blob_size", 100_000, "Size of test blobs in bytes")
 
-	// Test infrastructure
 	conn      *grpc_client.ClientConnPool
 	ctx       context.Context
 	bsClient  bspb.ByteStreamClient
 	acClient  repb.ActionCacheClient
 	casClient repb.ContentAddressableStorageClient
 )
-
-// Assertion helpers
 
 func assertNoError(err error, msg string) {
 	if err != nil {
@@ -59,19 +56,9 @@ func TestByteStream() {
 	d, buf, err := digestGenerator.RandomDigestBuf(*blobSize)
 	assertNoError(err, "failed to generate random data")
 
-	scenarios := []struct {
-		name       string
-		compressor repb.Compressor_Value
-	}{
-		{"uncompressed", repb.Compressor_IDENTITY},
-		{"zstd", repb.Compressor_ZSTD},
-	}
-
-	for _, scenario := range scenarios {
-		log.Infof("[ByteStream] Testing %s", scenario.name)
-
+	for _, compressor := range []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD} {
 		resourceName := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256)
-		resourceName.SetCompressor(scenario.compressor)
+		resourceName.SetCompressor(compressor)
 
 		reader := bytes.NewReader(buf)
 		_, _, err := cachetools.UploadFromReader(ctx, bsClient, resourceName, reader)
@@ -82,7 +69,6 @@ func TestByteStream() {
 		assertNoError(err, "failed to download blob")
 
 		assertEqual(buf, downloadBuf.Bytes(), "downloaded data doesn't match uploaded data")
-		log.Infof("[ByteStream] %s: PASS", scenario.name)
 	}
 }
 
@@ -123,17 +109,7 @@ func TestCAS() {
 	digestGenerator := digest.RandomGenerator(time.Now().UnixNano())
 	numBlobs := 3
 
-	scenarios := []struct {
-		name       string
-		compressor repb.Compressor_Value
-	}{
-		{"uncompressed", repb.Compressor_IDENTITY},
-		{"zstd", repb.Compressor_ZSTD},
-	}
-
-	for _, scenario := range scenarios {
-		log.Infof("[CAS] Testing %s", scenario.name)
-
+	for _, compressor := range []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD} {
 		var digests []*repb.Digest
 		var blobs [][]byte
 		for i := 0; i < numBlobs; i++ {
@@ -153,20 +129,19 @@ func TestCAS() {
 			DigestFunction: repb.DigestFunction_SHA256,
 			BlobDigests:    digests,
 		}
-		findResp, err := casClient.FindMissingBlobs(ctx, findReq)
+		_, err := casClient.FindMissingBlobs(ctx, findReq)
 		assertNoError(err, "failed to find missing blobs")
-		_ = findResp // Used later
 
 		var requests []*repb.BatchUpdateBlobsRequest_Request
 		for i, d := range digests {
 			data := blobs[i]
-			if scenario.compressor != repb.Compressor_IDENTITY {
+			if compressor == repb.Compressor_ZSTD {
 				data = compression.CompressZstd(nil, blobs[i])
 			}
 			requests = append(requests, &repb.BatchUpdateBlobsRequest_Request{
 				Digest:     d,
 				Data:       data,
-				Compressor: scenario.compressor,
+				Compressor: compressor,
 			})
 		}
 
@@ -182,7 +157,7 @@ func TestCAS() {
 			assertEqual(int32(0), resp.GetStatus().GetCode(), "blob upload failed")
 		}
 
-		findResp, err = casClient.FindMissingBlobs(ctx, findReq)
+		findResp, err := casClient.FindMissingBlobs(ctx, findReq)
 		assertNoError(err, "failed to find missing blobs after upload")
 		assertEqual(0, len(findResp.GetMissingBlobDigests()), "expected 0 missing blobs after upload")
 
@@ -190,19 +165,13 @@ func TestCAS() {
 			InstanceName:   *instanceName,
 			DigestFunction: repb.DigestFunction_SHA256,
 			Digests:        digests,
-		}
-		if scenario.compressor != repb.Compressor_IDENTITY {
-			batchReadReq.AcceptableCompressors = []repb.Compressor_Value{
-				repb.Compressor_IDENTITY,
-				scenario.compressor,
-			}
+			AcceptableCompressors:[]repb.Compressor_Value{compressor},
 		}
 
 		batchReadResp, err := cachetools.BatchReadBlobs(ctx, casClient, batchReadReq)
 		assertNoError(err, "failed to batch read blobs")
 		assertEqual(numBlobs, len(batchReadResp), "unexpected number of responses")
 
-		// Verify data integrity
 		for _, resp := range batchReadResp {
 			assertNoError(resp.Err, "blob download failed")
 
@@ -210,8 +179,6 @@ func TestCAS() {
 			assertTrue(ok, "unexpected blob")
 			assertEqual(expectedData, resp.Data, "blob data mismatch")
 		}
-
-		log.Infof("[CAS] %s: PASS", scenario.name)
 	}
 }
 
@@ -240,15 +207,7 @@ func main() {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
 
-	// Run tests
 	TestByteStream()
-	log.Infof("TestByteStream: PASS")
-
 	TestActionCache()
-	log.Infof("TestActionCache: PASS")
-
 	TestCAS()
-	log.Infof("TestCAS: PASS")
-
-	log.Infof("All tests passed")
 }
