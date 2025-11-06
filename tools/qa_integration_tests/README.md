@@ -5,10 +5,14 @@ This directory contains integration tests that validate BuildBuddy's remote exec
 ## Overview
 
 These tests use [`rules_bazel_integration_test`](https://github.com/bazel-contrib/rules_bazel_integration_test) to:
-1. Download source tarballs from GitHub releases
-2. Inject BuildBuddy's RBE toolchain into the project's MODULE.bazel
-3. Execute Bazel builds/tests remotely on BuildBuddy's infrastructure
+1. Download source tarballs from GitHub releases (bzlmod projects only)
+2. Inject BuildBuddy's RBE toolchain via:
+   - `bazel_dep(name = "toolchains_buildbuddy", version = "0.0.2")`
+   - `buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")`
+3. Execute Bazel builds/tests remotely on BuildBuddy's infrastructure (buildbuddy.buildbuddy.dev) using specific Ubuntu GCC x86_64 toolchains
 4. Verify successful execution
+
+**Note**: Only bzlmod-enabled projects (with MODULE.bazel) are supported. WORKSPACE-only projects are not supported.
 
 This complements the existing `tools/dev_qa.py` script by using Bazel-native integration testing.
 
@@ -43,7 +47,7 @@ bazel test //tools/qa_integration_tests:all_qa_integration_tests \
 ### abseil-cpp
 - **Version**: 20250814.1
 - **Source**: https://github.com/abseil/abseil-cpp/archive/refs/tags/20250814.1.tar.gz
-- **Command**: `build //... --cxxopt=-std=c++14`
+- **Command**: `build //...` (uses C++17 by default)
 - **Bazel Version**: 8.4.2
 
 ## Updating Test Versions
@@ -108,6 +112,28 @@ To add a new repository (e.g., bazel-gazelle):
 - **BUILD.bazel**: Defines test targets using `bazel_integration_test` macro
 - **workspaces/**: Empty directories that serve as test workspace roots (populated at test runtime)
 
+## BuildBuddy RBE Configuration
+
+The test runner automatically injects the following configuration into each test project:
+
+### MODULE.bazel additions:
+```python
+bazel_dep(name = "toolchains_buildbuddy", version = "0.0.2")
+buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
+```
+
+### .bazelrc configuration:
+```
+build:qa_integration_test --remote_executor=grpcs://buildbuddy.buildbuddy.dev
+build:qa_integration_test --remote_cache=grpcs://buildbuddy.buildbuddy.dev
+build:qa_integration_test --bes_backend=grpcs://buildbuddy.buildbuddy.dev
+build:qa_integration_test --extra_toolchains=@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64
+build:qa_integration_test --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+build:qa_integration_test --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+```
+
+This configuration uses BuildBuddy's dev environment (buildbuddy.buildbuddy.dev) with the Ubuntu GCC x86_64 toolchain for consistent remote execution.
+
 ## Benefits Over tools/dev_qa.py
 
 - **Bazel-native**: Integrates with Bazel's test framework, caching, and parallelization
@@ -123,9 +149,14 @@ To add a new repository (e.g., bazel-gazelle):
 - Verify the tarball URL is correct
 - Ensure `no-sandbox` tag is present (required for network access)
 
-**Test fails with "MODULE.bazel not found":**
-- Verify the project uses bzlmod (has MODULE.bazel)
+**Test fails with "No MODULE.bazel found" error:**
+- This test framework only supports bzlmod projects
+- Verify the project has a MODULE.bazel file in its root
 - Check the `QA_STRIP_PREFIX` matches the extracted directory name
+
+**Test fails with toolchain errors:**
+- Ensure `toolchains_buildbuddy` version 0.0.2 is available in the Bazel Central Registry
+- Check that the MODULE.bazel injection was successful
 
 **Test fails with authentication error:**
 - Ensure `BB_API_KEY` environment variable is set
@@ -133,4 +164,4 @@ To add a new repository (e.g., bazel-gazelle):
 
 **View invocation results:**
 - Check the test output for the invocation URL
-- Visit https://app.buildbuddy.dev/invocation/{invocation_id}
+- Visit https://buildbuddy.buildbuddy.dev/invocation/{invocation_id}
