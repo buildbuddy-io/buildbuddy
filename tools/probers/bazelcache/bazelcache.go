@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -62,6 +63,40 @@ func probeByteStream(ctx context.Context, bsClient bspb.ByteStreamClient) error 
 	}
 	log.Infof("[ByteStream] Download successful and verified: %d bytes", downloadBuf.Len())
 
+	// Test with zstd compression
+	log.Infof("[ByteStream] Testing with zstd compression...")
+	compressedResourceName := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256)
+	compressedResourceName.SetCompressor(repb.Compressor_ZSTD)
+
+	// Upload with compression
+	log.Infof("[ByteStream] Uploading %d bytes with zstd compression (digest: %s/%d)", len(buf), d.GetHash(), d.GetSizeBytes())
+	compressedReader := bytes.NewReader(buf)
+	_, compressedBytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, compressedResourceName, compressedReader)
+	if err != nil {
+		return status.UnknownErrorf("failed to upload compressed blob: %s", err)
+	}
+	log.Infof("[ByteStream] Compressed upload successful: %d bytes sent", compressedBytesUploaded)
+
+	// Download with compression
+	log.Infof("[ByteStream] Downloading compressed blob...")
+	var compressedDownloadBuf bytes.Buffer
+	err = cachetools.GetBlob(ctx, bsClient, compressedResourceName, &compressedDownloadBuf)
+	if err != nil {
+		return status.UnknownErrorf("failed to download compressed blob: %s", err)
+	}
+
+	// Decompress and verify
+	decompressedData, err := compression.DecompressZstd(nil, compressedDownloadBuf.Bytes())
+	if err != nil {
+		return status.UnknownErrorf("failed to decompress data: %s", err)
+	}
+
+	if !bytes.Equal(buf, decompressedData) {
+		return status.DataLossError("decompressed data doesn't match original data")
+	}
+	log.Infof("[ByteStream] Compressed download successful and verified: %d compressed bytes, %d uncompressed bytes (%.1f%% compression)",
+		compressedDownloadBuf.Len(), len(decompressedData), 100.0*(1.0-float64(compressedDownloadBuf.Len())/float64(len(decompressedData))))
+
 	return nil
 }
 
@@ -77,7 +112,7 @@ func probeActionCache(ctx context.Context, acClient repb.ActionCacheClient) erro
 
 	// Create a simple ActionResult
 	actionResult := &repb.ActionResult{
-		ExitCode: 0,
+		ExitCode:  0,
 		StdoutRaw: []byte("test stdout"),
 		StderrRaw: []byte("test stderr"),
 	}
@@ -233,6 +268,98 @@ func probeCAS(ctx context.Context, casClient repb.ContentAddressableStorageClien
 		}
 	}
 	log.Infof("[CAS] Downloaded and verified %d blobs successfully", numBlobs)
+
+	// Test with zstd compression
+	log.Infof("[CAS] Testing with zstd compression...")
+
+	// Generate new test blobs for compression test
+	var compressedDigests []*repb.Digest
+	var compressedBlobs [][]byte
+	var compressedBlobData [][]byte
+
+	for i := 0; i < numBlobs; i++ {
+		d, buf, err := digestGenerator.RandomDigestBuf(1024) // 1KB each
+		if err != nil {
+			return status.UnknownErrorf("failed to generate random data: %s", err)
+		}
+		compressedBuf := compression.CompressZstd(nil, buf)
+		compressedDigests = append(compressedDigests, d)
+		compressedBlobs = append(compressedBlobs, buf)                 // Original uncompressed data
+		compressedBlobData = append(compressedBlobData, compressedBuf) // Compressed data
+	}
+	log.Infof("[CAS] Generated %d test blobs for compression", numBlobs)
+
+	// Upload using BatchUpdateBlobs with compression
+	log.Infof("[CAS] Uploading compressed blobs via BatchUpdateBlobs...")
+	var compressedRequests []*repb.BatchUpdateBlobsRequest_Request
+	for i, d := range compressedDigests {
+		compressedRequests = append(compressedRequests, &repb.BatchUpdateBlobsRequest_Request{
+			Digest:     d,
+			Data:       compressedBlobData[i],
+			Compressor: repb.Compressor_ZSTD,
+		})
+	}
+
+	compressedBatchUpdateReq := &repb.BatchUpdateBlobsRequest{
+		InstanceName:   *instanceName,
+		DigestFunction: repb.DigestFunction_SHA256,
+		Requests:       compressedRequests,
+	}
+	compressedBatchUpdateResp, err := casClient.BatchUpdateBlobs(ctx, compressedBatchUpdateReq)
+	if err != nil {
+		return status.UnknownErrorf("failed to batch update compressed blobs: %s", err)
+	}
+
+	// Check all uploads succeeded
+	for _, resp := range compressedBatchUpdateResp.GetResponses() {
+		if resp.GetStatus().GetCode() != 0 {
+			return status.UnknownErrorf("compressed blob upload failed: %s", resp.GetStatus().GetMessage())
+		}
+	}
+	log.Infof("[CAS] Uploaded %d compressed blobs successfully", len(compressedBatchUpdateResp.GetResponses()))
+
+	// Download using BatchReadBlobs with compression support
+	log.Infof("[CAS] Downloading compressed blobs via BatchReadBlobs...")
+	compressedBatchReadReq := &repb.BatchReadBlobsRequest{
+		InstanceName:   *instanceName,
+		DigestFunction: repb.DigestFunction_SHA256,
+		Digests:        compressedDigests,
+		AcceptableCompressors: []repb.Compressor_Value{
+			repb.Compressor_IDENTITY,
+			repb.Compressor_ZSTD,
+		},
+	}
+
+	compressedBatchReadResp, err := cachetools.BatchReadBlobs(ctx, casClient, compressedBatchReadReq)
+	if err != nil {
+		return status.UnknownErrorf("failed to batch read compressed blobs: %s", err)
+	}
+
+	if len(compressedBatchReadResp) != numBlobs {
+		return status.DataLossError(fmt.Sprintf("expected %d compressed responses, got %d", numBlobs, len(compressedBatchReadResp)))
+	}
+
+	// Verify data integrity using digest hash as key (cachetools.BatchReadBlobs auto-decompresses)
+	expectedCompressedBlobs := make(map[string][]byte, numBlobs)
+	for i, digest := range compressedDigests {
+		expectedCompressedBlobs[digest.GetHash()] = compressedBlobs[i]
+	}
+
+	for _, resp := range compressedBatchReadResp {
+		if resp.Err != nil {
+			return status.UnknownErrorf("compressed blob download failed: %s", resp.Err)
+		}
+
+		expectedData, ok := expectedCompressedBlobs[resp.Digest.GetHash()]
+		if !ok {
+			return status.DataLossError(fmt.Sprintf("unexpected compressed blob with hash %s", resp.Digest.GetHash()))
+		}
+
+		if !bytes.Equal(resp.Data, expectedData) {
+			return status.DataLossError(fmt.Sprintf("compressed blob %s data mismatch", resp.Digest.GetHash()))
+		}
+	}
+	log.Infof("[CAS] Downloaded and verified %d compressed blobs successfully", numBlobs)
 
 	return nil
 }
