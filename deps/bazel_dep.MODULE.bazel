@@ -88,6 +88,7 @@ bazel_dep(name = "rules_oci", version = "2.0.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")
+bazel_dep(name = "rules_bazel_integration_test", version = "0.34.0")
 
 # BuildBuddy Toolchain
 # Keep up-to-date with
