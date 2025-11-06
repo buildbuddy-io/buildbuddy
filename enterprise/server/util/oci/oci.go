@@ -281,11 +281,11 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
 	// Authenticate doesn't need caching, just needs to verify access
-	cacher, err := ocicache.NewOCITeeCacher(false, r.env, remoteOpts...)
+	fetcher, err := ocicache.NewReadThroughFetcher(r.env, false, remoteOpts...)
 	if err != nil {
-		return status.InternalErrorf("error creating cacher: %s", err)
+		return status.InternalErrorf("error creating fetcher: %s", err)
 	}
-	_, err = cacher.Head(ctx, imageRef)
+	_, err = fetcher.Head(ctx, imageRef)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
@@ -299,7 +299,7 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 // If the input image name includes a digest, a canonicalized version of the name is returned.
 // If the input image name refers to a tag (either explictly or implicity), ResolveImageDigest
 // will make a HEAD request to the remote registry.
-// The OCITeeCacher keeps an in-memory cache that maps between canonical image names with tags
+// The ReadThroughFetcher keeps an in-memory cache that maps between canonical image names with tags
 // to image names with digests, to reduce the number of HEAD requests.
 func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (string, error) {
 	if imageRefWithDigest, err := gcrname.NewDigest(imageName); err == nil {
@@ -312,11 +312,11 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
 	// ResolveImageDigest just needs to lookup tag->digest mapping, doesn't need AC/CAS caching
-	cacher, err := ocicache.NewOCITeeCacher(false, r.env, remoteOpts...)
+	fetcher, err := ocicache.NewReadThroughFetcher(r.env, false, remoteOpts...)
 	if err != nil {
-		return "", status.InternalErrorf("error creating cacher: %s", err)
+		return "", status.InternalErrorf("error creating fetcher: %s", err)
 	}
-	desc, err := cacher.Head(ctx, tagRef)
+	desc, err := fetcher.Head(ctx, tagRef)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)

@@ -134,9 +134,9 @@ func (m *tagToDigestMapper) add(clock clockwork.Clock, key string, digest string
 	m.lru.Add(key, entry)
 }
 
-// OCITeeCacher is an interface for fetching OCI blobs and manifests from an upstream registry.
+// ReadThroughFetcher is an interface for fetching OCI blobs and manifests from an upstream registry.
 // Implementations may tee data to/from a cache while fetching from the upstream.
-type OCITeeCacher interface {
+type ReadThroughFetcher interface {
 	// Head makes a HEAD request to fetch metadata about a manifest.
 	Head(ctx context.Context, ref gcrname.Reference) (*gcr.Descriptor, error)
 	// Get fetches a manifest from the upstream registry.
@@ -148,8 +148,8 @@ type OCITeeCacher interface {
 	//TODO(dan) LayerFromDescriptor(ctx context.Context, ref gcrname.Digest, desc gcr.Descriptor, parentImage gcr.Image) (gcr.Layer, error)
 }
 
-// ociTeeCacher implements OCITeeCacher by wrapping a remote.Puller.
-type ociTeeCacher struct {
+// readThroughFetcher implements ReadThroughFetcher by wrapping a remote.Puller.
+type readThroughFetcher struct {
 	puller   *remote.Puller
 	acClient repb.ActionCacheClient
 	bsClient bspb.ByteStreamClient
@@ -157,15 +157,15 @@ type ociTeeCacher struct {
 	clock    clockwork.Clock
 }
 
-// NewOCITeeCacher creates a new OCITeeCacher that fetches OCI resources from an upstream registry
+// NewReadThroughFetcher creates a new ReadThroughFetcher that fetches OCI resources from an upstream registry
 // and tees data to/from the cache.
 // If useCache is false, caching is disabled and all requests go directly to the upstream registry.
-func NewOCITeeCacher(useCache bool, env environment.Env, opts ...remote.Option) (OCITeeCacher, error) {
+func NewReadThroughFetcher(env environment.Env, useCache bool, opts ...remote.Option) (ReadThroughFetcher, error) {
 	puller, err := remote.NewPuller(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return &ociTeeCacher{
+	return &readThroughFetcher{
 		puller:   puller,
 		acClient: env.GetActionCacheClient(),
 		bsClient: env.GetByteStreamClient(),
@@ -174,7 +174,7 @@ func NewOCITeeCacher(useCache bool, env environment.Env, opts ...remote.Option) 
 	}, nil
 }
 
-func (c *ociTeeCacher) Head(ctx context.Context, ref gcrname.Reference) (*gcr.Descriptor, error) {
+func (c *readThroughFetcher) Head(ctx context.Context, ref gcrname.Reference) (*gcr.Descriptor, error) {
 	_, isDigest := ref.(gcrname.Digest)
 
 	// Check mapper for tag references
