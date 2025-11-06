@@ -622,8 +622,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 				return nil, err
 			}
 			filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, opts.GCSAppName))
-			log.Printf("Pebble Cache: storing files larger than %d bytes in GCS (bucket: %q)", *opts.MinGCSFileSizeBytes, opts.GCSBucket)
-			log.Printf("Pebble Cache: GCS TTL is set to %d days", *opts.GCSTTLDays)
+			log.Infof("Pebble Cache: storing files larger than %d bytes in GCS (bucket: %q)", *opts.MinGCSFileSizeBytes, opts.GCSBucket)
+			log.Infof("Pebble Cache: GCS TTL is set to %d days", *opts.GCSTTLDays)
 		}
 
 		// For temporary files stored on disk, write them to a dedicated

@@ -115,6 +115,7 @@ func GetOptionsFromConfig(env environment.Env, cfg *cache_config.MetaCacheConfig
 	}
 	opts := Options{
 		Name:                        cfg.Name,
+		MetadataBackend:             cfg.MetadataBackend,
 		PartitionMappings:           cfg.PartitionMappings,
 		MaxInlineFileSizeBytes:      cfg.MaxInlineFileSizeBytes,
 		MinBytesAutoZstdCompression: cfg.MinBytesAutoZstdCompression,
@@ -176,7 +177,7 @@ func New(env environment.Env, opts Options) (*Cache, error) {
 				return nil, err
 			}
 			filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, opts.GCSAppName))
-			log.Printf("Meta Cache: GCS TTL is set to %d days", opts.GCSTTLDays)
+			log.Infof("Meta Cache: GCS TTL is set to %d days", opts.GCSTTLDays)
 			localOpts.FileStorer = filestore.New(filestoreOpts...)
 		}
 	}
