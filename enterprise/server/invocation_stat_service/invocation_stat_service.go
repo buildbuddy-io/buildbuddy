@@ -1215,8 +1215,9 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 	if *tagsInDrilldowns {
 		drilldownFields = append(drilldownFields, "tag")
 	}
+	executionDrilldownFields := []string{"worker", "target_label", "action_mnemonic", "effective_pool"}
 	if req.GetDrilldownMetric().GetExecution() != sfpb.ExecutionMetricType_UNKNOWN_EXECUTION_METRIC {
-		drilldownFields = append(drilldownFields, "worker", "target_label", "action_mnemonic")
+		drilldownFields = append(drilldownFields, executionDrilldownFields...)
 	}
 	placeholderQuery := query_builder.NewQuery("")
 
@@ -1400,6 +1401,7 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 		GormTag            *string
 		GormTargetLabel    *string
 		GormActionMnemonic *string
+		GormEffectivePool  *string
 		Selection          int64
 		Inverse            int64
 	}
@@ -1434,6 +1436,8 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 			addOutputChartEntry(m, dm, stpb.DrilldownType_TARGET_LABEL_DRILLDOWN_TYPE, stat.GormTargetLabel, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormActionMnemonic != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_ACTION_MNEMONIC_DRILLDOWN_TYPE, stat.GormActionMnemonic, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormEffectivePool != nil {
+			addOutputChartEntry(m, dm, stpb.DrilldownType_EFFECTIVE_POOL_DRILLDOWN_TYPE, stat.GormEffectivePool, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormTag != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_TAG_DRILLDOWN_TYPE, stat.GormTag, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else {

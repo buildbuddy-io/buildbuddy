@@ -25,6 +25,7 @@ import { getProtoFilterParams, isExecutionMetric } from "../filter/filter_util";
 import {
   decodeMetricUrlParam,
   encodeActionMnemonicUrlParam,
+  encodeEffectivePoolUrlParam,
   encodeMetricUrlParam,
   encodeTargetLabelUrlParam,
   encodeWorkerUrlParam,
@@ -605,6 +606,9 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       case stats.DrilldownType.ACTION_MNEMONIC_DRILLDOWN_TYPE:
         this.navigateDimensionBarClick(encodeActionMnemonicUrlParam(e.activeLabel));
         return;
+      case stats.DrilldownType.EFFECTIVE_POOL_DRILLDOWN_TYPE:
+        this.navigateDimensionBarClick(encodeEffectivePoolUrlParam(e.activeLabel));
+        return;
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
       case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
       default:
@@ -645,6 +649,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         return "target (execution)";
       case stats.DrilldownType.ACTION_MNEMONIC_DRILLDOWN_TYPE:
         return "mnemonic (execution)";
+      case stats.DrilldownType.EFFECTIVE_POOL_DRILLDOWN_TYPE:
+        return "pool (execution)";
       default:
         return "???";
     }
