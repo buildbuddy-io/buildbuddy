@@ -142,6 +142,9 @@ func setOptionDefaults(opts *Options) {
 	if opts.MinBytesAutoZstdCompression == 0 {
 		opts.MinBytesAutoZstdCompression = defaultMaxInlineFileSizeBytes
 	}
+	if opts.Clock == nil {
+		opts.Clock = clockwork.NewRealClock()
+	}
 }
 
 func New(env environment.Env, opts Options) (*Cache, error) {
