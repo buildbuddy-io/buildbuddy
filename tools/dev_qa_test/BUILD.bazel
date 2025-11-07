@@ -1,10 +1,10 @@
 load("@bazel_binaries//:defs.bzl", "bazel_binaries")
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load(
     "@rules_bazel_integration_test//bazel_integration_test:defs.bzl",
     "bazel_integration_test",
     "integration_test_utils",
 )
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 sh_binary(
     name = "dev_qa_test_runner",
@@ -25,6 +25,6 @@ bazel_integration_test(
     },
     tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
     test_runner = ":dev_qa_test_runner",
-    workspace_path = "workspaces/abseil_cpp",
     visibility = ["//visibility:public"],
+    workspace_path = "workspaces/abseil_cpp",
 )
