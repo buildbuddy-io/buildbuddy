@@ -33,13 +33,16 @@
 #common --repository_cache=~/.bazel/repository_cache/
 #common --experimental_repository_cache_hardlinks
 #
+# Cache your Go module downloads using the host Go module cache
+#common --repo_env=GO_REPOSITORY_USE_HOST_CACHE=1
+#
 # Print out test logs if there is any error
 #common --test_output=errors
 #
 # Show more actions in the terminal output.
 # When execute build remotely, up-to 100 actions could be running in parallel.
 #common --ui_actions_shown=32
-
+#
 # Enable disk cache and garbage collection
 #common --disk_cache=~/.bazel/disk_cache/
 #common --experimental_disk_cache_gc_max_age=7d
