@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/metacache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -112,10 +114,34 @@ func NewMigrationCache(env environment.Env, migrationConfig *cache_config.Migrat
 }
 
 func validateCacheConfig(config cache_config.CacheConfig) error {
-	if config.PebbleConfig != nil && config.DiskConfig != nil {
-		return status.FailedPreconditionError("only one cache config can be set")
-	} else if config.PebbleConfig == nil && config.DiskConfig == nil {
-		return status.FailedPreconditionError("a cache config must be set")
+	// Count base cache configs (disk or pebble)
+	baseCacheCount := 0
+	if config.DiskConfig != nil {
+		baseCacheCount++
+	}
+	if config.PebbleConfig != nil {
+		baseCacheCount++
+	}
+
+	// Meta cache is standalone
+	if config.MetaConfig != nil {
+		if baseCacheCount > 0 || config.DistributedConfig != nil {
+			return status.FailedPreconditionError("meta cache cannot be combined with other cache configs")
+		}
+		return nil
+	}
+
+	// Distributed cache requires exactly one base cache
+	if config.DistributedConfig != nil {
+		if baseCacheCount != 1 {
+			return status.FailedPreconditionError("distributed cache requires exactly one base cache (disk or pebble)")
+		}
+		return nil
+	}
+
+	// Otherwise, exactly one base cache must be set
+	if baseCacheCount != 1 {
+		return status.FailedPreconditionError("exactly one base cache config (disk or pebble) must be set")
 	}
 
 	return nil
@@ -127,21 +153,31 @@ func getCacheFromConfig(env environment.Env, cfg cache_config.CacheConfig) (inte
 		return nil, status.FailedPreconditionErrorf("error validating migration cache config: %s", err)
 	}
 
-	if cfg.DiskConfig != nil {
-		c, err := diskCacheFromConfig(env, cfg.DiskConfig)
-		if err != nil {
-			return nil, err
-		}
-		return c, nil
-	} else if cfg.PebbleConfig != nil {
-		c, err := pebbleCacheFromConfig(env, cfg.PebbleConfig)
-		if err != nil {
-			return nil, err
-		}
-		return c, nil
+	// Meta cache is standalone
+	if cfg.MetaConfig != nil {
+		return metaCacheFromConfig(env, cfg.MetaConfig)
 	}
 
-	return nil, status.FailedPreconditionErrorf("error getting cache from migration config: no valid cache types")
+	// Create base cache (disk or pebble)
+	var baseCache interfaces.Cache
+	if cfg.DiskConfig != nil {
+		baseCache, err = diskCacheFromConfig(env, cfg.DiskConfig)
+		if err != nil {
+			return nil, err
+		}
+	} else if cfg.PebbleConfig != nil {
+		baseCache, err = pebbleCacheFromConfig(env, cfg.PebbleConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Wrap with distributed cache if specified
+	if cfg.DistributedConfig != nil {
+		return distributedCacheFromConfig(env, baseCache, cfg.DistributedConfig)
+	}
+
+	return baseCache, nil
 }
 
 func diskCacheFromConfig(env environment.Env, cfg *cache_config.DiskCacheConfig) (*disk_cache.DiskCache, error) {
@@ -187,6 +223,47 @@ func pebbleCacheFromConfig(env environment.Env, cfg *cache_config.PebbleCacheCon
 
 	c.Start()
 	return c, nil
+}
+
+func distributedCacheFromConfig(env environment.Env, baseCache interfaces.Cache, cfg *cache_config.DistributedCacheConfig) (interfaces.Cache, error) {
+	if baseCache == nil {
+		return nil, status.FailedPreconditionError("distributed cache requires a base cache")
+	}
+
+	opts := distributed.Options{
+		ListenAddr:                   cfg.ListenAddr,
+		GroupName:                    cfg.GroupName,
+		Nodes:                        cfg.Nodes,
+		NewNodes:                     cfg.NewNodes,
+		ReplicationFactor:            cfg.ReplicationFactor,
+		ClusterSize:                  cfg.ClusterSize,
+		LookasideCacheSizeBytes:      cfg.LookasideCacheSizeBytes,
+		EnableLocalWrites:            cfg.EnableLocalWrites,
+		EnableLocalCompressionLookup: cfg.EnableLocalCompressionLookup,
+		ReadThroughLocalCache:        cfg.ReadThroughLocalCache,
+	}
+
+	dc, err := distributed.NewDistributedCache(env, baseCache, opts, env.GetHealthChecker())
+	if err != nil {
+		return nil, err
+	}
+
+	dc.StartListening()
+	return dc, nil
+}
+
+func metaCacheFromConfig(env environment.Env, cfg *cache_config.MetaCacheConfig) (interfaces.Cache, error) {
+	opts, err := metacache.GetOptionsFromConfig(env, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	mc, err := metacache.New(env, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return mc, nil
 }
 
 // Flags and values for experiments which control the migration cache.

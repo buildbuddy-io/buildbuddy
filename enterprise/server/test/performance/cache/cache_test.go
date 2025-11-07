@@ -137,7 +137,7 @@ func getMigrationCache(t testing.TB, env environment.Env, src, dest interfaces.C
 
 func getDistributedCache(t testing.TB, te environment.Env, c interfaces.Cache, lookasideCacheSizeBytes int64) interfaces.Cache {
 	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	conf := distributed.CacheConfig{
+	conf := distributed.Options{
 		ListenAddr:              listenAddr,
 		GroupName:               "default",
 		ReplicationFactor:       1,

@@ -65,17 +65,17 @@ var (
 	maxHintedHandoffsPerPeer = flag.Int64("cache.distributed_cache.max_hinted_handoffs_per_peer", 100_000, "The maximum number of hinted handoffs to keep in memory. Each hinted handoff is a digest (~64 bytes), prefix, and peer (40 bytes). So keeping around 100000 of these means an extra 10MB per peer.")
 )
 
-type CacheConfig struct {
-	PubSub                       interfaces.PubSub
+type Options struct {
+	DisableLocalLookup   bool
+	RPCHeartbeatInterval time.Duration
+
 	ListenAddr                   string
 	GroupName                    string
 	Nodes                        []string
 	NewNodes                     []string
 	ReplicationFactor            int
 	ClusterSize                  int
-	RPCHeartbeatInterval         time.Duration
 	LookasideCacheSizeBytes      int64
-	DisableLocalLookup           bool
 	EnableLocalWrites            bool
 	EnableLocalCompressionLookup bool
 	ReadThroughLocalCache        bool
@@ -122,7 +122,7 @@ type Cache struct {
 	shutdownMu           *sync.RWMutex
 	shutDownChan         chan struct{}
 	finishedShutdown     bool
-	config               CacheConfig
+	opts                 Options
 	zone                 string
 }
 
@@ -133,7 +133,7 @@ func Register(env *real_environment.RealEnv) error {
 	if env.GetCache() == nil {
 		return status.FailedPreconditionErrorf("Distributed Cache requires a base cache but one was not configured: please also enable a base cache")
 	}
-	dcConfig := CacheConfig{
+	options := Options{
 		ListenAddr:                   *listenAddr,
 		GroupName:                    *groupName,
 		ReplicationFactor:            *replicationFactor,
@@ -145,11 +145,8 @@ func Register(env *real_environment.RealEnv) error {
 		LookasideCacheSizeBytes:      *lookasideCacheSizeBytes,
 		ReadThroughLocalCache:        *readThroughLocalCache,
 	}
-	log.Infof("Enabling distributed cache with config: %+v", dcConfig)
-	if len(dcConfig.Nodes) == 0 {
-		dcConfig.PubSub = pubsub.NewPubSub(redisutil.NewSimpleClient(*redisTarget, env.GetHealthChecker(), "distributed_cache_redis"))
-	}
-	dc, err := NewDistributedCache(env, env.GetCache(), dcConfig, env.GetHealthChecker())
+	log.Infof("Enabling distributed cache with options: %+v", options)
+	dc, err := NewDistributedCache(env, env.GetCache(), options, env.GetHealthChecker())
 	if err != nil {
 		log.Fatalf("Error enabling distributed cache: %s", err.Error())
 	}
@@ -192,9 +189,9 @@ func convertEvictionReason(r lru.EvictionReason) string {
 //   - replicationFactor is an int specifying how many copies of each key will
 //
 // be stored across unique caches.
-func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheConfig, hc interfaces.HealthChecker) (*Cache, error) {
+func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, hc interfaces.HealthChecker) (*Cache, error) {
 	// Check Preconditions: if newNodes are enabled, node list must have been manually specified.
-	if len(config.NewNodes) > 0 && len(config.Nodes) == 0 {
+	if len(opts.NewNodes) > 0 && len(opts.Nodes) == 0 {
 		return nil, status.FailedPreconditionError("new nodes may only be specified when all nodes are hardcoded.")
 	}
 	hashFn, err := parseConsistentHash(*consistentHashFunction)
@@ -208,16 +205,16 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		return nil, err
 	}
 	extraCHash := consistent_hash.NewConsistentHash(newHashFn, *newConsistentHashVNodes)
-	if config.RPCHeartbeatInterval == 0 {
-		config.RPCHeartbeatInterval = 1 * time.Second
+	if opts.RPCHeartbeatInterval == 0 {
+		opts.RPCHeartbeatInterval = 1 * time.Second
 	}
 	dc := &Cache{
 		authenticator:       env.GetAuthenticator(),
 		local:               c,
 		lookasideMu:         &sync.Mutex{},
-		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", config.ListenAddr)),
-		config:              config,
-		distributedProxy:    distributed_client.New(env, c, config.ListenAddr),
+		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", opts.ListenAddr)),
+		opts:                opts,
+		distributedProxy:    distributed_client.New(env, c, opts.ListenAddr),
 		consistentHash:      chash,
 		extraConsistentHash: extraCHash,
 
@@ -231,9 +228,9 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		hintedHandoffsByPeer: make(map[string]chan *hintedHandoffOrder, 0),
 	}
 
-	if config.LookasideCacheSizeBytes > 0 {
+	if opts.LookasideCacheSizeBytes > 0 {
 		l, err := lru.NewLRU[lookasideCacheEntry](&lru.Config[lookasideCacheEntry]{
-			MaxSize: config.LookasideCacheSizeBytes,
+			MaxSize: opts.LookasideCacheSizeBytes,
 			OnEvict: func(key string, v lookasideCacheEntry, reason lru.EvictionReason) {
 				age := time.Since(time.UnixMilli(v.createdAtMillis))
 				metrics.LookasideCacheEvictionAgeMsec.WithLabelValues(
@@ -254,7 +251,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		if *lookasideCacheTTL > 0 {
 			lookasideCacheTTLString = lookasideCacheTTL.String()
 		}
-		log.Printf("Initialized lookaside cache (Size %d, ttl=%s)", config.LookasideCacheSizeBytes, lookasideCacheTTLString)
+		log.Printf("Initialized lookaside cache (Size %d, ttl=%s)", opts.LookasideCacheSizeBytes, lookasideCacheTTLString)
 	}
 
 	if zone := resources.GetZone(); zone != "" {
@@ -262,18 +259,18 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	}
 	dc.distributedProxy.SetHeartbeatCallbackFunc(dc.recvHeartbeatCallback)
 	dc.distributedProxy.SetHintedHandoffCallbackFunc(dc.recvHintedHandoffCallback)
-	if len(config.Nodes) > 0 {
+	if len(opts.Nodes) > 0 {
 		// Nodes are hardcoded. Set them once and be done with it.
-		chash.Set(config.Nodes...)
+		chash.Set(opts.Nodes...)
 
-		if len(config.NewNodes) > 0 {
-			extraCHash.Set(config.NewNodes...)
+		if len(opts.NewNodes) > 0 {
+			extraCHash.Set(opts.NewNodes...)
 		}
 	} else {
 		// No nodes were hardcoded, use redis for discovery.
 		heartbeatConfig := &heartbeat.Config{
-			MyPublicAddr: config.ListenAddr,
-			GroupName:    config.GroupName,
+			MyPublicAddr: opts.ListenAddr,
+			GroupName:    opts.GroupName,
 			UpdateFn: func(peers ...string) {
 				if err := chash.Set(peers...); err != nil {
 					log.Errorf("Error setting peers in consistent hash: %s", err)
@@ -281,12 +278,13 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 			},
 			EnablePeerExpiry: false,
 		}
-		dc.heartbeatChannel = heartbeat.NewHeartbeatChannel(config.PubSub, heartbeatConfig)
+		pubSub := pubsub.NewPubSub(redisutil.NewSimpleClient(*redisTarget, env.GetHealthChecker(), "distributed_cache_redis"))
+		dc.heartbeatChannel = heartbeat.NewHeartbeatChannel(pubSub, heartbeatConfig)
 	}
 	hc.RegisterShutdownFunction(func(ctx context.Context) error {
 		return dc.Shutdown(ctx)
 	})
-	if dc.config.ClusterSize > 0 {
+	if dc.opts.ClusterSize > 0 {
 		hc.AddHealthCheck("distributed_cache", dc)
 	}
 	return dc, nil
@@ -296,9 +294,9 @@ func (c *Cache) Check(ctx context.Context) error {
 	// If the distributed layer was configured with a hardcoded node list,
 	// then it's not necessary to wait for any heartbeats and this cache
 	// will report healthy immediately.
-	if len(c.config.Nodes) > 0 {
-		if len(c.config.Nodes) < c.config.ReplicationFactor {
-			return status.UnavailableErrorf("Not enough nodes configured %d to meet replication factor %d.", len(c.config.Nodes), c.config.ReplicationFactor)
+	if len(c.opts.Nodes) > 0 {
+		if len(c.opts.Nodes) < c.opts.ReplicationFactor {
+			return status.UnavailableErrorf("Not enough nodes configured %d to meet replication factor %d.", len(c.opts.Nodes), c.opts.ReplicationFactor)
 		}
 		return nil
 	}
@@ -306,11 +304,11 @@ func (c *Cache) Check(ctx context.Context) error {
 	// First check that the number of nodes in our chash
 	// matches the cluster size. If not, we can return early.
 	nodesAvailable := len(c.consistentHash.GetItems())
-	if nodesAvailable < c.config.ClusterSize {
-		return status.UnavailableErrorf("%d nodes available but cluster size is %d.", nodesAvailable, c.config.ClusterSize)
+	if nodesAvailable < c.opts.ClusterSize {
+		return status.UnavailableErrorf("%d nodes available but cluster size is %d.", nodesAvailable, c.opts.ClusterSize)
 	}
-	if nodesAvailable < c.config.ReplicationFactor {
-		return status.UnavailableErrorf("Not enough nodes available %d to meet replication factor %d.", nodesAvailable, c.config.ReplicationFactor)
+	if nodesAvailable < c.opts.ReplicationFactor {
+		return status.UnavailableErrorf("Not enough nodes available %d to meet replication factor %d.", nodesAvailable, c.opts.ReplicationFactor)
 	}
 
 	// Next check that we're participating in the network:
@@ -320,8 +318,8 @@ func (c *Cache) Check(ctx context.Context) error {
 	nodesInNetwork := len(c.peerMetadata)
 	c.heartbeatMu.Unlock()
 
-	if nodesInNetwork < c.config.ClusterSize {
-		return status.UnavailableErrorf("%d nodes in network but cluster size is %d.", nodesInNetwork, c.config.ClusterSize)
+	if nodesInNetwork < c.opts.ClusterSize {
+		return status.UnavailableErrorf("%d nodes in network but cluster size is %d.", nodesInNetwork, c.opts.ClusterSize)
 	}
 
 	return nil
@@ -497,11 +495,11 @@ func (c *Cache) lookasideWriter(r *rspb.ResourceName, lookasideKey string) (inte
 }
 
 func (c *Cache) lookasideCacheEnabled() bool {
-	return c.config.LookasideCacheSizeBytes > 0
+	return c.opts.LookasideCacheSizeBytes > 0
 }
 
 func (c *Cache) localReadthroughEnabled() bool {
-	return c.config.ReadThroughLocalCache
+	return c.opts.ReadThroughLocalCache
 }
 
 func combineCommittedWriteClosers(a, b interfaces.CommittedWriteCloser) interfaces.CommittedWriteCloser {
@@ -587,7 +585,7 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 }
 
 func (c *Cache) heartbeatPeers(shutDownChan chan struct{}) {
-	ticker := time.NewTicker(c.config.RPCHeartbeatInterval)
+	ticker := time.NewTicker(c.opts.RPCHeartbeatInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -615,7 +613,7 @@ func (c *Cache) StartListening() {
 	}
 	c.shutDownChan = make(chan struct{})
 	go c.heartbeatPeers(c.shutDownChan)
-	log.Infof("Distributed cache listening on %q", c.config.ListenAddr)
+	log.Infof("Distributed cache listening on %q", c.opts.ListenAddr)
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StartAdvertising()
 	}
@@ -626,7 +624,7 @@ func (c *Cache) StartListening() {
 }
 
 func (c *Cache) Shutdown(ctx context.Context) error {
-	log.Infof("Distributed cache shutting down %q", c.config.ListenAddr)
+	log.Infof("Distributed cache shutting down %q", c.opts.ListenAddr)
 	c.shutdownMu.Lock()
 	defer c.shutdownMu.Unlock()
 	if c.finishedShutdown {
@@ -656,10 +654,10 @@ func (c *Cache) peerZone(peer string) (string, bool) {
 // this key. They should be tried in order.
 func (c *Cache) writePeers(d *repb.Digest) *peerset.PeerSet {
 	allPeers := c.consistentHash.GetAllReplicas(d.GetHash())
-	if len(c.config.NewNodes) > 0 && !*newNodesReadOnly {
+	if len(c.opts.NewNodes) > 0 && !*newNodesReadOnly {
 		allPeers = c.extraConsistentHash.GetAllReplicas(d.GetHash())
 	}
-	return peerset.New(allPeers[:c.config.ReplicationFactor], allPeers[c.config.ReplicationFactor:])
+	return peerset.New(allPeers[:c.opts.ReplicationFactor], allPeers[c.opts.ReplicationFactor:])
 }
 
 func dedupe(in []string) []string {
@@ -682,17 +680,17 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 	peers := c.consistentHash.GetAllReplicas(d.GetHash())
 	var primaryPeers, secondaryPeers []string
 	// To prevent a panic if replication is misconfigured to be higher than peer count.
-	if len(peers) >= c.config.ReplicationFactor {
-		primaryPeers = peers[:c.config.ReplicationFactor]
-		secondaryPeers = peers[c.config.ReplicationFactor:]
+	if len(peers) >= c.opts.ReplicationFactor {
+		primaryPeers = peers[:c.opts.ReplicationFactor]
+		secondaryPeers = peers[c.opts.ReplicationFactor:]
 	}
 
-	if len(c.config.NewNodes) > 0 {
+	if len(c.opts.NewNodes) > 0 {
 		extendedPeerList := c.extraConsistentHash.GetAllReplicas(d.GetHash())
 		// To prevent a panic if replication is misconfigured to be higher than extended peer count.
-		if len(extendedPeerList) >= c.config.ReplicationFactor {
-			newPrimaryPeers := extendedPeerList[:c.config.ReplicationFactor]
-			newSecondaryPeers := extendedPeerList[c.config.ReplicationFactor:]
+		if len(extendedPeerList) >= c.opts.ReplicationFactor {
+			newPrimaryPeers := extendedPeerList[:c.opts.ReplicationFactor]
+			newSecondaryPeers := extendedPeerList[c.opts.ReplicationFactor:]
 
 			// If newNodes is set, we want to first attempt reads on
 			// the nodes where the data ~would~ be if the new nodes
@@ -708,7 +706,7 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 	}
 
 	sortVal := func(peer string) int {
-		if peer == c.config.ListenAddr {
+		if peer == c.opts.ListenAddr {
 			return 0
 		} else if zone, ok := c.peerZone(peer); ok && zone == c.zone {
 			return 1
@@ -723,21 +721,21 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 }
 
 func (c *Cache) remoteContains(ctx context.Context, peer string, r *rspb.ResourceName) (bool, error) {
-	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.Contains(ctx, r)
 	}
 	return c.distributedProxy.RemoteContains(ctx, peer, r)
 }
 
 func (c *Cache) remoteMetadata(ctx context.Context, peer string, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
-	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.Metadata(ctx, r)
 	}
 	return c.distributedProxy.RemoteMetadata(ctx, peer, r)
 }
 
 func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
-	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.FindMissing(ctx, rns)
 	}
 
@@ -756,7 +754,7 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *d
 }
 
 func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.GetMulti(ctx, rns)
 	}
 	results := make(map[*repb.Digest][]byte)
@@ -796,7 +794,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 }
 
 func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
-	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.Reader(ctx, r, offset, limit)
 	}
 	cacheable := offset == 0 && limit == 0
@@ -861,14 +859,14 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 }
 
 func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	if c.config.EnableLocalWrites && peer == c.config.ListenAddr {
+	if c.opts.EnableLocalWrites && peer == c.opts.ListenAddr {
 		return c.local.Writer(ctx, r)
 	}
 	return c.distributedProxy.RemoteWriter(ctx, peer, handoffPeer, r)
 }
 
 func (c *Cache) remoteDelete(ctx context.Context, peer string, r *rspb.ResourceName) error {
-	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.Delete(ctx, r)
 	}
 	return c.distributedProxy.RemoteDelete(ctx, peer, r)
@@ -1438,9 +1436,9 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 	mwc := &multiWriteCloser{
 		ctx:         ctx,
 		log:         c.log,
-		peerClosers: make(map[string]interfaces.CommittedWriteCloser, c.config.ReplicationFactor),
+		peerClosers: make(map[string]interfaces.CommittedWriteCloser, c.opts.ReplicationFactor),
 		mu:          &sync.Mutex{},
-		listenAddr:  c.config.ListenAddr,
+		listenAddr:  c.opts.ListenAddr,
 		r:           r,
 	}
 	for peer, hintedHandoff := ps.GetNextPeerAndHandoff(); peer != ""; peer, hintedHandoff = ps.GetNextPeerAndHandoff() {
@@ -1458,7 +1456,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		}
 		mwc.peerClosers[peer] = rwc
 	}
-	if len(mwc.peerClosers) < c.config.ReplicationFactor {
+	if len(mwc.peerClosers) < c.opts.ReplicationFactor {
 		mwc.Close()
 		openPeers := make([]string, len(mwc.peerClosers))
 		for peer := range mwc.peerClosers {
@@ -1466,7 +1464,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		}
 		allPeers := append(ps.PreferredPeers, ps.FallbackPeers...)
 		c.log.CtxDebugf(ctx, "Could not open enough remoteWriters for digest %s. All peers: %s, opened: %s (peerset: %+v)", r.Digest.GetHash(), allPeers, openPeers, ps)
-		return nil, status.UnavailableErrorf("Not enough peers (%d) available to satisfy replication factor (%d).", len(mwc.peerClosers), c.config.ReplicationFactor)
+		return nil, status.UnavailableErrorf("Not enough peers (%d) available to satisfy replication factor (%d).", len(mwc.peerClosers), c.opts.ReplicationFactor)
 	}
 	return mwc, nil
 }
@@ -1545,7 +1543,7 @@ func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.Co
 //     distributed underlying caches should have compression enabled, so it is safe to only check the local cache
 //     for compresion support
 func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
-	if c.config.EnableLocalCompressionLookup {
+	if c.opts.EnableLocalCompressionLookup {
 		return c.local.SupportsCompressor(compressor)
 	}
 	return false
