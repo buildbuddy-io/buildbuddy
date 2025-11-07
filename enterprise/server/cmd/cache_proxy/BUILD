@@ -20,6 +20,7 @@ go_library(
         "//enterprise/server/byte_stream_server_proxy",
         "//enterprise/server/capabilities_server_proxy",
         "//enterprise/server/content_addressable_storage_server_proxy",
+        "//enterprise/server/experiments",
         "//enterprise/server/hit_tracker_client",
         "//enterprise/server/remote_crypter",
         "//enterprise/server/remoteauth",
