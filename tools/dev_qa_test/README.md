@@ -1,4 +1,4 @@
-# QA Integration Tests
+# Dev QA Tests
 
 This directory contains integration tests that validate BuildBuddy's remote execution and caching capabilities by building real-world open-source projects using their release tarballs.
 
@@ -28,16 +28,8 @@ export BB_API_KEY=your-api-key-here
 ### Run a specific test
 
 ```bash
-# Run the abseil-cpp integration test
-bazel test //tools/qa_integration_tests:abseil_cpp_dev_qa_test \
-  --test_output=all \
-  --action_env=BB_API_KEY
-```
-
-### Run all QA integration tests
-
-```bash
-bazel test //tools/qa_integration_tests:all_qa_integration_tests \
+# Run the abseil-cpp test
+bazel test //tools/dev_qa_test:abseil_cpp_dev_qa_test \
   --test_output=all \
   --action_env=BB_API_KEY
 ```
@@ -80,16 +72,10 @@ To add a new repository (e.g., bazel-gazelle):
            "QA_STRIP_PREFIX": "bazel-gazelle-X.Y.Z",
            "QA_BAZEL_COMMAND": "build //... --build_tag_filters=-local",
        },
-       tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS + ["no-sandbox"],
+       tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
        test_runner = ":dev_qa_test_runner",
-       timeout = "long",
        workspace_path = "workspaces/bazel_gazelle",
    )
-   ```
-
-4. Run update_deleted_packages:
-   ```bash
-   bazel run @rules_bazel_integration_test//tools:update_deleted_packages
    ```
 
 5. Test the new integration test locally
@@ -112,12 +98,12 @@ buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbudd
 
 ### .bazelrc configuration:
 ```
-build:qa_integration_test --remote_executor=grpcs://buildbuddy.buildbuddy.dev
-build:qa_integration_test --remote_cache=grpcs://buildbuddy.buildbuddy.dev
-build:qa_integration_test --bes_backend=grpcs://buildbuddy.buildbuddy.dev
-build:qa_integration_test --extra_toolchains=@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64
-build:qa_integration_test --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
-build:qa_integration_test --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+build:dev_qa_test --remote_executor=grpcs://buildbuddy.buildbuddy.dev
+build:dev_qa_test --remote_cache=grpcs://buildbuddy.buildbuddy.dev
+build:dev_qa_test --bes_backend=grpcs://buildbuddy.buildbuddy.dev
+build:dev_qa_test --extra_toolchains=@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64
+build:dev_qa_test --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+build:dev_qa_test --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 ```
 
 This configuration uses BuildBuddy's dev environment (buildbuddy.buildbuddy.dev) with the Ubuntu GCC x86_64 toolchain for consistent remote execution.
