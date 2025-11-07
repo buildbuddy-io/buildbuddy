@@ -1,26 +1,19 @@
 #!/usr/bin/env bash
 
-# QA Test Runner for rules_bazel_integration_test
+# Dev QA Test Runner for rules_bazel_integration_test
 # This script downloads a source tarball, injects BuildBuddy toolchain,
 # and runs Bazel commands against it using BuildBuddy RBE.
 
 set -euo pipefail
 
-# Get Bazel binary and workspace from rules_bazel_integration_test framework
 bazel="${BIT_BAZEL_BINARY:-}"
 workspace_dir="${BIT_WORKSPACE_DIR:-}"
 
-# Get QA configuration from environment
 tarball_url="${QA_TARBALL_URL:-}"
 strip_prefix="${QA_STRIP_PREFIX:-}"
 bazel_command="${QA_BAZEL_COMMAND:-}"
 api_key="${BB_API_KEY:-}"
 
-# Debug: Show all environment variables related to test
-echo "DEBUG: Environment variables available:"
-env | grep -E "(BB_|BIT_|QA_|TEST)" | head -20 || true
-
-# Validate required environment variables
 if [[ -z "${bazel}" ]]; then
   echo >&2 "ERROR: BIT_BAZEL_BINARY not set"
   exit 1
@@ -47,7 +40,7 @@ if [[ -z "${bazel_command}" ]]; then
 fi
 
 echo "=================================================="
-echo "QA Integration Test Runner"
+echo "Dev QA Test Runner"
 echo "=================================================="
 echo "Bazel binary: ${bazel}"
 echo "Workspace: ${workspace_dir}"
@@ -56,24 +49,18 @@ echo "Strip prefix: ${strip_prefix}"
 echo "Bazel command: ${bazel_command}"
 echo "=================================================="
 
-# Change to workspace directory
 cd "${workspace_dir}"
 
-# Download tarball
-echo "Downloading tarball from ${tarball_url}..."
 if ! curl -L "${tarball_url}" -o repo.tar.gz; then
   echo >&2 "ERROR: Failed to download tarball from ${tarball_url}"
   exit 1
 fi
 
-# Extract tarball
-echo "Extracting tarball..."
 if ! tar -xzf repo.tar.gz; then
   echo >&2 "ERROR: Failed to extract tarball"
   exit 1
 fi
 
-# Change into extracted directory
 if [[ ! -d "${strip_prefix}" ]]; then
   echo >&2 "ERROR: Expected directory ${strip_prefix} not found after extraction"
   ls -la
@@ -83,7 +70,6 @@ fi
 cd "${strip_prefix}"
 echo "Working directory: $(pwd)"
 
-# Inject BuildBuddy toolchain (bzlmod only)
 if [[ ! -f MODULE.bazel ]]; then
   echo >&2 "ERROR: No MODULE.bazel found. Only bzlmod projects are supported."
   exit 1
@@ -105,9 +91,6 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2")
 EOF
 echo "MODULE.bazel updated successfully with bazel_dep and extension"
 
-# Generate unique invocation ID
-invocation_id=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "test-$(date +%s)")
-
 # Enable bzlmod (always, since we only support bzlmod projects)
 echo "Enabling bzlmod mode"
 bazel_mode_flags="--enable_bzlmod --noenable_workspace"
@@ -126,7 +109,6 @@ build:dev_qa_test --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation
 build:dev_qa_test --remote_timeout=10m
 build:dev_qa_test --jobs=100
 build:dev_qa_test --build_metadata=TAGS=qa-integration-test
-build:dev_qa_test --invocation_id=${invocation_id}
 EOF
 
 cat >> .bazelrc <<EOF
@@ -145,9 +127,7 @@ fi
 echo "Remote execution configuration created"
 echo "=================================================="
 
-echo "=================================================="
 echo "Running Bazel command: ${bazel_command}"
-echo "Invocation ID: ${invocation_id}"
 echo "=================================================="
 
 set -x
@@ -158,10 +138,8 @@ set +x
 echo "=================================================="
 if [[ ${exit_code} -eq 0 ]]; then
   echo "✓ Test PASSED"
-  echo "Invocation URL: https://buildbuddy.buildbuddy.dev/invocation/${invocation_id}"
 else
   echo "✗ Test FAILED (exit code: ${exit_code})"
-  echo "Invocation URL: https://buildbuddy.buildbuddy.dev/invocation/${invocation_id}"
 fi
 echo "=================================================="
 
