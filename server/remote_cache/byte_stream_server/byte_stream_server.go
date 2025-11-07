@@ -190,10 +190,6 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	return err
 }
 
-type flusher interface {
-	Flush() error
-}
-
 // writeHandler enapsulates an on-going ByteStream write to a cache,
 // freeing the caller of having to manage writing and committing-to the cache
 // tracking cache hits, verifying checksums, etc. Here is how it must be used:
@@ -216,10 +212,9 @@ type writeHandler struct {
 	bytesUploadedFromClient int
 	transferTimer           interfaces.TransferTimer
 
-	compressorFlusher flusher
-	bufioCloser       io.Closer
-	cacheCommitter    interfaces.Committer
-	cacheCloser       io.Closer
+	bufioFlusher   func() error
+	cacheCommitter interfaces.Committer
+	cacheCloser    io.Closer
 
 	checksum           *Checksum
 	resourceName       *digest.CASResourceName
@@ -344,7 +339,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 				return nil, err
 			}
 			ws.writer = io.MultiWriter(committedWriteCloser, decompressingChecksum)
-			ws.bufioCloser = decompressingChecksum
+			ws.bufioFlusher = decompressingChecksum.Close
 		} else {
 			// If the cache doesn't support compression, wrap both the checksum and cache writer in a decompressor
 			decompressor, err := compression.NewZstdDecompressor(ws.writer)
@@ -352,7 +347,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 				return nil, err
 			}
 			ws.writer = decompressor
-			ws.bufioCloser = decompressor
+			ws.bufioFlusher = decompressor.Close
 		}
 	} else if compressData {
 		// If the cache supports compression but the request isn't compressed,
@@ -363,8 +358,8 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 			return nil, err
 		}
 		ws.writer = io.MultiWriter(compressor, ws.checksum)
-		ws.bufioCloser = compressor
-		ws.compressorFlusher = compressor
+		ws.bufioFlusher = compressor.Flush
+		ws.cacheCloser = compressor
 	}
 
 	return ws, nil
@@ -391,24 +386,15 @@ func (w *writeHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error
 }
 
 func (w *writeHandler) commit() error {
-	// We need to flush the buffer in the compressor before closing it.
-	if w.compressorFlusher != nil {
+	if w.bufioFlusher != nil {
 		defer func() {
-			w.compressorFlusher = nil
-		}()
-		if err := w.compressorFlusher.Flush(); err != nil {
-			return err
-		}
-	}
-	if w.bufioCloser != nil {
-		defer func() {
-			w.bufioCloser = nil
+			w.bufioFlusher = nil
 		}()
 		// Close the decompressor or compressor, flushing any currently buffered
 		// bytes. If this fails, don't bother computing the checksum or
 		// commiting the file to cache, since the incoming data is likely
 		// corrupt anyway.
-		if err := w.bufioCloser.Close(); err != nil {
+		if err := w.bufioFlusher(); err != nil {
 			log.Warning(err.Error())
 			return err
 		}
@@ -428,8 +414,8 @@ func (w *writeHandler) Close() error {
 		log.Debugf("ByteStream Write: uploadTracker.CloseWithBytesTransferred error: %s", err)
 	}
 
-	if w.bufioCloser != nil {
-		w.bufioCloser.Close()
+	if w.bufioFlusher != nil {
+		w.bufioFlusher()
 	}
 	return w.cacheCloser.Close()
 }
