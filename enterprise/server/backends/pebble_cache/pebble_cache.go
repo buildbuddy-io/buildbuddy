@@ -2234,56 +2234,6 @@ func (cdcw *cdcWriter) Metadata() *sgpb.StorageMetadata {
 	}
 }
 
-// zstdCompressor compresses bytes before writing them to the nested writer
-type zstdCompressor struct {
-	cacheName string
-
-	interfaces.CommittedWriteCloser
-	compressBuf     []byte
-	poolCompressBuf []byte // Buffer we must return to the pool on close.
-	bufferPool      *bytebufferpool.VariableSizePool
-
-	numDecompressedBytes int
-	numCompressedBytes   int
-}
-
-func NewZstdCompressor(cacheName string, wc interfaces.CommittedWriteCloser, bp *bytebufferpool.VariableSizePool, digestSize int64) *zstdCompressor {
-	compressBuf := bp.Get(digestSize)
-	return &zstdCompressor{
-		cacheName:            cacheName,
-		CommittedWriteCloser: wc,
-		compressBuf:          compressBuf,
-		poolCompressBuf:      compressBuf,
-		bufferPool:           bp,
-	}
-}
-
-func (z *zstdCompressor) Write(decompressedBytes []byte) (int, error) {
-	// CompressZstd can allocate a new buffer if the given compressBuf is not large enough
-	// to fit the compressed bytes.
-	z.compressBuf = compression.CompressZstd(z.compressBuf, decompressedBytes)
-	compressedBytesWritten, err := z.CommittedWriteCloser.Write(z.compressBuf)
-	if err != nil {
-		return 0, err
-	}
-
-	z.numDecompressedBytes += len(decompressedBytes)
-	z.numCompressedBytes += compressedBytesWritten
-
-	// Return the size of the original buffer even though a different compressed buffer size may have been written,
-	// or clients will return a short write error
-	return len(decompressedBytes), nil
-}
-
-func (z *zstdCompressor) Close() error {
-	metrics.CompressionRatio.
-		With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: z.cacheName}).
-		Observe(float64(z.numCompressedBytes) / float64(z.numDecompressedBytes))
-
-	z.bufferPool.Put(z.poolCompressBuf)
-	return z.CommittedWriteCloser.Close()
-}
-
 func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
@@ -2400,7 +2350,24 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 	}
 
 	if shouldCompress {
-		return NewZstdCompressor(p.name, wc, p.bufferPool, fileRecord.GetDigest().GetSizeBytes()), nil
+		compressor, err := compression.NewZstdCompressingWriter(wc, fileRecord.GetDigest().GetSizeBytes())
+		if err != nil {
+			wc.Close()
+			return nil, err
+		}
+		compressWC := ioutil.NewCustomCommitWriteCloser(compressor)
+		compressWC.CommitFn = func(inputBytes int64) error {
+			// Close the compressor to flush the buffer and return it to the pool.
+			if err := compressor.Close(); err != nil {
+				return err
+			}
+			metrics.CompressionRatio.
+				With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: p.name}).
+				Observe(float64(compressor.CompressedBytesWritten) / float64(inputBytes))
+			return wc.Commit()
+		}
+		compressWC.CloseFn = wc.Close
+		return compressWC, nil
 	}
 	return wc, nil
 }
