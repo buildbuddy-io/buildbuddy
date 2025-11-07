@@ -13,8 +13,8 @@ PODMAN_STATIC_SHA256_ARM64 = "ef1e84ab80ee5d78d4d2e59e128ff963038f39e1e4259a83e0
 def install_static_dependencies(workspace_name = "buildbuddy"):
     http_archive(
         name = "com_github_buildbuddy_io_protoc_gen_protobufjs",
-        integrity = "sha256-VL3iXrCZj9OiYrads5Ve6uHjppfc5i8mHexOrVvpOI4=",
-        urls = ["https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.13/protoc-gen-protobufjs-v0.0.13.tar.gz"],
+        integrity = "sha256-0Glb6xE/18H8cVTsfolRVmAOX1Rgrm3XAkJMT1W1dkI=",
+        urls = ["https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.14/protoc-gen-protobufjs-v0.0.14.tar.gz"],
     )
     http_archive(
         name = "com_github_sluongng_nogo_analyzer",
