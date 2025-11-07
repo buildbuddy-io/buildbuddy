@@ -8,15 +8,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -32,6 +37,10 @@ import (
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
+var (
+	config = flag.Struct("cache.meta_cache", cache_config.MetaCacheConfig{}, "Config to specify meta cache")
+)
+
 const (
 	DefaultPartitionID = "default"
 
@@ -41,6 +50,11 @@ const (
 
 	// The max size of the read buffer, used to protect from invalid and malicious requests.
 	maxReadBufferSize = 1024 * 1024 * 4
+
+	// Default values for Options
+	defaultName                        = "meta_cache"
+	defaultMaxInlineFileSizeBytes      = int64(1024)
+	defaultMinBytesAutoZstdCompression = int64(100)
 )
 
 type Options struct {
@@ -54,7 +68,13 @@ type Options struct {
 	MinBytesAutoZstdCompression int64
 	MaxInlineFileSizeBytes      int64
 
-	GCSTTLDays int
+	MetadataBackend string
+
+	GCSBucket      string
+	GCSCredentials string
+	GCSProjectID   string
+	GCSAppName     string
+	GCSTTLDays     int64
 }
 
 type Cache struct {
@@ -63,8 +83,105 @@ type Cache struct {
 	opts       Options
 }
 
+// Register creates a new MetaCache from the configured flags and sets it in
+// the provided env.
+func Register(env *real_environment.RealEnv) error {
+	if config.MetadataBackend == "" {
+		return nil
+	}
+	opts, err := GetOptionsFromConfig(env, config)
+	if err != nil {
+		return err
+	}
+	mc, err := New(env, opts)
+	if err != nil {
+		return status.InternalErrorf("Error configuring meta cache: %s", err)
+	}
+	if env.GetCache() != nil {
+		log.Warningf("Overriding configured cache with metacache [%s].", mc.opts.Name)
+	}
+	env.SetCache(mc)
+	return nil
+
+}
+
+func GetOptionsFromConfig(env environment.Env, cfg *cache_config.MetaCacheConfig) (Options, error) {
+	emptyOpts := Options{}
+	if cfg == nil {
+		return emptyOpts, status.FailedPreconditionErrorf("meta cache config is nil")
+	}
+	if cfg.MetadataBackend == "" {
+		return emptyOpts, status.FailedPreconditionError("Meta cache metadata backend must be set")
+	}
+	opts := Options{
+		Name:                        cfg.Name,
+		MetadataBackend:             cfg.MetadataBackend,
+		PartitionMappings:           cfg.PartitionMappings,
+		MaxInlineFileSizeBytes:      cfg.MaxInlineFileSizeBytes,
+		MinBytesAutoZstdCompression: cfg.MinBytesAutoZstdCompression,
+		GCSBucket:                   cfg.GCSConfig.Bucket,
+		GCSCredentials:              cfg.GCSConfig.Credentials,
+		GCSProjectID:                cfg.GCSConfig.ProjectID,
+		GCSAppName:                  cfg.GCSConfig.AppName,
+	}
+
+	if cfg.GCSConfig.TTLDays != nil {
+		opts.GCSTTLDays = *cfg.GCSConfig.TTLDays
+	}
+
+	return opts, nil
+}
+
+func setOptionDefaults(opts *Options) {
+	if opts.Name == "" {
+		opts.Name = defaultName
+	}
+	if opts.MaxInlineFileSizeBytes == 0 {
+		opts.MaxInlineFileSizeBytes = defaultMaxInlineFileSizeBytes
+	}
+	if opts.MinBytesAutoZstdCompression == 0 {
+		opts.MinBytesAutoZstdCompression = defaultMaxInlineFileSizeBytes
+	}
+}
+
 func New(env environment.Env, opts Options) (*Cache, error) {
 	localOpts := opts
+	setOptionDefaults(&localOpts)
+	if localOpts.MetadataClient == nil {
+		if localOpts.MetadataBackend == "" {
+			return nil, status.FailedPreconditionError("Meta cache metadata client or metadata backend must be set")
+		}
+		conn, err := grpc_client.DialInternalWithPoolSize(env, opts.MetadataBackend, 2)
+		if err != nil {
+			return nil, status.UnavailableErrorf("could not dial metadata-server backend %q: %s", opts.MetadataBackend, err)
+		}
+		client := mdspb.NewMetadataServiceClient(conn)
+		localOpts.MetadataClient = client
+	}
+
+	if localOpts.FileStorer == nil {
+		filestoreOpts := make([]filestore.Option, 0)
+		if opts.GCSBucket != "" {
+			// Create a new GCS Client with compression disabled. This cache
+			// will already compress blobs before storing them, so we don't
+			// want the gcs lib to attempt to compress them too.
+			ctx := env.GetServerContext()
+			gcsBlobstore, err := gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
+			if err != nil {
+				return nil, err
+			}
+			// Because eviction is critical to how the cache works, if
+			// we're unable to ensure the bucket TTL is set correctly we
+			// return an error.
+			if err := gcsBlobstore.SetBucketCustomTimeTTL(ctx, opts.GCSTTLDays); err != nil {
+				return nil, err
+			}
+			filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, opts.GCSAppName))
+			log.Infof("Meta Cache: GCS TTL is set to %d days", opts.GCSTTLDays)
+			localOpts.FileStorer = filestore.New(filestoreOpts...)
+		}
+	}
+
 	return &Cache{
 		env:        env,
 		bufferPool: bytebufferpool.VariableSize(CompressorBufSizeBytes),

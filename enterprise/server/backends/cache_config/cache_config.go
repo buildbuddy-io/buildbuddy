@@ -67,6 +67,15 @@ type PebbleCacheConfig struct {
 	EnableAutoRatchet           bool                    `yaml:"enable_auto_ratchet"`
 }
 
+type MetaCacheConfig struct {
+	Name                        string                  `yaml:"name"`
+	MetadataBackend             string                  `yaml:"metadata_backend"`
+	PartitionMappings           []disk.PartitionMapping `yaml:"partition_mappings"`
+	MaxInlineFileSizeBytes      int64                   `yaml:"max_inline_file_size_bytes"`
+	MinBytesAutoZstdCompression int64                   `yaml:"min_bytes_auto_zstd_compression"`
+	GCSConfig                   GCSConfig               `yaml:"gcs"`
+}
+
 func (cfg *MigrationConfig) SetConfigDefaults() {
 	if cfg.CopyChanBufferSize == 0 {
 		cfg.CopyChanBufferSize = 50000

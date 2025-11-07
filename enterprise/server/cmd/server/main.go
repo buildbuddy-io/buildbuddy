@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/metacache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
@@ -235,6 +236,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
+	if err := metacache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := distributed.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
