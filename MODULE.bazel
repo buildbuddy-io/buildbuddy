@@ -10,17 +10,3 @@ include("//deps:oci.MODULE.bazel")
 include("//deps:static_deps.MODULE.bazel")
 include("//deps:toolchains.MODULE.bazel")
 include("//deps:web.MODULE.bazel")
-
-# Bazel binaries for integration testing
-bazel_binaries = use_extension(
-    "@rules_bazel_integration_test//:extensions.bzl",
-    "bazel_binaries",
-    dev_dependency = True,
-)
-bazel_binaries.download(version = "8.4.2")
-use_repo(
-    bazel_binaries,
-    "bazel_binaries",
-    "bazel_binaries_bazelisk",
-    "build_bazel_bazel_8_4_2",
-)
