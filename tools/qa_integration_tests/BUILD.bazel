@@ -29,12 +29,8 @@ bazel_integration_test(
         # API key will be provided via environment or --action_env
         # Set BB_API_KEY environment variable before running the test
     },
-    tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS + [
-        # Disable sandboxing to allow network access for downloading tarballs
-        "no-sandbox",
-    ],
+    tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
     test_runner = ":qa_test_runner",
-    timeout = "long",
     workspace_path = "workspaces/abseil_cpp",
 )
 
