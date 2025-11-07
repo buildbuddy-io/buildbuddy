@@ -6,40 +6,25 @@ load(
     "integration_test_utils",
 )
 
-# Custom test runner that downloads tarballs and runs Bazel against them
 sh_binary(
-    name = "qa_test_runner",
-    srcs = ["qa_test_runner.sh"],
+    name = "dev_qa_test_runner",
+    srcs = ["dev_qa_test_runner.sh"],
     deps = [
         "@bazel_tools//tools/bash/runfiles",
     ],
 )
 
-# Integration test for abseil-cpp using release tarball
 bazel_integration_test(
-    name = "abseil_cpp_qa_test",
+    name = "abseil_cpp_dev_qa_test",
     bazel_binaries = bazel_binaries,
     bazel_version = "8.4.2",
     env = {
-        # Source tarball configuration
         "QA_TARBALL_URL": "https://github.com/abseil/abseil-cpp/archive/refs/tags/20250814.1.tar.gz",
         "QA_STRIP_PREFIX": "abseil-cpp-20250814.1",
-        # Bazel command to execute (abseil-cpp will use C++17 by default)
         "QA_BAZEL_COMMAND": "build //...",
-        # API key will be provided via environment or --action_env
-        # Set BB_API_KEY environment variable before running the test
     },
     tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
-    test_runner = ":qa_test_runner",
+    test_runner = ":dev_qa_test_runner",
     workspace_path = "workspaces/abseil_cpp",
-)
-
-# Test suite for all QA integration tests
-test_suite(
-    name = "all_qa_integration_tests",
-    tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
-    tests = [
-        ":abseil_cpp_qa_test",
-    ],
     visibility = ["//visibility:public"],
 )

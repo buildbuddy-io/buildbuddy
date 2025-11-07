@@ -29,7 +29,7 @@ export BB_API_KEY=your-api-key-here
 
 ```bash
 # Run the abseil-cpp integration test
-bazel test //tools/qa_integration_tests:abseil_cpp_qa_test \
+bazel test //tools/qa_integration_tests:abseil_cpp_dev_qa_test \
   --test_output=all \
   --action_env=BB_API_KEY
 ```
@@ -72,7 +72,7 @@ To add a new repository (e.g., bazel-gazelle):
 2. Add a new `bazel_integration_test` target in `BUILD.bazel`:
    ```python
    bazel_integration_test(
-       name = "bazel_gazelle_qa_test",
+       name = "bazel_gazelle_dev_qa_test",
        bazel_binaries = bazel_binaries,
        bazel_version = "8.4.2",
        env = {
@@ -81,21 +81,9 @@ To add a new repository (e.g., bazel-gazelle):
            "QA_BAZEL_COMMAND": "build //... --build_tag_filters=-local",
        },
        tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS + ["no-sandbox"],
-       test_runner = ":qa_test_runner",
+       test_runner = ":dev_qa_test_runner",
        timeout = "long",
        workspace_path = "workspaces/bazel_gazelle",
-   )
-   ```
-
-3. Add to the test suite:
-   ```python
-   test_suite(
-       name = "all_qa_integration_tests",
-       tests = [
-           ":abseil_cpp_qa_test",
-           ":bazel_gazelle_qa_test",  # Add new test here
-       ],
-       ...
    )
    ```
 
@@ -108,7 +96,7 @@ To add a new repository (e.g., bazel-gazelle):
 
 ## Architecture
 
-- **qa_test_runner.sh**: Custom shell script that handles tarball download, extraction, toolchain injection, and Bazel execution
+- **dev_qa_test_runner.sh**: Custom shell script that handles tarball download, extraction, toolchain injection, and Bazel execution
 - **BUILD.bazel**: Defines test targets using `bazel_integration_test` macro
 - **workspaces/**: Empty directories that serve as test workspace roots (populated at test runtime)
 
