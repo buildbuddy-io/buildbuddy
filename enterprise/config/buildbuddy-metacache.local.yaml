@@ -25,7 +25,6 @@ cache:
     gcs:
       bucket: ${USER}_matacache_test
       project_id: "flame-build"
-      #credentials: ${TEST_SECRET}
       credentials: ${SECRET:BB_DEV_APP_SERVICE_ACCOUNT_CREDENTIALS}
       app_name: ${USER}-local-metacache
       ttl_days: 4
