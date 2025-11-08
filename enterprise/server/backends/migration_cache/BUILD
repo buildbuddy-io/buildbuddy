@@ -11,8 +11,6 @@ go_library(
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/metacache",
         "//enterprise/server/backends/pebble_cache",
-        "//enterprise/server/backends/pubsub",
-        "//enterprise/server/util/redisutil",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/backends/disk_cache",
