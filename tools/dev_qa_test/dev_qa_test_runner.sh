@@ -85,9 +85,6 @@ bazel_dep(name = "toolchains_buildbuddy", version = "0.0.2")
 
 # Use the extension to create toolchain and platform targets
 buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
-
-# Workaround: toolchains_buildbuddy loads buildifier_prebuilt but declares it as dev_dependency
-bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2")
 EOF
 echo "MODULE.bazel updated successfully with bazel_dep and extension"
 
