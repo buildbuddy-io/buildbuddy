@@ -894,7 +894,22 @@ func (q *PriorityTaskScheduler) Start() error {
 				case <-q.rootContext.Done():
 					return
 				case <-ticker.Chan():
-					for ok := true; ok; ok = q.trimQueue() {
+				}
+				trimCount := 0
+				for {
+					if q.trimQueue() {
+						trimCount++
+					} else {
+						break
+					}
+				}
+				if trimCount > 0 {
+					log.CtxDebugf(q.rootContext, "Trimmed %d tasks from queue", trimCount)
+					// Wake up the scheduling loop since the task after the
+					// trimmed task may now be schedulable.
+					select {
+					case q.checkQueueSignal <- struct{}{}:
+					default:
 					}
 				}
 			}
