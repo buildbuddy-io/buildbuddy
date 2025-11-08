@@ -954,7 +954,6 @@ func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
 			pw,
 			l.image.bsClient,
 			l.digest,
-			metadata.GetContentLength(),
 		)
 		if err != nil {
 			log.Warningf("Error fetching blob from cache: %s", err)

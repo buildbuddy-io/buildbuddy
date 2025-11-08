@@ -865,7 +865,7 @@ func (r *Replayer) copyCachedContainerImage(ctx, srcCtx, targetCtx context.Conte
 		defer pr.Close()
 		go func() {
 			defer pw.Close()
-			if err := ocicache.FetchBlobFromCache(srcCtx, pw, r.sourceBSClient, hash, contentLength); err != nil {
+			if err := ocicache.FetchBlobFromCache(srcCtx, pw, r.sourceBSClient, hash); err != nil {
 				pw.CloseWithError(fmt.Errorf("read image %s blob %s from source cache: %s", label, hash, err))
 			}
 		}()

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"math"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -38,6 +39,12 @@ const (
 	maxManifestSize = 10000000
 
 	cacheDigestFunction = repb.DigestFunction_SHA256
+
+	// unknownBlobSize is used as a dummy size value for CAS read operations
+	// when the actual blob size is not known. The CAS uses hash-only lookups,
+	// so any positive size value works. math.MaxInt64 provides optimal buffer
+	// allocation (clamped to 256 KiB) without affecting blob retrieval.
+	unknownBlobSize = math.MaxInt64
 )
 
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
@@ -229,10 +236,10 @@ func blobHit(ctx context.Context) {
 	updateCacheEventMetric(metrics.OCIBlobResourceTypeLabel, metrics.HitStatusLabel)
 }
 
-func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, hash gcr.Hash, contentLength int64) error {
+func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, hash gcr.Hash) error {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
-		SizeBytes: contentLength,
+		SizeBytes: unknownBlobSize,
 	}
 	blobRN := digest.NewCASResourceName(
 		blobCASDigest,
