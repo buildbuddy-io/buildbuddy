@@ -936,7 +936,7 @@ func (l *layerFromDigest) MediaType() (types.MediaType, error) {
 }
 
 func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
-	metadata, err := ocicache.FetchBlobMetadataFromCache(
+	_, err := ocicache.FetchBlobMetadataFromCache(
 		l.image.ctx,
 		l.image.bsClient,
 		l.image.acClient,
