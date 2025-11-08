@@ -53,3 +53,17 @@ toolchains_musl.config(
     extra_target_compatible_with = ["@com_github_buildbuddy_io_buildbuddy//toolchains:musl_on"],
 )
 use_repo(toolchains_musl, "musl_toolchains_hub")
+
+# Bazel binaries for integration testing
+bazel_binaries = use_extension(
+    "@rules_bazel_integration_test//:extensions.bzl",
+    "bazel_binaries",
+    dev_dependency = True,
+)
+bazel_binaries.download(version = "8.4.2")
+use_repo(
+    bazel_binaries,
+    "bazel_binaries",
+    "bazel_binaries_bazelisk",
+    "build_bazel_bazel_8_4_2",
+)
