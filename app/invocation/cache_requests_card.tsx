@@ -487,7 +487,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
                 name = result.name ? result.name : result.actionId;
               }
               return looksLikeDigest(result.actionId) ? (
-                <TextLink className="name-content" href={this.getActionUrl(result.actionId)}>
+                <TextLink className="name-content action-page-link" href={this.getActionUrl(result.actionId)}>
                   {name}
                 </TextLink>
               ) : (

@@ -86,6 +86,8 @@ func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string
 		fmt.Sprintf("--database.data_source=sqlite3://%s", app.dbFilePath),
 		fmt.Sprintf("--storage.disk.root_directory=%s", filepath.Join(dataDir, "storage")),
 		fmt.Sprintf("--cache.disk.root_directory=%s", filepath.Join(dataDir, "cache")),
+		// TODO: enable detailed cache stats by default
+		"--cache.detailed_stats_enabled=true",
 	}
 	args = append(args, commandArgs...)
 

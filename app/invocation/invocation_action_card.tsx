@@ -1381,7 +1381,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       {this.state.command && this.renderMissingOutputs(this.state.command, this.state.actionResult)}
                       <div className="action-section">
                         <div className="action-property-title">Stderr</div>
-                        <div>
+                        <div className="stderr-container">
                           {this.state.stderr ? (
                             <TerminalComponent
                               value={this.state.stderr}
@@ -1394,7 +1394,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       </div>
                       <div className="action-section">
                         <div className="action-property-title">Stdout</div>
-                        <div>
+                        <div className="stdout-container">
                           {this.state.stdout ? (
                             <TerminalComponent
                               value={this.state.stdout}
