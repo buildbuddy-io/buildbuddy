@@ -28,3 +28,18 @@ bazel_integration_test(
     visibility = ["//visibility:public"],
     workspace_path = "workspaces/abseil_cpp",
 )
+
+bazel_integration_test(
+    name = "rules_python_dev_qa_test",
+    bazel_binaries = bazel_binaries,
+    bazel_version = "8.4.2",
+    env = {
+        "QA_TARBALL_URL": "https://github.com/bazelbuild/rules_python/archive/refs/tags/1.6.3.tar.gz",
+        "QA_STRIP_PREFIX": "rules_python-1.6.3",
+        "QA_BAZEL_COMMAND": "build //python/...",
+    },
+    tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
+    test_runner = ":dev_qa_test_runner",
+    visibility = ["//visibility:public"],
+    workspace_path = "workspaces/rules_python",
+)
