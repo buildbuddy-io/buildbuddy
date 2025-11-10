@@ -75,10 +75,11 @@ if [[ ! -f MODULE.bazel ]]; then
   exit 1
 fi
 
-echo "Detected MODULE.bazel project - injecting bazel_dep..."
+if [[ "${INJECT_TOOLCHAIN:-true}" == "true" ]]; then
+  echo "Detected MODULE.bazel project - injecting bazel_dep..."
 
-# Append bazel_dep and extension setup to MODULE.bazel
-cat >> MODULE.bazel <<'EOF'
+  # Append bazel_dep and extension setup to MODULE.bazel
+  cat >> MODULE.bazel <<'EOF'
 
 # BuildBuddy RBE toolchain (injected by qa_test_runner.sh)
 bazel_dep(name = "toolchains_buildbuddy", version = "0.0.2")
@@ -86,7 +87,10 @@ bazel_dep(name = "toolchains_buildbuddy", version = "0.0.2")
 # Use the extension to create toolchain and platform targets
 buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
 EOF
-echo "MODULE.bazel updated successfully with bazel_dep and extension"
+  echo "MODULE.bazel updated successfully with bazel_dep and extension"
+else
+  echo "Skipping toolchain injection (INJECT_TOOLCHAIN=false)"
+fi
 
 # Enable bzlmod (always, since we only support bzlmod projects)
 echo "Enabling bzlmod mode"

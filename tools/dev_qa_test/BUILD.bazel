@@ -58,3 +58,19 @@ bazel_integration_test(
     visibility = ["//visibility:public"],
     workspace_path = "workspaces/bazel_gazelle",
 )
+
+bazel_integration_test(
+    name = "buildbuddy_dev_qa_test",
+    bazel_binaries = bazel_binaries,
+    bazel_version = "8.4.2",
+    env = {
+        "QA_TARBALL_URL": "https://github.com/buildbuddy-io/buildbuddy/archive/refs/tags/v2.218.0.tar.gz",
+        "QA_STRIP_PREFIX": "buildbuddy-2.218.0",
+        "QA_BAZEL_COMMAND": "test //...",
+        "INJECT_TOOLCHAIN": "false",
+    },
+    tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
+    test_runner = ":dev_qa_test_runner",
+    visibility = ["//visibility:public"],
+    workspace_path = "workspaces/buildbuddy",
+)
