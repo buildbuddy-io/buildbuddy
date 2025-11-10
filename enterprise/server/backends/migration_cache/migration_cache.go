@@ -113,7 +113,7 @@ func NewMigrationCache(env environment.Env, migrationConfig *cache_config.Migrat
 	}
 }
 
-func validateCacheConfig(config cache_config.CacheConfig) error {
+func ValidateCacheConfig(config cache_config.CacheConfig) error {
 	// Count base cache configs (disk or pebble)
 	baseCacheCount := 0
 	if config.DiskConfig != nil {
@@ -131,14 +131,6 @@ func validateCacheConfig(config cache_config.CacheConfig) error {
 		return nil
 	}
 
-	// Distributed cache requires exactly one base cache
-	if config.DistributedConfig != nil {
-		if baseCacheCount != 1 {
-			return status.FailedPreconditionError("distributed cache requires exactly one base cache (disk or pebble)")
-		}
-		return nil
-	}
-
 	// Otherwise, exactly one base cache must be set
 	if baseCacheCount != 1 {
 		return status.FailedPreconditionError("exactly one base cache config (disk or pebble) must be set")
@@ -148,7 +140,7 @@ func validateCacheConfig(config cache_config.CacheConfig) error {
 }
 
 func getCacheFromConfig(env environment.Env, cfg cache_config.CacheConfig) (interfaces.Cache, error) {
-	err := validateCacheConfig(cfg)
+	err := ValidateCacheConfig(cfg)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("error validating migration cache config: %s", err)
 	}
