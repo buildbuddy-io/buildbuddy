@@ -70,16 +70,6 @@ archive_override(
     urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/a40e8ad10fe00afd8bd149e558e5572793ca5873.tar.gz"],
 )
 
-bazel_dep(name = "toolchains_protoc", version = "0.6.0") # must come BEFORE protobuf so the toolchain registration wins
-bazel_dep(name = "protobuf", repo_name = "com_google_protobuf")
-# TODO(tyler-french): remove once https://github.com/protocolbuffers/protobuf/pull/19679 is included in a protobuf release.
-archive_override(
-    module_name = "protobuf",
-    integrity = "sha256-escvR0NBkLeowzVsjSbTzVsopPtU3f5+gESVq5puD2Y=",
-    strip_prefix = "protobuf-4986a7722460e3163f37c98da1cb47f52c6406e1",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/4986a7722460e3163f37c98da1cb47f52c6406e1.tar.gz"],
-)
-
 ## Regular bazel_deps
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
@@ -90,6 +80,7 @@ bazel_dep(name = "aspect_rules_swc", version = "2.5.0")
 bazel_dep(name = "aspect_rules_ts", version = "3.6.3")
 bazel_dep(name = "bazel_skylib", version = "1.8.1")
 bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "protobuf", version = "32.1", repo_name = "com_google_protobuf")
 bazel_dep(name = "redis", version = "5.0.4")
 bazel_dep(name = "rules_cc", version = "0.2.9")
 bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "io_bazel_rules_go")
