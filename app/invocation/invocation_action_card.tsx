@@ -53,6 +53,8 @@ interface State {
   action?: build.bazel.remote.execution.v2.Action;
   loadingAction: boolean;
   executionId?: string;
+  targetLabel?: string;
+  actionMnemonic?: string;
   executeResponse?: build.bazel.remote.execution.v2.ExecuteResponse;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   // The first entry in the tuple is the size, the second is the number of files.
@@ -91,6 +93,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
     showInvalidateSnapshotModal: false,
     showSnapshotMenu: false,
     profileLoading: false,
+    targetLabel: undefined,
+    actionMnemonic: undefined,
   };
 
   componentDidMount() {
@@ -249,6 +253,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   private executeResponseRPC?: CancelablePromise<build.bazel.remote.execution.v2.ExecuteResponse | null>;
+  private executionMetadataRPC?: CancelablePromise<execution_stats.Execution | null>;
   private actionResultRPC?: Cancelable;
   private stdoutRPC?: Cancelable;
   private stderrRPC?: Cancelable;
@@ -257,6 +262,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   fetchExecuteResponseOrActionResult({ streamFallback = true } = {}) {
     this.executeResponseRPC?.cancel();
+    this.executionMetadataRPC?.cancel();
     this.actionResultRPC?.cancel();
     this.stdoutRPC?.cancel();
     this.stderrRPC?.cancel();
@@ -271,6 +277,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
       stderr: undefined,
       serverLogs: undefined,
       profile: undefined,
+      targetLabel: undefined,
+      actionMnemonic: undefined,
     });
 
     const actionDigestParam = this.props.search.get("actionDigest");
@@ -279,7 +287,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
       return;
     }
 
+    const actionDigest = parseActionDigest(actionDigestParam);
+    if (!actionDigest) {
+      alert_service.error("Missing action digest in URL");
+      return;
+    }
+
     const executeResponseDigestParam = this.props.search.get("executeResponseDigest");
+    const usingExecuteResponseDigest = Boolean(executeResponseDigestParam);
     if (executeResponseDigestParam) {
       // If we have the executeResponseDigest in the URL, we can skip the
       // execution table lookup.
@@ -290,19 +305,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
       }
       this.fetchExecuteResponseByDigest(executeResponseDigest);
     } else {
-      const actionDigest = parseActionDigest(actionDigestParam);
-      if (!actionDigest) {
-        alert_service.error("Missing action digest in URL");
-        return;
-      }
       // If we have an execution ID, it means that this was certainly an RBE action
       // and we can fetch the ExecuteResponse directly by action digest.
       //
       // If we don't have an execution ID, we can fall back to fetching the
       // ActionResult from the action cache.
-      this.getExecutionId()
-        ? this.fetchExecuteResponseByActionDigest(actionDigest)
-        : this.fetchActionResult(actionDigest);
+      if (this.getExecutionId()) {
+        this.fetchExecuteResponseByActionDigest(actionDigest);
+      } else {
+        this.fetchExecutionMetadata(actionDigest);
+        this.fetchActionResult(actionDigest);
+      }
     }
 
     if (!this.executeResponseRPC) {
@@ -313,12 +326,28 @@ export default class InvocationActionCardComponent extends React.Component<Props
     this.executeResponseRPC
       .then((executeResponse) => {
         if (!executeResponse) {
+          if (usingExecuteResponseDigest) {
+            this.fetchExecutionMetadata(actionDigest);
+          }
           return;
         }
         // If we found an execution, we can cancel the direct AC fetch.
         this.actionResultRPC?.cancel();
         executionFound = true;
         this.setState({ executeResponse });
+        const requestMetadata = this.extractRequestMetadata(executeResponse.result?.executionMetadata);
+        const targetLabel = requestMetadata?.targetId ?? this.state.targetLabel;
+        const actionMnemonic = requestMetadata?.actionMnemonic ?? this.state.actionMnemonic;
+        const stateUpdate: Partial<State> = {};
+        if (requestMetadata?.targetId && !this.state.targetLabel) {
+          stateUpdate.targetLabel = requestMetadata.targetId;
+        }
+        if (requestMetadata?.actionMnemonic && !this.state.actionMnemonic) {
+          stateUpdate.actionMnemonic = requestMetadata.actionMnemonic;
+        }
+        if (Object.keys(stateUpdate).length) {
+          this.setState(stateUpdate);
+        }
         if (executeResponse.result) {
           const actionResult = executeResponse.result;
           this.setState({ actionResult });
@@ -329,6 +358,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
           if (executionId) {
             this.fetchProfile(executionId);
           }
+        }
+        if (usingExecuteResponseDigest && (!targetLabel || !actionMnemonic)) {
+          this.fetchExecutionMetadata(actionDigest);
         }
       })
       .catch((e) => {
@@ -365,23 +397,94 @@ export default class InvocationActionCardComponent extends React.Component<Props
       });
   }
 
-  fetchExecuteResponseByActionDigest(actionDigest: build.bazel.remote.execution.v2.Digest) {
+  private fetchExecutionByActionDigest(
+    actionDigest: build.bazel.remote.execution.v2.Digest,
+    inlineExecuteResponse: boolean
+  ): CancelablePromise<execution_stats.Execution | null> {
     const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
-    this.executeResponseRPC = service
+    const executionPromise = service
       .getExecution({
         executionLookup: new execution_stats.ExecutionLookup({
           invocationId: this.props.model.getInvocationId(),
           actionDigestHash: actionDigest.hash,
         }),
-        inlineExecuteResponse: true,
+        inlineExecuteResponse,
       })
       .then((response) => {
-        const execution = response.execution?.[0];
-        if (execution?.executionId) {
-          this.setState({ executionId: execution.executionId });
+        const execution = response.execution?.[0] ?? null;
+        if (!execution) {
+          return null;
         }
-        return execution?.executeResponse ?? null;
+        const stateUpdate: Partial<State> = {};
+        if (execution.executionId) {
+          stateUpdate.executionId = execution.executionId;
+        }
+        if (execution.targetLabel !== undefined) {
+          stateUpdate.targetLabel = execution.targetLabel;
+        }
+        if (execution.actionMnemonic !== undefined) {
+          stateUpdate.actionMnemonic = execution.actionMnemonic;
+        }
+        if (Object.keys(stateUpdate).length) {
+          this.setState(stateUpdate);
+        }
+        return execution;
       });
+    return executionPromise;
+  }
+
+  private fetchExecutionMetadata(actionDigest: build.bazel.remote.execution.v2.Digest) {
+    const metadataPromise = this.fetchExecutionByActionDigest(actionDigest, false).catch((e) => {
+      const error = BuildBuddyError.parse(e);
+      if (error.code === "NotFound") {
+        return null;
+      }
+      errorService.handleError(e);
+      return null;
+    });
+    this.executionMetadataRPC = metadataPromise;
+  }
+
+  fetchExecuteResponseByActionDigest(actionDigest: build.bazel.remote.execution.v2.Digest) {
+    const executionPromise = this.fetchExecutionByActionDigest(actionDigest, true);
+    this.executionMetadataRPC = executionPromise;
+    this.executeResponseRPC = executionPromise.then((execution) => execution?.executeResponse ?? null);
+  }
+
+  private extractRequestMetadata(
+    metadata?: build.bazel.remote.execution.v2.ExecutedActionMetadata | null
+  ): build.bazel.remote.execution.v2.RequestMetadata | null {
+    if (!metadata) {
+      return null;
+    }
+    for (const auxiliary of metadata.auxiliaryMetadata ?? []) {
+      if (auxiliary.typeUrl === build.bazel.remote.execution.v2.RequestMetadata.getTypeUrl()) {
+        try {
+          return build.bazel.remote.execution.v2.RequestMetadata.decode(auxiliary.value);
+        } catch (e) {
+          console.warn("Failed to decode RequestMetadata auxiliary metadata", e);
+          return null;
+        }
+      }
+    }
+    return null;
+  }
+
+  private getPrimaryOutput(): string | undefined {
+    const { command } = this.state;
+    if (!command) {
+      return undefined;
+    }
+    if (command.outputPaths?.length) {
+      return command.outputPaths[0];
+    }
+    if (command.outputFiles?.length) {
+      return command.outputFiles[0];
+    }
+    if (command.outputDirectories?.length) {
+      return command.outputDirectories[0];
+    }
+    return undefined;
   }
 
   fetchStdout(actionResult: build.bazel.remote.execution.v2.ActionResult) {
@@ -1020,6 +1123,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const vmMetadata = this.getAuxiliaryMetadata(firecracker.VMMetadata);
     const executionId = this.getExecutionId();
     const platformOverrides = this.getPlatformOverrides();
+    const targetLabelDisplay = [this.state.targetLabel, this.state.actionMnemonic].filter(Boolean).join(" > ");
+    const primaryOutput = this.getPrimaryOutput();
 
     return (
       <div className="invocation-action-card">
@@ -1089,6 +1194,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       <div className="action-property-title">Digest</div>
                       <DigestComponent digest={digest} expanded={true} />
                     </div>
+                    {targetLabelDisplay && (
+                      <div className="action-section">
+                        <div className="action-property-title">Target label</div>
+                        <div>{targetLabelDisplay}</div>
+                      </div>
+                    )}
+                    {primaryOutput && (
+                      <div className="action-section">
+                        <div className="action-property-title">Primary output</div>
+                        <div>{primaryOutput}</div>
+                      </div>
+                    )}
                     {this.state.action.inputRootDigest && (
                       <div className="action-section">
                         <div className="action-property-title">Input root digest</div>
