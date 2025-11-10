@@ -5,11 +5,9 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -76,13 +74,17 @@ var (
 )
 
 func FSFromRelPath(relPath string) (fs.FS, error) {
-	// Figure out where our runfiles (static content bundled with the binary) live.
-	rfp, err := bazel.RunfilesPath()
+	// Get a filesystem containing the runfiles (static content bundled with the binary).
+	runfilesFS, err := runfiles.New()
 	if err != nil {
 		return nil, err
 	}
-	dirFS := os.DirFS(filepath.Join(rfp, relPath))
-	return dirFS, nil
+	// "_main" is the default module name
+	moduleFS, err := fs.Sub(runfilesFS, "_main")
+	if err != nil {
+		return nil, err
+	}
+	return fs.Sub(moduleFS, relPath)
 }
 
 // StaticFileServer implements a static file http server that serves static

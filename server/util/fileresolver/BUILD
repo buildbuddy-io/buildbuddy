@@ -12,6 +12,9 @@ go_test(
     name = "fileresolver_test",
     size = "small",
     srcs = ["fileresolver_test.go"],
+    data = [
+        "//server/util/fileresolver/test_data:runfiles",
+    ],
     deps = [
         ":fileresolver",
         "//server/util/fileresolver/test_data:bundle",
