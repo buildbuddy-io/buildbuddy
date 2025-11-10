@@ -29,7 +29,11 @@ func (r *fileResolver) Open(name string) (fs.File, error) {
 		}
 	}
 
-	runfilePath, err := runfiles.Rlocation("_main/" + name)
+	prefix := "_main"
+	if strings.HasPrefix(name, "/") {
+		prefix = prefix + "/"
+	}
+	runfilePath, err := runfiles.Rlocation(prefix + name)
 	if err != nil {
 		return nil, err
 	}
