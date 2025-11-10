@@ -52,7 +52,11 @@ interface Props {
 interface State {
   action?: build.bazel.remote.execution.v2.Action;
   loadingAction: boolean;
-  executionId?: string;
+  /**
+   * The execution fetched from the `getExecution` API.
+   * At minimum this should include the basic metadata that we store in the DB.
+   */
+  execution?: execution_stats.Execution | null;
   executeResponse?: build.bazel.remote.execution.v2.ExecuteResponse;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   // The first entry in the tuple is the size, the second is the number of files.
@@ -249,6 +253,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   private executeResponseRPC?: CancelablePromise<build.bazel.remote.execution.v2.ExecuteResponse | null>;
+  private executionRPC?: CancelablePromise<execution_stats.Execution | null>;
   private actionResultRPC?: Cancelable;
   private stdoutRPC?: Cancelable;
   private stderrRPC?: Cancelable;
@@ -257,6 +262,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   fetchExecuteResponseOrActionResult({ streamFallback = true } = {}) {
     this.executeResponseRPC?.cancel();
+    this.executionRPC?.cancel();
     this.actionResultRPC?.cancel();
     this.stdoutRPC?.cancel();
     this.stderrRPC?.cancel();
@@ -265,7 +271,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     this.setState({
       executeResponse: undefined,
-      executionId: undefined,
+      execution: undefined,
       actionResult: undefined,
       stdout: undefined,
       stderr: undefined,
@@ -281,14 +287,20 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     const executeResponseDigestParam = this.props.search.get("executeResponseDigest");
     if (executeResponseDigestParam) {
-      // If we have the executeResponseDigest in the URL, we can skip the
-      // execution table lookup.
       const executeResponseDigest = parseActionDigest(executeResponseDigestParam);
       if (!executeResponseDigest) {
         alert_service.error("Invalid execute response digest in URL");
         return;
       }
+      // TODO: once all servers support executionId filtering, request
+      // inlineExecuteResponse from the server instead of fetching the
+      // ExecuteResponse separately on the client.
       this.fetchExecuteResponseByDigest(executeResponseDigest);
+      // If we have an execution ID, also fetch the execution metadata from the DB.
+      const executionId = this.getExecutionId();
+      if (executionId) {
+        this.fetchExecution(executionId);
+      }
     } else {
       const actionDigest = parseActionDigest(actionDigestParam);
       if (!actionDigest) {
@@ -300,6 +312,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
       //
       // If we don't have an execution ID, we can fall back to fetching the
       // ActionResult from the action cache.
+      //
+      // TODO: we should display a warning if we fetched the ActionResult from AC,
+      // since the AC entry could potentially be from a newer invocation, not the
+      // current one we're looking at, which is probably confusing.
       this.getExecutionId()
         ? this.fetchExecuteResponseByActionDigest(actionDigest)
         : this.fetchActionResult(actionDigest);
@@ -365,6 +381,28 @@ export default class InvocationActionCardComponent extends React.Component<Props
       });
   }
 
+  fetchExecution(executionId: string) {
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
+    // TODO: remove redundant actionDigestHash filtering once all servers
+    // support executionId filtering.
+    const actionDigestHash = parseActionDigestHashFromExecutionId(executionId);
+    this.executionRPC = service
+      .getExecution({
+        executionLookup: new execution_stats.ExecutionLookup({
+          invocationId: this.props.model.getInvocationId(),
+          executionId,
+          actionDigestHash,
+        }),
+      })
+      .then((response) => {
+        const execution = response.execution?.[0];
+        if (execution) {
+          this.setState({ execution });
+        }
+        return execution;
+      });
+  }
+
   fetchExecuteResponseByActionDigest(actionDigest: build.bazel.remote.execution.v2.Digest) {
     const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
     this.executeResponseRPC = service
@@ -377,8 +415,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
       })
       .then((response) => {
         const execution = response.execution?.[0];
-        if (execution?.executionId) {
-          this.setState({ executionId: execution.executionId });
+        if (execution) {
+          this.setState({ execution });
         }
         return execution?.executeResponse ?? null;
       });
@@ -468,7 +506,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     // If we got here from the executions page then we'll have the execution ID
     // in the URL; otherwise the execution ID gets fetched from the executions
     // linked to the invocation matching the actionDigest in the URL.
-    return this.props.search.get("executionId") || this.state.executionId;
+    return this.props.search.get("executionId") || this.state.execution?.executionId;
   }
 
   displayList(list: string[]) {
@@ -1036,6 +1074,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
                 <>
                   <div className="title">Execution details</div>
                   <div className="details">
+                    {this.state.execution?.targetLabel && (
+                      <div className="action-section">
+                        <div className="action-property-title">Target label</div>
+                        <div debug-id="target-label">{this.state.execution?.targetLabel}</div>
+                      </div>
+                    )}
+                    {this.state.execution?.actionMnemonic && (
+                      <div className="action-section">
+                        <div className="action-property-title">Action mnemonic</div>
+                        <div>{this.state.execution?.actionMnemonic}</div>
+                      </div>
+                    )}
                     <div className="action-section">
                       <div className="action-property-title">Execution ID</div>
                       <div debug-id="execution-id">{executionId}</div>
@@ -1456,4 +1506,9 @@ function durationSeconds(t1: ITimestamp, t2: ITimestamp): number {
 
 function timestampToUnixSeconds(timestamp: ITimestamp): number {
   return Number(timestamp.seconds) + Number(timestamp.nanos) / 1e9;
+}
+
+function parseActionDigestHashFromExecutionId(executionId: string): string | undefined {
+  const parts = executionId.split("/");
+  return parts[parts.length - 2];
 }
