@@ -54,7 +54,11 @@ func checkPreconditions(req *espb.GetExecutionRequest) error {
 	return status.FailedPreconditionError("An execution lookup with invocation_id must be provided")
 }
 
-func (es *ExecutionService) getInvocationExecutionsFromPrimaryDB(ctx context.Context, invocationID, actionDigestHash string) ([]*tables.Execution, error) {
+func (es *ExecutionService) getInvocationExecutionsFromPrimaryDB(ctx context.Context, lookup *espb.ExecutionLookup) ([]*tables.Execution, error) {
+	invocationID := lookup.GetInvocationId()
+	actionDigestHash := lookup.GetActionDigestHash()
+	executionID := lookup.GetExecutionId()
+
 	// Note: the invocation row may not be created yet because workflow
 	// invocations are created by the execution itself.
 	q := query_builder.NewQuery(`
@@ -65,6 +69,9 @@ func (es *ExecutionService) getInvocationExecutionsFromPrimaryDB(ctx context.Con
 	q.AddWhereClause(`ie.invocation_id = ?`, invocationID)
 	if actionDigestHash != "" {
 		q.AddWhereClause(`e.execution_id LIKE ?`, "%/"+actionDigestHash+"/%")
+	}
+	if executionID != "" {
+		q.AddWhereClause(`e.execution_id = ?`, executionID)
 	}
 	dbh := es.env.GetDBHandle()
 
@@ -99,8 +106,12 @@ func (es *ExecutionService) getInvocationExecutionsFromPrimaryDB(ctx context.Con
 	return executions, nil
 }
 
-func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Context, invocationID, actionDigestHash string) ([]*olaptables.Execution, error) {
+func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Context, lookup *espb.ExecutionLookup) ([]*olaptables.Execution, error) {
 	var eg errgroup.Group
+
+	invocationID := lookup.GetInvocationId()
+	actionDigestHash := lookup.GetActionDigestHash()
+	executionID := lookup.GetExecutionId()
 
 	// If executions.write_execution_progress_state_to_redis is enabled,
 	// executions that are still in progress will be buffered in Redis.
@@ -116,6 +127,18 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		if err != nil {
 			return err
 		}
+		// Respect filters.
+		if actionDigestHash != "" {
+			ex = slices.DeleteFunc(ex, func(e *repb.StoredExecution) bool {
+				parts := strings.Split(e.ExecutionId, "/")
+				return len(parts) < 2 || parts[len(parts)-2] != actionDigestHash
+			})
+		}
+		if executionID != "" {
+			ex = slices.DeleteFunc(ex, func(e *repb.StoredExecution) bool {
+				return e.ExecutionId != executionID
+			})
+		}
 		// Convert buffered representation to OLAP table representation.
 		inProgressExecutions = make([]*olaptables.Execution, len(ex))
 		for i, e := range ex {
@@ -130,11 +153,16 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		if err != nil {
 			return err
 		}
-		// Respect actionDigestHash filter if provided.
+		// Respect filters.
 		if actionDigestHash != "" {
 			ex = slices.DeleteFunc(ex, func(e *repb.StoredExecution) bool {
 				parts := strings.Split(e.ExecutionId, "/")
 				return len(parts) < 2 || parts[len(parts)-2] != actionDigestHash
+			})
+		}
+		if executionID != "" {
+			ex = slices.DeleteFunc(ex, func(e *repb.StoredExecution) bool {
+				return e.ExecutionId != executionID
 			})
 		}
 		// Convert buffered representation to OLAP table representation.
@@ -204,6 +232,9 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		if actionDigestHash != "" {
 			q.AddWhereClause(`execution_id LIKE ?`, "%/"+actionDigestHash+"/%")
 		}
+		if executionID != "" {
+			q.AddWhereClause(`execution_id = ?`, executionID)
+		}
 		q.AddWhereClause(`updated_at_usec >= ?`, rangeStartUsec)
 		q.AddWhereClause(`updated_at_usec <= ?`, rangeEndUsec)
 		queryStr, args := q.Build()
@@ -249,7 +280,7 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	var eg errgroup.Group
 	if *primaryDBReadsEnabled {
 		eg.Go(func() error {
-			ex, err := es.getInvocationExecutionsFromPrimaryDB(ctx, req.GetExecutionLookup().GetInvocationId(), req.GetExecutionLookup().GetActionDigestHash())
+			ex, err := es.getInvocationExecutionsFromPrimaryDB(ctx, req.GetExecutionLookup())
 			if err != nil {
 				return err
 			}
@@ -259,7 +290,7 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	}
 	if *olapReadsEnabled {
 		eg.Go(func() error {
-			ex, err := es.getInvocationExecutionsFromOLAPDB(ctx, req.GetExecutionLookup().GetInvocationId(), req.GetExecutionLookup().GetActionDigestHash())
+			ex, err := es.getInvocationExecutionsFromOLAPDB(ctx, req.GetExecutionLookup())
 			if err != nil {
 				return err
 			}
