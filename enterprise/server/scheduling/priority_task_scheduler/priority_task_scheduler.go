@@ -896,12 +896,8 @@ func (q *PriorityTaskScheduler) Start() error {
 				case <-ticker.Chan():
 				}
 				trimCount := 0
-				for {
-					if q.trimQueue() {
-						trimCount++
-					} else {
-						break
-					}
+				for q.trimQueue() {
+					trimCount++
 				}
 				if trimCount > 0 {
 					log.CtxDebugf(q.rootContext, "Trimmed %d tasks from queue", trimCount)
