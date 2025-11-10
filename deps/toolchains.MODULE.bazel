@@ -54,9 +54,6 @@ toolchains_musl.config(
 )
 use_repo(toolchains_musl, "musl_toolchains_hub")
 
-protoc = use_extension("@toolchains_protoc//protoc:extensions.bzl", "protoc")
-protoc.toolchain(version = "v32.1")
-
 # Bazel binaries for integration testing
 bazel_binaries = use_extension(
     "@rules_bazel_integration_test//:extensions.bzl",

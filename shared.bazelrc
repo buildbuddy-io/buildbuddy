@@ -20,9 +20,6 @@ common --module_mirrors=https://bcr.cloudflaremirrors.com
 # Avoid being broken by version requirement changes in transitive deps.
 common --check_direct_dependencies=error
 
-# Enable proto toolchain resolution to use pre-built protoc.
-common --incompatible_enable_proto_toolchain_resolution
-
 # Sanitize environment variables to avoid cache misses.
 common --incompatible_strict_action_env
 

@@ -15,8 +15,6 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_buildbuddy_io_protoc_gen_protobufjs",
         integrity = "sha256-VL3iXrCZj9OiYrads5Ve6uHjppfc5i8mHexOrVvpOI4=",
         urls = ["https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.13/protoc-gen-protobufjs-v0.0.13.tar.gz"],
-        patches = ["//buildpatches:protoc_gen_protobufjs_use_toolchain.patch"],
-        patch_strip = 1,
     )
     http_archive(
         name = "com_github_sluongng_nogo_analyzer",
