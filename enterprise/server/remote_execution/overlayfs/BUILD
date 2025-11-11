@@ -33,6 +33,7 @@ go_test(
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":overlayfs",
+        "//server/testutil/quarantine",
         "//server/testutil/testfs",
         "//server/testutil/testmount",
         "@com_github_docker_go_units//:go-units",

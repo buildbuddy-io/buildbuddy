@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/overlayfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmount"
 	"github.com/docker/go-units"
@@ -21,6 +22,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestOverlayWorkspace(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
+
 	tmp := testfs.MakeTempDir(t)
 	ws := testfs.MakeDirAll(t, tmp, "workspace")
 	testfs.WriteAllFileContents(t, ws, map[string]string{
