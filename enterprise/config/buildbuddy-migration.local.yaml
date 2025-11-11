@@ -34,10 +34,10 @@ cache:
         cluster_size: 4
         listen_addr: ${LISTEN_ADDR}
         nodes:
-          -localhost:1337
-          -localhost:1338
-          -localhost:1339
-          -localhost:1340
+          - localhost:1337
+          - localhost:1338
+          - localhost:1339
+          - localhost:1340
       pebble:
         name: "pebble_cache"
         active_key_version: 5
