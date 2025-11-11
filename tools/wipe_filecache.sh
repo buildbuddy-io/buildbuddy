@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # Configuration
-NODE_LABEL=""     # Optional: Add label selector like "role=worker"
-DRY_RUN=true      # Default to dry-run mode
+NODE_LABEL=""              # Optional: Add label selector like "role=worker"
+NODE_NAME_PATTERN="sjc-prod-r2204m*v*"  # Node name pattern to match
+DRY_RUN=true               # Default to dry-run mode
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -53,6 +54,7 @@ if [ -n "$NODE_LABEL" ]; then
 else
     echo "  Node label filter: (none - all nodes)"
 fi
+echo "  Node name pattern: $NODE_NAME_PATTERN"
 echo "  Command: sudo rm -rf \"/var/buildbuddy/filecache/\$(cat /var/buildbuddy/filecache/metadata/host_id)/*\""
 echo ""
 
@@ -74,6 +76,18 @@ nodes_info=$(eval $KUBECTL_CMD)
 if [ -z "$nodes_info" ]; then
     echo "No nodes found or error getting nodes"
     exit 1
+fi
+
+# Filter nodes by name pattern
+if [ -n "$NODE_NAME_PATTERN" ]; then
+    # Convert glob pattern to regex (simple conversion: * -> .*)
+    pattern_regex=$(echo "$NODE_NAME_PATTERN" | sed 's/\*/.*/g')
+    nodes_info=$(echo "$nodes_info" | grep -E "^${pattern_regex} ")
+
+    if [ -z "$nodes_info" ]; then
+        echo "No nodes found matching pattern: $NODE_NAME_PATTERN"
+        exit 1
+    fi
 fi
 
 echo "Found nodes:"
