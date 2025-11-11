@@ -136,7 +136,7 @@ func busyLoop(dur time.Duration) {
 
 func getDistributedCache(t testing.TB, te environment.Env, c interfaces.Cache, lookasideCacheSizeBytes int64) interfaces.Cache {
 	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	conf := distributed.CacheConfig{
+	conf := distributed.Options{
 		ListenAddr:                   listenAddr,
 		GroupName:                    "default",
 		ReplicationFactor:            1,

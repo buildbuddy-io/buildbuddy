@@ -925,14 +925,7 @@ func (l *layerFromDigest) Size() (int64, error) {
 }
 
 func (l *layerFromDigest) MediaType() (types.MediaType, error) {
-	if l.desc != nil {
-		return l.desc.MediaType, nil
-	}
-	remoteLayer, err := l.createRemoteLayer()
-	if err != nil {
-		return "", err
-	}
-	return remoteLayer.MediaType()
+	return types.DockerLayer, nil
 }
 
 func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {

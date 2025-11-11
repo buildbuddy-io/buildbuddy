@@ -27,8 +27,10 @@ type MigrationConfig struct {
 }
 
 type CacheConfig struct {
-	DiskConfig   *DiskCacheConfig   `yaml:"disk"`
-	PebbleConfig *PebbleCacheConfig `yaml:"pebble"`
+	DiskConfig        *DiskCacheConfig        `yaml:"disk"`
+	PebbleConfig      *PebbleCacheConfig      `yaml:"pebble"`
+	DistributedConfig *DistributedCacheConfig `yaml:"distributed"`
+	MetaConfig        *MetaCacheConfig        `yaml:"meta"`
 }
 
 type DiskCacheConfig struct {
@@ -39,12 +41,12 @@ type DiskCacheConfig struct {
 }
 
 type GCSConfig struct {
-	Bucket              string `yaml:"bucket"`
-	ProjectID           string `yaml:"project_id"`
-	Credentials         string `yaml:"credentials"`
-	AppName             string `yaml:"app_name"`
-	MinGCSFileSizeBytes *int64 `yaml:"min_gcs_file_size_bytes"`
-	TTLDays             *int64 `yaml:"ttl_days"`
+	Bucket              string `yaml:"bucket" usage:"The name of the GCS bucket to store build artifact files in."`
+	ProjectID           string `yaml:"project_id" usage:"The Google Cloud project ID of the project owning the above credentials and GCS bucket."`
+	Credentials         string `yaml:"credentials" usage:"Credentials in JSON format that will be used to authenticate to GCS."`
+	AppName             string `yaml:"app_name" usage:"The app name, under which blobstore data will be stored."`
+	MinGCSFileSizeBytes *int64 `yaml:"min_gcs_file_size_bytes" usage:"Files larger than this may be stored in GCS (0 is disabled)."`
+	TTLDays             *int64 `yaml:"ttl_days" usage:"An object TTL, specified in days, to apply to the GCS bucket (0 means disabled)."`
 }
 
 type PebbleCacheConfig struct {
@@ -68,12 +70,25 @@ type PebbleCacheConfig struct {
 }
 
 type MetaCacheConfig struct {
-	Name                        string                  `yaml:"name"`
-	MetadataBackend             string                  `yaml:"metadata_backend"`
-	PartitionMappings           []disk.PartitionMapping `yaml:"partition_mappings"`
-	MaxInlineFileSizeBytes      int64                   `yaml:"max_inline_file_size_bytes"`
-	MinBytesAutoZstdCompression int64                   `yaml:"min_bytes_auto_zstd_compression"`
-	GCSConfig                   GCSConfig               `yaml:"gcs"`
+	Name                        string                  `yaml:"name" usage:"The name used in reporting cache metrics and status."`
+	MetadataBackend             string                  `yaml:"metadata_backend" usage:"The metadata server to use (e.g., 'grpc://localhost:1991')."`
+	PartitionMappings           []disk.PartitionMapping `yaml:"partition_mappings" usage:"Partition mappings for the cache."`
+	MaxInlineFileSizeBytes      int64                   `yaml:"max_inline_file_size_bytes" usage:"Files smaller than this may be inlined directly into metadata storage."`
+	MinBytesAutoZstdCompression int64                   `yaml:"min_bytes_auto_zstd_compression" usage:"Blobs larger than this will be zstd compressed before written to disk."`
+	GCSConfig                   GCSConfig               `yaml:"gcs" usage:"GCS configuration for storing large files."`
+}
+
+type DistributedCacheConfig struct {
+	ListenAddr                   string   `yaml:"listen_addr"`
+	GroupName                    string   `yaml:"group_name"`
+	Nodes                        []string `yaml:"nodes"`
+	NewNodes                     []string `yaml:"new_nodes"`
+	ReplicationFactor            int      `yaml:"replication_factor"`
+	ClusterSize                  int      `yaml:"cluster_size"`
+	LookasideCacheSizeBytes      int64    `yaml:"lookaside_cache_size_bytes"`
+	EnableLocalWrites            bool     `yaml:"enable_local_writes"`
+	EnableLocalCompressionLookup bool     `yaml:"enable_local_compression_lookup"`
+	ReadThroughLocalCache        bool     `yaml:"read_through_local_cache"`
 }
 
 func (cfg *MigrationConfig) SetConfigDefaults() {

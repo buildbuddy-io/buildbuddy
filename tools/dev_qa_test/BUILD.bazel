@@ -1,0 +1,30 @@
+load("@bazel_binaries//:defs.bzl", "bazel_binaries")
+load(
+    "@rules_bazel_integration_test//bazel_integration_test:defs.bzl",
+    "bazel_integration_test",
+    "integration_test_utils",
+)
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+sh_binary(
+    name = "dev_qa_test_runner",
+    srcs = ["dev_qa_test_runner.sh"],
+    deps = [
+        "@bazel_tools//tools/bash/runfiles",
+    ],
+)
+
+bazel_integration_test(
+    name = "abseil_cpp_dev_qa_test",
+    bazel_binaries = bazel_binaries,
+    bazel_version = "8.4.2",
+    env = {
+        "QA_TARBALL_URL": "https://github.com/abseil/abseil-cpp/archive/refs/tags/20250814.1.tar.gz",
+        "QA_STRIP_PREFIX": "abseil-cpp-20250814.1",
+        "QA_BAZEL_COMMAND": "build //...",
+    },
+    tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
+    test_runner = ":dev_qa_test_runner",
+    visibility = ["//visibility:public"],
+    workspace_path = "workspaces/abseil_cpp",
+)

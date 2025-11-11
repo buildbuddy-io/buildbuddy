@@ -157,10 +157,15 @@ common --incompatible_strict_action_env=true
 	require.Contains(t, execution.Text(), "Succeeded", "should show stage")
 	require.Contains(t, execution.Text(), "genrule-setup.sh", "should show command_snippet")
 
-	// Click the execution and make sure the execution ID matches the original.
+	// Click the execution and make sure the execution ID matches the original,
+	// and that we can see basic execution metadata.
 	execution.Click()
 	executionID2 := wt.Find(`[debug-id="execution-id"]`).Text()
 	require.Equal(t, originalExecutionID, executionID2)
+	if tc.expectTargetLabelVisible {
+		targetLabel := wt.Find(`[debug-id="target-label"]`).Text()
+		require.Equal(t, "//:target1", targetLabel)
+	}
 
 	// Now go to Drilldowns, drilldown by execution wall time, and click the
 	// rectangle shown in the heatmap. This should select the invocations
