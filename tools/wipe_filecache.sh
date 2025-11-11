@@ -101,7 +101,7 @@ while IFS= read -r line; do
 
     # Step 1: Check host_id is non-empty
     echo "Step 1: Checking host_id on $external_ip..."
-    CHECK_CMD="ssh $external_ip 'cat /var/buildbuddy/filecache/metadata/host_id'"
+    CHECK_CMD="ssh core@$external_ip 'cat /var/buildbuddy/filecache/metadata/host_id'"
     echo "[DRY RUN] Would execute: $CHECK_CMD"
 
     if [ "$DRY_RUN" = false ]; then
