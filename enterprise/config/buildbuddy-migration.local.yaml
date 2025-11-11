@@ -1,3 +1,5 @@
+# Run with
+# goreman -f tools/goreman/procfiles/Procfile.migration start
 app:
   no_default_user_group: true
   create_group_per_user: true
@@ -20,8 +22,6 @@ storage:
   tempdir: /tmp/${USER}
 cache:
   max_size_bytes: 1000000000
-  distributed_cache:
-    redis_target: "localhost:6497"
   migration:
     copy_chan_buffer_size: 200000
     max_copies_per_sec: 100
@@ -33,6 +33,11 @@ cache:
         replication_factor: 3
         cluster_size: 4
         listen_addr: ${LISTEN_ADDR}
+        nodes:
+          -localhost:1337
+          -localhost:1338
+          -localhost:1339
+          -localhost:1340
       pebble:
         name: "pebble_cache"
         active_key_version: 5
