@@ -2,6 +2,7 @@
 
 # Configuration
 NODE_LABEL="buildbuddy.io/rack=22.04,buildbuddy.io/pool=bb-executor-prod-vm30"
+NODE_NAME_PATTERN="sjc-prod-r2204m05vm*"
 KUBECTL_CONTEXT="bb-prod-us-sjc"
 DRY_RUN=true  # Default to dry-run mode
 
@@ -47,7 +48,8 @@ fi
 echo "This script will:"
 echo "  Kubectl context: $KUBECTL_CONTEXT"
 echo "  Node labels: $NODE_LABEL"
-echo "  Command: sudo rm -rf \"/var/buildbuddy/filecache/\$(cat /var/buildbuddy/filecache/metadata/host_id)/*\""
+echo "  Node name pattern: $NODE_NAME_PATTERN"
+echo "  Action: Check host_id and drain nodes"
 echo ""
 
 # Build the kubectl command
@@ -64,6 +66,18 @@ nodes_info=$(eval $KUBECTL_CMD)
 if [ -z "$nodes_info" ]; then
     echo "No nodes found or error getting nodes"
     exit 1
+fi
+
+# Filter nodes by name pattern
+if [ -n "$NODE_NAME_PATTERN" ]; then
+    # Convert glob pattern to regex (simple conversion: * -> .*)
+    pattern_regex=$(echo "$NODE_NAME_PATTERN" | sed 's/\*/.*/g')
+    nodes_info=$(echo "$nodes_info" | grep -E "^${pattern_regex} ")
+
+    if [ -z "$nodes_info" ]; then
+        echo "No nodes found matching pattern: $NODE_NAME_PATTERN"
+        exit 1
+    fi
 fi
 
 echo "Found nodes:"
@@ -84,14 +98,29 @@ while IFS= read -r line; do
     echo "================================================"
     echo "Processing node: $node_name ($external_ip)"
     echo "================================================"
-    
-    # Step 1: Drain the node
-    echo "Step 1: Draining node $node_name..."
-    DRAIN_CMD="kubectl drain $node_name --ignore-daemonsets --delete-emptydir-data --force --grace-period=30"
+
+    # Step 1: Check host_id is non-empty
+    echo "Step 1: Checking host_id on $external_ip..."
+    CHECK_CMD="ssh $external_ip 'cat /var/buildbuddy/filecache/metadata/host_id'"
+    echo "[DRY RUN] Would execute: $CHECK_CMD"
+
+    if [ "$DRY_RUN" = false ]; then
+        host_id=$(ssh $external_ip 'cat /var/buildbuddy/filecache/metadata/host_id' 2>/dev/null)
+        if [ -z "$host_id" ]; then
+            echo "✗ ERROR: host_id is empty on $external_ip"
+            echo "Skipping this node for safety..."
+            continue
+        fi
+        echo "✓ host_id is non-empty: $host_id"
+    fi
+
+    # Step 2: Drain the node
+    echo "Step 2: Draining node $node_name..."
+    DRAIN_CMD="kubectl --context=$KUBECTL_CONTEXT drain $node_name --ignore-daemonsets --delete-emptydir-data --force --grace-period=30"
     echo "[DRY RUN] Would execute: $DRAIN_CMD"
-    
+
 #    if [ "$DRY_RUN" = false ]; then
-#        if $DRAIN_CMD; then
+#        if kubectl --context=$KUBECTL_CONTEXT drain $node_name --ignore-daemonsets --delete-emptydir-data --force --grace-period=30; then
 #            echo "✓ Node drained successfully"
 #        else
 #            echo "✗ Failed to drain node $node_name"
@@ -99,34 +128,7 @@ while IFS= read -r line; do
 #            continue
 #        fi
 #    fi
-    
-    # Step 2: SSH and clean
-    echo "Step 2: SSHing into $external_ip and cleaning BuildBuddy filecache..."
-    SSH_CMD="ssh $external_ip 'sudo rm -rf \"/var/buildbuddy/filecache/\$(cat /var/buildbuddy/filecache/metadata/host_id)/*\"'"
-    echo "[DRY RUN] Would execute: $SSH_CMD"
 
-#    if [ "$DRY_RUN" = false ]; then
-#        if ssh $external_ip 'sudo rm -rf "/var/buildbuddy/filecache/$(cat /var/buildbuddy/filecache/metadata/host_id)/*"'; then
-#            echo "✓ Cleaned BuildBuddy filecache successfully"
-#        else
-#            echo "✗ Failed to clean filecache on $external_ip"
-#            echo "Attempting to uncordon anyway..."
-#        fi
-#    fi
-    
-    # Step 3: Uncordon the node
-    echo "Step 3: Uncordoning node $node_name..."
-    UNCORDON_CMD="kubectl uncordon $node_name"
-    echo "[DRY RUN] Would execute: $UNCORDON_CMD"
-    
-#    if [ "$DRY_RUN" = false ]; then
-#        if $UNCORDON_CMD; then
-#            echo "✓ Node uncordoned successfully"
-#        else
-#            echo "✗ Failed to uncordon node $node_name"
-#        fi
-#    fi
-    
     echo "Completed processing $node_name"
     
 done <<< "$nodes_info"
