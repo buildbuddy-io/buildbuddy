@@ -119,15 +119,15 @@ while IFS= read -r line; do
     DRAIN_CMD="kubectl --context=$KUBECTL_CONTEXT drain $node_name --ignore-daemonsets"
     echo "[DRY RUN] Would execute: $DRAIN_CMD"
 
-#    if [ "$DRY_RUN" = false ]; then
-#        if kubectl --context=$KUBECTL_CONTEXT drain $node_name --ignore-daemonsets --delete-emptydir-data --force --grace-period=30; then
-#            echo "✓ Node drained successfully"
-#        else
-#            echo "✗ Failed to drain node $node_name"
-#            echo "Skipping this node..."
-#            continue
-#        fi
-#    fi
+    if [ "$DRY_RUN" = false ]; then
+        if kubectl --context=$KUBECTL_CONTEXT drain $node_name --ignore-daemonsets; then
+            echo "✓ Node drained successfully"
+        else
+            echo "✗ Failed to drain node $node_name"
+            echo "Skipping this node..."
+            continue
+        fi
+    fi
 
     echo "Completed processing $node_name"
     
