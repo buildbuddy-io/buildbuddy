@@ -86,21 +86,32 @@ func (c *readThroughFetcher) Head(ctx context.Context, ref gcrname.Reference) (*
 }
 
 func (c *readThroughFetcher) Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error) {
-	// Validate that ref is a digest
-	digest, ok := ref.(gcrname.Digest)
-	if !ok {
-		return nil, status.FailedPreconditionErrorf("Get only accepts digest references, got %T: %s", ref, ref)
-	}
+	// Resolve ref to digest if it's a tag
+	var hash gcr.Hash
+	var digestRef gcrname.Reference
 
-	// Extract hash from digest
-	hash, err := gcr.NewHash(digest.DigestStr())
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid digest %s: %s", digest.DigestStr(), err)
+	if digest, ok := ref.(gcrname.Digest); ok {
+		// Already a digest reference - extract hash directly
+		var err error
+		hash, err = gcr.NewHash(digest.DigestStr())
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid digest %s: %s", digest.DigestStr(), err)
+		}
+		digestRef = ref
+	} else {
+		// Tag reference - resolve to digest using Head()
+		desc, err := c.puller.Head(ctx, ref)
+		if err != nil {
+			return nil, err
+		}
+		hash = desc.Digest
+		// Convert to digest reference for cache operations
+		digestRef = ref.Context().Digest(hash.String())
 	}
 
 	// Try to fetch from cache if enabled
 	if c.useCache {
-		mc, err := FetchManifestFromAC(ctx, c.acClient, ref.Context(), hash, ref)
+		mc, err := FetchManifestFromAC(ctx, c.acClient, digestRef.Context(), hash, ref)
 		if err == nil {
 			// Cache hit - convert OCIManifestContent to remote.Descriptor
 			desc := &remote.Descriptor{
@@ -119,15 +130,15 @@ func (c *readThroughFetcher) Get(ctx context.Context, ref gcrname.Reference) (*r
 		}
 	}
 
-	// Fetch from upstream
-	desc, err := c.puller.Get(ctx, ref)
+	// Fetch from upstream - use digestRef (resolved digest) for the fetch
+	desc, err := c.puller.Get(ctx, digestRef)
 	if err != nil {
 		return nil, err
 	}
 
 	// Write through to cache if enabled
 	if c.useCache {
-		if err := WriteManifestToAC(ctx, desc.Manifest, c.acClient, ref.Context(), hash, string(desc.MediaType), ref); err != nil {
+		if err := WriteManifestToAC(ctx, desc.Manifest, c.acClient, digestRef.Context(), hash, string(desc.MediaType), ref); err != nil {
 			log.CtxWarningf(ctx, "Error writing manifest to AC for %s: %s", ref, err)
 			// Don't fail the request if cache write fails
 		}
