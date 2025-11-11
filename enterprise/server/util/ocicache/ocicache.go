@@ -24,6 +24,7 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -48,7 +49,7 @@ type ReadThroughFetcher interface {
 	// Head makes a HEAD request to fetch metadata about a manifest.
 	Head(ctx context.Context, ref gcrname.Reference) (*gcr.Descriptor, error)
 	// Get fetches a manifest from the upstream registry.
-	//TODO(dan) Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error)
+	Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error)
 	// Layer fetches a layer (blob) from the upstream registry.
 	//TODO(dan) Layer(ctx context.Context, ref gcrname.Digest) (gcr.Layer, error)
 	// LayerFromDescriptor fetches a layer with a known descriptor, avoiding extra HTTP requests.
@@ -82,6 +83,57 @@ func NewReadThroughFetcher(env environment.Env, useCache bool, opts ...remote.Op
 
 func (c *readThroughFetcher) Head(ctx context.Context, ref gcrname.Reference) (*gcr.Descriptor, error) {
 	return c.puller.Head(ctx, ref)
+}
+
+func (c *readThroughFetcher) Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error) {
+	// Validate that ref is a digest
+	digest, ok := ref.(gcrname.Digest)
+	if !ok {
+		return nil, status.FailedPreconditionErrorf("Get only accepts digest references, got %T: %s", ref, ref)
+	}
+
+	// Extract hash from digest
+	hash, err := gcr.NewHash(digest.DigestStr())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid digest %s: %s", digest.DigestStr(), err)
+	}
+
+	// Try to fetch from cache if enabled
+	if c.useCache {
+		mc, err := FetchManifestFromAC(ctx, c.acClient, ref.Context(), hash, ref)
+		if err == nil {
+			// Cache hit - convert OCIManifestContent to remote.Descriptor
+			desc := &remote.Descriptor{
+				Descriptor: gcr.Descriptor{
+					MediaType: types.MediaType(mc.ContentType),
+					Size:      int64(len(mc.Raw)),
+					Digest:    hash,
+				},
+				Manifest: mc.Raw,
+			}
+			return desc, nil
+		}
+		// Cache miss or error - continue to upstream fetch
+		if !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Error fetching manifest from AC for %s: %s", ref, err)
+		}
+	}
+
+	// Fetch from upstream
+	desc, err := c.puller.Get(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	// Write through to cache if enabled
+	if c.useCache {
+		if err := WriteManifestToAC(ctx, desc.Manifest, c.acClient, ref.Context(), hash, string(desc.MediaType), ref); err != nil {
+			log.CtxWarningf(ctx, "Error writing manifest to AC for %s: %s", ref, err)
+			// Don't fail the request if cache write fails
+		}
+	}
+
+	return desc, nil
 }
 
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
