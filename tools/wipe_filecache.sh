@@ -105,7 +105,7 @@ while IFS= read -r line; do
     echo "[DRY RUN] Would execute: $CHECK_CMD"
 
     if [ "$DRY_RUN" = false ]; then
-        host_id=$(ssh $external_ip 'cat /var/buildbuddy/filecache/metadata/host_id' 2>/dev/null)
+        host_id=$(ssh core@$external_ip 'cat /var/buildbuddy/filecache/metadata/host_id' 2>/dev/null)
         if [ -z "$host_id" ]; then
             echo "✗ ERROR: host_id is empty on $external_ip"
             echo "Skipping this node for safety..."
