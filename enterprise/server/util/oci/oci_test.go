@@ -708,6 +708,8 @@ func TestResolve_WithCache(t *testing.T) {
 					Platform: &tc.imagePlatform,
 				},
 			})
+			indexDigest, err := index.Digest()
+			require.NoError(t, err)
 			registry.PushIndex(t, index, tc.imageName+"_index")
 
 			// Test with normal image manifest
@@ -725,10 +727,10 @@ func TestResolve_WithCache(t *testing.T) {
 				// to resolve the manifest, as well as to fetch the manifest and
 				// layer contents.
 				expected := map[string]int{
-					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":             1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/latest":              1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(): 1,
+					http.MethodGet + " /v2/":                                                                       1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":                     1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/" + imageDigest.String():     1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String():         1,
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 
@@ -783,12 +785,12 @@ func TestResolve_WithCache(t *testing.T) {
 				// compared to the non-index manifest case, since the index
 				// manifest points to the platform-specific image manifest.
 				expected := map[string]int{
-					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                   1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String():  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():      1,
+					http.MethodGet + " /v2/":                                                                       1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                     1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + indexDigest.String():     1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String():    1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String():     1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():         1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 
@@ -859,13 +861,16 @@ func TestResolve_Concurrency(t *testing.T) {
 	configDigest, err := pushedImage.ConfigName()
 	require.NoError(t, err)
 
+	imageDigest, err := pushedImage.Digest()
+	require.NoError(t, err)
+
 	imageAddress := registry.ImageAddress(imageName + "_image")
 	expected := map[string]int{
-		http.MethodGet + " /v2/": 1,
-		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
-		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
-		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
-		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
+		http.MethodGet + " /v2/":                                                                1,
+		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":                      1,
+		http.MethodGet + " /v2/" + imageName + "_image/manifests/" + imageDigest.String():      1,
+		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String():        1,
+		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():         1,
 	}
 	for digest, _ := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
