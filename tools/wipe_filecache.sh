@@ -116,7 +116,7 @@ while IFS= read -r line; do
 
     # Step 2: Drain the node
     echo "Step 2: Draining node $node_name..."
-    DRAIN_CMD="kubectl --context=$KUBECTL_CONTEXT drain $node_name --ignore-daemonsets --delete-emptydir-data --force --grace-period=30"
+    DRAIN_CMD="kubectl --context=$KUBECTL_CONTEXT drain $node_name --ignore-daemonsets"
     echo "[DRY RUN] Would execute: $DRAIN_CMD"
 
 #    if [ "$DRY_RUN" = false ]; then
