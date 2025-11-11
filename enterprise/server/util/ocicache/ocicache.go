@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"sync"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -16,10 +14,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -44,95 +40,7 @@ const (
 	maxManifestSize = 10000000
 
 	cacheDigestFunction = repb.DigestFunction_SHA256
-
-	// Tag-to-digest mapper configuration
-	tagToDigestTTL        = 15 * time.Minute
-	tagToDigestMaxEntries = 1000
 )
-
-// tagToDigestEntry represents a cached tag-to-digest mapping with expiration.
-type tagToDigestEntry struct {
-	digest     string
-	expiration time.Time
-}
-
-// tagToDigestMapper caches tag-to-digest mappings to avoid repeated HEAD requests.
-type tagToDigestMapper struct {
-	lru *lru.LRU[tagToDigestEntry]
-	mu  sync.RWMutex
-}
-
-var (
-	globalTagToDigestMapper *tagToDigestMapper
-	initMapperOnce          sync.Once
-)
-
-// getTagToDigestMapper returns the singleton mapper, initializing it if needed.
-func getTagToDigestMapper() *tagToDigestMapper {
-	initMapperOnce.Do(func() {
-		globalTagToDigestMapper = newTagToDigestMapper()
-	})
-	return globalTagToDigestMapper
-}
-
-// newTagToDigestMapper creates a new tag-to-digest mapper.
-func newTagToDigestMapper() *tagToDigestMapper {
-	lruCache, err := lru.NewLRU[tagToDigestEntry](&lru.Config[tagToDigestEntry]{
-		SizeFn:  func(_ tagToDigestEntry) int64 { return 1 },
-		MaxSize: tagToDigestMaxEntries,
-	})
-	if err != nil {
-		log.Errorf("Failed to initialize tag-to-digest mapper: %s", err)
-		return &tagToDigestMapper{}
-	}
-	return &tagToDigestMapper{
-		lru: lruCache,
-	}
-}
-
-// get retrieves a non-expired digest for the given tag.
-// Returns the digest and true if found and not expired, or empty string and false otherwise.
-// Automatically removes expired entries.
-func (m *tagToDigestMapper) get(clock clockwork.Clock, key string) (string, bool) {
-	if m == nil || m.lru == nil {
-		return "", false
-	}
-
-	m.mu.RLock()
-	entry, ok := m.lru.Get(key)
-	m.mu.RUnlock()
-
-	if !ok {
-		return "", false
-	}
-
-	// Check expiration using the provided clock
-	if clock.Now().After(entry.expiration) {
-		// Expired - remove it
-		m.mu.Lock()
-		m.lru.Remove(key)
-		m.mu.Unlock()
-		return "", false
-	}
-
-	return entry.digest, true
-}
-
-// add stores a digest for the given tag with automatic expiration.
-func (m *tagToDigestMapper) add(clock clockwork.Clock, key string, digest string) {
-	if m == nil || m.lru == nil {
-		return
-	}
-
-	entry := tagToDigestEntry{
-		digest:     digest,
-		expiration: clock.Now().Add(tagToDigestTTL),
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.lru.Add(key, entry)
-}
 
 // ReadThroughFetcher is an interface for fetching OCI blobs and manifests from an upstream registry.
 // Implementations may tee data to/from a cache while fetching from the upstream.
@@ -154,7 +62,6 @@ type readThroughFetcher struct {
 	acClient repb.ActionCacheClient
 	bsClient bspb.ByteStreamClient
 	useCache bool
-	clock    clockwork.Clock
 }
 
 // NewReadThroughFetcher creates a new ReadThroughFetcher that fetches OCI resources from an upstream registry
@@ -170,39 +77,11 @@ func NewReadThroughFetcher(env environment.Env, useCache bool, opts ...remote.Op
 		acClient: env.GetActionCacheClient(),
 		bsClient: env.GetByteStreamClient(),
 		useCache: useCache,
-		clock:    env.GetClock(),
 	}, nil
 }
 
 func (c *readThroughFetcher) Head(ctx context.Context, ref gcrname.Reference) (*gcr.Descriptor, error) {
-	_, isDigest := ref.(gcrname.Digest)
-
-	// Check mapper for tag references
-	if !isDigest {
-		mapper := getTagToDigestMapper()
-		if digestStr, ok := mapper.get(c.clock, ref.String()); ok {
-			// Mapper hit - return descriptor without HTTP request
-			digest, err := gcr.NewHash(digestStr)
-			if err == nil {
-				log.CtxDebugf(ctx, "Tag-to-digest mapping hit: %s -> %s", ref, digestStr)
-				return &gcr.Descriptor{Digest: digest}, nil
-			}
-		}
-	}
-
-	// Mapper miss or digest reference - make HEAD request
-	desc, err := c.puller.Head(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
-
-	// Store mapping for tag references
-	if !isDigest {
-		mapper := getTagToDigestMapper()
-		mapper.add(c.clock, ref.String(), desc.Digest.String())
-	}
-
-	return desc, nil
+	return c.puller.Head(ctx, ref)
 }
 
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
