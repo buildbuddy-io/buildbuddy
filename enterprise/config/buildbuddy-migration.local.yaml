@@ -33,6 +33,8 @@ cache:
         replication_factor: 3
         cluster_size: 4
         listen_addr: ${LISTEN_ADDR}
+        # The addresses of the peer nodes are defined in
+        # tools/goreman/procifles/Procfile.migration.
         nodes:
           - localhost:1337
           - localhost:1338
