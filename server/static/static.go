@@ -79,12 +79,12 @@ func FSFromRelPath(relPath string) (fs.FS, error) {
 	if err != nil {
 		return nil, err
 	}
-	// "_main" is the default module name
-	moduleFS, err := fs.Sub(runfilesFS, "_main")
-	if err != nil {
-		return nil, err
+	prefix := "_main"
+	if relPath != "" && !strings.HasPrefix(relPath, "/") {
+		prefix = prefix + "/"
 	}
-	return fs.Sub(moduleFS, relPath)
+	// "_main" is the default module name
+	return fs.Sub(runfilesFS, prefix+relPath)
 }
 
 // StaticFileServer implements a static file http server that serves static
