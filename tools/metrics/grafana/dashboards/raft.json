@@ -8829,7 +8829,7 @@
     "to": "now"
   },
   "timepicker": {},
-  "timezone": "",
+  "timezone": "America/Los_Angeles",
   "title": "Raft",
   "uid": "dbbffdbe-e2d2-4297-bd36-2544b51850ef"
 }

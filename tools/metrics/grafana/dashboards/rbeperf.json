@@ -462,7 +462,7 @@
     "to": "now"
   },
   "timepicker": {},
-  "timezone": "",
+  "timezone": "America/Los_Angeles",
   "title": "BuildBuddy Remote Execution Performance",
   "uid": "bKW9Rr_Mk"
 }

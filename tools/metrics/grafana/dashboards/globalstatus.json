@@ -1427,7 +1427,7 @@
     "to": "now"
   },
   "timepicker": {},
-  "timezone": "",
+  "timezone": "America/Los_Angeles",
   "title": "globalstatus",
   "uid": "a42a59ae-6753-4b18-baad-34dd8183d9d4"
 }

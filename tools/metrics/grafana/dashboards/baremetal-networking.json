@@ -755,7 +755,7 @@
     "to": "now"
   },
   "timepicker": {},
-  "timezone": "browser",
+  "timezone": "America/Los_Angeles",
   "title": "Baremetal Networking",
   "uid": "df22a5nr1yio0e"
 }

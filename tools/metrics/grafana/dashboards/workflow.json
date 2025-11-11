@@ -1366,7 +1366,7 @@
     "to": "now"
   },
   "timepicker": {},
-  "timezone": "",
+  "timezone": "America/Los_Angeles",
   "title": "Workflow Snapshotting",
   "uid": "KI6NxDWSk"
 }
