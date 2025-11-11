@@ -171,6 +171,10 @@ export function encodeEffectivePoolUrlParam(effectivePool: string): string {
   return `e4|${effectivePool.length}|${effectivePool}`;
 }
 
+export function encodeExitCodeUrlParam(exitCode: string): string {
+  return `e5|${exitCode.length}|${exitCode}`;
+}
+
 export function getTotal(stats: stats.ITrendStat[], fn: (stat: stats.ITrendStat) => number): number {
   return stats.map(fn).reduce((a, b) => a + b, 0);
 }

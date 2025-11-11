@@ -410,6 +410,8 @@ export function getDimensionName(d: stat_filter.Dimension): string {
         return "Mnemonic";
       case stat_filter.ExecutionDimensionType.EFFECTIVE_POOL_EXECUTION_DIMENSION:
         return "Pool";
+      case stat_filter.ExecutionDimensionType.EXIT_CODE_EXECUTION_DIMENSION:
+        return "Exit Code";
     }
   } else if (d.invocation) {
     switch (d.invocation) {
