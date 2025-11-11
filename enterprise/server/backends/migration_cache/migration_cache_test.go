@@ -1585,3 +1585,154 @@ func TestOnlySrc(t *testing.T) {
 func TestOnlyDest(t *testing.T) {
 	testOnlyOneCache(t, true)
 }
+
+func TestValidateCacheConfig(t *testing.T) {
+	testCases := []struct {
+		name        string
+		config      cache_config.CacheConfig
+		expectError bool
+	}{
+		{
+			name: "valid disk config only",
+			config: cache_config.CacheConfig{
+				DiskConfig: &cache_config.DiskCacheConfig{
+					RootDirectory: "/tmp/disk",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid pebble config only",
+			config: cache_config.CacheConfig{
+				PebbleConfig: &cache_config.PebbleCacheConfig{
+					RootDirectory: "/tmp/pebble",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid meta config only",
+			config: cache_config.CacheConfig{
+				MetaConfig: &cache_config.MetaCacheConfig{
+					MetadataBackend: "mysql",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid disk + distributed",
+			config: cache_config.CacheConfig{
+				DiskConfig: &cache_config.DiskCacheConfig{
+					RootDirectory: "/tmp/disk",
+				},
+				DistributedConfig: &cache_config.DistributedCacheConfig{
+					ListenAddr: "localhost:1985",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid pebble + distributed",
+			config: cache_config.CacheConfig{
+				PebbleConfig: &cache_config.PebbleCacheConfig{
+					RootDirectory: "/tmp/pebble",
+				},
+				DistributedConfig: &cache_config.DistributedCacheConfig{
+					ListenAddr: "localhost:1985",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:        "invalid no configs",
+			config:      cache_config.CacheConfig{},
+			expectError: true,
+		},
+		{
+			name: "invalid both disk and pebble",
+			config: cache_config.CacheConfig{
+				DiskConfig: &cache_config.DiskCacheConfig{
+					RootDirectory: "/tmp/disk",
+				},
+				PebbleConfig: &cache_config.PebbleCacheConfig{
+					RootDirectory: "/tmp/pebble",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "invalid meta + disk",
+			config: cache_config.CacheConfig{
+				MetaConfig: &cache_config.MetaCacheConfig{
+					MetadataBackend: "mysql",
+				},
+				DiskConfig: &cache_config.DiskCacheConfig{
+					RootDirectory: "/tmp/disk",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "invalid meta + pebble",
+			config: cache_config.CacheConfig{
+				MetaConfig: &cache_config.MetaCacheConfig{
+					MetadataBackend: "mysql",
+				},
+				PebbleConfig: &cache_config.PebbleCacheConfig{
+					RootDirectory: "/tmp/pebble",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "invalid meta + distributed",
+			config: cache_config.CacheConfig{
+				MetaConfig: &cache_config.MetaCacheConfig{
+					MetadataBackend: "mysql",
+				},
+				DistributedConfig: &cache_config.DistributedCacheConfig{
+					ListenAddr: "localhost:1985",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "invalid only distributed",
+			config: cache_config.CacheConfig{
+				DistributedConfig: &cache_config.DistributedCacheConfig{
+					ListenAddr: "localhost:1985",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "invalid all configs",
+			config: cache_config.CacheConfig{
+				DiskConfig: &cache_config.DiskCacheConfig{
+					RootDirectory: "/tmp/disk",
+				},
+				PebbleConfig: &cache_config.PebbleCacheConfig{
+					RootDirectory: "/tmp/pebble",
+				},
+				DistributedConfig: &cache_config.DistributedCacheConfig{
+					ListenAddr: "localhost:1985",
+				},
+				MetaConfig: &cache_config.MetaCacheConfig{
+					MetadataBackend: "mysql",
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := migration_cache.ValidateCacheConfig(tc.config)
+			if tc.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

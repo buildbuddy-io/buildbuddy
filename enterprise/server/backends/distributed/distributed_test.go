@@ -77,7 +77,7 @@ func waitForShutdown(c *Cache) {
 	cancel()
 }
 
-func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCache interfaces.Cache) *Cache {
+func startNewDCache(t *testing.T, te environment.Env, config Options, baseCache interfaces.Cache) *Cache {
 	c, err := NewDistributedCache(te, baseCache, config, te.GetHealthChecker())
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func TestBasicReadWrite(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -210,7 +210,7 @@ func TestReadWrite_Compression(t *testing.T) {
 			peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 			peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 			peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-			baseConfig := CacheConfig{
+			baseConfig := Options{
 				ReplicationFactor:  3,
 				Nodes:              []string{peer1, peer2, peer3},
 				DisableLocalLookup: true,
@@ -278,7 +278,7 @@ func TestContains(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -329,7 +329,7 @@ func TestContains_NotWritten(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -377,7 +377,7 @@ func TestReadMaxOffset(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -426,7 +426,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -480,7 +480,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer4 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3, peer4},
 		DisableLocalLookup: true,
@@ -546,7 +546,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer4 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3, peer4},
 		DisableLocalLookup: true,
@@ -626,7 +626,7 @@ func TestBackfill(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:    3,
 		Nodes:                []string{peer1, peer2, peer3},
 		DisableLocalLookup:   true,
@@ -705,7 +705,7 @@ func TestContainsMulti(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -767,7 +767,7 @@ func TestMetadata(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -821,7 +821,7 @@ func TestFindMissing(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -917,7 +917,7 @@ func TestGetMulti(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -1005,7 +1005,7 @@ func TestHintedHandoff(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer4 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3, peer4},
 		DisableLocalLookup: true,
@@ -1111,7 +1111,7 @@ func TestDelete(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -1174,7 +1174,7 @@ func TestDelete_NonExistentFile(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -1250,7 +1250,7 @@ func TestSupportsCompressor(t *testing.T) {
 			// Setup distributed cache
 			peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 			peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-			baseConfig := CacheConfig{
+			baseConfig := Options{
 				ReplicationFactor:            2,
 				Nodes:                        []string{peer1, peer2},
 				DisableLocalLookup:           true,
@@ -1286,7 +1286,7 @@ func TestExtraNodes(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -1351,7 +1351,7 @@ func TestExtraNodes(t *testing.T) {
 	peer8 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer9 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 
-	baseConfig = CacheConfig{
+	baseConfig = Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		NewNodes:           []string{peer1, peer2, peer3, peer4, peer5, peer6, peer7, peer8, peer9},
@@ -1495,7 +1495,7 @@ func TestExtraNodesReadOnly(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -1565,7 +1565,7 @@ func TestExtraNodesReadOnly(t *testing.T) {
 	peer5 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer6 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 
-	baseConfig = CacheConfig{
+	baseConfig = Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		NewNodes:           []string{peer1, peer2, peer3, peer4, peer5, peer6},
@@ -1671,7 +1671,7 @@ func TestExtraNodesReadWrite(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -1741,7 +1741,7 @@ func TestExtraNodesReadWrite(t *testing.T) {
 	peer5 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer6 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 
-	baseConfig = CacheConfig{
+	baseConfig = Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		NewNodes:           []string{peer1, peer2, peer3, peer4, peer5, peer6},
@@ -1829,7 +1829,7 @@ func TestReadThroughLookaside(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:       3,
 		Nodes:                   []string{peer1, peer2, peer3},
 		DisableLocalLookup:      true,
@@ -1916,7 +1916,7 @@ func TestAbandonedReadDoesntWriteToLookaside(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	config := CacheConfig{
+	config := Options{
 		ReplicationFactor:       1,
 		Nodes:                   []string{peer},
 		DisableLocalLookup:      true,
@@ -1960,7 +1960,7 @@ func TestGetMultiLookaside(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:       3,
 		Nodes:                   []string{peer1, peer2, peer3},
 		DisableLocalLookup:      true,
@@ -2059,7 +2059,7 @@ func TestLookasideLimits(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:       3,
 		Nodes:                   []string{peer1, peer2, peer3},
 		DisableLocalLookup:      true,
@@ -2130,7 +2130,7 @@ func TestTreeCacheLookaside(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:       3,
 		Nodes:                   []string{peer1, peer2, peer3},
 		DisableLocalLookup:      true,
@@ -2236,7 +2236,7 @@ func TestReadThroughLocalCache(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:     1,
 		Nodes:                 []string{peer1, peer2, peer3},
 		DisableLocalLookup:    true,
@@ -2330,7 +2330,7 @@ func TestNoEncryptedContentsInLookaside(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:       1,
 		Nodes:                   []string{peer1, peer2, peer3},
 		LookasideCacheSizeBytes: 100_000,

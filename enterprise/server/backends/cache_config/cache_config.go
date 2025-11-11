@@ -27,8 +27,10 @@ type MigrationConfig struct {
 }
 
 type CacheConfig struct {
-	DiskConfig   *DiskCacheConfig   `yaml:"disk"`
-	PebbleConfig *PebbleCacheConfig `yaml:"pebble"`
+	DiskConfig        *DiskCacheConfig        `yaml:"disk"`
+	PebbleConfig      *PebbleCacheConfig      `yaml:"pebble"`
+	DistributedConfig *DistributedCacheConfig `yaml:"distributed"`
+	MetaConfig        *MetaCacheConfig        `yaml:"meta"`
 }
 
 type DiskCacheConfig struct {
@@ -74,6 +76,19 @@ type MetaCacheConfig struct {
 	MaxInlineFileSizeBytes      int64                   `yaml:"max_inline_file_size_bytes" usage:"Files smaller than this may be inlined directly into metadata storage."`
 	MinBytesAutoZstdCompression int64                   `yaml:"min_bytes_auto_zstd_compression" usage:"Blobs larger than this will be zstd compressed before written to disk."`
 	GCSConfig                   GCSConfig               `yaml:"gcs" usage:"GCS configuration for storing large files."`
+}
+
+type DistributedCacheConfig struct {
+	ListenAddr                   string   `yaml:"listen_addr"`
+	GroupName                    string   `yaml:"group_name"`
+	Nodes                        []string `yaml:"nodes"`
+	NewNodes                     []string `yaml:"new_nodes"`
+	ReplicationFactor            int      `yaml:"replication_factor"`
+	ClusterSize                  int      `yaml:"cluster_size"`
+	LookasideCacheSizeBytes      int64    `yaml:"lookaside_cache_size_bytes"`
+	EnableLocalWrites            bool     `yaml:"enable_local_writes"`
+	EnableLocalCompressionLookup bool     `yaml:"enable_local_compression_lookup"`
+	ReadThroughLocalCache        bool     `yaml:"read_through_local_cache"`
 }
 
 func (cfg *MigrationConfig) SetConfigDefaults() {
