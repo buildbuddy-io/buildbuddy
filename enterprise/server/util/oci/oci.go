@@ -369,10 +369,6 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	log.CtxInfof(ctx, "Resolving image %q", imageRef)
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	puller, err := remote.NewPuller(remoteOpts...)
-	if err != nil {
-		return nil, status.InternalErrorf("error creating puller: %s", err)
-	}
 
 	useCache := false
 	if *useCachePercent >= 100 {
@@ -381,7 +377,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		useCache = rand.Intn(100) < *useCachePercent
 	}
 
-	// Create a ReadThroughFetcher for manifest operations
+	// Create a ReadThroughFetcher for all OCI operations (manifest and layer fetching)
 	// When useCache=false, the fetcher will skip caching operations
 	fetcher, err := ocicache.NewReadThroughFetcher(r.env, useCache, remoteOpts...)
 	if err != nil {
@@ -399,7 +395,6 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		fetcher,
 		r.env.GetActionCacheClient(),
 		r.env.GetByteStreamClient(),
-		puller,
 		credentials.bypassRegistry,
 	)
 }
@@ -408,7 +403,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 // then falls back to fetching from the upstream remote registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, fetcher ocicache.ReadThroughFetcher, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool) (gcr.Image, error) {
+func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, fetcher ocicache.ReadThroughFetcher, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, bypassRegistry bool) (gcr.Image, error) {
 	// Determine if caching should be used
 	canUseCache := !isAnonymousUser(ctx)
 	if !canUseCache {
@@ -460,7 +455,6 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		fetcher,
 		acClient,
 		bsClient,
-		puller,
 		bypassRegistry,
 	)
 }
@@ -468,7 +462,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 // imageFromDescriptorAndManifest returns an Image from the given manifest (if the manifest is an image manifest),
 // finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
 // and otherwise returns an error.
-func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, fetcher ocicache.ReadThroughFetcher, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool) (gcr.Image, error) {
+func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, fetcher ocicache.ReadThroughFetcher, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, bypassRegistry bool) (gcr.Image, error) {
 	if desc.MediaType.IsSchema1() {
 		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
 	}
@@ -491,7 +485,6 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 			fetcher,
 			acClient,
 			bsClient,
-			puller,
 			bypassRegistry,
 		)
 	}
@@ -503,7 +496,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 		rawManifest,
 		acClient,
 		bsClient,
-		puller,
+		fetcher,
 	), nil
 }
 
@@ -599,7 +592,7 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 	return t.inner.RoundTrip(in)
 }
 
-func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller) *imageFromRawManifest {
+func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, fetcher ocicache.ReadThroughFetcher) *imageFromRawManifest {
 	i := &imageFromRawManifest{
 		repo:        repo,
 		desc:        desc,
@@ -607,7 +600,7 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		ctx:         ctx,
 		acClient:    acClient,
 		bsClient:    bsClient,
-		puller:      puller,
+		fetcher:     fetcher,
 	}
 	i.fetchRawConfigOnce = sync.OnceValues(func() ([]byte, error) {
 		manifest, err := i.Manifest()
@@ -621,7 +614,7 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 			i.repo,
 			manifest.Config.Digest,
 			i,
-			i.puller,
+			i.fetcher,
 			nil,
 		)
 
@@ -649,7 +642,7 @@ type imageFromRawManifest struct {
 	ctx      context.Context
 	acClient repb.ActionCacheClient
 	bsClient bspb.ByteStreamClient
-	puller   *remote.Puller
+	fetcher  ocicache.ReadThroughFetcher
 
 	fetchRawConfigOnce func() ([]byte, error)
 }
@@ -716,7 +709,7 @@ func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
 			i.repo,
 			layerDesc.Digest,
 			i,
-			i.puller,
+			i.fetcher,
 			&layerDesc,
 		)
 
@@ -730,7 +723,7 @@ func (i *imageFromRawManifest) LayerByDigest(digest gcr.Hash) (gcr.Layer, error)
 		i.repo,
 		digest,
 		i,
-		i.puller,
+		i.fetcher,
 		nil,
 	), nil
 }
@@ -744,21 +737,21 @@ func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error)
 		i.repo,
 		digest,
 		i,
-		i.puller,
+		i.fetcher,
 		nil,
 	), nil
 }
 
-func newLayerFromDigest(repo gcrname.Repository, digest gcr.Hash, image *imageFromRawManifest, puller *remote.Puller, desc *gcr.Descriptor) *layerFromDigest {
+func newLayerFromDigest(repo gcrname.Repository, digest gcr.Hash, image *imageFromRawManifest, fetcher ocicache.ReadThroughFetcher, desc *gcr.Descriptor) *layerFromDigest {
 	return &layerFromDigest{
-		repo:   repo,
-		digest: digest,
-		image:  image,
-		puller: puller,
-		desc:   desc,
+		repo:    repo,
+		digest:  digest,
+		image:   image,
+		fetcher: fetcher,
+		desc:    desc,
 		createRemoteLayer: sync.OnceValues(func() (gcr.Layer, error) {
 			ref := repo.Digest(digest.String())
-			return puller.Layer(image.ctx, ref)
+			return fetcher.Layer(image.ctx, ref)
 		}),
 	}
 }
@@ -772,8 +765,8 @@ type layerFromDigest struct {
 	digest gcr.Hash
 	image  *imageFromRawManifest
 
-	puller *remote.Puller
-	desc   *gcr.Descriptor
+	fetcher ocicache.ReadThroughFetcher
+	desc    *gcr.Descriptor
 
 	createRemoteLayer func() (gcr.Layer, error)
 }

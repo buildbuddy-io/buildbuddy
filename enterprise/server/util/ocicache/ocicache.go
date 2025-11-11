@@ -51,7 +51,7 @@ type ReadThroughFetcher interface {
 	// Get fetches a manifest from the upstream registry.
 	Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error)
 	// Layer fetches a layer (blob) from the upstream registry.
-	//TODO(dan) Layer(ctx context.Context, ref gcrname.Digest) (gcr.Layer, error)
+	Layer(ctx context.Context, ref gcrname.Digest) (gcr.Layer, error)
 	// LayerFromDescriptor fetches a layer with a known descriptor, avoiding extra HTTP requests.
 	// The parentImage is used to look up DiffID from the image config without fetching the layer blob.
 	//TODO(dan) LayerFromDescriptor(ctx context.Context, ref gcrname.Digest, desc gcr.Descriptor, parentImage gcr.Image) (gcr.Layer, error)
@@ -145,6 +145,12 @@ func (c *readThroughFetcher) Get(ctx context.Context, ref gcrname.Reference) (*r
 	}
 
 	return desc, nil
+}
+
+func (c *readThroughFetcher) Layer(ctx context.Context, ref gcrname.Digest) (gcr.Layer, error) {
+	// Delegate to the underlying puller for layer fetching
+	// Layer caching is handled by the oci package via read-through caching
+	return c.puller.Layer(ctx, ref)
 }
 
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
