@@ -25,70 +25,24 @@ func SyncParentDir(path string) error {
 }
 
 // MkdirAllAndSync creates a directory tree and syncs all created directories and their parents to disk.
-// It walks down the directory tree, creating and syncing only the directories that don't already exist.
 func MkdirAllAndSync(path string, mode os.FileMode) error {
-	// Handle edge cases
 	if path == "" {
 		return nil
 	}
-
-	// Clean the path
-	path = filepath.Clean(path)
-
-	// If it's just ".", nothing to create
-	if path == "." {
-		return nil
-	}
-
-	// Check if the final target already exists
-	if fi, err := os.Stat(path); err == nil {
-		if fi.IsDir() {
-			return nil // already exists
-		}
-		return fmt.Errorf("%s exists but is not a directory", path)
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-
-	// Walk up the tree to find which directories need to be created
-	var dirsToCreate []string
-	current := path
-	for {
-		if _, err := os.Stat(current); os.IsNotExist(err) {
-			dirsToCreate = append(dirsToCreate, current)
-			parent := filepath.Dir(current)
-			if parent == current {
-				// Reached the filesystem root
-				break
-			}
-			current = parent
-		} else if err != nil {
-			return err
-		} else {
-			// This directory exists, stop walking up
-			break
-		}
-	}
-
-	// Create directories from top down (reverse order)
-	for i := len(dirsToCreate) - 1; i >= 0; i-- {
-		dir := dirsToCreate[i]
-
-		// Create the directory
-		if err := os.Mkdir(dir, mode); err != nil {
-			return err
-		}
-
-		// Sync the newly created directory
-		if err := SyncPath(dir); err != nil {
-			return err
-		}
-
-		// Sync the parent to persist the directory entry
-		if err := SyncParentDir(dir); err != nil {
-			return err
-		}
-	}
+	cleanpath := filepath.Clean(path)
+	if err := os.MkdirAll(cleanpath, mode); err != nil {
+        return err
+    }
+    for dir := cleanpath; ; {
+        if err := SyncPath(dir); err != nil {
+            return err
+        }
+        parent := filepath.Dir(dir)
+        if parent == dir {
+            break
+        }
+        dir = parent
+    }
 
 	return nil
 }
