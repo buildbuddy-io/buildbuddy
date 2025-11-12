@@ -6,6 +6,7 @@ import (
 	"io"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +36,10 @@ import (
 var (
 	primaryDBReadsEnabled = flag.Bool("remote_execution.primary_db_reads_enabled", true, "Whether to read executions from the primary database.")
 	olapReadsEnabled      = flag.Bool("remote_execution.olap_reads_enabled", false, "Whether to read executions from the OLAP database (and read in-progress execution info from Redis).")
+)
+
+const (
+	pageSizeOffsetPrefix = "offset_"
 )
 
 type ExecutionService struct {
@@ -332,8 +337,52 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 		return ti.Before(tj)
 	})
 
+	// Apply pagination if requested.
+	offset := int64(0)
+	limit := int64(0)
+	if req.GetCount() > 0 {
+		limit = int64(req.GetCount())
+		// Parse page token if provided.
+		if req.GetPageToken() != "" {
+			if strings.HasPrefix(req.GetPageToken(), pageSizeOffsetPrefix) {
+				parsedOffset, err := strconv.ParseInt(strings.Replace(req.GetPageToken(), pageSizeOffsetPrefix, "", 1), 10, 64)
+				if err != nil {
+					return nil, status.InvalidArgumentError("Error parsing pagination token")
+				}
+				offset = parsedOffset
+			} else {
+				return nil, status.InvalidArgumentError("Invalid pagination token")
+			}
+		}
+	}
+
+	// Apply pagination.
+	totalExecutions := int64(len(executions))
+	var paginatedExecutions []*espb.Execution
+	if limit > 0 {
+		start := offset
+		end := offset + limit
+		if start > totalExecutions {
+			start = totalExecutions
+		}
+		if end > totalExecutions {
+			end = totalExecutions
+		}
+		if start < end {
+			paginatedExecutions = executions[start:end]
+		}
+	} else {
+		// No pagination requested, return all executions (backward compatibility).
+		paginatedExecutions = executions
+	}
+
 	rsp := &espb.GetExecutionResponse{
-		Execution: executions,
+		Execution: paginatedExecutions,
+	}
+
+	// Set next page token if there are more results.
+	if limit > 0 && offset+limit < totalExecutions {
+		rsp.NextPageToken = pageSizeOffsetPrefix + strconv.FormatInt(offset+limit, 10)
 	}
 
 	if req.GetInlineExecuteResponse() {

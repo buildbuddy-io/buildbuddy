@@ -30,10 +30,13 @@ interface State {
   sort: string;
   direction: "asc" | "desc";
   statusFilter: string;
-  limit: number;
+  pageToken: string;
+  nextPageToken: string;
 }
 
 const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage;
+
+const PAGE_SIZE = 40;
 
 export default class SpawnCardComponent extends React.Component<Props, State> {
   state: State = {
@@ -42,7 +45,8 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     sort: "status",
     direction: "desc",
     statusFilter: "all",
-    limit: 100,
+    pageToken: "",
+    nextPageToken: "",
   };
 
   timeoutRef?: number;
@@ -59,7 +63,9 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     if (invocationIdChanged || invocationStatusChanged) {
       clearTimeout(this.timeoutRef);
       this.timeoutRef = undefined;
-      this.fetchExecution();
+      // Reset to first page when invocation changes
+      this.setState({ pageToken: "", nextPageToken: "" });
+      this.fetchExecution("");
     }
   }
 
@@ -67,15 +73,22 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     clearTimeout(this.timeoutRef);
   }
 
-  fetchExecution() {
+  fetchExecution(pageToken: string = "") {
     let request = new execution_stats.GetExecutionRequest();
     request.executionLookup = new execution_stats.ExecutionLookup();
     request.executionLookup.invocationId = this.props.model.getInvocationId();
+    request.count = PAGE_SIZE;
+    request.pageToken = pageToken;
     let inProgressBeforeRequestWasMade = this.props.model.isInProgress();
     rpcService.service
       .getExecution(request)
       .then((response) => {
-        this.setState({ executions: response.execution, loading: false });
+        this.setState({
+          executions: response.execution,
+          nextPageToken: response.nextPageToken || "",
+          pageToken: pageToken,
+          loading: false,
+        });
 
         if (inProgressBeforeRequestWasMade) {
           this.fetchUpdatedProgress();
@@ -91,8 +104,9 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     clearTimeout(this.timeoutRef);
 
     // Refetch execution data in 3 seconds to update status.
+    // Preserve the current page when refetching for progress updates.
     this.timeoutRef = window.setTimeout(() => {
-      this.fetchExecution();
+      this.fetchExecution(this.state.pageToken);
     }, 3000);
   }
 
@@ -185,12 +199,22 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     });
   }
 
-  handleMoreClicked() {
-    this.setState({ limit: this.state.limit + 100 });
+  handleNextPage() {
+    if (this.state.nextPageToken) {
+      this.setState({ loading: true });
+      this.fetchExecution(this.state.nextPageToken);
+    }
   }
 
-  handleAllClicked() {
-    this.setState({ limit: Number.MAX_SAFE_INTEGER });
+  handlePreviousPage() {
+    // Calculate previous page token from current offset
+    if (this.state.pageToken) {
+      const currentOffset = parseInt(this.state.pageToken.replace("offset_", "")) || 0;
+      const prevOffset = Math.max(0, currentOffset - PAGE_SIZE);
+      const prevPageToken = prevOffset > 0 ? `offset_${prevOffset}` : "";
+      this.setState({ loading: true });
+      this.fetchExecution(prevPageToken);
+    }
   }
 
   render() {
@@ -298,16 +322,27 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
             <div>
               {filteredExecutions.length ? (
                 <InvocationExecutionTable
-                  executions={filteredExecutions.sort(this.sort.bind(this)).slice(0, this.state.limit)}
+                  executions={filteredExecutions.sort(this.sort.bind(this))}
                   invocationIdProvider={() => this.props.model.getInvocationId()}></InvocationExecutionTable>
               ) : (
                 <div className="invocation-execution-empty-actions">No matching actions.</div>
               )}
             </div>
-            {filteredExecutions.length > this.state.limit && (
-              <div className="more-buttons">
-                <OutlinedButton onClick={this.handleMoreClicked.bind(this)}>See more executions</OutlinedButton>
-                <OutlinedButton onClick={this.handleAllClicked.bind(this)}>See all executions</OutlinedButton>
+            {(this.state.pageToken || this.state.nextPageToken) && (
+              <div className="more-buttons" style={{ display: "flex", gap: "8px", alignItems: "center", justifyContent: "center", marginTop: "16px" }}>
+                <OutlinedButton
+                  onClick={this.handlePreviousPage.bind(this)}
+                  disabled={!this.state.pageToken}>
+                  Previous
+                </OutlinedButton>
+                <span style={{ color: "#666", minWidth: "80px", textAlign: "center" }}>
+                  Page {Math.floor((parseInt(this.state.pageToken.replace("offset_", "")) || 0) / PAGE_SIZE) + 1}
+                </span>
+                <OutlinedButton
+                  onClick={this.handleNextPage.bind(this)}
+                  disabled={!this.state.nextPageToken}>
+                  Next
+                </OutlinedButton>
               </div>
             )}
           </div>

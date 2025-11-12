@@ -222,12 +222,23 @@ message GetExecutionRequest {
   // Fetch the ExecuteResponse from cache for each execution and include it in
   // the response if it is available.
   bool inline_execute_response = 3;
+
+  // The number of results to return. Optional.
+  // If unset, the server will return all executions (for backward compatibility).
+  int32 count = 4;
+
+  // The next_page_token value returned from a previous request, if any.
+  string page_token = 5;
 }
 
 message GetExecutionResponse {
   context.ResponseContext response_context = 1;
 
   repeated Execution execution = 2;
+
+  // Token to retrieve the next page of results, or empty if there are no
+  // more results in the list.
+  string next_page_token = 3;
 }
 
 message WaitExecutionRequest {
