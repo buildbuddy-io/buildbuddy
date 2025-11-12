@@ -28,25 +28,55 @@ func SyncParentDir(path string) error {
 	return SyncPath(filepath.Dir(path))
 }
 
-// MkdirAllAndSync creates a directory tree and syncs all created directories and their parents to disk.
-func MkdirAllAndSync(path string, mode os.FileMode) error {
-	if path == "" {
+// MkdirAllAndSync creates a directory tree and syncs all created directories up to a specified root directory.
+// The rootDir parameter specifies where to stop recursing upward after syncing it.
+// The relativePath parameter is a child path relative to rootDir.
+func MkdirAllAndSync(rootDir string, relativePath string, mode os.FileMode) error {
+	if rootDir == "" {
 		return nil
 	}
-	cleanpath := filepath.Clean(path)
-	if err := os.MkdirAll(cleanpath, mode); err != nil {
-        return err
-    }
-    for dir := cleanpath; ; {
-        if err := SyncPath(dir); err != nil {
-            return err
-        }
-        parent := filepath.Dir(dir)
-        if parent == dir {
-            break
-        }
-        dir = parent
-    }
+
+	cleanRoot := filepath.Clean(rootDir)
+
+	// If relativePath is empty, we're just creating/syncing the root directory itself
+	var fullPath string
+	if relativePath == "" {
+		fullPath = cleanRoot
+	} else {
+		fullPath = filepath.Join(cleanRoot, relativePath)
+	}
+
+	// Create all directories from rootDir to fullPath
+	if err := os.MkdirAll(fullPath, mode); err != nil {
+		return err
+	}
+
+	// Sync from fullPath up to and including rootDir, then stop
+	for dir := fullPath; ; {
+		if err := SyncPath(dir); err != nil {
+			return err
+		}
+
+		// Stop after syncing rootDir
+		if dir == cleanRoot {
+			break
+		}
+
+		parent := filepath.Dir(dir)
+		// Safety check: if we've reached filesystem root without hitting cleanRoot, break
+		if parent == dir {
+			break
+		}
+
+		dir = parent
+	}
+
+	// Sync the parent of rootDir to persist the rootDir directory entry.
+	// This ensures that if rootDir was created during this call, the parent
+	// directory entry is persisted to disk.
+	if err := SyncParentDir(cleanRoot); err != nil {
+		return err
+	}
 
 	return nil
 }

@@ -1639,7 +1639,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 	defer rc.Close()
 
 	tempUnpackDir := destDir + tmpSuffix()
-	if err := fsync.MkdirAllAndSync(tempUnpackDir, 0755); err != nil {
+	if err := fsync.MkdirAllAndSync(filepath.Dir(tempUnpackDir), filepath.Base(tempUnpackDir), 0755); err != nil {
 		return status.UnavailableErrorf("create layer unpack dir: %s", err)
 	}
 	defer os.RemoveAll(tempUnpackDir)
@@ -1668,7 +1668,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			header.Typeflag == tar.TypeSymlink ||
 			header.Typeflag == tar.TypeLink {
 			// Ensure that parent dir exists
-			if err := fsync.MkdirAllAndSync(dir, os.ModePerm); err != nil {
+			if err := fsync.MkdirAllAndSync(tempUnpackDir, filepath.Dir(header.Name), os.ModePerm); err != nil {
 				return status.UnavailableErrorf("create directory: %s", err)
 			}
 		} else {
@@ -1698,7 +1698,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := fsync.MkdirAllAndSync(file, os.FileMode(header.Mode)); err != nil {
+			if err := fsync.MkdirAllAndSync(tempUnpackDir, header.Name, os.FileMode(header.Mode)); err != nil {
 				return status.UnavailableErrorf("create directory: %s", err)
 			}
 			if err := fsync.ChownAndSync(file, header.Uid, header.Gid); err != nil {

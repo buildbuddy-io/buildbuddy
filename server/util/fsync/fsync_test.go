@@ -25,13 +25,24 @@ func TestSyncPath(t *testing.T) {
 
 func TestMkdirAllAndSync(t *testing.T) {
 	tmpDir := t.TempDir()
-	testPath := filepath.Join(tmpDir, "a", "b", "c")
+	relativePath := filepath.Join("a", "b", "c")
+	fullPath := filepath.Join(tmpDir, relativePath)
 
-	err := fsync.MkdirAllAndSync(testPath, 0755)
+	// Test creating nested directories with root boundary
+	err := fsync.MkdirAllAndSync(tmpDir, relativePath, 0755)
 	require.NoError(t, err)
 
 	// Verify directory exists
-	info, err := os.Stat(testPath)
+	info, err := os.Stat(fullPath)
+	require.NoError(t, err)
+	require.True(t, info.IsDir())
+
+	// Test with empty relative path (just sync root dir)
+	rootDir := filepath.Join(tmpDir, "justroot")
+	err = fsync.MkdirAllAndSync(rootDir, "", 0755)
+	require.NoError(t, err)
+
+	info, err = os.Stat(rootDir)
 	require.NoError(t, err)
 	require.True(t, info.IsDir())
 }
