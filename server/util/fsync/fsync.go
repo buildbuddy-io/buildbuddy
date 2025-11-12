@@ -40,7 +40,7 @@ func MkdirAllAndSync(rootDir string, relativePath string, mode os.FileMode) erro
 
 	fullPath := cleanRoot
 	if relativePath != "" {
-		fullPath = filepath.Join(cleanRoot, relativePath)
+		fullPath = filepath.Clean(filepath.Join(cleanRoot, relativePath))
 	}
 
 	if err := os.MkdirAll(fullPath, mode); err != nil {
