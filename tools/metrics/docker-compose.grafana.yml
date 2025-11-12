@@ -13,6 +13,7 @@ services:
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT}
       - CLICKHOUSE_USERNAME=${CLICKHOUSE_USERNAME}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - GF_DATE_FORMATS_DEFAULT_TIMEZONE=America/Los_Angeles
     volumes:
       - ./grafana/provisioning/local:/etc/grafana/provisioning
       - ${DASHBOARDS_DIR}:/var/lib/grafana/dashboards
