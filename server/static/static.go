@@ -83,7 +83,7 @@ func FSFromRelPath(relPath string) (fs.FS, error) {
 	if relPath != "" && !strings.HasPrefix(relPath, "/") {
 		prefix = prefix + "/"
 	}
-	// "_main" is the default module name
+	// "_main" is the fixed runfiles directory name of the main repo
 	return fs.Sub(runfilesFS, prefix+relPath)
 }
 
