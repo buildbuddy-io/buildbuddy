@@ -9,14 +9,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// SyncFd syncs a file descriptor to disk.
-func SyncFd(fd *os.File) error {
-	if err := fd.Sync(); err != nil {
-		return fmt.Errorf("sync fd: %w", err)
-	}
-	return nil
-}
-
 // SyncPath opens a path and syncs it to disk.
 func SyncPath(path string) error {
 	f, err := os.Open(path)
@@ -24,7 +16,7 @@ func SyncPath(path string) error {
 		return fmt.Errorf("open path for sync: %w", err)
 	}
 	defer f.Close()
-	return SyncFd(f)
+	return f.Sync()
 }
 
 // SyncParentDir syncs the parent directory of a path to disk.
@@ -33,38 +25,69 @@ func SyncParentDir(path string) error {
 }
 
 // MkdirAllAndSync creates a directory tree and syncs all created directories and their parents to disk.
-// This ensures that if we create a/b/c, we sync a, b, c, and all their parents.
+// It walks down the directory tree, creating and syncing only the directories that don't already exist.
 func MkdirAllAndSync(path string, mode os.FileMode) error {
-	if err := os.MkdirAll(path, mode); err != nil {
+	// Handle edge cases
+	if path == "" {
+		return nil
+	}
+
+	// Clean the path
+	path = filepath.Clean(path)
+
+	// If it's just ".", nothing to create
+	if path == "." {
+		return nil
+	}
+
+	// Check if the final target already exists
+	if fi, err := os.Stat(path); err == nil {
+		if fi.IsDir() {
+			return nil // already exists
+		}
+		return fmt.Errorf("%s exists but is not a directory", path)
+	} else if !os.IsNotExist(err) {
 		return err
 	}
 
-	// Sync all directories from the path up to the root
-	// We sync each directory and its parent to ensure both the directory
-	// metadata and the directory entry in the parent are persisted.
+	// Walk up the tree to find which directories need to be created
+	var dirsToCreate []string
 	current := path
 	for {
-		// Sync the current directory
-		if err := SyncPath(current); err != nil {
+		if _, err := os.Stat(current); os.IsNotExist(err) {
+			dirsToCreate = append(dirsToCreate, current)
+			parent := filepath.Dir(current)
+			if parent == current {
+				// Reached the filesystem root
+				break
+			}
+			current = parent
+		} else if err != nil {
+			return err
+		} else {
+			// This directory exists, stop walking up
+			break
+		}
+	}
+
+	// Create directories from top down (reverse order)
+	for i := len(dirsToCreate) - 1; i >= 0; i-- {
+		dir := dirsToCreate[i]
+
+		// Create the directory
+		if err := os.Mkdir(dir, mode); err != nil {
 			return err
 		}
 
-		// Sync the parent directory to persist the directory entry
-		parent := filepath.Dir(current)
-		if parent == current {
-			// Reached the root (e.g., "/") - already synced
-			break
-		}
-		if parent == "." || parent == "/" {
-			// Reached the boundary - sync the parent directory to persist the entry
-			if err := SyncPath(parent); err != nil {
-				return err
-			}
-			break
+		// Sync the newly created directory
+		if err := SyncPath(dir); err != nil {
+			return err
 		}
 
-		// Move up to the parent for the next iteration
-		current = parent
+		// Sync the parent to persist the directory entry
+		if err := SyncParentDir(dir); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -75,24 +98,24 @@ func MkdirAllAndSync(path string, mode os.FileMode) error {
 func CreateFileAndSync(path string, mode os.FileMode, data io.Reader, uid, gid int) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
-		return fmt.Errorf("create file: %w", err)
+		return err
 	}
 	defer f.Close()
 
 	if _, err := io.Copy(f, data); err != nil {
-		return fmt.Errorf("write file content: %w", err)
+		return err
 	}
 
 	if err := f.Chown(uid, gid); err != nil {
-		return fmt.Errorf("chown file: %w", err)
+		return err
 	}
 
-	if err := SyncFd(f); err != nil {
+	if err := f.Sync(); err != nil {
 		return err
 	}
 
 	if err := f.Close(); err != nil {
-		return fmt.Errorf("close file: %w", err)
+		return err
 	}
 
 	if err := SyncParentDir(path); err != nil {
@@ -155,11 +178,9 @@ func RenameAndSync(oldpath, newpath string) error {
 	if err := os.Rename(oldpath, newpath); err != nil {
 		return err
 	}
-	// Sync the destination parent directory
 	if err := SyncParentDir(newpath); err != nil {
 		return err
 	}
-	// Sync the source parent directory
 	if err := SyncParentDir(oldpath); err != nil {
 		return err
 	}
