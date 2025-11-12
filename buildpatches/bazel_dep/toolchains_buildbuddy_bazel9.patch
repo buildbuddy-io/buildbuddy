@@ -1,0 +1,23 @@
+diff --git a/templates/cc_toolchain_config.bzl b/templates/cc_toolchain_config.bzl
+--- a/templates/cc_toolchain_config.bzl
++++ b/templates/cc_toolchain_config.bzl
+@@ -25,6 +25,7 @@
+     "with_feature_set",
+ )
+ load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
++load("@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl", "CcToolchainConfigInfo")
+ 
+ def layering_check_features(compiler):
+     if compiler != "clang":
+diff --git a/templates/windows_cc_toolchain_config.bzl b/templates/windows_cc_toolchain_config.bzl
+--- a/templates/windows_cc_toolchain_config.bzl
++++ b/templates/windows_cc_toolchain_config.bzl
+@@ -35,6 +35,7 @@
+     "with_feature_set",
+ )
+ load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
++load("@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl", "CcToolchainConfigInfo")
+ 
+ all_compile_actions = [
+     ACTION_NAMES.c_compile,
+
