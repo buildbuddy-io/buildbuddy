@@ -1,3 +1,7 @@
+// Package fsync provides utilities for durably writing files to disk.
+// It can be useful in cases where you need to ensure that
+// file operations are not only visible in the FS layer, but also
+// flushed to the storage layer.
 package fsync
 
 import (
