@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -26,4 +27,16 @@ genrule(
         ":generate_docs.py",
         "//tools/prettier",
     ],
+)
+
+py_binary(
+    name = "generate_docs",
+    srcs = ["generate_docs.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "metrics_py_library",
+    srcs = ["generate_docs.py"],
+    visibility = ["//:__subpackages__"],
 )
