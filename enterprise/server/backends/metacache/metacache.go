@@ -318,6 +318,42 @@ func (c *Cache) makeFileRecord(ctx context.Context, pr *rspb.ResourceName) (*sgp
 	}, nil
 }
 
+// key is a comparable key for uniquely identifying a ResourceName/FileRecord.
+// Note: groupID, partitionID, and encryptionKeyID are deliberately omitted
+// because these fields are set by the server based on request context.
+type key struct {
+	cacheType          rspb.CacheType
+	remoteInstanceName string
+	hash               string
+	sizeBytes          int64
+	digestFunction     repb.DigestFunction_Value
+}
+
+// newKeyFromFileRecord creates a key from a FileRecord.
+func newKeyFromFileRecord(fr *sgpb.FileRecord) key {
+	iso := fr.GetIsolation()
+	d := fr.GetDigest()
+	return key{
+		cacheType:          iso.GetCacheType(),
+		remoteInstanceName: iso.GetRemoteInstanceName(),
+		hash:               string(d.GetHash()),
+		sizeBytes:          d.GetSizeBytes(),
+		digestFunction:     fr.GetDigestFunction(),
+	}
+}
+
+// newKeyFromResourceName creates a key from a ResourceName.
+func newKeyFromResourceName(r *rspb.ResourceName) key {
+	d := r.GetDigest()
+	return key{
+		cacheType:          r.GetCacheType(),
+		remoteInstanceName: r.GetInstanceName(),
+		hash:               string(d.GetHash()),
+		sizeBytes:          d.GetSizeBytes(),
+		digestFunction:     r.GetDigestFunction(),
+	}
+}
+
 func (c *Cache) lookupMetadatas(ctx context.Context, records ...*sgpb.FileRecord) ([]*sgpb.FileMetadata, error) {
 	req := &mdpb.GetRequest{
 		FileRecords: records,
@@ -561,10 +597,35 @@ func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	// TODO: optimize this. We can read multiple resources in one call.
+	// Convert resources to fileRecords
+	fileRecords := make([]*sgpb.FileRecord, 0, len(resources))
+	for _, r := range resources {
+		fileRecord, err := c.makeFileRecord(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		fileRecords = append(fileRecords, fileRecord)
+	}
+
+	mds, err := c.lookupMetadatas(ctx, fileRecords...)
+	if err != nil {
+		return nil, err
+	}
+
+	keyToMetadata := make(map[key]*sgpb.FileMetadata, len(mds))
+	for _, md := range mds {
+		k := newKeyFromFileRecord(md.GetFileRecord())
+		keyToMetadata[k] = md
+	}
+
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	for _, r := range resources {
-		rc, err := c.Reader(ctx, r, 0, 0)
+		k := newKeyFromResourceName(r)
+		md, ok := keyToMetadata[k]
+		if !ok {
+			continue
+		}
+		rc, err := c.reader(ctx, md, r, 0, 0)
 		if err != nil {
 			if status.IsNotFoundError(err) || os.IsNotExist(err) {
 				continue
@@ -620,30 +681,7 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	return c.deleteFileAndMetadata(ctx, fileRecord, 0 /*=matchAtime*/)
 }
 
-// Low level interface used for seeking and stream-writing.
-func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64) (io.ReadCloser, error) {
-	ctx, spn := tracing.StartSpan(ctx)
-	defer spn.End()
-	if spn.IsRecording() {
-		spn.SetAttributes(
-			attribute.String("digest_hash", r.GetDigest().GetHash()),
-			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
-	}
-	fileRecord, err := c.makeFileRecord(ctx, r)
-	if err != nil {
-		return nil, err
-	}
-
-	mds, err := c.lookupMetadatas(ctx, fileRecord)
-	if err != nil {
-		return nil, err
-	}
-	if len(mds) != 1 {
-		log.Errorf("File record %v found multiple metadatas: %v", fileRecord, mds)
-		return nil, status.InternalError("only one metadata record should match query")
-	}
-	md := mds[0]
-
+func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64) (io.ReadCloser, error) {
 	// If this object was not chunked, and is somehow stored as a zero-
 	// length file, pretend it does not exist.
 	storageMetadata := md.GetStorageMetadata()
@@ -735,6 +773,34 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 	}
 
 	return reader, nil
+}
+
+// Low level interface used for seeking and stream-writing.
+func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64) (io.ReadCloser, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	if spn.IsRecording() {
+		spn.SetAttributes(
+			attribute.String("digest_hash", r.GetDigest().GetHash()),
+			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
+	}
+	fileRecord, err := c.makeFileRecord(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+
+	mds, err := c.lookupMetadatas(ctx, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	if len(mds) != 1 {
+		log.Errorf("File record %v found multiple metadatas: %v", fileRecord, mds)
+		return nil, status.InternalError("only one metadata record should match query")
+	}
+	md := mds[0]
+
+	return c.reader(ctx, md, r, uncompressedOffset, uncompressedLimit)
+
 }
 
 func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
