@@ -13,16 +13,39 @@ This document traces the call chain from the high-level `CommandContainer` inter
 
 ```go
 type CommandContainer interface {
-    // IsImageCached checks if the container image is cached locally
+    // IsolationType returns the isolation type of this container
+    IsolationType() string
+
+    // Run the given command within the container and remove the container after it is done executing
+    Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult
+
+    // IsImageCached returns whether the configured image is cached locally
     IsImageCached(ctx context.Context) (bool, error)
 
-    // PullImage pulls the container image if not cached
+    // PullImage pulls the container image from the remote. It always
+    // re-authenticates the request, but may serve the image from a local cache
+    // if needed.
     PullImage(ctx context.Context, creds oci.Credentials) error
 
-    Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult
+    // Create creates a new container and starts a top-level process inside it
     Create(ctx context.Context, workingDir string) error
+
+    // Exec runs a command inside a container
     Exec(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult
+
+    // Signal sends the given signal to all containerized processes
+    Signal(ctx context.Context, sig syscall.Signal) error
+
+    // Unpause un-freezes a container so that it can be used to execute commands
+    Unpause(ctx context.Context) error
+
+    // Pause freezes a container so that it no longer consumes CPU resources
+    Pause(ctx context.Context) error
+
+    // Remove kills any processes currently running inside the container and removes any resources
     Remove(ctx context.Context) error
+
+    // Stats returns the current resource usage of this container
     Stats(ctx context.Context) (*repb.UsageStats, error)
 }
 ```
@@ -37,12 +60,16 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 ```
 
 **Flow**:
-1. Acquires per-(isolation_type, imageRef) mutex to serialize concurrent pulls
-2. Calls `ctr.IsImageCached(ctx)` to check if image exists locally
-3. Creates token via `NewImageCacheToken(ctx, env, creds, imageRef)`
-4. **Fast path**: If image is cached AND `IsAuthorized(token)` returns true → skip pull
-5. **Slow path**: Calls `ctr.PullImage(ctx, creds)` to download/extract image
-6. On success, calls `Refresh(token)` to mark authorized for 15 minutes
+1. **Fallback path** (lines 523-530): If either the image-cache authenticator or the request authenticator is unavailable:
+   - Logs a warning: "Authentication is not properly configured; this will result in slower image pulls"
+   - Immediately calls `ctr.PullImage(ctx, creds)` on every request
+   - Returns (no token caching available)
+2. Acquires per-(isolation_type, imageRef) mutex to serialize concurrent pulls
+3. Calls `ctr.IsImageCached(ctx)` to check if image exists locally
+4. Creates token via `NewImageCacheToken(ctx, env, creds, imageRef)`
+5. **Fast path**: If image is cached AND `IsAuthorized(token)` returns true → skip pull
+6. **Slow path**: Calls `ctr.PullImage(ctx, creds)` to download/extract image (always re-authenticates with registry)
+7. On success, calls `Refresh(token)` to mark authorized for 15 minutes
 
 ---
 
@@ -309,7 +336,9 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 
 - Makes HEAD request to remote registry with credentials
 - Returns error if authentication fails
-- Called by both ociruntime and firecracker before pulling
+- **Usage differs by container type**:
+  - **firecracker/ext4**: Explicitly calls this when a cached disk image exists (ociconv.go:121) to verify credentials before reusing the cached image
+  - **ociruntime**: Does NOT call this - goes straight to `resolver.Resolve()` (ociruntime.go:1555) which handles authentication internally during the pull
 
 ### Resolution
 
@@ -706,91 +735,3 @@ The ext4 disk image is mounted as a block device in the Firecracker VM:
 - Mounted read-only as root filesystem
 - Provides fast, efficient VM boot times
 - No overlayfs needed - entire filesystem in one file
-
----
-
-## Key Data Structures
-
-### ImageStore (ociruntime)
-
-```go
-type ImageStore struct {
-    resolver       *oci.Resolver
-    layersDir      string
-    imagePullGroup singleflight.Group[string, *Image]
-    layerPullGroup singleflight.Group[string, any]
-    mu             sync.RWMutex
-    cachedImages   map[string]*Image
-}
-```
-
-- **Scope**: One per ociruntime provider (shared across all containers)
-- **Storage**: Content-addressable by DiffID
-- **In-memory cache**: Map of image name → Image metadata
-- **Disk check**: `os.Stat()` to determine if layer exists
-
-### Image and ImageLayer
-
-```go
-type Image struct {
-    Layers     []*ImageLayer
-    ConfigFile ctr.ConfigFile
-}
-
-type ImageLayer struct {
-    DiffID ctr.Hash  // Uncompressed digest
-}
-```
-
-- **Image**: Contains metadata about all layers and configuration
-- **ImageLayer**: Just the DiffID, used to construct layer path on disk
-- **ConfigFile**: Contains environment, entrypoint, user, working dir, etc.
-
-### ImageCacheToken
-
-```go
-type ImageCacheToken struct {
-    GroupID  string  // Authenticated group ID
-    ImageRef string  // Remote image reference
-}
-```
-
-- **Purpose**: Key for 15-minute authorization cache
-- **Security**: Group-isolated - different groups can't share tokens
-- **Deterministic**: Same (group, image) always produces same token
-- **No credentials**: Credentials validated separately, not stored in token
-
-### ImageCacheAuthenticator
-
-```go
-type imageCacheAuthenticator struct {
-    opts             ImageCacheAuthenticatorOpts
-    mu               sync.Mutex
-    tokenExpireTimes map[interfaces.ImageCacheToken]time.Time
-}
-```
-
-- **Scope**: One per executor (shared across all containers and isolation types)
-- **TTL**: 15 minutes (configurable)
-- **Cleanup**: Opportunistic on access (no background goroutine)
-- **Thread-safe**: All operations protected by mutex
-
----
-
-## Summary: Two-Layer Caching Strategy
-
-BuildBuddy's OCI implementation uses **two complementary caching layers**:
-
-### 1. Token Cache (15 minutes)
-- **What**: Caches that a group has recently authenticated for an image
-- **Benefit**: Avoids network roundtrip to registry on every action
-- **Scope**: In-memory, per-executor
-- **Invalidation**: Time-based (15 minutes)
-
-### 2. Image/Layer Cache (persistent)
-- **What**: Caches image manifests, layers, and disk images
-- **Benefit**: Avoids downloading image data from registry
-- **Scope**: On-disk, shared across all executors
-- **Invalidation**: Manual cleanup or cache eviction
-
-**Performance Impact**: Without token cache, every action would require registry authentication even for cached images. With it, only the first access within a 15-minute window requires network communication.
