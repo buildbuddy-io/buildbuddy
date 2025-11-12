@@ -38,32 +38,25 @@ func MkdirAllAndSync(rootDir string, relativePath string, mode os.FileMode) erro
 
 	cleanRoot := filepath.Clean(rootDir)
 
-	// If relativePath is empty, we're just creating/syncing the root directory itself
-	var fullPath string
-	if relativePath == "" {
-		fullPath = cleanRoot
-	} else {
+	fullPath := cleanRoot
+	if relativePath != "" {
 		fullPath = filepath.Join(cleanRoot, relativePath)
 	}
 
-	// Create all directories from rootDir to fullPath
 	if err := os.MkdirAll(fullPath, mode); err != nil {
 		return err
 	}
 
-	// Sync from fullPath up to and including rootDir, then stop
 	for dir := fullPath; ; {
 		if err := SyncPath(dir); err != nil {
 			return err
 		}
 
-		// Stop after syncing rootDir
 		if dir == cleanRoot {
 			break
 		}
 
 		parent := filepath.Dir(dir)
-		// Safety check: if we've reached filesystem root without hitting cleanRoot, break
 		if parent == dir {
 			break
 		}
@@ -71,14 +64,7 @@ func MkdirAllAndSync(rootDir string, relativePath string, mode os.FileMode) erro
 		dir = parent
 	}
 
-	// Sync the parent of rootDir to persist the rootDir directory entry.
-	// This ensures that if rootDir was created during this call, the parent
-	// directory entry is persisted to disk.
-	if err := SyncParentDir(cleanRoot); err != nil {
-		return err
-	}
-
-	return nil
+	return SyncParentDir(cleanRoot)
 }
 
 // CreateFileAndSync creates a file, writes data to it, sets ownership, syncs both the file
