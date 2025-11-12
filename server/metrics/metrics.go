@@ -2325,6 +2325,16 @@ var (
 		StatusLabel,
 	})
 
+	ProxySecondarySyncWriteDigests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "proxy_secondary_sync_write_digests",
+		Help:      "The number of digests written synchronously to a secondary cache.",
+	}, []string{
+		ServerName,
+		StatusLabel,
+	})
+
 	// ### Misc metrics
 
 	Version = promauto.NewGaugeVec(prometheus.GaugeOpts{

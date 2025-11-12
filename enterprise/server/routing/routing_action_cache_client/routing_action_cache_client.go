@@ -13,9 +13,12 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -118,7 +121,16 @@ func (r *RoutingACClient) UpdateActionResult(ctx context.Context, req *repb.Upda
 	dualWrite := singleRandValue < c.GetDualWriteFraction()
 	if dualWrite && secondaryClient != nil {
 		var wg sync.WaitGroup
-		wg.Go(func() { secondaryClient.UpdateActionResult(ctx, req, opts...) })
+		wg.Go(func() {
+			_, err := secondaryClient.UpdateActionResult(ctx, req, opts...)
+			if err != nil {
+				log.CtxInfof(ctx, "synchronous secondary ac write failed: %s", err)
+			}
+			metrics.ProxySecondarySyncWriteDigests.WithLabelValues(
+				"ac_server",
+				gstatus.Code(err).String(),
+			).Add(1)
+		})
 		defer wg.Wait()
 		return primaryClient.UpdateActionResult(ctx, req, opts...)
 	}

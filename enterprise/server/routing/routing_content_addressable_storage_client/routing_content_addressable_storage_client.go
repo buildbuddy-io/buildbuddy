@@ -13,9 +13,12 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -131,7 +134,27 @@ func (r *RoutingCASClient) BatchUpdateBlobs(ctx context.Context, req *repb.Batch
 	dualWrite := singleRandValue < c.GetDualWriteFraction()
 	if dualWrite && secondaryClient != nil {
 		var wg sync.WaitGroup
-		wg.Go(func() { secondaryClient.BatchUpdateBlobs(ctx, req, opts...) })
+		wg.Go(func() {
+			results, err := secondaryClient.BatchUpdateBlobs(ctx, req, opts...)
+			if err != nil {
+				log.CtxInfof(ctx, "synchronous secondary cas write failed: %s", err)
+				metrics.ProxySecondarySyncWriteDigests.WithLabelValues(
+					"cas_server",
+					gstatus.Code(err).String(),
+				).Add(float64(len(req.GetRequests())))
+				return
+			}
+			statusTotals := make(map[string]int64)
+			for _, r := range results.GetResponses() {
+				statusTotals[gstatus.FromProto(r.GetStatus()).Code().String()] += 1
+			}
+			for s, count := range statusTotals {
+				metrics.ProxySecondarySyncWriteDigests.WithLabelValues(
+					"cas_server",
+					s,
+				).Add(float64(count))
+			}
+		})
 		defer wg.Wait()
 		return primaryClient.BatchUpdateBlobs(ctx, req, opts...)
 	}
