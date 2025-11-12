@@ -44,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fsync"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
@@ -1638,7 +1639,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 	defer rc.Close()
 
 	tempUnpackDir := destDir + tmpSuffix()
-	if err := os.MkdirAll(tempUnpackDir, 0755); err != nil {
+	if err := fsync.MkdirAllAndSync(filepath.Dir(tempUnpackDir), filepath.Base(tempUnpackDir), 0755); err != nil {
 		return status.UnavailableErrorf("create layer unpack dir: %s", err)
 	}
 	defer os.RemoveAll(tempUnpackDir)
@@ -1667,7 +1668,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			header.Typeflag == tar.TypeSymlink ||
 			header.Typeflag == tar.TypeLink {
 			// Ensure that parent dir exists
-			if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+			if err := fsync.MkdirAllAndSync(tempUnpackDir, filepath.Dir(header.Name), os.ModePerm); err != nil {
 				return status.UnavailableErrorf("create directory: %s", err)
 			}
 		} else {
@@ -1680,7 +1681,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 		if strings.HasPrefix(base, whiteoutPrefix) {
 			// Directory whiteout
 			if base == whiteoutPrefix+whiteoutPrefix+".opq" {
-				if err := unix.Setxattr(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
+				if err := fsync.SetxattrAndSync(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
 					return status.UnavailableErrorf("setxattr on deleted dir: %s", err)
 				}
 				continue
@@ -1689,7 +1690,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			// File whiteout: Mark the file for deletion in overlayfs.
 			originalBase := base[len(whiteoutPrefix):]
 			originalPath := filepath.Join(dir, originalBase)
-			if err := unix.Mknod(originalPath, unix.S_IFCHR, 0); err != nil {
+			if err := fsync.MknodAndSync(originalPath, unix.S_IFCHR, 0); err != nil {
 				return status.UnavailableErrorf("mknod for whiteout marker: %s", err)
 			}
 			continue
@@ -1697,33 +1698,23 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(file, os.FileMode(header.Mode)); err != nil {
+			if err := fsync.MkdirAllAndSync(tempUnpackDir, header.Name, os.FileMode(header.Mode)); err != nil {
 				return status.UnavailableErrorf("create directory: %s", err)
 			}
-			if err := os.Chown(file, header.Uid, header.Gid); err != nil {
+			if err := fsync.ChownAndSync(file, header.Uid, header.Gid); err != nil {
 				return status.UnavailableErrorf("chown directory: %s", err)
 			}
 		case tar.TypeReg:
-			f, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY, os.FileMode(header.Mode))
-			if err != nil {
-				return status.UnavailableErrorf("create file: %s", err)
+			if err := fsync.CreateFileAndSync(file, os.FileMode(header.Mode), tr, header.Uid, header.Gid); err != nil {
+				return status.UnavailableErrorf("create and sync file: %s", err)
 			}
-			if _, err := io.Copy(f, tr); err != nil {
-				f.Close()
-				return status.UnavailableErrorf("copy file content: %s", err)
-			}
-			if err := f.Chown(header.Uid, header.Gid); err != nil {
-				f.Close()
-				return status.UnavailableErrorf("chown file: %s", err)
-			}
-			f.Close()
 		case tar.TypeSymlink:
 			// Symlink's target is only evaluated at runtime, inside the container context.
 			// So it's safe to have the symlink targeting paths outside unpackdir.
-			if err := os.Symlink(header.Linkname, file); err != nil {
+			if err := fsync.SymlinkAndSync(header.Linkname, file); err != nil {
 				return status.UnavailableErrorf("create symlink: %s", err)
 			}
-			if err := os.Lchown(file, header.Uid, header.Gid); err != nil {
+			if err := fsync.LchownAndSync(file, header.Uid, header.Gid); err != nil {
 				return status.UnavailableErrorf("chown link: %s", err)
 			}
 		case tar.TypeLink:
@@ -1733,13 +1724,13 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			}
 			// Note that this will call linkat(2) without AT_SYMLINK_FOLLOW,
 			// so if target is a symlink, the hardlink will point to the symlink itself and not the symlink target.
-			if err := os.Link(target, file); err != nil {
+			if err := fsync.LinkAndSync(target, file); err != nil {
 				return status.UnavailableErrorf("create hard link: %s", err)
 			}
 		}
 	}
 
-	if err := os.Rename(tempUnpackDir, destDir); err != nil {
+	if err := fsync.RenameAndSync(tempUnpackDir, destDir); err != nil {
 		// If the dest dir already exists then it's most likely because we were
 		// pulling the same layer concurrently with different credentials.
 		if os.IsExist(err) {
