@@ -18,13 +18,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/types/known/anypb"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/types"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -43,21 +43,16 @@ const (
 	cacheDigestFunction = repb.DigestFunction_SHA256
 )
 
-// ReadThroughFetcher is an interface for fetching OCI blobs and manifests from an upstream registry.
-// Implementations may tee data to/from a cache while fetching from the upstream.
-type ReadThroughFetcher interface {
+// Fetcher is an interface for fetching OCI blobs and manifests from an upstream registry.
+type Fetcher interface {
 	// Head makes a HEAD request to fetch metadata about a manifest.
 	Head(ctx context.Context, ref gcrname.Reference) (*gcr.Descriptor, error)
 	// Get fetches a manifest from the upstream registry.
 	Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error)
 	// Layer fetches a layer (blob) from the upstream registry.
 	Layer(ctx context.Context, ref gcrname.Digest) (gcr.Layer, error)
-	// LayerFromDescriptor fetches a layer with a known descriptor, avoiding extra HTTP requests.
-	// The parentImage is used to look up DiffID from the image config without fetching the layer blob.
-	//TODO(dan) LayerFromDescriptor(ctx context.Context, ref gcrname.Digest, desc gcr.Descriptor, parentImage gcr.Image) (gcr.Layer, error)
 }
 
-// readThroughFetcher implements ReadThroughFetcher by wrapping a remote.Puller.
 type readThroughFetcher struct {
 	puller   *remote.Puller
 	acClient repb.ActionCacheClient
@@ -65,10 +60,11 @@ type readThroughFetcher struct {
 	useCache bool
 }
 
-// NewReadThroughFetcher creates a new ReadThroughFetcher that fetches OCI resources from an upstream registry
-// and tees data to/from the cache.
+// NewFetcher creates a Fetcher that fetches OCI manifest from the AC and blobs from the CAS.
+// If a manifest is not in the AC or a blob is not in the CAS, it is fetched from the upstream registry
+// and written to the AC or CAS.
 // If useCache is false, caching is disabled and all requests go directly to the upstream registry.
-func NewReadThroughFetcher(env environment.Env, useCache bool, opts ...remote.Option) (ReadThroughFetcher, error) {
+func NewFetcher(env environment.Env, useCache bool, opts ...remote.Option) (Fetcher, error) {
 	puller, err := remote.NewPuller(opts...)
 	if err != nil {
 		return nil, err
@@ -86,34 +82,20 @@ func (c *readThroughFetcher) Head(ctx context.Context, ref gcrname.Reference) (*
 }
 
 func (c *readThroughFetcher) Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error) {
-	// Resolve ref to digest if it's a tag
-	var hash gcr.Hash
-	var digestRef gcrname.Reference
-
-	if digest, ok := ref.(gcrname.Digest); ok {
-		// Already a digest reference - extract hash directly
-		var err error
-		hash, err = gcr.NewHash(digest.DigestStr())
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("invalid digest %s: %s", digest.DigestStr(), err)
-		}
-		digestRef = ref
-	} else {
-		// Tag reference - resolve to digest using Head()
+	digestRef := ref
+	hash, err := gcr.NewHash(ref.Identifier())
+	if err != nil {
 		desc, err := c.puller.Head(ctx, ref)
 		if err != nil {
 			return nil, err
 		}
 		hash = desc.Digest
-		// Convert to digest reference for cache operations
 		digestRef = ref.Context().Digest(hash.String())
 	}
 
-	// Try to fetch from cache if enabled
 	if c.useCache {
 		mc, err := FetchManifestFromAC(ctx, c.acClient, digestRef.Context(), hash, ref)
 		if err == nil {
-			// Cache hit - convert OCIManifestContent to remote.Descriptor
 			desc := &remote.Descriptor{
 				Descriptor: gcr.Descriptor{
 					MediaType: types.MediaType(mc.ContentType),
@@ -124,23 +106,19 @@ func (c *readThroughFetcher) Get(ctx context.Context, ref gcrname.Reference) (*r
 			}
 			return desc, nil
 		}
-		// Cache miss or error - continue to upstream fetch
 		if !status.IsNotFoundError(err) {
 			log.CtxWarningf(ctx, "Error fetching manifest from AC for %s: %s", ref, err)
 		}
 	}
 
-	// Fetch from upstream - use digestRef (resolved digest) for the fetch
 	desc, err := c.puller.Get(ctx, digestRef)
 	if err != nil {
 		return nil, err
 	}
 
-	// Write through to cache if enabled
 	if c.useCache {
 		if err := WriteManifestToAC(ctx, desc.Manifest, c.acClient, digestRef.Context(), hash, string(desc.MediaType), ref); err != nil {
 			log.CtxWarningf(ctx, "Error writing manifest to AC for %s: %s", ref, err)
-			// Don't fail the request if cache write fails
 		}
 	}
 
@@ -148,8 +126,6 @@ func (c *readThroughFetcher) Get(ctx context.Context, ref gcrname.Reference) (*r
 }
 
 func (c *readThroughFetcher) Layer(ctx context.Context, ref gcrname.Digest) (gcr.Layer, error) {
-	// Delegate to the underlying puller for layer fetching
-	// Layer caching is handled by the oci package via read-through caching
 	return c.puller.Layer(ctx, ref)
 }
 
