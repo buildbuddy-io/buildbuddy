@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/sys/unix"
 )
@@ -31,40 +32,39 @@ func SyncParentDir(path string) error {
 // MkdirAllAndSync creates a directory tree and syncs all created directories up to a specified root directory.
 // The rootDir parameter specifies where to stop recursing upward after syncing it.
 // The relativePath parameter is a child path relative to rootDir.
-func MkdirAllAndSync(rootDir string, relativePath string, mode os.FileMode) error {
+func MkdirAllAndSync(rootDir, relativePath string, mode os.FileMode) error {
 	if rootDir == "" {
-		return nil
+		return fmt.Errorf("invalid argument: root dir cannot be empty")
 	}
 
-	cleanRoot := filepath.Clean(rootDir)
-
-	fullPath := cleanRoot
-	if relativePath != "" {
-		fullPath = filepath.Clean(filepath.Join(cleanRoot, relativePath))
-	}
-
+	// Make the dirs.
+	fullPath := filepath.Join(rootDir, relativePath)
 	if err := os.MkdirAll(fullPath, mode); err != nil {
 		return err
 	}
 
+	// Sync all paths up to and including rootDir.
 	for dir := fullPath; ; {
 		if err := SyncPath(dir); err != nil {
 			return err
 		}
-
-		if dir == cleanRoot {
-			break
-		}
-
 		parent := filepath.Dir(dir)
-		if parent == dir {
+		// If we reach a dir that is above rootDir, stop. As a special case, if
+		// rootDir is the FS absolute root, then [filepath.Dir] will return d
+		// itself. Stop in this case too.
+		if isParent(parent, rootDir) || dir == parent {
 			break
 		}
-
 		dir = parent
 	}
 
-	return SyncParentDir(cleanRoot)
+	return nil
+}
+
+// Returns whether parent is a parent directory of child, based on string
+// processing only (does not actually check for path existence).
+func isParent(parent, child string) bool {
+	return strings.HasPrefix(filepath.Clean(child), filepath.Clean(parent)+string(os.PathSeparator))
 }
 
 // CreateFileAndSync creates a file, writes data to it, sets ownership, syncs both the file
