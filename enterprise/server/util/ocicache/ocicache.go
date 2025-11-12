@@ -45,11 +45,11 @@ const (
 
 // Fetcher is an interface for fetching OCI blobs and manifests from an upstream registry.
 type Fetcher interface {
-	// Head makes a HEAD request to fetch metadata about a manifest.
+	// Head fetches the digest and size for a manifest.
 	Head(ctx context.Context, ref gcrname.Reference) (*gcr.Descriptor, error)
-	// Get fetches a manifest from the upstream registry.
+	// Get fetches manifest contents.
 	Get(ctx context.Context, ref gcrname.Reference) (*remote.Descriptor, error)
-	// Layer fetches a layer (blob) from the upstream registry.
+	// Layer fetches a layer (blob).
 	Layer(ctx context.Context, ref gcrname.Digest) (gcr.Layer, error)
 }
 

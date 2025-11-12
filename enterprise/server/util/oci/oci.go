@@ -301,7 +301,12 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	log.CtxInfof(ctx, "Authenticating with registry %q", imageRef.Context().RegistryStr())
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	_, err = remote.Head(imageRef, remoteOpts...)
+
+	fetcher, err := ocicache.NewFetcher(r.env, false, remoteOpts...)
+	if err != nil {
+		return status.InternalErrorf("could not create fetcher for %q: %s", imageName, err)
+	}
+	_, err = fetcher.Head(ctx, imageRef)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
@@ -333,14 +338,18 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		if entry.expiration.After(r.clock.Now()) {
 			return entry.nameWithDigest, nil
 		}
-		// Expired; evict and refresh via remote.Head below.
+		// Expired; evict and refresh
 		r.mu.Lock()
 		r.imageTagToDigestLRU.Remove(tagRef.String())
 		r.mu.Unlock()
 	}
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	desc, err := remote.Head(tagRef, remoteOpts...)
+	fetcher, err := ocicache.NewFetcher(r.env, false, remoteOpts...)
+	if err != nil {
+		return "", status.InternalErrorf("could not create fetcher for %q: %s", imageName, err)
+	}
+	desc, err := fetcher.Head(ctx, tagRef)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
