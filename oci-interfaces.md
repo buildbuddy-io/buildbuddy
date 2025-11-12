@@ -185,8 +185,8 @@ type ociContainer struct {
 }
 
 func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
-    image, ok := c.imageStore.CachedImage(c.imageRef)
-    return ok && image != nil, nil
+    _, ok := c.imageStore.CachedImage(c.imageRef)
+    return ok, nil
 }
 
 func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
@@ -292,11 +292,22 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 }
 
 func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
+    if c.pulled {
+        return nil
+    }
+    c.pulled = true
+
+    if c.createFromSnapshot {
+        return nil
+    }
+
     _, err := ociconv.CreateDiskImage(ctx, c.resolver, c.executorConfig.CacheRoot,
                                        c.containerImage, creds)
     return err
 }
 ```
+
+- Subsequent calls return immediately thanks to the `pulled` guard, and snapshot-backed containers skip disk conversion entirely.
 
 **Key Difference**: Firecracker uses `ociconv` package to convert entire OCI image to a single ext4 filesystem image, rather than maintaining separate layer directories.
 
