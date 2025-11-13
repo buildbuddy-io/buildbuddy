@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
@@ -622,9 +623,12 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte)
 	eg.SetLimit(c.opts.MaxWriteGoroutines)
 
 	mds := make([]*sgpb.FileMetadata, 0, len(kvs))
+	mu := sync.Mutex{}
 
 	fn := func(md *sgpb.FileMetadata) error {
+		mu.Lock()
 		mds = append(mds, md)
+		mu.Unlock()
 		return nil
 	}
 
