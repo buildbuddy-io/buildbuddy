@@ -8,10 +8,7 @@ go_library(
     x_defs = {
         "fileresolverGoRlocation": "$(rlocationpath fileresolver.go)",
     },
-    deps = [
-        "//server/util/log",
-        "@io_bazel_rules_go//go/runfiles",
-    ],
+    deps = ["@io_bazel_rules_go//go/runfiles"],
 )
 
 go_test(
