@@ -155,7 +155,7 @@ def build_image_with_bazel(bazel_target):
     # where it uses "application/vnd.oci.image.layer.v1.tar" mediaType for some
     # image layers on arm64, which podman and containerd cannot handle.
     # https://github.com/buildbuddy-io/buildbuddy-internal/issues/3316
-    run_or_die(f'bazel run -c opt --stamp --define=release=true {bazel_target} --sandbox--verbose_failures --sandbox_debug -s')
+    run_or_die(f'bazel run -c opt --stamp --define=release=true {bazel_target} --verbose_failures --sandbox_debug -s')
 
 def tag_and_push_image_with_docker(bazel_target, project, version_tag):
     # rules_docker uses a convention where "//PACKAGE:LABEL" gets locally tagged
