@@ -118,7 +118,7 @@ require (
 	github.com/shirou/gopsutil/v3 v3.23.12
 	github.com/shurcooL/githubv4 v0.0.0-20231126234147-1cffa1f02456
 	github.com/sirupsen/logrus v1.9.3
-	github.com/smacker/go-tree-sitter v0.0.0-20230501083651-a7d92773b3aa
+	github.com/smacker/go-tree-sitter v0.0.0-20240827094217-dd81d9e9be82
 	github.com/stretchr/testify v1.11.1
 	github.com/tebeka/selenium v0.9.9
 	github.com/throttled/throttled/v2 v2.12.0
