@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/filestore",
         "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
@@ -22,6 +23,7 @@ go_library(
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//server/gossip",
+        "//server/testutil/mockgcs",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testport",

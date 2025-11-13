@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockgcs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
@@ -126,7 +128,10 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 	require.NoError(t, err)
 	leaser := pebble.NewDBLeaser(db)
 	ts.leaser = leaser
-	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, ts.gm, s, ts.Registry, raftListener, apiClient, ts.GRPCAddress, ts.GRPCAddress, partitions, db, leaser, mc)
+
+	mockGCS := mockgcs.New(sf.clock)
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"))
+	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, ts.gm, s, ts.Registry, raftListener, apiClient, ts.GRPCAddress, ts.GRPCAddress, partitions, db, leaser, mc, fileStorer)
 	require.NoError(t, err)
 	require.NotNil(t, store)
 	store.Start()
