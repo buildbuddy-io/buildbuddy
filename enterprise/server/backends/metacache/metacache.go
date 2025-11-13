@@ -29,6 +29,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sync/errgroup"
 
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
 	mdspb "github.com/buildbuddy-io/buildbuddy/proto/metadata_service"
@@ -55,6 +56,7 @@ const (
 	defaultName                        = "meta_cache"
 	defaultMaxInlineFileSizeBytes      = int64(1024)
 	defaultMinBytesAutoZstdCompression = int64(100)
+	defaultMaxWriteGoroutines          = 10
 )
 
 type Options struct {
@@ -67,6 +69,8 @@ type Options struct {
 
 	MinBytesAutoZstdCompression int64
 	MaxInlineFileSizeBytes      int64
+
+	MaxWriteGoroutines int
 
 	MetadataBackend string
 
@@ -119,6 +123,7 @@ func GetOptionsFromConfig(env environment.Env, cfg *cache_config.MetaCacheConfig
 		PartitionMappings:           cfg.PartitionMappings,
 		MaxInlineFileSizeBytes:      cfg.MaxInlineFileSizeBytes,
 		MinBytesAutoZstdCompression: cfg.MinBytesAutoZstdCompression,
+		MaxWriteGoroutines:          cfg.MaxWriteGoroutines,
 		GCSBucket:                   cfg.GCSConfig.Bucket,
 		GCSCredentials:              cfg.GCSConfig.Credentials,
 		GCSProjectID:                cfg.GCSConfig.ProjectID,
@@ -141,6 +146,9 @@ func setOptionDefaults(opts *Options) {
 	}
 	if opts.MinBytesAutoZstdCompression == 0 {
 		opts.MinBytesAutoZstdCompression = defaultMaxInlineFileSizeBytes
+	}
+	if opts.MaxWriteGoroutines == 0 {
+		opts.MaxWriteGoroutines = defaultMaxWriteGoroutines
 	}
 	if opts.Clock == nil {
 		opts.Clock = clockwork.NewRealClock()
@@ -408,8 +416,9 @@ func (c *Cache) writerForRecord(ctx context.Context, fileRecord *sgpb.FileRecord
 // (1) compress the data if shouldCompress is true; and then
 // (2) encrypt the data if encryption is enabled
 // (3) write the data using input wcm's Write method.
-// On Commit, it will write the metadata for fileRecord.
-func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecord, sizeHint int64, fileType sgpb.FileMetadata_FileType) (interfaces.CommittedWriteCloser, error) {
+// On Commit, it will write the metadata for fileRecord using the provided
+// writeMetadataFn.
+func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecord, sizeHint int64, fileType sgpb.FileMetadata_FileType, fn writeMetadataFn) (interfaces.CommittedWriteCloser, error) {
 	wcm, err := c.writerForRecord(ctx, fileRecord, sizeHint)
 	if err != nil {
 		return nil, err
@@ -432,7 +441,7 @@ func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 			log.Infof("Rejecting zero-length write. Metadata: %+v", md)
 			return status.UnavailableError("zero-length writes are not allowed")
 		}
-		return c.setMetadatas(ctx, md)
+		return fn(md)
 	}
 
 	wc := interfaces.CommittedWriteCloser(cwc)
@@ -454,7 +463,16 @@ func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 	return wc, nil
 }
 
-func (c *Cache) writerWithSizeHint(ctx context.Context, r *rspb.ResourceName, sizeHint int64) (interfaces.CommittedWriteCloser, error) {
+type writeMetadataFn func(*sgpb.FileMetadata) error
+
+func (c *Cache) writerWithImmediateCommit(ctx context.Context, r *rspb.ResourceName, sizeHint int64) (interfaces.CommittedWriteCloser, error) {
+	fn := func(md *sgpb.FileMetadata) error {
+		return c.setMetadatas(ctx, md)
+	}
+	return c.writerWithSizeHintAndCommitFn(ctx, r, sizeHint, fn)
+}
+
+func (c *Cache) writerWithSizeHintAndCommitFn(ctx context.Context, r *rspb.ResourceName, sizeHint int64, fn writeMetadataFn) (interfaces.CommittedWriteCloser, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	if spn.IsRecording() {
@@ -482,7 +500,7 @@ func (c *Cache) writerWithSizeHint(ctx context.Context, r *rspb.ResourceName, si
 		return nil, err
 	}
 
-	wc, err := c.newWrappedWriter(ctx, fileRecord, sizeHint, sgpb.FileMetadata_COMPLETE_FILE_TYPE)
+	wc, err := c.newWrappedWriter(ctx, fileRecord, sizeHint, sgpb.FileMetadata_COMPLETE_FILE_TYPE, fn)
 	if err != nil {
 		return nil, err
 	}
@@ -588,7 +606,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 }
 
 func (c *Cache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
-	wc, err := c.writerWithSizeHint(ctx, r, int64(len(data)))
+	wc, err := c.writerWithImmediateCommit(ctx, r, int64(len(data)))
 	if err != nil {
 		return err
 	}
@@ -600,15 +618,36 @@ func (c *Cache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) erro
 }
 
 func (c *Cache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
-	// TODO(tylerw): make this more efficient, possibly by batching
-	// the metadata update operations and running the GCS uploads in
-	// parallel.
-	for r, data := range kvs {
-		if err := c.Set(ctx, r, data); err != nil {
-			return err
-		}
+	eg, egctx := errgroup.WithContext(ctx)
+	eg.SetLimit(c.opts.MaxWriteGoroutines)
+
+	mds := make([]*sgpb.FileMetadata, 0, len(kvs))
+
+	fn := func(md *sgpb.FileMetadata) error {
+		mds = append(mds, md)
+		return nil
 	}
-	return nil
+
+	for r, data := range kvs {
+		r, data := r, data
+		eg.Go(func() error {
+			wc, err := c.writerWithSizeHintAndCommitFn(egctx, r, int64(len(data)), fn)
+			if err != nil {
+				return err
+			}
+			defer wc.Close()
+			if _, err := wc.Write(data); err != nil {
+				return err
+			}
+			return wc.Commit()
+		})
+	}
+	err := eg.Wait()
+	if err != nil {
+		return err
+	}
+
+	return c.setMetadatas(ctx, mds...)
 }
 
 func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
@@ -738,7 +777,7 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 }
 
 func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	return c.writerWithSizeHint(ctx, r, r.GetDigest().GetSizeBytes())
+	return c.writerWithImmediateCommit(ctx, r, r.GetDigest().GetSizeBytes())
 }
 
 // SupportsCompressor returns whether the cache supports storing data compressed

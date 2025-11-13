@@ -32,6 +32,7 @@ go_library(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
