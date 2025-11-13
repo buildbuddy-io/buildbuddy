@@ -1059,6 +1059,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if wd.IsTargetRepoPublic {
 		visibility = "PUBLIC"
 	}
+	if workflowAction.Visibility != "" {
+		visibility = workflowAction.Visibility
+	}
 	includeSecretsPropertyValue := "false"
 	if isTrusted && ws.env.GetSecretService() != nil {
 		includeSecretsPropertyValue = "true"

@@ -53,6 +53,14 @@ actions:
     triggers: { pull_request: { branches: [ "*" ] }, push: { branches: [ "*" ] } }
     bazel_commands: [ "test //..." ]
 `
+
+	configWithLinuxWorkflowWithPrivateVisibility = `
+actions:
+  - name: "Test (linux_amd64)"
+    triggers: { pull_request: { branches: [ "*" ] }, push: { branches: [ "*" ] } }
+    bazel_commands: [ "test //..." ]
+    visibility: "PRIVATE"
+`
 )
 
 func newTestEnv(t *testing.T) *testenv.TestEnv {
@@ -585,6 +593,54 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 	execReq := execClient.NextExecuteRequest()
 	exec := getExecution(t, ctx, te, execReq.Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+	assert.Contains(t, exec.Command.GetArguments(), "--visibility=PUBLIC")
+	assert.NotContains(t, exec.Command.GetArguments(), "--visibility=PRIVATE")
+	env := envVars(exec.Command)
+	assert.NotContains(t,
+		env, "BUILDBUDDY_API_KEY",
+		"action env should not contain BUILDBUDDY_API_KEY env var")
+	assert.Regexp(t,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
+		"API key should be set via env-overrides")
+}
+
+func TestWebhook_RespectsVisibility(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:     "push",
+		TargetRepoURL: "https://github.com/acme-inc/acme",
+		TargetBranch:  "main",
+		PushedRepoURL: "https://github.com/acme-inc/acme",
+		PushedBranch:  "main",
+		SHA:           "c04d68571cb519e095772c865847007ed3e7fea9",
+		// Target repo is public, but this is overridden by bb.yaml
+		IsTargetRepoPublic: true,
+	}
+	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflowWithPrivateVisibility}
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
+	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+	assert.Contains(t, exec.Command.GetArguments(), "--visibility=PRIVATE")
+	assert.NotContains(t, exec.Command.GetArguments(), "--visibility=PUBLIC")
 	env := envVars(exec.Command)
 	assert.NotContains(t,
 		env, "BUILDBUDDY_API_KEY",
