@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -134,21 +135,27 @@ func (w *wrappedWriteStream) CloseAndRecv() (*bspb.WriteResponse, error) {
 }
 
 func (r *RoutingByteStreamClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
-	primaryClient, _, err := r.router.GetBSClients(ctx)
+	primaryClient, secondaryClient, err := r.router.GetBSClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary AC client: %s", err)
 	}
+	c, err := r.router.GetCacheRoutingConfig(ctx)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to fetch routing config: %s", err)
+		return primaryClient.Write(ctx, opts...)
+	}
+
+	singleRandValue := rand.Float64()
+	dualWrite := singleRandValue < c.GetDualWriteFraction()
+	if dualWrite && secondaryClient != nil {
+		return newDualWriteClient(ctx, primaryClient, secondaryClient, opts...)
+	}
+
 	rsp, err := primaryClient.Write(ctx, opts...)
 	if err != nil {
 		return rsp, err
 	}
 
-	c, err := r.router.GetCacheRoutingConfig(ctx)
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to fetch routing config: %s", err)
-		return rsp, nil
-	}
-	singleRandValue := rand.Float64()
 	if (singleRandValue) < c.GetBackgroundCopyFraction() {
 		return &wrappedWriteStream{
 			ctx:                    ctx,
@@ -157,4 +164,135 @@ func (r *RoutingByteStreamClient) Write(ctx context.Context, opts ...grpc.CallOp
 		}, nil
 	}
 	return rsp, nil
+}
+
+func newDualWriteClient(ctx context.Context, primary bspb.ByteStreamClient, secondary bspb.ByteStreamClient, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	primaryStream, err := primary.Write(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+	secondaryCtx, secondaryCancel := background.ExtendContextForFinalization(ctx, 5*time.Second)
+	secondaryStream, err := secondary.Write(secondaryCtx, opts...)
+	if err != nil {
+		// TODO: Log an error.
+		secondaryCancel()
+		return primaryStream, nil
+	}
+
+	stream := &dualWriteStream{
+		ByteStream_WriteClient: primaryStream,
+		secondary:              secondaryStream,
+		buffer:                 make(chan *clientOp, 5),
+		secondaryCtx:           secondaryCtx,
+		secondaryCancel:        secondaryCancel,
+	}
+
+	go stream.processSecondary()
+	return stream, nil
+}
+
+type streamOp int
+
+const (
+	send streamOp = iota
+	closeSend
+	closeAndRecv
+)
+
+type clientOp struct {
+	op  streamOp
+	req *bspb.WriteRequest
+}
+
+type dualWriteStream struct {
+	bspb.ByteStream_WriteClient
+	secondary       bspb.ByteStream_WriteClient
+	buffer          chan *clientOp
+	secondaryCtx    context.Context
+	secondaryCancel context.CancelFunc
+}
+
+func (d *dualWriteStream) Send(req *bspb.WriteRequest) error {
+	err := d.ByteStream_WriteClient.Send(req)
+	if err != nil {
+		d.secondaryCancel()
+		close(d.buffer)
+		return err
+	}
+	opToQueue := &clientOp{
+		op:  send,
+		req: req,
+	}
+	select {
+	case d.buffer <- opToQueue:
+	case <-d.secondaryCtx.Done():
+	}
+
+	return nil
+}
+
+func (d *dualWriteStream) CloseAndRecv() (*bspb.WriteResponse, error) {
+	go func() {
+		// Either the secondary write will finish, or the extended context
+		// will time out.  Either way, we don't want to block the primary
+		// response here.
+		opToQueue := &clientOp{
+			op: closeAndRecv,
+		}
+		select {
+		case d.buffer <- opToQueue:
+		case <-d.secondaryCtx.Done():
+		}
+	}()
+	return d.ByteStream_WriteClient.CloseAndRecv()
+}
+
+func (d *dualWriteStream) processSecondary() {
+	defer d.secondaryCancel()
+
+	for {
+		select {
+		case op, ok := <-d.buffer:
+			if !ok {
+				return
+			}
+
+			switch op.op {
+			case send:
+				if err := d.secondary.Send(op.req); err != nil {
+					log.CtxWarningf(d.secondaryCtx, "Secondary stream failed: %s", err)
+					return
+				}
+			case closeSend:
+				if err := d.secondary.CloseSend(); err != nil {
+					log.CtxWarningf(d.secondaryCtx, "Secondary stream failed: %s", err)
+				}
+				return
+			case closeAndRecv:
+				if _, err := d.secondary.CloseAndRecv(); err != nil {
+					log.CtxWarningf(d.secondaryCtx, "Secondary stream failed: %s", err)
+				}
+				return
+			}
+		case <-d.secondaryCtx.Done():
+			log.CtxWarningf(d.secondaryCtx, "Secondary stream context closed early: %s", d.secondaryCtx.Err())
+			return
+		}
+	}
+}
+
+func (d *dualWriteStream) CloseSend() error {
+	go func() {
+		// Either the secondary write will finish, or the extended context
+		// will time out.  Either way, we don't want to block the primary
+		// response here.
+		opToQueue := &clientOp{
+			op: closeSend,
+		}
+		select {
+		case d.buffer <- opToQueue:
+		case <-d.secondaryCtx.Done():
+		}
+	}()
+	return d.ByteStream_WriteClient.CloseSend()
 }
