@@ -7,7 +7,10 @@ import (
 	"strings"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
+
+var fileresolverGoRlocation string
 
 type fileResolver struct {
 	bundleFS     fs.FS
@@ -75,9 +78,11 @@ func New(bundleFS fs.FS, bundleRoot string) fs.FS {
 	if bundleRoot != "" && !strings.HasSuffix(bundleRoot, "/") {
 		bundlePrefix = bundleRoot + "/"
 	}
+	moduleName, _, _ := strings.Cut(fileresolverGoRlocation, "/")
+	log.Infof("fileresolverGoRlocation: %s", fileresolverGoRlocation)
 	return &fileResolver{
 		bundleFS:     bundleFS,
 		bundlePrefix: bundlePrefix,
-		moduleName:   "_main",
+		moduleName:   moduleName,
 	}
 }
