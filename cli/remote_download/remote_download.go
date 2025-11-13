@@ -2,12 +2,15 @@ package remote_download
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -36,16 +39,22 @@ usage: bb ` + flags.Name() + ` <url>
 Fetches a file via an intermediate cache server and prints the resulting
 cache resource name to stdout.
 
-The resource can be downloaded using 'bb download':
+The resource itself can be downloaded using 'bb download':
 
 	bb remote-download <url> | xargs bb download
 
 The "checksum.sri" qualifier can be used to specify a checksum.
+If not provided, the URL is always fetched from source, in case the contents
+have changed since the last fetch. This may not be desirable if the contents are already cached.
+
 Example:
 
 	SHA256=$(curl -fsSL https://example.com | sha256sum | awk '{print $1}')
 	SRI="sha256-$(echo "$SHA256" | xxd -r -p | base64 -w 0)"
 	bb remote-download --qualifier=checksum.sri="$SRI" https://example.com
+
+For Google Artifact Registry URLs, the checksum is automatically fetched
+from the metadata API if not provided.
 `
 )
 
@@ -94,6 +103,9 @@ func HandleRemoteDownload(args []string) (int, error) {
 		Timeout:        timeoutProto,
 		// TODO: OldestContentAccepted
 	}
+
+	authHeaders := make(map[string]string)
+	hasChecksumQualifier := false
 	for _, q := range *qualifiers {
 		name, value, ok := strings.Cut(q, "=")
 		if !ok {
@@ -103,7 +115,35 @@ func HandleRemoteDownload(args []string) (int, error) {
 			Name:  name,
 			Value: value,
 		})
+
+		if name == "checksum.sri" {
+			hasChecksumQualifier = true
+		}
+
+		// Extract Authorization header for metadata fetching
+		if strings.HasPrefix(name, "http_header:") {
+			headerName := strings.TrimPrefix(name, "http_header:")
+			authHeaders[headerName] = value
+		}
 	}
+
+	// If no checksum qualifier provided, try to fetch it.
+	parsedURL, err := url.Parse(uris[0])
+	if err != nil {
+		return -1, fmt.Errorf("invalid URL: %w", err)
+	}
+	if !hasChecksumQualifier && isGoogleArtifactRegistryDownloadURL(parsedURL) {
+		checksum, err := fetchGoogleArtifactRegistryChecksum(ctx, parsedURL, authHeaders)
+		if err != nil {
+			log.Warnf("Failed to fetch Artifact Registry checksum. Contents will not be fetched from the cache: %v", err)
+		} else if checksum != "" {
+			req.Qualifiers = append(req.Qualifiers, &rapb.Qualifier{
+				Name:  "checksum.sri",
+				Value: checksum,
+			})
+		}
+	}
+
 	client := rapb.NewFetchClient(conn)
 
 	apiKey, err := login.GetAPIKey()
@@ -127,4 +167,64 @@ func HandleRemoteDownload(args []string) (int, error) {
 		fmt.Println()
 	}
 	return 0, nil
+}
+
+func isGoogleArtifactRegistryDownloadURL(parsedURL *url.URL) bool {
+	return parsedURL.Host == "artifactregistry.googleapis.com" && strings.HasSuffix(parsedURL.Path, ":download")
+}
+
+// artifactRegistryMetadata is the response from the Google Artifact Registry metadata API
+type artifactRegistryMetadata struct {
+	Name      string `json:"name"`
+	SizeBytes string `json:"sizeBytes"`
+	Hashes    []struct {
+		Type  string `json:"type"`
+		Value string `json:"value"` // base64 encoded
+	} `json:"hashes"`
+}
+
+// fetchGoogleArtifactRegistryChecksum fetches the checksum for the requested artifact.
+//
+// The remote asset API takes a checksum qualifier. If not provided, the URL is always fetched from source, in case the contents
+// have changed. This may not be desirable if the contents are already cached.
+//
+// This function returns the checksum in SRI format (EX. "sha256-<base64hash>").
+func fetchGoogleArtifactRegistryChecksum(ctx context.Context, googleArtifactRegistryDownloadURL *url.URL, authHeaders map[string]string) (string, error) {
+	// Convert download URL to metadata API URL by removing the `:download` suffix.
+	metadataURL := *googleArtifactRegistryDownloadURL
+	metadataURL.Path = strings.TrimSuffix(googleArtifactRegistryDownloadURL.Path, ":download")
+	metadataURL.RawQuery = ""
+
+	req, err := http.NewRequestWithContext(ctx, "GET", metadataURL.String(), nil)
+	if err != nil {
+		return "", fmt.Errorf("create metadata request: %w", err)
+	}
+
+	for key, value := range authHeaders {
+		req.Header.Set(key, value)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("fetch metadata: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("metadata API returned status %d", resp.StatusCode)
+	}
+
+	var metadata artifactRegistryMetadata
+	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
+		return "", fmt.Errorf("decode metadata: %w", err)
+	}
+
+	for _, hash := range metadata.Hashes {
+		if strings.ToUpper(hash.Type) == "SHA256" {
+			return "sha256-" + hash.Value, nil
+		}
+	}
+
+	return "", fmt.Errorf("no SHA256 hash found in metadata")
 }

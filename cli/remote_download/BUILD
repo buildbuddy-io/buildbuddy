@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
+        "//cli/log",
         "//cli/login",
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
