@@ -1,8 +1,5 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
-# gazelle:exclude example_plugins/**/*.py
-# gazelle:exclude plugins/**/*.py
 # gazelle:default_visibility //cli:__subpackages__
 package(default_visibility = ["//cli:__subpackages__"])
 
@@ -32,16 +29,4 @@ sh_test(
 
 exports_files(
     srcs = ["install.sh"],
-)
-
-py_binary(
-    name = "release",
-    srcs = ["release.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
-    name = "cli_py_library",
-    srcs = ["release.py"],
-    visibility = ["//:__subpackages__"],
 )
