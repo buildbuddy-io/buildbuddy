@@ -329,8 +329,8 @@ type key struct {
 	digestFunction     repb.DigestFunction_Value
 }
 
-// newKeyFromFileRecord creates a key from a FileRecord.
-func newKeyFromFileRecord(fr *sgpb.FileRecord) key {
+// keyFromFileRecord creates a key from a FileRecord.
+func keyFromFileRecord(fr *sgpb.FileRecord) key {
 	iso := fr.GetIsolation()
 	d := fr.GetDigest()
 	return key{
@@ -342,8 +342,8 @@ func newKeyFromFileRecord(fr *sgpb.FileRecord) key {
 	}
 }
 
-// newKeyFromResourceName creates a key from a ResourceName.
-func newKeyFromResourceName(r *rspb.ResourceName) key {
+// keyFromResourceName creates a key from a ResourceName.
+func keyFromResourceName(r *rspb.ResourceName) key {
 	d := r.GetDigest()
 	return key{
 		cacheType:          r.GetCacheType(),
@@ -614,13 +614,13 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 
 	keyToMetadata := make(map[key]*sgpb.FileMetadata, len(mds))
 	for _, md := range mds {
-		k := newKeyFromFileRecord(md.GetFileRecord())
+		k := keyFromFileRecord(md.GetFileRecord())
 		keyToMetadata[k] = md
 	}
 
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	for _, r := range resources {
-		k := newKeyFromResourceName(r)
+		k := keyFromResourceName(r)
 		md, ok := keyToMetadata[k]
 		if !ok {
 			continue
