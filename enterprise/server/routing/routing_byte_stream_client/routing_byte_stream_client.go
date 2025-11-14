@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -172,6 +173,7 @@ func newDualWriteClient(ctx context.Context, primary bspb.ByteStreamClient, seco
 		return nil, err
 	}
 	secondaryCtx, secondaryCancel := background.ExtendContextForFinalization(ctx, 5*time.Second)
+	secondaryCtx = usageutil.DisableUsageTracking(secondaryCtx)
 	secondaryStream, err := secondary.Write(secondaryCtx, opts...)
 	if err != nil {
 		// TODO: Log an error.
