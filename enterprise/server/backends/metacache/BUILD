@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/backends/cache_config",
         "//enterprise/server/filestore",
+        "//enterprise/server/util/gcsutil",
         "//proto:metadata_go_proto",
         "//proto:metadata_service_go_proto",
         "//proto:remote_execution_go_proto",

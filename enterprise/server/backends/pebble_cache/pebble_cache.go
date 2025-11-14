@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/chunker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/gcsutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -943,7 +944,7 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	// If this is a GCS object, update the custom time and record the new
 	// custom time.
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
-		if p.gcsObjectIsPastTTL(gcsMetadata) {
+		if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
 			return nil
 		}
 		if err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime); err != nil {
@@ -1703,28 +1704,13 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, r *r
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
-		if p.gcsObjectIsPastTTL(gcsMetadata) {
+		if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
 			return status.NotFoundError("backing object may have expired")
 		}
 	}
 
 	p.sendAtimeUpdate(key, md.GetLastAccessUsec())
 	return nil
-}
-
-func (p *PebbleCache) gcsObjectIsPastTTL(gcsMetadata *sgpb.StorageMetadata_GCSMetadata) bool {
-	// The GCS TTL is set as an integer number of days. The docs are vague,
-	// but it seems plausible that if a file is *ever* marked for deletion,
-	// it will be deleted, even if it has changed since. Basically, there is
-	// one job marking files for deletion, and another job deleting them,
-	// and if the object has changed between those two events, it is still
-	// deleted.
-	//
-	// For this reason, if a GCS object is ever less than 1 hour away from
-	// TTL, assume it has already been marked for deletion.
-	customTimeUsec := gcsMetadata.GetLastCustomTimeUsec()
-	buffer := time.Hour
-	return p.clock.Since(time.UnixMicro(customTimeUsec))+buffer > time.Duration(p.gcsTTLDays*24)*time.Hour
 }
 
 func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
@@ -3296,7 +3282,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
 	if gcsMetadata := fileMetadata.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
-		if p.gcsObjectIsPastTTL(gcsMetadata) {
+		if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
 			return nil, status.NotFoundError("backing object may have expired")
 		}
 	}
