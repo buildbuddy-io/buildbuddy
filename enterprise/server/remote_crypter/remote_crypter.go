@@ -21,6 +21,10 @@ import (
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
+const (
+	remoteEncryptionEnabled = "crypter.remote_encryption_enabled"
+)
+
 var (
 	target = flag.String("crypter.remote_target", "", "The gRPC target of the remote encryption API.")
 )
@@ -30,6 +34,18 @@ type RemoteCrypter struct {
 	client                enpb.EncryptionServiceClient
 	cache                 *crypter_key_cache.KeyCache
 	clientIdentityService interfaces.ClientIdentityService
+}
+
+func SupportsEncryption(env environment.Env) func(ctx context.Context) bool {
+	return func(ctx context.Context) bool {
+		if env.GetCrypter() == nil {
+			return false
+		}
+		if env.GetExperimentFlagProvider() == nil {
+			return false
+		}
+		return env.GetExperimentFlagProvider().Boolean(ctx, remoteEncryptionEnabled, false)
+	}
 }
 
 func Register(env *real_environment.RealEnv) error {

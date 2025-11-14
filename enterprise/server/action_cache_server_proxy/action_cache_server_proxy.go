@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -30,7 +31,7 @@ var (
 )
 
 type ActionCacheServerProxy struct {
-	supportsEncryption bool
+	supportsEncryption func(context.Context) bool
 	env                environment.Env
 	authenticator      interfaces.Authenticator
 	localCache         interfaces.Cache
@@ -53,7 +54,7 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 		return nil, fmt.Errorf("An ActionCacheClient is required to enable the ActionCacheServerProxy")
 	}
 	return &ActionCacheServerProxy{
-		supportsEncryption: env.GetCrypter() != nil,
+		supportsEncryption: remote_crypter.SupportsEncryption(env),
 		env:                env,
 		authenticator:      env.GetAuthenticator(),
 		localCache:         env.GetCache(),
@@ -134,7 +135,7 @@ func (s *ActionCacheServerProxy) cacheActionResultToLocalCAS(ctx context.Context
 // request to the authoritative cache, but send a hash of the last value we
 // received to avoid transferring data on unmodified actions.
 func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
-	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption {
+	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
 		resp, err := s.remoteACClient.GetActionResult(ctx, req)
 		labels := prometheus.Labels{
 			metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
@@ -222,7 +223,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 
 func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	// Only if it's explicitly requested do we cache AC results locally.
-	if proxy_util.SkipRemote(ctx) && (!authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption) {
+	if proxy_util.SkipRemote(ctx) && (!authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption(ctx)) {
 		resp, err := s.localACServer.UpdateActionResult(ctx, req)
 
 		labels := prometheus.Labels{

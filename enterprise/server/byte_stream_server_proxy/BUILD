@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/remote_crypter",
         "//enterprise/server/util/proxy_util",
         "//server/environment",
         "//server/interfaces",

@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -29,7 +30,7 @@ import (
 var enableGetTreeCaching = flag.Bool("cache_proxy.enable_get_tree_caching", false, "If true, the Cache Proxy attempts to serve GetTree requests out of the local cache. If false, GetTree requests are always proxied to the remote, authoritative cache.")
 
 type CASServerProxy struct {
-	supportsEncryption bool
+	supportsEncryption func(context.Context) bool
 	atimeUpdater       interfaces.AtimeUpdater
 	authenticator      interfaces.Authenticator
 	local              repb.ContentAddressableStorageServer
@@ -63,7 +64,7 @@ func New(env environment.Env) (*CASServerProxy, error) {
 		return nil, fmt.Errorf("A remote ContentAddressableStorageClient is required to enable the ContentAddressableStorageServerProxy")
 	}
 	proxy := CASServerProxy{
-		supportsEncryption: env.GetCrypter() != nil,
+		supportsEncryption: remote_crypter.SupportsEncryption(env),
 		atimeUpdater:       atimeUpdater,
 		authenticator:      authenticator,
 		local:              local,
@@ -123,7 +124,7 @@ func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUp
 		map[string]int{metrics.MissStatusLabel: bytesInRequest(req)},
 	)
 
-	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption {
+	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
 		return s.remote.BatchUpdateBlobs(ctx, req)
 	}
 
@@ -172,7 +173,7 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	mergedResp := repb.BatchReadBlobsResponse{}
 	mergedDigests := []*repb.Digest{}
 	localResp := &repb.BatchReadBlobsResponse{}
-	remoteOnly := authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption
+	remoteOnly := authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx)
 	if !remoteOnly {
 		resp, err := s.local.BatchReadBlobs(ctx, req)
 		if err != nil {
@@ -290,7 +291,7 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 			Compressor: response.Compressor,
 		})
 	}
-	if !authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption {
+	if !authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption(ctx) {
 		if _, err := s.local.BatchUpdateBlobs(ctx, &updateReq); err != nil {
 			log.CtxWarningf(ctx, "Error locally updating blobs: %s", err)
 		}
