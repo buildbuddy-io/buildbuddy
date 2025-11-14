@@ -178,6 +178,10 @@ func startNodes(t *testing.T, configs []testConfig) []*metadata.Server {
 
 	// wait for them all to become healthy
 	waitForHealthy(t, caches...)
+
+	t.Cleanup(func() {
+		waitForShutdown(t, caches...)
+	})
 	return caches
 }
 
@@ -220,8 +224,7 @@ func randomFileMetadata(t testing.TB, sizeBytes int64, groupID string) *sgpb.Fil
 
 func TestAutoBringup(t *testing.T) {
 	configs := getTestConfigs(t, 3)
-	caches := startNodes(t, configs)
-	waitForShutdown(t, caches...)
+	startNodes(t, configs)
 }
 
 func TestGetAndSet(t *testing.T) {
@@ -320,7 +323,6 @@ func TestGetAndSet(t *testing.T) {
 		require.Equal(t, 1, len(findRsp.GetFindResponses()))
 		assert.False(t, findRsp.GetFindResponses()[0].GetPresent())
 	}
-	waitForShutdown(t, caches...)
 }
 
 func TestCacheShutdown(t *testing.T) {
@@ -373,7 +375,6 @@ func TestCacheShutdown(t *testing.T) {
 		assert.True(t, rsp.GetPresent())
 	}
 
-	waitForShutdown(t, caches...)
 }
 
 func TestDistributedRanges(t *testing.T) {
@@ -411,8 +412,6 @@ func TestDistributedRanges(t *testing.T) {
 		require.Equal(t, 1, len(getRsp.GetFileMetadatas()))
 		assert.True(t, proto.Equal(md, getRsp.GetFileMetadatas()[0]))
 	}
-
-	waitForShutdown(t, caches...)
 }
 
 func TestFindMissingMetadata(t *testing.T) {
@@ -460,8 +459,6 @@ func TestFindMissingMetadata(t *testing.T) {
 			assert.False(t, rsp.GetPresent())
 		}
 	}
-
-	waitForShutdown(t, caches...)
 }
 
 func TestLRU(t *testing.T) {
@@ -622,6 +619,4 @@ func TestLRU(t *testing.T) {
 	require.LessOrEqual(t, evictedCount, quartile*2)
 	// Check that the avg age of evicted items is older than avg age of kept items.
 	require.Greater(t, avgEvictedAgeSeconds, avgKeptAgeSeconds)
-
-	waitForShutdown(t, caches...)
 }
