@@ -1,6 +1,7 @@
 package fileresolver
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"strings"
@@ -8,9 +9,12 @@ import (
 	"github.com/bazelbuild/rules_go/go/runfiles"
 )
 
+var fileresolverGoRlocation string
+
 type fileResolver struct {
 	bundleFS     fs.FS
 	bundlePrefix string
+	moduleName   string
 }
 
 // Open resolves a logical path to a local file, where the path is relative to
@@ -19,8 +23,30 @@ type fileResolver struct {
 // `os.NotExists` can be used to check whether the file does not exist, if an
 // error is returned. The caller is responsible for closing the returned file.
 func (r *fileResolver) Open(name string) (fs.File, error) {
-	if strings.HasPrefix(name, r.bundlePrefix) {
-		f, err := r.bundleFS.Open(strings.TrimPrefix(name, r.bundlePrefix))
+	rlocation := strings.Builder{}
+	rlocation.WriteString(r.moduleName)
+	if name != "" && !strings.HasPrefix(name, "/") {
+		rlocation.WriteString("/")
+	}
+	rlocation.WriteString(name)
+	return r.OpenFromRlocation(rlocation.String())
+}
+
+// Open resolves a logical path to a local file, where the path is relative to
+// the Bazel workspace root. It first consults the bundle, then Bazel runfiles.
+//
+// `os.NotExists` can be used to check whether the file does not exist, if an
+// error is returned. The caller is responsible for closing the returned file.
+func (r *fileResolver) OpenFromRlocation(rlocation string) (fs.File, error) {
+	if moduleName, _, _ := strings.Cut(rlocation, "/"); r.moduleName != moduleName {
+		return nil, &fs.PathError{
+			Op:   "open",
+			Path: rlocation,
+			Err:  fmt.Errorf("invalid rlocation for file resolver with module name %s", r.moduleName),
+		}
+	}
+	if strings.HasPrefix(rlocation, r.moduleName+"/"+r.bundlePrefix) {
+		f, err := r.bundleFS.Open(strings.TrimPrefix(rlocation, r.moduleName+"/"+r.bundlePrefix))
 		if err == nil {
 			return f, nil
 		}
@@ -29,7 +55,7 @@ func (r *fileResolver) Open(name string) (fs.File, error) {
 		}
 	}
 
-	runfilePath, err := runfiles.Rlocation(name)
+	runfilePath, err := runfiles.Rlocation(rlocation)
 	if err != nil {
 		return nil, err
 	}
@@ -51,8 +77,10 @@ func New(bundleFS fs.FS, bundleRoot string) fs.FS {
 	if bundleRoot != "" && !strings.HasSuffix(bundleRoot, "/") {
 		bundlePrefix = bundleRoot + "/"
 	}
+	moduleName, _, _ := strings.Cut(fileresolverGoRlocation, "/")
 	return &fileResolver{
 		bundleFS:     bundleFS,
 		bundlePrefix: bundlePrefix,
+		moduleName:   moduleName,
 	}
 }
