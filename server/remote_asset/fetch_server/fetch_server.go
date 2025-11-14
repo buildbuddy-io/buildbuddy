@@ -104,8 +104,8 @@ func NewFetchServer(env environment.Env) (*FetchServer, error) {
 }
 
 func checkPreconditions(env environment.Env) error {
-	if env.GetCache() == nil {
-		return status.FailedPreconditionError("missing Cache")
+	if env.GetByteStreamClient() == nil {
+		return status.FailedPreconditionError("missing ByteStreamClient")
 	}
 	return nil
 }
@@ -318,27 +318,24 @@ func (p *FetchServer) FetchDirectory(ctx context.Context, req *rapb.FetchDirecto
 }
 
 func (p *FetchServer) rewriteToCache(ctx context.Context, blobDigest *repb.Digest, instanceName string, fromFunc, toFunc repb.DigestFunction_Value) *repb.Digest {
-	cacheRN := digest.NewCASResourceName(blobDigest, instanceName, fromFunc)
-	cache := p.env.GetCache()
-	reader, err := cache.Reader(ctx, cacheRN.ToProto(), 0, 0)
+	tmpFile, err := scratchspace.CreateTemp("remote-asset-fetch-*")
 	if err != nil {
-		log.CtxErrorf(ctx, "Failed to get cache reader for %s: %s", digest.String(blobDigest), err)
-		return nil
-	}
-	defer reader.Close()
-
-	tmpFilePath, err := tempCopy(reader)
-	if err != nil {
-		log.CtxErrorf(ctx, "Failed to copy from reader to temp for %s: %s", digest.String(blobDigest), err)
+		log.CtxErrorf(ctx, "failed to create temp file: %s", err)
 		return nil
 	}
 	defer func() {
-		if err := os.Remove(tmpFilePath); err != nil {
-			log.Errorf("Failed to remove temp file: %s", err)
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			log.CtxErrorf(ctx, "Failed to remove temp file: %s", err)
 		}
 	}()
 
-	storageDigest, err := cachetools.UploadFile(ctx, getByteStreamClient(p.env), instanceName, toFunc, tmpFilePath)
+	cacheRN := digest.NewCASResourceName(blobDigest, instanceName, fromFunc)
+	if err := cachetools.GetBlob(ctx, getByteStreamClient(p.env), cacheRN, tmpFile); err != nil {
+		log.CtxErrorf(ctx, "Failed to read blob from cache for %s: %s", digest.String(blobDigest), err)
+		return nil
+	}
+
+	storageDigest, err := cachetools.UploadFile(ctx, getByteStreamClient(p.env), instanceName, toFunc, tmpFile.Name())
 	if err != nil {
 		log.CtxErrorf(ctx, "Failed to re-upload blob with new digestFunc %s for %s: %s", toFunc, digest.String(blobDigest), err)
 		return nil
