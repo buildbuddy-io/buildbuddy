@@ -17,6 +17,7 @@ go_library(
         "//enterprise/server/raft/registry",
         "//enterprise/server/raft/sender",
         "//enterprise/server/raft/store",
+        "//enterprise/server/util/gcsutil",
         "//proto:metadata_go_proto",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
