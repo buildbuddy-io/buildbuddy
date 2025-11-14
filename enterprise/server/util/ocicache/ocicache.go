@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci_byte_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -19,6 +20,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
@@ -476,4 +478,84 @@ func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader
 	}
 	tr := io.TeeReader(upstream, w)
 	return WriteBlobToCache(ctx, tr, bsClient, acClient, repo, hash, contentType, contentLength)
+}
+
+// FetchBlobViaOCIByteStream fetches a blob using the OCI byte stream path.
+// This will first check the cache, then fall back to fetching from the OCI registry
+// if not found, and write to the cache while streaming.
+func FetchBlobViaOCIByteStream(
+	ctx context.Context,
+	bsClient bspb.ByteStreamClient,
+	acClient repb.ActionCacheClient,
+	repo gcrname.Repository,
+	hash gcr.Hash,
+	credentials *rgpb.Credentials,
+	mediaType string,
+	contentLength int64,
+) (io.ReadCloser, error) {
+	// Validate that required clients are present
+	if bsClient == nil {
+		return nil, status.FailedPreconditionError("ByteStreamClient is required for FetchBlobViaOCIByteStream")
+	}
+	if acClient == nil {
+		return nil, status.FailedPreconditionError("ActionCacheClient is required for FetchBlobViaOCIByteStream")
+	}
+
+	// Wrap the byte stream client with OCI byte stream client
+	// This will add OCI metadata as gRPC headers
+	ociClient := oci_byte_stream.NewOCIByteStreamClient(bsClient)
+
+	// Create a CAS resource name for the blob
+	blobCASDigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
+	}
+	blobRN := digest.NewCASResourceName(
+		blobCASDigest,
+		"",
+		cacheDigestFunction,
+	)
+
+	// Create the ByteStream read request
+	req := &bspb.ReadRequest{
+		ResourceName: blobRN.DownloadString(),
+		ReadOffset:   0,
+		ReadLimit:    0,
+	}
+
+	// Create OCI read options
+	ociOpts := &oci_byte_stream.OCIReadOptions{
+		Registry:    repo.RegistryStr(),
+		Repository:  repo,
+		Digest:      hash,
+		Credentials: credentials,
+		MediaType:   mediaType,
+		ContentSize: contentLength,
+	}
+
+	// Add OCI options to context
+	ctx = oci_byte_stream.ContextWithOCIReadOptions(ctx, ociOpts)
+
+	// Read from byte stream with OCI headers
+	// The OCI byte stream server will:
+	// 1. Check cache first (via underlying byte stream server)
+	// 2. Fall back to OCI registry if not found
+	rc, err := oci_byte_stream.ReadFromByteStream(ctx, ociClient, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Wrap in a read-through cacher to write to cache while streaming
+	// This is necessary because the server can't use NewBlobReadThroughCacher
+	// directly (would create circular dependency)
+	return NewBlobReadThroughCacher(
+		ctx,
+		rc,
+		bsClient,
+		acClient,
+		repo,
+		hash,
+		mediaType,
+		contentLength,
+	)
 }

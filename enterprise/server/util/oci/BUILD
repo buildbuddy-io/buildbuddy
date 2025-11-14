@@ -42,9 +42,16 @@ go_test(
     deps = [
         ":oci",
         "//enterprise/server/clientidentity",
+        "//enterprise/server/oci_byte_stream",
         "//enterprise/server/remote_execution/platform",
         "//proto:registry_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/remote_cache/action_cache_server",
+        "//server/remote_cache/byte_stream_server",
+        "//server/remote_cache/capabilities_server",
+        "//server/remote_cache/content_addressable_storage_server",
+        "//server/rpc/interceptors",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
@@ -63,5 +70,6 @@ go_test(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
