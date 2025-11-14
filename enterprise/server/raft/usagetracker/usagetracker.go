@@ -318,7 +318,7 @@ func (pu *partitionUsage) processGCSDeletions(ctx context.Context) {
 			return
 		case gcsMD := <-pu.gcsDeletes:
 			if err := pu.fileStorer.DeleteStoredBlob(ctx, gcsMD); err != nil {
-				log.Warningf("failed to delete blob %q", gcsMD.GetBlobName(), err)
+				log.Warningf("failed to delete blob %q: %s", gcsMD.GetBlobName(), err)
 				//TODO: add some metrics here
 			}
 		}
