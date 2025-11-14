@@ -62,6 +62,7 @@ type Env interface {
 	GetSplashPrinter() interfaces.SplashPrinter
 	GetActionCacheClient() repb.ActionCacheClient
 	GetByteStreamClient() bspb.ByteStreamClient
+	GetLocalByteStreamClient() bspb.ByteStreamClient
 	GetPooledByteStreamClient() interfaces.PooledByteStreamClient
 	GetSchedulerClient() scpb.SchedulerClient
 	GetCapabilitiesClient() repb.CapabilitiesClient

@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -581,6 +582,92 @@ func TestFetchBlobWithUnknownQualifiers(t *testing.T) {
 	require.IsType(t, expectedDetail, status.Details()[0])
 	actualDetail := status.Details()[0].(*gerrdetails.BadRequest)
 	assert.True(t, proto.Equal(expectedDetail, actualDetail))
+}
+
+func TestFetchBlob_StoreInLocalClusterOnly(t *testing.T) {
+	ctx := context.Background()
+
+	localEnv := testenv.GetTestEnv(t)
+	require.NoError(t, scratchspace.Init())
+	clientConn := runFetchServer(ctx, t, localEnv)
+	fetchClient := rapb.NewFetchClient(clientConn)
+	// Initialize a remote env with a separate cache that backs the remote BSS server.
+	runRemoteBSS(t, ctx, localEnv)
+	remoteBSS := localEnv.GetByteStreamClient()
+	// Initialize a "local" bytestream server.
+	runLocalBSS(ctx, localEnv, t)
+
+	content := "hello world"
+	contentDigest, err := digest.Compute(bytes.NewReader([]byte(content)), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	remoteFetches := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		remoteFetches++
+		fmt.Fprint(w, content)
+	}))
+	defer ts.Close()
+
+	request := &rapb.FetchBlobRequest{
+		Uris: []string{ts.URL},
+		Qualifiers: []*rapb.Qualifier{
+			{
+				Name:  fetch_server.ChecksumQualifier,
+				Value: checksumQualifierFromContent(t, contentDigest.GetHash(), repb.DigestFunction_BLAKE3),
+			},
+		},
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+	resp, err := fetchClient.FetchBlob(ctx, request)
+	require.NoError(t, err)
+	require.Equal(t, contentDigest.GetHash(), resp.GetBlobDigest().GetHash())
+	require.Equal(t, 1, remoteFetches)
+
+	// Verify on the second read, you can read the blob from local BSS server without another fetch from the HTTP server.
+	resp, err = fetchClient.FetchBlob(ctx, request)
+	require.NoError(t, err)
+	require.Equal(t, contentDigest.GetHash(), resp.GetBlobDigest().GetHash())
+	require.Equal(t, 1, remoteFetches)
+
+	// Verify you can't read the blob from remote server.
+	rn := digest.NewCASResourceName(contentDigest, "", repb.DigestFunction_BLAKE3)
+	buf := bytes.NewBuffer(make([]byte, 0, contentDigest.GetSizeBytes()))
+	err = cachetools.GetBlob(ctx, remoteBSS, rn, buf)
+	require.Error(t, err)
+}
+
+func runRemoteBSS(t testing.TB, ctx context.Context, localEnv *testenv.TestEnv) {
+	remoteEnv := testenv.GetTestEnv(t)
+
+	server, err := byte_stream_server.NewByteStreamServer(remoteEnv)
+	require.NoError(t, err)
+
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
+	bspb.RegisterByteStreamServer(grpcServer, server)
+	go runFunc()
+
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	localEnv.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+}
+
+func runLocalBSS(ctx context.Context, env *testenv.TestEnv, t testing.TB) {
+	env.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
+
+	server, err := byte_stream_server.NewByteStreamServer(env)
+	require.NoError(t, err)
+
+	grpcServer, runFunc, lis := testenv.RegisterLocalInternalGRPCServer(t, env)
+	bspb.RegisterByteStreamServer(grpcServer, server)
+	go runFunc()
+
+	conn, err := testenv.LocalInternalGRPCConn(ctx, lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	env.SetLocalByteStreamClient(bspb.NewByteStreamClient(conn))
+	env.SetLocalByteStreamServer(server)
 }
 
 func TestFetchDirectory(t *testing.T) {

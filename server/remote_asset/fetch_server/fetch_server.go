@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
@@ -155,6 +156,9 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	if err != nil {
 		return nil, err
 	}
+	// TODO: Support reading and writing from the remote cache from cache proxies. Must replace direct cache access with GRPC calls.
+	// This prevents remote writes when the fetch server is implemented in the cache proxy. This has no effect when implemented in the apps.
+	ctx = metadata.AppendToOutgoingContext(ctx, "proxy_skip_remote", "true")
 
 	storageFunc := req.GetDigestFunction()
 	if storageFunc == repb.DigestFunction_UNKNOWN {
@@ -233,6 +237,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	}
 
 	httpClient := httpclient.New(p.allowedPrivateIPNets, "fetch_server")
+	bsClient := getByteStreamClient(p.env)
 
 	ctx, cancel := context.WithTimeout(ctx, p.computeRequestTimeout(ctx, req.GetTimeout()))
 	defer cancel()
@@ -258,7 +263,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		}
 		blobDigest, err := mirrorToCache(
 			ctx,
-			p.env.GetByteStreamClient(),
+			bsClient,
 			req.GetInstanceName(),
 			httpClient,
 			uri,
@@ -333,8 +338,7 @@ func (p *FetchServer) rewriteToCache(ctx context.Context, blobDigest *repb.Diges
 		}
 	}()
 
-	bsClient := p.env.GetByteStreamClient()
-	storageDigest, err := cachetools.UploadFile(ctx, bsClient, instanceName, toFunc, tmpFilePath)
+	storageDigest, err := cachetools.UploadFile(ctx, getByteStreamClient(p.env), instanceName, toFunc, tmpFilePath)
 	if err != nil {
 		log.CtxErrorf(ctx, "Failed to re-upload blob with new digestFunc %s for %s: %s", toFunc, digest.String(blobDigest), err)
 		return nil
@@ -501,4 +505,14 @@ func tempCopy(r io.Reader) (path string, err error) {
 		return "", status.UnavailableErrorf("failed to copy HTTP response to temp file: %s", err)
 	}
 	return f.Name(), nil
+}
+
+// TODO: Support making requests to the local BSS server without GRPC overhead.
+func getByteStreamClient(env environment.Env) bspb.ByteStreamClient {
+	bsClient := env.GetByteStreamClient()
+	// If there is a local bytestream server, use it instead of the remote one.
+	if env.GetLocalByteStreamClient() != nil {
+		bsClient = env.GetLocalByteStreamClient()
+	}
+	return bsClient
 }
