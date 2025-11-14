@@ -6,10 +6,10 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/gcsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -265,22 +265,6 @@ func (c *Cache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceNam
 		}
 	}
 	return groupID, DefaultPartitionID
-}
-
-func (c *Cache) gcsObjectIsPastTTL(gcsMetadata *sgpb.StorageMetadata_GCSMetadata) bool {
-	// The GCS TTL is set as an integer number of days. The docs are vague,
-	// but it seems plausible that if a file is *ever* marked for deletion,
-	// it will be deleted, even if it has changed since. Basically, there is
-	// one job marking files for deletion, and another job deleting them,
-	// and if the object has changed between those two events, it is still
-	// deleted.
-	//
-	// For this reason, if a GCS object is ever less than 1 hour away from
-	// TTL, assume it has already been marked for deletion.
-	customTimeUsec := gcsMetadata.GetLastCustomTimeUsec()
-	buffer := time.Hour
-
-	return c.opts.Clock.Since(time.UnixMicro(customTimeUsec))+buffer > time.Duration(c.opts.GCSTTLDays*24)*time.Hour
 }
 
 func (c *Cache) makeFileRecord(ctx context.Context, pr *rspb.ResourceName) (*sgpb.FileRecord, error) {
@@ -695,7 +679,7 @@ func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.Resou
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
-		if c.gcsObjectIsPastTTL(gcsMetadata) {
+		if gcsutil.ObjectIsPastTTL(c.opts.Clock, gcsMetadata, c.opts.GCSTTLDays) {
 			return nil, status.NotFoundError("backing object may have expired")
 		}
 	}
