@@ -5,9 +5,11 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
-	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -27,8 +29,6 @@ import (
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/server/scheduling/scheduler_server/config"
 )
-
-var staticGoRlocation string
 
 const (
 	indexTemplateFilename = "index.html"
@@ -76,16 +76,13 @@ var (
 )
 
 func FSFromRelPath(relPath string) (fs.FS, error) {
-	// Get a filesystem containing the runfiles (static content bundled with the binary).
-	runfilesFS, err := runfiles.New()
+	// Figure out where our runfiles (static content bundled with the binary) live.
+	rfp, err := bazel.RunfilesPath()
 	if err != nil {
 		return nil, err
 	}
-	moduleName, _, _ := strings.Cut(staticGoRlocation, "/")
-	if relPath != "" && !strings.HasPrefix(relPath, "/") {
-		moduleName = moduleName + "/"
-	}
-	return fs.Sub(runfilesFS, moduleName+relPath)
+	dirFS := os.DirFS(filepath.Join(rfp, relPath))
+	return dirFS, nil
 }
 
 // StaticFileServer implements a static file http server that serves static
