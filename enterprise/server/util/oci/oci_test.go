@@ -485,6 +485,9 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 
 					configDigest, err := pulledImage.ConfigName()
 					require.NoError(t, err)
+					// TODO(dan): The OCI byte stream path makes additional HEAD requests
+					// to check if blobs exist before fetching them. We need to update
+					// test expectations to account for these requests.
 					expected = map[string]int{
 						http.MethodGet + " /v2/": 1,
 						http.MethodHead + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
@@ -748,6 +751,8 @@ func TestResolve_WithCache(t *testing.T) {
 				// should be able to avoid GET requests for manifests and blobs,
 				// but we still expect some requests to resolve the tag to a
 				// digest.
+				// TODO(dan): The OCI byte stream path may make additional requests
+				// when serving from cache. Need to verify expected behavior.
 				expected = map[string]int{
 					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest": 1,
@@ -872,6 +877,9 @@ func TestResolve_Concurrency(t *testing.T) {
 	require.NoError(t, err)
 
 	imageAddress := registry.ImageAddress(imageName + "_image")
+	// TODO(dan): The OCI byte stream path makes HEAD requests before fetching blobs.
+	// With concurrent requests, the caching behavior may result in different request
+	// patterns. Need to determine the expected behavior for concurrent blob fetches.
 	expected := map[string]int{
 		http.MethodGet + " /v2/": 1,
 		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
