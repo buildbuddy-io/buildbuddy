@@ -1061,6 +1061,7 @@ func (sm *Replica) find(db ReplicaReader, req *rfpb.FindRequest) (*rfpb.FindResp
 	return &rfpb.FindResponse{
 		Present:        present,
 		LastAccessUsec: fileMetadata.GetLastAccessUsec(),
+		GcsMetadata:    fileMetadata.GetStorageMetadata().GetGcsMetadata(),
 	}, nil
 }
 
