@@ -18,9 +18,15 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci_byte_stream"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -40,6 +46,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
@@ -953,9 +961,57 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	require.NotNil(t, te.GetClientIdentityService())
 
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
-	testcache.Setup(t, te, localGRPClis)
+
+	// Set up a temporary connection to create clients (before starting the server)
+	conn, err := testenv.LocalGRPCConn(
+		te.GetServerContext(),
+		localGRPClis,
+		interceptors.GetUnaryClientIdentityInterceptor(te),
+		interceptors.GetStreamClientIdentityInterceptor(te),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	// Register clients
+	testcache.RegisterClients(te, conn)
+
+	// Now register cache servers with OCI byte stream support
+	// (clients are available now, so OCI byte stream server can use them)
+	registerCacheServersWithOCI(t, te)
+
 	go runServer()
 	return te
+}
+
+func registerCacheServersWithOCI(t *testing.T, env *testenv.TestEnv) {
+	require.NotNil(t, env.GetGRPCServer(), "GRPC server is missing from env. Call testenv.RegisterLocalGRPCServer first")
+
+	// Create the underlying byte stream server
+	underlyingBS, err := byte_stream_server.NewByteStreamServer(env)
+	require.NoError(t, err)
+
+	// Create the OCI byte stream server wrapping the underlying server
+	// (clients are already set up at this point)
+	ociBS, err := oci_byte_stream.NewOCIByteStreamServer(
+		env,
+		env.GetByteStreamClient(),
+		env.GetActionCacheClient(),
+		underlyingBS,
+	)
+	require.NoError(t, err)
+
+	// Create other cache servers
+	ac, err := action_cache_server.NewActionCacheServer(env)
+	require.NoError(t, err)
+	cas, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
+	require.NoError(t, err)
+	caps := capabilities_server.NewCapabilitiesServer(env, true /*cas*/, true /*rbe*/, true /*zstd*/)
+
+	// Register all servers
+	repb.RegisterActionCacheServer(env.GetGRPCServer(), ac)
+	bspb.RegisterByteStreamServer(env.GetGRPCServer(), ociBS)
+	repb.RegisterContentAddressableStorageServer(env.GetGRPCServer(), cas)
+	repb.RegisterCapabilitiesServer(env.GetGRPCServer(), caps)
 }
 
 func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, expected map[string]int, counter *requestCounter) {

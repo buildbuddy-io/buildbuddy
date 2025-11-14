@@ -13,9 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci_byte_stream"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -709,10 +711,11 @@ type imageFromRawManifest struct {
 	desc        gcr.Descriptor
 	rawManifest []byte
 
-	ctx      context.Context
-	acClient repb.ActionCacheClient
-	bsClient bspb.ByteStreamClient
-	puller   *remote.Puller
+	ctx         context.Context
+	acClient    repb.ActionCacheClient
+	bsClient    bspb.ByteStreamClient
+	puller      *remote.Puller
+	credentials *rgpb.Credentials
 
 	fetchRawConfigOnce func() ([]byte, error)
 }
@@ -850,6 +853,60 @@ func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
 }
 
 func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
+	// Get size for the resource name
+	contentLength, err := l.Size()
+	if err != nil {
+		// Fall back to the old implementation if we can't get the size
+		return l.compressedFallback()
+	}
+
+	// Create a CAS resource name for the blob
+	blobCASDigest := &repb.Digest{
+		Hash:      l.digest.Hex,
+		SizeBytes: contentLength,
+	}
+	blobRN := digest.NewCASResourceName(
+		blobCASDigest,
+		"",
+		repb.DigestFunction_SHA256,
+	)
+
+	// Create the ByteStream read request
+	req := &bspb.ReadRequest{
+		ResourceName: blobRN.DownloadString(),
+		ReadOffset:   0,
+		ReadLimit:    0,
+	}
+
+	// Get media type for OCI metadata
+	mediaType, err := l.MediaType()
+	if err != nil {
+		mediaType = ""
+	}
+
+	// Create OCI read options
+	ociOpts := &oci_byte_stream.OCIReadOptions{
+		Registry:    l.repo.RegistryStr(),
+		Repository:  l.repo,
+		Digest:      l.digest,
+		Credentials: l.image.credentials,
+		MediaType:   string(mediaType),
+		ContentSize: contentLength,
+	}
+
+	// Add OCI options to context
+	ctx := oci_byte_stream.ContextWithOCIReadOptions(l.image.ctx, ociOpts)
+
+	// Read from byte stream with OCI headers
+	// This will go through the OCI byte stream server which will:
+	// 1. Check cache first
+	// 2. Fall back to OCI registry if not found
+	// 3. Write to cache while streaming
+	return oci_byte_stream.ReadFromByteStream(ctx, l.image.bsClient, req)
+}
+
+// compressedFallback is the old implementation, used as a fallback
+func (l *layerFromDigest) compressedFallback() (io.ReadCloser, error) {
 	canUseCache := !isAnonymousUser(l.image.ctx)
 	if !canUseCache {
 		log.CtxInfof(l.image.ctx, "Anonymous user request, skipping layer cache for %s:%s", l.image.repo, l.image.desc.Digest)
