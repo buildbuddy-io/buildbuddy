@@ -323,6 +323,17 @@ bb remote --remote_run_header=x-buildbuddy-platform.remote-snapshot-save-policy=
 
 #### Snapshot read policy
 
+VM snapshots can be stored both locally on the machine that ran the
+remote run, as well as remotely in BuildBuddy's cache.
+
+There are pros and cons to local vs remote snapshots.
+
+Resuming from a local snapshot is often faster, because the large snapshots don't have to be fetched over the network. They are also more economical, because remote cache reads are billed at a higher rate. Due to snapshots' size, reading remote snapshots can result in high cache download.
+
+However local snapshots may be inaccessible by future workloads if the original machine is fully occupied and can't accept additional
+work, or if the executor is restarting during a release. Remote snapshots can be
+fetched from any machine, and guarantee you'll always be able to resume from a warm VM.
+
 When looking for a snapshot, we look in the following order:
 
 1. Search for a local snapshot on the same branch of the current run.
@@ -330,8 +341,6 @@ When looking for a snapshot, we look in the following order:
 3. Search for a local snapshot on a fallback branch (typically the default branch, like
    `main` or `master`).
 4. Search for a remote snapshot on a fallback branch.
-
-Due to their size, reading remote snapshots can result in high cache download.
 
 We support configuring the snapshot read policy with the `snapshot-read-policy`
 platform property. Valid values are:
