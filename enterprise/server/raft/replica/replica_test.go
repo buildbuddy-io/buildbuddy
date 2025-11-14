@@ -1724,3 +1724,123 @@ func TestDeleteSessions(t *testing.T) {
 	session3.EntryIndex = proto.Uint64(4)
 	require.ElementsMatch(t, got, []*rfpb.Session{session2, session3})
 }
+
+func TestUpdateATime(t *testing.T) {
+	repl := testutil.NewTestingReplica(t, 1, 1)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	lastAppliedIndex, err := repl.Open(stopc)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+
+	// Create a file record and write initial metadata with an access time
+	r, _ := testdigest.RandomCASResourceBuf(t, 1000)
+	fileRecord := &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
+			CacheType:   rspb.CacheType_CAS,
+			PartitionId: "default",
+			GroupId:     interfaces.AuthAnonymousUser,
+		},
+		Digest:         r.GetDigest(),
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	initialATime := int64(1_000_000)
+	md := &sgpb.FileMetadata{
+		FileRecord: fileRecord,
+		StorageMetadata: &sgpb.StorageMetadata{
+			InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{
+				Data: []byte("test-data"),
+			},
+		},
+		LastAccessUsec: initialATime,
+	}
+
+	fs := filestore.New()
+	key, err := fs.PebbleKey(fileRecord)
+	require.NoError(t, err)
+	fileMetadataKey, err := key.Bytes(filestore.Version5)
+	require.NoError(t, err)
+	val, err := proto.Marshal(md)
+	require.NoError(t, err)
+
+	// Write the initial file metadata
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   fileMetadataKey,
+			Value: val,
+		},
+	}))
+	entries := []dbsm.Entry{entry}
+	writeRsp, err := repl.Update(entries)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(writeRsp))
+
+	// Test case 1: New atime comes before old atime - should not update
+	olderATime := int64(500_000)
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.UpdateAtimeRequest{
+			Key:            fileMetadataKey,
+			AccessTimeUsec: olderATime,
+		}))
+		entries := []dbsm.Entry{entry}
+		updateRsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		require.Equal(t, 1, len(updateRsp))
+		require.NoError(t, rbuilder.NewBatchResponse(updateRsp[0].Result.Data).AnyError())
+
+		// Verify that atime was NOT updated (should still be initialATime)
+		buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+			Key: fileMetadataKey,
+		}).ToBuf()
+		require.NoError(t, err)
+		readRsp, err := repl.Lookup(buf)
+		require.NoError(t, err)
+
+		readBatch := rbuilder.NewBatchResponse(readRsp)
+		directRead, err := readBatch.DirectReadResponse(0)
+		require.NoError(t, err)
+
+		gotMd := &sgpb.FileMetadata{}
+		err = proto.Unmarshal(directRead.GetKv().GetValue(), gotMd)
+		require.NoError(t, err)
+		require.Equal(t, initialATime, gotMd.GetLastAccessUsec(), "atime should not be updated when new atime is older")
+	}
+
+	// Test case 2: New atime comes after old atime - should update
+	newerATime := int64(2_000_000)
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.UpdateAtimeRequest{
+			Key:            fileMetadataKey,
+			AccessTimeUsec: newerATime,
+		}))
+		entries := []dbsm.Entry{entry}
+		updateRsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		require.Equal(t, 1, len(updateRsp))
+		require.NoError(t, rbuilder.NewBatchResponse(updateRsp[0].Result.Data).AnyError())
+
+		// Verify that atime was updated to newerATime
+		buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+			Key: fileMetadataKey,
+		}).ToBuf()
+		require.NoError(t, err)
+		readRsp, err := repl.Lookup(buf)
+		require.NoError(t, err)
+
+		readBatch := rbuilder.NewBatchResponse(readRsp)
+		directRead, err := readBatch.DirectReadResponse(0)
+		require.NoError(t, err)
+
+		gotMd := &sgpb.FileMetadata{}
+		err = proto.Unmarshal(directRead.GetKv().GetValue(), gotMd)
+		require.NoError(t, err)
+		require.Equal(t, newerATime, gotMd.GetLastAccessUsec(), "atime should be updated when new atime is newer")
+	}
+
+	err = repl.Close()
+	require.NoError(t, err)
+}
