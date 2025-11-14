@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 
 	"google.golang.org/grpc/codes"
 
@@ -29,6 +30,7 @@ import (
 var enableGetTreeCaching = flag.Bool("cache_proxy.enable_get_tree_caching", false, "If true, the Cache Proxy attempts to serve GetTree requests out of the local cache. If false, GetTree requests are always proxied to the remote, authoritative cache.")
 
 type CASServerProxy struct {
+	env                environment.Env
 	supportsEncryption bool
 	atimeUpdater       interfaces.AtimeUpdater
 	authenticator      interfaces.Authenticator
@@ -63,6 +65,7 @@ func New(env environment.Env) (*CASServerProxy, error) {
 		return nil, fmt.Errorf("A remote ContentAddressableStorageClient is required to enable the ContentAddressableStorageServerProxy")
 	}
 	proxy := CASServerProxy{
+		env:                env,
 		supportsEncryption: env.GetCrypter() != nil,
 		atimeUpdater:       atimeUpdater,
 		authenticator:      authenticator,
@@ -103,9 +106,70 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	defer spn.End()
 	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.BlobDigests)))
 
-	// Always serve FindMissingBlobs requests out of the backing cache to
-	// avoid possible cache-inconsistency bugs.
-	return s.remote.FindMissingBlobs(ctx, req)
+	mergedEnabled := s.env.GetExperimentFlagProvider() != nil &&
+		s.env.GetExperimentFlagProvider().Boolean(ctx, "proxy-merged-find-missing", false)
+
+	if !mergedEnabled {
+		return s.remote.FindMissingBlobs(ctx, req)
+	}
+
+	type result struct {
+		remote *repb.FindMissingBlobsResponse
+		local  *repb.FindMissingBlobsResponse
+	}
+	res := &result{}
+	eg, ctx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
+		resp, err := s.remote.FindMissingBlobs(ctx, req)
+		if err != nil {
+			return err
+		}
+		res.remote = resp
+		return nil
+	})
+
+	eg.Go(func() error {
+		resp, err := s.local.FindMissingBlobs(ctx, req)
+		res.local = resp
+		return err
+	})
+
+	if err := eg.Wait(); err != nil {
+		// this is only true if remote succeeded.
+		if res.remote != nil {
+			return res.remote, nil
+		}
+		return nil, err
+	}
+
+	return s.mergeMissingBlobs(ctx, res.remote, res.local)
+}
+
+// mergeMissingBlobs merges the missing blobs from the remote and local CAS servers.
+// This forces users to upload all missing blobs to the local CAS server, to populate the local cache.
+func (s *CASServerProxy) mergeMissingBlobs(ctx context.Context, remote, local *repb.FindMissingBlobsResponse) (*repb.FindMissingBlobsResponse, error) {
+	remoteMissing := make(map[string]bool, len(remote.MissingBlobDigests))
+	for _, d := range remote.MissingBlobDigests {
+		remoteMissing[d.GetHash()] = true
+	}
+
+	merged := &repb.FindMissingBlobsResponse{
+		MissingBlobDigests: append([]*repb.Digest{}, remote.MissingBlobDigests...),
+	}
+
+	for _, d := range local.MissingBlobDigests {
+		if !remoteMissing[d.GetHash()] {
+			merged.MissingBlobDigests = append(merged.MissingBlobDigests, d)
+		}
+	}
+
+	if len(merged.MissingBlobDigests) > len(remote.MissingBlobDigests) {
+		log.CtxDebugf(ctx, "Cache warming: %d blobs missing locally (vs %d remotely)",
+			len(merged.MissingBlobDigests), len(remote.MissingBlobDigests))
+	}
+
+	return merged, nil
 }
 
 func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
