@@ -63,14 +63,8 @@ func New(env environment.Env) (*CASServerProxy, error) {
 	if remote == nil {
 		return nil, fmt.Errorf("A remote ContentAddressableStorageClient is required to enable the ContentAddressableStorageServerProxy")
 	}
-	supportsEncryption := func(ctx context.Context) bool {
-		if env.GetCrypter() == nil {
-			return false
-		}
-		return remote_crypter.Enabled(ctx, env.GetExperimentFlagProvider())
-	}
 	proxy := CASServerProxy{
-		supportsEncryption: supportsEncryption,
+		supportsEncryption: remote_crypter.SupportsEncryption(env),
 		atimeUpdater:       atimeUpdater,
 		authenticator:      authenticator,
 		local:              local,

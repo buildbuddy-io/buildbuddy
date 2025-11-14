@@ -57,14 +57,8 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 	if local == nil {
 		return nil, fmt.Errorf("A local ByteStreamServer is required to enable ByteStreamServerProxy")
 	}
-	supportsEncryption := func(ctx context.Context) bool {
-		if env.GetCrypter() == nil {
-			return false
-		}
-		return remote_crypter.Enabled(ctx, env.GetExperimentFlagProvider())
-	}
 	return &ByteStreamServerProxy{
-		supportsEncryption: supportsEncryption,
+		supportsEncryption: remote_crypter.SupportsEncryption(env),
 		atimeUpdater:       atimeUpdater,
 		authenticator:      authenticator,
 		local:              local,

@@ -53,14 +53,8 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 	if remoteCache == nil {
 		return nil, fmt.Errorf("An ActionCacheClient is required to enable the ActionCacheServerProxy")
 	}
-	supportsEncryption := func(ctx context.Context) bool {
-		if env.GetCrypter() == nil {
-			return false
-		}
-		return remote_crypter.Enabled(ctx, env.GetExperimentFlagProvider())
-	}
 	return &ActionCacheServerProxy{
-		supportsEncryption: supportsEncryption,
+		supportsEncryption: remote_crypter.SupportsEncryption(env),
 		env:                env,
 		authenticator:      env.GetAuthenticator(),
 		localCache:         env.GetCache(),

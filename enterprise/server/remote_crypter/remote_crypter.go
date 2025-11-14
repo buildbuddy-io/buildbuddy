@@ -36,8 +36,16 @@ type RemoteCrypter struct {
 	clientIdentityService interfaces.ClientIdentityService
 }
 
-func Enabled(ctx context.Context, experiments interfaces.ExperimentFlagProvider) bool {
-	return experiments.Boolean(ctx, remoteEncryptionEnabled, false)
+func SupportsEncryption(env environment.Env) func(ctx context.Context) bool {
+	return func(ctx context.Context) bool {
+		if env.GetCrypter() == nil {
+			return false
+		}
+		if env.GetExperimentFlagProvider() == nil {
+			return false
+		}
+		return env.GetExperimentFlagProvider().Boolean(ctx, remoteEncryptionEnabled, false)
+	}
 }
 
 func Register(env *real_environment.RealEnv) error {
