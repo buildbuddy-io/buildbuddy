@@ -5,6 +5,9 @@ go_library(
     srcs = ["static.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/static",
     visibility = ["//visibility:public"],
+    x_defs = {
+        "staticGoRlocation": "$(rlocationpath static.go)",
+    },
     deps = [
         "//proto:config_go_proto",
         "//server/backends/github",

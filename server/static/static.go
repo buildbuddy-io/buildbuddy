@@ -28,6 +28,8 @@ import (
 	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/server/scheduling/scheduler_server/config"
 )
 
+var staticGoRlocation string
+
 const (
 	indexTemplateFilename = "index.html"
 	stylePathTemplate     = "/app/style.css?hash={APP_BUNDLE_HASH}"
@@ -79,12 +81,11 @@ func FSFromRelPath(relPath string) (fs.FS, error) {
 	if err != nil {
 		return nil, err
 	}
-	prefix := "_main"
+	moduleName, _, _ := strings.Cut(staticGoRlocation, "/")
 	if relPath != "" && !strings.HasPrefix(relPath, "/") {
-		prefix = prefix + "/"
+		moduleName = moduleName + "/"
 	}
-	// "_main" is the fixed runfiles directory name of the main repo
-	return fs.Sub(runfilesFS, prefix+relPath)
+	return fs.Sub(runfilesFS, moduleName+relPath)
 }
 
 // StaticFileServer implements a static file http server that serves static
