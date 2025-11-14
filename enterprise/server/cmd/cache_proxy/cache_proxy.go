@@ -48,6 +48,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/grpc"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
@@ -290,11 +291,14 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 			log.Fatalf("Error initializing routing CAS client: %s", err.Error())
 		}
 		env.SetContentAddressableStorageClient(cas)
+
+		// TODO: Register the BuildBuddyServiceClient.
 	} else {
 		env.SetActionCacheClient(repb.NewActionCacheClient(conn))
 		env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
 		env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+		env.SetBuildBuddyServiceClient(bbspb.NewBuildBuddyServiceClient(conn))
 	}
 
 	// The atime updater must be registered after the remote CAS client (which
@@ -350,6 +354,7 @@ func registerInternalServices(env *real_environment.RealEnv, grpcServer *grpc.Se
 		return status.InternalErrorf("CacheProxy: error starting local contentaddressablestorage server: %s", err.Error())
 	}
 	env.SetLocalCASServer(localCAS)
+	env.SetLocalContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
 	localAC, err := action_cache_server.NewActionCacheServer(env)
 	if err != nil {

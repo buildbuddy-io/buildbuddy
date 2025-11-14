@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -357,6 +358,11 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 
 	// Lookup metadata to get the correct digest size to be returned to
 	// the client.
+	p.env.GetBuildBuddyServiceClient().GetCacheMetadata(ctx, &bbspb.Get{
+		InstanceName:   instanceName,
+		Digest:         blobDigest,
+		DigestFunction: checksumFunc,
+	})
 	cache := p.env.GetCache()
 	md, err := cache.Metadata(ctx, cacheRN.ToProto())
 	if err != nil {
@@ -364,28 +370,21 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 		return nil
 	}
 
-	// TODO(Maggie): Remove after corrupted data has been evicted from cache.
-	// If the size is 1, that indicates metadata corruption. Delete the entry from the cache.
-	if md.DigestSizeBytes == 1 {
-		log.CtxInfof(ctx, "FetchServer found corrupted metadata for %v. Deleting from cache.", cacheRN.ToProto())
-		if err := cache.Delete(ctx, cacheRN.ToProto()); err != nil {
-			log.CtxErrorf(ctx, "Failed to delete artifact with corrupted metadata %v from cache: %s", cacheRN.ToProto(), err)
-		}
-		return nil
-	}
-
 	blobDigest.SizeBytes = md.DigestSizeBytes
 
-	// Even though we successfully fetched metadata, we need to renew
-	// the cache entry (using Contains()) to ensure that it doesn't
-	// expire by the time the client requests it from cache.
+	// The metadata API doesn't update the last access time, so we need to use the FindMissing API to renew the entry
+	// to ensure it doesn't expire by the time the client requests it from cache.
 	cacheRN = digest.NewCASResourceName(blobDigest, instanceName, checksumFunc)
-	exists, err := cache.Contains(ctx, cacheRN.ToProto())
+	rsp, err := getCASClient(p.env).FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		InstanceName:   instanceName,
+		BlobDigests:    []*repb.Digest{blobDigest},
+		DigestFunction: checksumFunc,
+	})
 	if err != nil {
 		log.CtxErrorf(ctx, "Failed to renew %s: %s", digest.String(blobDigest), err)
 		return nil
 	}
-	if !exists {
+	if len(rsp.MissingBlobDigests) > 0 {
 		log.CtxInfof(ctx, "Blob %s expired before we could renew it", digest.String(blobDigest))
 		return nil
 	}
@@ -504,7 +503,7 @@ func tempCopy(r io.Reader) (path string, err error) {
 	return f.Name(), nil
 }
 
-// TODO: Support making requests to the local BSS server without GRPC overhead.
+// TODO: Support making requests to the local servers without GRPC overhead.
 func getByteStreamClient(env environment.Env) bspb.ByteStreamClient {
 	bsClient := env.GetByteStreamClient()
 	// If there is a local bytestream server, use it instead of the remote one.
@@ -512,4 +511,13 @@ func getByteStreamClient(env environment.Env) bspb.ByteStreamClient {
 		bsClient = env.GetLocalByteStreamClient()
 	}
 	return bsClient
+}
+
+func getCASClient(env environment.Env) repb.ContentAddressableStorageClient {
+	casClient := env.GetContentAddressableStorageClient()
+	// If there is a local content addressable storage server, use it instead of the remote one.
+	if env.GetLocalContentAddressableStorageClient() != nil {
+		casClient = env.GetLocalContentAddressableStorageClient()
+	}
+	return casClient
 }

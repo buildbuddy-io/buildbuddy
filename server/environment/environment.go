@@ -10,6 +10,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
@@ -68,6 +69,8 @@ type Env interface {
 	GetCapabilitiesClient() repb.CapabilitiesClient
 	GetRemoteExecutionClient() repb.ExecutionClient
 	GetContentAddressableStorageClient() repb.ContentAddressableStorageClient
+	GetLocalContentAddressableStorageClient() repb.ContentAddressableStorageClient
+	GetBuildBuddyServiceClient() bbspb.BuildBuddyServiceClient
 	GetAPIService() interfaces.ApiService
 	GetFileCache() interfaces.FileCache
 	GetRemoteExecutionService() interfaces.RemoteExecutionService
