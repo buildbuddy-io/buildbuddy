@@ -27,6 +27,10 @@ go_library(
     ],
 )
 
+# Tell gazelle to make each file a separate test target,
+# so we can use them with different properties.
+# gazelle:go_test file
+
 go_test(
     name = "invocation_stat_service_test",
     srcs = ["invocation_stat_service_test.go"],
@@ -54,5 +58,17 @@ go_test(
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//testing/protocmp",
+    ],
+)
+
+go_test(
+    name = "invocation_stat_query_test",
+    size = "small",
+    srcs = ["invocation_stat_query_test.go"],
+    embed = [":invocation_stat_service"],
+    deps = [
+        "//proto:stat_filter_go_proto",
+        "//proto:stats_go_proto",
+        "@com_github_stretchr_testify//require",
     ],
 )

@@ -1152,6 +1152,8 @@ func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilld
 			queryFields[i] = "NULL as gorm_" + f
 		} else if col == "tag" {
 			queryFields[i] = "arrayJoin(tags) as gorm_tag"
+		} else if col == "exit_code" {
+			queryFields[i] = "toString(exit_code) as gorm_exit_code"
 		} else {
 			columnName := f
 			if columnName == "user" {
@@ -1178,13 +1180,17 @@ func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilld
 			nulledOutFieldList, drilldown, drilldown, table, where), args
 	}
 	col = "gorm_" + col
+	groupByCol := col
+	if col == "gorm_exit_code" {
+		groupByCol = "toString(exit_code)" // column aliases can't be used in GROUP BY
+	}
 
 	return fmt.Sprintf(`
 		(SELECT %s, 1 AS totals_first, count(*) AS total, countIf(%s) AS selection,
 			countIf(not(%s)) AS inverse
 		FROM "%s" %s
 		GROUP BY %s ORDER BY selection DESCENDING, total DESCENDING LIMIT 25)`,
-		nulledOutFieldList, drilldown, drilldown, table, where, col), args
+		nulledOutFieldList, drilldown, drilldown, table, where, groupByCol), args
 }
 
 func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{}, error) {
@@ -1215,7 +1221,7 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 	if *tagsInDrilldowns {
 		drilldownFields = append(drilldownFields, "tag")
 	}
-	executionDrilldownFields := []string{"worker", "target_label", "action_mnemonic", "effective_pool"}
+	executionDrilldownFields := []string{"worker", "target_label", "action_mnemonic", "effective_pool", "exit_code"}
 	if req.GetDrilldownMetric().GetExecution() != sfpb.ExecutionMetricType_UNKNOWN_EXECUTION_METRIC {
 		drilldownFields = append(drilldownFields, executionDrilldownFields...)
 	}
@@ -1402,6 +1408,7 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 		GormTargetLabel    *string
 		GormActionMnemonic *string
 		GormEffectivePool  *string
+		GormExitCode       *string
 		Selection          int64
 		Inverse            int64
 	}
@@ -1438,6 +1445,8 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 			addOutputChartEntry(m, dm, stpb.DrilldownType_ACTION_MNEMONIC_DRILLDOWN_TYPE, stat.GormActionMnemonic, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormEffectivePool != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_EFFECTIVE_POOL_DRILLDOWN_TYPE, stat.GormEffectivePool, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormExitCode != nil {
+			addOutputChartEntry(m, dm, stpb.DrilldownType_EXIT_CODE_DRILLDOWN_TYPE, stat.GormExitCode, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormTag != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_TAG_DRILLDOWN_TYPE, stat.GormTag, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else {
