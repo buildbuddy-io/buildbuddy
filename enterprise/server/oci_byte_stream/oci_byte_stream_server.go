@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 
@@ -17,8 +16,6 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -205,48 +202,13 @@ func (s *OCIByteStreamServer) fetchFromOCIAndCache(ctx context.Context, r *diges
 	}
 	defer upstream.Close()
 
-	// Get media type and content length for caching
-	mediaType := ociMeta.mediaType
-	if mediaType == "" {
-		mt, err := layer.MediaType()
-		if err != nil {
-			log.CtxWarningf(ctx, "Could not get media type for layer: %s", err)
-			mediaType = ""
-		} else {
-			mediaType = string(mt)
-		}
-	}
-
-	contentLength := ociMeta.contentSize
-	if contentLength == 0 {
-		size, err := layer.Size()
-		if err != nil {
-			log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
-		} else {
-			contentLength = size
-		}
-	}
-
-	// Wrap in a read-through cacher that writes to the byte stream while reading
-	rc, err := ocicache.NewBlobReadThroughCacher(
-		ctx,
-		upstream,
-		s.bsClient,
-		s.acClient,
-		repo,
-		hash,
-		mediaType,
-		contentLength,
-	)
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to create read-through cacher, streaming without caching: %s", err)
-		rc = upstream
-	}
-	defer rc.Close()
+	// Note: Caching is handled client-side by ocicache.FetchBlobViaOCIByteStream,
+	// which wraps this server call with NewBlobReadThroughCacher.
+	// We don't do caching here to avoid circular dependencies.
 
 	// Handle offset if specified
 	if offset > 0 {
-		_, err = io.CopyN(io.Discard, rc, offset)
+		_, err = io.CopyN(io.Discard, upstream, offset)
 		if err != nil {
 			return status.InternalErrorf("Failed to skip to offset: %s", err)
 		}
@@ -260,7 +222,7 @@ func (s *OCIByteStreamServer) fetchFromOCIAndCache(ctx context.Context, r *diges
 			break
 		}
 
-		n, err := rc.Read(buf)
+		n, err := upstream.Read(buf)
 		if n > 0 {
 			toSend := n
 			if limit > 0 && totalSent+int64(n) > limit {
@@ -284,12 +246,12 @@ func (s *OCIByteStreamServer) fetchFromOCIAndCache(ctx context.Context, r *diges
 	return nil
 }
 
-// Write is not supported for the OCI byte stream server (read-only)
+// Write delegates to the underlying byte stream server
 func (s *OCIByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
-	return status.UnimplementedError("OCI ByteStream server is read-only")
+	return s.underlying.Write(stream)
 }
 
-// QueryWriteStatus is not supported for the OCI byte stream server (read-only)
+// QueryWriteStatus delegates to the underlying byte stream server
 func (s *OCIByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
-	return nil, status.UnimplementedError("OCI ByteStream server is read-only")
+	return s.underlying.QueryWriteStatus(ctx, req)
 }

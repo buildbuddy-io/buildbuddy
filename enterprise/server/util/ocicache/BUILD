@@ -7,7 +7,9 @@ go_library(
     srcs = ["ocicache.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache",
     deps = [
+        "//enterprise/server/oci_byte_stream",
         "//proto:ociregistry_go_proto",
+        "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/metrics",

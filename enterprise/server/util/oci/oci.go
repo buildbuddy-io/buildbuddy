@@ -13,11 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci_byte_stream"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -396,6 +394,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 			r.env.GetByteStreamClient(),
 			puller,
 			credentials.bypassRegistry,
+			credentials,
 		)
 	}
 
@@ -407,29 +406,31 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
-	// Image() should resolve both images and image indices to an appropriate image
-	img, err := remoteDesc.Image()
-	if err != nil {
-		switch remoteDesc.MediaType {
-		// This is an "image index", a meta-manifest that contains a list of
-		// {platform props, manifest hash} properties to allow client to decide
-		// which manifest they want to use based on platform.
-		case types.OCIImageIndex, types.DockerManifestList:
-			return nil, status.UnknownErrorf("could not get image in image index from descriptor: %s", err)
-		case types.OCIManifestSchema1, types.DockerManifestSchema2:
-			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
-		default:
-			return nil, status.UnknownErrorf("descriptor has unknown media type %q, oci error: %s", remoteDesc.MediaType, err)
-		}
-	}
-	return img, nil
+	// Always use our imageFromDescriptorAndManifest implementation so that layers
+	// can use the OCI byte stream path with caching
+	return imageFromDescriptorAndManifest(
+		ctx,
+		imageRef.Context(),
+		remoteDesc.Descriptor,
+		remoteDesc.Manifest,
+		gcr.Platform{
+			Architecture: platform.GetArch(),
+			OS:           platform.GetOs(),
+			Variant:      platform.GetVariant(),
+		},
+		r.env.GetActionCacheClient(),
+		r.env.GetByteStreamClient(),
+		puller,
+		credentials.bypassRegistry,
+		credentials,
+	)
 }
 
 // fetchImageFromCacheOrRemote first tries to fetch the manifest for the given image reference from the cache,
 // then falls back to fetching from the upstream remote registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool) (gcr.Image, error) {
+func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool, credentials Credentials) (gcr.Image, error) {
 	canUseCache := !isAnonymousUser(ctx)
 	if !canUseCache {
 		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", digestOrTagRef)
@@ -492,6 +493,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				bsClient,
 				puller,
 				bypassRegistry,
+				credentials,
 			)
 		}
 	}
@@ -528,13 +530,14 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		bsClient,
 		puller,
 		bypassRegistry,
+		credentials,
 	)
 }
 
 // imageFromDescriptorAndManifest returns an Image from the given manifest (if the manifest is an image manifest),
 // finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
 // and otherwise returns an error.
-func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool) (gcr.Image, error) {
+func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool, credentials Credentials) (gcr.Image, error) {
 	if desc.MediaType.IsSchema1() {
 		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
 	}
@@ -558,6 +561,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 			bsClient,
 			puller,
 			bypassRegistry,
+			credentials,
 		)
 	}
 
@@ -569,6 +573,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 		acClient,
 		bsClient,
 		puller,
+		credentials,
 	), nil
 }
 
@@ -664,7 +669,7 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 	return t.inner.RoundTrip(in)
 }
 
-func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller) *imageFromRawManifest {
+func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, credentials Credentials) *imageFromRawManifest {
 	i := &imageFromRawManifest{
 		repo:        repo,
 		desc:        desc,
@@ -673,6 +678,7 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		acClient:    acClient,
 		bsClient:    bsClient,
 		puller:      puller,
+		credentials: credentials.ToProto(),
 	}
 	i.fetchRawConfigOnce = sync.OnceValues(func() ([]byte, error) {
 		manifest, err := i.Manifest()
@@ -856,26 +862,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	// Get size for the resource name
 	contentLength, err := l.Size()
 	if err != nil {
-		// Fall back to the old implementation if we can't get the size
-		return l.compressedFallback()
-	}
-
-	// Create a CAS resource name for the blob
-	blobCASDigest := &repb.Digest{
-		Hash:      l.digest.Hex,
-		SizeBytes: contentLength,
-	}
-	blobRN := digest.NewCASResourceName(
-		blobCASDigest,
-		"",
-		repb.DigestFunction_SHA256,
-	)
-
-	// Create the ByteStream read request
-	req := &bspb.ReadRequest{
-		ResourceName: blobRN.DownloadString(),
-		ReadOffset:   0,
-		ReadLimit:    0,
+		return nil, err
 	}
 
 	// Get media type for OCI metadata
@@ -884,25 +871,20 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		mediaType = ""
 	}
 
-	// Create OCI read options
-	ociOpts := &oci_byte_stream.OCIReadOptions{
-		Registry:    l.repo.RegistryStr(),
-		Repository:  l.repo,
-		Digest:      l.digest,
-		Credentials: l.image.credentials,
-		MediaType:   string(mediaType),
-		ContentSize: contentLength,
-	}
-
-	// Add OCI options to context
-	ctx := oci_byte_stream.ContextWithOCIReadOptions(l.image.ctx, ociOpts)
-
-	// Read from byte stream with OCI headers
-	// This will go through the OCI byte stream server which will:
+	// Use the OCI byte stream path which will:
 	// 1. Check cache first
 	// 2. Fall back to OCI registry if not found
 	// 3. Write to cache while streaming
-	return oci_byte_stream.ReadFromByteStream(ctx, l.image.bsClient, req)
+	return ocicache.FetchBlobViaOCIByteStream(
+		l.image.ctx,
+		l.image.bsClient,
+		l.image.acClient,
+		l.repo,
+		l.digest,
+		l.image.credentials,
+		string(mediaType),
+		contentLength,
+	)
 }
 
 // compressedFallback is the old implementation, used as a fallback

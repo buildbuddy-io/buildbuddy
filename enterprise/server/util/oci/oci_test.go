@@ -353,7 +353,7 @@ func TestResolve(t *testing.T) {
 	} {
 		for _, useCachePercent := range []int{0, 100} {
 			t.Run(tc.name+fmt.Sprintf("/use_cache_percent_%d", useCachePercent), func(t *testing.T) {
-				te := testenv.GetTestEnv(t)
+				te := setupTestEnvWithCache(t)
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
 				registry := testregistry.Run(t, tc.opts)
@@ -446,7 +446,7 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 		for _, useCachePercent := range []int{0, 100} {
 			name := tc.name + "/use_cache_percent_" + strconv.Itoa(useCachePercent)
 			t.Run(name, func(t *testing.T) {
-				te := testenv.GetTestEnv(t)
+				te := setupTestEnvWithCache(t)
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
 				counter := newRequestCounter()
@@ -486,7 +486,9 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 					configDigest, err := pulledImage.ConfigName()
 					require.NoError(t, err)
 					expected = map[string]int{
-						http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
+						http.MethodGet + " /v2/": 1,
+						http.MethodHead + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
+						http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String():  1,
 					}
 
 					// To make the DiffID() request counts always be zero,
@@ -731,12 +733,14 @@ func TestResolve_WithCache(t *testing.T) {
 
 				// Initially, nothing is cached, and we expect to make requests
 				// to resolve the manifest, as well as to fetch the manifest and
-				// layer contents.
+				// layer contents. The OCI byte stream path makes a HEAD request
+				// before fetching the blob.
 				expected := map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":             1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/latest":              1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(): 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":              1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/latest":               1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(): 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String():  1,
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 
@@ -876,6 +880,8 @@ func TestResolve_Concurrency(t *testing.T) {
 		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
 	}
 	for digest, _ := range pushedDigestToFiles {
+		// OCI byte stream path makes a HEAD request before fetching each blob
+		expected[http.MethodHead+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
 	counter.reset()

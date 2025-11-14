@@ -7,7 +7,6 @@ go_library(
     srcs = ["oci.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci",
     deps = [
-        "//enterprise/server/oci_byte_stream",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/util/ocicache",
         "//enterprise/server/util/ocimanifest",
@@ -15,7 +14,6 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/http/httpclient",
-        "//server/remote_cache/digest",
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/flag",
