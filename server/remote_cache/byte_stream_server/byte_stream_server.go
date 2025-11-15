@@ -34,6 +34,7 @@ const (
 	// but experiments in dev show that 256KiB is better. Values smaller than
 	// 256KiB or larger than 1MiB are both slower and allocate more bytes.
 	readBufSizeBytes = 256 * 1024
+	compressBufSize  = 4e6 // 4MB
 )
 
 var (
@@ -69,7 +70,7 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	return &ByteStreamServer{
 		env:        env,
 		cache:      cache,
-		bufferPool: bytebufferpool.VariableSize(readBufSizeBytes),
+		bufferPool: bytebufferpool.VariableSize(max(readBufSizeBytes, compressBufSize)),
 		warner:     bazel_deprecation.NewWarner(env),
 	}, nil
 }
@@ -189,6 +190,10 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	return err
 }
 
+type flusher interface {
+	Flush() error
+}
+
 // writeHandler enapsulates an on-going ByteStream write to a cache,
 // freeing the caller of having to manage writing and committing-to the cache
 // tracking cache hits, verifying checksums, etc. Here is how it must be used:
@@ -211,9 +216,10 @@ type writeHandler struct {
 	bytesUploadedFromClient int
 	transferTimer           interfaces.TransferTimer
 
-	bufioCloser    io.Closer
-	cacheCommitter interfaces.Committer
-	cacheCloser    io.Closer
+	compressorFlusher flusher
+	bufioCloser       io.Closer
+	cacheCommitter    interfaces.Committer
+	cacheCloser       io.Closer
 
 	checksum           *Checksum
 	resourceName       *digest.CASResourceName
@@ -352,12 +358,13 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		// If the cache supports compression but the request isn't compressed,
 		// wrap the cache writer in a compressor. This is faster than sending
 		// uncompressed data to the cache and letting it compress it.
-		compressor, err := compression.NewZstdCompressingWriter(committedWriteCloser, r.GetDigest().GetSizeBytes())
+		compressor, err := compression.NewZstdCompressingWriter(committedWriteCloser, s.bufferPool, r.GetDigest().GetSizeBytes(), nil /* observer */)
 		if err != nil {
 			return nil, err
 		}
 		ws.writer = io.MultiWriter(compressor, ws.checksum)
 		ws.bufioCloser = compressor
+		ws.compressorFlusher = compressor
 	}
 
 	return ws, nil
@@ -384,6 +391,15 @@ func (w *writeHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error
 }
 
 func (w *writeHandler) commit() error {
+	// We need to flush the buffer in the compressor before closing it.
+	if w.compressorFlusher != nil {
+		defer func() {
+			w.compressorFlusher = nil
+		}()
+		if err := w.compressorFlusher.Flush(); err != nil {
+			return err
+		}
+	}
 	if w.bufioCloser != nil {
 		defer func() {
 			w.bufioCloser = nil

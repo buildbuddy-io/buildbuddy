@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/compression",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/interfaces",
         "//server/metrics",
         "//server/util/bytebufferpool",
         "//server/util/log",
@@ -21,6 +22,7 @@ go_test(
         ":compression",
         "//server/testutil/testdigest",
         "//server/util/bytebufferpool",
+        "//server/util/ioutil",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
     ],
