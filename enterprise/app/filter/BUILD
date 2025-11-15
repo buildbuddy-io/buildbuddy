@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -72,5 +72,21 @@ ts_library(
         "//proto:invocation_status_ts_proto",
         "//proto:stat_filter_ts_proto",
         "//proto:timestamp_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "filter_util_test_setup",
+    testonly = True,
+    srcs = ["test_setup.ts"],
+)
+
+ts_jasmine_node_test(
+    name = "filter_util_test",
+    srcs = ["filter_util.test.ts"],
+    deps = [
+        ":filter_util",
+        ":filter_util_test_setup",
+        "//proto:stat_filter_ts_proto",
     ],
 )
