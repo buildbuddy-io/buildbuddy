@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
@@ -28,6 +29,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	smpb "github.com/buildbuddy-io/buildbuddy/proto/semver"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -40,8 +42,51 @@ var (
 )
 
 const (
-	queueBufferSize = 10_000
+	queueBufferSize           = 10_000
+	ephemeralCacheFlag        = "ephemeral-cache"
+	ephemeralCacheMaxSizeFlag = "ephemeral-cache-max-blob-size-bytes"
 )
+
+func (p *CacheProxy) isEphemeralCacheEnabled(ctx context.Context) bool {
+	if p.env.GetExperimentFlagProvider() == nil {
+		return false
+	}
+	return p.env.GetExperimentFlagProvider().Boolean(ctx, ephemeralCacheFlag, false)
+}
+
+// shouldSkipCASRemoteWrite determines if a CAS blob write should skip remote storage.
+// Skip writing from excluded groups above the specified threshold.
+func (p *CacheProxy) shouldSkipCASRemoteWrite(ctx context.Context, casDigest *repb.Digest) bool {
+	if !p.isEphemeralCacheEnabled(ctx) {
+		return false
+	}
+
+	maxBlobSize := p.env.GetExperimentFlagProvider().Int64(ctx, ephemeralCacheMaxSizeFlag, 0)
+	return maxBlobSize <= 0 || (casDigest != nil && casDigest.GetSizeBytes() > maxBlobSize)
+}
+
+// shouldSkipACRemoteWrite determines if an Action Cache write should skip remote storage.
+// Skip writing from excluded groups for actions with an output file size above the specified threshold.
+func (p *CacheProxy) shouldSkipACRemoteWrite(ctx context.Context, actionResult *repb.ActionResult) bool {
+	if !p.isEphemeralCacheEnabled(ctx) {
+		return false
+	}
+
+	maxBlobSize := p.env.GetExperimentFlagProvider().Int64(ctx, ephemeralCacheMaxSizeFlag, 0)
+	if maxBlobSize <= 0 {
+		return true
+	}
+
+	if actionResult != nil {
+		for _, outputFile := range actionResult.GetOutputFiles() {
+			if outputFile.GetDigest().GetSizeBytes() > maxBlobSize {
+				return true
+			}
+		}
+	}
+
+	return false
+}
 
 // CacheProxy implements a local GRPC cache that proxies a remote GRPC cache.
 // It implements both read-through and write-through functionality by:
@@ -143,8 +188,48 @@ func (p *CacheProxy) GetActionResult(ctx context.Context, req *repb.GetActionRes
 	return p.acClient.GetActionResult(ctx, req)
 }
 
-func (p *CacheProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
+// updateActionResultEphemeral writes the action result to the local cache only,
+// this is needed since the AC should not refer to blobs that don't exist in the CAS.
+func (p *CacheProxy) updateActionResultEphemeral(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
+	if req.ActionDigest == nil {
+		return nil, status.InvalidArgumentError("ActionDigest is a required field")
+	}
+	if req.ActionResult == nil {
+		return nil, status.InvalidArgumentError("ActionResult is a required field")
+	}
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, p.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+
+	acResource := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
+	if err := acResource.Validate(); err != nil {
+		return nil, err
+	}
+
+	blob, err := proto.Marshal(req.ActionResult)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := p.cache.Set(ctx, acResource.ToProto(), blob); err != nil {
+		return nil, err
+	}
+
+	return req.ActionResult, nil
+}
+
+// updateActionResultBackend writes the action result to the remote cache backend.
+func (p *CacheProxy) updateActionResultBackend(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	return p.acClient.UpdateActionResult(ctx, req)
+}
+
+func (p *CacheProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
+	if p.shouldSkipACRemoteWrite(ctx, req.GetActionResult()) {
+		return p.updateActionResultEphemeral(ctx, req)
+	}
+	return p.updateActionResultBackend(ctx, req)
 }
 
 func (p *CacheProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
@@ -266,19 +351,39 @@ func (p *CacheProxy) Write(stream bspb.ByteStream_WriteServer) error {
 			if err != nil {
 				return err
 			}
-			if *writeThrough {
-				if *synchronousWrite {
-					if err := p.qWorker.RemoteWriteBlocked(ctx, wreq); err != nil {
-						log.CtxErrorf(ctx, "Error write to remote cache: %s", err)
-					}
-				} else {
-					if err := p.qWorker.EnqueueRemoteWrite(ctx, wreq); err != nil {
-						log.CtxErrorf(ctx, "Error enqueueing write request to remote: %s", err.Error())
-					}
-				}
-			}
+
+			p.finishWrite(ctx, wreq, *writeThrough)
 			return stream.SendAndClose(lastRsp)
 		}
+	}
+}
+
+func (p *CacheProxy) finishWrite(ctx context.Context, wreq *bspb.WriteRequest, writeThrough bool) {
+	if !writeThrough {
+		return
+	}
+
+	var casDigest *repb.Digest
+	if wreq != nil && wreq.GetResourceName() != "" {
+		resourceName, err := digest.ParseUploadResourceName(wreq.GetResourceName())
+		if err == nil {
+			casDigest = resourceName.GetDigest()
+		}
+	}
+
+	if p.shouldSkipCASRemoteWrite(ctx, casDigest) {
+		return
+	}
+
+	if *synchronousWrite {
+		if err := p.qWorker.RemoteWriteBlocked(ctx, wreq); err != nil {
+			log.CtxErrorf(ctx, "Error write to remote cache: %s", err)
+		}
+		return
+	}
+
+	if err := p.qWorker.EnqueueRemoteWrite(ctx, wreq); err != nil {
+		log.CtxErrorf(ctx, "Error enqueueing write request to remote: %s", err.Error())
 	}
 }
 
@@ -428,7 +533,7 @@ func (qw *queueWorker) RemoteWriteBlocked(ctx context.Context, wreq *bspb.WriteR
 }
 
 func defaultCapabilities() *repb.ServerCapabilities {
-	var compressors = []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD}
+	compressors := []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD}
 	return &repb.ServerCapabilities{
 		// Support REAPI 2.0 -> 2.3
 		LowApiVersion:  &smpb.SemVer{Major: int32(2)},
