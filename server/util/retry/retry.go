@@ -191,7 +191,7 @@ func (r *Retry) AttemptNumber() int {
 	return r.currentAttempt + 1
 }
 
-// MaxAttempts the maximum numer of retry attempts.
+// MaxAttempts the maximum number of retry attempts.
 // Only valid if retrier was created with MaxRetries set.
 func (r *Retry) MaxAttempts() int {
 	return r.maxAttempts
