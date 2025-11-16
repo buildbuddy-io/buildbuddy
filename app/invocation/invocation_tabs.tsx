@@ -29,6 +29,7 @@ export type TabId =
   | "raw"
   | "execution"
   | "spawns"
+  | "tbd"
   | "files"
   | "fetches"
   | "coverage"
@@ -70,6 +71,7 @@ export default class InvocationTabsComponent extends React.Component<InvocationT
         {this.props.hasCoverage && this.renderTab("coverage", { label: "Coverage" })}
         {this.props.executionsEnabled && this.renderTab("execution", { label: "Executions" })}
         {this.props.hasExecutionLogs && this.renderTab("spawns", { label: "Spawns" })}
+        {this.props.hasExecutionLogs && this.renderTab("tbd", { label: "TBD" })}
         {this.props.hasExecutionLogs && this.renderTab("files", { label: "Files" })}
         {this.props.hasSuggestions && this.renderTab("suggestions", { label: "Suggestions" })}
         {this.renderTab("raw", { label: "Raw" })}
