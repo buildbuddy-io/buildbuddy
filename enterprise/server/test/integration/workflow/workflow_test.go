@@ -143,7 +143,7 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	// workflow will not be printed
 	//flags.Set(t, "debug_stream_command_outputs", true)
 
-	env.AddExecutors(t, 10)
+	env.AddInProcessExecutors(t, 10)
 	return env, workflowService
 }
 

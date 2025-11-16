@@ -104,7 +104,7 @@ func TestPersistentUnavailableError_Retried(t *testing.T) {
 	env.AddBuildBuddyServer()
 	const errMsg = "error injected by test"
 	errResult := commandutil.ErrorResult(status.UnavailableError(errMsg))
-	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+	env.AddInProcessExecutorWithOptions(t, &rbetest.InProcessExecutorOptions{
 		RunInterceptor: rbetest.AlwaysReturn(errResult),
 	})
 	// observe initial count so that we can get the diff at the end of the test
@@ -128,7 +128,7 @@ func TestTransientUnavailableError_Retried(t *testing.T) {
 	env.AddBuildBuddyServer()
 	const errMsg = "error injected by test"
 	errResult := commandutil.ErrorResult(status.UnavailableError(errMsg))
-	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+	env.AddInProcessExecutorWithOptions(t, &rbetest.InProcessExecutorOptions{
 		RunInterceptor: rbetest.ReturnForFirstAttempt(errResult),
 	})
 	// observe initial count so that we can get the diff at the end of the test
@@ -152,7 +152,7 @@ func TestTransientInternalError_Retried(t *testing.T) {
 	env.AddBuildBuddyServer()
 	const errMsg = "error injected by test"
 	errResult := commandutil.ErrorResult(status.InternalError(errMsg))
-	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+	env.AddSingleTaskInProcessExecutorWithOptions(t, &rbetest.InProcessExecutorOptions{
 		RunInterceptor: rbetest.ReturnForFirstAttempt(errResult),
 	})
 	// observe initial count so that we can get the diff at the end of the test
@@ -176,7 +176,7 @@ func TestTransientAbortedError_Retried(t *testing.T) {
 	env.AddBuildBuddyServer()
 	const errMsg = "error injected by test"
 	errResult := commandutil.ErrorResult(status.AbortedError(errMsg))
-	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+	env.AddInProcessExecutorWithOptions(t, &rbetest.InProcessExecutorOptions{
 		RunInterceptor: rbetest.ReturnForFirstAttempt(errResult),
 	})
 	// observe initial count so that we can get the diff at the end of the test
@@ -200,7 +200,7 @@ func TestDeadlineExceededError_NotRetried(t *testing.T) {
 	env.AddBuildBuddyServer()
 	const errMsg = "error injected by test"
 	errResult := commandutil.ErrorResult(status.DeadlineExceededError(errMsg))
-	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+	env.AddInProcessExecutorWithOptions(t, &rbetest.InProcessExecutorOptions{
 		RunInterceptor: rbetest.AlwaysReturn(errResult),
 	})
 	// observe initial count so that we can get the diff at the end of the test
@@ -223,7 +223,7 @@ func TestUnauthenticatedError_RetriedOnce(t *testing.T) {
 	env.AddBuildBuddyServer()
 	const errMsg = "error injected by test"
 	errResult := commandutil.ErrorResult(status.UnauthenticatedError(errMsg))
-	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+	env.AddInProcessExecutorWithOptions(t, &rbetest.InProcessExecutorOptions{
 		RunInterceptor: rbetest.AlwaysReturn(errResult),
 	})
 	// observe initial count so that we can get the diff at the end of the test
@@ -250,7 +250,7 @@ func TestTransientExecutorShutdown_Retried(t *testing.T) {
 	// TODO(bduffany): Simplify executor shutdown logic across runner types and
 	// remove reliance on ErrSIGKILL here
 	errResult := commandutil.ErrorResult(commandutil.ErrSIGKILL)
-	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+	env.AddInProcessExecutorWithOptions(t, &rbetest.InProcessExecutorOptions{
 		RunInterceptor: rbetest.ReturnForFirstAttempt(errResult),
 	})
 	// observe initial count so that we can get the diff at the end of the test
@@ -282,7 +282,7 @@ func TestPersistentExecutorShutdown_Retried(t *testing.T) {
 	// remove reliance on ErrSIGKILL here
 	errResult := commandutil.ErrorResult(commandutil.ErrSIGKILL)
 	errResult.Stderr = []byte("THIS_MSG_SHOULD_APPEAR_IN_BAZEL_STDERR")
-	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+	env.AddInProcessExecutorWithOptions(t, &rbetest.InProcessExecutorOptions{
 		RunInterceptor: rbetest.AlwaysReturn(errResult),
 	})
 	// observe initial count so that we can get the diff at the end of the test
@@ -307,7 +307,7 @@ func TestTransientCacheNotFoundError_Retried(t *testing.T) {
 	env := rbetest.NewRBETestEnv(t)
 	env.AddBuildBuddyServer()
 	errResult := commandutil.ErrorResult(status.NotFoundError("not found"))
-	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+	env.AddInProcessExecutorWithOptions(t, &rbetest.InProcessExecutorOptions{
 		RunInterceptor: rbetest.ReturnForFirstAttempt(errResult),
 	})
 	// observe initial count so that we can get the diff at the end of the test
@@ -370,7 +370,7 @@ func setup(t *testing.T) *rbetest.Env {
 	// Run the executor with an API key to more closely match a production
 	// setup.
 	flags.Set(t, "executor.api_key", env.APIKey1)
-	env.AddExecutor(t)
+	env.AddInProcessExecutor(t)
 	// observe initial count so that we can get the diff at the end of the test
 	_ = tasksStarted(t)
 	return env
