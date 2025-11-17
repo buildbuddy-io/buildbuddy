@@ -425,7 +425,8 @@ func (rc *Server) maybeUpdateGCSAtime(ctx context.Context, gcsMetadata *sgpb.Sto
 	}
 	// Note: we are not using the atime that was provided in the atime udpate
 	// task. This is fine because we just want to make sure the gcs file that were
-	// recently accessed are not deleted through GCS lifecycle management.
+	// recently accessed are not deleted through GCS lifecycle management. Also,
+	// we want to prevent atime from moving backwards by a lot.
 	newAtime := rc.clock.Now()
 	return rc.fileStorer.UpdateBlobAtime(ctx, gcsMetadata, newAtime)
 }
@@ -472,12 +473,10 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 		select {
 		case accessTimeUpdate := <-rc.accesses:
 			key := accessTimeUpdate.key
-			if gcsMetadata := accessTimeUpdate.gcsMetadata; gcsMetadata != nil {
-				if err := rc.maybeUpdateGCSAtime(ctx, gcsMetadata); err != nil {
-					log.Errorf("Error updating GCS custom time (%q): %s", key, err)
-					// Don't update the atime on raft if gcs atime update fails. This is to prevent the situation, where the gcs file is deleted but the metadata still exist.
-					continue
-				}
+			if err := rc.maybeUpdateGCSAtime(ctx, accessTimeUpdate.gcsMetadata); err != nil {
+				log.Errorf("Error updating GCS custom time (%q): %s", key, err)
+				// Don't update the atime on raft if gcs atime update fails. This is to prevent the situation where the gcs file is deleted but the metadata still exist.
+				continue
 			}
 			keys = append(keys, &sender.KeyMeta{
 				Key:  key,
