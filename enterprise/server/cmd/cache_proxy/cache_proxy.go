@@ -70,7 +70,8 @@ var (
 		usageutil.ClientHeaderName,
 		usageutil.OriginHeaderName,
 		authutil.ClientIdentityHeaderName,
-		bazel_request.RequestMetadataKey}
+		bazel_request.RequestMetadataKey,
+	}
 )
 
 func main() {

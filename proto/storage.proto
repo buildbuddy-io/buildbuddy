@@ -55,6 +55,14 @@ message StorageMetadata {
   }
   ChunkedMetadata chunked_metadata = 4;
 
+  // ChunkedMetadataPointer stores a digest that points to a ChunkedMetadata
+  // proto stored in CAS. This adds a level of indirection so that the metadata
+  // itself is content-addressable.
+  message ChunkedMetadataPointer {
+    build.bazel.remote.execution.v2.Digest metadata_digest = 1;
+  }
+  ChunkedMetadataPointer chunked_metadata_pointer = 7;
+
   message GCSMetadata {
     string blob_name = 1;
 

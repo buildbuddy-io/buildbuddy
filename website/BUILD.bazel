@@ -44,3 +44,13 @@ yarn(
         ":website",
     ],
 )
+
+filegroup(
+    name = "static_files",
+    srcs = glob([
+        "static/img/blog/members.png",
+        "static/img/blog/cache_misses.png",
+        "static/img/cache_misses.png",
+        "static/img/team/team.png",
+    ]),
+)
