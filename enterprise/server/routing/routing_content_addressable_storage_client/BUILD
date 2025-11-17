@@ -17,6 +17,7 @@ go_library(
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/usageutil",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//status",
     ],
