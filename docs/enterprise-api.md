@@ -997,7 +997,7 @@ message RunRequest {
   // runner.
   //
   // Can be used to set platform properties containing secrets.
-  // Ex. --remote_headers=x-buildbuddy-platform.SECRET_NAME=SECRET_VALUE
+  // Ex. ["x-buildbuddy-platform.env-overrides=SECRET_NAME=SECRET_VALUE"]
   repeated string remote_headers = 10;
 
   // Max time before run should be canceled.

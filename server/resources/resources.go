@@ -230,13 +230,18 @@ func GetOSDisplayName() string {
 	case "linux":
 		command = []string{"sh", "-c", "grep '^PRETTY_NAME=' /etc/os-release | cut -d= -f2- | tr -d '\"'"}
 	case "windows":
-		command = []string{"ver"}
+		// Calling PowerShell 7 (or newer) which include OS information.
+		command = []string{"pwsh", "-Command", "$PSVersionTable.OS"}
+	}
+	if len(command) == 0 {
+		return runtime.GOOS
 	}
 	b, err := exec.Command(command[0], command[1:]...).Output()
 	if err != nil {
 		log.Warningf("Error getting operating system display name: %v", err)
+		return runtime.GOOS
 	}
-	return string(b)
+	return strings.TrimSpace(string(b))
 }
 
 func GetMyHostname() (string, error) {
