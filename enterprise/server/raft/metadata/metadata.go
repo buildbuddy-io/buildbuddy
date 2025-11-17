@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -35,7 +37,7 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
-	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
+	oss_cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 	_ "github.com/buildbuddy-io/buildbuddy/server/gossip"
 )
 
@@ -58,6 +60,8 @@ var (
 	// key, so that we can easily start fresh in dev by just changing the
 	// gossip key.
 	subdir = types.Alias[string](stdFlag.CommandLine, "gossip.secret_key")
+
+	gcsConfig = flag.Struct("cache.raft.gcs", cache_config.GCSConfig{}, "Config to specify gcs")
 )
 
 const (
@@ -82,6 +86,10 @@ type Config struct {
 	PartitionMappings []disk.PartitionMapping
 
 	LogDBConfigType store.LogDBConfigType
+
+	FileStorer filestore.Store
+
+	GCS cache_config.GCSConfig
 }
 
 // data needed to update last access time.
@@ -163,7 +171,7 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		partitionSet.Add(constants.DefaultPartitionID)
 		ps = append(ps, disk.Partition{
 			ID:           constants.DefaultPartitionID,
-			MaxSizeBytes: cache_config.MaxSizeBytes(),
+			MaxSizeBytes: oss_cache_config.MaxSizeBytes(),
 			NumRanges:    1,
 		})
 	}
@@ -190,6 +198,7 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		Partitions:        ps,
 		PartitionMappings: *partitionMappings,
 		LogDBConfigType:   store.LargeMemLogDBConfigType,
+		GCS:               *gcsConfig,
 	}
 	return New(env, rcConfig)
 }
@@ -200,7 +209,6 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 		conf:         conf,
 		shutdown:     make(chan struct{}),
 		shutdownOnce: &sync.Once{},
-		fileStorer:   filestore.New(),
 		accesses:     make(chan *accessTimeUpdate, *atimeBufferSize),
 		clock:        env.GetClock(),
 	}
@@ -212,13 +220,32 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 	if env.GetGossipService() == nil {
 		return nil, status.FailedPreconditionError("raft cache requires gossip be enabled")
 	}
+
+	fileStorer := conf.FileStorer
+	filestoreOpts := make([]filestore.Option, 0)
+	if fileStorer == nil {
+		if conf.GCS.Bucket != "" {
+			// Create a new GCS Client with compression disabled. This cache
+			// will already compress blobs before storing them, so we don't
+			// want the gcs lib to attempt to compress them too.
+			gcsBlobstore, err := gcs.NewGCSBlobStore(env.GetServerContext(), conf.GCS.Bucket, "", conf.GCS.Credentials, conf.GCS.ProjectID, false /*=enableCompression*/)
+			if err != nil {
+				return nil, err
+			}
+			// Not going to  set custom time ttl here since meta cache should take care of this.
+			filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, conf.GCS.AppName))
+		}
+		fileStorer = filestore.New(filestoreOpts...)
+	}
+	rc.fileStorer = fileStorer
+
 	rc.gossipManager = env.GetGossipService()
 
 	rc.raftAddr = fmt.Sprintf("%s:%d", conf.Hostname, conf.HTTPPort)
 	rc.grpcAddr = fmt.Sprintf("%s:%d", conf.Hostname, conf.GRPCPort)
 	grpcListeningAddr := fmt.Sprintf("%s:%d", conf.ListenAddr, conf.GRPCPort)
 
-	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, rc.conf.Partitions, rc.conf.LogDBConfigType)
+	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, rc.conf.Partitions, rc.conf.LogDBConfigType, rc.fileStorer)
 	if err != nil {
 		return nil, err
 	}
@@ -378,6 +405,7 @@ func (rc *Server) sendAccessTimeUpdate(key []byte, lastAccessUsec int64) {
 		}
 	}
 }
+
 func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan struct{}, atimeWriteBatchSize int) error {
 	var keys []*sender.KeyMeta
 	timer := time.NewTimer(atimeFlushPeriod)

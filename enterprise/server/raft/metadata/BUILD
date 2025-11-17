@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/backends/cache_config",
         "//enterprise/server/filestore",
         "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/constants",
@@ -20,6 +21,7 @@ go_library(
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//proto:storage_go_proto",
+        "//server/backends/blobstore/gcs",
         "//server/cache/config",
         "//server/environment",
         "//server/gossip",
