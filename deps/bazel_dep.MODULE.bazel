@@ -70,8 +70,9 @@ archive_override(
     urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/a40e8ad10fe00afd8bd149e558e5572793ca5873.tar.gz"],
 )
 
-bazel_dep(name = "toolchains_protoc", version = "0.6.0") # must come BEFORE protobuf so the toolchain registration wins
+bazel_dep(name = "toolchains_protoc", version = "0.6.0")  # must come BEFORE protobuf so the toolchain registration wins
 bazel_dep(name = "protobuf", repo_name = "com_google_protobuf")
+
 # TODO(tyler-french): remove once https://github.com/protocolbuffers/protobuf/pull/19679 is included in a protobuf release.
 archive_override(
     module_name = "protobuf",
@@ -108,3 +109,9 @@ bazel_dep(name = "toolchains_buildbuddy", version = "0.0.2")
 bazel_dep(name = "toolchains_musl", version = "0.1.27")
 bazel_dep(name = "zlib", version = "1.3.1.bcr.5")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
+
+# Bazel uses buildozer for `bazel mod tidy`
+# We want to keep this pre-built binary consistent with our own
+#   github.com/bazelbuild/buildtools
+# version inside go.mod file.
+bazel_dep(name = "buildozer", version = "8.2.1")
