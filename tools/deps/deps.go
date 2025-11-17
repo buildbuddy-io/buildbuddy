@@ -11,30 +11,14 @@
 // The package is shielded with a "go:build tools" directive.
 // Without a specific flag, gazelle should NOT generate go targets for this
 // package.
+//
+// Deprecated: use "go get tool <tool_name>" to add the tool directly into go.mod file instead.
 package deps
 
 import (
-	// Device manager
-	_ "gitlab.com/arm-research/smarter/smarter-device-manager"
-
-	// Gazelle deps for 'bb fix'
-	_ "github.com/pmezard/go-difflib/difflib"
-
-	// rules_webtesting deps
-	_ "github.com/gorilla/mux"
-
-	// static analyzers
-	_ "github.com/nishanths/exhaustive"
-	_ "golang.org/x/tools/go/analysis"
-	_ "honnef.co/go/tools/staticcheck"
-
 	// Protobuf and grpc deps
+	// We still keep these here so that they remain in the direct require portion of the go.mod file.
+	// This prevents "go mod tidy -e" inconsistent formatting for "pbsync" users.
 	_ "github.com/planetscale/vtprotobuf/vtproto"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
-
-	// Used by cli/explain/compactgraph/testdata/generate to generate test data.
-	_ "github.com/otiai10/copy"
-
-	// Used indirectly through a data dependency by //tools/lint on gomimports
-	_ "golang.org/x/telemetry/counter"
 )
