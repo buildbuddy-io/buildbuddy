@@ -173,6 +173,9 @@ const (
 	// Describes the type of compression
 	CompressionType = "compression"
 
+	// Compression status of the request: `compressed` or `uncompressed`
+	CompressionStatus = "compression_status"
+
 	// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
@@ -3318,41 +3321,97 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "byte_stream_read_requests",
-		Help:      "The number of ByteStream.Read requests served by a ByteStreamServerProxy broken down by gRPC status and cache hit/miss status.",
+		Help:      "The number of ByteStream.Read requests served by a ByteStreamServerProxy broken down by gRPC status, cache hit/miss status, and compression status.",
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
 		CacheProxyRequestType,
+		CompressionStatus,
 	})
 	ByteStreamProxiedWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "byte_stream_write_requests",
-		Help:      "The number of ByteStream.Write requests served by a ByteStreamServerProxy broken down by gRPC status and cache hit/miss status.",
+		Help:      "The number of ByteStream.Write requests served by a ByteStreamServerProxy broken down by gRPC status, cache hit/miss status, and compression status.",
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
 		CacheProxyRequestType,
+		CompressionStatus,
 	})
 	ByteStreamProxiedReadBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "byte_stream_read_bytes",
-		Help:      "The number of bytes read by ByteStream.Read RPCs served by a ByteStreamServerProxy broken down by gRPC status and cache hit/miss status. Note: this metric tracks bytes sent over the wire, which may be compressed.",
+		Help:      "The number of bytes read by ByteStream.Read RPCs served by a ByteStreamServerProxy broken down by gRPC status, cache hit/miss status, and compression status. Note: this metric tracks compressed bytes sent over the wire.",
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
 		CacheProxyRequestType,
+		CompressionStatus,
 	})
 	ByteStreamProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "byte_stream_write_bytes",
-		Help:      "The number of bytes written to a ByteStream.Write RPCs served by a ByteStreamServerProxy broken down by gRPC status and cache hit/miss status. Note: this metric tracks bytes sent over the wire, which may be compressed.",
+		Help:      "The number of bytes written to a ByteStream.Write RPCs served by a ByteStreamServerProxy broken down by gRPC status, cache hit/miss status, and compression status. Note: this metric tracks compressed bytes sent over the wire.",
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
 		CacheProxyRequestType,
+		CompressionStatus,
+	})
+
+	// Uncompressed bytes metrics track the original digest size (before compression)
+	ByteStreamProxiedReadUncompressedBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_read_uncompressed_bytes",
+		Help:      "The number of uncompressed bytes read by ByteStream.Read RPCs (digest size) broken down by gRPC status, cache hit/miss status, and compression status.",
+	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+		CacheProxyRequestType,
+		CompressionStatus,
+	})
+
+	ByteStreamProxiedWriteUncompressedBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_write_uncompressed_bytes",
+		Help:      "The number of uncompressed bytes written by ByteStream.Write RPCs (digest size) broken down by gRPC status, cache hit/miss status, and compression status.",
+	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+		CacheProxyRequestType,
+		CompressionStatus,
+	})
+
+	// Request size histograms track the size distribution of requests
+	ByteStreamProxiedReadRequestSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_read_request_size_bytes",
+		Help:      "Histogram of ByteStream.Read request sizes (uncompressed digest size) in bytes.",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9), // 1 byte to 1GB
+	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+		CacheProxyRequestType,
+		CompressionStatus,
+	})
+
+	ByteStreamProxiedWriteRequestSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_write_request_size_bytes",
+		Help:      "Histogram of ByteStream.Write request sizes (uncompressed digest size) in bytes.",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9), // 1 byte to 1GB
+	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+		CacheProxyRequestType,
+		CompressionStatus,
 	})
 
 	CapabilitiesProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{

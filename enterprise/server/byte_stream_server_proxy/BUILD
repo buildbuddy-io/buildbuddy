@@ -10,6 +10,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_crypter",
         "//enterprise/server/util/proxy_util",
+        "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",

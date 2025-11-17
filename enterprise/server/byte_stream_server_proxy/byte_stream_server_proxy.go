@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -87,8 +88,25 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	requestTypeLabel := proxy_util.RequestTypeLabelFromContext(ctx)
 	meteredStream := &meteredReadServerStream{ByteStream_ReadServer: stream}
 	stream = meteredStream
+
+	// Parse resource name to determine compression status and digest size
+	var compressionStatus string
+	var uncompressedBytes int64
+	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
+	if err == nil {
+		if rn.GetCompressor() == repb.Compressor_ZSTD {
+			compressionStatus = "compressed"
+		} else {
+			compressionStatus = "uncompressed"
+		}
+		uncompressedBytes = rn.GetDigest().GetSizeBytes()
+	} else {
+		compressionStatus = "unknown"
+		uncompressedBytes = 0
+	}
+
 	cacheStatus, err := s.read(ctx, req, meteredStream)
-	recordReadMetrics(cacheStatus, requestTypeLabel, err, int(meteredStream.bytes))
+	recordReadMetrics(cacheStatus, requestTypeLabel, err, int(meteredStream.bytes), compressionStatus, uncompressedBytes)
 	return err
 }
 
@@ -259,26 +277,52 @@ func (s *ByteStreamServerProxy) readRemoteWriteLocal(req *bspb.ReadRequest, stre
 	return nil
 }
 
-func recordReadMetrics(cacheStatus string, proxyRequestType string, err error, bytesRead int) {
+func recordReadMetrics(cacheStatus string, proxyRequestType string, err error, compressedBytesRead int, compressionStatus string, uncompressedBytes int64) {
 	labels := prometheus.Labels{
 		metrics.StatusLabel:           strconv.Itoa(int(gstatus.Code(err))),
 		metrics.CacheHitMissStatus:    cacheStatus,
 		metrics.CacheProxyRequestType: proxyRequestType,
+		metrics.CompressionStatus:     compressionStatus,
 	}
 	metrics.ByteStreamProxiedReadRequests.With(labels).Inc()
-	metrics.ByteStreamProxiedReadBytes.With(labels).Add(float64(bytesRead))
+	metrics.ByteStreamProxiedReadBytes.With(labels).Add(float64(compressedBytesRead))
+	if uncompressedBytes > 0 {
+		metrics.ByteStreamProxiedReadUncompressedBytes.With(labels).Add(float64(uncompressedBytes))
+		metrics.ByteStreamProxiedReadRequestSizeBytes.With(labels).Observe(float64(uncompressedBytes))
+	}
 }
 
 // Wrapper around a ByteStream_WriteServer that counts the number of bytes
-// written through it.
+// written through it and tracks compression status.
 type meteredServerSideClientStream struct {
-	bytes int64
+	bytes             int64
+	compressionStatus string
+	uncompressedBytes int64
+	firstReq          *bspb.WriteRequest
 	bspb.ByteStream_WriteServer
 }
 
 func (s *meteredServerSideClientStream) Recv() (*bspb.WriteRequest, error) {
 	message, err := s.ByteStream_WriteServer.Recv()
-	s.bytes += int64(len(message.GetData()))
+	if err == nil && message != nil {
+		s.bytes += int64(len(message.GetData()))
+		// Track compression status from first request
+		if s.firstReq == nil && len(message.GetResourceName()) > 0 {
+			s.firstReq = message
+			rn, parseErr := digest.ParseUploadResourceName(message.GetResourceName())
+			if parseErr == nil {
+				if rn.GetCompressor() == repb.Compressor_ZSTD {
+					s.compressionStatus = "compressed"
+				} else {
+					s.compressionStatus = "uncompressed"
+				}
+				// Use digest size as uncompressed bytes
+				s.uncompressedBytes = rn.GetDigest().GetSizeBytes()
+			} else {
+				s.compressionStatus = "unknown"
+			}
+		}
+	}
 	return message, err
 }
 
@@ -287,7 +331,10 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	defer spn.End()
 
 	requestTypeLabel := proxy_util.RequestTypeLabelFromContext(stream.Context())
-	meteredStream := &meteredServerSideClientStream{ByteStream_WriteServer: stream}
+	meteredStream := &meteredServerSideClientStream{
+		ByteStream_WriteServer: stream,
+		compressionStatus:      "unknown",
+	}
 	stream = meteredStream
 	var err error
 	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
@@ -297,7 +344,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	} else {
 		err = s.dualWrite(ctx, stream)
 	}
-	recordWriteMetrics(meteredStream.bytes, err, requestTypeLabel)
+	recordWriteMetrics(meteredStream.bytes, err, requestTypeLabel, meteredStream.compressionStatus, meteredStream.uncompressedBytes)
 	return err
 }
 
@@ -417,15 +464,20 @@ func flushToRemote(stream bspb.ByteStream_WriteServer, remoteStream bspb.ByteStr
 	}
 }
 
-func recordWriteMetrics(bytesWritten int64, err error, proxyRequestType string) {
+func recordWriteMetrics(compressedBytesWritten int64, err error, proxyRequestType string, compressionStatus string, uncompressedBytes int64) {
 	labels := prometheus.Labels{
 		metrics.StatusLabel:           strconv.Itoa(int(gstatus.Code(err))),
 		metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
 		metrics.CacheProxyRequestType: proxyRequestType,
+		metrics.CompressionStatus:     compressionStatus,
 	}
 	metrics.ByteStreamProxiedWriteRequests.With(labels).Inc()
-	if bytesWritten > 0 {
-		metrics.ByteStreamProxiedWriteBytes.With(labels).Add(float64(bytesWritten))
+	if compressedBytesWritten > 0 {
+		metrics.ByteStreamProxiedWriteBytes.With(labels).Add(float64(compressedBytesWritten))
+	}
+	if uncompressedBytes > 0 {
+		metrics.ByteStreamProxiedWriteUncompressedBytes.With(labels).Add(float64(uncompressedBytes))
+		metrics.ByteStreamProxiedWriteRequestSizeBytes.With(labels).Observe(float64(uncompressedBytes))
 	}
 }
 
