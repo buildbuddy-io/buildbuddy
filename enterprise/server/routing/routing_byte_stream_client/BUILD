@@ -13,6 +13,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/metrics",
         "//server/remote_cache/digest",
         "//server/util/background",
         "//server/util/flag",
@@ -21,5 +22,6 @@ go_library(
         "//server/util/usageutil",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//status",
     ],
 )

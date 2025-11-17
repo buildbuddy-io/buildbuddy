@@ -12,6 +12,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -176,7 +178,7 @@ func newDualWriteClient(ctx context.Context, primary bspb.ByteStreamClient, seco
 	secondaryCtx = usageutil.DisableUsageTracking(secondaryCtx)
 	secondaryStream, err := secondary.Write(secondaryCtx, opts...)
 	if err != nil {
-		// TODO: Log an error.
+		log.CtxWarningf(secondaryCtx, "Failed to start secondary write, falling back to primary: %s", err)
 		secondaryCancel()
 		return primaryStream, nil
 	}
@@ -263,21 +265,39 @@ func (d *dualWriteStream) processSecondary() {
 			case send:
 				if err := d.secondary.Send(op.req); err != nil {
 					log.CtxWarningf(d.secondaryCtx, "Secondary stream failed: %s", err)
+					metrics.ProxySecondarySyncWriteDigests.WithLabelValues(
+						"bs_server",
+						gstatus.Code(err).String(),
+					).Add(1)
 					return
 				}
 			case closeSend:
-				if err := d.secondary.CloseSend(); err != nil {
+				err := d.secondary.CloseSend()
+				if err != nil {
 					log.CtxWarningf(d.secondaryCtx, "Secondary stream failed: %s", err)
 				}
+				metrics.ProxySecondarySyncWriteDigests.WithLabelValues(
+					"bs_server",
+					gstatus.Code(err).String(),
+				).Add(1)
 				return
 			case closeAndRecv:
-				if _, err := d.secondary.CloseAndRecv(); err != nil {
+				_, err := d.secondary.CloseAndRecv()
+				if err != nil {
 					log.CtxWarningf(d.secondaryCtx, "Secondary stream failed: %s", err)
 				}
+				metrics.ProxySecondarySyncWriteDigests.WithLabelValues(
+					"bs_server",
+					gstatus.Code(err).String(),
+				).Add(1)
 				return
 			}
 		case <-d.secondaryCtx.Done():
 			log.CtxWarningf(d.secondaryCtx, "Secondary stream context closed early: %s", d.secondaryCtx.Err())
+			metrics.ProxySecondarySyncWriteDigests.WithLabelValues(
+				"bs_server",
+				gstatus.Code(d.secondaryCtx.Err()).String(),
+			).Add(1)
 			return
 		}
 	}
