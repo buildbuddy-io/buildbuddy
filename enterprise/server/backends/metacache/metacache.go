@@ -432,13 +432,6 @@ func (c *Cache) writerForRecord(ctx context.Context, fileRecord *sgpb.FileRecord
 	}
 }
 
-// newWrappedWriter returns an interfaces.CommittedWriteCloser that on Write
-// will:
-// (1) compress the data if shouldCompress is true; and then
-// (2) encrypt the data if encryption is enabled
-// (3) write the data using input wcm's Write method.
-// On Commit, it will write the metadata for fileRecord using the provided
-// writeMetadataFn.
 func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecord, sizeHint int64, fileType sgpb.FileMetadata_FileType, fn writeMetadataFn) (interfaces.CommittedWriteCloser, error) {
 	wcm, err := c.writerForRecord(ctx, fileRecord, sizeHint)
 	if err != nil {
@@ -486,14 +479,24 @@ func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 
 type writeMetadataFn func(*sgpb.FileMetadata) error
 
+// writerWithImmediateCommit returns an interfaces.CommittedWriteCloser that on
+// Commit, it will call metadata server to write the metadata for the fileRecord
+// immediately.
 func (c *Cache) writerWithImmediateCommit(ctx context.Context, r *rspb.ResourceName, sizeHint int64) (interfaces.CommittedWriteCloser, error) {
 	fn := func(md *sgpb.FileMetadata) error {
 		return c.setMetadatas(ctx, md)
 	}
-	return c.writerWithSizeHintAndCommitFn(ctx, r, sizeHint, fn)
+	return c.writer(ctx, r, sizeHint, fn)
 }
 
-func (c *Cache) writerWithSizeHintAndCommitFn(ctx context.Context, r *rspb.ResourceName, sizeHint int64, fn writeMetadataFn) (interfaces.CommittedWriteCloser, error) {
+// writer returns an interfaces.CommittedWriteCloser that on Write
+// will:
+// (1) compress the data if shouldCompress is true; and then
+// (2) encrypt the data if encryption is enabled
+// (3) write the data using input wcm's Write method.
+// On Commit, it will write the metadata for fileRecord using the provided
+// writeMetadataFn.
+func (c *Cache) writer(ctx context.Context, r *rspb.ResourceName, sizeHint int64, fn writeMetadataFn) (interfaces.CommittedWriteCloser, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	if spn.IsRecording() {
@@ -678,9 +681,8 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte)
 	}
 
 	for r, data := range kvs {
-		r, data := r, data
 		eg.Go(func() error {
-			wc, err := c.writerWithSizeHintAndCommitFn(egctx, r, int64(len(data)), fn)
+			wc, err := c.writer(egctx, r, int64(len(data)), fn)
 			if err != nil {
 				return err
 			}
