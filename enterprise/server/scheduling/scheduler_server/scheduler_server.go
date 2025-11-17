@@ -689,6 +689,27 @@ func filterToHostnamePattern(ctx context.Context, nodes []*executionNode, patter
 	return out
 }
 
+func filterToRoutingConfig(ctx context.Context, nodes []*executionNode, routingConfig *scpb.RoutingConfig) []*executionNode {
+	if routingConfig.GetHostnamePattern() == "" {
+		return nodes
+	}
+	p, err := regexp.Compile(routingConfig.GetHostnamePattern())
+	if err != nil {
+		alert.CtxUnexpectedEvent(ctx, "invalid_hostname_pattern", "invalid hostname pattern %q in experiment config", routingConfig.GetHostnamePattern())
+		return nodes
+	}
+	var out []*executionNode
+	for _, n := range nodes {
+		if p.MatchString(n.GetHost()) {
+			out = append(out, n)
+		}
+	}
+	if len(out) == 0 && routingConfig.GetBestEffort() {
+		return nodes
+	}
+	return out
+}
+
 type nodePoolKey struct {
 	groupID string
 	os      string
@@ -1595,6 +1616,17 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 				continue
 			}
 		}
+		if pattern := task.metadata.GetRoutingConfig().GetHostnamePattern(); pattern != "" {
+			p, err := regexp.Compile(pattern)
+			if err != nil {
+				alert.CtxUnexpectedEvent(ctx, "invalid_hostname_pattern", "invalid hostname pattern %q in experiment config", pattern)
+			} else if !p.MatchString(node.GetHost()) {
+				// Regardless of whether the routing config is best-effort or
+				// not, don't allow tasks to be stolen by executors that don't
+				// match the hostname pattern.
+				continue
+			}
+		}
 
 		// Don't try to re-assign tasks intended to run on a specific executor.
 		fullTask := &repb.ExecutionTask{}
@@ -1995,6 +2027,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	arch := enqueueRequest.GetSchedulingMetadata().GetArch()
 	pool := enqueueRequest.GetSchedulingMetadata().GetPool()
 	hostnamePattern := enqueueRequest.GetSchedulingMetadata().GetHostnamePattern()
+	routingConfig := enqueueRequest.GetSchedulingMetadata().GetRoutingConfig()
 
 	key := nodePoolKey{os: os, arch: arch, pool: pool, groupID: groupID}
 
@@ -2076,6 +2109,11 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			if len(candidateNodes) == 0 {
 				log.CtxWarningf(ctx, "No executors found matching hostname pattern %q in pool %q with os %q with arch %q", hostnamePattern, pool, os, arch)
 				return status.UnavailableErrorf("no executors found matching hostname pattern")
+			}
+			candidateNodes = filterToRoutingConfig(ctx, candidateNodes, routingConfig)
+			if len(candidateNodes) == 0 {
+				log.CtxWarningf(ctx, "No executors found matching routing config %q in pool %q with os %q with arch %q", routingConfig, pool, os, arch)
+				return status.UnavailableErrorf("no executors found matching routing config")
 			}
 			rankedNodes = s.taskRouter.RankNodes(ctx, task.GetAction(), cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
 		}

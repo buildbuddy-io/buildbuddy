@@ -326,7 +326,11 @@ message SchedulingMetadata {
 
   // If set, the task will be scheduled only on nodes matching this hostname
   // pattern within the pool.
-  string hostname_pattern = 15;
+  // DEPRECATED: use routing_config instead.
+  string hostname_pattern = 15 [deprecated = true];
+
+  // Experimental routing config.
+  RoutingConfig routing_config = 16;
 
   // Group ID that owns the executors on which the task is to be executed.
   // May be different from the Group ID of the user that issued the Execute
@@ -358,6 +362,16 @@ message SchedulingMetadata {
 
   // cgroup2 settings. Will be set only for Linux executions.
   CgroupSettings cgroup_settings = 12;
+}
+
+message RoutingConfig {
+  // If set, the task will be scheduled only on nodes matching this hostname
+  // pattern within the pool.
+  string hostname_pattern = 1;
+
+  // If true, and the routing requirements cannot be satisfied, behave as though
+  // the routing config was not specified at all.
+  bool best_effort = 2;
 }
 
 message ScheduleTaskRequest {

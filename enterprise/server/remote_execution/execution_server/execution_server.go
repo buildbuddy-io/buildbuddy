@@ -837,8 +837,21 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return nil, status.WrapError(err, "get executor pool info")
 	}
 	var hostnamePattern string
+	var routingConfig *scpb.RoutingConfig
 	if exp := s.env.GetExperimentFlagProvider(); exp != nil {
+		// TODO: delete this once we're only using routing_config.
 		hostnamePattern = exp.String(ctx, "remote_execution.executor_hostname_pattern", "")
+		const routingConfigExperimentName = "remote_execution.executor_routing_config"
+		routingConfigObj, details := exp.ObjectDetails(ctx, routingConfigExperimentName, nil)
+		if len(routingConfigObj) > 0 {
+			routingConfig = &scpb.RoutingConfig{}
+			if err := experiments.ObjectToProto(routingConfigObj, routingConfig); err != nil {
+				alert.CtxUnexpectedEvent(ctx, "Error converting routing config object %+#v to proto: %s", routingConfigObj, err)
+			}
+			if v := details.Variant(); v != "" && v != "default" {
+				executionTask.Experiments = append(executionTask.Experiments, routingConfigExperimentName+":"+v)
+			}
+		}
 	}
 
 	metrics.RemoteExecutionRequests.With(prometheus.Labels{metrics.GroupID: taskGroupID, metrics.OS: props.OS, metrics.Arch: props.Arch}).Inc()
@@ -854,6 +867,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		Arch:              props.Arch,
 		Pool:              pool.Name,
 		HostnamePattern:   hostnamePattern,
+		RoutingConfig:     routingConfig,
 		TaskSize:          taskSize,
 		DefaultTaskSize:   defaultTaskSize,
 		MeasuredTaskSize:  measuredSize,
