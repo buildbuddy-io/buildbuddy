@@ -235,6 +235,10 @@ container_layer(
 
 container_image(
     name = "base_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
     base = "@executor_image//image:dockerfile_image.tar",
     layers = [
         ":tini_layer",
@@ -261,6 +265,10 @@ container_image(
 # This target can be run locally with enterprise/tools/run_executor_image.sh
 go_image(
     name = "executor_go_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
     base = ":base_image",
     binary = ":executor",
     tags = ["manual"],
@@ -268,6 +276,10 @@ go_image(
 
 container_image(
     name = "executor_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
     base = ":executor_go_image",
     entrypoint = [
         "/tini",
