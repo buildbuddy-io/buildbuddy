@@ -3,6 +3,7 @@ package routing_action_cache_client
 import (
 	"context"
 	"math/rand/v2"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -12,9 +13,12 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -101,21 +105,41 @@ func (r *RoutingACClient) GetActionResult(ctx context.Context, req *repb.GetActi
 }
 
 func (r *RoutingACClient) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
-	primaryClient, _, err := r.router.GetACClients(ctx)
+	primaryClient, secondaryClient, err := r.router.GetACClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary AC client: %s", err)
 	}
+
+	c, err := r.router.GetCacheRoutingConfig(ctx)
+	if err != nil {
+		// This should never happen, but if it does, we at least know where the
+		// primary request should go, so let's send that.
+		log.CtxWarningf(ctx, "Failed to fetch routing config: %s", err)
+		return primaryClient.UpdateActionResult(ctx, req, opts...)
+	}
+	singleRandValue := rand.Float64()
+	dualWrite := singleRandValue < c.GetDualWriteFraction()
+	if dualWrite && secondaryClient != nil {
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			_, err := secondaryClient.UpdateActionResult(ctx, req, opts...)
+			if err != nil {
+				log.CtxInfof(ctx, "synchronous secondary ac write failed: %s", err)
+			}
+			metrics.ProxySecondarySyncWriteDigests.WithLabelValues(
+				"ac_server",
+				gstatus.Code(err).String(),
+			).Add(1)
+		})
+		defer wg.Wait()
+		return primaryClient.UpdateActionResult(ctx, req, opts...)
+	}
+
 	rsp, err := primaryClient.UpdateActionResult(ctx, req, opts...)
 	if err != nil {
 		return rsp, err
 	}
 
-	c, err := r.router.GetCacheRoutingConfig(ctx)
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to fetch routing config: %s", err)
-		return rsp, nil
-	}
-	singleRandValue := rand.Float64()
 	if (singleRandValue) < c.GetBackgroundCopyFraction() {
 		r.copyOp.Enqueue(ctx, req.GetInstanceName(), []*repb.Digest{req.GetActionDigest()}, req.GetDigestFunction())
 	}
