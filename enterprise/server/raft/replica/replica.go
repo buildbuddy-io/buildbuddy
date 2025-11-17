@@ -1080,6 +1080,15 @@ func (sm *Replica) updateAtime(wb pebble.Batch, req *rfpb.UpdateAtimeRequest) (*
 	if err := proto.Unmarshal(buf, fileMetadata); err != nil {
 		return nil, err
 	}
+	prevATime := fileMetadata.GetLastAccessUsec()
+	newATime := req.GetAccessTimeUsec()
+
+	if prevATime > newATime {
+		// Atime should always move forward. If the new one is behind, don't attempt
+		// to add it.
+		return &rfpb.UpdateAtimeResponse{}, nil
+	}
+
 	fileMetadata.LastAccessUsec = req.GetAccessTimeUsec()
 	buf, err = proto.Marshal(fileMetadata)
 	if err != nil {
