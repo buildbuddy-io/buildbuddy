@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/gcsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -94,7 +95,8 @@ type Config struct {
 
 // data needed to update last access time.
 type accessTimeUpdate struct {
-	key []byte
+	key         []byte
+	gcsMetadata *sgpb.StorageMetadata_GCSMetadata
 }
 
 type Server struct {
@@ -120,6 +122,8 @@ type Server struct {
 	egCancel context.CancelFunc
 
 	clock clockwork.Clock
+
+	gcsTTLDays int64
 }
 
 func clearPrevCache(dir string, currentSubDir string) error {
@@ -238,6 +242,10 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 		fileStorer = filestore.New(filestoreOpts...)
 	}
 	rc.fileStorer = fileStorer
+
+	if conf.GCS.TTLDays != nil {
+		rc.gcsTTLDays = *conf.GCS.TTLDays
+	}
 
 	rc.gossipManager = env.GetGossipService()
 
@@ -371,9 +379,10 @@ func (rc *Server) fileRecordsToKeyMetas(fileRecords []*sgpb.FileRecord) ([]*send
 	return keys, nil
 }
 
-type keyAndLastAccessUsec struct {
+type atimeUpdateData struct {
 	key            []byte
 	lastAccessUsec int64
+	gcsMetadata    *sgpb.StorageMetadata_GCSMetadata
 }
 
 func (rc *Server) olderThanThreshold(t time.Time, threshold time.Duration) bool {
@@ -381,14 +390,15 @@ func (rc *Server) olderThanThreshold(t time.Time, threshold time.Duration) bool 
 	return age >= threshold
 }
 
-func (rc *Server) sendAccessTimeUpdate(key []byte, lastAccessUsec int64) {
-	atime := time.UnixMicro(lastAccessUsec)
+func (rc *Server) sendAccessTimeUpdate(a atimeUpdateData) {
+	atime := time.UnixMicro(a.lastAccessUsec)
 	if rc.clock.Since(atime) < *atimeUpdateThreshold {
 		return
 	}
 
 	up := &accessTimeUpdate{
-		key: key,
+		key:         a.key,
+		gcsMetadata: a.gcsMetadata,
 	}
 
 	// If the atimeBufferSize is 0, non-blocking writes do not make sense,
@@ -401,9 +411,24 @@ func (rc *Server) sendAccessTimeUpdate(key []byte, lastAccessUsec int64) {
 		case rc.accesses <- up:
 			return
 		default:
-			log.Warningf("Dropping atime update for %q", key)
+			log.Warningf("Dropping atime update for %q", a.key)
 		}
 	}
+}
+
+func (rc *Server) maybeUpdateGCSAtime(ctx context.Context, gcsMetadata *sgpb.StorageMetadata_GCSMetadata) error {
+	if gcsMetadata != nil {
+		return nil
+	}
+	if gcsutil.ObjectIsPastTTL(rc.clock, gcsMetadata, rc.gcsTTLDays) {
+		return nil
+	}
+	// Note: we are not using the atime that was provided in the atime udpate
+	// task. This is fine because we just want to make sure the gcs file that were
+	// recently accessed are not deleted through GCS lifecycle management. Also,
+	// we want to prevent atime from moving backwards by a lot.
+	newAtime := rc.clock.Now()
+	return rc.fileStorer.UpdateBlobAtime(ctx, gcsMetadata, newAtime)
 }
 
 func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan struct{}, atimeWriteBatchSize int) error {
@@ -447,8 +472,14 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 	for {
 		select {
 		case accessTimeUpdate := <-rc.accesses:
+			key := accessTimeUpdate.key
+			if err := rc.maybeUpdateGCSAtime(ctx, accessTimeUpdate.gcsMetadata); err != nil {
+				log.Errorf("Error updating GCS custom time (%q): %s", key, err)
+				// Don't update the atime on raft if gcs atime update fails. This is to prevent the situation where the gcs file is deleted but the metadata still exist.
+				continue
+			}
 			keys = append(keys, &sender.KeyMeta{
-				Key:  accessTimeUpdate.key,
+				Key:  key,
 				Meta: rc.clock.Now().UnixMicro(),
 			})
 			if len(keys) >= atimeWriteBatchSize {
@@ -467,7 +498,7 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 
 type getMetadataResult struct {
 	found        map[*sgpb.FileRecord]*sgpb.FileMetadata
-	atimeUpdates []keyAndLastAccessUsec
+	atimeUpdates []atimeUpdateData
 }
 
 func (rc *Server) userGroupID(ctx context.Context) string {
@@ -520,9 +551,10 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 			if err == nil {
 				fr := k.Meta.(*sgpb.FileRecord)
 				res.found[fr] = r.GetFileMetadata()
-				res.atimeUpdates = append(res.atimeUpdates, keyAndLastAccessUsec{
+				res.atimeUpdates = append(res.atimeUpdates, atimeUpdateData{
 					key:            k.Key,
 					lastAccessUsec: r.GetFileMetadata().GetLastAccessUsec(),
+					gcsMetadata:    r.GetFileMetadata().GetStorageMetadata().GetGcsMetadata(),
 				})
 			}
 		}
@@ -545,7 +577,7 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 		}
 
 		for _, p := range res.atimeUpdates {
-			rc.sendAccessTimeUpdate(p.key, p.lastAccessUsec)
+			rc.sendAccessTimeUpdate(p)
 		}
 	}
 
@@ -561,7 +593,7 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 
 type findMetadataResult struct {
 	found        map[*sgpb.FileRecord]bool
-	atimeUpdates []keyAndLastAccessUsec
+	atimeUpdates []atimeUpdateData
 }
 
 func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindResponse, error) {
@@ -609,9 +641,10 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 			present := findRsp.GetPresent()
 			res.found[k.Meta.(*sgpb.FileRecord)] = present
 			if present {
-				res.atimeUpdates = append(res.atimeUpdates, keyAndLastAccessUsec{
+				res.atimeUpdates = append(res.atimeUpdates, atimeUpdateData{
 					key:            k.Key,
 					lastAccessUsec: findRsp.GetLastAccessUsec(),
+					gcsMetadata:    findRsp.GetGcsMetadata(),
 				})
 			}
 		}
@@ -634,7 +667,7 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 		}
 
 		for _, p := range res.atimeUpdates {
-			rc.sendAccessTimeUpdate(p.key, p.lastAccessUsec)
+			rc.sendAccessTimeUpdate(p)
 		}
 	}
 
