@@ -46,11 +46,11 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
 
   interval?: number;
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.updateTimeIfInProgress();
   }
 
-  updateTimeIfInProgress() {
+  updateTimeIfInProgress(): void {
     if (!this.isInProgress()) {
       if (this.interval) {
         window.clearInterval(this.interval);
@@ -65,54 +65,54 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
     }
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     window.clearInterval(this.interval);
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
-  handleUserClicked(event: any, invocation: invocation.Invocation) {
+  handleUserClicked(event: React.MouseEvent, invocation: invocation.Invocation): void {
     router.navigateToUserHistory(invocation.user);
     event.stopPropagation();
     event.preventDefault();
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
-  handleHostClicked(event: any, invocation: invocation.Invocation) {
+  handleHostClicked(event: React.MouseEvent, invocation: invocation.Invocation): void {
     router.navigateToHostHistory(invocation.host);
     event.stopPropagation();
     event.preventDefault();
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
-  handleCommitClicked(event: any, invocation: invocation.Invocation) {
+  handleCommitClicked(event: React.MouseEvent, invocation: invocation.Invocation): void {
     router.navigateToCommitHistory(invocation.commitSha);
     event.stopPropagation();
     event.preventDefault();
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
-  handleBranchClicked(event: any, invocation: invocation.Invocation) {
+  handleBranchClicked(event: React.MouseEvent, invocation: invocation.Invocation): void {
     router.navigateToBranchHistory(invocation.branchName);
     event.stopPropagation();
     event.preventDefault();
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
-  handleRepoClicked(event: any, invocation: invocation.Invocation) {
+  handleRepoClicked(event: React.MouseEvent, invocation: invocation.Invocation): void {
     router.navigateToRepoHistory(invocation.repoUrl);
     event.stopPropagation();
     event.preventDefault();
   }
 
-  isInProgress() {
+  isInProgress(): boolean {
     return this.props.invocation.invocationStatus == invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS;
   }
 
-  isDisconnected() {
+  isDisconnected(): boolean {
     return this.props.invocation.invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS;
   }
 
-  getStatusClass() {
+  getStatusClass(): string {
     if (this.isInProgress()) {
       return "card-in-progress";
     }
@@ -128,7 +128,7 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
     return this.props.invocation.success ? "card-success" : "card-failure";
   }
 
-  renderStatusIcon() {
+  renderStatusIcon(): React.ReactNode {
     if (this.isInProgress()) {
       return <PlayCircle className="icon blue" />;
     }
@@ -144,7 +144,7 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
     return this.props.invocation.success ? <CheckCircle className="icon green" /> : <XCircle className="icon red" />;
   }
 
-  getStatusLabel() {
+  getStatusLabel(): string {
     if (this.isInProgress()) {
       return "In progress...";
     }
@@ -155,12 +155,12 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
     return this.props.invocation.success ? "Succeeded" : exitCode(this.props.invocation.bazelExitCode);
   }
 
-  private getTitleForWorkflow() {
+  private getTitleForWorkflow(): string {
     const actionName = this.props.invocation.pattern;
-    return actionName;
+    return format.truncateList(Array.isArray(actionName) ? actionName : [actionName || ""]);
   }
 
-  getTitle() {
+  getTitle(): string {
     if (this.props.invocation.role === "CI_RUNNER") {
       return this.getTitleForWorkflow();
     }
@@ -185,7 +185,7 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
     return userPrefix + `${this.props.invocation.command} ${format.truncateList(this.props.invocation.pattern)}`;
   }
 
-  getDuration() {
+  getDuration(): string {
     if (this.isInProgress()) {
       return format.durationUsec(this.state.time * 1000 - +this.props.invocation.createdAtUsec);
     }
@@ -193,7 +193,7 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
     return format.durationUsec(this.props.invocation.durationUsec);
   }
 
-  render() {
+  render(): React.ReactNode {
     const roleLabel = format.formatRole(this.props.invocation.role);
     const tags = (this.props.invocation.tags || []).map((t) => t.name).join(", ");
 

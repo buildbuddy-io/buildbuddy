@@ -1,5 +1,5 @@
 // From https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/util/ExitCode.java#L38
-export function exitCode(exitCode: string) {
+export function exitCode(exitCode: string): string {
   switch (exitCode) {
     case "SUCCESS":
       return "Succeeded";

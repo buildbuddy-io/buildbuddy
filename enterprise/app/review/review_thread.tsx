@@ -20,7 +20,7 @@ interface ReviewThreadComponentProps {
 export default class ReviewThreadComponent extends React.Component<ReviewThreadComponentProps> {
   commentTextRef: React.RefObject<HTMLTextAreaElement> = React.createRef();
 
-  handleCreate(commentBody: string) {
+  handleCreate(commentBody: string): void {
     commentBody = commentBody.trim();
     if (commentBody === "") {
       return;
@@ -36,32 +36,32 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
     this.props.handler.handleCreateComment(commentToSubmit);
   }
 
-  handleUpdate() {
+  handleUpdate(): void {
     if (!this.props.draftComment || !this.commentTextRef.current?.value) {
       return;
     }
     this.props.handler.handleUpdateComment(this.props.draftComment.getId(), this.commentTextRef.current.value);
   }
 
-  handleDelete() {
+  handleDelete(): void {
     if (!this.props.draftComment?.getId()) {
       return;
     }
     this.props.handler.handleDeleteComment(this.props.draftComment.getId());
   }
 
-  handleCancel() {
+  handleCancel(): void {
     if (!this.props.draftComment?.getId()) {
       return;
     }
     this.props.handler.handleCancelComment(this.props.draftComment.getId());
   }
 
-  handleStartReply() {
+  handleStartReply(): void {
     this.props.handler.handleStartReply(this.props.threadId);
   }
 
-  render() {
+  render(): React.ReactNode {
     const comments = [...this.props.comments];
     const draft = this.props.draftComment;
     const hasDraft = draft !== undefined;

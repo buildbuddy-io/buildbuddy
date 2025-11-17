@@ -18,11 +18,11 @@ type State = {
 export default class NamespacesComponent extends React.Component<{}, State> {
   state: State = {};
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetch();
   }
 
-  private fetch() {
+  private fetch(): void {
     this.setState({ loading: true });
     rpc_service.service
       .getNamespace(quota.GetNamespaceRequest.create({}))
@@ -31,13 +31,13 @@ export default class NamespacesComponent extends React.Component<{}, State> {
       .finally(() => this.setState({ loading: false }));
   }
 
-  private onClickDelete(namespace: string) {
+  private onClickDelete(namespace: string): void {
     this.setState({ namespaceToDelete: namespace });
   }
-  private onRequestCloseDialog() {
+  private onRequestCloseDialog(): void {
     this.setState({ namespaceToDelete: "" });
   }
-  private onConfirmDelete() {
+  private onConfirmDelete(): void {
     const namespace = this.state.namespaceToDelete;
     this.setState({ deleteLoading: true });
     rpc_service.service
@@ -51,7 +51,7 @@ export default class NamespacesComponent extends React.Component<{}, State> {
       .finally(() => this.setState({ deleteLoading: false }));
   }
 
-  render() {
+  render(): JSX.Element | null {
     if (this.state.loading) return <div className="loading" />;
     if (!this.state.response) return null;
 

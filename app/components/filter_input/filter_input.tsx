@@ -10,20 +10,21 @@ export type FilterInputProps = React.InputHTMLAttributes<HTMLInputElement> & {
  * `FilterInput` renders an input intended to be placed at the top of a list of
  * results, filtering the results list as text is entered.
  */
-export const FilterInput = React.forwardRef((props: FilterInputProps, ref: React.Ref<HTMLInputElement>) => {
-  const { className, placeholder, rightElement, ...rest } = props;
-  return (
-    <div className={`filter-input-container ${props.value ? "is-filtering" : ""} ${className || ""}`}>
-      <input
-        ref={ref}
-        className="filter-input"
-        type="text"
-        placeholder={placeholder || "Filter..."}
-        {...{ spellcheck: "false" }}
-        {...rest}
-      />
-      <Search className="icon" />
-      {rightElement && <span className="right-element">{rightElement}</span>}
-    </div>
-  );
-});
+export const FilterInput: React.ForwardRefExoticComponent<FilterInputProps & React.RefAttributes<HTMLInputElement>> =
+  React.forwardRef<HTMLInputElement, FilterInputProps>((props: FilterInputProps, ref: React.Ref<HTMLInputElement>) => {
+    const { className, placeholder, rightElement, ...rest } = props;
+    return (
+      <div className={`filter-input-container ${props.value ? "is-filtering" : ""} ${className || ""}`}>
+        <input
+          ref={ref}
+          className="filter-input"
+          type="text"
+          placeholder={placeholder || "Filter..."}
+          {...{ spellcheck: "false" }}
+          {...rest}
+        />
+        <Search className="icon" />
+        {rightElement && <span className="right-element">{rightElement}</span>}
+      </div>
+    );
+  });

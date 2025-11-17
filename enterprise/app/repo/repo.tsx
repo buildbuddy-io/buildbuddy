@@ -72,7 +72,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     workflowResponse: null,
   };
 
-  getTemplate() {
+  getTemplate(): string {
     let paramTemplate = this.props.search.get("template");
     if (paramTemplate) {
       return paramTemplate;
@@ -84,27 +84,27 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     return "";
   }
 
-  getTemplateDirectory() {
+  getTemplateDirectory(): string {
     return this.props.search.get("dir") || "";
   }
 
-  getTemplateName() {
+  getTemplateName(): string {
     return this.props.search.get("templatename") || "";
   }
 
-  getTemplateUrl() {
+  getTemplateUrl(): string {
     return this.props.search.get("template") || "";
   }
 
-  getTemplateImage() {
+  getTemplateImage(): string {
     return this.props.search.get("image") || "";
   }
 
-  getDestinationDirectory() {
+  getDestinationDirectory(): string {
     return this.props.search.get("destdir") || "";
   }
 
-  getRepoName() {
+  getRepoName(): string {
     let paramRepoName = this.props.search.get("name");
     if (paramRepoName) {
       return paramRepoName;
@@ -116,7 +116,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     return "";
   }
 
-  fetchGithubInstallations() {
+  fetchGithubInstallations(): Promise<github.GetGithubUserInstallationsResponse | null> {
     if (!this.props.user || !this.props.user.githubLinked) {
       this.setState({ githubInstallationsLoading: false });
       return Promise.resolve(null);
@@ -131,15 +131,18 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
       .finally(() => this.setState({ githubInstallationsLoading: false }));
   }
 
-  fetchSecrets() {
-    if (!this.props.user) return;
-    return rpc_service.service.listSecrets(new secrets.ListSecretsRequest()).then((response) => {
-      console.log(response);
-      this.setState({ secretsResponse: response });
-    });
+  fetchSecrets(): Promise<void> {
+    if (!this.props.user) return Promise.resolve();
+    return rpc_service.service
+      .listSecrets(new secrets.ListSecretsRequest())
+      .then((response) => {
+        console.log(response);
+        this.setState({ secretsResponse: response });
+      })
+      .then(() => {});
   }
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetchGithubInstallations().catch((e) => {
       // Log the error, but we don't need to show it to the user since
       // when they click the Create repository button, we'll do a GitHub
@@ -149,7 +152,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     this.fetchSecrets();
   }
 
-  async loginAndLinkGithub() {
+  async loginAndLinkGithub(): Promise<void> {
     try {
       if (!this.props.user) {
         await this.loginToGithub();
@@ -160,7 +163,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     }
   }
 
-  loginToGithub() {
+  loginToGithub(): Promise<void> {
     return popup
       .open(
         `/login/github/?${new URLSearchParams({
@@ -168,12 +171,13 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
           link: "true",
         })}`
       )
-      .then(() => auth_service.refreshUser());
+      .then(() => auth_service.refreshUser())
+      .then(() => {});
   }
 
   // TODO: Have a better way to manage which features require write permissions
   // and gate them for users that have installed the read-only app.
-  linkGithubAccount() {
+  linkGithubAccount(): Promise<github.GetGithubUserInstallationsResponse | null | void> {
     return popup
       .open(
         installReadWriteGitHubAppURL(
@@ -194,19 +198,20 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
       });
   }
 
-  handleInstallationPicked(e: React.ChangeEvent<HTMLSelectElement>) {
+  handleInstallationPicked(e: React.ChangeEvent<HTMLSelectElement>): void {
     this.selectInstallation(Number(e.target.value));
   }
 
-  selectInstallation(index: number) {
+  async selectInstallation(index: number): Promise<void> {
     if (index == -1) {
-      return this.loginAndLinkGithub();
+      await this.loginAndLinkGithub();
+      return;
     }
     localStorage[selectedInstallationIndexLocalStorageKey] = index;
     this.setState({ selectedInstallationIndex: index });
   }
 
-  hasPermissions() {
+  hasPermissions(): boolean {
     let selectedInstallation =
       this.state.githubInstallationsResponse?.installations[this.state.selectedInstallationIndex];
     if (!selectedInstallation) {
@@ -215,32 +220,33 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     return selectedInstallation.permissions?.administration == "write";
   }
 
-  handleRepoChanged(e: React.ChangeEvent<HTMLInputElement>) {
+  handleRepoChanged(e: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({ repoName: e.target.value });
   }
 
-  handleTemplateChanged(e: React.ChangeEvent<HTMLInputElement>) {
+  handleTemplateChanged(e: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({ template: e.target.value });
   }
 
-  handlePrivateChanged(e: React.ChangeEvent<HTMLInputElement>) {
+  handlePrivateChanged(e: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({ private: e.target.checked });
   }
 
-  linkInstallation() {
+  linkInstallation(): Promise<void> | undefined {
     let selectedInstallation =
       this.state.githubInstallationsResponse?.installations[this.state.selectedInstallationIndex];
-    rpc_service.service
+    return rpc_service.service
       .linkGitHubAppInstallation(
         github.LinkAppInstallationRequest.create({
           installationId: selectedInstallation?.id,
           appId: selectedInstallation?.appId,
         })
       )
-      .catch((e) => error_service.handleError(e));
+      .catch((e) => error_service.handleError(e))
+      .then(() => {});
   }
 
-  createOrUpdateRepo(update?: boolean) {
+  createOrUpdateRepo(update?: boolean): Promise<repo.CreateRepoResponse> {
     let selectedInstallation =
       this.state.githubInstallationsResponse?.installations[this.state.selectedInstallationIndex];
     let r = new repo.CreateRepoRequest();
@@ -265,7 +271,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     return rpc_service.service.createRepo(r);
   }
 
-  runWorkflow(repo: string) {
+  runWorkflow(repo: string): Promise<workflow.ExecuteWorkflowResponse> {
     return rpc_service.service.executeWorkflow(
       new workflow.ExecuteWorkflowRequest({
         pushedRepoUrl: repo,
@@ -278,17 +284,17 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     );
   }
 
-  getSecrets() {
+  getSecrets(): string[] {
     let s = this.props.search.get("secret") || this.props.search.get("secrets") || "";
     return s ? s.split(",") : [];
   }
 
-  getVars() {
+  getVars(): string[] {
     let s = this.props.search.get("var") || this.props.search.get("vars") || "";
     return s ? s.split(",") : [];
   }
 
-  getUnsetSecrets() {
+  getUnsetSecrets(): string[] {
     return (
       this.getSecrets()
         .filter((s) => !this.state.secretsResponse?.secret.map((s) => s.name).includes(s))
@@ -302,7 +308,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     );
   }
 
-  async handleCreateClicked() {
+  async handleCreateClicked(): Promise<void> {
     if (!this.state.githubInstallationsResponse?.installations?.length) {
       // TODO(siggisim): Instead of showing link popup again, show an in-app picker if
       // there is more than one github org, or skip the linking if there's exactly one.
@@ -334,15 +340,15 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     }
   }
 
-  async saveSecrets() {
+  async saveSecrets(): Promise<void> {
     await Promise.all(this.getUnsetSecrets().map((s) => encryptAndUpdate(s, this.state.secrets.get(s) || "")));
   }
 
-  async promptGCPProjectPicker() {
+  async promptGCPProjectPicker(): Promise<void> {
     let picked = await this.showGCPProjectPicker();
     await encryptAndUpdate(gcpProjectKey, picked);
   }
-  async showGCPProjectPicker() {
+  async showGCPProjectPicker(): Promise<string> {
     let resp = await rpc_service.service.getGCPProject({});
     return await picker_service.show({
       placeholder: "Pick a GCP project or search...",
@@ -379,7 +385,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     });
   }
 
-  async handleDeployClicked(repoResponse: repo.CreateRepoResponse) {
+  async handleDeployClicked(repoResponse: repo.CreateRepoResponse): Promise<void> {
     let isGCPDeploy = this.getSecrets().includes(gcpRefreshTokenKey);
     let needsGCPLink =
       isGCPDeploy && !this.state.secretsResponse?.secret.map((s) => s.name).includes(gcpRefreshTokenKey);
@@ -408,18 +414,21 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     }
   }
 
-  showPermissions() {
+  showPermissions(): Promise<void> {
     let selectedInstallation =
       this.state.githubInstallationsResponse?.installations[this.state.selectedInstallationIndex];
-    return popup.open(selectedInstallation?.url + `/permissions/update`).catch((e) => {
-      // Log an error here, but let's keep going since sometimes the Github UI
-      // doesn't redirect after a permissions change, and the user has to X out
-      // of the window.
-      console.log(e);
-    });
+    return popup
+      .open(selectedInstallation?.url + `/permissions/update`)
+      .catch((e) => {
+        // Log an error here, but let's keep going since sometimes the Github UI
+        // doesn't redirect after a permissions change, and the user has to X out
+        // of the window.
+        console.log(e);
+      })
+      .then(() => {});
   }
 
-  linkGoogleCloud() {
+  linkGoogleCloud(): Promise<unknown> {
     return popup.open(
       `/auth/gcp/link/?${new URLSearchParams({
         link_gcp_for_group: this.props.user?.selectedGroup.id || "",
@@ -428,7 +437,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     );
   }
 
-  render() {
+  render(): React.ReactNode {
     if (this.state.githubInstallationsLoading) {
       return (
         <div className="create-repo-page">

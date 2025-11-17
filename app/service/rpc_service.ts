@@ -70,10 +70,10 @@ const structuredErrors = capabilities.config.streamingHttpEnabled;
 const SUBDOMAIN_REGEX = /^[a-zA-Z0-9-]+$/;
 
 class RpcService {
-  service: ExtendedBuildBuddyService;
-  regionalServices = new Map<string, ExtendedBuildBuddyService>();
-  events: Subject<string>;
-  requestContext = new context.RequestContext({
+  service!: ExtendedBuildBuddyService;
+  regionalServices: Map<string, ExtendedBuildBuddyService> = new Map<string, ExtendedBuildBuddyService>();
+  events!: Subject<string>;
+  requestContext: context.RequestContext = new context.RequestContext({
     timezoneOffsetMinutes: new Date().getTimezoneOffset(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     appBundleHash: capabilities.config.appBundleHash,
@@ -164,7 +164,11 @@ class RpcService {
     })}`;
   }
 
-  getBytestreamUrl(bytestreamURL: string, invocationId: string, { filename = "", zip = "" } = {}): string {
+  getBytestreamUrl(
+    bytestreamURL: string,
+    invocationId: string,
+    { filename = "", zip = "" }: { filename?: string; zip?: string } = {}
+  ): string {
     const params: Record<string, string> = {
       bytestream_url: bytestreamURL,
       invocation_id: invocationId,
@@ -174,7 +178,7 @@ class RpcService {
     return this.getDownloadUrl(params);
   }
 
-  downloadLog(invocationId: string, attempt: number) {
+  downloadLog(invocationId: string, attempt: number): void {
     const params: Record<string, string> = {
       invocation_id: invocationId,
       attempt: attempt.toString(),
@@ -183,11 +187,11 @@ class RpcService {
     window.open(this.getDownloadUrl(params));
   }
 
-  downloadBytestreamFile(filename: string, bytestreamURL: string, invocationId: string) {
+  downloadBytestreamFile(filename: string, bytestreamURL: string, invocationId: string): void {
     window.open(this.getBytestreamUrl(bytestreamURL, invocationId, { filename }));
   }
 
-  downloadBytestreamZipFile(filename: string, bytestreamURL: string, zip: string, invocationId: string) {
+  downloadBytestreamZipFile(filename: string, bytestreamURL: string, zip: string, invocationId: string): void {
     window.open(this.getBytestreamUrl(bytestreamURL, invocationId, { filename, zip }));
   }
 
@@ -601,4 +605,5 @@ type FetchPromiseType<T extends FetchResponseType> = T extends ""
         ? Response
         : never;
 
-export default new RpcService();
+const rpcService: RpcService = new RpcService();
+export default rpcService;

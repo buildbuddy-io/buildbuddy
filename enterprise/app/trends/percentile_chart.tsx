@@ -40,14 +40,14 @@ export default class PercentilesChartComponent extends React.Component<Percentil
   state: State = {};
   private lastDataFromHover?: number;
 
-  handleRowClick() {
+  handleRowClick(): void {
     if (!this.props.onColumnClicked || !this.lastDataFromHover) {
       return;
     }
     this.props.onColumnClicked(this.lastDataFromHover);
   }
 
-  onMouseDown(e: CategoricalChartState) {
+  onMouseDown(e: CategoricalChartState): void {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -55,7 +55,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
     this.setState({ refAreaLeft: e.activeLabel, refAreaRight: e.activeLabel });
   }
 
-  onMouseMove(e: CategoricalChartState) {
+  onMouseMove(e: CategoricalChartState): void {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -66,7 +66,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
     this.setState({ refAreaRight: e.activeLabel });
   }
 
-  onMouseUp(e: CategoricalChartState) {
+  onMouseUp(e: CategoricalChartState): void {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -88,7 +88,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
     return !Boolean(this.state.refAreaLeft);
   }
 
-  render() {
+  render(): JSX.Element {
     return (
       <div id={this.props.id} className={`trend-chart ${this.props.onZoomSelection ? "zoomable" : ""}`}>
         <div className="trend-chart-title">{this.props.title}</div>
@@ -186,13 +186,13 @@ interface PercentilesChartTooltipProps extends TooltipProps<any, any> {
 }
 
 class PercentilesChartTooltip extends React.Component<PercentilesChartTooltipProps> {
-  componentDidUpdate(prevProps: PercentilesChartTooltipProps) {
+  componentDidUpdate(prevProps: PercentilesChartTooltipProps): void {
     if (this.props.payload && this.props.payload.length > 0) {
       this.props.triggerCallback(this.props.payload[0].payload);
     }
   }
 
-  render() {
+  render(): JSX.Element | null {
     if (!this.props.active || !this.props.payload || this.props.payload.length < 1 || !this.props.shouldRender()) {
       return null;
     }

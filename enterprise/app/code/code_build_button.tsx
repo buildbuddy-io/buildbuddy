@@ -24,19 +24,19 @@ export default class CodeBuildButton extends React.Component<CodeBuildButtonProp
     isMenuOpen: false,
   };
 
-  private onOpenMenu() {
+  private onOpenMenu(): void {
     this.setState({ isMenuOpen: true });
   }
-  private onCloseMenu() {
+  private onCloseMenu(): void {
     this.setState({ isMenuOpen: false });
   }
 
-  private handleCommandClicked(args: string) {
+  private handleCommandClicked(args: string): void {
     this.onCloseMenu();
     this.props.onCommandClicked(args);
   }
 
-  private handleCustomClicked(defaultValue: string) {
+  private handleCustomClicked(defaultValue: string): void {
     this.onCloseMenu();
     let customArgs = prompt("bazel", defaultValue);
     if (!customArgs) {
@@ -48,16 +48,16 @@ export default class CodeBuildButton extends React.Component<CodeBuildButtonProp
     this.handleCommandClicked(customArgs);
   }
 
-  private handleDefaultConfigClicked() {
+  private handleDefaultConfigClicked(): void {
     this.onCloseMenu();
     this.props.onDefaultConfig(prompt("config") || "");
   }
 
-  private getConfig() {
+  private getConfig(): string {
     return this.props.defaultConfig ? ` --config=${this.props.defaultConfig}` : "";
   }
 
-  render() {
+  render(): React.ReactNode {
     return (
       <PopupContainer>
         <OutlinedButtonGroup>

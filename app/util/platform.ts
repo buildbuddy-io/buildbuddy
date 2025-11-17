@@ -1,7 +1,7 @@
-export function isMac() {
+export function isMac(): boolean {
   return navigator.platform.startsWith("Mac");
 }
 
-export function modifierKey() {
+export function modifierKey(): string {
   return isMac() ? "⌘" : "Ctrl";
 }

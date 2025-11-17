@@ -39,23 +39,23 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
     isDeleteModalLoading: false,
   };
 
-  private onClickMenuButton() {
+  private onClickMenuButton(): void {
     this.setState({ isMenuOpen: true });
   }
 
-  private onCloseMenu() {
+  private onCloseMenu(): void {
     this.setState({ isMenuOpen: false });
   }
 
-  private onClickDeleteItem() {
+  private onClickDeleteItem(): void {
     this.setState({ isMenuOpen: false, isDeleteModalOpen: true });
   }
 
-  private onCloseDeleteModal() {
+  private onCloseDeleteModal(): void {
     this.setState({ isDeleteModalOpen: false });
   }
 
-  private async onClickDelete() {
+  private async onClickDelete(): Promise<void> {
     this.setState({ isDeleteModalLoading: true, deleteModalError: null });
     try {
       await rpcService.service.deleteInvocation(
@@ -69,7 +69,7 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
     }
   }
 
-  render() {
+  render(): React.ReactNode {
     if (!capabilities.deleteInvocation) {
       return <></>;
     }
@@ -128,7 +128,7 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
   }
 }
 
-function canWrite(user: User, invocation: invocation.Invocation) {
+function canWrite(user: User, invocation: invocation.Invocation): boolean {
   const acl = invocation.acl;
   if (!acl) {
     return false;

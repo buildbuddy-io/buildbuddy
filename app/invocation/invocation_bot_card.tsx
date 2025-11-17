@@ -5,7 +5,7 @@ export interface Props {
   suggestions: string[];
 }
 
-export function InvocationBotCard({ suggestions }: Props) {
+export function InvocationBotCard({ suggestions }: Props): JSX.Element {
   return (
     <>
       {suggestions.map((suggestion) => (

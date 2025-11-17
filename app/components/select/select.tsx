@@ -3,19 +3,20 @@ import React from "react";
 
 export type SelectProps = JSX.IntrinsicElements["select"];
 
-export const Select = React.forwardRef((props: SelectProps, ref: React.Ref<HTMLSelectElement>) => {
-  const { className, ...rest } = props;
-  return (
-    <div className="select-wrapper">
-      <select ref={ref} className={`select ${className || ""}`} {...rest} />
-      <div className="dropdown-icon-wrapper">
-        <ChevronDown className="icon" />
+export const Select: React.ForwardRefExoticComponent<SelectProps & React.RefAttributes<HTMLSelectElement>> =
+  React.forwardRef<HTMLSelectElement, SelectProps>((props: SelectProps, ref: React.Ref<HTMLSelectElement>) => {
+    const { className, ...rest } = props;
+    return (
+      <div className="select-wrapper">
+        <select ref={ref} className={`select ${className || ""}`} {...rest} />
+        <div className="dropdown-icon-wrapper">
+          <ChevronDown className="icon" />
+        </div>
       </div>
-    </div>
-  );
-});
+    );
+  });
 
-export function Option(props: JSX.IntrinsicElements["option"]) {
+export function Option(props: JSX.IntrinsicElements["option"]): JSX.Element {
   const { className, ...rest } = props;
   return <option className={`select-option ${className || ""}`} {...rest} />;
 }

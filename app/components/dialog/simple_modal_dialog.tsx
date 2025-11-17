@@ -28,7 +28,7 @@ export interface SimpleModalDialogProps {
  * `loading` prop should be provided to indicate whether the RPC is in progress.
  */
 export default class SimpleModalDialog extends React.Component<SimpleModalDialogProps> {
-  render() {
+  render(): React.ReactNode {
     return (
       <Modal isOpen={this.props.isOpen} onRequestClose={this.props.loading ? undefined : this.props.onRequestClose}>
         <Dialog className={this.props.className || ""}>

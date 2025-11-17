@@ -22,11 +22,11 @@ export default class Picker extends React.Component<{}, State> {
     optionCache: new Map<string, Promise<string[]>>(),
   };
 
-  ref = React.createRef<HTMLInputElement>();
+  ref: React.RefObject<HTMLInputElement> = React.createRef<HTMLInputElement>();
 
   private subscription: Subscription = pickerService.pickers.subscribe(this.onPicker.bind(this));
 
-  private onPicker(picker: PickerModel) {
+  private onPicker(picker: PickerModel): void {
     this.setState({
       isVisible: true,
       search: "",
@@ -37,25 +37,25 @@ export default class Picker extends React.Component<{}, State> {
     this.fetchOptions("");
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     this.subscription.unsubscribe();
   }
 
-  handleOptionPicked(o: string) {
+  handleOptionPicked(o: string): void {
     pickerService.picked.next(o);
     this.setState({ isVisible: false });
   }
 
-  handleDismissed() {
+  handleDismissed(): void {
     pickerService.dismissed.next();
     this.setState({ isVisible: false });
   }
 
-  handleSearchChanged(value: string) {
+  handleSearchChanged(value: string): void {
     this.fetchOptions(value);
   }
 
-  handleKeyUp(e: React.KeyboardEvent<HTMLInputElement>) {
+  handleKeyUp(e: React.KeyboardEvent<HTMLInputElement>): void {
     switch (e.key) {
       case "Enter":
         if (this.state.currentOptions.length > this.selectedIndex()) {
@@ -74,11 +74,11 @@ export default class Picker extends React.Component<{}, State> {
     }
   }
 
-  selectedIndex() {
+  selectedIndex(): number {
     return Math.min((this.state.currentOptions.length || 0) - 1, this.state.selectedIndex);
   }
 
-  async fetchOptions(search: string) {
+  async fetchOptions(search: string): Promise<void> {
     this.setState({ search: search });
     let searchString = search.toLowerCase();
     let cachedValuePromise = this.state.optionCache.get(searchString);
@@ -113,7 +113,7 @@ export default class Picker extends React.Component<{}, State> {
     });
   }
 
-  render() {
+  render(): React.ReactNode {
     return (
       <Modal
         isOpen={this.state.isVisible}

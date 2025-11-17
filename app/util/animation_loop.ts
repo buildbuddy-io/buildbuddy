@@ -15,7 +15,7 @@ export class AnimationLoop {
     }
   }
 
-  private loop() {
+  private loop(): void {
     if (!this.enabled_ || this.isNextFrameScheduled) return;
 
     this.dt.update();
@@ -24,7 +24,7 @@ export class AnimationLoop {
   }
 
   private isNextFrameScheduled = false;
-  private scheduleNextFrame() {
+  private scheduleNextFrame(): void {
     if (this.isNextFrameScheduled) return;
     this.isNextFrameScheduled = true;
     requestAnimationFrame(() => {
@@ -33,12 +33,12 @@ export class AnimationLoop {
     });
   }
 
-  start() {
+  start(): void {
     this.enabled_ = true;
     this.loop();
   }
 
-  stop() {
+  stop(): void {
     this.enabled_ = false;
     this.dt.reset();
   }

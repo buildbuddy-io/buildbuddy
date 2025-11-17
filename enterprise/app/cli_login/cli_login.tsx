@@ -30,16 +30,16 @@ export default class CliLoginComponent extends React.Component<CliLoginProps, St
 
   private currentRPC?: Cancelable;
 
-  componentDidMount() {
+  componentDidMount(): void {
     document.title = "CLI Login | BuildBuddy";
     this.update();
   }
 
-  componentDidUpdate() {
+  componentDidUpdate(): void {
     this.update();
   }
 
-  async update() {
+  async update(): Promise<void> {
     // If this is the "completed" page then nothing needs to be fetched.
     if (this.props.search.get("complete")) return;
 
@@ -117,7 +117,7 @@ export default class CliLoginComponent extends React.Component<CliLoginProps, St
     router.replaceURL("/settings/cli-login");
   }
 
-  async createPersonalKeyAndRedirect() {
+  async createPersonalKeyAndRedirect(): Promise<void> {
     console.log("Creating personal API key");
     this.setState({ creatingApiKey: true });
     return rpc_service.service
@@ -136,36 +136,38 @@ export default class CliLoginComponent extends React.Component<CliLoginProps, St
       .catch((e) => error_service.handleError(e));
   }
 
-  async fetchGroupInfo(slug: string) {
+  async fetchGroupInfo(slug: string): Promise<grp.Group | null> {
     this.currentRPC?.cancel();
     this.setState({ loadingGroup: true });
-    this.currentRPC = rpc_service.service
-      .getGroup({ urlIdentifier: slug })
-      .then(
-        (response) =>
-          new grp.Group({
-            id: response.id,
-            url: response.url,
-            urlIdentifier: slug,
-          })
-      )
-      .catch((e) => error_service.handleError(e))
-      .finally(() => this.setState({ loadingGroup: false }));
-    return this.currentRPC;
+    const rpc = rpc_service.service.getGroup({ urlIdentifier: slug });
+    this.currentRPC = rpc;
+    try {
+      const response = await rpc;
+      return new grp.Group({
+        id: response.id,
+        url: response.url,
+        urlIdentifier: slug,
+      });
+    } catch (e) {
+      error_service.handleError(e);
+      return null;
+    } finally {
+      this.setState({ loadingGroup: false });
+    }
   }
 
-  onChangeSelectedGroup(e: React.ChangeEvent<HTMLSelectElement>) {
+  onChangeSelectedGroup(e: React.ChangeEvent<HTMLSelectElement>): void {
     this.setState({ selectedGroupIdOption: e.target.value });
   }
 
-  onClickComplete() {
+  onClickComplete(): void {
     router.replaceParams({
       ...Object.fromEntries(this.props.search.entries()),
       group_id: this.state.selectedGroupIdOption || this.props.user.selectedGroup.id,
     });
   }
 
-  render() {
+  render(): JSX.Element {
     if (this.props.search.get("complete")) {
       const failed = !!this.props.search.get("cliLoginError");
       return (

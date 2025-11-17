@@ -17,7 +17,7 @@ import {
 class Router {
   user?: User;
 
-  register(pathChangeHandler: VoidFunction) {
+  register(pathChangeHandler: VoidFunction): void {
     const oldPushState = history.pushState;
     history.pushState = (data: any, unused: string, url?: string | URL): void => {
       oldPushState.apply(history, [data, unused, url]);
@@ -63,7 +63,7 @@ class Router {
     this.redirectIfNecessary();
   }
 
-  private redirectIfNecessary() {
+  private redirectIfNecessary(): void {
     let redirectUrl = new URLSearchParams(window.location.search).get("redirect_url");
     if (this.user && redirectUrl) {
       this.navigateTo(redirectUrl);
@@ -72,7 +72,7 @@ class Router {
 
   // checks whether user has access to the current page, and if not returns
   // URL to redirect to.
-  private checkGroupAccess() {
+  private checkGroupAccess(): string {
     const path = window.location.pathname;
     // Disallowed access to the selected group means one of two things:
     // 1) This is a customer subdomain and the user does not have access to
@@ -97,7 +97,7 @@ class Router {
     return "";
   }
 
-  private handlePathChanged(pathChangeHandler: VoidFunction) {
+  private handlePathChanged(pathChangeHandler: VoidFunction): void {
     const newUrl = this.checkGroupAccess();
     if (newUrl) {
       window.history.replaceState({}, "", newUrl);
@@ -113,7 +113,7 @@ class Router {
    * - Creates a new browser history entry.
    * - Preserves global filter params unless resetFilters is set
    */
-  navigateTo(url: string, resetFilters: boolean = false) {
+  navigateTo(url: string, resetFilters: boolean = false): void {
     const oldUrl = new URL(window.location.href);
     const newUrl = new URL(url, window.location.href);
 
@@ -159,7 +159,7 @@ class Router {
    * - Preserves global filter params.
    * - Preserves the current `path`, but not the `hash`.
    */
-  navigateToQueryParam(key: string, value: string) {
+  navigateToQueryParam(key: string, value: string): void {
     const url = new URL(window.location.href);
     url.searchParams.set(key, value);
     window.history.pushState({}, "", url.href);
@@ -174,7 +174,7 @@ class Router {
    * - Preserves global filter params except "days" if set.
    * - Preserves the current `path` *and* `hash`.
    */
-  navigateToDatePreserveHash(startTimeMillis: number, endTimeMillis?: number) {
+  navigateToDatePreserveHash(startTimeMillis: number, endTimeMillis?: number): void {
     const url = new URL(window.location.href);
     url.searchParams.set(START_DATE_PARAM_NAME, String(startTimeMillis));
     if (endTimeMillis) {
@@ -194,13 +194,13 @@ class Router {
    * - Does not create a new browser history entry.
    * - Preserves global filter params.
    */
-  setQuery(query: Record<string, string>) {
+  setQuery(query: Record<string, string>): void {
     window.history.replaceState({}, "", getModifiedUrl({ query }));
   }
   /**
    * Replaces a single query param, preserving all other params.
    */
-  setQueryParam(key: string, value: any) {
+  setQueryParam(key: string, value: any): void {
     const url = new URL(window.location.href);
     if (value === undefined || value === null) {
       url.searchParams.delete(key);
@@ -210,95 +210,95 @@ class Router {
     window.history.replaceState({}, "", url.href);
   }
 
-  navigateHome(hash?: string) {
+  navigateHome(hash?: string): void {
     this.navigateTo("/" + (hash || ""));
   }
 
-  navigateToSetup() {
+  navigateToSetup(): void {
     this.navigateTo(Path.setupPath);
   }
 
-  navigateToWorkflows() {
+  navigateToWorkflows(): void {
     this.navigateTo(Path.workflowsPath);
   }
 
-  navigateToCode() {
+  navigateToCode(): void {
     this.navigateTo(Path.codePath);
   }
 
-  navigateToSettings() {
+  navigateToSettings(): void {
     this.navigateTo(Path.settingsPath);
   }
 
-  navigateToTargets() {
+  navigateToTargets(): void {
     this.navigateTo(Path.targetsPath);
   }
 
-  navigateToTrends() {
+  navigateToTrends(): void {
     this.navigateTo(Path.trendsPath);
   }
 
-  navigateToUsage() {
+  navigateToUsage(): void {
     this.navigateTo(Path.usagePath);
   }
 
-  navigateToExecutors() {
+  navigateToExecutors(): void {
     this.navigateTo(Path.executorsPath);
   }
 
-  navigateToTap() {
+  navigateToTap(): void {
     this.navigateTo(Path.tapPath);
   }
 
-  navigateToInvocation(invocationId: string) {
+  navigateToInvocation(invocationId: string): void {
     this.navigateTo(Path.invocationPath + invocationId);
   }
 
-  navigateToUserList(userListID: string) {
+  navigateToUserList(userListID: string): void {
     this.navigateTo(Path.settingsOrgUserListsPath + "/" + userListID);
   }
 
-  navigateToUserLists() {
+  navigateToUserLists(): void {
     this.navigateTo(Path.settingsOrgUserListsPath);
   }
 
-  getInvocationUrl(invocationId: string) {
+  getInvocationUrl(invocationId: string): string {
     return Path.invocationPath + invocationId;
   }
 
-  navigateToUserHistory(user: string) {
+  navigateToUserHistory(user: string): void {
     this.navigateTo(Path.userHistoryPath + user);
   }
 
-  navigateToHostHistory(host: string) {
+  navigateToHostHistory(host: string): void {
     this.navigateTo(Path.hostHistoryPath + host);
   }
 
-  getWorkflowHistoryUrl(repo: string) {
+  getWorkflowHistoryUrl(repo: string): string {
     return `${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}?role=CI_RUNNER`;
   }
 
-  getWorkflowActionHistoryUrl(repo: string, actionName: string) {
+  getWorkflowActionHistoryUrl(repo: string, actionName: string): string {
     return `${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}?role=CI_RUNNER&pattern=${actionName}`;
   }
 
-  navigateToRepoHistory(repo: string) {
+  navigateToRepoHistory(repo: string): void {
     this.navigateTo(`${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}`);
   }
 
-  navigateToBranchHistory(branch: string) {
+  navigateToBranchHistory(branch: string): void {
     this.navigateTo(Path.branchHistoryPath + branch);
   }
 
-  navigateToCommitHistory(commit: string) {
+  navigateToCommitHistory(commit: string): void {
     this.navigateTo(Path.commitHistoryPath + commit);
   }
 
-  navigateToTagHistory(tag: string) {
+  navigateToTagHistory(tag: string): void {
     this.navigateTo(Path.home + "?tag=" + tag);
   }
 
-  navigateToCreateOrg() {
+  navigateToCreateOrg(): void {
     if (!capabilities.createOrg) {
       window.open("https://buildbuddy.typeform.com/to/PFjD5A", "_blank");
       return;
@@ -306,36 +306,36 @@ class Router {
     this.navigateTo(Path.createOrgPath);
   }
 
-  getReviewUrl(owner: string, repo: string, pull: number, filePath?: string) {
+  getReviewUrl(owner: string, repo: string, pull: number, filePath?: string): string {
     return `${Path.reviewsPath}${owner}/${repo}/${pull}${filePath ? "/" + filePath : ""}`;
   }
 
-  updateParams(params: Record<string, string>) {
+  updateParams(params: Record<string, string>): void {
     const newUrl = getModifiedUrl({ query: params });
     window.history.pushState({ path: newUrl }, "", newUrl);
   }
 
-  replaceParams(params: Record<string, string>) {
+  replaceParams(params: Record<string, string>): void {
     const newUrl = getModifiedUrl({ query: params });
     this.replaceURL(newUrl);
   }
 
-  replaceURL(newUrl: string) {
+  replaceURL(newUrl: string): void {
     window.history.replaceState({ path: newUrl }, "", newUrl);
   }
 
-  getLastPathComponent(path: string, pathPrefix: string) {
+  getLastPathComponent(path: string, pathPrefix: string): string | null {
     if (!path.startsWith(pathPrefix)) {
       return null;
     }
     return decodeURIComponent(path.replace(pathPrefix, ""));
   }
 
-  getInvocationId(path: string) {
+  getInvocationId(path: string): string | null {
     return this.getLastPathComponent(path, Path.invocationPath);
   }
 
-  getInvocationIdsForCompare(path: string) {
+  getInvocationIdsForCompare(path: string): { a: string; b: string } | null {
     const idsComponent = this.getLastPathComponent(path, Path.comparePath);
     if (!idsComponent) {
       return null;
@@ -347,7 +347,12 @@ class Router {
     return { a, b };
   }
 
-  getActionDetailsForCompare(path: string) {
+  getActionDetailsForCompare(path: string): {
+    invocationA: string;
+    actionA: string;
+    invocationB: string;
+    actionB: string;
+  } | null {
     const idsComponent = this.getLastPathComponent(path, Path.compareActionsPath);
     if (!idsComponent) {
       return null;
@@ -384,15 +389,15 @@ class Router {
     };
   }
 
-  getHistoryUser(path: string) {
+  getHistoryUser(path: string): string | null {
     return this.getLastPathComponent(path, Path.userHistoryPath);
   }
 
-  getHistoryHost(path: string) {
+  getHistoryHost(path: string): string | null {
     return this.getLastPathComponent(path, Path.hostHistoryPath);
   }
 
-  getHistoryRepo(path: string) {
+  getHistoryRepo(path: string): string {
     let repoComponent = this.getLastPathComponent(path, Path.repoHistoryPath);
     if (repoComponent?.includes("/")) {
       return `https://github.com/${repoComponent}`;
@@ -400,15 +405,15 @@ class Router {
     return repoComponent ? atob(repoComponent) : "";
   }
 
-  getHistoryBranch(path: string) {
+  getHistoryBranch(path: string): string | null {
     return this.getLastPathComponent(path, Path.branchHistoryPath);
   }
 
-  getHistoryCommit(path: string) {
+  getHistoryCommit(path: string): string | null {
     return this.getLastPathComponent(path, Path.commitHistoryPath);
   }
 
-  isFiltering() {
+  isFiltering(): boolean {
     const url = new URL(window.location.href);
     for (const param of GLOBAL_FILTER_PARAM_NAMES) {
       if (url.searchParams.has(param)) return true;
@@ -416,7 +421,7 @@ class Router {
     return false;
   }
 
-  clearFilters() {
+  clearFilters(): void {
     const url = new URL(window.location.href);
     for (const param of GLOBAL_FILTER_PARAM_NAMES) {
       url.searchParams.delete(param);
@@ -424,27 +429,27 @@ class Router {
     this.replaceParams(Object.fromEntries(url.searchParams.entries()));
   }
 
-  canAccessExecutorsPage(user?: User) {
+  canAccessExecutorsPage(user?: User): boolean {
     return capabilities.executors && Boolean(user?.canCall("getExecutionNodes"));
   }
 
-  canAccessUsagePage(user?: User) {
+  canAccessUsagePage(user?: User): boolean {
     return capabilities.usage && Boolean(user?.canCall("getUsage"));
   }
 
-  canAccessWorkflowsPage() {
+  canAccessWorkflowsPage(): boolean {
     return capabilities.config.workflowsEnabled;
   }
 
-  canAccessOrgDetailsPage(user?: User) {
+  canAccessOrgDetailsPage(user?: User): boolean {
     return Boolean(user?.canCall("updateGroup"));
   }
 
-  canAccessOrgMembersPage(user?: User) {
+  canAccessOrgMembersPage(user?: User): boolean {
     return Boolean(user?.canCall("updateGroupUsers"));
   }
 
-  canCreateOrg(user?: User) {
+  canCreateOrg(user?: User): boolean {
     if (!user?.canCall("createGroup")) {
       return false;
     }
@@ -456,7 +461,7 @@ class Router {
     return user?.selectedGroup.developerOrgCreationEnabled;
   }
 
-  canAccessCodeSearchPage(user?: User) {
+  canAccessCodeSearchPage(user?: User): boolean {
     if (!user?.canCall("search")) {
       return false;
     }
@@ -464,26 +469,26 @@ class Router {
     return user?.selectedGroup.codeSearchEnabled;
   }
 
-  canAccessOrgGitHubLinkPage(user?: User) {
+  canAccessOrgGitHubLinkPage(user?: User): boolean {
     // GitHub linking does not call updateGroup, but the required permissions
     // are equivalent.
     return Boolean(user?.canCall("updateGroup"));
   }
 
-  canAccessOrgSecretsPage(user?: User) {
+  canAccessOrgSecretsPage(user?: User): boolean {
     return Boolean(user?.canCall("listSecrets"));
   }
 
-  canAccessAuditLogsPage(user?: User) {
+  canAccessAuditLogsPage(user?: User): boolean {
     return Boolean(user?.canCall("getAuditLogs"));
   }
 
-  getTab() {
+  getTab(): string {
     let tab = window.location.hash.split("@")[0];
     return tab == "#" ? "" : tab;
   }
 
-  getLineNumber() {
+  getLineNumber(): number | undefined {
     let hashParts = location.hash.split("@");
     if (hashParts.length > 1) {
       return parseInt(hashParts[1]);
@@ -491,11 +496,11 @@ class Router {
     return undefined;
   }
 
-  canAccessEncryptionPage(user?: User) {
+  canAccessEncryptionPage(user?: User): boolean {
     return Boolean(user?.canCall("getEncryptionConfig"));
   }
 
-  canAccessIpRulesPage(user?: User) {
+  canAccessIpRulesPage(user?: User): boolean {
     return Boolean(user?.canCall("getIPRules"));
   }
 
@@ -503,7 +508,7 @@ class Router {
    * Routes the user to a new page if they don't have the ability to access the
    * current page.
    */
-  rerouteIfNecessary(user?: User) {
+  rerouteIfNecessary(user?: User): void {
     const fallback = this.getFallback(user);
     if (fallback === null) return;
 
@@ -514,7 +519,7 @@ class Router {
     window.history.replaceState({}, "", newUrl);
   }
 
-  setUser(user?: User) {
+  setUser(user?: User): void {
     this.user = user;
     this.redirectIfNecessary();
     this.rerouteIfNecessary(user);
@@ -580,7 +585,7 @@ export function getRepoUrlPathParam(repo: string): string {
   return window.btoa(repo);
 }
 
-function getQueryString(params: Record<string, string>) {
+function getQueryString(params: Record<string, string>): string {
   return (
     new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([_, value]) => Boolean(value))))
       .toString()
@@ -589,7 +594,7 @@ function getQueryString(params: Record<string, string>) {
   );
 }
 
-function getModifiedUrl({ query, path }: { query?: Record<string, string>; path?: string }) {
+function getModifiedUrl({ query, path }: { query?: Record<string, string>; path?: string }): string {
   const queryString = query ? getQueryString(query) : window.location.search;
   return (
     window.location.protocol +
@@ -654,7 +659,7 @@ function getMatchedPath(urlPath: string): string | null {
   return curMatch;
 }
 
-function getUnavailableMessage(matchedPath: string) {
+function getUnavailableMessage(matchedPath: string): string {
   switch (matchedPath) {
     case Path.workflowsPath:
     case Path.codePath:
@@ -683,4 +688,6 @@ function originRelativeHref(): string {
   return window.location.href.substring(window.location.origin.length);
 }
 
-export default new Router();
+const router: Router = new Router();
+
+export default router;

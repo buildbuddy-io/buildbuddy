@@ -173,7 +173,7 @@ function limitRows(rows: RowData[]): RowData[] {
   return rows.slice(-ROW_LIMIT);
 }
 
-export function normalizeSpace(text: string) {
+export function normalizeSpace(text: string): string {
   // Fast path for text not containing tabs.
   if (!text.includes("\t")) return text;
 
@@ -214,7 +214,7 @@ export function normalizeSpace(text: string) {
   return out;
 }
 
-export function toPlainText(text: string) {
+export function toPlainText(text: string): string {
   return normalizeSpace(stripAnsiCodes(text));
 }
 
@@ -382,4 +382,4 @@ function computeRowsImpl(
  * so this memoization prevents quadratic complexity for very long lines that
  * need to be wrapped into several rows.
  */
-export const computeRows = memoizeOne(computeRowsImpl);
+export const computeRows: typeof computeRowsImpl = memoizeOne(computeRowsImpl);

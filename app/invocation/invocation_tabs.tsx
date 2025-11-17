@@ -47,7 +47,7 @@ export function getActiveTab({ tab, role, denseMode }: TabsContext): TabId {
 }
 
 export default class InvocationTabsComponent extends React.Component<InvocationTabsProps> {
-  private renderTab(id: TabId, { label, href }: { label: string; href?: string }) {
+  private renderTab(id: TabId, { label, href }: { label: string; href?: string }): JSX.Element {
     return (
       <a href={href || `#${id}`} className={`tab ${getActiveTab(this.props) === id ? "selected" : ""}`}>
         {label}
@@ -55,7 +55,7 @@ export default class InvocationTabsComponent extends React.Component<InvocationT
     );
   }
 
-  render() {
+  render(): JSX.Element {
     const isBazelInvocation = this.props.role !== CI_RUNNER_ROLE && this.props.role !== HOSTED_BAZEL_ROLE;
 
     return (

@@ -55,56 +55,56 @@ function isZeroTimestamp(ts: google_ts.protobuf.ITimestamp) {
 export function subtractTimestamp(
   timestampA?: google_ts.protobuf.ITimestamp | null,
   timestampB?: google_ts.protobuf.ITimestamp | null
-) {
+): number {
   if (!timestampA || !timestampB || isZeroTimestamp(timestampA) || isZeroTimestamp(timestampB)) return NaN;
   let microsA = +(timestampA.seconds ?? 0) * 1000000 + +(timestampA.nanos ?? 0) / 1000;
   let microsB = +(timestampB.seconds ?? 0) * 1000000 + +(timestampB.nanos ?? 0) / 1000;
   return microsA - microsB;
 }
 
-export function totalDuration(execution: execution_stats.IExecution) {
+export function totalDuration(execution: execution_stats.IExecution): number {
   return subtractTimestamp(
     execution?.executedActionMetadata?.workerCompletedTimestamp,
     execution?.executedActionMetadata?.queuedTimestamp
   );
 }
 
-export function workerDuration(execution: execution_stats.IExecution) {
+export function workerDuration(execution: execution_stats.IExecution): number {
   return subtractTimestamp(
     execution?.executedActionMetadata?.workerCompletedTimestamp,
     execution?.executedActionMetadata?.workerStartTimestamp
   );
 }
 
-export function queuedDuration(execution: execution_stats.IExecution) {
+export function queuedDuration(execution: execution_stats.IExecution): number {
   return subtractTimestamp(
     execution?.executedActionMetadata?.workerStartTimestamp,
     execution?.executedActionMetadata?.queuedTimestamp
   );
 }
 
-export function downloadDuration(execution: execution_stats.IExecution) {
+export function downloadDuration(execution: execution_stats.IExecution): number {
   return subtractTimestamp(
     execution?.executedActionMetadata?.inputFetchCompletedTimestamp,
     execution?.executedActionMetadata?.inputFetchStartTimestamp
   );
 }
 
-export function executionDuration(execution: execution_stats.IExecution) {
+export function executionDuration(execution: execution_stats.IExecution): number {
   return subtractTimestamp(
     execution?.executedActionMetadata?.executionCompletedTimestamp,
     execution?.executedActionMetadata?.executionStartTimestamp
   );
 }
 
-export function uploadDuration(execution: execution_stats.IExecution) {
+export function uploadDuration(execution: execution_stats.IExecution): number {
   return subtractTimestamp(
     execution?.executedActionMetadata?.outputUploadCompletedTimestamp,
     execution?.executedActionMetadata?.outputUploadStartTimestamp
   );
 }
 
-export function getActionPageLink(invocationId: string, execution: execution_stats.Execution) {
+export function getActionPageLink(invocationId: string, execution: execution_stats.Execution): string {
   const search = new URLSearchParams();
   search.set("executionId", execution.executionId);
   if (execution.actionDigest) {

@@ -16,7 +16,7 @@ interface Props {
 }
 
 interface State {
-  lcov: any[];
+  lcov: any[] | null;
 }
 
 export default class TargetTestCoverageCardComponent extends React.Component<Props> {
@@ -24,17 +24,17 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
     lcov: [],
   };
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetchTestCoverage();
   }
 
-  componentDidUpdate(prevProps: Props) {
+  componentDidUpdate(prevProps: Props): void {
     if (this.props.buildEvent !== prevProps.buildEvent) {
       this.fetchTestCoverage();
     }
   }
 
-  fetchTestCoverage() {
+  fetchTestCoverage(): void {
     let testCoverageUrl = this.props.buildEvent?.testResult?.testActionOutput.find(
       (log: any) => log.name == "test.lcov"
     )?.uri;
@@ -67,7 +67,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
       });
   }
 
-  render() {
+  render(): JSX.Element {
     let testCoverageUrl = this.props.buildEvent?.testResult?.testActionOutput.find(
       (log: any) => log.name == "test.lcov"
     )?.uri;

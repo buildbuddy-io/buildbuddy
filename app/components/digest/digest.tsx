@@ -1,6 +1,6 @@
 import Long from "long";
 import React from "react";
-import format from "../../format/format";
+import { bytes, colorHash } from "../../format/format";
 
 export type Digest = {
   hash?: string;
@@ -15,7 +15,8 @@ export type DigestProps = {
   sizeWidth?: string;
 };
 
-export const DigestComponent = React.forwardRef((props: DigestProps, ref: React.Ref<HTMLInputElement>) => {
+export const DigestComponent: React.ForwardRefExoticComponent<DigestProps & React.RefAttributes<HTMLInputElement>> =
+  React.forwardRef<HTMLInputElement, DigestProps>((props: DigestProps, ref: React.Ref<HTMLInputElement>) => {
   return (
     <span
       className={`digest-component ${
@@ -23,26 +24,26 @@ export const DigestComponent = React.forwardRef((props: DigestProps, ref: React.
       } ${props.expanded ? "expanded" : ""}`}
       ref={ref}>
       <span
-        className={`digest-component-hash ${props.hashWidth !== undefined ? "fixed-width" : ""}`}
-        title={props.digest.hash}
-        style={{
-          backgroundColor: format.colorHash(props.digest.hash || ""),
-          ...(props.hashWidth !== undefined && { width: props.hashWidth }),
-        }}>
+          className={`digest-component-hash ${props.hashWidth !== undefined ? "fixed-width" : ""}`}
+          title={props.digest.hash}
+          style={{
+          backgroundColor: colorHash(props.digest.hash || ""),
+            ...(props.hashWidth !== undefined && { width: props.hashWidth }),
+          }}>
         {props.digest.hash}
       </span>
       {props.digest.sizeBytes !== null && props.digest.sizeBytes !== undefined && (
         <span
           title={`${props.digest.sizeBytes}`}
-          className={`digest-component-size ${props.sizeWidth !== undefined ? "fixed-width" : ""}`}
-          style={{
-            ...(props.sizeWidth !== undefined && { width: props.sizeWidth }),
-          }}>
-          {format.bytes(props.digest.sizeBytes)}
+            className={`digest-component-size ${props.sizeWidth !== undefined ? "fixed-width" : ""}`}
+            style={{
+              ...(props.sizeWidth !== undefined && { width: props.sizeWidth }),
+            }}>
+          {bytes(props.digest.sizeBytes)}
         </span>
       )}
     </span>
   );
-});
+  });
 
 export default DigestComponent;

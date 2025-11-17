@@ -8,26 +8,26 @@ import { durationToMillis } from "../util/proto";
  * Formats a fractional value like 0.123 as a percentage like "12".
  * This does not include the "%" symbol.
  */
-export function percent(fraction: number | Long) {
+export function percent(fraction: number | Long): string {
   if (!fraction) return "0";
   return `${(+fraction * 100).toFixed(0)}`;
 }
 
-export function durationProto(duration: google_duration.protobuf.IDuration) {
+export function durationProto(duration: google_duration.protobuf.IDuration): string {
   return durationMillis(durationToMillis(duration));
 }
 
-export function durationUsec(duration: number | Long) {
+export function durationUsec(duration: number | Long): string {
   let seconds = +duration / 1000000;
   return durationSec(seconds);
 }
 
-export function durationMillis(duration: number | Long) {
+export function durationMillis(duration: number | Long): string {
   let seconds = +duration / 1000;
   return durationSec(seconds);
 }
 
-export function durationSec(duration: number | Long) {
+export function durationSec(duration: number | Long): string {
   let seconds = +duration;
   if (!seconds || seconds < 0) {
     return "0s";
@@ -69,7 +69,7 @@ export function durationSec(duration: number | Long) {
   return `${(milliseconds * 1000).toPrecision(3)}µs`;
 }
 
-export function roundedDurationSec(duration: number | Long) {
+export function roundedDurationSec(duration: number | Long): string {
   let seconds = +duration;
   if (!seconds || seconds < 0) {
     return "0s";
@@ -95,7 +95,7 @@ export function roundedDurationSec(duration: number | Long) {
   return `${Math.round(seconds)} seconds`;
 }
 
-export function cpuSavingsSec(duration: number | Long) {
+export function cpuSavingsSec(duration: number | Long): string {
   let seconds = +duration;
   if (!seconds || seconds < 0) {
     return "0 CPU-seconds";
@@ -122,11 +122,11 @@ export function cpuSavingsSec(duration: number | Long) {
   return `${seconds.toPrecision(3)} CPU-seconds`;
 }
 
-export function compactDurationMillis(duration: number | Long) {
+export function compactDurationMillis(duration: number | Long): string {
   return compactDurationSec(Number(duration) / 1000);
 }
 
-export function compactDurationSec(duration: number | Long) {
+export function compactDurationSec(duration: number | Long): string {
   let seconds = +duration;
   if (!seconds || seconds < 0) {
     return "0s";
@@ -168,7 +168,7 @@ function truncateDecimalZeroes(numString: string): string {
   return numString.replace(/\.(.+?)0+$/, ".$1").replace(/\.0+$/, "");
 }
 
-export function bytes(bytes: number | Long) {
+export function bytes(bytes: number | Long): string {
   bytes = Number(bytes);
   const units = ["B", "KB", "MB", "GB", "TB", "PB"];
   for (const [i, unit] of units.entries()) {
@@ -179,7 +179,7 @@ export function bytes(bytes: number | Long) {
   throw new Error("unreachable code");
 }
 
-export function bytesIEC(bytes: number | Long) {
+export function bytesIEC(bytes: number | Long): string {
   bytes = Number(bytes);
   const units = ["B", "KB", "MB", "GB", "TB", "PB"];
   for (const [i, unit] of units.entries()) {
@@ -190,7 +190,7 @@ export function bytesIEC(bytes: number | Long) {
   throw new Error("unreachable code");
 }
 
-export function bitsPerSecond(bitsPerSecond: number | Long) {
+export function bitsPerSecond(bitsPerSecond: number | Long): string {
   bitsPerSecond = Number(bitsPerSecond);
   if (bitsPerSecond < 1e3) {
     return bitsPerSecond + "bps";
@@ -224,12 +224,12 @@ export function count(value: number | Long): string {
   return truncateDecimalZeroes((value / 1e9).toPrecision(4)) + "B";
 }
 
-export function sentenceCase(string: string) {
+export function sentenceCase(string: string): string {
   if (!string) return "";
   return string[0].toUpperCase() + string.slice(1);
 }
 
-export function truncateList(list: string[]) {
+export function truncateList(list: string[]): string {
   if (list.length > 3) {
     return `${list.slice(0, 3).join(", ")} and ${list.length - 3} more`;
   }
@@ -239,15 +239,15 @@ export function truncateList(list: string[]) {
 /** Unix epoch expressed in local time. */
 export const LOCAL_EPOCH: Date = moment(0).toDate();
 
-export function formatTimestampUsec(timestamp: number | Long) {
+export function formatTimestampUsec(timestamp: number | Long): string {
   return formatTimestampMillis(+timestamp / 1000);
 }
 
-export function formatTimestampMillis(timestamp: number | Long) {
+export function formatTimestampMillis(timestamp: number | Long): string {
   return `${moment(+timestamp).format("MMMM Do, YYYY")} at ${moment(+timestamp).format("h:mm:ss a")}`;
 }
 
-export function formatTimestamp(timestamp: { seconds?: number | Long; nanos?: number | Long }) {
+export function formatTimestamp(timestamp: { seconds?: number | Long; nanos?: number | Long }): string {
   return `${moment(+(timestamp.seconds || 0) * 1000).format("MMMM Do, YYYY")} at ${moment(
     +(timestamp.seconds || 0) * 1000
   ).format("h:mm:ss")}.${Math.floor(+(timestamp.nanos || 0) / 1_000_000)
@@ -259,7 +259,7 @@ export function formatDate(date: Date): string {
   return formatTimestampMillis(date.getTime());
 }
 
-export function formatDateFromUsec(timestamp: number | Long, { compact = false } = {}) {
+export function formatDateFromUsec(timestamp: number | Long, { compact = false }: { compact?: boolean } = {}): string {
   const format = compact ? "MMM D" : "MMMM Do";
   return `${moment(+timestamp / 1000).format(format)}`;
 }
@@ -280,7 +280,11 @@ function usingSubDayTimeRange(startDate: Date, endDate?: Date): boolean {
   return +endCopy !== +endDate;
 }
 
-export function formatDateRange(startDate: Date, endDate?: Date, { now = new Date() } = {}) {
+export function formatDateRange(
+  startDate: Date,
+  endDate?: Date,
+  { now = new Date() }: { now?: Date } = {}
+): string {
   let startFormat, endFormat;
 
   // Time range isn't just midnight-midnight--maybe 8:30-12:30 or something like that.
@@ -358,7 +362,7 @@ export function relativeTimeSeconds(timestamp: { seconds?: number | Long; nanos?
   return `${seconds} second${seconds === 1 ? "" : "s"} ago`;
 }
 
-export function formatGitUrl(url: string) {
+export function formatGitUrl(url: string): string {
   return url
     ?.replace("https://", "")
     .replace("ssh://", "")
@@ -368,7 +372,7 @@ export function formatGitUrl(url: string) {
     .replace("github.com:", "");
 }
 
-export function formatCommitHash(commit: string) {
+export function formatCommitHash(commit: string): string {
   return commit?.substring(0, 6);
 }
 
@@ -386,18 +390,18 @@ export function formatRole(role: string): string | null {
   return null;
 }
 
-export function formatWithCommas(num: number | Long | Number | undefined, options?: Intl.NumberFormatOptions) {
+export function formatWithCommas(num: number | Long | Number | undefined, options?: Intl.NumberFormatOptions): string {
   if (num === undefined || num === null) {
     return "";
   }
   return (+num).toLocaleString("en-US", options);
 }
 
-export function differenceInCalendarDays(start: Date, end: Date) {
+export function differenceInCalendarDays(start: Date, end: Date): number {
   return moment(end).diff(start, "days");
 }
 
-export function colorHash(input: string) {
+export function colorHash(input: string): string {
   let num = 0;
   for (var i = 0; i < input.length; i++) {
     num = input.charCodeAt(i) + ((num << 5) - num);
@@ -405,14 +409,43 @@ export function colorHash(input: string) {
   return `hsl(${(num % 360000) / 1000}, 50%, 80%)`;
 }
 
-export function enumLabel(e: string) {
+export function enumLabel(e: string): string {
   if (!e) {
     return "";
   }
   return e.substring(0, 1).toUpperCase() + e.substring(1).replaceAll("_", " ").toLowerCase();
 }
 
-export default {
+type Formatters = {
+  compactDurationSec: typeof compactDurationSec;
+  durationSec: typeof durationSec;
+  durationProto: typeof durationProto;
+  roundedDurationSec: typeof roundedDurationSec;
+  durationMillis: typeof durationMillis;
+  durationUsec: typeof durationUsec;
+  sentenceCase: typeof sentenceCase;
+  percent: typeof percent;
+  bytes: typeof bytes;
+  bytesIEC: typeof bytesIEC;
+  bitsPerSecond: typeof bitsPerSecond;
+  count: typeof count;
+  truncateList: typeof truncateList;
+  formatDate: typeof formatDate;
+  formatTimestampUsec: typeof formatTimestampUsec;
+  formatTimestampMillis: typeof formatTimestampMillis;
+  formatTimestamp: typeof formatTimestamp;
+  formatGitUrl: typeof formatGitUrl;
+  formatCommitHash: typeof formatCommitHash;
+  formatRole: typeof formatRole;
+  formatWithCommas: typeof formatWithCommas;
+  formatDateRange: typeof formatDateRange;
+  colorHash: typeof colorHash;
+  enumLabel: typeof enumLabel;
+  formatDateFromUsec: typeof formatDateFromUsec;
+  relativeTimeSeconds: typeof relativeTimeSeconds;
+};
+
+const formatters: Formatters = {
   compactDurationSec,
   durationSec,
   durationProto,
@@ -440,3 +473,5 @@ export default {
   formatDateFromUsec,
   relativeTimeSeconds,
 };
+
+export default formatters;

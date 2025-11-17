@@ -31,7 +31,7 @@ export default class InvocationLogsModel {
 
   constructor(private invocationId: string) {}
 
-  startFetching() {
+  startFetching(): void {
     this.stopFetching();
     if (capabilities.config.streamingHttpEnabled && capabilities.config.invocationLogStreamingEnabled) {
       this.streamLogs();
@@ -40,7 +40,7 @@ export default class InvocationLogsModel {
     }
   }
 
-  stopFetching() {
+  stopFetching(): void {
     if (this.pollTailTimeout !== undefined) {
       window.clearTimeout(this.pollTailTimeout);
     }

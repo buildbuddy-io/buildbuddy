@@ -9,7 +9,7 @@ interface SnippetProps {
 }
 
 class SnippetComponent extends React.Component<SnippetProps> {
-  getFileAndLineURL(lineNumber: number) {
+  getFileAndLineURL(lineNumber: number): string {
     let ownerRepo = this.props.result.owner + "/" + this.props.result.repo;
     let filename = this.props.result.filename;
     let parsedQuery = this.props.highlight.source;
@@ -17,7 +17,7 @@ class SnippetComponent extends React.Component<SnippetProps> {
     return `/code/${ownerRepo}/${filename}?commit=${sha}&pq=${parsedQuery}#L${lineNumber}`;
   }
 
-  renderLine(line: string) {
+  renderLine(line: string): JSX.Element {
     let lineNumber = 1;
     let lineNumberMatch = line.match(/\d+:/g);
     if (lineNumberMatch) {
@@ -53,7 +53,7 @@ class SnippetComponent extends React.Component<SnippetProps> {
     );
   }
 
-  render() {
+  render(): React.ReactNode {
     const lines = this.props.snippet.lines.split("\n");
     return <div className="snippet">{lines.map((line) => this.renderLine(line))}</div>;
   }
@@ -73,7 +73,7 @@ export default class ResultComponent extends React.Component<ResultProps, Result
     limit: 3,
   };
 
-  getFileOnlyURL() {
+  getFileOnlyURL(): string {
     let ownerRepo = this.props.result.owner + "/" + this.props.result.repo;
     let filename = this.props.result.filename;
     let parsedQuery = this.props.highlight.source;
@@ -81,11 +81,11 @@ export default class ResultComponent extends React.Component<ResultProps, Result
     return `/code/${ownerRepo}/${filename}?commit=${sha}&pq=${parsedQuery}`;
   }
 
-  handleMoreClicked() {
+  handleMoreClicked(): void {
     this.setState({ limit: Number.MAX_SAFE_INTEGER });
   }
 
-  render() {
+  render(): React.ReactNode {
     let additionalMatchCount = this.props.result.snippets.length - this.state.limit;
     return (
       <div className="result">

@@ -52,11 +52,11 @@ export default class UserGitHubLink extends React.Component<Props, State> {
 
   private accountFetch?: CancelablePromise;
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetchGitHubAccount();
   }
 
-  private fetchGitHubAccount() {
+  private fetchGitHubAccount(): void {
     this.accountFetch?.cancel();
 
     if (!this.props.user.githubLinked) {
@@ -80,13 +80,13 @@ export default class UserGitHubLink extends React.Component<Props, State> {
       .finally(() => this.setState({ accountLoading: false }));
   }
 
-  private onRequestCloseDeleteModal() {
+  private onRequestCloseDeleteModal(): void {
     this.setState({ deleteModalVisible: false });
   }
-  private onClickUnlinkButton() {
+  private onClickUnlinkButton(): void {
     this.setState({ deleteModalVisible: true });
   }
-  private onConfirmDelete() {
+  private onConfirmDelete(): void {
     this.setState({ isDeleting: true });
     rpcService.service
       .unlinkUserGitHubAccount({})
@@ -98,7 +98,7 @@ export default class UserGitHubLink extends React.Component<Props, State> {
       .catch((e: any) => errorService.handleError(e))
       .finally(() => this.setState({ isDeleting: false }));
   }
-  private refreshUser() {
+  private refreshUser(): void {
     this.setState({ isRefreshingUser: true });
     authService
       .refreshUser()
@@ -106,7 +106,7 @@ export default class UserGitHubLink extends React.Component<Props, State> {
       .finally(() => this.setState({ isRefreshingUser: false }));
   }
 
-  render() {
+  render(): JSX.Element {
     if (this.state.isRefreshingUser) return <div className="loading" />;
 
     return (

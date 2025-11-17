@@ -10,6 +10,6 @@ export interface ClientXY {
 /**
  * Returns whether a `DOMRect` contains a given point.
  */
-export function domRectContains(rect: DOMRect, x: number, y: number) {
+export function domRectContains(rect: DOMRect, x: number, y: number): boolean {
   return x >= rect.left && x < rect.left + rect.width && y >= rect.top && y < rect.top + rect.height;
 }

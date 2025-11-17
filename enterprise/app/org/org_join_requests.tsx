@@ -21,17 +21,17 @@ const { ADD, REMOVE } = grp.UpdateGroupUsersRequest.Update.MembershipAction;
 export default class OrgJoinRequests extends React.Component<OrgJoinRequestsComponentProps, State> {
   state: State = { isLoading: true };
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.getJoinOrgRequests();
   }
 
-  componentDidUpdate(prevProps: OrgJoinRequestsComponentProps) {
+  componentDidUpdate(prevProps: OrgJoinRequestsComponentProps): void {
     if (prevProps.user.selectedGroup.id !== this.props.user.selectedGroup.id) {
       const _ = this.getJoinOrgRequests();
     }
   }
 
-  private async getJoinOrgRequests() {
+  private async getJoinOrgRequests(): Promise<void> {
     const initialGroupId = this.props.user.selectedGroup.id;
 
     this.setState({ users: null, isLoading: true });
@@ -49,7 +49,7 @@ export default class OrgJoinRequests extends React.Component<OrgJoinRequestsComp
   private async applyMembershipAction(
     userId: user_id.IUserId,
     membershipAction: grp.UpdateGroupUsersRequest.Update.MembershipAction
-  ) {
+  ): Promise<void> {
     const initialGroupId = this.props.user.selectedGroup.id;
 
     this.setState({ isLoading: true });
@@ -69,7 +69,7 @@ export default class OrgJoinRequests extends React.Component<OrgJoinRequestsComp
     await this.getJoinOrgRequests();
   }
 
-  render() {
+  render(): React.ReactNode {
     if (!this.state.users?.length) return <></>;
 
     return (

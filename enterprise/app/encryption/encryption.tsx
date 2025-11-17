@@ -61,11 +61,11 @@ export default class EncryptionComponent extends React.Component<{}, State> {
     awsKeyARN: "",
   };
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetchConfig();
   }
 
-  private async fetchConfig() {
+  private async fetchConfig(): Promise<void> {
     try {
       const response = await rpc_service.service.getEncryptionConfig(encryption.GetEncryptionConfigRequest.create());
       this.setState({
@@ -78,15 +78,15 @@ export default class EncryptionComponent extends React.Component<{}, State> {
     }
   }
 
-  private onCloseDisableModal() {
+  private onCloseDisableModal(): void {
     this.setState({ isDisableModalOpen: false });
   }
 
-  private onClickDisable() {
+  private onClickDisable(): void {
     this.setState({ isDisableModalOpen: true });
   }
 
-  private async onClickConfirmedDisable() {
+  private async onClickConfirmedDisable(): Promise<void> {
     this.setState({ isDisablingInProgress: true, disablingError: null });
     try {
       await rpc_service.service.setEncryptionConfig(
@@ -103,7 +103,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
     }
   }
 
-  private async onClickEnable() {
+  private async onClickEnable(): Promise<void> {
     this.setState({ isEnablingInProgress: true, enablingError: null });
     let req = encryption.SetEncryptionConfigRequest.create({
       enabled: true,
@@ -145,11 +145,11 @@ export default class EncryptionComponent extends React.Component<{}, State> {
     }
   }
 
-  private onSelectKMS(kms: encryption.KMS) {
+  private onSelectKMS(kms: encryption.KMS): void {
     this.setState({ selectedKMS: kms });
   }
 
-  private kmsName(kms: encryption.KMS) {
+  private kmsName(kms: encryption.KMS): string {
     switch (kms) {
       case encryption.KMS.LOCAL_INSECURE:
         return "Local KMS";
@@ -162,31 +162,31 @@ export default class EncryptionComponent extends React.Component<{}, State> {
     }
   }
 
-  private onLocalIDChange(event: React.ChangeEvent<HTMLInputElement>) {
+  private onLocalIDChange(event: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({ localKeyID: event.target.value });
   }
 
-  private onGCPProjectChange(event: React.ChangeEvent<HTMLInputElement>) {
+  private onGCPProjectChange(event: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({ gcpProject: event.target.value });
   }
 
-  private onGCPKeyRingChange(event: React.ChangeEvent<HTMLInputElement>) {
+  private onGCPKeyRingChange(event: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({ gcpKeyRing: event.target.value });
   }
 
-  private onGCPKeyChange(event: React.ChangeEvent<HTMLInputElement>) {
+  private onGCPKeyChange(event: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({ gcpKey: event.target.value });
   }
 
-  private onGCPLocationChange(event: React.ChangeEvent<HTMLInputElement>) {
+  private onGCPLocationChange(event: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({ gcpLocation: event.target.value });
   }
 
-  private onAWSARNChange(event: React.ChangeEvent<HTMLInputElement>) {
+  private onAWSARNChange(event: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({ awsKeyARN: event.target.value });
   }
 
-  private renderKMSFields(kms: encryption.KMS) {
+  private renderKMSFields(kms: encryption.KMS): React.ReactNode {
     switch (kms) {
       case encryption.KMS.LOCAL_INSECURE:
         return (
@@ -300,7 +300,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
     }
   }
 
-  private renderKMSTabs(options: encryption.KMS[], selected: encryption.KMS) {
+  private renderKMSTabs(options: encryption.KMS[], selected: encryption.KMS): React.ReactNode {
     return (
       <div className="kms-tabs">
         {options.map((kms, idx) => (
@@ -314,7 +314,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
     );
   }
 
-  render() {
+  render(): React.ReactNode {
     return (
       <>
         {this.state.encryptionEnabled && (

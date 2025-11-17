@@ -3,7 +3,7 @@ import React from "react";
 import capabilities from "../capabilities/capabilities";
 
 export default class FooterComponent extends React.Component {
-  render() {
+  render(): React.ReactNode {
     return (
       <div className="footer">
         <span>&copy; {new Date().getFullYear()} Iteration, Inc.</span>

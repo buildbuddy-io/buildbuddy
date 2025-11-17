@@ -20,15 +20,15 @@ export default class ScorecardCardComponent extends React.Component<Props, State
     resultsLimit: INITIAL_RESULTS_LIMIT,
   };
 
-  getActionUrl(digestHash: string) {
+  getActionUrl(digestHash: string): string {
     return `/invocation/${this.props.model.getInvocationId()}?actionDigest=${digestHash}#action`;
   }
 
-  onClickShowAll() {
+  onClickShowAll(): void {
     this.setState({ resultsLimit: null });
   }
 
-  render() {
+  render(): JSX.Element | null {
     if (!this.props.model.scoreCard) return null;
 
     const groups = groupResultsByTargetId(this.props.model.scoreCard.misses);
@@ -103,7 +103,7 @@ function limitResults(groups: ResultGroup[], limit: number | null): ResultGroup[
   if (limit === null) {
     return groups;
   }
-  const limitedGroups = [];
+  const limitedGroups: ResultGroup[] = [];
   let remaining = limit;
   for (let group of groups) {
     if (remaining === 0) break;

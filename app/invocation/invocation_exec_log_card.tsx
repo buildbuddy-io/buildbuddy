@@ -47,11 +47,11 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
 
   timeoutRef?: number;
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetchExecution();
   }
 
-  componentDidUpdate(prevProps: Props) {
+  componentDidUpdate(prevProps: Props): void {
     const invocationIdChanged = this.props.model.getInvocationId() !== prevProps.model.getInvocationId();
     const invocationStatusChanged =
       this.props.model.invocation.invocationStatus !== prevProps.model.invocation.invocationStatus;
@@ -63,11 +63,11 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     }
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     clearTimeout(this.timeoutRef);
   }
 
-  fetchExecution() {
+  fetchExecution(): void {
     let request = new execution_stats.GetExecutionRequest();
     request.executionLookup = new execution_stats.ExecutionLookup();
     request.executionLookup.invocationId = this.props.model.getInvocationId();
@@ -87,7 +87,7 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
       .finally(() => this.setState({ loading: false }));
   }
 
-  fetchUpdatedProgress() {
+  fetchUpdatedProgress(): void {
     clearTimeout(this.timeoutRef);
 
     // Refetch execution data in 3 seconds to update status.
@@ -165,7 +165,7 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     }
   }
 
-  handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+  handleInputChange(event: React.ChangeEvent<HTMLInputElement>): void {
     const target = event.target;
     const name = target.name;
     this.setState({
@@ -173,27 +173,27 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     } as Record<keyof State, any>);
   }
 
-  handleSortChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleSortChange(event: React.ChangeEvent<HTMLSelectElement>): void {
     this.setState({
       sort: event.target.value,
     });
   }
 
-  handleStatusFilterChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleStatusFilterChange(event: React.ChangeEvent<HTMLSelectElement>): void {
     this.setState({
       statusFilter: event.target.value,
     });
   }
 
-  handleMoreClicked() {
+  handleMoreClicked(): void {
     this.setState({ limit: this.state.limit + 100 });
   }
 
-  handleAllClicked() {
+  handleAllClicked(): void {
     this.setState({ limit: Number.MAX_SAFE_INTEGER });
   }
 
-  render() {
+  render(): JSX.Element {
     if (this.state.loading) {
       return <div className="loading loading-slim invocation-tab-loading" />;
     }

@@ -16,7 +16,7 @@ export default class CodeEmptyStateComponent extends React.Component<{}, State> 
     loading: false,
   };
 
-  componentDidMount() {
+  componentDidMount(): void {
     const request = new invocation.GetInvocationStatRequest({
       aggregationType: invocation.AggType.REPO_URL_AGGREGATION_TYPE,
     });
@@ -45,7 +45,7 @@ export default class CodeEmptyStateComponent extends React.Component<{}, State> 
     return;
   }
 
-  render() {
+  render(): JSX.Element {
     let recentRepos = new Set<string>();
     this.state.reposWithStats.forEach((r) => recentRepos.add(r));
     this.state.linkedRepos.forEach((r) => recentRepos.add(r));

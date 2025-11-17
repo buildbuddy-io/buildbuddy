@@ -24,7 +24,7 @@ interface Props {
 }
 
 export default class InvocationExecutionTable extends React.Component<Props> {
-  render() {
+  render(): JSX.Element {
     return (
       <div className="invocation-execution-table">
         {this.props.executions.map((execution, index) => {
@@ -97,7 +97,7 @@ export default class InvocationExecutionTable extends React.Component<Props> {
   }
 }
 
-function renderExecutionLabel(execution: execution_stats.Execution) {
+function renderExecutionLabel(execution: execution_stats.Execution): JSX.Element | null {
   const nodes = [
     execution.targetLabel && <span className="target-label">{execution.targetLabel}</span>,
     execution.actionMnemonic && <span className="action-mnemonic">{execution.actionMnemonic}</span>,
@@ -112,7 +112,7 @@ function renderExecutionLabel(execution: execution_stats.Execution) {
   );
 }
 
-function formatPrimaryOutput(path: string) {
+function formatPrimaryOutput(path: string): string {
   const segments = path.split("/").filter(Boolean);
   if (segments.length <= 2) {
     return path;

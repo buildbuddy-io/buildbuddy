@@ -75,18 +75,18 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   private updateFormRef = React.createRef<HTMLFormElement>();
   private deleteButtonRef = React.createRef<HTMLButtonElement>();
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetchApiKeys();
   }
 
-  componentDidUpdate(prevProps: ApiKeysComponentProps) {
+  componentDidUpdate(prevProps: ApiKeysComponentProps): void {
     if (prevProps.user !== this.props.user) {
       this.setState(INITIAL_STATE);
       const _ = this.fetchApiKeys();
     }
   }
 
-  private async fetchApiKeys() {
+  private async fetchApiKeys(): Promise<void> {
     if (!this.props.user) return;
 
     try {
@@ -130,7 +130,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
   // Creation modal
 
-  private async onClickCreateNew() {
+  private async onClickCreateNew(): Promise<void> {
     this.setState({
       createForm: {
         isOpen: true,
@@ -144,10 +144,10 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       this.createFormRef.current?.querySelector("input")?.focus();
     });
   }
-  private async onCloseCreateForm() {
+  private async onCloseCreateForm(): Promise<void> {
     this.setState({ createForm: newFormState(api_key.CreateApiKeyRequest.create()) });
   }
-  private onChangeCreateForm(name: string, value: any) {
+  private onChangeCreateForm(name: string, value: any): void {
     this.setState({
       createForm: {
         ...this.state.createForm,
@@ -155,7 +155,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       },
     });
   }
-  private async onSubmitCreateNewForm(e: React.FormEvent) {
+  private async onSubmitCreateNewForm(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     if (!this.props.user) return;
 
@@ -177,7 +177,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
   // Update modal
 
-  private async onClickUpdate(apiKey: api_key.ApiKey) {
+  private async onClickUpdate(apiKey: api_key.ApiKey): Promise<void> {
     this.setState({
       updateForm: {
         isOpen: true,
@@ -194,10 +194,10 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       this.updateFormRef.current?.querySelector("input")?.focus();
     });
   }
-  private async onCloseUpdateForm() {
+  private async onCloseUpdateForm(): Promise<void> {
     this.setState({ updateForm: newFormState(api_key.UpdateApiKeyRequest.create()) });
   }
-  private onChangeUpdateForm(name: string, value: any) {
+  private onChangeUpdateForm(name: string, value: any): void {
     this.setState({
       updateForm: {
         ...this.state.updateForm,
@@ -205,7 +205,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       },
     });
   }
-  private async onSubmitUpdateForm(e: React.FormEvent) {
+  private async onSubmitUpdateForm(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     if (!this.props.user) return;
 
@@ -227,18 +227,18 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
   // Delete modal
 
-  private onClickDelete(keyToDelete: api_key.ApiKey) {
+  private onClickDelete(keyToDelete: api_key.ApiKey): void {
     this.setState({ keyToDelete, isDeleteModalOpen: true });
     setTimeout(() => {
       this.deleteButtonRef.current?.focus();
     });
   }
-  private onCloseDeleteModal() {
+  private onCloseDeleteModal(): void {
     if (!this.state.isDeleteModalSubmitting) {
       this.setState({ isDeleteModalOpen: false });
     }
   }
-  private async onConfirmDelete() {
+  private async onConfirmDelete(): Promise<void> {
     try {
       this.setState({ isDeleteModalSubmitting: true });
       await this.props.delete(new api_key.DeleteApiKeyRequest({ id: this.state.keyToDelete!.id }));
@@ -251,35 +251,38 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     }
   }
 
-  private onChangeLabel(onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>) {
+  private onChangeLabel(onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>): void {
     onChange(e.target.name, e.target.value);
   }
 
-  private onSelectReadOnly(onChange: (name: string, value: any) => any) {
+  private onSelectReadOnly(onChange: (name: string, value: any) => any): void {
     onChange("capability", []);
   }
 
-  private onSelectCASOnly(onChange: (name: string, value: any) => any) {
+  private onSelectCASOnly(onChange: (name: string, value: any) => any): void {
     onChange("capability", [capability.Capability.CAS_WRITE]);
   }
 
-  private onSelectReadWrite(onChange: (name: string, value: any) => any) {
+  private onSelectReadWrite(onChange: (name: string, value: any) => any): void {
     onChange("capability", [capability.Capability.CACHE_WRITE]);
   }
 
-  private onSelectExecutor(onChange: (name: string, value: any) => any) {
+  private onSelectExecutor(onChange: (name: string, value: any) => any): void {
     onChange("capability", [capability.Capability.CACHE_WRITE, capability.Capability.REGISTER_EXECUTOR]);
   }
 
-  private onSelectOrgAdmin(onChange: (name: string, value: any) => any) {
+  private onSelectOrgAdmin(onChange: (name: string, value: any) => any): void {
     onChange("capability", [capability.Capability.ORG_ADMIN]);
   }
 
-  private onSelectAuditLogReader(onChange: (name: string, value: any) => any) {
+  private onSelectAuditLogReader(onChange: (name: string, value: any) => any): void {
     onChange("capability", [capability.Capability.AUDIT_LOG_READ]);
   }
 
-  private onChangeVisibility(onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>) {
+  private onChangeVisibility(
+    onChange: (name: string, value: any) => any,
+    e: React.ChangeEvent<HTMLInputElement>
+  ): void {
     onChange("visibleToDevelopers", e.target.checked);
   }
 
@@ -317,7 +320,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange: (name: string, value: any) => any;
     ref: React.RefObject<HTMLFormElement>;
     formState: FormState<T>;
-  }) {
+  }): React.ReactNode {
     return (
       <Modal isOpen={isOpen} onRequestClose={onRequestClose} shouldFocusAfterRender={false}>
         <Dialog>
@@ -455,7 +458,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     );
   }
 
-  render() {
+  render(): React.ReactNode {
     if (!this.props.user) return <></>;
 
     const { keyToDelete, createForm, updateForm, getApiKeysResponse, isDeleteModalOpen, initialLoadError } = this.state;
@@ -585,35 +588,38 @@ function capabilitiesToInt(capabilities: capability.Capability[]): number {
   return out;
 }
 
-function hasExactCapabilities<T extends ApiKeyFields>(apiKey: T | null, capabilities: capability.Capability[]) {
+function hasExactCapabilities<T extends ApiKeyFields>(
+  apiKey: T | null,
+  capabilities: capability.Capability[]
+): boolean {
   return capabilitiesToInt(apiKey?.capability || []) === capabilitiesToInt(capabilities);
 }
 
-function isReadWrite<T extends ApiKeyFields>(apiKey: T | null) {
+function isReadWrite<T extends ApiKeyFields>(apiKey: T | null): boolean {
   return hasExactCapabilities(apiKey, [capability.Capability.CACHE_WRITE]);
 }
 
-function isCASOnly<T extends ApiKeyFields>(apiKey: T | null) {
+function isCASOnly<T extends ApiKeyFields>(apiKey: T | null): boolean {
   return hasExactCapabilities(apiKey, [capability.Capability.CAS_WRITE]);
 }
 
-function isExecutorKey<T extends ApiKeyFields>(apiKey: T | null) {
+function isExecutorKey<T extends ApiKeyFields>(apiKey: T | null): boolean {
   return hasExactCapabilities(apiKey, [capability.Capability.CACHE_WRITE, capability.Capability.REGISTER_EXECUTOR]);
 }
 
-function isOrgAdminKey<T extends ApiKeyFields>(apiKey: T | null) {
+function isOrgAdminKey<T extends ApiKeyFields>(apiKey: T | null): boolean {
   return hasExactCapabilities(apiKey, [capability.Capability.ORG_ADMIN]);
 }
 
-function isAuditLogReader<T extends ApiKeyFields>(apiKey: T | null) {
+function isAuditLogReader<T extends ApiKeyFields>(apiKey: T | null): boolean {
   return hasExactCapabilities(apiKey, [capability.Capability.AUDIT_LOG_READ]);
 }
 
-function isReadOnly<T extends ApiKeyFields>(apiKey: T | null) {
+function isReadOnly<T extends ApiKeyFields>(apiKey: T | null): boolean {
   return hasExactCapabilities(apiKey, []);
 }
 
-function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
+function describeCapabilities<T extends ApiKeyFields>(apiKey: T): string {
   let capabilities = "Read+Write";
   if (isReadOnly(apiKey)) {
     capabilities = "Read-only";
@@ -662,13 +668,13 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
   private copyTimeout: number | undefined;
   private value: string | undefined;
 
-  componentDidMount() {
+  componentDidMount(): void {
     if (this.props.apiKey.value) {
       this.value = this.props.apiKey.value;
     }
   }
 
-  private async retrieveValue() {
+  private async retrieveValue(): Promise<string> {
     if (this.value) {
       return this.value;
     }
@@ -682,7 +688,7 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
   }
 
   // onClick handler function for the copy button
-  private handleCopyClick() {
+  private handleCopyClick(): void {
     this.retrieveValue()
       .then((val) => {
         copyToClipboard(val);
@@ -698,7 +704,7 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
   }
 
   // onClick handler function for the hide/reveal button
-  private toggleHideValue() {
+  private toggleHideValue(): void {
     this.retrieveValue()
       .then((val) => {
         this.setState({
@@ -709,7 +715,7 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
       .catch((e) => errorService.handleError(e));
   }
 
-  render() {
+  render(): React.ReactNode {
     const { isCopied, hideValue, displayValue } = this.state;
 
     return (

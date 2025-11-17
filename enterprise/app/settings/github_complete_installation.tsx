@@ -36,7 +36,7 @@ export default class CompleteGitHubAppInstallationDialog extends React.Component
     isRefreshingUser: false,
   };
 
-  private linkInstallation() {
+  private linkInstallation(): void {
     const installationId = this.props.search.get("installation_id");
     const appId = this.props.search.get("app_id");
     if (!installationId || !appId) {
@@ -58,7 +58,7 @@ export default class CompleteGitHubAppInstallationDialog extends React.Component
       .finally(() => this.setState({ isLinkInstallationLoading: false }));
   }
 
-  private onChangeSelectedGroup(e: React.ChangeEvent<HTMLSelectElement>) {
+  private onChangeSelectedGroup(e: React.ChangeEvent<HTMLSelectElement>): void {
     this.setState({ isRefreshingUser: true });
     const grp = this.props.user.groups.find((g) => g.id === e.target.value);
     // Should not be possible.
@@ -71,7 +71,7 @@ export default class CompleteGitHubAppInstallationDialog extends React.Component
       .finally(() => this.setState({ isRefreshingUser: false }));
   }
 
-  private close() {
+  private close(): void {
     if (this.props.user.canCall("unlinkGitHubAccount")) {
       router.navigateTo("/settings/org/github");
     } else {
@@ -79,7 +79,7 @@ export default class CompleteGitHubAppInstallationDialog extends React.Component
     }
   }
 
-  render() {
+  render(): React.ReactNode {
     return (
       <SimpleModalDialog
         title="Complete GitHub app installation"

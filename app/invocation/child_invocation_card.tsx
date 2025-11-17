@@ -37,7 +37,7 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
     return "";
   }
 
-  private renderStatusIcon(status: CommandStatus) {
+  private renderStatusIcon(status: CommandStatus): JSX.Element | undefined {
     switch (status) {
       case "succeeded":
         return <CheckCircle className="icon" />;
@@ -53,7 +53,7 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
     }
   }
 
-  render() {
+  render(): JSX.Element {
     const inv = this.props.invocation;
     const invModel = new InvocationModel(inv);
 

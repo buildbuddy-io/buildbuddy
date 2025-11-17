@@ -25,7 +25,7 @@ export default class EventHovercard extends React.Component<EventHovercardProps,
 
   private width = 0;
 
-  componentDidUpdate(prevProps: EventHovercardProps, prevState: EventHovercardState) {
+  componentDidUpdate(prevProps: EventHovercardProps, prevState: EventHovercardState): void {
     const card = this.ref.current;
     if (!card) return;
 
@@ -53,7 +53,7 @@ export default class EventHovercard extends React.Component<EventHovercardProps,
     }
   }
 
-  render() {
+  render(): React.ReactNode {
     if (!this.state.data?.event) return <></>;
 
     const event = this.state.data.event;

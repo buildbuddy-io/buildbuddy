@@ -29,17 +29,17 @@ export class Tooltip extends React.Component<TooltipProps> {
   private windowScrollListener?: (e: Event) => any;
   private contentRef = React.createRef<TooltipContent>();
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.windowScrollListener = (e: Event) => {
       this.onMouseEvent(e as any);
     };
     window.addEventListener("wheel", this.windowScrollListener);
   }
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     window.removeEventListener("wheel", this.windowScrollListener!);
   }
 
-  onMouseEvent(e: React.MouseEvent) {
+  onMouseEvent(e: React.MouseEvent): void {
     const content = this.contentRef.current;
     if (!content) return;
 
@@ -52,7 +52,7 @@ export class Tooltip extends React.Component<TooltipProps> {
     content.setState({ visible: false });
   }
 
-  render() {
+  render(): React.ReactNode {
     const { renderContent, pin, ...props } = this.props;
     return (
       <>
@@ -113,7 +113,7 @@ class TooltipContent extends React.Component<TooltipContentProps> {
   private mouseCoords: MouseCoords = { clientX: 0, clientY: 0 };
   private isLayoutCalculated = false;
 
-  componentDidUpdate() {
+  componentDidUpdate(): void {
     this.isLayoutCalculated = false;
     if (!this.state.visible) return;
 
@@ -130,14 +130,14 @@ class TooltipContent extends React.Component<TooltipContentProps> {
     this.updatePosition();
   }
 
-  setMousePosition(x: number, y: number) {
+  setMousePosition(x: number, y: number): void {
     this.mouseCoords = { clientX: x, clientY: y };
 
-    if (!this.isLayoutCalculated) return false;
+    if (!this.isLayoutCalculated) return;
     this.updatePosition();
   }
 
-  private updatePosition() {
+  private updatePosition(): void {
     const el = this.ref.current;
     if (!el) return;
 
@@ -160,7 +160,7 @@ class TooltipContent extends React.Component<TooltipContentProps> {
   }
 
   private portalElement: HTMLElement | null = null;
-  private getPortalElement() {
+  private getPortalElement(): HTMLElement {
     if (this.portalElement) return this.portalElement;
 
     // Note: all tooltips share a single portal.

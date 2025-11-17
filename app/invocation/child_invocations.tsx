@@ -7,7 +7,7 @@ export type ChildInvocationProps = {
 };
 
 export default class ChildInvocations extends React.Component<ChildInvocationProps> {
-  render() {
+  render(): JSX.Element | null {
     if (!this.props.childInvocations.length) return null;
 
     return (

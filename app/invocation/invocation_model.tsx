@@ -29,7 +29,7 @@ export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
 export const NINJA_ROLE = "NINJA";
 
-export const InvocationStatus = invocation_status.InvocationStatus;
+export const InvocationStatus: typeof invocation_status.InvocationStatus = invocation_status.InvocationStatus;
 
 export default class InvocationModel {
   // The invocations array is guaranteed to have at least 1 invocation.
@@ -55,7 +55,10 @@ export default class InvocationModel {
   failedAction?: build_event_stream.BuildEvent;
   workflowConfigured?: build_event_stream.WorkflowConfigured;
   childInvocationsConfigured: build_event_stream.ChildInvocationsConfigured[] = [];
-  childInvocationCompletedByInvocationId = new Map<string, build_event_stream.IChildInvocationCompleted>();
+  childInvocationCompletedByInvocationId: Map<string, build_event_stream.IChildInvocationCompleted> = new Map<
+    string,
+    build_event_stream.IChildInvocationCompleted
+  >();
   workspaceStatus?: build_event_stream.WorkspaceStatus;
   configuration?: build_event_stream.Configuration;
   workspaceConfig?: build_event_stream.WorkspaceConfig;
@@ -66,18 +69,18 @@ export default class InvocationModel {
   buildMetrics?: build_event_stream.BuildMetrics;
   buildToolLogs?: build_event_stream.BuildToolLogs;
 
-  workspaceStatusMap = new Map<string, string>();
-  toolLogMap = new Map<string, string>();
-  optionsMap = new Map<string, string>();
-  clientEnvMap = new Map<string, string>();
-  buildMetadataMap = new Map<string, string>();
-  configuredMap = new Map<string, invocation.InvocationEvent>();
-  completedMap = new Map<string, invocation.InvocationEvent>();
-  skippedMap = new Map<string, invocation.InvocationEvent>();
+  workspaceStatusMap: Map<string, string> = new Map<string, string>();
+  toolLogMap: Map<string, string> = new Map<string, string>();
+  optionsMap: Map<string, string> = new Map<string, string>();
+  clientEnvMap: Map<string, string> = new Map<string, string>();
+  buildMetadataMap: Map<string, string> = new Map<string, string>();
+  configuredMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
+  completedMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
+  skippedMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
   testResultMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
   testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
   actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
-  rootCauseTargetLabels: Set<String> = new Set<String>();
+  rootCauseTargetLabels: Set<string> = new Set<string>();
 
   execLogEntryPromise: Promise<tools.protos.ExecLogEntry[]> | undefined;
 
@@ -242,7 +245,7 @@ export default class InvocationModel {
     }
   }
 
-  getUser() {
+  getUser(): string {
     let invocationUser = this.invocation.user;
     if (invocationUser) {
       return invocationUser;
@@ -255,7 +258,7 @@ export default class InvocationModel {
     return username;
   }
 
-  getUserPossessivePrefix() {
+  getUserPossessivePrefix(): string {
     const user = this.getUser();
     if (!user) {
       return "";
@@ -268,7 +271,7 @@ export default class InvocationModel {
    *
    * If no groups are provided or if the group is not found, null is returned.
    */
-  findOwnerGroup(groups: grp.Group[] | undefined) {
+  findOwnerGroup(groups: grp.Group[] | undefined): grp.Group | null {
     if (!groups?.length) return null;
 
     return groups.find((group) => group.id === this.invocation.acl?.groupId) || null;
@@ -292,11 +295,11 @@ export default class InvocationModel {
     return this.invocation.invocationId;
   }
 
-  getAttempt() {
-    return this.invocation.attempt;
+  getAttempt(): Long | undefined {
+    return this.invocation.attempt ?? undefined;
   }
 
-  getHost() {
+  getHost(): string {
     return this.invocation.host || this.workspaceStatusMap.get("BUILD_HOST") || "";
   }
 
@@ -316,36 +319,36 @@ export default class InvocationModel {
     return rawVal;
   }
 
-  isCacheCompressionEnabled() {
+  isCacheCompressionEnabled(): boolean {
     return (
       this.optionsMap.get("experimental_remote_cache_compression") === "1" ||
       this.optionsMap.get("remote_cache_compression") === "1"
     );
   }
 
-  getTargetConfiguredCount() {
+  getTargetConfiguredCount(): number {
     return Number(this.invocation.targetConfiguredCount) || this.targets.length;
   }
 
-  getFailedToBuildCount() {
+  getFailedToBuildCount(): number {
     return this.invocation.targetGroups.length
       ? this.targetCountForStatus(api_common.v1.Status.FAILED_TO_BUILD)
       : this.brokenTest.length;
   }
 
-  getFailedCount() {
+  getFailedCount(): number {
     return this.invocation.targetGroups.length
       ? this.targetCountForStatus(api_common.v1.Status.FAILED)
       : this.failedTest.length;
   }
 
-  getBuiltCount() {
+  getBuiltCount(): number {
     return this.invocation.targetGroups.length
       ? this.targetCountForStatus(api_common.v1.Status.BUILT)
       : this.succeeded.length;
   }
 
-  getFlakyCount() {
+  getFlakyCount(): number {
     return this.invocation.targetGroups.length
       ? this.targetCountForStatus(api_common.v1.Status.FLAKY)
       : this.flakyTest.length;
@@ -360,7 +363,7 @@ export default class InvocationModel {
     return 0;
   }
 
-  getCache() {
+  getCache(): string {
     if (!this.optionsMap.get("remote_cache") && !this.optionsMap.get("remote_executor")) {
       return "Cache off";
     }
@@ -376,7 +379,7 @@ export default class InvocationModel {
     return "Cache on";
   }
 
-  private parseBytestreamURIPrefix() {
+  private parseBytestreamURIPrefix(): { host: string; pathname: string } | null {
     let prefix = this.optionsMap.get("remote_bytestream_uri_prefix");
     if (!prefix) return null;
 
@@ -419,18 +422,18 @@ export default class InvocationModel {
     return undefined;
   }
 
-  getRemoteInstanceName() {
+  getRemoteInstanceName(): string {
     return this.optionsMap.get("remote_instance_name") ?? "";
   }
 
-  getCompressor() {
+  getCompressor(): build.bazel.remote.execution.v2.Compressor.Value {
     if (this.isCacheCompressionEnabled()) {
       return build.bazel.remote.execution.v2.Compressor.Value.ZSTD;
     }
     return build.bazel.remote.execution.v2.Compressor.Value.IDENTITY;
   }
 
-  getDigestFunction() {
+  getDigestFunction(): build.bazel.remote.execution.v2.DigestFunction.Value {
     const digestFnName = this.optionsMap.get("digest_function");
     if (!digestFnName) {
       return build.bazel.remote.execution.v2.DigestFunction.Value.SHA256;
@@ -479,15 +482,15 @@ export default class InvocationModel {
     });
   }
 
-  getIsRBEEnabled() {
+  getIsRBEEnabled(): boolean {
     return Boolean(this.stringCommandLineOption("remote_executor"));
   }
 
-  getRBE() {
+  getRBE(): string {
     return this.getIsRBEEnabled() ? "Remote execution on" : "Remote execution off";
   }
 
-  getIsExecutionLogEnabled() {
+  getIsExecutionLogEnabled(): boolean {
     return Boolean(
       this.buildToolLogs?.log.find(
         (l: any) =>
@@ -496,7 +499,7 @@ export default class InvocationModel {
     );
   }
 
-  hasCoverage() {
+  hasCoverage(): boolean {
     return (
       this.getCommand() == "coverage" &&
       Boolean(
@@ -505,19 +508,19 @@ export default class InvocationModel {
     );
   }
 
-  getFetchURLs() {
+  getFetchURLs(): string[] {
     return this.fetchEventURLs;
   }
 
-  getRepo() {
+  getRepo(): string {
     return this.getGithubRepo();
   }
 
-  getCommit() {
+  getCommit(): string {
     return this.getGithubSHA();
   }
 
-  getBranchName() {
+  getBranchName(): string {
     return this.getGithubBranch();
   }
 
@@ -531,11 +534,11 @@ export default class InvocationModel {
       : undefined;
   }
 
-  getGithubUser() {
+  getGithubUser(): string | undefined {
     return this.clientEnvMap.get("GITHUB_ACTOR");
   }
 
-  getBuildkiteUrl() {
+  getBuildkiteUrl(): string | undefined {
     if (this.clientEnvMap.get("BUILDKITE_BUILD_URL") && this.clientEnvMap.get("BUILDKITE_JOB_ID")) {
       return `${this.clientEnvMap.get("BUILDKITE_BUILD_URL")}#${this.clientEnvMap.get("BUILDKITE_JOB_ID")}`;
     }
@@ -551,7 +554,7 @@ export default class InvocationModel {
     return this.invocation.commitSha;
   }
 
-  getGithubRef() {
+  getGithubRef(): string | undefined {
     return this.clientEnvMap.get("GITHUB_REF");
   }
 
@@ -559,19 +562,19 @@ export default class InvocationModel {
     return this.invocation.branchName;
   }
 
-  getGithubRun() {
+  getGithubRun(): string | undefined {
     return this.clientEnvMap.get("GITHUB_RUN_ID");
   }
 
-  getGKEProject() {
+  getGKEProject(): string | undefined {
     return this.clientEnvMap.get("GKE_PROJECT");
   }
 
-  getGKECluster() {
+  getGKECluster(): string | undefined {
     return this.clientEnvMap.get("GKE_CLUSTER");
   }
 
-  getCommand() {
+  getCommand(): string {
     return this.started?.command || "build";
   }
 
@@ -579,23 +582,23 @@ export default class InvocationModel {
     return this.invocation.role;
   }
 
-  isWorkflowInvocation() {
+  isWorkflowInvocation(): boolean {
     return this.getRole() === CI_RUNNER_ROLE;
   }
 
-  isHostedBazelInvocation() {
+  isHostedBazelInvocation(): boolean {
     return this.getRole() === HOSTED_BAZEL_ROLE;
   }
 
-  isBazelInvocation() {
+  isBazelInvocation(): boolean {
     return !this.isWorkflowInvocation() && !this.isHostedBazelInvocation();
   }
 
-  isNinjaInvocation() {
+  isNinjaInvocation(): boolean {
     return this.getRole() === NINJA_ROLE;
   }
 
-  getTool() {
+  getTool(): string {
     if (this.isWorkflowInvocation()) {
       return "BuildBuddy workflow runner";
     }
@@ -608,15 +611,15 @@ export default class InvocationModel {
     return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
   }
 
-  getToolTag() {
+  getToolTag(): string | undefined {
     return this.optionsParsed?.toolTag;
   }
 
-  getPattern() {
+  getPattern(): string {
     return this.getAllPatterns(3);
   }
 
-  getAllPatterns(patternLimit?: number) {
+  getAllPatterns(patternLimit?: number): string {
     let patterns =
       this.invocation.pattern ||
       this.expanded?.id?.pattern?.pattern ||
@@ -637,15 +640,15 @@ export default class InvocationModel {
     return new Date(this.getStartTimeDate().getTime() + durationMillis);
   }
 
-  getFormattedStartedDate() {
+  getFormattedStartedDate(): string {
     return formatDate(this.getStartTimeDate());
   }
 
-  timeSinceStart() {
+  timeSinceStart(): string {
     return moment(this.getStartTimeDate()).fromNow(true);
   }
 
-  getDurationMicros() {
+  getDurationMicros(): number {
     if (!this.finished && this.started) {
       return Math.max(0, new Date().getTime() - this.getStartTimeDate().getTime()) * 1000;
     }
@@ -655,17 +658,17 @@ export default class InvocationModel {
     return +(this.invocation.durationUsec ?? 0);
   }
 
-  getDurationSeconds() {
+  getDurationSeconds(): string {
     let durationMicros = this.getDurationMicros();
     return `${durationMicros / 1000000} seconds`;
   }
 
-  getHumanReadableDuration() {
+  getHumanReadableDuration(): string {
     let durationMicros = this.getDurationMicros();
     return format.durationUsec(durationMicros);
   }
 
-  getTiming() {
+  getTiming(): string {
     let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return "disconnected";
@@ -676,7 +679,7 @@ export default class InvocationModel {
     return this.getHumanReadableDuration();
   }
 
-  getStatus() {
+  getStatus(): string {
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
         return this.invocation.success ? "Succeeded" : exitCode(this.invocation.bazelExitCode);
@@ -689,7 +692,7 @@ export default class InvocationModel {
     }
   }
 
-  getStatusClass() {
+  getStatusClass(): string {
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
         if (this.invocation.bazelExitCode == "NO_TESTS_FOUND") {
@@ -705,11 +708,11 @@ export default class InvocationModel {
     }
   }
 
-  isComplete() {
+  isComplete(): boolean {
     return this.invocation.invocationStatus === InvocationStatus.COMPLETE_INVOCATION_STATUS;
   }
 
-  isInProgress() {
+  isInProgress(): boolean {
     return this.invocation.invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
   }
 
@@ -717,14 +720,14 @@ export default class InvocationModel {
    * Returns whether basic invocation metadata has been received yet, such as
    * user, bazel command, target pattern etc.
    */
-  isMetadataLoaded() {
+  isMetadataLoaded(): boolean {
     // Just return whether we have any events. This logic works because the
     // server doesn't persist any events until all invocation metadata is
     // loaded.
     return this.invocation.event.length > 0;
   }
 
-  getFaviconType() {
+  getFaviconType(): IconType {
     let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return IconType.Unknown;
@@ -741,7 +744,7 @@ export default class InvocationModel {
     return this.finished.exitCode?.code == 0 ? IconType.Success : IconType.Failure;
   }
 
-  getStatusIcon() {
+  getStatusIcon(): JSX.Element {
     let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return <HelpCircle className="icon" />;
@@ -762,7 +765,7 @@ export default class InvocationModel {
     );
   }
 
-  getCPU() {
+  getCPU(): string {
     if (this.workflowConfigured) {
       // Rename GOOS/GOARCH convention to be consistent with bazel's TARGET_CPU convention.
       if (this.workflowConfigured.os === "linux" && this.workflowConfigured.arch === "amd64") {
@@ -778,17 +781,17 @@ export default class InvocationModel {
     return this.configuration?.makeVariable.TARGET_CPU || "Unknown CPU";
   }
 
-  getMode() {
+  getMode(): string {
     return this.configuration?.makeVariable.COMPILATION_MODE || "Unknown mode";
   }
 
-  getDuration(completionTime: any, beginTime: any) {
+  getDuration(completionTime: any, beginTime: any): string {
     if (!completionTime || !beginTime) return "0";
     let nanos = (+completionTime.nanos - +beginTime.nanos) / 1000000000;
     return `${(+completionTime.seconds - +beginTime.seconds + nanos).toFixed(3)}`;
   }
 
-  getRuntime(label: string) {
+  getRuntime(label: string): string {
     let testResult = this.testSummaryMap.get(label)?.buildEvent?.testSummary;
     if (testResult) {
       let durationMillis = durationToMillisWithFallback(testResult.totalRunDuration, testResult.totalRunDurationMillis);
@@ -799,7 +802,7 @@ export default class InvocationModel {
     );
   }
 
-  getTestSize(testSize?: build_event_stream.TestSize) {
+  getTestSize(testSize?: build_event_stream.TestSize): string {
     switch (testSize) {
       case build_event_stream.TestSize.SMALL:
         return " - Small";
@@ -841,7 +844,7 @@ export default class InvocationModel {
     );
   }
 
-  isQuery() {
+  isQuery(): boolean {
     return this.getCommand() == "query";
   }
 
@@ -849,7 +852,7 @@ export default class InvocationModel {
     return this.invocation.hasChunkedEventLogs || false;
   }
 
-  fetchSuggestions(service: string) {
+  fetchSuggestions(service: string): Promise<void> {
     let req = new suggestion.GetSuggestionRequest();
     if (service == "openai") {
       req.service = suggestion.SuggestionService.OPENAI;
@@ -871,7 +874,7 @@ export default class InvocationModel {
   /**
    * Returns the original command line as it was entered by the user.
    */
-  explicitCommandLine() {
+  explicitCommandLine(): string {
     // We allow overriding EXPLICIT_COMMAND_LINE to enable tools that wrap bazel
     // to append bazel args but still preserve the appearance of the original
     // command line. The effective command line can still be used to see the
@@ -895,7 +898,7 @@ export default class InvocationModel {
    * subcommands (for example, the "cquery" subcommand overrides "--build" to
    * false, from its default value of true).
    */
-  effectiveCommandLine() {
+  effectiveCommandLine(): string {
     return this.commandLineOptionsToShellCommand(this.getEffectiveCommandLineOptions());
   }
 
@@ -977,7 +980,7 @@ export default class InvocationModel {
       .map((option) => option.combinedForm);
   }
 
-  private commandLineOptionsToShellCommand(options: string[]) {
+  private commandLineOptionsToShellCommand(options: string[]): string {
     return [
       this.getExecutableName() ?? "bazel",
       this.started?.command,
@@ -989,7 +992,7 @@ export default class InvocationModel {
       .join(" ");
   }
 
-  hasPatternFile() {
+  hasPatternFile(): boolean {
     return Boolean(this.optionsMap.get("target_pattern_file"));
   }
 
@@ -1018,7 +1021,7 @@ export default class InvocationModel {
     )?.uri;
   }
 
-  getExecutionLog() {
+  getExecutionLog(): Promise<tools.protos.ExecLogEntry[]> {
     if (this.execLogEntryPromise) {
       return this.execLogEntryPromise;
     }
@@ -1051,7 +1054,7 @@ export default class InvocationModel {
     return this.execLogEntryPromise;
   }
 
-  downloadExecutionLog() {
+  downloadExecutionLog(): void {
     let profileFileUri = this.getExecutionLogFileUri();
     if (!profileFileUri) {
       return;

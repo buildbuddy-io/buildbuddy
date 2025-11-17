@@ -17,7 +17,7 @@ export class Scroller {
 
   constructor(private getElement: () => ScrollableElement | null) {}
 
-  scrollTo(top: number, { animate = true } = {}) {
+  scrollTo(top: number, { animate = true }: { animate?: boolean } = {}): void {
     this.updateBounds();
     this.position.target = top;
     if (!animate) {
@@ -31,7 +31,7 @@ export class Scroller {
     return this.position.max;
   }
 
-  private step(dt: number) {
+  private step(dt: number): void {
     this.updateBounds();
     this.position.step(dt, { rate: 0.05, threshold: 1 });
     const el = this.getElement();
@@ -39,7 +39,7 @@ export class Scroller {
     if (this.position.isAtTarget) this.animation.stop();
   }
 
-  private updateBounds() {
+  private updateBounds(): void {
     const el = this.getElement();
     if (!el) return;
     this.position.max = el.scrollHeight - el.clientHeight;

@@ -12,11 +12,11 @@ export type PickerModel = {
 };
 
 export class PickerService {
-  pickers = new Subject<PickerModel>();
-  picked = new Subject<string>();
-  dismissed = new Subject<string>();
+  pickers: Subject<PickerModel> = new Subject<PickerModel>();
+  picked: Subject<string> = new Subject<string>();
+  dismissed: Subject<string> = new Subject<string>();
 
-  show(picker: PickerModel) {
+  show(picker: PickerModel): Promise<string> {
     let promise = new Promise<string>((resolve, reject) => {
       this.picked.subscribe((option) => resolve(option));
       this.dismissed.subscribe(() => reject());
@@ -26,4 +26,5 @@ export class PickerService {
   }
 }
 
-export default new PickerService();
+const pickerService: PickerService = new PickerService();
+export default pickerService;

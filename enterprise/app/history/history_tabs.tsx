@@ -5,7 +5,7 @@ interface Props {
 }
 
 export default class HistoryTabsComponent extends React.Component<Props> {
-  render() {
+  render(): React.ReactNode {
     return (
       <div className="tabs">
         <a href="#" className={`tab ${this.props.tab == "" && "selected"}`}>

@@ -23,7 +23,7 @@ interface Props {
 }
 
 export default class HistoryInvocationStatCardComponent extends React.Component<Props> {
-  handleStatClicked() {
+  handleStatClicked(): void {
     console.log(this.props.invocationStat);
     if (this.props.type == invocation.AggType.USER_AGGREGATION_TYPE) {
       router.navigateToUserHistory(this.props.invocationStat.name);
@@ -42,7 +42,7 @@ export default class HistoryInvocationStatCardComponent extends React.Component<
     }
   }
 
-  getTitle() {
+  getTitle(): string {
     if (this.props.type == invocation.AggType.USER_AGGREGATION_TYPE) {
       return this.props.invocationStat.name || "Unknown user";
     }
@@ -64,7 +64,7 @@ export default class HistoryInvocationStatCardComponent extends React.Component<
     return this.props.invocationStat.name || "Unknown";
   }
 
-  renderStatusIcon() {
+  renderStatusIcon(): JSX.Element {
     if (this.props.invocationStat.lastGreenBuildUsec == this.props.invocationStat.latestBuildTimeUsec) {
       return <CheckCircle className="icon green" />;
     }
@@ -74,7 +74,7 @@ export default class HistoryInvocationStatCardComponent extends React.Component<
     return <PlayCircle className="icon blue" />;
   }
 
-  getStatus() {
+  getStatus(): string {
     if (this.props.invocationStat.lastGreenBuildUsec == this.props.invocationStat.latestBuildTimeUsec)
       return "Last build succeeded";
     if (this.props.invocationStat.lastRedBuildUsec == this.props.invocationStat.latestBuildTimeUsec)
@@ -82,7 +82,7 @@ export default class HistoryInvocationStatCardComponent extends React.Component<
     return "Last build in progress";
   }
 
-  getClass() {
+  getClass(): string {
     if (this.props.invocationStat.lastGreenBuildUsec == this.props.invocationStat.latestBuildTimeUsec)
       return "card-success";
     if (this.props.invocationStat.lastRedBuildUsec == this.props.invocationStat.latestBuildTimeUsec)
@@ -90,7 +90,7 @@ export default class HistoryInvocationStatCardComponent extends React.Component<
     return "card-in-progress";
   }
 
-  render() {
+  render(): JSX.Element {
     return (
       <div onClick={this.handleStatClicked.bind(this)} className={`clickable card ${this.getClass()}`}>
         <div className="content">

@@ -29,32 +29,32 @@ export default class InvocationCompareButtonComponent extends React.Component<
 
   private subscription = new Subscription();
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.subscription.add(service.subscribe(this.onInvocationUpdate.bind(this)));
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     this.subscription.unsubscribe();
   }
 
-  private onInvocationUpdate(data: IdAndModel) {
+  private onInvocationUpdate(data: IdAndModel): void {
     this.setState({ invocationIdToCompare: data.id });
   }
 
-  private onClick(event: React.MouseEvent<HTMLElement>) {
+  private onClick(event: React.MouseEvent<HTMLElement>): void {
     this.setState({ isDropdownOpen: true });
     event.preventDefault();
     event.stopPropagation();
   }
 
-  private onClickSelectForComparison(event: React.MouseEvent<HTMLElement>) {
+  private onClickSelectForComparison(event: React.MouseEvent<HTMLElement>): void {
     service.setComparisonInvocation(this.props.invocationId);
     this.setState({ isDropdownOpen: false, invocationIdToCompare: this.props.invocationId });
     event.preventDefault();
     event.stopPropagation();
   }
 
-  private onClickCompareWithSelected(event: React.MouseEvent<HTMLElement>) {
+  private onClickCompareWithSelected(event: React.MouseEvent<HTMLElement>): void {
     const invocationIdToCompare = this.state.invocationIdToCompare;
     this.setState({ isDropdownOpen: false, invocationIdToCompare: "" });
     router.navigateTo(`/compare/${invocationIdToCompare}...${this.props.invocationId}`);
@@ -62,13 +62,13 @@ export default class InvocationCompareButtonComponent extends React.Component<
     event.stopPropagation();
   }
 
-  private onRequestCloseDropdown(event: React.MouseEvent<HTMLElement>) {
+  private onRequestCloseDropdown(event: React.MouseEvent<HTMLElement>): void {
     this.setState({ isDropdownOpen: false });
     event.preventDefault();
     event.stopPropagation();
   }
 
-  render() {
+  render(): JSX.Element {
     if (!capabilities.compareInvocations) {
       return <></>;
     }
@@ -108,7 +108,7 @@ export default class InvocationCompareButtonComponent extends React.Component<
   }
 }
 
-function ComparisonBufferIllustration({ isBuffered }: { isBuffered: boolean }) {
+function ComparisonBufferIllustration({ isBuffered }: { isBuffered: boolean }): JSX.Element {
   return (
     <div className={`comparison-buffer-illustration ${isBuffered ? "buffered" : ""}`}>
       <div className="comparison-buffer-icon comparison-buffer-icon-a" />

@@ -6,7 +6,7 @@ export type ModalProps = ReactModal.Props;
 ReactModal.setAppElement("#app");
 
 export default class Modal extends React.Component<ModalProps> {
-  render() {
+  render(): React.ReactNode {
     return <ReactModal overlayClassName="modal-overlay" className="modal-content" {...this.props} />;
   }
 }

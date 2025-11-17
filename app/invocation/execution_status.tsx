@@ -3,8 +3,10 @@ import { build } from "../../proto/remote_execution_ts_proto";
 import { ExtendedBuildBuddyService, ServerStream, ServerStreamHandler } from "../service/rpc_service";
 import { streamWithRetry } from "../util/rpc";
 
-export const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage.Value;
-export const ExecutionState = build.bazel.remote.execution.v2.ExecutionProgress.ExecutionState;
+export const ExecutionStage: typeof build.bazel.remote.execution.v2.ExecutionStage.Value =
+  build.bazel.remote.execution.v2.ExecutionStage.Value;
+export const ExecutionState: typeof build.bazel.remote.execution.v2.ExecutionProgress.ExecutionState =
+  build.bazel.remote.execution.v2.ExecutionProgress.ExecutionState;
 
 /**
  * Live-streams execution updates using the WaitExecution API.
@@ -37,7 +39,7 @@ export function waitExecution(
   );
 }
 
-export function executionStatusLabel(op: ExecuteOperation) {
+export function executionStatusLabel(op: ExecuteOperation): string {
   if (op.done) {
     return "Completed";
   }
@@ -57,7 +59,7 @@ export function executionStatusLabel(op: ExecuteOperation) {
   }
 }
 
-function executionProgressLabel(op: ExecuteOperation) {
+function executionProgressLabel(op: ExecuteOperation): string {
   switch (op.progress?.executionState) {
     case ExecutionState.PULLING_CONTAINER_IMAGE:
       return "Pulling container image";

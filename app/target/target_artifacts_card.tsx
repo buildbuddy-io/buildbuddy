@@ -27,17 +27,17 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     loading: false,
   };
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.maybeFetchOutputManifest();
   }
 
-  componentDidUpdate(prevProps: Props) {
+  componentDidUpdate(prevProps: Props): void {
     if (this.props.files !== prevProps.files) {
       this.maybeFetchOutputManifest();
     }
   }
 
-  maybeFetchOutputManifest() {
+  maybeFetchOutputManifest(): void {
     if (!capabilities.config.testOutputManifestsEnabled) {
       return;
     }
@@ -92,7 +92,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     return `/code/buildbuddy-io/buildbuddy/?${new URLSearchParams(params).toString()}`;
   }
 
-  handleArtifactClicked(outputUri: string, outputFilename: string, event: React.MouseEvent<HTMLAnchorElement>) {
+  handleArtifactClicked(outputUri: string, outputFilename: string, event: React.MouseEvent<HTMLAnchorElement>): boolean {
     event.preventDefault();
     if (!outputUri) return false;
 
@@ -109,7 +109,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     outputFilename: string,
     entry: zip.ManifestEntry,
     event: React.MouseEvent<HTMLAnchorElement>
-  ) {
+  ): boolean {
     event.preventDefault();
     if (!outputUri) return false;
 
@@ -126,7 +126,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     return false;
   }
 
-  render() {
+  render(): JSX.Element {
     return (
       <div className="card artifacts">
         <ArrowDownCircle className="icon brown" />

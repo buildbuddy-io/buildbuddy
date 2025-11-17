@@ -36,7 +36,7 @@ const MATERIAL_CHART_LIGHT_COLORS = [
  * returned color falls back to a less pretty set of colors but with uniform
  * perceived brightness.
  */
-export function getChartColor(index: number) {
+export function getChartColor(index: number): string {
   if (index < 0 || index >= MATERIAL_CHART_COLORS.length) {
     return getUniformBrightnessColor(String(index));
   }
@@ -49,7 +49,7 @@ export function getChartColor(index: number) {
  * chart elements, starting from 0. Indexes that are one apart from each other
  * will have visually distinct colors.
  */
-export function getMaterialChartColor(index: number) {
+export function getMaterialChartColor(index: number): string {
   return MATERIAL_CHART_COLORS[Math.abs(index % MATERIAL_CHART_COLORS.length)];
 }
 
@@ -59,7 +59,7 @@ export function getMaterialChartColor(index: number) {
  * chart elements, starting from 0. Indexes that are one apart from each other
  * will have visually distinct colors.
  */
-export function getLightMaterialChartColor(index: number) {
+export function getLightMaterialChartColor(index: number): string {
   return MATERIAL_CHART_LIGHT_COLORS[Math.abs(index % MATERIAL_CHART_LIGHT_COLORS.length)];
 }
 
@@ -206,11 +206,11 @@ const UNIFORM_BRIGHTNESS_COLORS = [
  * All colors returned have the same approximate perceived brightness
  * to avoid issues with color contrast.
  */
-export function getUniformBrightnessColor(id: string) {
+export function getUniformBrightnessColor(id: string): string {
   return UNIFORM_BRIGHTNESS_COLORS[Math.abs(hash(id) % UNIFORM_BRIGHTNESS_COLORS.length)];
 }
 
-function hash(value: string) {
+function hash(value: string): number {
   let hash = 0;
   for (let i = 0; i < value?.length; i++) {
     hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
@@ -227,11 +227,11 @@ function hash(value: string) {
  * @param value the percentage value between 0 and 1
  * @returns a color between red and green
  */
-export function percentageColor(value: number) {
+export function percentageColor(value: number): string {
   return RED_TO_GREEN_SCALE[Math.floor(value * (RED_TO_GREEN_SCALE.length - 1))];
 }
 
-export const RED_TO_GREEN_SCALE = [
+export const RED_TO_GREEN_SCALE: readonly string[] = [
   "#D32F2F", // red 700
   "#E53935", // red 600
   "#F4511E", // deep orange 600

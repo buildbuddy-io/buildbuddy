@@ -17,7 +17,7 @@ export default class ShortcutsComponent extends React.Component<Props, State> {
     showing: false,
   };
 
-  componentWillMount() {
+  componentWillMount(): void {
     shortcuts.register(KeyCombo.question, () => {
       this.setState({ showing: true });
     });
@@ -26,7 +26,7 @@ export default class ShortcutsComponent extends React.Component<Props, State> {
     });
   }
 
-  render() {
+  render(): React.ReactNode {
     return (
       <Modal isOpen={this.state.showing}>
         <Dialog>

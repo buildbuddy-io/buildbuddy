@@ -22,7 +22,7 @@ interface State {
 export default class UpdateSecretComponent extends React.Component<UpdateSecretProps, State> {
   state: State = {};
 
-  private onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  private onSubmit(e: React.FormEvent<HTMLFormElement>): void {
     e.preventDefault();
     this.setState({ loading: true });
 
@@ -40,17 +40,17 @@ export default class UpdateSecretComponent extends React.Component<UpdateSecretP
       });
   }
 
-  private onChangeSecretName(e: React.ChangeEvent<HTMLInputElement>) {
+  private onChangeSecretName(e: React.ChangeEvent<HTMLInputElement>): void {
     const name = e.target.value;
     this.setState({ name });
   }
 
-  private onChangeSecretValue(e: React.ChangeEvent<HTMLTextAreaElement>) {
+  private onChangeSecretValue(e: React.ChangeEvent<HTMLTextAreaElement>): void {
     const value = e.target.value;
     this.setState({ value });
   }
 
-  render() {
+  render(): JSX.Element {
     return (
       <div className="update-secret">
         <div className="secrets-breadcrumbs">

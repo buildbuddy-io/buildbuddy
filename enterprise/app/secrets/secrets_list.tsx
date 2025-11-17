@@ -20,11 +20,11 @@ interface State {
 export default class SecretsListComponent extends React.Component<{}, State> {
   state: State = {};
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetch();
   }
 
-  private fetch() {
+  private fetch(): void {
     this.setState({ loading: true });
     rpc_service.service
       .listSecrets(secrets.ListSecretsRequest.create({}))
@@ -33,13 +33,13 @@ export default class SecretsListComponent extends React.Component<{}, State> {
       .finally(() => this.setState({ loading: false }));
   }
 
-  private onClickDelete(name: string) {
+  private onClickDelete(name: string): void {
     this.setState({ secretToDelete: name });
   }
-  private onCloseDeleteModal() {
+  private onCloseDeleteModal(): void {
     this.setState({ secretToDelete: undefined });
   }
-  private onConfirmDelete() {
+  private onConfirmDelete(): void {
     this.setState({ deleteLoading: true });
     rpc_service.service
       .deleteSecret(
@@ -54,7 +54,7 @@ export default class SecretsListComponent extends React.Component<{}, State> {
       .finally(() => this.setState({ deleteLoading: false }));
   }
 
-  render() {
+  render(): React.ReactNode {
     return (
       <div className="secrets-list settings-content">
         <div className="settings-option-title">Secrets</div>

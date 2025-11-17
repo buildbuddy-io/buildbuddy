@@ -37,27 +37,29 @@ export default class SuggestionButton extends React.Component<SuggestionButtonPr
     isLoading: false,
   };
 
-  private inFlightRpc: CancelablePromise | undefined;
+  private inFlightRpc: CancelablePromise<void> | Promise<void> | undefined;
 
-  private onOpenMenu() {
+  private onOpenMenu(): void {
     this.setState({ isMenuOpen: true });
   }
-  private onCloseMenu() {
+  private onCloseMenu(): void {
     this.setState({ isMenuOpen: false });
   }
 
-  private onOpenDialog() {
+  private onOpenDialog(): void {
     this.setState({ isMenuOpen: false, isDialogOpen: true });
   }
-  private onCloseDialog() {
+  private onCloseDialog(): void {
     this.setState({ isDialogOpen: false });
   }
 
-  componentWillUnmount() {
-    this.inFlightRpc?.cancel();
+  componentWillUnmount(): void {
+    if (this.inFlightRpc && "cancel" in this.inFlightRpc) {
+      this.inFlightRpc.cancel();
+    }
   }
 
-  onClickAsk(service: string) {
+  onClickAsk(service: string): void {
     if (localStorage.getItem(openAIAgreedLocalStorageKey)) {
       this.makeRequest("");
       return;
@@ -66,13 +68,13 @@ export default class SuggestionButton extends React.Component<SuggestionButtonPr
     this.onOpenDialog();
   }
 
-  makeRequest(service: string) {
+  makeRequest(service: string): void {
     localStorage.setItem(openAIAgreedLocalStorageKey, "true");
     this.setState({ isLoading: true, isMenuOpen: false, isDialogOpen: false });
     this.inFlightRpc = this.props.model.fetchSuggestions(service).finally(() => this.setState({ isLoading: false }));
   }
 
-  render() {
+  render(): JSX.Element {
     if (
       !capabilities.config.botSuggestionsEnabled ||
       !this.props.user ||

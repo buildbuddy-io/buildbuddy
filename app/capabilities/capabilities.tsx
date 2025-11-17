@@ -57,7 +57,7 @@ export class Capabilities {
     this.readOnlyGitHubApp = this.config.readOnlyGithubAppEnabled;
   }
 
-  register(name: string, enterprise: boolean, paths: Array<string>) {
+  register(name: string, enterprise: boolean, paths: Array<string>): void {
     this.name = name;
     this.paths = new Set(paths);
     this.enterprise = enterprise;
@@ -76,11 +76,11 @@ export class Capabilities {
     this.didNavigateToPath();
   }
 
-  canNavigateToPath(path: string) {
+  canNavigateToPath(path: string): boolean {
     return this.paths.has(path);
   }
 
-  didNavigateToPath() {
+  didNavigateToPath(): void {
     if (window.gtag) {
       window.gtag("event", "path", {
         event_category: "navigate",
@@ -90,4 +90,5 @@ export class Capabilities {
   }
 }
 
-export default new Capabilities();
+const defaultCapabilities: Capabilities = new Capabilities();
+export default defaultCapabilities;

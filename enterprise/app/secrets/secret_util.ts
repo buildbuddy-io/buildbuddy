@@ -2,7 +2,7 @@ import sodium from "libsodium-wrappers";
 import rpc_service from "../../../app/service/rpc_service";
 import { secrets } from "../../../proto/secrets_ts_proto";
 
-export function encryptAndUpdate(name: string, value: string) {
+export function encryptAndUpdate(name: string, value: string): Promise<secrets.UpdateSecretResponse> {
   return sodium.ready.then(() => {
     return rpc_service.service.getPublicKey(secrets.GetPublicKeyRequest.create({})).then((response) => {
       const typedResponse = response as secrets.GetPublicKeyResponse;
@@ -24,7 +24,7 @@ function encrypt(publicKey: secrets.PublicKey, name: string, value: string): sec
   return { name, value: output };
 }
 
-function updateSecret(secret: secrets.ISecret) {
+function updateSecret(secret: secrets.ISecret): Promise<secrets.UpdateSecretResponse> {
   return rpc_service.service.updateSecret(
     secrets.UpdateSecretRequest.create({ secret: secrets.Secret.create(secret) })
   );

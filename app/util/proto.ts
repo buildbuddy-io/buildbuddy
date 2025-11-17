@@ -91,7 +91,7 @@ export function durationToMillisWithFallback(
 export function addDurationToTimestamp(
   timestamp: google_timestamp.protobuf.ITimestamp,
   duration: google_duration.protobuf.IDuration | null | undefined
-) {
+): google_timestamp.protobuf.ITimestamp {
   if (!duration) return timestamp;
 
   const startNanos = Long.fromValue(timestamp.seconds ?? 0)

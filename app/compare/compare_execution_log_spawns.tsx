@@ -47,17 +47,17 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
     unchanged: [],
   };
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetchLogs();
   }
 
-  componentDidUpdate(prevProps: Props) {
+  componentDidUpdate(prevProps: Props): void {
     if (this.props.modelA !== prevProps.modelA || this.props.modelB !== prevProps.modelB) {
       this.fetchLogs();
     }
   }
 
-  async fetchLogs() {
+  async fetchLogs(): Promise<void> {
     await Promise.all([this.fetchLog(this.props.modelA), this.fetchLog(this.props.modelB)])
       .then(([logA, logB]) => {
         this.setState({ logA, logB }, () => {
@@ -68,7 +68,7 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
       .finally(() => this.setState({ loading: false }));
   }
 
-  fetchLog(model?: InvocationModel) {
+  fetchLog(model?: InvocationModel): Promise<tools.protos.ExecLogEntry[] | undefined> {
     if (!model) return Promise.resolve(undefined);
 
     if (!model.hasExecutionLog()) {
@@ -90,7 +90,7 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
     return spawn.digest.hash;
   }
 
-  compareSpawns() {
+  compareSpawns(): void {
     const spawnsA = this.state.logA?.filter((l) => l.type == "spawn" && l.spawn) || [];
     const spawnsB = this.state.logB?.filter((l) => l.type == "spawn" && l.spawn) || [];
 
@@ -143,15 +143,15 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
     return +(firstSpawn?.metrics?.startTime?.seconds || 0) - +(secondSpawn?.metrics?.startTime?.seconds || 0);
   }
 
-  handleMoreClicked(section: string) {
+  handleMoreClicked(section: string): void {
     this.setState({ limit: this.state.limit.set(section, (this.state.limit.get(section) || PAGE_SIZE) + PAGE_SIZE) });
   }
 
-  handleAllClicked(section: string) {
+  handleAllClicked(section: string): void {
     this.setState({ limit: this.state.limit.set(section, Number.MAX_SAFE_INTEGER) });
   }
 
-  getActionPageLink(model: InvocationModel, spawn?: tools.protos.ExecLogEntry.Spawn | null) {
+  getActionPageLink(model: InvocationModel, spawn?: tools.protos.ExecLogEntry.Spawn | null): string | undefined {
     if (!spawn?.digest) {
       return undefined;
     }
@@ -160,7 +160,7 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
     return `/invocation/${model.getInvocationId()}?${search}#action`;
   }
 
-  getCompareActionLink(comparison: SpawnComparison) {
+  getCompareActionLink(comparison: SpawnComparison): string | undefined {
     if (comparison.status !== "changed" || !comparison.a?.spawn?.digest || !comparison.b?.spawn?.digest) {
       return undefined;
     }
@@ -169,7 +169,7 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
     return `/action/compare/${this.props.modelA.getInvocationId()}:${encodeURIComponent(digestA)}...${this.props.modelB.getInvocationId()}:${encodeURIComponent(digestB)}`;
   }
 
-  renderComparisonRow(comparison: SpawnComparison, index: number) {
+  renderComparisonRow(comparison: SpawnComparison, index: number): React.ReactNode {
     const spawn = comparison.a?.spawn || comparison.b?.spawn;
     let link = this.getCompareActionLink(comparison);
 
@@ -203,7 +203,7 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
     );
   }
 
-  renderCard(comparisons: SpawnComparison[], section: string, icon: React.ReactNode) {
+  renderCard(comparisons: SpawnComparison[], section: string, icon: React.ReactNode): React.ReactNode {
     return (
       <div className={`card expanded`}>
         <div className="content">
@@ -235,7 +235,7 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
     );
   }
 
-  render() {
+  render(): React.ReactNode {
     if (this.state.loading) {
       return <div className="loading" />;
     }

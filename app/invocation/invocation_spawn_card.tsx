@@ -45,21 +45,21 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
 
   timeoutRef?: number;
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetchLog();
   }
 
-  componentDidUpdate(prevProps: Props) {
+  componentDidUpdate(prevProps: Props): void {
     if (this.props.model !== prevProps.model) {
       this.fetchLog();
     }
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     clearTimeout(this.timeoutRef);
   }
 
-  fetchLog() {
+  fetchLog(): void {
     if (!this.props.model.hasExecutionLog()) {
       this.setState({ loading: false });
     }
@@ -76,7 +76,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
       .finally(() => this.setState({ loading: false }));
   }
 
-  downloadLog() {
+  downloadLog(): void {
     this.props.model.downloadExecutionLog();
   }
 
@@ -99,31 +99,31 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     return 0;
   }
 
-  handleSortDirectionChange(event: React.ChangeEvent<HTMLInputElement>) {
+  handleSortDirectionChange(event: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({
       direction: event.target.value as "asc" | "desc",
     });
   }
 
-  handleSortChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleSortChange(event: React.ChangeEvent<HTMLSelectElement>): void {
     this.setState({
       sort: event.target.value,
     });
   }
 
-  handleMnemonicFilterChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleMnemonicFilterChange(event: React.ChangeEvent<HTMLSelectElement>): void {
     this.setState({
       mnemonicFilter: event.target.value,
     });
   }
 
-  handleRunnerFilterChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleRunnerFilterChange(event: React.ChangeEvent<HTMLSelectElement>): void {
     this.setState({
       runnerFilter: event.target.value,
     });
   }
 
-  handlePlatformPropertyFilterChange(propertyName: string, value: string) {
+  handlePlatformPropertyFilterChange(propertyName: string, value: string): void {
     this.setState((prevState) => {
       const newFilters = new Map(prevState.platformPropertyFilters);
       if (value === "*") {
@@ -135,15 +135,15 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     });
   }
 
-  handleMoreClicked() {
+  handleMoreClicked(): void {
     this.setState({ limit: this.state.limit + 100 });
   }
 
-  handleAllClicked() {
+  handleAllClicked(): void {
     this.setState({ limit: Number.MAX_SAFE_INTEGER });
   }
 
-  getActionPageLink(entry: tools.protos.ExecLogEntry) {
+  getActionPageLink(entry: tools.protos.ExecLogEntry): string | undefined {
     if (!entry.spawn?.digest) {
       return undefined;
     }
@@ -170,7 +170,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     return prop?.value || "";
   }
 
-  render() {
+  render(): React.ReactNode {
     if (this.state.loading) {
       return <div className="loading" />;
     }

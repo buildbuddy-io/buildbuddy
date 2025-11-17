@@ -4,7 +4,7 @@ import { google as google_status } from "../../proto/grpc_status_ts_proto";
 import { Cancelable, ServerStream, ServerStreamHandler, ServerStreamingRpcMethod } from "../service/rpc_service";
 import { FetchError, GRPCStatusError } from "./errors";
 
-export const Code = google_code.rpc.Code;
+export const Code: typeof google_code.rpc.Code = google_code.rpc.Code;
 
 /**
  * Performs a server-streaming RPC, automatically retrying certain types of

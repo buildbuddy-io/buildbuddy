@@ -20,11 +20,11 @@ export default class InvocationFilterComponent extends React.Component<Props, St
 
   private timeout?: number;
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.setState({ value: this.props.search.get(this.filterType()) ?? "" });
   }
 
-  handleFilterChange(event: any) {
+  handleFilterChange(event: any): void {
     let value = event.target.value;
     let params = {};
     switch (this.filterType()) {
@@ -54,7 +54,7 @@ export default class InvocationFilterComponent extends React.Component<Props, St
     }, this.props.debounceMillis || 0);
   }
 
-  filterType() {
+  filterType(): string {
     switch (this.props.tab) {
       case "#artifacts":
         return "artifactFilter";
@@ -71,7 +71,7 @@ export default class InvocationFilterComponent extends React.Component<Props, St
     }
   }
 
-  render() {
+  render(): JSX.Element {
     return (
       <FilterInput
         className="invocation-filter"

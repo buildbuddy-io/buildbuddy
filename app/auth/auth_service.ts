@@ -22,11 +22,11 @@ const TOKEN_REFRESH_INTERVAL_SECONDS = 30 * 60; // 30 minutes
 
 export class AuthService {
   user?: User;
-  userStream = new Subject<User | undefined>();
+  userStream: Subject<User | undefined> = new Subject<User | undefined>();
 
-  static userEventName = "user";
+  static userEventName: string = "user";
 
-  register() {
+  register(): void {
     if (!capabilities.auth) return;
     // Set initially preferred group ID from cookie.
     const preferredGroupId =
@@ -76,13 +76,13 @@ export class AuthService {
       });
   }
 
-  getCookie(name: string) {
+  getCookie(name: string): string | undefined {
     let match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
     if (match) return match[2];
   }
 
   // sets a cookie with a default age of 1 year.
-  setCookie(name: string, value: string, { maxAge = 31536000 } = {}) {
+  setCookie(name: string, value: string, { maxAge = 31536000 }: { maxAge?: number } = {}): void {
     let cookie = `${name}=${value}; path=/;`;
     if (maxAge > 0) {
       cookie += ` max-age=${maxAge};`;
@@ -93,7 +93,7 @@ export class AuthService {
     document.cookie = cookie;
   }
 
-  startRefreshTimer() {
+  startRefreshTimer(): void {
     const sessionDuration = Number(this.getCookie("Session-Duration-Seconds") || 0);
     const refreshFrequencySeconds = sessionDuration ? sessionDuration / 2 : TOKEN_REFRESH_INTERVAL_SECONDS;
     console.info(`Refreshing access token every ${refreshFrequencySeconds} seconds.`);
@@ -106,23 +106,25 @@ export class AuthService {
     ); // One day in ms
   }
 
-  refreshToken() {
-    return this.getUser(new user.GetUserRequest()).catch((error: any) => {
-      let parsedError = BuildBuddyError.parse(error);
+  async refreshToken(): Promise<void> {
+    try {
+      await this.getUser(new user.GetUserRequest());
+    } catch (error: any) {
+      const parsedError = BuildBuddyError.parse(error);
       console.warn(parsedError);
       if (parsedError?.code == "Unauthenticated" || parsedError?.code == "PermissionDenied") {
         this.handleTokenRefreshError();
       }
-    });
+    }
   }
 
-  handleLoggedIn(response: user.GetUserResponse) {
+  handleLoggedIn(response: user.GetUserResponse): void {
     window.opener?.postMessage({ type: "buildbuddy_message", error: "", success: true }, window.location.origin);
     localStorage.removeItem(AUTO_LOGIN_ATTEMPTED_STORAGE_KEY);
     this.emitUser(this.userFromResponse(response));
   }
 
-  handleTokenRefreshError() {
+  handleTokenRefreshError(): void {
     // If we've already tried to auto-relogin and it didn't work, just log the user out.
     if (localStorage.getItem(AUTO_LOGIN_ATTEMPTED_STORAGE_KEY)) {
       this.emitUser(undefined);
@@ -135,7 +137,7 @@ export class AuthService {
     })}`;
   }
 
-  refreshUser() {
+  refreshUser(): Promise<void> {
     return this.getUser(new user.GetUserRequest())
       .then((response: user.GetUserResponse) => {
         this.handleLoggedIn(response);
@@ -145,11 +147,11 @@ export class AuthService {
       });
   }
 
-  private getUser(request: user.GetUserRequest) {
+  private getUser(request: user.GetUserRequest): Promise<user.GetUserResponse> {
     return rpcService.service.getUser(request);
   }
 
-  createUser() {
+  createUser(): void {
     let request = new user.CreateUserRequest();
     rpcService.service
       .createUser(request)
@@ -167,12 +169,12 @@ export class AuthService {
       });
   }
 
-  onUserRpcError(error: any) {
+  onUserRpcError(error: any): void {
     errorService.handleError(error);
     this.emitUser(undefined);
   }
 
-  userFromResponse(response: user.GetUserResponse) {
+  userFromResponse(response: user.GetUserResponse): User {
     const selectedGroupId = response.selectedGroup?.groupId ? response.selectedGroup.groupId : response.selectedGroupId;
 
     return new User({
@@ -194,7 +196,7 @@ export class AuthService {
     });
   }
 
-  emitUser(user?: User) {
+  emitUser(user?: User): void {
     console.log("User", user);
     this.user = user;
     this.updateRequestContext();
@@ -204,7 +206,7 @@ export class AuthService {
     this.userStream.next(user);
   }
 
-  updateRequestContext() {
+  updateRequestContext(): void {
     let cookieName = "userId";
     let match = document.cookie.match("(^|[^;]+)\\s*" + cookieName + "\\s*=\\s*([^;]+)");
     let userIdFromCookie = match ? match.pop() : "";
@@ -214,7 +216,7 @@ export class AuthService {
     this.setCookie(SELECTED_GROUP_ID_COOKIE, groupId);
   }
 
-  async setSelectedGroupId(groupId: string, groupURL: string, { reload = false }: { reload?: boolean } = {}) {
+  async setSelectedGroupId(groupId: string, groupURL: string, { reload = false }: { reload?: boolean } = {}): Promise<void> {
     if (!this.user) throw new Error("failed to set selected group ID: not logged in");
 
     this.setCookie(SELECTED_GROUP_ID_COOKIE, groupId);
@@ -237,7 +239,7 @@ export class AuthService {
   }
 
   // Enters impersonation for the given group, which may either be a group ID or a URL identifier.
-  async enterImpersonationMode(query: string, { redirectUrl = "" }: { redirectUrl?: string } = {}) {
+  async enterImpersonationMode(query: string, { redirectUrl = "" }: { redirectUrl?: string } = {}): Promise<void> {
     const request = grp.GetGroupRequest.create(query.startsWith("GR") ? { groupId: query } : { urlIdentifier: query });
     const response = await rpcService.service.getGroup(request);
 
@@ -263,14 +265,14 @@ export class AuthService {
     window.location.href = impersonationUrl.toString();
   }
 
-  async exitImpersonationMode() {
+  async exitImpersonationMode(): Promise<void> {
     sessionStorage.removeItem(IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY);
     const url = new URL(window.location.href);
     url.searchParams.delete(IMPERSONATING_GROUP_ID_SEARCH_PARAM);
     window.location.href = url.toString();
   }
 
-  login(slug?: string) {
+  login(slug?: string): void {
     const search = new URLSearchParams(window.location.search);
     if (slug) {
       let url = `/login/?${new URLSearchParams({
@@ -304,9 +306,11 @@ export class AuthService {
     window.location.href = url;
   }
 
-  logout() {
+  logout(): void {
     window.location.href = `/logout/`;
   }
 }
 
-export default new AuthService();
+const authService: AuthService = new AuthService();
+
+export default authService;

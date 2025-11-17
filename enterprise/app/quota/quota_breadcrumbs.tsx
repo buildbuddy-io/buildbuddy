@@ -10,7 +10,7 @@ export interface QuotaBreadcrumbsProps {
   items: BreadcrumbItem[];
 }
 
-export default function QuotaBreadcrumbs({ items }: QuotaBreadcrumbsProps) {
+export default function QuotaBreadcrumbs({ items }: QuotaBreadcrumbsProps): JSX.Element {
   return (
     <div className="quota-breadcrumbs">
       {items.map((item) => (

@@ -23,18 +23,18 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
     limit: defaultPageSize,
   };
 
-  handleMoreInvocationClicked() {
+  handleMoreInvocationClicked(): void {
     this.setState({
       limit: this.state.limit ? undefined : defaultPageSize,
     });
   }
 
-  handleCopyClicked(label: string) {
+  handleCopyClicked(label: string): void {
     copyToClipboard(label);
     alert_service.success("Command line copied to clipboard!");
   }
 
-  render() {
+  render(): JSX.Element {
     const isBazelInvocation = this.props.model.isBazelInvocation();
 
     const cumulativeMetrics = this.props.model.buildMetrics?.cumulativeMetrics;

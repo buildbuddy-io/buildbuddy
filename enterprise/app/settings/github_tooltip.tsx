@@ -3,7 +3,7 @@ import React from "react";
 import { Tooltip } from "../../../app/components/tooltip/tooltip";
 
 export default class GitHubTooltip extends React.Component<{}, {}> {
-  render() {
+  render(): React.ReactNode {
     return (
       <Tooltip
         renderContent={() => (

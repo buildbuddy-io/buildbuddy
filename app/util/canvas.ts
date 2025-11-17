@@ -38,7 +38,7 @@ export function fillTextBox(
   x: number,
   y: number,
   { textColor = "black", boxColor = "white", boxRadius = 0, boxPadding = 0, xAnchor = "left" }: TextBoxProps = {}
-) {
+): void {
   const textMetrics = ctx.measureText(text);
   const radiusPadding = boxRadius / 2;
   const boxWidth = textMetrics.width + boxPadding * 2 + radiusPadding * 2;
@@ -77,7 +77,7 @@ export function fillCenteredText(
     horizontal?: boolean;
     maxWidth?: number;
   } = {}
-) {
+): void {
   let x = left;
   let y = top + height;
   const textMetrics = ctx.measureText(text);
@@ -103,7 +103,7 @@ export function fillRoundedRect(
   height: number,
   radius: number,
   fillStyle: string = ""
-) {
+): void {
   ctx.beginPath();
   ctx.moveTo(x + radius, y);
   ctx.arcTo(x + width, y, x + width, y + height, radius);

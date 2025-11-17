@@ -96,7 +96,7 @@ export class CommentModel {
     return CommentModel.fromComment(newComment);
   }
 
-  static fromComment(c: github.Comment) {
+  static fromComment(c: github.Comment): CommentModel {
     return new CommentModel(new github.Comment(c));
   }
 
@@ -169,7 +169,7 @@ export class FileModel {
     return this.file.changeType;
   }
 
-  static fromFileSummary(f: github.FileSummary) {
+  static fromFileSummary(f: github.FileSummary): FileModel {
     return new FileModel(new github.FileSummary(f));
   }
 }
@@ -472,7 +472,7 @@ export class ReviewModel {
     return new ReviewModel(newState);
   }
 
-  removeCommentFromPending(commentId: string) {
+  removeCommentFromPending(commentId: string): ReviewModel {
     if (!this.isCommentInProgress(commentId)) {
       return this;
     }
@@ -481,7 +481,7 @@ export class ReviewModel {
     return new ReviewModel(newState);
   }
 
-  setDraftReviewId(draftReviewId: string) {
+  setDraftReviewId(draftReviewId: string): ReviewModel {
     if (this.state.draftReviewId === draftReviewId) {
       return this;
     }

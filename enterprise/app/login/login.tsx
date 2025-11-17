@@ -32,23 +32,23 @@ export default class LoginComponent extends React.Component<Props, State> {
     ssoSlug: this.getUrlSlug(),
   };
 
-  ssoSlugButton = React.createRef<HTMLInputElement>();
+  ssoSlugButton: React.RefObject<HTMLInputElement> = React.createRef<HTMLInputElement>();
 
-  componentDidMount() {
+  componentDidMount(): void {
     if (this.isOrgSpecific()) {
       this.fetchOrgName();
     }
   }
 
-  isJoiningOrg() {
+  isJoiningOrg(): boolean {
     return window.location.pathname.startsWith("/join/");
   }
 
-  isOrgSpecific() {
+  isOrgSpecific(): boolean {
     return this.isJoiningOrg() || capabilities.config.defaultLoginSlug || capabilities.config.customerSubdomain;
   }
 
-  getUrlSlug() {
+  getUrlSlug(): string | null {
     if (this.isJoiningOrg()) {
       return window.location.pathname.split("/").pop();
     }
@@ -58,7 +58,7 @@ export default class LoginComponent extends React.Component<Props, State> {
     return capabilities.config.defaultLoginSlug;
   }
 
-  async fetchOrgName() {
+  async fetchOrgName(): Promise<void> {
     this.setState({ loading: true });
     try {
       const { name, ssoEnabled } = await rpcService.service.getGroup(
@@ -74,15 +74,15 @@ export default class LoginComponent extends React.Component<Props, State> {
     }
   }
 
-  componentWillMount() {
+  componentWillMount(): void {
     document.title = `Login | BuildBuddy`;
   }
 
-  handleLoginClicked(event: any) {
+  handleLoginClicked(event: React.MouseEvent<HTMLButtonElement>): void {
     authService.login();
   }
 
-  handleGithubClicked() {
+  handleGithubClicked(): void {
     const url = `/login/github/?${new URLSearchParams({
       redirect_url: window.location.href,
     })}`;
@@ -97,7 +97,7 @@ export default class LoginComponent extends React.Component<Props, State> {
     window.location.href = url;
   }
 
-  handleSSOClicked(event: any) {
+  handleSSOClicked(event: React.SyntheticEvent): void {
     event.preventDefault();
 
     if (!this.state.showSSO && !this.state.ssoSlug) {
@@ -115,27 +115,27 @@ export default class LoginComponent extends React.Component<Props, State> {
     authService.login(this.state.ssoSlug);
   }
 
-  handleSetupClicked() {
+  handleSetupClicked(): void {
     router.navigateTo("/docs/setup");
   }
 
-  onChange(e: React.ChangeEvent<HTMLInputElement>) {
+  onChange(e: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({ ssoSlug: e.target.value });
   }
 
-  isGoogleConfigured() {
+  isGoogleConfigured(): boolean {
     return (
       capabilities.config.configuredIssuers.length &&
       capabilities.config.configuredIssuers[0].includes("accounts.google.com")
     );
   }
-  isOktaConfigured() {
+  isOktaConfigured(): boolean {
     return (
       capabilities.config.configuredIssuers.length && capabilities.config.configuredIssuers[0].includes("okta.com")
     );
   }
 
-  render() {
+  render(): React.ReactNode {
     if (this.isOrgSpecific() && this.state.loading) {
       return (
         <div className="login">

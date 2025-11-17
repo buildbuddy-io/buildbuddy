@@ -50,11 +50,11 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
     roleToApply: DEFAULT_ROLE,
   };
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetch();
   }
 
-  private fetch() {
+  private fetch(): void {
     this.setState({ loading: true });
 
     const fetches = new Array<CancelablePromise>();
@@ -87,7 +87,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
 
   // Edit role modal
 
-  private onClickEditRole(selectedMembers: Map<string, member_list.MemberListMember>) {
+  private onClickEditRole(selectedMembers: Map<string, member_list.MemberListMember>): void {
     const selectedWithRole = Array.from(selectedMembers.values()).filter((u) => u.role !== undefined);
 
     this.setState({
@@ -98,16 +98,16 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
       roleToApply: selectedWithRole[0]?.role || DEFAULT_ROLE,
     });
   }
-  private onRequestCloseEditRoleModal() {
+  private onRequestCloseEditRoleModal(): void {
     if (this.state.isRoleUpdateLoading) return;
 
     this.setState({ isEditRoleModalVisible: false });
   }
-  private onChangeRoleToApply(event: React.ChangeEvent<HTMLSelectElement>) {
+  private onChangeRoleToApply(event: React.ChangeEvent<HTMLSelectElement>): void {
     const roleToApply = Number(event.target.value) as grp.Group.Role;
     this.setState({ roleToApply });
   }
-  private onClickApplyRoleEdits() {
+  private onClickApplyRoleEdits(): void {
     this.setState({ isRoleUpdateLoading: true });
 
     const req = new grp.UpdateGroupUsersRequest({
@@ -157,15 +157,15 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
 
   // Remove modal
 
-  private onClickRemove() {
+  private onClickRemove(): void {
     this.setState({ isRemoveModalVisible: true });
   }
-  private onRequestCloseRemoveModal() {
+  private onRequestCloseRemoveModal(): void {
     if (this.state.isRemoveLoading) return;
 
     this.setState({ isRemoveModalVisible: false });
   }
-  private onClickConfirmRemove() {
+  private onClickConfirmRemove(): void {
     this.setState({ isRemoveLoading: true });
 
     const req = new grp.UpdateGroupUsersRequest({
@@ -210,19 +210,19 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
       .finally(() => this.setState({ isRemoveLoading: false }));
   }
 
-  private isLoggedInUser(member: member_list.MemberListMember) {
+  private isLoggedInUser(member: member_list.MemberListMember): boolean {
     return member?.user?.userId?.id === this.props.user.displayUser?.userId?.id;
   }
 
-  private containsLoggedInUser(member: member_list.MemberListMember) {
+  private containsLoggedInUser(member: member_list.MemberListMember): boolean {
     return member.userList?.user.some((u) => u.userId?.id === this.props.user.displayUser.userId?.id);
   }
 
-  private affectsLoggedInUser(member: member_list.MemberListMember) {
+  private affectsLoggedInUser(member: member_list.MemberListMember): boolean {
     return this.isLoggedInUser(member) || this.containsLoggedInUser(member);
   }
 
-  private renderAffectedUsersList({ verb }: { verb: string }) {
+  private renderAffectedUsersList({ verb }: { verb: string }): React.ReactNode {
     let selectedMembers = Array.from(this.state.selectedMembers.values());
     if (verb == "Removing") {
       selectedMembers = selectedMembers.filter((u) => u.role !== undefined);
@@ -253,7 +253,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
     );
   }
 
-  private renderRoleDescription(role: grp.Group.Role) {
+  private renderRoleDescription(role: grp.Group.Role): React.ReactNode {
     // TODO: send up role=>capabilities mapping from server, and base these
     // descriptions on that.
     type Capability = {
@@ -305,7 +305,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
     );
   }
 
-  private onClickUserListButton(idx: number, selectedUsers: Map<string, member_list.MemberListMember>) {
+  private onClickUserListButton(idx: number, selectedUsers: Map<string, member_list.MemberListMember>): void {
     this.setState({ selectedMembers: selectedUsers });
     if (idx == 0) {
       this.onClickEditRole(selectedUsers);
@@ -314,7 +314,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
     }
   }
 
-  render() {
+  render(): React.ReactNode {
     if (this.state.loading) {
       return <div className="loading" />;
     }

@@ -22,7 +22,7 @@ interface SidebarNodeState {
 
 export default class SidebarNodeComponent extends React.Component<SidebarNodeProps, SidebarNodeState> {
   state: SidebarNodeState = { renameValue: "" };
-  render() {
+  render(): React.ReactNode {
     const depth = this.props.depth || 0;
     const expanded =
       this.props.node.nodeType == workspace.NodeType.DIRECTORY && this.props.isExpanded(this.props.fullPath);
@@ -100,7 +100,7 @@ export default class SidebarNodeComponent extends React.Component<SidebarNodePro
     );
   }
 
-  handleRename() {
+  handleRename(): void {
     this.props.handleRename(
       this.props.node,
       this.props.fullPath,
@@ -110,7 +110,7 @@ export default class SidebarNodeComponent extends React.Component<SidebarNodePro
   }
 }
 
-export function compareNodes(a: workspace.Node, b: workspace.Node) {
+export function compareNodes(a: workspace.Node, b: workspace.Node): number {
   // Sort 'tree' type nodes after 'file' type nodes.
   const typeDiff = b.nodeType - a.nodeType;
   if (typeDiff !== 0) return typeDiff;

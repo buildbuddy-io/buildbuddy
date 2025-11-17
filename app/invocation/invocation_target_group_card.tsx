@@ -57,22 +57,23 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
 
   private fetchRPC?: CancelablePromise;
 
-  private getTargetURL(target: target.Target) {
+  private getTargetURL(target: target.Target): string {
     return `?${new URLSearchParams({
       target: target.metadata?.label ?? "",
       targetStatus: String(target.status),
     })}`;
   }
 
-  private nextPageToken() {
-    return this.state.nextPageToken === null ? this.props.group.nextPageToken : this.state.nextPageToken;
+  private nextPageToken(): string | undefined {
+    const token = this.state.nextPageToken === null ? this.props.group.nextPageToken : this.state.nextPageToken;
+    return token ?? undefined;
   }
 
-  private hasMoreTargets() {
+  private hasMoreTargets(): boolean {
     return Boolean(this.nextPageToken());
   }
 
-  private loadMore(all?: boolean, callback?: () => void) {
+  private loadMore(all?: boolean, callback?: () => void): void {
     this.fetchRPC?.cancel();
     this.setState({ loading: true });
     rpcService.service
@@ -101,9 +102,9 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
       .finally(() => this.setState({ loading: false }));
   }
 
-  private onClickFile(event: React.MouseEvent<HTMLAnchorElement>, file: build_event_stream.File) {
+  private onClickFile(event: React.MouseEvent<HTMLAnchorElement>, file: build_event_stream.File): void {
     event.preventDefault();
-    if (!file.uri) return false;
+    if (!file.uri) return;
 
     if (file.uri.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", file.uri);
@@ -120,7 +121,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
     })}`;
   }
 
-  onCopyClicked() {
+  onCopyClicked(): void {
     let callback = () => {
       let targets = this.props.group.targets.concat(this.state.fetchedTargets);
       copyToClipboard(targets.map((target) => target.metadata?.label ?? "").join(" "));
@@ -133,7 +134,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
     callback();
   }
 
-  render() {
+  render(): React.ReactNode {
     let targets = this.props.group.targets.concat(this.state.fetchedTargets);
     let className = "";
     let icon: React.ReactNode = null;

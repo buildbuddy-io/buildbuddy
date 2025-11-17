@@ -26,12 +26,12 @@ export class KythePanel extends React.Component<Props, State> {
   goToDefKey: monaco.editor.IContextKey<boolean> | undefined = undefined;
   findRefsKey: monaco.editor.IContextKey<boolean> | undefined = undefined;
   mousedownTarget: monaco.Position | undefined = undefined;
-  mouseMoveListener = this.resizeXrefs.bind(this);
-  mouseUpListener = () => {
+  mouseMoveListener: (e: MouseEvent) => void = this.resizeXrefs.bind(this);
+  mouseUpListener: () => void = () => {
     window.removeEventListener("mousemove", this.mouseMoveListener, false);
   };
 
-  componentDidMount() {
+  componentDidMount(): void {
     window.addEventListener("mouseup", this.mouseUpListener);
 
     this.goToDefKey = this.props.editor.createContextKey<boolean>("goToDefContextKey", false);
@@ -101,12 +101,12 @@ export class KythePanel extends React.Component<Props, State> {
     );
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     window.removeEventListener("mouseup", this.mouseUpListener);
     window.removeEventListener("mousemove", this.mouseMoveListener);
   }
 
-  render() {
+  render(): JSX.Element {
     return (
       <>
         {Boolean(this.state.xrefsLoading || this.state.extendedXrefs) && (
@@ -148,7 +148,7 @@ export class KythePanel extends React.Component<Props, State> {
     );
   }
 
-  resizeXrefs(e: MouseEvent) {
+  resizeXrefs(e: MouseEvent): void {
     this.setState({
       xrefsHeight: Math.max(100, window.innerHeight - e.clientY - 6),
     });
@@ -178,7 +178,7 @@ export class KythePanel extends React.Component<Props, State> {
     });
   }
 
-  navigateToDefinitionOrPopulatePanel(pos: monaco.Position) {
+  navigateToDefinitionOrPopulatePanel(pos: monaco.Position): void {
     const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
     if (!refs.length) {
       // clear all highlights when clicking on a non-reference
@@ -196,7 +196,7 @@ export class KythePanel extends React.Component<Props, State> {
     }
   }
 
-  navigateToDefinition(tickets: string[], fallbackToPanel = false) {
+  navigateToDefinition(tickets: string[], fallbackToPanel = false): void {
     if (!tickets?.length) {
       return;
     }
@@ -240,7 +240,7 @@ export class KythePanel extends React.Component<Props, State> {
       .catch((e) => console.log("Error fetching kythe data", e));
   }
 
-  populateXrefsPanel(tickets: string[]) {
+  populateXrefsPanel(tickets: string[]): void {
     if (!tickets || tickets.length === 0) {
       return;
     }
@@ -268,11 +268,11 @@ export class KythePanel extends React.Component<Props, State> {
       .catch((e) => console.log("Error fetching kythe data", e));
   }
 
-  navigateToAnchor(a: kythe.proto.Anchor) {
+  navigateToAnchor(a: kythe.proto.Anchor): void {
     this.props.navigate(filenameFromAnchor(a), "", lineNumberFromAnchor(a));
   }
 
-  renderAnchors(name: string, anchors: kythe.proto.CrossReferencesReply.RelatedAnchor[]) {
+  renderAnchors(name: string, anchors: kythe.proto.CrossReferencesReply.RelatedAnchor[]): JSX.Element {
     if (anchors.length === 0) {
       return <></>;
     }
@@ -426,7 +426,7 @@ function getDisplayOptions(o: any, className: string = "code-hover"): monaco.edi
   return { inlineClassName: className, hoverMessage: { value: o.target_ticket } };
 }
 
-function updateSymbolHighlights(model: monaco.editor.ITextModel, tickets: string[]) {
+function updateSymbolHighlights(model: monaco.editor.ITextModel, tickets: string[]): void {
   let modDecs: monaco.editor.IModelDecoration[] = [];
 
   // Go through each decoration. Find decorations with matching tickets. Update their class names
@@ -619,9 +619,9 @@ export async function fetchDocumentation(tick: string): Promise<search.ExtendedD
     });
 }
 
-export async function fetchDecorations(filename: string) {
+export async function fetchDecorations(filename: string): Promise<monaco.editor.IModelDeltaDecoration[]> {
   if (!filename) {
-    return;
+    return [];
   }
 
   let ticket = "kythe://buildbuddy?path=" + filename;
@@ -638,7 +638,7 @@ export async function fetchDecorations(filename: string) {
   });
   let rsp = await rpcService.service.kytheProxy(req);
 
-  const newDecor =
+  const newDecor: monaco.editor.IModelDeltaDecoration[] =
     rsp.decorationsReply?.reference
       .map((x) => {
         const startLine = x.span?.start?.lineNumber || 0;
@@ -660,7 +660,7 @@ export async function fetchDecorations(filename: string) {
           options: displayOptions,
         };
       })
-      .filter((x) => x !== null) || [];
+      .filter((x): x is monaco.editor.IModelDeltaDecoration => x !== null) || [];
   return newDecor;
 }
 

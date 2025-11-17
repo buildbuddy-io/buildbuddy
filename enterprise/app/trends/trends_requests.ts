@@ -95,7 +95,7 @@ export class TrendsRpcCache {
     return this.nowTime;
   }
 
-  set(key: string, response: stats.GetTrendResponse) {
+  set(key: string, response: stats.GetTrendResponse): void {
     this.rpcCache.set(key, response);
   }
 

@@ -94,7 +94,7 @@ export function computeTimeKeys(
   return { timeKeys: timeDay.range(timeDay.floor(domain[0]), domain[1]).map((v) => v.getTime()), ticks: [] };
 }
 
-export function renderMetricValue(m: stat_filter.Metric, v: number) {
+export function renderMetricValue(m: stat_filter.Metric, v: number): string {
   if (isExecutionMetric(m)) {
     switch (m.execution) {
       case stat_filter.ExecutionMetricType.EXECUTION_WALL_TIME_EXECUTION_METRIC:

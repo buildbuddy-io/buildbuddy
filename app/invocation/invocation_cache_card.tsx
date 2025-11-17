@@ -14,7 +14,7 @@ interface Props {
 const BITS_PER_BYTE = 8;
 
 export default class CacheCardComponent extends React.Component<Props> {
-  render() {
+  render(): JSX.Element {
     const hasCacheStats =
       this.props.model.cacheStats.length &&
       (+this.props.model.cacheStats[0]?.actionCacheHits !== 0 ||
@@ -222,7 +222,7 @@ export default class CacheCardComponent extends React.Component<Props> {
     );
   }
 
-  renderVolumeChartLabel(label: string, swatch: string, sizeBytes: number, compressedSizeBytes: number) {
+  renderVolumeChartLabel(label: string, swatch: string, sizeBytes: number, compressedSizeBytes: number): JSX.Element {
     const savings = 1 - compressedSizeBytes / sizeBytes;
     return (
       <div className="cache-chart-label">
@@ -245,7 +245,7 @@ export default class CacheCardComponent extends React.Component<Props> {
     );
   }
 
-  drawChart(a: number, colorA: string, b: number, colorB: string) {
+  drawChart(a: number, colorA: string, b: number, colorB: string): JSX.Element {
     if (a == 0 && b == 0) {
       colorA = "#eee";
       colorB = "#eee";
@@ -273,7 +273,7 @@ export default class CacheCardComponent extends React.Component<Props> {
   }
 }
 
-function renderBreakdown(data: any[] | undefined, title: string, subtitle: string) {
+function renderBreakdown(data: any[] | undefined, title: string, subtitle: string): JSX.Element {
   data = data?.filter((d) => d.value > 0).sort((a, b) => b.value - a.value);
 
   let sum = data?.reduce(

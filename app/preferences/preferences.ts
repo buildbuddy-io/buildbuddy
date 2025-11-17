@@ -19,26 +19,26 @@ export default class UserPreferences {
     this.handlePreferencesChanged = handlePreferencesChanged;
   }
 
-  denseModeEnabled =
+  denseModeEnabled: boolean =
     viewModeKey in window.localStorage
       ? window.localStorage.getItem(viewModeKey) == denseModeValue
       : capabilities.config.defaultToDenseMode;
-  lightTerminalEnabled = window.localStorage.getItem(terminalThemeKey) == terminalThemeLightValue || false;
-  keyboardShortcutsEnabled = window.localStorage.getItem(keyboardShortcutsKey) === keyboardShortcutsValue;
+  lightTerminalEnabled: boolean = window.localStorage.getItem(terminalThemeKey) == terminalThemeLightValue || false;
+  keyboardShortcutsEnabled: boolean = window.localStorage.getItem(keyboardShortcutsKey) === keyboardShortcutsValue;
 
-  toggleDenseMode() {
+  toggleDenseMode(): void {
     this.denseModeEnabled = !this.denseModeEnabled;
     window.localStorage.setItem(viewModeKey, this.denseModeEnabled ? denseModeValue : comfyModeValue);
     this.handlePreferencesChanged();
   }
 
-  toggleLightTerminal() {
+  toggleLightTerminal(): void {
     this.lightTerminalEnabled = !this.lightTerminalEnabled;
     window.localStorage.setItem(terminalThemeKey, this.lightTerminalEnabled ? terminalThemeLightValue : "");
     this.handlePreferencesChanged();
   }
 
-  toggleKeyboardShortcuts() {
+  toggleKeyboardShortcuts(): void {
     this.keyboardShortcutsEnabled = !this.keyboardShortcutsEnabled;
     window.localStorage.setItem(keyboardShortcutsKey, this.keyboardShortcutsEnabled ? keyboardShortcutsValue : "");
     this.handlePreferencesChanged();

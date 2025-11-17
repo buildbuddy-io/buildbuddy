@@ -26,32 +26,32 @@ export default class ActionCompareButtonComponent extends React.Component<Action
 
   private subscription = new Subscription();
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.subscription.add(actionComparisonService.subscribe(this.onComparisonDataUpdate.bind(this)));
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     this.subscription.unsubscribe();
   }
 
-  private onComparisonDataUpdate(data: ActionComparisonData) {
+  private onComparisonDataUpdate(data: ActionComparisonData): void {
     this.setState({ comparisonActionData: data });
   }
 
-  private onClick = (event: React.MouseEvent<HTMLElement>) => {
+  private onClick = (event: React.MouseEvent<HTMLElement>): void => {
     this.setState({ isDropdownOpen: true });
     event.stopPropagation();
     event.preventDefault();
   };
 
-  private onClickSelectForComparison = (event: React.MouseEvent<HTMLElement>) => {
+  private onClickSelectForComparison = (event: React.MouseEvent<HTMLElement>): void => {
     actionComparisonService.setComparisonAction(this.props.invocationId, this.props.actionDigest);
     this.setState({ isDropdownOpen: false });
     event.stopPropagation();
     event.preventDefault();
   };
 
-  private onClickCompareWithSelected = (event: React.MouseEvent<HTMLElement>) => {
+  private onClickCompareWithSelected = (event: React.MouseEvent<HTMLElement>): void => {
     const comparisonData = this.state.comparisonActionData;
     if (!comparisonData?.invocationId || !comparisonData?.actionDigest) {
       return;
@@ -73,13 +73,13 @@ export default class ActionCompareButtonComponent extends React.Component<Action
     event.preventDefault();
   };
 
-  private onRequestCloseDropdown = (event: React.MouseEvent<HTMLElement>) => {
+  private onRequestCloseDropdown = (event: React.MouseEvent<HTMLElement>): void => {
     this.setState({ isDropdownOpen: false });
     event.stopPropagation();
     event.preventDefault();
   };
 
-  render() {
+  render(): JSX.Element {
     const canCompare = actionComparisonService.canCompareWith(this.props.invocationId, this.props.actionDigest);
 
     return (
@@ -113,7 +113,7 @@ export default class ActionCompareButtonComponent extends React.Component<Action
   }
 }
 
-function ComparisonBufferIllustration({ isBuffered }: { isBuffered: boolean }) {
+function ComparisonBufferIllustration({ isBuffered }: { isBuffered: boolean }): JSX.Element {
   return (
     <div className={`comparison-buffer-illustration ${isBuffered ? "buffered" : ""}`}>
       <div className="comparison-buffer-icon comparison-buffer-icon-a" />

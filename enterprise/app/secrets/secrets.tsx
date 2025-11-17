@@ -8,7 +8,7 @@ export interface SecretsComponentProps {
 }
 
 export default class SecretsComponent extends React.Component<SecretsComponentProps> {
-  private renderPage() {
+  private renderPage(): React.ReactNode {
     if (this.props.path === "/settings/org/secrets/new") {
       return <UpdateSecretComponent />;
     }
@@ -18,7 +18,7 @@ export default class SecretsComponent extends React.Component<SecretsComponentPr
     return <SecretsListComponent />;
   }
 
-  render() {
+  render(): React.ReactNode {
     return <div className="secrets">{this.renderPage()}</div>;
   }
 }

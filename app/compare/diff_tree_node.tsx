@@ -206,7 +206,7 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
     );
   }
 
-  render() {
+  render(): JSX.Element {
     const { nodes, otherNodes, showChangesOnly } = this.props;
 
     // Get all unique names from both sides

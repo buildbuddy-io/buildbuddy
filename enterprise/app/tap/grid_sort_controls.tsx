@@ -15,15 +15,15 @@ interface Props {
 }
 
 export default class GridSortControlsComponent extends React.Component<Props> {
-  handleSortChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleSortChange(event: React.ChangeEvent<HTMLSelectElement>): void {
     router.setQueryParam(SORT_MODE_PARAM, event.target.value);
   }
 
-  handleDirectionChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleDirectionChange(event: React.ChangeEvent<HTMLSelectElement>): void {
     router.setQueryParam(SORT_DIRECTION_PARAM, event.target.value);
   }
 
-  handleColorChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleColorChange(event: React.ChangeEvent<HTMLSelectElement>): void {
     router.setQueryParam(COLOR_MODE_PARAM, event.target.value);
   }
 
@@ -39,7 +39,7 @@ export default class GridSortControlsComponent extends React.Component<Props> {
     return (this.props.search.get(COLOR_MODE_PARAM) as ColorMode) || "status";
   }
 
-  render() {
+  render(): JSX.Element {
     return (
       <div className="tap-sort-controls">
         <div className="tap-sort-control">

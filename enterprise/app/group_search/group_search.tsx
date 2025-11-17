@@ -14,23 +14,23 @@ interface State {
 export default class GroupSearchComponent extends React.Component<{}, State> {
   state: State = { query: "", visible: false, loading: false };
 
-  componentDidMount() {
+  componentDidMount(): void {
     window.addEventListener("groupSearchClick", () => this.onClickGroupSearch());
   }
 
-  private onClickGroupSearch() {
+  private onClickGroupSearch(): void {
     this.setState({ visible: true, query: "" });
   }
 
-  private onClose() {
+  private onClose(): void {
     this.setState({ visible: false });
   }
 
-  private onChangeQuery(e: React.ChangeEvent<HTMLInputElement>) {
+  private onChangeQuery(e: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({ query: e.target.value });
   }
 
-  private onSearch() {
+  private onSearch(): void {
     const query = this.state.query.trim();
     this.setState({ loading: true });
     auth_service
@@ -39,7 +39,7 @@ export default class GroupSearchComponent extends React.Component<{}, State> {
       .finally(() => this.setState({ loading: false }));
   }
 
-  render() {
+  render(): JSX.Element {
     return (
       <SimpleModalDialog
         title="Go to org"

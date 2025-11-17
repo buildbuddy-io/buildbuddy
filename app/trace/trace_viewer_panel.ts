@@ -5,6 +5,8 @@ import * as constants from "./constants";
 import { TraceEvent } from "./trace_events";
 import { LinePlotModel, PanelModel, SectionModel, TrackModel } from "./trace_viewer_model";
 
+type ModelCoordinates = { x: number; y: number };
+
 /**
  * Draws the data from a `PanelModel` to a canvas.
  */
@@ -46,14 +48,14 @@ export default class Panel {
     this.container = canvas.parentElement!;
   }
 
-  private isSectionVisible(section: SectionModel) {
+  private isSectionVisible(section: SectionModel): boolean {
     return !(
       constants.TIMESTAMP_HEADER_SIZE + section.y > this.scrollY + this.model.height ||
       constants.TIMESTAMP_HEADER_SIZE + section.y + section.height < this.scrollY
     );
   }
 
-  private isSectionFullyVisible(section: SectionModel) {
+  private isSectionFullyVisible(section: SectionModel): boolean {
     // TODO: incorporate timestamp header size into section.y instead of having to account for it here
     return (
       section.y + constants.TIMESTAMP_HEADER_SIZE >= this.scrollY + constants.TIMESTAMP_HEADER_SIZE &&
@@ -62,7 +64,7 @@ export default class Panel {
     );
   }
 
-  containsClientXY(c: ClientXY) {
+  containsClientXY(c: ClientXY): boolean {
     return domRectContains(this.canvas.getBoundingClientRect(), c.clientX, c.clientY);
   }
 
@@ -71,7 +73,7 @@ export default class Panel {
    * updates the scaling to match the current device pixel ratio (note: the
    * pixel ratio can change when zooming in and out).
    */
-  resize() {
+  resize(): void {
     this.dpr = window.devicePixelRatio;
     this.canvasWidth = this.container.clientWidth;
     this.canvasHeight = this.container.clientHeight;
@@ -82,7 +84,7 @@ export default class Panel {
     this.ctx.scale(this.dpr, this.dpr);
   }
 
-  draw() {
+  draw(): void {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
 
@@ -93,7 +95,7 @@ export default class Panel {
     this.drawMouseSelection();
   }
 
-  getMouseModelCoordinates() {
+  getMouseModelCoordinates(): ModelCoordinates {
     const scrollLeft = this.mouse.clientX - this.canvas.getBoundingClientRect().left + this.scrollX;
     const x = scrollLeft / this.canvasXPerModelX;
     const y =
@@ -102,7 +104,7 @@ export default class Panel {
     return { x, y };
   }
 
-  isHovering() {
+  isHovering(): boolean {
     return this.canvas === document.elementFromPoint(this.mouse.clientX, this.mouse.clientY);
   }
 
@@ -180,7 +182,7 @@ export default class Panel {
     return { start, size: duration, count };
   }
 
-  private drawGridlines(ticks: Ticks, height = this.canvasHeight) {
+  private drawGridlines(ticks: Ticks, height: number = this.canvasHeight): void {
     const ctx = this.ctx;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -195,7 +197,7 @@ export default class Panel {
     ctx.stroke();
   }
 
-  private drawMouseSelection() {
+  private drawMouseSelection(): void {
     if (!this.showMouseXGridline) return;
     const x = Math.floor(this.mouse.clientX - this.canvas.getBoundingClientRect().left);
     const ctx = this.ctx;
@@ -253,7 +255,7 @@ export default class Panel {
     }
   }
 
-  private drawTimeline(ticks: Ticks) {
+  private drawTimeline(ticks: Ticks): void {
     const ctx = this.ctx;
     ctx.fillStyle = constants.TIMESTAMP_HEADER_COLOR;
     ctx.fillRect(0, 0, this.canvasWidth, constants.TIMESTAMP_HEADER_SIZE);
@@ -269,7 +271,7 @@ export default class Panel {
     }
   }
 
-  private drawSections() {
+  private drawSections(): void {
     const ctx = this.ctx;
     const xMin = this.scrollX / this.canvasXPerModelX;
     const xMax = (this.scrollX + this.canvasWidth) / this.canvasXPerModelX;
@@ -314,7 +316,7 @@ export default class Panel {
     }
   }
 
-  private drawLinePlot(plot: LinePlotModel, yTop: number, xMin: number, xMax: number) {
+  private drawLinePlot(plot: LinePlotModel, yTop: number, xMin: number, xMax: number): void {
     const ctx = this.ctx;
     const yBottom = yTop + constants.TIME_SERIES_HEIGHT;
     // TODO: reduce plot resolution based on zoom level
@@ -388,7 +390,7 @@ export default class Panel {
     ctx.stroke();
   }
 
-  private drawTrack(track: TrackModel, y: number, xMin: number, xMax: number) {
+  private drawTrack(track: TrackModel, y: number, xMin: number, xMax: number): void {
     let i = 0;
     let lastEventRendered = false;
     for (; i < track.xs.length; i++) {

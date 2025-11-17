@@ -299,7 +299,10 @@ export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
  * Builds the ThreadTimeline structures given the flat list of trace events
  * from the profile.
  */
-export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold = 0 } = {}): ThreadTimeline[] {
+export function buildThreadTimelines(
+  events: TraceEvent[],
+  { visibilityThreshold = 0 }: { visibilityThreshold?: number } = {}
+): ThreadTimeline[] {
   normalizeThreadNames(events);
   const threadNameByTid = getThreadNames(events);
   const threadNameToTidMap = new Map<string, number>();

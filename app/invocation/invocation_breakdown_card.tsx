@@ -17,7 +17,7 @@ interface Datum {
 }
 
 export default class InvocationBreakdownCardComponent extends React.Component<Props> {
-  render() {
+  render(): JSX.Element {
     let launching = this.props.durationByNameMap.get("Launch Blaze") ?? 0;
     let total = this.props.durationByNameMap.get("buildTargets") ?? 0;
     let targets = this.props.durationByNameMap.get("evaluateTargetPatterns") ?? 0;
@@ -90,7 +90,7 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
   }
 }
 
-function renderBreakdown(data: Datum[], title: string, subtitle: string) {
+function renderBreakdown(data: Datum[], title: string, subtitle: string): JSX.Element {
   let sum = data.reduce((prev, current) => {
     return { name: "Sum", value: prev.value + current.value };
   });

@@ -1,4 +1,4 @@
-export function getLangHintFromFilePath(path: string) {
+export function getLangHintFromFilePath(path: string): string | undefined {
   if (!path) {
     return undefined;
   }

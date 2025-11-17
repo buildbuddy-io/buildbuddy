@@ -20,13 +20,13 @@ interface State {
 export default class FlakyTargetChipComponent extends React.Component<Props, State> {
   state: State = { loading: true };
 
-  componentDidMount() {
+  componentDidMount(): void {
     rpc_service.service
       .getTargetStats({ repo: this.props.repo, labels: this.props.labels })
       .then((r) => this.setState({ response: r }))
       .finally(() => this.setState({ loading: false }));
   }
-  render() {
+  render(): React.ReactNode {
     if (this.state.loading) {
       return (
         <OutlinedButton

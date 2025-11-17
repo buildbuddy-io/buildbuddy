@@ -10,7 +10,7 @@ import { grp } from "../../../proto/group_ts_proto";
 import { user_id } from "../../../proto/user_id_ts_proto";
 import { user_list } from "../../../proto/user_list_ts_proto";
 
-export function iconFromAccountType(accountType: user_id.AccountType | undefined) {
+export function iconFromAccountType(accountType: user_id.AccountType | undefined): JSX.Element {
   switch (accountType) {
     case user_id.AccountType.GOOGLE:
       return <GoogleIcon />;
@@ -52,7 +52,7 @@ export class MemberListMember {
     this.role = role;
   }
 
-  id() {
+  id(): string {
     if (this.user) {
       return this.user.userId?.id || "";
     } else if (this.userList) {
@@ -61,7 +61,7 @@ export class MemberListMember {
     return "";
   }
 
-  displayName() {
+  displayName(): React.ReactNode {
     if (this.user) {
       return accountName(this.user);
     } else if (this.userList) {
@@ -79,7 +79,7 @@ export class MemberListMember {
     }
   }
 
-  icon() {
+  icon(): JSX.Element {
     if (this.user) {
       return iconFromAccountType(this.user.accountType);
     } else if (this.userList) {
@@ -113,7 +113,7 @@ export default class MemberListComponent extends React.Component<MemberListProps
     showAll: false,
   };
 
-  private onClickRow(member: MemberListMember) {
+  private onClickRow(member: MemberListMember): void {
     if (this.props.readOnly) {
       return;
     }
@@ -130,7 +130,7 @@ export default class MemberListComponent extends React.Component<MemberListProps
     });
   }
 
-  private onClickSelectAllToggle() {
+  private onClickSelectAllToggle(): void {
     if (this.state.isSelectingAll) {
       this.setState({
         isSelectingAll: false,
@@ -144,15 +144,15 @@ export default class MemberListComponent extends React.Component<MemberListProps
     }
   }
 
-  private onClickShowAllMembers() {
+  private onClickShowAllMembers(): void {
     this.setState({ showAll: true });
   }
 
-  private isLoggedInUser(member: grp.GetGroupUsersResponse.IGroupUser) {
+  private isLoggedInUser(member: grp.GetGroupUsersResponse.IGroupUser): boolean {
     return member?.user?.userId?.id === this.props.user.displayUser?.userId?.id;
   }
 
-  private onButtonClick(buttonIdx: number) {
+  private onButtonClick(buttonIdx: number): void {
     // selectedMembers is stored in the order that the user selected the items.
     // We refilter the original members list here so that we can return
     // the selected items in the same order that they appear in the list.
@@ -162,7 +162,7 @@ export default class MemberListComponent extends React.Component<MemberListProps
     );
   }
 
-  render() {
+  render(): React.ReactNode {
     const isSelectionEmpty = this.state.selectedMembers.size === 0;
 
     let users = this.props.members;

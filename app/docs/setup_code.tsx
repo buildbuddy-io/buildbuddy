@@ -42,7 +42,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     separateAuth: false,
   };
 
-  componentWillMount() {
+  componentWillMount(): void {
     if (this.props.requireCacheEnabled) this.setState({ cacheChecked: true });
 
     authService.userStream.subscribe({
@@ -69,7 +69,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     return response.credential[index] || null;
   }
 
-  handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+  handleInputChange(event: React.ChangeEvent<HTMLInputElement>): void {
     const target = event.target;
     const name = target.name;
     this.setState({
@@ -77,7 +77,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     } as Record<keyof State, any>);
   }
 
-  handleCheckboxChange(event: React.ChangeEvent<HTMLInputElement>) {
+  handleCheckboxChange(event: React.ChangeEvent<HTMLInputElement>): void {
     const target = event.target;
     const name = target.name;
     this.setState({
@@ -85,25 +85,25 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     } as Record<keyof State, any>);
   }
 
-  getResultsUrl() {
+  getResultsUrl(): string | undefined {
     return this.state.bazelConfigResponse?.configOption?.find(
       (option: bazel_config.IConfigOption) => option.flagName == "bes_results_url"
     )?.body;
   }
 
-  getEventStream() {
+  getEventStream(): string | undefined {
     return this.state.bazelConfigResponse?.configOption?.find(
       (option: bazel_config.IConfigOption) => option.flagName == "bes_backend"
     )?.body;
   }
 
-  getCache() {
+  getCache(): string | undefined {
     return this.state.bazelConfigResponse?.configOption?.find(
       (option: bazel_config.IConfigOption) => option.flagName == "remote_cache"
     )?.body;
   }
 
-  getCacheOptions() {
+  getCacheOptions(): React.ReactNode {
     if (this.state.cache == "read")
       return (
         <span>
@@ -121,17 +121,17 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     return "";
   }
 
-  getRemoteOptions() {
+  getRemoteOptions(): React.ReactNode {
     return <span>build --remote_timeout=10m</span>;
   }
 
-  getRemoteExecution() {
+  getRemoteExecution(): string | undefined {
     return this.state.bazelConfigResponse?.configOption?.find(
       (option: bazel_config.IConfigOption) => option.flagName == "remote_executor"
     )?.body;
   }
 
-  getCredentials() {
+  getCredentials(): React.ReactNode {
     if (this.state.auth == "cert") {
       return (
         <div>
@@ -155,11 +155,11 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     return null;
   }
 
-  isAuthEnabled() {
+  isAuthEnabled(): boolean {
     return Boolean(capabilities.auth && this.state.user);
   }
 
-  isCacheEnabled() {
+  isCacheEnabled(): boolean {
     return Boolean(
       this.state.bazelConfigResponse?.configOption?.find(
         (option: bazel_config.IConfigOption) => option.flagName == "remote_cache"
@@ -167,7 +167,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     );
   }
 
-  isExecutionEnabled() {
+  isExecutionEnabled(): boolean {
     return (
       (this.isAuthenticated() || !capabilities.auth) &&
       Boolean(
@@ -178,27 +178,29 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     );
   }
 
-  isCertEnabled() {
+  isCertEnabled(): boolean {
     const certificate = this.getSelectedCredential()?.certificate;
     return Boolean(certificate && certificate.cert && certificate.key);
   }
 
-  isAuthenticated() {
+  isAuthenticated(): boolean {
     return this.isAuthEnabled() && this.state.auth != "none";
   }
 
-  handleCopyClicked(event: any) {
-    var copyText = event.target.parentElement.firstChild;
-    var input = document.createElement("textarea");
-    input.value = copyText.innerText;
+  handleCopyClicked(event: React.MouseEvent): void {
+    const target = event.currentTarget as HTMLElement;
+    const copySource = target.parentElement?.firstChild as HTMLElement | null;
+    if (!copySource) return;
+    const input = document.createElement("textarea");
+    input.value = copySource.textContent ?? "";
     document.body.appendChild(input);
     input.select();
     document.execCommand("copy");
     document.body.removeChild(input);
-    event.target.innerText = "Copied!";
+    target.innerText = "Copied!";
   }
 
-  async fetchAPIKeyValue(bazelConfigResponse: bazel_config.IGetBazelConfigResponse, selectedIndex: number) {
+  async fetchAPIKeyValue(bazelConfigResponse: bazel_config.IGetBazelConfigResponse, selectedIndex: number): Promise<void> {
     this.setState({ apiKeyLoading: true });
     try {
       const creds = bazelConfigResponse.credential;
@@ -221,7 +223,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     }
   }
 
-  onChangeCredential(e: React.ChangeEvent<HTMLSelectElement>) {
+  onChangeCredential(e: React.ChangeEvent<HTMLSelectElement>): void {
     const selectedIndex = Number(e.target.value);
     this.fetchAPIKeyValue(this.state.bazelConfigResponse!, selectedIndex);
     this.setState({ selectedCredentialIndex: selectedIndex });
@@ -236,7 +238,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     return null;
   }
 
-  renderMissingApiKeysNotice() {
+  renderMissingApiKeysNotice(): React.ReactNode {
     const createLink = this.getCreateApiKeyLink();
 
     return (
@@ -262,7 +264,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     );
   }
 
-  render() {
+  render(): React.ReactNode {
     if (!this.state.bazelConfigResponse || this.state.apiKeyLoading) {
       return <Spinner />;
     }

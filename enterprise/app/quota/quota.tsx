@@ -9,7 +9,7 @@ export interface QuotaProps {
 }
 
 export default class QuotaComponent extends React.Component<QuotaProps> {
-  private renderChildPage() {
+  private renderChildPage(): React.ReactNode {
     if (this.props.path === "/settings/server/quota/namespace") {
       return <NamespaceComponent path={this.props.path} search={this.props.search} />;
     }
@@ -19,7 +19,7 @@ export default class QuotaComponent extends React.Component<QuotaProps> {
     return <NamespacesComponent />;
   }
 
-  render() {
+  render(): React.ReactNode {
     return <div className="quota">{this.renderChildPage()}</div>;
   }
 }

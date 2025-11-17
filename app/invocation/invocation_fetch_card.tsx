@@ -15,7 +15,7 @@ export default class FetchCardComponent extends React.Component<Props, State> {
     loading: false,
   };
 
-  render() {
+  render(): JSX.Element {
     return (
       <div className="card">
         <DownloadCloud className="icon" />

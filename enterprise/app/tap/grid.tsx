@@ -101,12 +101,12 @@ export default class TestGridComponent extends React.Component<Props, State> {
     maxDuration: 1,
   };
 
-  isV2 = Boolean(capabilities.config.testGridV2Enabled);
+  isV2: boolean = Boolean(capabilities.config.testGridV2Enabled);
 
   subscription?: Subscription;
   targetsRPC?: CancelablePromise;
 
-  componentWillMount() {
+  componentWillMount(): void {
     document.title = `Tests | BuildBuddy`;
 
     this.fetchTargets(/*initial=*/ true);
@@ -116,11 +116,11 @@ export default class TestGridComponent extends React.Component<Props, State> {
     });
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     this.subscription?.unsubscribe();
   }
 
-  componentDidUpdate(prevProps: Props) {
+  componentDidUpdate(prevProps: Props): void {
     if (this.props.repo !== prevProps.repo || this.props.search.get("branch") !== prevProps.search.get("branch")) {
       // Repo or branch filter changed; re-fetch targets starting from scratch.
       this.fetchTargets(/*initial=*/ true);
@@ -132,7 +132,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
    * from scratch. Otherwise, append the fetched history to the existing
    * history.
    */
-  fetchTargets(initial: boolean) {
+  fetchTargets(initial: boolean): void {
     this.targetsRPC?.cancel();
     this.setState({ loading: false });
 
@@ -163,7 +163,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
       .finally(() => this.setState({ loading: false }));
   }
 
-  updateState(response: target.GetTargetHistoryResponse, initial: boolean) {
+  updateState(response: target.GetTargetHistoryResponse, initial: boolean): void {
     this.state.stats.clear();
 
     let histories = response.invocationTargets;
@@ -245,23 +245,23 @@ export default class TestGridComponent extends React.Component<Props, State> {
     return { commits, commitToMaxInvocationCreatedAtUsec, commitToTargetLabelToStatuses };
   }
 
-  navigateTo(destination: string, event: React.MouseEvent) {
+  navigateTo(destination: string, event: React.MouseEvent): void {
     event.preventDefault();
     router.navigateTo(destination);
   }
 
-  handleFilterChange(event: React.ChangeEvent<HTMLInputElement>) {
+  handleFilterChange(event: React.ChangeEvent<HTMLInputElement>): void {
     router.setQueryParam("filter", event.target.value);
   }
 
-  durationToNum(duration?: google_duration.protobuf.Duration) {
+  durationToNum(duration?: google_duration.protobuf.Duration): number {
     if (!duration) {
       return 0;
     }
     return +duration.seconds + +duration.nanos / 1000000000;
   }
 
-  statusToString(s: api.v1.Status) {
+  statusToString(s: api.v1.Status): string {
     switch (s) {
       case Status.STATUS_UNSPECIFIED:
         return "Unknown";
@@ -294,7 +294,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
     }
   }
 
-  statusToIcon(s: api.v1.Status) {
+  statusToIcon(s: api.v1.Status): React.ReactNode {
     switch (s) {
       case Status.STATUS_UNSPECIFIED:
         return <HelpCircle />;
@@ -327,11 +327,11 @@ export default class TestGridComponent extends React.Component<Props, State> {
     }
   }
 
-  loadMoreTargets() {
+  loadMoreTargets(): void {
     this.setState({ targetLimit: this.state.targetLimit + 50 });
   }
 
-  loadMoreInvocations() {
+  loadMoreInvocations(): void {
     if (this.isV2) {
       this.fetchTargets(/*initial=*/ false);
       return;
@@ -340,15 +340,15 @@ export default class TestGridComponent extends React.Component<Props, State> {
     this.setState({ invocationLimit: this.state.invocationLimit + 50 });
   }
 
-  handleSortChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleSortChange(event: React.ChangeEvent<HTMLSelectElement>): void {
     router.setQueryParam("sort", event.target.value);
   }
 
-  handleDirectionChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleDirectionChange(event: React.ChangeEvent<HTMLSelectElement>): void {
     router.setQueryParam("direction", event.target.value);
   }
 
-  handleColorChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleColorChange(event: React.ChangeEvent<HTMLSelectElement>): void {
     router.setQueryParam("color", event.target.value);
   }
 
@@ -364,7 +364,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
     return (this.props.search.get(COLOR_MODE_PARAM) as ColorMode) || "status";
   }
 
-  sort(a: target.ITargetHistory, b: target.ITargetHistory) {
+  sort(a: target.ITargetHistory, b: target.ITargetHistory): number {
     let first = this.getSortDirection() == "asc" ? a : b;
     let second = this.getSortDirection() == "asc" ? b : a;
 
@@ -427,7 +427,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
     );
   }
 
-  render() {
+  render(): React.ReactNode {
     if (this.state.loading && !this.state.targetHistory?.length) {
       return <div className="loading"></div>;
     }
@@ -586,7 +586,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
   }
 }
 
-function isCached(status: target.ITargetStatus) {
+function isCached(status: target.ITargetStatus): boolean {
   return (
     +(status.timing?.startTime?.seconds || 0) > 0 &&
     Math.floor(+(status.invocationCreatedAtUsec || 0) / 1000000) > +(status.timing?.startTime?.seconds || 0)
@@ -624,7 +624,7 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
   // TODO(bduffany): Use a generic tooltip component.
   private tooltipPortal?: HTMLDivElement;
 
-  componentWillMount() {
+  componentWillMount(): void {
     const tooltipPortal = document.createElement("div");
     tooltipPortal.style.position = "fixed";
     tooltipPortal.style.zIndex = "1";
@@ -633,16 +633,16 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
     this.tooltipPortal = tooltipPortal;
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     this.tooltipPortal!.remove();
   }
 
-  onMouseLeaveCommitTimeline(event: React.MouseEvent) {
+  onMouseLeaveCommitTimeline(event: React.MouseEvent): void {
     this.setState({ hoveredCommit: null });
     this.tooltipPortal!.style.opacity = "0";
   }
 
-  onMouseOverCommit(commitSha: string, event: React.MouseEvent) {
+  onMouseOverCommit(commitSha: string, event: React.MouseEvent): void {
     this.setState({
       hoveredCommit: {
         commitSha,
@@ -654,7 +654,7 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
     setTimeout(() => this.centerHoveredCommitWith(hoveredElement));
   }
 
-  onClickCommitLink(event: React.MouseEvent) {
+  onClickCommitLink(event: React.MouseEvent): void {
     event.preventDefault();
     const link = event.target as HTMLAnchorElement;
     if (link.getAttribute("href")) {
@@ -662,7 +662,7 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
     }
   }
 
-  centerHoveredCommitWith(element: HTMLElement) {
+  centerHoveredCommitWith(element: HTMLElement): void {
     const hoveredCommit = this.hoveredCommitInfo.current;
     if (!hoveredCommit) return;
 
@@ -682,7 +682,7 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
     this.tooltipPortal!.style.opacity = "1";
   }
 
-  render() {
+  render(): React.ReactNode {
     return (
       <>
         <div className="inner-top-bar-underlay" />

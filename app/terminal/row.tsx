@@ -9,7 +9,7 @@ export const ROW_HEIGHT_PX = 20;
  * Renders a single row in the terminal. A row may be a complete line, or a part
  * of a wrapped line (if wrapping is enabled).
  */
-export function Row({ data, index, style }: ListChildComponentProps<ListData>) {
+export function Row({ data, index, style }: ListChildComponentProps<ListData>): JSX.Element | null {
   const rowData = data.rows[index];
   // Use the memoized version of getRows(), since we'll call it several times in
   // quick succession when rendering each row of a wrapped line.
@@ -54,7 +54,7 @@ interface RowSpanProps extends SpanData {
  *
  * If the span is a link, an `<a>` tag will be used instead.
  */
-function RowSpan({ text, matchIndex, isActiveMatch, style, link }: RowSpanProps) {
+function RowSpan({ text, matchIndex, isActiveMatch, style, link }: RowSpanProps): JSX.Element {
   if (!style) style = {};
   const className = [
     style.background && `ansi-bg-${style.background}`,

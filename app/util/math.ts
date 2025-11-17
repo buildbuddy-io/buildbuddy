@@ -1,4 +1,4 @@
-export function clamp(value: number, min: number, max: number) {
+export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
@@ -13,7 +13,7 @@ export function clamp(value: number, min: number, max: number) {
  * - truncateDecimals(1234.5678, 2) // returns 1234.57
  * - truncateDecimals(12345678, 2) // returns 12345678
  */
-export function truncateDecimals(value: number, decimalPlaces: number) {
+export function truncateDecimals(value: number, decimalPlaces: number): number {
   const decimalShift = Math.pow(10, decimalPlaces);
   return Math.round(value * decimalShift) / decimalShift;
 }
@@ -31,6 +31,6 @@ export function truncateDecimals(value: number, decimalPlaces: number) {
  * mod(-1, 9)  // returns 8
  * ```
  */
-export function mod(value: number, modulus: number) {
+export function mod(value: number, modulus: number): number {
   return ((value % modulus) + modulus) % modulus;
 }

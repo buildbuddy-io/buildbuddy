@@ -7,7 +7,9 @@ export type OutlinedButtonGroupProps = JSX.IntrinsicElements["div"];
  * rendering the outline around the whole group and coalescing the outlines
  * between buttons.
  */
-export const OutlinedButtonGroup = React.forwardRef(
+export const OutlinedButtonGroup: React.ForwardRefExoticComponent<
+  OutlinedButtonGroupProps & React.RefAttributes<HTMLDivElement>
+> = React.forwardRef<HTMLDivElement, OutlinedButtonGroupProps>(
   ({ className, ...props }: OutlinedButtonGroupProps, ref: React.Ref<HTMLDivElement>) => {
     return <div ref={ref} className={`outlined-button-group ${className || ""}`} {...props} />;
   }

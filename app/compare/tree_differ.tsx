@@ -33,11 +33,11 @@ export default class TreeDifferComponent extends React.Component<Props, State> {
     treeShaToChildrenMap: new Map<string, TreeNode[]>(),
   };
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetchInputRootsAndExpand();
   }
 
-  componentDidUpdate(prevProps: Props) {
+  componentDidUpdate(prevProps: Props): void {
     if (prevProps.actionA !== this.props.actionA || prevProps.actionB !== this.props.actionB) {
       this.fetchInputRootsAndExpand();
     }
@@ -52,7 +52,7 @@ export default class TreeDifferComponent extends React.Component<Props, State> {
     return build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
   }
 
-  private async fetchInputRootsAndExpand() {
+  private async fetchInputRootsAndExpand(): Promise<void> {
     const [inputRootA, inputRootB] = await Promise.all([
       this.fetchInputRoot(this.props.actionA),
       this.fetchInputRoot(this.props.actionB),
@@ -69,7 +69,7 @@ export default class TreeDifferComponent extends React.Component<Props, State> {
     );
   }
 
-  private async expandDifferingNodes() {
+  private async expandDifferingNodes(): Promise<void> {
     const inputNodesA = this.extractInputNodes(this.state.treeA);
     const inputNodesB = this.extractInputNodes(this.state.treeB);
 
@@ -78,7 +78,7 @@ export default class TreeDifferComponent extends React.Component<Props, State> {
     this.forceUpdate();
   }
 
-  private async expandDifferences(nodeA: TreeNode, nodeB?: TreeNode) {
+  private async expandDifferences(nodeA: TreeNode, nodeB?: TreeNode): Promise<void> {
     let childrenA: TreeNode[] = [];
     if (nodeA.type == "dir") {
       this.state.treeShaToExpanded.set(nodeA.obj.digest?.hash || "", true);
@@ -152,7 +152,7 @@ export default class TreeDifferComponent extends React.Component<Props, State> {
     return nodes;
   }
 
-  private handleDirectoryClicked = async (node: TreeNode, side: "A" | "B") => {
+  private handleDirectoryClicked = async (node: TreeNode, side: "A" | "B"): Promise<void> => {
     if (node.type !== "dir") return;
 
     const dirNode = node.obj as build.bazel.remote.execution.v2.DirectoryNode;
@@ -195,7 +195,7 @@ export default class TreeDifferComponent extends React.Component<Props, State> {
     return this.extractInputNodes(dir);
   }
 
-  render() {
+  render(): JSX.Element {
     const inputNodesA = this.extractInputNodes(this.state.treeA);
     const inputNodesB = this.extractInputNodes(this.state.treeB);
 

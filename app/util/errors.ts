@@ -2,6 +2,24 @@ import { google as google_code } from "../../proto/grpc_code_ts_proto";
 import { google as google_status } from "../../proto/grpc_status_ts_proto";
 
 export type ErrorCode = Omit<GRPCCodeName, "OK">;
+export type GRPCCodeName =
+  | "OK"
+  | "Cancelled"
+  | "Unknown"
+  | "InvalidArgument"
+  | "DeadlineExceeded"
+  | "NotFound"
+  | "AlreadyExists"
+  | "PermissionDenied"
+  | "Unauthenticated"
+  | "ResourceExhausted"
+  | "FailedPrecondition"
+  | "Aborted"
+  | "OutOfRange"
+  | "Unimplemented"
+  | "Internal"
+  | "Unavailable"
+  | "DataLoss";
 
 /**
  * High-level error class representing any error from the BuildBuddy server,
@@ -39,7 +57,7 @@ export class BuildBuddyError extends Error {
     return new BuildBuddyError(grpcCodeToString(status.code), status.message);
   }
 
-  toString() {
+  toString(): string {
     return this.description;
   }
 }
@@ -120,15 +138,9 @@ export function parseGRPCStatus(text: string): google_status.rpc.Status | null {
   return new google_status.rpc.Status({ code, message });
 }
 
-/**
- * CamelCase string representation of a gRPC code, which is the same
- * representation used by the server for error responses.
- */
-export type GRPCCodeName = keyof typeof codesByName;
-
 const Code = google_code.rpc.Code;
 
-const codesByName = {
+const codesByName: Record<GRPCCodeName, google_code.rpc.Code> = {
   OK: Code.OK,
   Cancelled: Code.CANCELLED,
   Unknown: Code.UNKNOWN,
@@ -148,10 +160,9 @@ const codesByName = {
   DataLoss: Code.DATA_LOSS,
 } as const;
 
-const namesByCode = Object.fromEntries(Object.entries(codesByName).map(([k, v]) => [v, k])) as Record<
-  google_code.rpc.Code,
-  GRPCCodeName
->;
+const namesByCode: Record<google_code.rpc.Code, GRPCCodeName> = Object.fromEntries(
+  Object.entries(codesByName).map(([k, v]) => [v, k])
+) as Record<google_code.rpc.Code, GRPCCodeName>;
 
 export function parseGRPCCode(text: string): google_code.rpc.Code | null {
   return (codesByName as Record<string, google_code.rpc.Code>)[text] ?? null;

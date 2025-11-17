@@ -29,11 +29,11 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
     inputText: this.getQuery(),
   };
 
-  getQuery() {
+  getQuery(): string {
     return this.props.search.get("q") || "";
   }
 
-  search() {
+  search(): void {
     if (!this.getQuery()) {
       return;
     }
@@ -55,26 +55,26 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
       .finally(() => this.setState({ loading: false }));
   }
 
-  componentDidUpdate(prevProps: Props) {
+  componentDidUpdate(prevProps: Props): void {
     if (this.props.search.get("q") != prevProps.search.get("q")) {
       this.search();
     }
   }
 
-  handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+  handleInputChange(event: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({
       inputText: event.target.value,
     });
   }
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.keyboardShortcutHandle = shortcuts.register(KeyCombo.slash, () => {
       this.focusSearchBox();
     });
     this.search();
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     shortcuts.deregister(this.keyboardShortcutHandle);
   }
 
@@ -86,7 +86,7 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
     return +(match?.value || 0);
   }
 
-  renderTheRestOfTheOwl() {
+  renderTheRestOfTheOwl(): React.ReactNode {
     if (this.state.loading) {
       return undefined;
     }
@@ -169,11 +169,11 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
     );
   }
 
-  focusSearchBox() {
+  focusSearchBox(): void {
     (document.querySelector(".searchbox") as HTMLElement | undefined)?.focus();
   }
 
-  render() {
+  render(): React.ReactNode {
     return (
       <div className="code-search">
         <div className="shelf">

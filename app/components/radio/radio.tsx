@@ -2,7 +2,7 @@ import React from "react";
 
 export type RadioProps = Omit<JSX.IntrinsicElements["input"], "type">;
 
-export function Radio({ className, ...rest }: RadioProps) {
+export function Radio({ className, ...rest }: RadioProps): JSX.Element {
   return <input type="radio" className={`radio-input ${className || ""}`} {...rest} />;
 }
 

@@ -63,11 +63,11 @@ export default class IpRulesComponent extends React.Component<Props, State> {
     bulkModalError: "",
   };
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetchIPRules();
   }
 
-  private async fetchIPRules() {
+  private async fetchIPRules(): Promise<void> {
     if (!this.props.user) return;
 
     rpcService.service
@@ -81,7 +81,7 @@ export default class IpRulesComponent extends React.Component<Props, State> {
       .catch((e) => errorService.handleError(e));
   }
 
-  private onCloseEditModal() {
+  private onCloseEditModal(): void {
     this.setState({
       editModalOpen: false,
       editModalSubmitting: false,
@@ -89,7 +89,7 @@ export default class IpRulesComponent extends React.Component<Props, State> {
     });
   }
 
-  private async onSubmitEditModal(e: React.FormEvent) {
+  private async onSubmitEditModal(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     this.setState({ editModalSubmitting: true });
 
@@ -109,21 +109,21 @@ export default class IpRulesComponent extends React.Component<Props, State> {
     await this.fetchIPRules();
   }
 
-  private onEditModalCidrChanged(e: React.ChangeEvent<HTMLInputElement>) {
+  private onEditModalCidrChanged(e: React.ChangeEvent<HTMLInputElement>): void {
     const newValue = e.target.value;
     this.setState((prevState) => {
       return { editModalRule: iprules.IPRule.create({ ...prevState.editModalRule, cidr: newValue }) };
     });
   }
 
-  private onEditModalDescriptionChanged(e: React.ChangeEvent<HTMLInputElement>) {
+  private onEditModalDescriptionChanged(e: React.ChangeEvent<HTMLInputElement>): void {
     const newValue = e.target.value;
     this.setState((prevState) => {
       return { editModalRule: iprules.IPRule.create({ ...prevState.editModalRule, description: newValue }) };
     });
   }
 
-  private renderEditModal() {
+  private renderEditModal(): JSX.Element {
     return (
       <Modal
         className="ip-rule-edit-modal"
@@ -169,14 +169,14 @@ export default class IpRulesComponent extends React.Component<Props, State> {
     );
   }
 
-  private onCloseDeleteModal() {
+  private onCloseDeleteModal(): void {
     this.setState({
       deleteModalOpen: false,
       deleteModalSubmitting: false,
     });
   }
 
-  private async onConfirmDeleteRule() {
+  private async onConfirmDeleteRule(): Promise<void> {
     this.setState({ deleteModalSubmitting: true });
 
     try {
@@ -193,7 +193,7 @@ export default class IpRulesComponent extends React.Component<Props, State> {
     await this.fetchIPRules();
   }
 
-  private renderDeleteModal() {
+  private renderDeleteModal(): JSX.Element {
     return (
       <Modal
         className="ip-rule-delete-modal"
@@ -225,7 +225,7 @@ export default class IpRulesComponent extends React.Component<Props, State> {
       </Modal>
     );
   }
-  private onAddNewRule() {
+  private onAddNewRule(): void {
     this.setState({
       editModalOpen: true,
       editModalTitle: "Add IP rule",
@@ -234,7 +234,7 @@ export default class IpRulesComponent extends React.Component<Props, State> {
     });
   }
 
-  private onEditRule(rule: iprules.IPRule) {
+  private onEditRule(rule: iprules.IPRule): void {
     this.setState({
       editModalOpen: true,
       editModalTitle: "Edit IP rule",
@@ -243,21 +243,21 @@ export default class IpRulesComponent extends React.Component<Props, State> {
     });
   }
 
-  private onDeleteRule(rule: iprules.IPRule) {
+  private onDeleteRule(rule: iprules.IPRule): void {
     this.setState({
       deleteModalOpen: true,
       deleteModalRule: rule,
     });
   }
 
-  private onConfigureEnforcement(enable: boolean) {
+  private onConfigureEnforcement(enable: boolean): void {
     rpcService.service
       .setIPRulesConfig(iprules.SetRulesConfigRequest.create({ enforceIpRules: enable }))
       .then((r) => this.setState({ enforcementEnabled: enable }))
       .catch((e) => errorService.handleError(e));
   }
 
-  private onCloseBulkAddModal() {
+  private onCloseBulkAddModal(): void {
     this.setState({
       bulkModalOpen: false,
       bulkModalSubmitting: false,
@@ -266,7 +266,7 @@ export default class IpRulesComponent extends React.Component<Props, State> {
     });
   }
 
-  private onBulkAddRules() {
+  private onBulkAddRules(): void {
     this.setState({
       bulkModalSubmitting: true,
     });
@@ -310,19 +310,19 @@ export default class IpRulesComponent extends React.Component<Props, State> {
     });
   }
 
-  private onBulkAddEntryChanged(e: React.ChangeEvent<HTMLTextAreaElement>) {
+  private onBulkAddEntryChanged(e: React.ChangeEvent<HTMLTextAreaElement>): void {
     this.setState({
       bulkModalText: e.target.value,
     });
   }
 
-  private onBulkAddDismissError() {
+  private onBulkAddDismissError(): void {
     this.setState({
       bulkModalError: "",
     });
   }
 
-  private renderBulkAddModal() {
+  private renderBulkAddModal(): JSX.Element {
     return (
       <Modal
         className="ip-rule-bulk-add-modal"
@@ -372,13 +372,13 @@ export default class IpRulesComponent extends React.Component<Props, State> {
     );
   }
 
-  private onOpenBulkAddRulesModal() {
+  private onOpenBulkAddRulesModal(): void {
     this.setState({
       bulkModalOpen: true,
     });
   }
 
-  render() {
+  render(): JSX.Element {
     if (!this.props.user) return <></>;
 
     return (

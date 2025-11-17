@@ -22,11 +22,11 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
     error: "",
   };
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetchOrg();
   }
 
-  private async fetchOrg() {
+  private async fetchOrg(): Promise<void> {
     // URL is expected to look like `/join/$orgName`
     const urlIdentifier = window.location.pathname.split("/").pop();
     try {
@@ -42,11 +42,11 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
     }
   }
 
-  private onNoClicked() {
+  private onNoClicked(): void {
     router.navigateHome();
   }
 
-  private async onYesClicked(org: grp.GetGroupResponse) {
+  private async onYesClicked(org: grp.GetGroupResponse): Promise<void> {
     this.setState({ status: "JOINING_GROUP" });
     try {
       console.debug("Joining group", org.id);
@@ -70,16 +70,16 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
     router.navigateHome();
   }
 
-  private async onViewBuildsClicked(org: grp.GetGroupResponse) {
+  private async onViewBuildsClicked(org: grp.GetGroupResponse): Promise<void> {
     await authService.setSelectedGroupId(org.id, org.url);
     router.navigateHome();
   }
 
-  private isInOrgDomain(org: grp.GetGroupResponse) {
+  private isInOrgDomain(org: grp.GetGroupResponse): boolean {
     return org.ownedDomain === getUserEmailDomain(this.props.user);
   }
 
-  render() {
+  render(): React.ReactNode {
     const status = this.state.status;
     const org = this.state.org;
 
@@ -162,7 +162,7 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
   }
 }
 
-function getUserEmailDomain(user: User) {
+function getUserEmailDomain(user: User): string | undefined {
   const email = user.displayUser.email;
   return email.split("@").pop();
 }

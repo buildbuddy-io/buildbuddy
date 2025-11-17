@@ -18,7 +18,7 @@ type State = {
 export default class InvocationCancelButtonComponent extends React.Component<InvocationCancelButtonComponentProps> {
   state: State = {};
 
-  private onClick() {
+  private onClick(): void {
     this.setState({ isLoading: true, cancelled: true });
     rpcService.service
       .cancelExecutions(new invocation.CancelExecutionsRequest({ invocationId: this.props.invocationId }))
@@ -29,7 +29,7 @@ export default class InvocationCancelButtonComponent extends React.Component<Inv
       .finally(() => this.setState({ isLoading: false }));
   }
 
-  render() {
+  render(): JSX.Element {
     const isLoading = this.state.isLoading;
     const alreadyCancelled = this.state.cancelled;
     return (

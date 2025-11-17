@@ -598,7 +598,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
   }
 }
 
-export const HeatmapComponent = (p: HeatmapProps) => {
+export const HeatmapComponent = (p: HeatmapProps): JSX.Element => {
   const { width, ref } = useResizeDetector({
     handleHeight: false,
     refreshMode: "throttle",

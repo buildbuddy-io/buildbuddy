@@ -62,11 +62,11 @@ export default class TrendsModel {
     }
   }
 
-  public hasInvocationStatPercentiles() {
+  public hasInvocationStatPercentiles(): boolean {
     return this.data.hasInvocationStatPercentiles;
   }
 
-  public getStats() {
+  public getStats(): stats.TrendStat[] {
     return this.data.trendStat;
   }
 
@@ -74,7 +74,7 @@ export default class TrendsModel {
     return this.timeToStatMap.get(time) || {};
   }
 
-  public hasExecutionStats() {
+  public hasExecutionStats(): boolean {
     return this.timeToExecutionStatMap.size > 0;
   }
 
@@ -82,23 +82,23 @@ export default class TrendsModel {
     return this.timeToExecutionStatMap.get(time) || {};
   }
 
-  public getTimeKeys() {
+  public getTimeKeys(): number[] {
     return this.timeKeys;
   }
 
-  public getTicks() {
+  public getTicks(): number[] {
     return this.ticks;
   }
 
-  public getInterval() {
+  public getInterval(): stats.IntervalType {
     return this.data.interval?.type || stats.IntervalType.INTERVAL_TYPE_DAY;
   }
 
-  public getCurrentSummary() {
+  public getCurrentSummary(): stats.Summary | null | undefined {
     return this.data.currentSummary;
   }
 
-  public getPreviousSummary() {
+  public getPreviousSummary(): stats.Summary | null | undefined {
     return this.data.previousSummary;
   }
 
@@ -106,11 +106,11 @@ export default class TrendsModel {
     return !this.error && this.loading;
   }
 
-  public isError() {
+  public isError(): boolean {
     return this.error !== undefined;
   }
 
-  public getError() {
+  public getError(): string | undefined {
     return this.error;
   }
 }

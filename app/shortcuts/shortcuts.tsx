@@ -2,37 +2,37 @@ import { v4 as uuid } from "uuid";
 import UserPreferences from "../preferences/preferences";
 
 export class KeyCombo {
-  public static a = new KeyCombo(false, "KeyA");
-  public static b = new KeyCombo(false, "KeyB");
-  public static c = new KeyCombo(false, "KeyC");
-  public static d = new KeyCombo(false, "KeyD");
-  public static e = new KeyCombo(false, "KeyE");
-  public static f = new KeyCombo(false, "KeyF");
-  public static g = new KeyCombo(false, "KeyG");
-  public static h = new KeyCombo(false, "KeyH");
-  public static i = new KeyCombo(false, "KeyI");
-  public static j = new KeyCombo(false, "KeyJ");
-  public static k = new KeyCombo(false, "KeyK");
-  public static l = new KeyCombo(false, "KeyL");
-  public static m = new KeyCombo(false, "KeyM");
-  public static n = new KeyCombo(false, "KeyN");
-  public static o = new KeyCombo(false, "KeyO");
-  public static p = new KeyCombo(false, "KeyP");
-  public static q = new KeyCombo(false, "KeyQ");
-  public static r = new KeyCombo(false, "KeyR");
-  public static s = new KeyCombo(false, "KeyS");
-  public static t = new KeyCombo(false, "KeyT");
-  public static u = new KeyCombo(false, "KeyU");
-  public static v = new KeyCombo(false, "KeyV");
-  public static w = new KeyCombo(false, "KeyW");
-  public static x = new KeyCombo(false, "KeyX");
-  public static y = new KeyCombo(false, "KeyY");
-  public static z = new KeyCombo(false, "KeyZ");
-  public static shift_c = new KeyCombo(true, "KeyC");
-  public static slash = new KeyCombo(false, "Slash");
-  public static question = new KeyCombo(true, "Slash");
-  public static esc = new KeyCombo(false, "Escape");
-  public static enter = new KeyCombo(false, "Enter");
+  public static a: KeyCombo = new KeyCombo(false, "KeyA");
+  public static b: KeyCombo = new KeyCombo(false, "KeyB");
+  public static c: KeyCombo = new KeyCombo(false, "KeyC");
+  public static d: KeyCombo = new KeyCombo(false, "KeyD");
+  public static e: KeyCombo = new KeyCombo(false, "KeyE");
+  public static f: KeyCombo = new KeyCombo(false, "KeyF");
+  public static g: KeyCombo = new KeyCombo(false, "KeyG");
+  public static h: KeyCombo = new KeyCombo(false, "KeyH");
+  public static i: KeyCombo = new KeyCombo(false, "KeyI");
+  public static j: KeyCombo = new KeyCombo(false, "KeyJ");
+  public static k: KeyCombo = new KeyCombo(false, "KeyK");
+  public static l: KeyCombo = new KeyCombo(false, "KeyL");
+  public static m: KeyCombo = new KeyCombo(false, "KeyM");
+  public static n: KeyCombo = new KeyCombo(false, "KeyN");
+  public static o: KeyCombo = new KeyCombo(false, "KeyO");
+  public static p: KeyCombo = new KeyCombo(false, "KeyP");
+  public static q: KeyCombo = new KeyCombo(false, "KeyQ");
+  public static r: KeyCombo = new KeyCombo(false, "KeyR");
+  public static s: KeyCombo = new KeyCombo(false, "KeyS");
+  public static t: KeyCombo = new KeyCombo(false, "KeyT");
+  public static u: KeyCombo = new KeyCombo(false, "KeyU");
+  public static v: KeyCombo = new KeyCombo(false, "KeyV");
+  public static w: KeyCombo = new KeyCombo(false, "KeyW");
+  public static x: KeyCombo = new KeyCombo(false, "KeyX");
+  public static y: KeyCombo = new KeyCombo(false, "KeyY");
+  public static z: KeyCombo = new KeyCombo(false, "KeyZ");
+  public static shift_c: KeyCombo = new KeyCombo(true, "KeyC");
+  public static slash: KeyCombo = new KeyCombo(false, "Slash");
+  public static question: KeyCombo = new KeyCombo(true, "Slash");
+  public static esc: KeyCombo = new KeyCombo(false, "Escape");
+  public static enter: KeyCombo = new KeyCombo(false, "Enter");
 
   // Add other modifiers here as needed.
   shiftKey: boolean;
@@ -70,11 +70,11 @@ class Shortcut {
     this.action = action;
   }
 
-  reset() {
+  reset(): void {
     this.keyComboPosition = 0;
   }
 
-  matchKeyboardEvent(event: KeyboardEvent) {
+  matchKeyboardEvent(event: KeyboardEvent): void {
     if (this.keyCombo[this.keyComboPosition].matches(event)) {
       this.keyComboPosition++;
     } else {
@@ -107,7 +107,7 @@ export class Shortcuts {
   shortcuts?: Map<string, Shortcut> = undefined;
   preferences?: UserPreferences = undefined;
 
-  public setPreferences(preferences: UserPreferences) {
+  public setPreferences(preferences: UserPreferences): void {
     this.preferences = preferences;
   }
 
@@ -183,7 +183,7 @@ export class Shortcuts {
     return handle;
   }
 
-  resetAll() {
+  resetAll(): void {
     for (let shortcut of this.shortcuts?.values() || []) {
       shortcut.reset();
     }
@@ -192,9 +192,10 @@ export class Shortcuts {
   // Deregisters the keyboard shortcut with the provided handle. If the
   // provided keyboard shortcut handle is unrecognized, this function
   // silently returns.
-  public deregister(handle: string) {
+  public deregister(handle: string): void {
     this.shortcuts?.delete(handle);
   }
 }
 
-export default new Shortcuts();
+const shortcuts: Shortcuts = new Shortcuts();
+export default shortcuts;

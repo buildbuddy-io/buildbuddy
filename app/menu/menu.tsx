@@ -21,39 +21,39 @@ export default class MenuComponent extends React.Component<Props, State> {
     menuExpanded: false,
   };
 
-  dismissMenu() {
+  dismissMenu(): void {
     this.setState({ menuExpanded: false });
   }
 
-  handleShadeClicked() {
+  handleShadeClicked(): void {
     this.dismissMenu();
   }
 
-  handleMenuClicked() {
+  handleMenuClicked(): void {
     this.setState({ menuExpanded: !this.state.menuExpanded });
   }
 
-  handleToggleDenseModeClicked() {
+  handleToggleDenseModeClicked(): void {
     this.props.preferences.toggleDenseMode();
     this.dismissMenu();
   }
 
-  handleSetupClicked() {
+  handleSetupClicked(): void {
     router.navigateToSetup();
     this.dismissMenu();
   }
 
-  handleLoginClicked() {
+  handleLoginClicked(): void {
     authService.login();
     this.dismissMenu();
   }
 
-  handleLogoutClicked() {
+  handleLogoutClicked(): void {
     authService.logout();
     this.dismissMenu();
   }
 
-  render() {
+  render(): React.ReactNode {
     return (
       <div>
         {this.state.menuExpanded && (

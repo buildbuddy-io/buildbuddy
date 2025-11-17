@@ -41,28 +41,28 @@ export default class InvocationShareButtonComponent extends React.Component<
   InvocationShareButtonComponentProps,
   State
 > {
-  state = this.getInitialState();
+  state: State = this.getInitialState();
 
   private inputRef = React.createRef<HTMLInputElement>();
 
-  componentDidMount() {
+  componentDidMount(): void {
     let handle = shortcuts.register(KeyCombo.shift_c, () => {
       this.copyShareUrl();
     });
     this.setState({ keyboardShortcutHandle: handle });
   }
 
-  componentDidUpdate(prevProps: InvocationShareButtonComponentProps) {
+  componentDidUpdate(prevProps: InvocationShareButtonComponentProps): void {
     if (prevProps.invocationId !== this.props.invocationId) {
       this.setState(this.getInitialState());
     }
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     shortcuts.deregister(this.state.keyboardShortcutHandle);
   }
 
-  copyShareUrl() {
+  copyShareUrl(): void {
     navigator.clipboard.writeText(window.location.href);
     alert_service.success("Copied invocation link to clipboard");
   }
@@ -76,19 +76,19 @@ export default class InvocationShareButtonComponent extends React.Component<
     };
   }
 
-  private onShareButtonClick() {
+  private onShareButtonClick(): void {
     this.setState({ isOpen: true });
   }
 
-  private onRequestClose() {
+  private onRequestClose(): void {
     this.setState({ isOpen: false });
   }
 
-  private onLinkInputClick() {
+  private onLinkInputClick(): void {
     this.inputRef.current?.select();
   }
 
-  private async onVisibilitySelectionChange(e: React.ChangeEvent<HTMLSelectElement>) {
+  private async onVisibilitySelectionChange(e: React.ChangeEvent<HTMLSelectElement>): Promise<void> {
     const visibility = e.target.value as VisibilitySelection;
     const newAcl = new acl.ACL(this.props.model.invocation.acl ?? {});
     if (!newAcl.othersPermissions) {
@@ -112,12 +112,12 @@ export default class InvocationShareButtonComponent extends React.Component<
     }
   }
 
-  private onCopyLinkButtonClick() {
+  private onCopyLinkButtonClick(): void {
     this.inputRef.current!.select();
     document.execCommand("copy");
   }
 
-  render() {
+  render(): React.ReactNode {
     if (!capabilities.invocationSharing || !this.props.user) {
       return <></>;
     }

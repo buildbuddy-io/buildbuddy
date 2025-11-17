@@ -102,7 +102,7 @@ export const getTestShardingSuggestion = ({
 }: {
   model: InvocationModel;
   resultEvents?: build_event_stream.BuildEvent[];
-}) => {
+}): Suggestion | null => {
   if (!capabilities.config.expandedSuggestionsEnabled) {
     return null;
   }
@@ -663,7 +663,7 @@ export function getSuggestions({
 }
 
 export default class SuggestionCardComponent extends React.Component<Props> {
-  render() {
+  render(): React.ReactNode {
     const suggestions = this.props.suggestions;
     if (!suggestions.length) return null;
 
@@ -706,7 +706,7 @@ export default class SuggestionCardComponent extends React.Component<Props> {
   }
 }
 
-function renderIcon(level: SuggestionLevel) {
+function renderIcon(level: SuggestionLevel): React.ReactNode {
   switch (level) {
     case SuggestionLevel.INFO:
       return <HelpCircle className="icon" />;
@@ -721,7 +721,7 @@ export interface SuggestionComponentProps {
   suggestion: Suggestion;
 }
 
-export function SuggestionComponent({ suggestion }: SuggestionComponentProps) {
+export function SuggestionComponent({ suggestion }: SuggestionComponentProps): React.ReactNode {
   return (
     <div className="card card-suggestion">
       {renderIcon(suggestion.level)}
@@ -745,7 +745,7 @@ function buildLogRegex({
   regex: RegExp;
   message: React.ReactNode;
 }): SuggestionMatcher {
-  return ({ buildLogs }) => {
+  return ({ buildLogs }): Suggestion | null => {
     const matches = buildLogs.match(regex);
     if (!matches) return null;
     const reason = <>Shown because your build log contains "{matches[0]}"</>;
@@ -753,7 +753,7 @@ function buildLogRegex({
   };
 }
 
-function BazelFlag({ children }: { children: string }) {
+function BazelFlag({ children }: { children: string }): React.ReactNode {
   let flag = children.split("=")[0] || "";
   if (flag.startsWith("--no")) {
     flag = "--" + flag.substring("--no".length);
@@ -771,7 +771,7 @@ function BazelFlag({ children }: { children: string }) {
  * Renders a list of items separated by commas, with "and" preceding the final item.
  * For convenience, falsy list items are filtered out.
  */
-function InlineProseList({ items }: { items: React.ReactNode[] }) {
+function InlineProseList({ items }: { items: React.ReactNode[] }): React.ReactNode {
   items = items.filter((item) => item);
   const out = [];
   for (let i = 0; i < items.length; i++) {

@@ -23,11 +23,11 @@ const MAX_TARGETS_PER_INSIGHT = 10;
 export default class QueryGraphCardComponent extends React.Component<Props, State> {
   state: State = {};
 
-  onClickShowAnyway() {
+  onClickShowAnyway(): void {
     this.setState({ showLargeGraph: true });
   }
 
-  render() {
+  render(): React.ReactNode {
     if (!this.props.buildLogs.includes("digraph mygraph {")) {
       return <></>;
     }

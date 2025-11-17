@@ -17,7 +17,7 @@ const FLAG_ASSIGNMENT_REGEXP = /^--[A-Za-z0-9_:\-,.%@\/]+=/;
  *   quote("foo bar") // returns "'foo bar'"
  * ```
  */
-export function quote(argument: string) {
+export function quote(argument: string): string {
   if (ALL_SAFE_CHARS_REGEXP.test(argument)) {
     return argument;
   }

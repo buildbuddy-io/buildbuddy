@@ -26,24 +26,24 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
     filterString: "",
   };
 
-  handleEventClicked(event: invocation.InvocationEvent) {
+  handleEventClicked(event: invocation.InvocationEvent): void {
     this.state.expandedMap.set(event.sequenceNumber, !this.state.expandedMap.get(event.sequenceNumber));
     this.setState(this.state);
   }
 
-  handleMoreClicked() {
+  handleMoreClicked(): void {
     this.setState({ numPages: this.state.numPages + 1 });
   }
 
-  handleAllClicked() {
+  handleAllClicked(): void {
     this.setState({ numPages: Number.MAX_SAFE_INTEGER });
   }
 
-  handleFilterChange(event: any) {
+  handleFilterChange(event: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({ filterString: event.target.value });
   }
 
-  render() {
+  render(): React.ReactNode {
     let filteredEvents = this.props.model.invocation.event
       .map((event) => {
         let json = JSON.stringify((event.buildEvent as any).toJSON(), null, 4);

@@ -28,12 +28,12 @@ const modulesDataURL = "https://registry.build/v1/modules.json";
 export default class ModuleSidekick extends React.Component<Props, State> {
   state: State = { query: "", showModal: false, selectIndex: 0, modules: [] };
 
-  async componentDidMount() {
+  async componentDidMount(): Promise<void> {
     this.setState({ modules: await (await fetch(modulesDataURL)).json() });
     document.addEventListener("keydown", this.onKeydown);
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     document.removeEventListener("keydown", this.onKeydown);
   }
 
@@ -52,7 +52,7 @@ export default class ModuleSidekick extends React.Component<Props, State> {
     }
   };
 
-  add(m: Module) {
+  add(m: Module): void {
     let snippet = m.module_snippet?.trim() + "\n" || "unknown";
     let selectedRange = this.props.editor.getSelection() || new monaco.Selection(0, 0, 0, 0);
     // By default, replace the selected range.
@@ -90,7 +90,7 @@ export default class ModuleSidekick extends React.Component<Props, State> {
     this.props.editor.focus();
   }
 
-  remove(m: RegExpMatchArray | null) {
+  remove(m: RegExpMatchArray | null): void {
     if (!m) {
       return;
     }
@@ -105,7 +105,7 @@ export default class ModuleSidekick extends React.Component<Props, State> {
     ]);
   }
 
-  update(match: RegExpMatchArray, latestVersion: string) {
+  update(match: RegExpMatchArray, latestVersion: string): void {
     let start = this.props.editor.getModel()?.getPositionAt(match.index || 0)!;
     let end = this.props.editor.getModel()?.getPositionAt((match.index || 0) + match[0].length)!;
     let range = new monaco.Selection(start.lineNumber, start?.column, end?.lineNumber, end.column);
@@ -118,7 +118,7 @@ export default class ModuleSidekick extends React.Component<Props, State> {
     ]);
   }
 
-  selected(selectedDeps: Array<RegExpMatchArray>, name: string) {
+  selected(selectedDeps: Array<RegExpMatchArray>, name: string): RegExpMatchArray | null {
     for (let d of selectedDeps) {
       if (d.groups?.name == name) {
         return d;
@@ -127,7 +127,7 @@ export default class ModuleSidekick extends React.Component<Props, State> {
     return null;
   }
 
-  render() {
+  render(): React.ReactNode {
     let moduleRegex = /bazel_dep\(.*?name\s=\s"(?<name>.*?)".*?version\s=\s"(?<version>.*?)".*?\)\n?/g;
     let selectedDeps = [...this.props.editor.getValue()?.matchAll(moduleRegex)];
     let filteredDeps = this.state.modules
@@ -278,7 +278,7 @@ interface ModuleProps {
   onRemove?: () => void;
 }
 
-const Module = (props: ModuleProps) => (
+const Module: React.FC<ModuleProps> = (props: ModuleProps) => (
   <div className="module">
     <div className="module-header">
       <div className="module-name">
@@ -336,12 +336,12 @@ const Module = (props: ModuleProps) => (
   </div>
 );
 
-export function since(date: string) {
+export function since(date: string): string {
   let diff = (Date.now() - new Date(date).getTime()) / 1000;
   return roundedDurationSec(diff);
 }
 
-export function popularity(a: any, b: any) {
+export function popularity(a: any, b: any): number {
   let aScore = a.repo.stargazers_count;
   let bScore = b.repo.stargazers_count;
   if (a.name.includes("rules_")) aScore = aScore * 100;

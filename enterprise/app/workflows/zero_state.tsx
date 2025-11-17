@@ -1,6 +1,6 @@
 import React from "react";
 
-export default function WorkflowsZeroStateAnimation() {
+export default function WorkflowsZeroStateAnimation(): JSX.Element {
   return (
     <svg
       className="zero-state-animation"

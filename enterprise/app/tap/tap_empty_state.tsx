@@ -8,7 +8,7 @@ interface Props {
 }
 
 export default class TapEmptyStateComponent extends React.Component<Props> {
-  render() {
+  render(): React.ReactNode {
     return (
       <div className="container narrow">
         <div className="empty-state history">

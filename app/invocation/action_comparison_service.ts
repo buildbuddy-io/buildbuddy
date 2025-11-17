@@ -17,7 +17,7 @@ export class ActionComparisonService {
     this.onStorage();
   }
 
-  private onStorage() {
+  private onStorage(): void {
     const storageValue = localStorage[ACTION_TO_COMPARE_LOCALSTORAGE_KEY];
     if (storageValue) {
       try {
@@ -39,14 +39,14 @@ export class ActionComparisonService {
     }
   }
 
-  setComparisonAction(invocationId: string, actionDigest: string) {
+  setComparisonAction(invocationId: string, actionDigest: string): void {
     this.comparisonData = { invocationId, actionDigest };
     localStorage[ACTION_TO_COMPARE_LOCALSTORAGE_KEY] = JSON.stringify(this.comparisonData);
     this.publishState();
     alert_service.success("Action selected for comparison");
   }
 
-  clearComparisonAction() {
+  clearComparisonAction(): void {
     this.comparisonData = undefined;
     delete localStorage[ACTION_TO_COMPARE_LOCALSTORAGE_KEY];
     this.publishState();
@@ -66,7 +66,7 @@ export class ActionComparisonService {
     return !(this.comparisonData?.invocationId === invocationId && this.comparisonData?.actionDigest === actionDigest);
   }
 
-  private publishState() {
+  private publishState(): void {
     this.subject.next(this.comparisonData || {});
     window.dispatchEvent(new Event("storage"));
   }
@@ -76,4 +76,5 @@ export class ActionComparisonService {
   }
 }
 
-export default new ActionComparisonService();
+const actionComparisonService: ActionComparisonService = new ActionComparisonService();
+export default actionComparisonService;

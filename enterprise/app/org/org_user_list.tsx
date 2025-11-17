@@ -45,11 +45,11 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
     allUsers: new Array<grp.GetGroupUsersResponse.GroupUser>(),
   };
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetch();
   }
 
-  private fetch() {
+  private fetch(): void {
     this.setState({ loading: true });
 
     const fetchUserList = rpcService.service
@@ -78,7 +78,7 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
   private newMembershipUpdateRequest(
     userIDs: Set<string>,
     action: user_list.UpdateUserListMembershipRequest.MembershipAction
-  ) {
+  ): user_list.UpdateUserListMembershipRequest {
     return new user_list.UpdateUserListMembershipRequest({
       userListId: this.state.userList?.userListId,
       update: Array.from(userIDs).map(
@@ -91,7 +91,7 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
     });
   }
 
-  private onClickAddUsers(idx: number, selectedUsers: Map<string, MemberListMember>) {
+  private onClickAddUsers(idx: number, selectedUsers: Map<string, MemberListMember>): void {
     if (selectedUsers.size == 0) {
       return;
     }
@@ -103,7 +103,7 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
       .finally(() => this.fetch());
   }
 
-  private onClickRemoveUsers(idx: number, selectedUsers: Map<string, MemberListMember>) {
+  private onClickRemoveUsers(idx: number, selectedUsers: Map<string, MemberListMember>): void {
     if (selectedUsers.size == 0) {
       return;
     }
@@ -115,38 +115,38 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
       .finally(() => this.fetch());
   }
 
-  private onClickBackToAllGroups() {
+  private onClickBackToAllGroups(): void {
     router.navigateToUserLists();
   }
 
   // Rename modal.
 
-  private onClickOpenRenameUserListModal() {
+  private onClickOpenRenameUserListModal(): void {
     this.setState({
       isRenameUserListModalVisible: true,
       renameNewName: this.state.userList?.name,
     });
   }
 
-  private onRequestCloseRenameModal() {
+  private onRequestCloseRenameModal(): void {
     if (this.state.isRenameUserListRequestPending) return;
 
     this.setState({ isRenameUserListModalVisible: false });
   }
 
-  private onChangeRenameUserListName(e: React.ChangeEvent<HTMLInputElement>) {
+  private onChangeRenameUserListName(e: React.ChangeEvent<HTMLInputElement>): void {
     const name = e.target.value;
     this.setState({ renameNewName: name });
   }
 
-  private onSubmitRenameForm(e: React.FormEvent) {
+  private onSubmitRenameForm(e: React.FormEvent): void {
     e.preventDefault();
     if (!this.state.isRenameUserListRequestPending) {
       this.onClickRenameUserList();
     }
   }
 
-  private onClickRenameUserList() {
+  private onClickRenameUserList(): void {
     this.setState({ isRenameUserListRequestPending: true });
     rpcService.service
       .updateUserList(
@@ -168,7 +168,7 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
       .finally(() => this.setState({ isRenameUserListRequestPending: false }));
   }
 
-  render() {
+  render(): React.ReactNode {
     if (this.state.loading) {
       return <div className="loading" />;
     }

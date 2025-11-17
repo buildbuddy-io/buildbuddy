@@ -32,7 +32,7 @@ export type TreeNode =
       obj: SymlinkNode;
     };
 
-function getChildCountText(childCount: Number) {
+function getChildCountText(childCount: Number): string {
   if (childCount === 0) {
     return "empty";
   } else if (childCount === 1) {
@@ -42,7 +42,7 @@ function getChildCountText(childCount: Number) {
 }
 
 export default class TreeNodeComponent extends React.Component<Props, State> {
-  renderFileOrDirectoryNode(node: FileNode | DirectoryNode) {
+  renderFileOrDirectoryNode(node: FileNode | DirectoryNode): JSX.Element {
     const digestString = node.digest?.hash ?? "";
     const sizeInfo = this.props.treeShaToTotalSizeMap.get(digestString);
     const expanded = this.props.treeShaToExpanded.get(digestString);
@@ -94,7 +94,7 @@ export default class TreeNodeComponent extends React.Component<Props, State> {
     );
   }
 
-  renderSymlinkNode(node: SymlinkNode) {
+  renderSymlinkNode(node: SymlinkNode): JSX.Element {
     return (
       <div className="tree-node-symlink">
         <span>
@@ -109,7 +109,7 @@ export default class TreeNodeComponent extends React.Component<Props, State> {
     );
   }
 
-  render() {
+  render(): JSX.Element {
     return this.props.node.type == "symlink"
       ? this.renderSymlinkNode(this.props.node.obj)
       : this.renderFileOrDirectoryNode(this.props.node.obj);

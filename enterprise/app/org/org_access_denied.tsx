@@ -9,13 +9,13 @@ export type Props = {
 };
 
 export default class OrgAccessDeniedComponent extends React.Component<Props> {
-  handleImpersonateClicked() {
+  handleImpersonateClicked(): void {
     const params = new URLSearchParams(window.location.search);
     const sourceUrl = params.get("source_url");
     authService.enterImpersonationMode(this.props.user.subdomainGroupID, { redirectUrl: sourceUrl ?? undefined });
   }
 
-  render() {
+  render(): JSX.Element {
     const params = new URLSearchParams(window.location.search);
     const deniedByIpRules = params.get("denied_reason") == user.SelectedGroup.Access.DENIED_BY_IP_RULES.toString();
 

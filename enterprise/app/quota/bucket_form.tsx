@@ -75,7 +75,7 @@ export default class BucketForm extends React.Component<BucketFormProps, State> 
     this.props.onSubmit(values).finally(() => this.setState({ loading: false }));
   }
 
-  private Field = ({ name = "", placeholder = "", initialValue, ...rest }: FieldProps) => {
+  private Field: React.FC<FieldProps> = ({ name = "", placeholder = "", initialValue, ...rest }) => {
     return (
       <TextInput
         placeholder={placeholder}
@@ -92,7 +92,7 @@ export default class BucketForm extends React.Component<BucketFormProps, State> 
     );
   };
 
-  render() {
+  render(): JSX.Element {
     return (
       <form autoComplete="off" onSubmit={this.onSubmit.bind(this)} className="bucket-form" noValidate>
         {this.props.namespaceEditable && (

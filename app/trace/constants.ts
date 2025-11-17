@@ -31,7 +31,7 @@ export const TRACK_VERTICAL_GAP = 1;
 export const EVENT_HORIZONTAL_GAP = 0.5;
 export const EVENT_LABEL_WIDTH_THRESHOLD = 20;
 export const EVENT_LABEL_FONT_SIZE = "11px";
-export const EVENT_LABEL_FONT_COLOR = SECTION_LABEL_FONT_COLOR;
+export const EVENT_LABEL_FONT_COLOR: string = SECTION_LABEL_FONT_COLOR;
 export const EVENT_FILTERED_OUT_COLOR = "#ddd";
 
 // The minimum pixel width an event should be rendered at. Events smaller than

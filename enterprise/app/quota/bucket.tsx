@@ -39,13 +39,13 @@ export default class BucketComponent extends React.Component<BucketProps> {
       .catch((e) => error_service.handleError(e));
   }
 
-  private getSubmitLabel() {
+  private getSubmitLabel(): string {
     if (this.props.search.get("bucket")) return "Save";
     if (this.props.search.get("namespace")) return "Add";
     return "Create";
   }
 
-  private getInitialFormValues() {
+  private getInitialFormValues(): BucketFormValues {
     const serializedBucket = this.props.search.get("initialValues");
     return {
       namespace: this.props.search.get("namespace") || undefined,
@@ -74,7 +74,7 @@ export default class BucketComponent extends React.Component<BucketProps> {
     return items;
   }
 
-  render() {
+  render(): JSX.Element {
     return (
       <div className="quota-bucket quota-column-layout">
         <QuotaBreadcrumbs items={this.getBreadcrumbItems()} />

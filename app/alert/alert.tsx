@@ -15,7 +15,7 @@ export default class AlertComponent extends React.Component<{}, State> {
   private subscription: Subscription = alertService.alerts.subscribe(this.onAlert.bind(this));
   private displayDuration = 0;
 
-  private onAlert(alert: Alert) {
+  private onAlert(alert: Alert): void {
     if (this.hideTimeout) {
       clearTimeout(this.hideTimeout);
     }
@@ -27,18 +27,18 @@ export default class AlertComponent extends React.Component<{}, State> {
   // If the user hovers over the banner then they are probably trying to copy & paste
   // the error message. Make sure we don't dismiss while they are doing that.
 
-  private onMouseEnter() {
+  private onMouseEnter(): void {
     clearTimeout(this.hideTimeout);
   }
-  private onMouseLeave() {
+  private onMouseLeave(): void {
     this.hideTimeout = setTimeout(() => this.setState({ isVisible: false }), this.displayDuration);
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     this.subscription.unsubscribe();
   }
 
-  render() {
+  render(): React.ReactNode {
     return (
       <Banner
         type={this.state.alert?.type || "info"}
@@ -51,7 +51,7 @@ export default class AlertComponent extends React.Component<{}, State> {
   }
 }
 
-function displayDurationMs(alert: Alert) {
+function displayDurationMs(alert: Alert): number {
   if (alert.type === "error" || alert.type === "warning") {
     return 8_000;
   }

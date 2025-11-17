@@ -5,9 +5,9 @@ import { BuildBuddyError, ErrorCode } from "../util/errors";
 const ERROR_SEARCH_PARAM = "error";
 
 export class ErrorService {
-  isWindowUnloading = false;
+  isWindowUnloading: boolean = false;
 
-  register() {
+  register(): void {
     let searchParams = new URLSearchParams(window.location.search);
     if (searchParams.has(ERROR_SEARCH_PARAM)) {
       this.handleError(searchParams.get(ERROR_SEARCH_PARAM));
@@ -26,7 +26,7 @@ export class ErrorService {
     );
   }
 
-  handleError(e: any, options?: { ignoreErrorCodes: ErrorCode[] }) {
+  handleError(e: any, options?: { ignoreErrorCodes: ErrorCode[] }): void {
     if (this.isWindowUnloading) {
       console.debug("Ignoring error due to page unload:", e);
       return;
@@ -48,4 +48,6 @@ export class ErrorService {
   }
 }
 
-export default new ErrorService();
+const errorService: ErrorService = new ErrorService();
+
+export default errorService;

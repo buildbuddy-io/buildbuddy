@@ -16,7 +16,7 @@ export interface LinkGithubRepoModalProps {
 }
 
 export default class LinkGithubRepoModal extends React.Component<LinkGithubRepoModalProps> {
-  render() {
+  render(): React.ReactNode {
     return (
       <Modal className="link-repo-modal" isOpen={this.props.isOpen} onRequestClose={this.props.onRequestClose}>
         <Dialog>

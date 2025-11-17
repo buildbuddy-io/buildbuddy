@@ -19,7 +19,7 @@ export function triggerRemoteRun(
   autoOpenChild: boolean,
   platformProps: Map<string, string> | null,
   runnerFlags: string[] = []
-) {
+): void {
   command = command.replaceAll(/--[a-zA-Z_]+='\<REDACTED\>'/g, "");
   let execProps: build.bazel.remote.execution.v2.Platform.Property[] = [];
 

@@ -3,12 +3,14 @@ import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
 
-const Digest = build.bazel.remote.execution.v2.Digest;
+const Digest: typeof build.bazel.remote.execution.v2.Digest = build.bazel.remote.execution.v2.Digest;
 type Digest = build.bazel.remote.execution.v2.Digest;
 type IDigest = build.bazel.remote.execution.v2.IDigest;
-const Compressor = build.bazel.remote.execution.v2.Compressor.Value;
+const Compressor: typeof build.bazel.remote.execution.v2.Compressor.Value =
+  build.bazel.remote.execution.v2.Compressor.Value;
 type Compressor = build.bazel.remote.execution.v2.Compressor.Value;
-const DigestFunction = build.bazel.remote.execution.v2.DigestFunction.Value;
+const DigestFunction: typeof build.bazel.remote.execution.v2.DigestFunction.Value =
+  build.bazel.remote.execution.v2.DigestFunction.Value;
 type DigestFunction = build.bazel.remote.execution.v2.DigestFunction.Value;
 
 function lowercaseEnumNames(e: Record<string | number, string | number>): string[] {

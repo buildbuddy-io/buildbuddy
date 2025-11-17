@@ -20,28 +20,28 @@ export default class OrgPicker extends React.Component<Props, State> {
     profileExpanded: false,
   };
 
-  async handleOrgClicked(groupId: string, groupURL: string) {
+  async handleOrgClicked(groupId: string, groupURL: string): Promise<void> {
     if (this.props.user?.selectedGroup?.id === groupId) return;
 
     await authService.setSelectedGroupId(groupId, groupURL, { reload: true });
   }
 
-  handleCreateOrgClicked(e: React.MouseEvent) {
+  handleCreateOrgClicked(e: React.MouseEvent): void {
     router.navigateToCreateOrg();
   }
 
-  handleSearchGroupsClicked() {
+  handleSearchGroupsClicked(): void {
     window.dispatchEvent(new CustomEvent("groupSearchClick"));
   }
 
-  handleProfileClicked() {
+  handleProfileClicked(): void {
     if (this.props.onClick) {
       this.props.onClick(!this.state.profileExpanded);
     }
     this.setState({ profileExpanded: !this.state.profileExpanded });
   }
 
-  render() {
+  render(): React.ReactNode {
     if (!this.props.user) {
       return (
         <div

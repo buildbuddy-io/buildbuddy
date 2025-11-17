@@ -35,12 +35,12 @@ const flagsDataURL = "https://registry.build/v1/flags.json";
 export default class BazelrcSidekick extends React.Component<Props, State> {
   state: State = { query: "", selectedCommand: "", selectedConfig: "", showModal: false, selectIndex: 0, flags: [] };
 
-  async componentDidMount() {
+  async componentDidMount(): Promise<void> {
     this.setState({ flags: await (await fetch(flagsDataURL)).json() });
     document.addEventListener("keydown", this.onKeydown);
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     document.removeEventListener("keydown", this.onKeydown);
   }
 
@@ -59,7 +59,7 @@ export default class BazelrcSidekick extends React.Component<Props, State> {
     }
   };
 
-  add(m: Flag) {
+  add(m: Flag): void {
     let snippet = `${this.state.selectedCommand || "common"}${
       this.state.selectedConfig ? ":" + this.state.selectedConfig : ""
     } --${m.name?.trim()}=\n`;
@@ -100,7 +100,7 @@ export default class BazelrcSidekick extends React.Component<Props, State> {
     this.props.editor.focus();
   }
 
-  remove(m: RegExpMatchArray | null) {
+  remove(m: RegExpMatchArray | null): void {
     if (!m) {
       return;
     }
@@ -115,7 +115,7 @@ export default class BazelrcSidekick extends React.Component<Props, State> {
     ]);
   }
 
-  render() {
+  render(): React.ReactNode {
     let flagRegex = /(?<=^|\n)(?<command>[^#:\s]*?)(:(?<config>.*?))?\s+(--(?<name>.*?))(=(?<value>.*?))?(\n|$)/g;
     let selectedFlags = [...this.props.editor.getValue()?.matchAll(flagRegex)].map((f) => {
       if (f.groups?.name.startsWith("no")) {
@@ -312,7 +312,7 @@ interface FlagProps {
   onRemove?: () => void;
 }
 
-const Flag = (props: FlagProps) => (
+const Flag: React.FC<FlagProps> = (props: FlagProps) => (
   <div className="flag">
     <div className="flag-header">
       <div className="flag-name">

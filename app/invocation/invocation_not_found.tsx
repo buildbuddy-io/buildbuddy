@@ -20,15 +20,15 @@ interface State {
 export default class InvocationNotFoundComponent extends React.Component<Props, State> {
   state: State = {};
 
-  canImpersonate() {
-    return this.props.user?.canCall("getInvocationOwner");
+  canImpersonate(): boolean {
+    return Boolean(this.props.user?.canCall("getInvocationOwner"));
   }
 
-  isPermissionDenied() {
+  isPermissionDenied(): boolean {
     return this.props.error?.code === "PermissionDenied";
   }
 
-  componentDidMount() {
+  componentDidMount(): void {
     if (!this.isPermissionDenied() || !this.canImpersonate()) {
       return;
     }
@@ -55,11 +55,11 @@ export default class InvocationNotFoundComponent extends React.Component<Props, 
       .catch((e) => errorService.handleError(BuildBuddyError.parse(e)));
   }
 
-  handleImpersonateClicked() {
+  handleImpersonateClicked(): void {
     authService.enterImpersonationMode(this.state.impersonationGroupID!);
   }
 
-  render() {
+  render(): JSX.Element {
     const invocationExists = this.props.error?.code !== "NotFound";
     const canLogin = capabilities.auth && !this.props.user;
 

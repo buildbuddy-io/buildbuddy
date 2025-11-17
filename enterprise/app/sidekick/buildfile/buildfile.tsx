@@ -10,9 +10,9 @@ interface State {}
 
 const commands = ["build", "test", "run"];
 export default class BuildFileSidekick extends React.Component<Props, State> {
-  state = {};
+  state: State = {};
 
-  render() {
+  render(): React.ReactNode {
     // TODO(siggisim): this hueristic for finding target names is janky, do something more clever here.
     let targetNames = this.props.editor.getValue().matchAll(/\bname\s*=\s*"(?<name>[^"]*)"/g);
     let path = this.getBuildPath(this.props.editor.getModel()?.uri.path || "");
@@ -39,7 +39,7 @@ export default class BuildFileSidekick extends React.Component<Props, State> {
     );
   }
 
-  getBuildPath(path: string) {
+  getBuildPath(path: string): string {
     let lastSlashIndex = path.lastIndexOf("/");
     if (lastSlashIndex == -1) {
       lastSlashIndex = 0;

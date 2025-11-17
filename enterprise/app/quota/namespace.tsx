@@ -45,15 +45,15 @@ interface State {
 export default class NamespaceComponent extends React.Component<NamespaceProps, State> {
   state: State = {};
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetch();
   }
 
-  private getNamespaceName() {
+  private getNamespaceName(): string {
     return this.props.search.get("name") || "";
   }
 
-  private fetch() {
+  private fetch(): void {
     this.setState({ loading: true });
     rpc_service.service
       .getNamespace(quota.GetNamespaceRequest.create({ namespace: this.getNamespaceName() }))
@@ -64,16 +64,16 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
       .finally(() => this.setState({ loading: false }));
   }
 
-  private onClickAssign(bucketName: string) {
+  private onClickAssign(bucketName: string): void {
     this.setState({ bucketToAssign: bucketName });
   }
-  private onCloseAssignModal() {
+  private onCloseAssignModal(): void {
     this.setState({ bucketToAssign: "" });
   }
-  private onChangeMemberToAdd(e: React.ChangeEvent<HTMLInputElement>) {
+  private onChangeMemberToAdd(e: React.ChangeEvent<HTMLInputElement>): void {
     this.setState({ memberToAdd: e.target.value });
   }
-  private onSubmitAssign() {
+  private onSubmitAssign(): void {
     const bucketName = this.state.bucketToAssign;
     const namespace = this.getNamespaceName();
     const member = this.state.memberToAdd || "";
@@ -95,13 +95,13 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
       .finally(() => this.setState({ assignLoading: false }));
   }
 
-  private onClickEditQuotaKey(bucketName: string, key: string) {
+  private onClickEditQuotaKey(bucketName: string, key: string): void {
     this.setState({ quotaKeyToEdit: { bucketName, key } });
   }
-  private onCloseReassignModal() {
+  private onCloseReassignModal(): void {
     this.setState({ quotaKeyToEdit: undefined });
   }
-  private onClickSubmitReassign() {
+  private onClickSubmitReassign(): void {
     this.setState({ reassignLoading: true });
     const newBucket = this.state.quotaKeyNewBucket;
     const oldBucket = this.state.quotaKeyToEdit?.bucketName;
@@ -122,7 +122,7 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ reassignLoading: false }));
   }
-  private onChangeBucketForReassign(e: React.ChangeEvent<HTMLSelectElement>) {
+  private onChangeBucketForReassign(e: React.ChangeEvent<HTMLSelectElement>): void {
     this.setState({ quotaKeyNewBucket: e.target.value });
   }
 
@@ -148,13 +148,13 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
     return `/settings/server/quota/bucket?${search}`;
   }
 
-  private onClickDelete(bucketName: string) {
+  private onClickDelete(bucketName: string): void {
     this.setState({ bucketToDelete: bucketName });
   }
-  private onCloseDeleteDialog() {
+  private onCloseDeleteDialog(): void {
     this.setState({ bucketToDelete: undefined });
   }
-  private onConfirmDelete() {
+  private onConfirmDelete(): void {
     this.setState({ deleteLoading: true });
     const bucketName = this.state.bucketToDelete;
     rpc_service.service
@@ -170,7 +170,7 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
       .finally(() => this.setState({ deleteLoading: false }));
   }
 
-  render() {
+  render(): React.ReactNode {
     if (this.state.loading) return <div className="loading" />;
     if (!this.state.response) return null;
     return (

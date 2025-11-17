@@ -15,7 +15,7 @@ export default function CheckboxButton({
   onChange,
   className,
   ...props
-}: CheckboxButtonProps) {
+}: CheckboxButtonProps): JSX.Element {
   const nodes = [
     <span>{children}</span>,
     <Checkbox ref={checkboxRef} checked={checked} onChange={onChange} {...props} />,

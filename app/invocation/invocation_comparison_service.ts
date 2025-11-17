@@ -24,14 +24,14 @@ export class InvocationComparisonService {
     this.onStorage();
   }
 
-  private onStorage() {
+  private onStorage(): void {
     const storageValue = localStorage[INVOCATION_ID_TO_COMPARE_LOCALSTORAGE_KEY] || undefined;
     if (this.invocationId !== storageValue) {
       this.setComparisonInvocation(storageValue);
     }
   }
 
-  fetch() {
+  fetch(): void {
     if (this.invocationId === undefined) {
       this.invocationModel = undefined;
       return;
@@ -77,7 +77,7 @@ export class InvocationComparisonService {
       .finally(() => (this.pendingRequest = undefined));
   }
 
-  private scheduleFetch() {
+  private scheduleFetch(): void {
     clearTimeout(this.timeoutRef);
     // Refetch data every 10 seconds for unfinished invocations.
     // This doesn't need to be constant spam, just want to eventually
@@ -87,7 +87,7 @@ export class InvocationComparisonService {
     }, 10000);
   }
 
-  setComparisonInvocation(invocationId?: string) {
+  setComparisonInvocation(invocationId?: string): void {
     if (this.invocationId === invocationId || (!this.invocationId && !invocationId)) {
       return;
     }
@@ -106,7 +106,7 @@ export class InvocationComparisonService {
     this.publishState();
   }
 
-  private publishState() {
+  private publishState(): void {
     this.subject.next({ id: this.invocationId, model: this.invocationModel });
     window.dispatchEvent(new Event("storage"));
   }
@@ -132,4 +132,6 @@ export class InvocationComparisonService {
   }
 }
 
-export default new InvocationComparisonService();
+const invocationComparisonService: InvocationComparisonService = new InvocationComparisonService();
+
+export default invocationComparisonService;

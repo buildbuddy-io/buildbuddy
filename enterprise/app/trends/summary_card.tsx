@@ -57,7 +57,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
     );
   }
 
-  render() {
+  render(): JSX.Element {
     const cacheRequestTotal = +this.props.currentPeriod.acCacheHits + +this.props.currentPeriod.acCacheMisses;
     const cacheHitRate = +this.props.currentPeriod.acCacheHits / cacheRequestTotal;
     const previousCacheRequestTotal =

@@ -27,16 +27,16 @@ export default class TargetsCardComponent extends React.Component<Props, State> 
     numPages: 1,
   };
 
-  private handleMoreClicked() {
+  private handleMoreClicked(): void {
     this.setState({ numPages: this.state.numPages + 1 });
   }
 
-  private handleCopyClicked(label: string) {
+  private handleCopyClicked(label: string): void {
     copyToClipboard(label);
     alert_service.success("Target labels copied to clipboard!");
   }
 
-  render() {
+  render(): JSX.Element {
     let events = this.props.buildEvents.filter(
       (target) =>
         !this.props.filter || target.id?.targetCompleted?.label.toLowerCase().includes(this.props.filter.toLowerCase())

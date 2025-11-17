@@ -7,14 +7,14 @@ export enum IconType {
 }
 
 class FaviconService {
-  getDefaultFavicon() {
+  getDefaultFavicon(): string {
     if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)")?.matches) {
       return "/favicon/favicon_white.svg";
     }
     return "/favicon/favicon_black.svg";
   }
 
-  getFaviconForType(type: IconType) {
+  getFaviconForType(type: IconType): string {
     switch (type) {
       case IconType.Success:
         return "/favicon/favicon_green.svg";
@@ -29,13 +29,14 @@ class FaviconService {
     }
   }
 
-  setFaviconForType(type: IconType) {
+  setFaviconForType(type: IconType): void {
     document.getElementById("favicon")?.setAttribute("href", this.getFaviconForType(type));
   }
 
-  setDefaultFavicon() {
+  setDefaultFavicon(): void {
     this.setFaviconForType(IconType.Default);
   }
 }
 
-export default new FaviconService();
+const faviconService: FaviconService = new FaviconService();
+export default faviconService;

@@ -19,7 +19,9 @@ export type LinkProps = {
  * navigation. If `e.preventDefault()` is called from the registered `onClick`
  * handler, navigation is canceled, as is the case for normal `<a>` elements.
  */
-export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAnchorElement>) => {
+export const Link: React.ForwardRefExoticComponent<
+  LinkProps & React.RefAttributes<HTMLAnchorElement>
+> = React.forwardRef<HTMLAnchorElement, LinkProps>((props, ref) => {
   const { className, href, target, onClick, resetFilters, ...rest } = props;
   const isExternal = Boolean(target) || Boolean(href && (href.startsWith("http://") || href.startsWith("https://")));
   const onClickWrapped = isExternal
@@ -60,7 +62,9 @@ export type TextLinkProps = LinkProps & {
 /**
  * TextLink renders an inline text `<Link>` with underline styling.
  */
-export const TextLink = React.forwardRef((props: TextLinkProps, ref: React.Ref<HTMLAnchorElement>) => {
+export const TextLink: React.ForwardRefExoticComponent<
+  TextLinkProps & React.RefAttributes<HTMLAnchorElement>
+> = React.forwardRef<HTMLAnchorElement, TextLinkProps>((props, ref) => {
   const { className, plain, ...rest } = props;
   return <Link ref={ref} className={`text-link ${plain ? "plain" : ""} ${className}`} {...rest} />;
 });

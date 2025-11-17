@@ -1,7 +1,7 @@
 import React from "react";
 import ReactSlider, { ReactSliderProps } from "react-slider";
 
-export function Slider({ className, ...rest }: ReactSliderProps<ReadonlyArray<number>>) {
+export function Slider({ className, ...rest }: ReactSliderProps<ReadonlyArray<number>>): JSX.Element {
   return (
     <ReactSlider
       className={`horizontal-slider ${className || ""}`}

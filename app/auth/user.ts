@@ -45,24 +45,24 @@ export class User {
     }
   }
 
-  getId() {
+  getId(): string {
     return this.displayUser.userId?.id || "";
   }
 
-  selectedGroupName() {
+  selectedGroupName(): string | undefined {
     if (this.selectedGroup?.name == "DEFAULT_GROUP") return "Organization";
     return this.selectedGroup?.name?.trim();
   }
 
-  canCall(rpc: BuildBuddyServiceRpcName) {
+  canCall(rpc: BuildBuddyServiceRpcName): boolean {
     return this.allowedRpcs.has(rpc);
   }
 
-  canImpersonate() {
+  canImpersonate(): boolean {
     return this.allowedRpcs.has("getInvocationOwner");
   }
 
-  isGroupAdmin() {
+  isGroupAdmin(): boolean {
     return this.allowedRpcs.has("updateGroup");
   }
 }

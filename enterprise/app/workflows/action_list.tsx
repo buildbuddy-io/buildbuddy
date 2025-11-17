@@ -165,7 +165,7 @@ function renderHistoryChart(actionHistory: workflow.ActionHistory): JSX.Element 
 }
 
 export default class ActionListComponent extends React.Component<ActionListComponentProps> {
-  render() {
+  render(): JSX.Element {
     return (
       <>
         {this.props.history.map((h) => {

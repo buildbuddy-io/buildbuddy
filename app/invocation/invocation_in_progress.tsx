@@ -7,7 +7,7 @@ interface Props {
 }
 
 export default class InvocationInProgressComponent extends React.Component<Props> {
-  render() {
+  render(): React.ReactNode {
     return (
       <div className="state-page">
         <div className="shelf">

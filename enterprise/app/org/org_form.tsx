@@ -39,7 +39,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
   abstract submitRequest(): Promise<any>;
   abstract showAdvancedSettings(): boolean;
 
-  async onSubmit(e: any) {
+  async onSubmit(e: any): Promise<void> {
     e.preventDefault();
 
     this.setState({ submitting: true, error: undefined });
@@ -57,27 +57,27 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
       this.setState({ submitting: false });
     }
   }
-  onFocus(e: React.FocusEvent) {
+  onFocus(e: React.FocusEvent): void {
     const name = (e.target as HTMLInputElement).name;
     this.setState({ touched: new Set([...this.state.touched, name]) });
   }
-  onChange(e: React.ChangeEvent<HTMLInputElement>) {
+  onChange(e: React.ChangeEvent<HTMLInputElement>): void {
     const { name, value } = getChangedFormState(e);
     this.setFieldValue(name, value);
   }
-  onChangeName(e: React.ChangeEvent<HTMLInputElement>) {
+  onChangeName(e: React.ChangeEvent<HTMLInputElement>): void {
     return this.onChange(e);
   }
-  onChangeUrlIdentifier(e: React.ChangeEvent<HTMLInputElement>) {
+  onChangeUrlIdentifier(e: React.ChangeEvent<HTMLInputElement>): void {
     const { name, value } = getChangedFormState(e);
     this.setFieldValue(name, makeSlug(value as string));
   }
-  onChangeSuggestionPreference(e: React.ChangeEvent<HTMLSelectElement>) {
+  onChangeSuggestionPreference(e: React.ChangeEvent<HTMLSelectElement>): void {
     const { name, value } = getChangedFormState(e);
     this.setFieldValue(name, Number(value) as grp.SuggestionPreference);
   }
 
-  setFieldValue(name: string, value: any) {
+  setFieldValue(name: string, value: any): void {
     const request = this.state.request;
     (request as Record<string, any>)[name] = value;
 
@@ -87,11 +87,11 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
     });
   }
 
-  renderError() {
+  renderError(): React.ReactNode {
     return this.state.error && <div className="form-error">{this.state.error.description}</div>;
   }
 
-  renderFields() {
+  renderFields(): React.ReactNode {
     const { request, initialRequest } = this.state;
     const domain =
       this.props.user.selectedGroup?.id == (request as grp.UpdateGroupRequest)?.id
@@ -287,20 +287,22 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
   }
 }
 
-export function getChangedFormState(changeEvent: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+export function getChangedFormState(
+  changeEvent: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+): { name: string; value: string | boolean } {
   const input = changeEvent.target;
 
   const name = input.name;
   const value = input.type === "checkbox" ? (input as HTMLInputElement).checked : input.value;
 
-  return { name, value };
+  return { name: name, value: value };
 }
 
-function getDomainFromEmail(email: string) {
+function getDomainFromEmail(email: string): string | undefined {
   return email.split("@").pop();
 }
 
-export function makeSlug(value: string) {
+export function makeSlug(value: string): string {
   return (
     value
       .toLowerCase()

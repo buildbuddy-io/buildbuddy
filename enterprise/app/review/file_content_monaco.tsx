@@ -32,7 +32,7 @@ export default class FileContentMonacoComponent extends React.Component<
     modifiedLoaded: false,
   };
 
-  componentWillMount() {
+  componentWillMount(): void {
     // Fetch full files rather than using github diff patch.
     // TODO(jdhollen): Check for existing monaco model first.
     const changeType = this.props.fileModel.getChangeType();
@@ -178,7 +178,7 @@ class EditorMouseListener implements monaco.IDisposable {
     this.disposables.push(editor.onMouseLeave((e) => this.onMouseLeave(e)));
   }
 
-  onMouseDown(e: monaco.editor.IEditorMouseEvent) {
+  onMouseDown(e: monaco.editor.IEditorMouseEvent): void {
     if (e.target.position === null) {
       this.startLine = 0;
     } else {
@@ -186,7 +186,7 @@ class EditorMouseListener implements monaco.IDisposable {
     }
   }
 
-  setDecorations() {
+  setDecorations(): void {
     const newDecorations: monaco.editor.IModelDeltaDecoration[] = [];
     if (this.previousLineClick !== 0) {
       newDecorations.push({
@@ -200,7 +200,7 @@ class EditorMouseListener implements monaco.IDisposable {
     this.currentDecorations = this.editor.deltaDecorations(this.currentDecorations, newDecorations);
   }
 
-  onMouseUp(e: monaco.editor.IEditorMouseEvent) {
+  onMouseUp(e: monaco.editor.IEditorMouseEvent): void {
     if (e.target.position === null) {
       this.startLine = 0;
       this.previousLineClick = 0;
@@ -224,21 +224,21 @@ class EditorMouseListener implements monaco.IDisposable {
     }
   }
 
-  onMouseMove(e: monaco.editor.IEditorMouseEvent) {
+  onMouseMove(e: monaco.editor.IEditorMouseEvent): void {
     // If the user's mouse drifts, don't count this as a click to add a comment.
     const currentLine = e.target.position ? e.target.position.lineNumber : 0;
     if (currentLine !== this.startLine) {
       this.startLine = 0;
     }
   }
-  onMouseLeave(e: monaco.editor.IPartialEditorMouseEvent) {
+  onMouseLeave(e: monaco.editor.IPartialEditorMouseEvent): void {
     // If the user's mouse drifts, don't count this as a click to add a comment.
     this.startLine = 0;
     this.previousLineClick = 0;
     this.setDecorations();
   }
 
-  dispose() {
+  dispose(): void {
     this.disposables.forEach((d) => d.dispose());
     this.disposables = [];
   }
@@ -274,14 +274,14 @@ class AutoZone {
     this.editor = editor;
   }
 
-  updateSize() {
+  updateSize(): void {
     if (!this.editor) {
       return;
     }
     this.editor.changeViewZones((ca) => this.updateFunction(ca));
   }
 
-  removeFromEditor() {
+  removeFromEditor(): void {
     if (!this.editor || !this.overlayWidget) {
       return;
     }
@@ -364,7 +364,7 @@ class MonacoDiffViewerComponent extends React.Component<
     modifiedEditorThreadZones: [],
   };
 
-  scheduleSizeUpdate() {
+  scheduleSizeUpdate(): void {
     if (this.resizeUpdateScheduled) {
       return;
     }
@@ -375,7 +375,7 @@ class MonacoDiffViewerComponent extends React.Component<
     }, 200);
   }
 
-  performSizeUpdate() {
+  performSizeUpdate(): void {
     const editor = this.state.editor;
     const container = this.monacoElement.current;
     if (this.sizeUpdateInProgress || !editor || !container) {
@@ -413,7 +413,7 @@ class MonacoDiffViewerComponent extends React.Component<
     }
   }
 
-  componentDidMount() {
+  componentDidMount(): void {
     // Element is always part of the render() result.
     const container = this.monacoElement.current!;
     const editor = monaco.editor.createDiffEditor(container, {
@@ -479,10 +479,13 @@ class MonacoDiffViewerComponent extends React.Component<
 
   // I don't like to use this, but this is the nicest way to add junk to Monaco
   // while still tracking it with React.
-  static getDerivedStateFromProps(props: MonacoDiffViewerComponentProps, state: MonacoDiffViewerComponentState) {
+  static getDerivedStateFromProps(
+    props: MonacoDiffViewerComponentProps,
+    state: MonacoDiffViewerComponentState
+  ): Partial<MonacoDiffViewerComponentState> | null {
     const editor = state.editor;
     if (!editor) {
-      return;
+      return null;
     }
     const originalUpdates = getAddedAndRemovedThreads(props.originalThreads, state.originalEditorThreadZones);
     const modifiedUpdates = getAddedAndRemovedThreads(props.modifiedThreads, state.modifiedEditorThreadZones);
@@ -517,7 +520,7 @@ class MonacoDiffViewerComponent extends React.Component<
     };
   }
 
-  componentDidUpdate() {
+  componentDidUpdate(): void {
     this.state.originalEditorThreadZones.forEach((z) => z.updateSize());
     this.state.modifiedEditorThreadZones.forEach((z) => z.updateSize());
   }
@@ -530,7 +533,7 @@ class MonacoDiffViewerComponent extends React.Component<
     this.state.editor?.dispose();
   }
 
-  render() {
+  render(): JSX.Element {
     const zonesToRender = [...this.state.originalEditorThreadZones, ...this.state.modifiedEditorThreadZones];
     const zonePortals = zonesToRender.map((tz) => {
       const thread =

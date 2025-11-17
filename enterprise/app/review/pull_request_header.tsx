@@ -13,7 +13,7 @@ interface PullRequestHeaderComponentProps {
 }
 
 export default class PullRequestHeaderComponent extends React.Component<PullRequestHeaderComponentProps> {
-  render() {
+  render(): JSX.Element {
     const model = this.props.reviewModel;
     const userIsPrAuthor = model.viewerIsPrAuthor();
     return (

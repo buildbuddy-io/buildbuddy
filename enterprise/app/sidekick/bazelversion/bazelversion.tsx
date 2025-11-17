@@ -12,13 +12,13 @@ interface State {
 const versionsDataURL = "https://registry.build/v1/versions.json";
 
 export default class BazelVersionSidekick extends React.Component<Props, State> {
-  state = { versions: [] };
+  state: State = { versions: [] };
 
-  async componentDidMount() {
+  async componentDidMount(): Promise<void> {
     this.setState({ versions: (await (await fetch(versionsDataURL)).json()).reverse() });
   }
 
-  render() {
+  render(): React.ReactNode {
     return (
       <div className="sidekick bazelversion-sidekick">
         <h1>Bazel Version</h1>

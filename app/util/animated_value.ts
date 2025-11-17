@@ -9,7 +9,10 @@ export class AnimatedValue {
   private min_: number;
   private max_: number;
 
-  constructor(target: number, { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER } = {}) {
+  constructor(
+    target: number,
+    { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER }: { min?: number; max?: number } = {}
+  ) {
     this.min_ = min;
     this.max_ = max;
     this.target_ = clamp(target, min, max);
@@ -19,14 +22,14 @@ export class AnimatedValue {
   set target(target: number) {
     this.target_ = clamp(target, this.min_, this.max_);
   }
-  get target() {
+  get target(): number {
     return this.target_;
   }
 
   set value(value: number) {
     this.value_ = clamp(value, this.min_, this.max_);
   }
-  get value() {
+  get value(): number {
     return this.value_;
   }
 
@@ -37,7 +40,7 @@ export class AnimatedValue {
     this.value_ = Math.max(min, this.value_);
     this.target_ = Math.max(min, this.target_);
   }
-  get min() {
+  get min(): number {
     return this.min_;
   }
 
@@ -48,7 +51,7 @@ export class AnimatedValue {
     this.value_ = Math.min(max, this.value);
     this.target_ = Math.min(max, this.target_);
   }
-  get max() {
+  get max(): number {
     return this.max_;
   }
 
@@ -66,7 +69,7 @@ export class AnimatedValue {
    * @param dt step time in milliseconds
    * @param options rate and threshold (optional)
    */
-  step(dt: number, { rate = 0.02, threshold = 0.000001 } = {}) {
+  step(dt: number, { rate = 0.02, threshold = 0.000001 }: { rate?: number; threshold?: number } = {}): void {
     const distance = this.target_ - this.value_;
     const stepAmount = distance * rate * dt;
 
@@ -79,15 +82,15 @@ export class AnimatedValue {
     this.value_ = clamp(this.value_, this.min_, this.max_);
   }
 
-  toString() {
+  toString(): string {
     return String(this.value_);
   }
 
-  get isAtTarget() {
+  get isAtTarget(): boolean {
     return this.value_ === this.target_;
   }
 
-  toJson() {
+  toJson(): { value: number; target: number; isAtTarget: boolean; min: number; max: number } {
     return {
       value: this.value_,
       target: this.target_,

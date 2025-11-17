@@ -70,7 +70,7 @@ export interface ProtoFilterParams {
   sortOrder?: SortOrder;
 }
 
-export const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
+export const LAST_N_DAYS_OPTIONS: readonly number[] = [7, 30, 90, 180, 365];
 
 function splitAndTrimTags(param: string | null): string[] {
   if (!param) {
@@ -500,11 +500,11 @@ const STATUS_TO_STRING = Object.fromEntries(
   Object.entries(invocation_status.OverallStatus).map(([k, v]) => [v, k.toLowerCase().replace(/_/g, "-")])
 );
 
-export function statusToString(status: invocation_status.OverallStatus) {
+export function statusToString(status: invocation_status.OverallStatus): string {
   return STATUS_TO_STRING[status];
 }
 
-export function statusFromString(value: string) {
+export function statusFromString(value: string): invocation_status.OverallStatus {
   return invocation_status.OverallStatus[
     value.toUpperCase().replace(/-/g, "_") as any
   ] as unknown as invocation_status.OverallStatus;
@@ -596,7 +596,7 @@ function parseDuration(value: string | null): google_duration.protobuf.Duration 
 }
 
 /** Duration slider values, in seconds. **/
-export const DURATION_SLIDER_VALUES = [
+export const DURATION_SLIDER_VALUES: readonly number[] = [
   0,
   1,
   2,
@@ -636,7 +636,7 @@ export const DURATION_SLIDER_VALUES = [
   12 * 60 * 60,
   24 * 60 * 60,
 ];
-export const DURATION_SLIDER_MIN_INDEX = 0;
-export const DURATION_SLIDER_MIN_VALUE = DURATION_SLIDER_VALUES[DURATION_SLIDER_MIN_INDEX];
-export const DURATION_SLIDER_MAX_INDEX = DURATION_SLIDER_VALUES.length - 1;
-export const DURATION_SLIDER_MAX_VALUE = DURATION_SLIDER_VALUES[DURATION_SLIDER_MAX_INDEX];
+export const DURATION_SLIDER_MIN_INDEX: number = 0;
+export const DURATION_SLIDER_MIN_VALUE: number = DURATION_SLIDER_VALUES[DURATION_SLIDER_MIN_INDEX];
+export const DURATION_SLIDER_MAX_INDEX: number = DURATION_SLIDER_VALUES.length - 1;
+export const DURATION_SLIDER_MAX_VALUE: number = DURATION_SLIDER_VALUES[DURATION_SLIDER_MAX_INDEX];

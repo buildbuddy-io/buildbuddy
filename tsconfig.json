@@ -13,6 +13,7 @@
     "declaration": true,
     "target": "ES2018",
     "lib": ["es2018", "es2019", "es2021", "dom", "dom.iterable"],
+    "isolatedDeclarations": true,
     "strict": true
     // Note: we intentionally don't set "baseUrl": "." in order to force import
     // module specifiers to be relative.

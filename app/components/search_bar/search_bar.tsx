@@ -34,22 +34,22 @@ export default class SearchBar<T> extends React.Component<Props<T>, State<T>> {
     searching: false,
   };
 
-  ref = React.createRef<HTMLInputElement>();
-  resultsRef = React.createRef<HTMLInputElement>();
+  ref: React.RefObject<HTMLInputElement> = React.createRef<HTMLInputElement>();
+  resultsRef: React.RefObject<HTMLInputElement> = React.createRef<HTMLInputElement>();
 
-  handleResultPicked(result: T) {
+  handleResultPicked(result: T): void {
     this.props.onResultPicked && this.props.onResultPicked(result, this.state.search);
   }
 
-  handleDismissed() {
+  handleDismissed(): void {
     this.setState({ isVisible: false });
   }
 
-  handleSearchChanged(value: string) {
+  handleSearchChanged(value: string): void {
     this.fetchResults(value);
   }
 
-  handleKeyUp(e: React.KeyboardEvent<HTMLInputElement>) {
+  handleKeyUp(e: React.KeyboardEvent<HTMLInputElement>): void {
     switch (e.key) {
       case "Enter":
         if (this.state.results.length > this.selectedIndex()) {
@@ -70,11 +70,11 @@ export default class SearchBar<T> extends React.Component<Props<T>, State<T>> {
     }
   }
 
-  selectedIndex() {
+  selectedIndex(): number {
     return Math.min((this.state.results.length || 0) - 1, this.state.selectedIndex);
   }
 
-  async fetchResults(search: string) {
+  async fetchResults(search: string): Promise<void> {
     this.setState({ search: search, searching: true });
 
     if (search == "") {
@@ -105,7 +105,7 @@ export default class SearchBar<T> extends React.Component<Props<T>, State<T>> {
     this.setState({ results: results, searching: false });
   }
 
-  render() {
+  render(): React.ReactNode {
     return (
       <div className={`search-bar-container ${this.state.focused ? "focused" : ""}`}>
         <div onClick={(e) => e.stopPropagation()} className={`search-bar`}>

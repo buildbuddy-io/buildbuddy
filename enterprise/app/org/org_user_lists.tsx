@@ -277,7 +277,7 @@ export type OrgUserListsProps = {
 };
 
 export default class OrgUserListsComponent extends React.Component<OrgUserListsProps> {
-  render() {
+  render(): React.ReactNode {
     const path = window.location.pathname;
     if (path.startsWith("/settings/org/user-lists/")) {
       return <OrgUserListComponent user={this.props.user} userListID={path.split("/").pop()!} />;

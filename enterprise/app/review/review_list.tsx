@@ -18,7 +18,7 @@ interface State {
 export default class ReviewListComponent extends React.Component<ReviewListComponentProps, State> {
   state: State = {};
 
-  componentWillMount() {
+  componentWillMount(): void {
     document.title = "Reviews | Buildbuddy";
     rpc_service.service.getGithubPullRequest({ user: this.props.user }).then((r) => {
       console.log(r);
@@ -26,7 +26,7 @@ export default class ReviewListComponent extends React.Component<ReviewListCompo
     });
   }
 
-  render() {
+  render(): React.ReactNode {
     let needsAttention: github.PullRequest[] = [];
     for (let p of this.state.response?.incoming || []) {
       if (!incomingNeedsAttention(p)) continue;
@@ -163,7 +163,7 @@ interface PRProps {
 }
 
 class PR extends React.Component<PRProps> {
-  private onClick(e: React.MouseEvent<HTMLAnchorElement>) {
+  private onClick(e: React.MouseEvent<HTMLAnchorElement>): void {
     if (e.ctrlKey && e.shiftKey) {
       // When clicking with Ctrl+Shift+Click, go directly to the GitHub PR page.
       e.preventDefault();
@@ -174,7 +174,7 @@ class PR extends React.Component<PRProps> {
     }
   }
 
-  render() {
+  render(): React.ReactNode {
     let reviewers: React.ReactNode[] = [];
     let unresolved = false;
     let approved = false;

@@ -35,17 +35,17 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
     logB: undefined,
   };
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.fetchLogs();
   }
 
-  componentDidUpdate(prevProps: Props) {
+  componentDidUpdate(prevProps: Props): void {
     if (this.props.modelA !== prevProps.modelA || this.props.modelB !== prevProps.modelB) {
       this.fetchLogs();
     }
   }
 
-  fetchLogs() {
+  fetchLogs(): void {
     if (!this.state.logA) {
       this.fetchLog(this.props.modelA)
         .then((log) => this.setState({ logA: log }))
@@ -60,7 +60,7 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
     }
   }
 
-  fetchLog(model?: InvocationModel) {
+  fetchLog(model?: InvocationModel): Promise<tools.protos.ExecLogEntry[] | undefined> {
     if (!model) return Promise.resolve(undefined);
 
     if (!model.hasExecutionLog()) {
@@ -87,7 +87,7 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
     return 0;
   }
 
-  handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+  handleInputChange(event: React.ChangeEvent<HTMLInputElement>): void {
     const target = event.target;
     const name = target.name;
     this.setState({
@@ -95,17 +95,17 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
     } as Record<keyof State, any>);
   }
 
-  handleSortChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleSortChange(event: React.ChangeEvent<HTMLSelectElement>): void {
     this.setState({
       sort: event.target.value,
     });
   }
 
-  handleMoreClicked() {
+  handleMoreClicked(): void {
     this.setState({ limit: this.state.limit + 100 });
   }
 
-  handleAllClicked() {
+  handleAllClicked(): void {
     this.setState({ limit: Number.MAX_SAFE_INTEGER });
   }
 
@@ -138,7 +138,7 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
     return `/code/buildbuddy-io/buildbuddy/?${new URLSearchParams(params).toString()}#diff`;
   }
 
-  render() {
+  render(): React.ReactNode {
     if (this.state.loading) {
       return <div className="loading" />;
     }

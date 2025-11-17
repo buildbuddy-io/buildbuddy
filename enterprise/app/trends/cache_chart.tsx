@@ -76,7 +76,7 @@ const CacheChartTooltip = ({
 export default class CacheChartComponent extends React.Component<CacheChartProps, State> {
   state: State = {};
 
-  onMouseDown(e: CategoricalChartState) {
+  onMouseDown(e: CategoricalChartState): void {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -84,7 +84,7 @@ export default class CacheChartComponent extends React.Component<CacheChartProps
     this.setState({ refAreaLeft: e.activeLabel, refAreaRight: e.activeLabel });
   }
 
-  onMouseMove(e: CategoricalChartState) {
+  onMouseMove(e: CategoricalChartState): void {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -95,7 +95,7 @@ export default class CacheChartComponent extends React.Component<CacheChartProps
     this.setState({ refAreaRight: e.activeLabel });
   }
 
-  onMouseUp(e: CategoricalChartState) {
+  onMouseUp(e: CategoricalChartState): void {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -117,7 +117,7 @@ export default class CacheChartComponent extends React.Component<CacheChartProps
     return !Boolean(this.state.refAreaLeft);
   }
 
-  render() {
+  render(): JSX.Element {
     return (
       <div id={this.props.id} className={`trend-chart ${this.props.onZoomSelection ? "zoomable" : ""}`}>
         <div className="trend-chart-title">{this.props.title}</div>

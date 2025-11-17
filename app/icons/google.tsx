@@ -111,7 +111,7 @@ const source = `
 
 const base64 = btoa(source);
 
-export function GoogleIcon() {
+export function GoogleIcon(): JSX.Element {
   return (
     <img className="google-icon" src={`data:image/svg+xml;base64,${base64}`} alt="Google" width="20" height="20" />
   );
