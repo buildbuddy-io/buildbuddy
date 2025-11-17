@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
@@ -340,6 +341,7 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 func flattenInvalidates(invalidates []any, isTool bool) map[string]uint32 {
 	transitivelyInvalidated := make(map[string]uint32)
 	spawnsSeen := make(map[*Spawn]struct{})
+	slicesSeen := make(map[*any]struct{})
 	toVisit := invalidates
 	for len(toVisit) > 0 {
 		var n any
@@ -354,9 +356,16 @@ func flattenInvalidates(invalidates []any, isTool bool) map[string]uint32 {
 				}
 				transitivelyInvalidated[n.Mnemonic+suffix]++
 			}
+		case []any:
+			// The invalidates argument and any slices it transitively references are reachable and not modified while
+			// traversing, so we can identify them with the pointer to their slice data.
+			ptr := unsafe.SliceData(n)
+			if _, seen := slicesSeen[ptr]; !seen {
+				slicesSeen[ptr] = struct{}{}
+				toVisit = append(toVisit, n...)
+			}
 		default:
-			// If n is not a Spawn, it must be a slice of Spawns or slices.
-			toVisit = append(toVisit, n.([]any)...)
+			log.Fatalf("unexpected type in invalidates: %T", n)
 		}
 	}
 	return transitivelyInvalidated
