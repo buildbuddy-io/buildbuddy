@@ -34,6 +34,7 @@ go_library(
         "//server/util/claims",
         "//server/util/disk",
         "//server/util/flag",
+        "//server/util/fsync",
         "//server/util/hash",
         "//server/util/log",
         "//server/util/networking",

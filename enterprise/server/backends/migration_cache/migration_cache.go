@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/metacache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
@@ -30,7 +31,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	oss_cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"

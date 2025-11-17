@@ -1657,7 +1657,7 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "file_cache_op_latency_usec",
 		Help:      "Latency of individual file cache operations.",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Second, 10),
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Hour, 2),
 	}, []string{
 		OpLabel,
 	})
@@ -2322,6 +2322,16 @@ var (
 	}, []string{
 		BatchOperatorName,
 		GroupID,
+		StatusLabel,
+	})
+
+	ProxySecondarySyncWriteDigests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "proxy_secondary_sync_write_digests",
+		Help:      "The number of digests written synchronously to a secondary cache.",
+	}, []string{
+		ServerName,
 		StatusLabel,
 	})
 

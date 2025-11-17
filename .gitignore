@@ -65,6 +65,9 @@ enterprise/config/user-configs
 # IntelliJ directory
 /.ijwb/
 
+# VSCode settings
+.vscode/**
+
 # Python cache
 **/__pycache__/**
 

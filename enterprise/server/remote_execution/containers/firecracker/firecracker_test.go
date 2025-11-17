@@ -992,6 +992,13 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 		expectedOutputAfterResume string
 	}{
 		{
+			name:               "By default, apply local first policy",
+			snapshotReadPolicy: snaputil.ReadLocalSnapshotFirst,
+			// Even though a newer remote snapshot was written by executor 2, expect to
+			// start from the local snapshot written by executor 1.
+			expectedOutputAfterResume: "Executor1\nResume\n",
+		},
+		{
 			name:               "Always read newest",
 			snapshotReadPolicy: snaputil.AlwaysReadNewestSnapshot,
 			// Even though a local snapshot exists on executor 1, expect to
@@ -1149,10 +1156,11 @@ func TestFirecracker_SnapshotSharing_ReadPolicy_FallbackSnapshot(t *testing.T) {
 			expectedOutputAfterResume: "MainExecutor1\nMainExecutor2\nPR2Executor1\n",
 		},
 		{
-			name:               "By default, always read newest",
+			name:               "By default, use local first policy",
 			snapshotReadPolicy: "",
-			// We always expect to resume from the newest main snapshot.
-			expectedOutputAfterResume: "MainExecutor1\nMainExecutor2\nPR2Executor1\n",
+			// Even though a newer main snapshot was written on executor 2, we should
+			// start from the local main snapshot on executor 1.
+			expectedOutputAfterResume: "MainExecutor1\nPR2Executor1\n",
 		},
 		{
 			name:               "Local first",

@@ -6,6 +6,7 @@ import (
 	"io"
 	"strconv"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -23,7 +24,7 @@ import (
 )
 
 type ByteStreamServerProxy struct {
-	supportsEncryption bool
+	supportsEncryption func(context.Context) bool
 	atimeUpdater       interfaces.AtimeUpdater
 	authenticator      interfaces.Authenticator
 	local              interfaces.ByteStreamServer
@@ -57,7 +58,7 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		return nil, fmt.Errorf("A local ByteStreamServer is required to enable ByteStreamServerProxy")
 	}
 	return &ByteStreamServerProxy{
-		supportsEncryption: env.GetCrypter() != nil,
+		supportsEncryption: remote_crypter.SupportsEncryption(env),
 		atimeUpdater:       atimeUpdater,
 		authenticator:      authenticator,
 		local:              local,
@@ -92,7 +93,7 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 }
 
 func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream) (string, error) {
-	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption {
+	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
 		return metrics.UncacheableStatusLabel, s.readRemoteOnly(ctx, req, stream)
 	}
 
@@ -289,7 +290,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	meteredStream := &meteredServerSideClientStream{ByteStream_WriteServer: stream}
 	stream = meteredStream
 	var err error
-	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption {
+	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
 		err = s.writeRemoteOnly(ctx, stream)
 	} else if proxy_util.SkipRemote(ctx) {
 		err = s.writeLocalOnly(stream)

@@ -7,10 +7,10 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/gcsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -276,22 +276,6 @@ func (c *Cache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceNam
 	return groupID, DefaultPartitionID
 }
 
-func (c *Cache) gcsObjectIsPastTTL(gcsMetadata *sgpb.StorageMetadata_GCSMetadata) bool {
-	// The GCS TTL is set as an integer number of days. The docs are vague,
-	// but it seems plausible that if a file is *ever* marked for deletion,
-	// it will be deleted, even if it has changed since. Basically, there is
-	// one job marking files for deletion, and another job deleting them,
-	// and if the object has changed between those two events, it is still
-	// deleted.
-	//
-	// For this reason, if a GCS object is ever less than 1 hour away from
-	// TTL, assume it has already been marked for deletion.
-	customTimeUsec := gcsMetadata.GetLastCustomTimeUsec()
-	buffer := time.Hour
-
-	return c.opts.Clock.Since(time.UnixMicro(customTimeUsec))+buffer > time.Duration(c.opts.GCSTTLDays*24)*time.Hour
-}
-
 func (c *Cache) makeFileRecord(ctx context.Context, pr *rspb.ResourceName) (*sgpb.FileRecord, error) {
 	r := digest.ResourceNameFromProto(pr)
 	if err := r.Validate(); err != nil {
@@ -325,6 +309,42 @@ func (c *Cache) makeFileRecord(ctx context.Context, pr *rspb.ResourceName) (*sgp
 		Compressor:     r.GetCompressor(),
 		Encryption:     encryption,
 	}, nil
+}
+
+// key is a comparable key for uniquely identifying a ResourceName/FileRecord.
+// Note: groupID, partitionID, and encryptionKeyID are deliberately omitted
+// because these fields are set by the server based on request context.
+type key struct {
+	cacheType          rspb.CacheType
+	remoteInstanceName string
+	hash               string
+	sizeBytes          int64
+	digestFunction     repb.DigestFunction_Value
+}
+
+// keyFromFileRecord creates a key from a FileRecord.
+func keyFromFileRecord(fr *sgpb.FileRecord) key {
+	iso := fr.GetIsolation()
+	d := fr.GetDigest()
+	return key{
+		cacheType:          iso.GetCacheType(),
+		remoteInstanceName: iso.GetRemoteInstanceName(),
+		hash:               string(d.GetHash()),
+		sizeBytes:          d.GetSizeBytes(),
+		digestFunction:     fr.GetDigestFunction(),
+	}
+}
+
+// keyFromResourceName creates a key from a ResourceName.
+func keyFromResourceName(r *rspb.ResourceName) key {
+	d := r.GetDigest()
+	return key{
+		cacheType:          r.GetCacheType(),
+		remoteInstanceName: r.GetInstanceName(),
+		hash:               string(d.GetHash()),
+		sizeBytes:          d.GetSizeBytes(),
+		digestFunction:     r.GetDigestFunction(),
+	}
 }
 
 func (c *Cache) lookupMetadatas(ctx context.Context, records ...*sgpb.FileRecord) ([]*sgpb.FileMetadata, error) {
@@ -580,10 +600,35 @@ func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	// TODO: optimize this. We can read multiple resources in one call.
+	// Convert resources to fileRecords
+	fileRecords := make([]*sgpb.FileRecord, 0, len(resources))
+	for _, r := range resources {
+		fileRecord, err := c.makeFileRecord(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		fileRecords = append(fileRecords, fileRecord)
+	}
+
+	mds, err := c.lookupMetadatas(ctx, fileRecords...)
+	if err != nil {
+		return nil, err
+	}
+
+	keyToMetadata := make(map[key]*sgpb.FileMetadata, len(mds))
+	for _, md := range mds {
+		k := keyFromFileRecord(md.GetFileRecord())
+		keyToMetadata[k] = md
+	}
+
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	for _, r := range resources {
-		rc, err := c.Reader(ctx, r, 0, 0)
+		k := keyFromResourceName(r)
+		md, ok := keyToMetadata[k]
+		if !ok {
+			continue
+		}
+		rc, err := c.reader(ctx, md, r, 0, 0)
 		if err != nil {
 			if status.IsNotFoundError(err) || os.IsNotExist(err) {
 				continue
@@ -663,30 +708,7 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	return c.deleteFileAndMetadata(ctx, fileRecord, 0 /*=matchAtime*/)
 }
 
-// Low level interface used for seeking and stream-writing.
-func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64) (io.ReadCloser, error) {
-	ctx, spn := tracing.StartSpan(ctx)
-	defer spn.End()
-	if spn.IsRecording() {
-		spn.SetAttributes(
-			attribute.String("digest_hash", r.GetDigest().GetHash()),
-			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
-	}
-	fileRecord, err := c.makeFileRecord(ctx, r)
-	if err != nil {
-		return nil, err
-	}
-
-	mds, err := c.lookupMetadatas(ctx, fileRecord)
-	if err != nil {
-		return nil, err
-	}
-	if len(mds) != 1 {
-		log.Errorf("File record %v found multiple metadatas: %v", fileRecord, mds)
-		return nil, status.InternalError("only one metadata record should match query")
-	}
-	md := mds[0]
-
+func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64) (io.ReadCloser, error) {
 	// If this object was not chunked, and is somehow stored as a zero-
 	// length file, pretend it does not exist.
 	storageMetadata := md.GetStorageMetadata()
@@ -700,7 +722,7 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
-		if c.gcsObjectIsPastTTL(gcsMetadata) {
+		if gcsutil.ObjectIsPastTTL(c.opts.Clock, gcsMetadata, c.opts.GCSTTLDays) {
 			return nil, status.NotFoundError("backing object may have expired")
 		}
 	}
@@ -778,6 +800,34 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 	}
 
 	return reader, nil
+}
+
+// Low level interface used for seeking and stream-writing.
+func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64) (io.ReadCloser, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	if spn.IsRecording() {
+		spn.SetAttributes(
+			attribute.String("digest_hash", r.GetDigest().GetHash()),
+			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
+	}
+	fileRecord, err := c.makeFileRecord(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+
+	mds, err := c.lookupMetadatas(ctx, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	if len(mds) != 1 {
+		log.Errorf("File record %v found multiple metadatas: %v", fileRecord, mds)
+		return nil, status.InternalError("only one metadata record should match query")
+	}
+	md := mds[0]
+
+	return c.reader(ctx, md, r, uncompressedOffset, uncompressedLimit)
+
 }
 
 func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {

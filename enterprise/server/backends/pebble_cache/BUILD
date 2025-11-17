@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/filestore",
         "//enterprise/server/raft/keys",
         "//enterprise/server/util/chunker",
+        "//enterprise/server/util/gcsutil",
         "//enterprise/server/util/pebble",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",

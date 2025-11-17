@@ -1039,6 +1039,81 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	}
 }
 
+func TestFileWriteAndFind(t *testing.T) {
+	repl := testutil.NewTestingReplica(t, 1, 1)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	lastAppliedIndex, err := repl.Open(stopc)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+
+	now := time.Now().UnixMicro()
+	// Write a file to the replica's data dir.
+	r, _ := testdigest.RandomCASResourceBuf(t, 1000)
+	fileRecord := &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
+			CacheType:   rspb.CacheType_CAS,
+			PartitionId: "default",
+			GroupId:     interfaces.AuthAnonymousUser,
+		},
+		Digest:         r.GetDigest(),
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	md := &sgpb.FileMetadata{
+		FileRecord: fileRecord,
+		StorageMetadata: &sgpb.StorageMetadata{
+			GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
+				BlobName: "blob",
+			},
+		},
+		LastAccessUsec: now,
+	}
+
+	fs := filestore.New()
+
+	key, err := fs.PebbleKey(fileRecord)
+	require.NoError(t, err)
+	fileMetadataKey, err := key.Bytes(filestore.Version5)
+	require.NoError(t, err)
+	val, err := proto.Marshal(md)
+	require.NoError(t, err)
+
+	// Do a DirectWrite.
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   fileMetadataKey,
+			Value: val,
+		},
+	}))
+	entries := []dbsm.Entry{entry}
+	writeRsp, err := repl.Update(entries)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(writeRsp))
+
+	// Do a find
+	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.FindRequest{
+		Key: fileMetadataKey,
+	}).ToBuf()
+	require.NoError(t, err)
+	readRsp, err := repl.Lookup(buf)
+	require.NoError(t, err)
+
+	readBatch := rbuilder.NewBatchResponse(readRsp)
+	findRsp, err := readBatch.FindResponse(0)
+	require.NoError(t, err)
+
+	require.True(t, findRsp.GetPresent())
+	require.Equal(t, now, findRsp.GetLastAccessUsec())
+	require.Equal(t, "blob", findRsp.GetGcsMetadata().GetBlobName())
+
+	err = repl.Close()
+	require.NoError(t, err)
+}
+
 func TestUsage(t *testing.T) {
 	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)

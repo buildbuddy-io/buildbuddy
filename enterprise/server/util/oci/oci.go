@@ -215,7 +215,7 @@ func credentials(username, password string) (Credentials, error) {
 			"malformed credentials: password present with no username")
 	} else if username != "" && password == "" {
 		return Credentials{}, status.InvalidArgumentError(
-			"malformed credentials: username present with no password")
+			"malformed credentials: username present with no password - if setting 'container-registry-password=$( some-command )', check whether the command failed")
 	} else {
 		return Credentials{
 			Username: username,

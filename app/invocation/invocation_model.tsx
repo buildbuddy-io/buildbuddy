@@ -27,6 +27,7 @@ import { quote } from "../util/shlex";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
+export const NINJA_ROLE = "NINJA";
 
 export const InvocationStatus = invocation_status.InvocationStatus;
 
@@ -590,12 +591,19 @@ export default class InvocationModel {
     return !this.isWorkflowInvocation() && !this.isHostedBazelInvocation();
   }
 
+  isNinjaInvocation() {
+    return this.getRole() === NINJA_ROLE;
+  }
+
   getTool() {
     if (this.isWorkflowInvocation()) {
       return "BuildBuddy workflow runner";
     }
     if (this.isHostedBazelInvocation()) {
       return "BuildBuddy hosted bazel";
+    }
+    if (this.isNinjaInvocation()) {
+      return `ninja v${this.started?.buildToolVersion} ` + this.started?.command || "";
     }
     return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
   }

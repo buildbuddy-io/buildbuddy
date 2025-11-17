@@ -46,7 +46,6 @@ var (
 	hostName      = flag.String("cache.raft.host_name", "", "The hostname of the raft store.")
 	listen        = flag.String("cache.raft.listen", "0.0.0.0", "The interface to listen on (default:0.0.0.0)")
 
-	clearCacheOnStartup     = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
 	clearPrevCacheOnStartup = flag.Bool("cache.raft.clear_prev_cache_on_startup", false, "If set, remove all raft + cache data from previous run on start")
 	partitions              = flag.Slice("cache.raft.partitions", []disk.Partition{}, "")
 	partitionMappings       = flag.Slice("cache.raft.partition_mappings", []disk.PartitionMapping{}, "")
@@ -176,12 +175,7 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		}
 	}
 
-	if *clearCacheOnStartup {
-		log.Warningf("Clearing cache dir %q on startup!", *rootDirectory)
-		if err := os.RemoveAll(*rootDirectory); err != nil {
-			return nil, err
-		}
-	} else if *clearPrevCacheOnStartup {
+	if *clearPrevCacheOnStartup {
 		if err := clearPrevCache(*rootDirectory, *subdir); err != nil {
 			return nil, status.InternalErrorf("failed to delete cache from previous run: %w", err)
 		}

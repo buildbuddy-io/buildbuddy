@@ -651,6 +651,8 @@ message FindResponse {
   bool present = 1;
   // The last time this file record was accessed.
   int64 last_access_usec = 2;
+  // The gcs_metadata of this file record, if exist.
+  storage.StorageMetadata.GCSMetadata gcs_metadata = 3;
 }
 
 message GetRequest {

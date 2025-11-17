@@ -54,6 +54,7 @@ type Action struct {
 	GitFetchDepth      *int              `yaml:"git_fetch_depth"`
 	BazelWorkspaceDir  string            `yaml:"bazel_workspace_dir"`
 	Env                map[string]string `yaml:"env"`
+	Visibility         string            `yaml:"visibility"`
 	PlatformProperties map[string]string `yaml:"platform_properties"`
 	Steps              []*rnpb.Step      `yaml:"steps"`
 	Timeout            *time.Duration    `yaml:"timeout"`
