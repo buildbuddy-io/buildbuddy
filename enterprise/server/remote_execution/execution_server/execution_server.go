@@ -846,9 +846,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		if len(routingConfigObj) > 0 {
 			routingConfig = &scpb.RoutingConfig{}
 			if err := experiments.ObjectToProto(routingConfigObj, routingConfig); err != nil {
-				alert.CtxUnexpectedEvent(ctx, "Error converting routing config object %+#v to proto: %s", routingConfigObj, err)
-			}
-			if v := details.Variant(); v != "" && v != "default" {
+				alert.CtxUnexpectedEvent(ctx, "executor_routing_config_invalid", "Error converting routing config object %+#v to proto: %s", routingConfigObj, err)
+			} else if v := details.Variant(); v != "" && v != "default" {
 				executionTask.Experiments = append(executionTask.Experiments, routingConfigExperimentName+":"+v)
 			}
 		}

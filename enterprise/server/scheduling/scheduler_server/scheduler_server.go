@@ -690,7 +690,7 @@ func filterToHostnamePattern(ctx context.Context, nodes []*executionNode, patter
 }
 
 func filterToRoutingConfig(ctx context.Context, nodes []*executionNode, routingConfig *scpb.RoutingConfig) []*executionNode {
-	if routingConfig.GetHostnamePattern() == "" {
+	if routingConfig.GetHostnamePattern() == "" || len(nodes) == 0 {
 		return nodes
 	}
 	p, err := regexp.Compile(routingConfig.GetHostnamePattern())
@@ -704,8 +704,13 @@ func filterToRoutingConfig(ctx context.Context, nodes []*executionNode, routingC
 			out = append(out, n)
 		}
 	}
-	if len(out) == 0 && routingConfig.GetBestEffort() {
-		return nodes
+	if len(out) == 0 {
+		if routingConfig.GetBestEffort() {
+			alert.CtxUnexpectedEvent(ctx, "no_executors_matched_by_best_effort_routing_config", "Routing config does not match any executor nodes - returning all nodes instead. config: %q", routingConfig)
+			out = nodes
+		} else {
+			alert.CtxUnexpectedEvent(ctx, "no_executors_matched_by_routing_config", "Routing config does not match any executor nodes. Execution will fail.")
+		}
 	}
 	return out
 }
