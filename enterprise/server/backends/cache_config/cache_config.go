@@ -75,6 +75,7 @@ type MetaCacheConfig struct {
 	PartitionMappings           []disk.PartitionMapping `yaml:"partition_mappings" usage:"Partition mappings for the cache."`
 	MaxInlineFileSizeBytes      int64                   `yaml:"max_inline_file_size_bytes" usage:"Files smaller than this may be inlined directly into metadata storage."`
 	MinBytesAutoZstdCompression int64                   `yaml:"min_bytes_auto_zstd_compression" usage:"Blobs larger than this will be zstd compressed before written to disk."`
+	MaxWriteGoroutines          int                     `yaml:"max_write_goroutines" usage:"The maximum number of goroutines to write data in SetMulti."`
 	GCSConfig                   GCSConfig               `yaml:"gcs" usage:"GCS configuration for storing large files."`
 }
 
