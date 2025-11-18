@@ -87,7 +87,7 @@ func (c *ZstdCompressingWriter) writeCompressed(p []byte) error {
 	n, err := c.writer.Write(c.compressBuffer)
 	c.CompressedBytesWritten += n
 	if err == nil && n < len(c.compressBuffer) {
-		c.err = io.ErrShortWrite
+		err = io.ErrShortWrite
 	}
 	c.err = err
 	return c.err
