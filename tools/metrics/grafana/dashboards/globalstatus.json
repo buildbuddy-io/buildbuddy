@@ -314,7 +314,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{job=\"buildbuddy-app\", cache_name=\"pebble_cache\", partition_id=\"default\"}/1e6)",
+          "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{job=\"buildbuddy-app\", cache_name=\"pebble_gcs_cache\", partition_id=\"default\"}/1e6)",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
