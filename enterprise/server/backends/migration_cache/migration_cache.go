@@ -231,7 +231,7 @@ func distributedCacheFromConfig(env environment.Env, baseCache interfaces.Cache,
 		ClusterSize:                  cfg.ClusterSize,
 		LookasideCacheSizeBytes:      cfg.LookasideCacheSizeBytes,
 		EnableLocalWrites:            cfg.EnableLocalWrites,
-		EnableLocalCompressionLookup: cfg.EnableLocalCompressionLookup,
+		EnableLocalCompressionLookup: true,
 		ReadThroughLocalCache:        cfg.ReadThroughLocalCache,
 	}
 

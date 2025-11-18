@@ -80,16 +80,15 @@ type MetaCacheConfig struct {
 }
 
 type DistributedCacheConfig struct {
-	ListenAddr                   string   `yaml:"listen_addr"`
-	GroupName                    string   `yaml:"group_name"`
-	Nodes                        []string `yaml:"nodes"`
-	NewNodes                     []string `yaml:"new_nodes"`
-	ReplicationFactor            int      `yaml:"replication_factor"`
-	ClusterSize                  int      `yaml:"cluster_size"`
-	LookasideCacheSizeBytes      int64    `yaml:"lookaside_cache_size_bytes"`
-	EnableLocalWrites            bool     `yaml:"enable_local_writes"`
-	EnableLocalCompressionLookup bool     `yaml:"enable_local_compression_lookup"`
-	ReadThroughLocalCache        bool     `yaml:"read_through_local_cache"`
+	ListenAddr              string   `yaml:"listen_addr"`
+	GroupName               string   `yaml:"group_name"`
+	Nodes                   []string `yaml:"nodes"`
+	NewNodes                []string `yaml:"new_nodes"`
+	ReplicationFactor       int      `yaml:"replication_factor"`
+	ClusterSize             int      `yaml:"cluster_size"`
+	LookasideCacheSizeBytes int64    `yaml:"lookaside_cache_size_bytes"`
+	EnableLocalWrites       bool     `yaml:"enable_local_writes"`
+	ReadThroughLocalCache   bool     `yaml:"read_through_local_cache"`
 }
 
 func (cfg *MigrationConfig) SetConfigDefaults() {
