@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
 	stdFlag "flag"
@@ -477,8 +478,11 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 		select {
 		case accessTimeUpdate := <-rc.accesses:
 			key := accessTimeUpdate.key
-			if err := rc.maybeUpdateGCSAtime(ctx, accessTimeUpdate.gcsMetadata); err != nil {
-				metrics.RaftAtimeUpdateGCSErrorCount.Inc()
+			err := rc.maybeUpdateGCSAtime(ctx, accessTimeUpdate.gcsMetadata)
+			metrics.RaftAtimeUpdateGCSCount.With(prometheus.Labels{
+				metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+			}).Inc()
+			if err != nil {
 				log.Errorf("Error updating GCS custom time (%q): %s", key, err)
 				// Don't update the atime on raft if gcs atime update fails. This is to prevent the situation where the gcs file is deleted but the metadata still exist.
 				continue

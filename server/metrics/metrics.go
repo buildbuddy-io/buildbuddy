@@ -2660,7 +2660,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "raft",
 		Name:      "split_duration_usec",
-		Buckets:   durationMsecBuckets(1*time.Millisecond, 15*time.Second, 2),
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 15*time.Second, 2),
 		Help:      "The time spent splitting a range in **microseconds**.",
 	}, []string{
 		RaftRangeIDLabel,
@@ -2781,7 +2781,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "raft",
 		Name:      "nodehost_method_usec",
-		Buckets:   durationMsecBuckets(1*time.Millisecond, 15*time.Second, 2),
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 15*time.Second, 2),
 		Help:      "The duration of a nodehost method",
 	}, []string{
 		RaftNodeHostMethodLabel,
@@ -2792,15 +2792,15 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "raft",
 		Name:      "batch_atime_update_usec",
-		Buckets:   durationMsecBuckets(1*time.Millisecond, 15*time.Second, 2),
-		Help:      "The duration of the batch request to update a time",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 15*time.Second, 2),
+		Help:      "The duration of the batch request to update atime",
 	})
 
 	RaftBatchDeleteDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",
 		Name:      "batch_delete_usec",
-		Buckets:   durationMsecBuckets(1*time.Millisecond, 15*time.Second, 2),
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 15*time.Second, 2),
 		Help:      "The duration of the batch request to delete",
 	})
 
@@ -2861,11 +2861,23 @@ var (
 		PartitionID,
 	})
 
-	RaftAtimeUpdateGCSErrorCount = promauto.NewCounter(prometheus.CounterOpts{
+	RaftAtimeUpdateGCSCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",
-		Name:      "atime_update_gcs_error_count",
-		Help:      "Count of atime update errors from GCS.",
+		Name:      "atime_update_gcs_count",
+		Help:      "Count of atime updates to GCS.",
+	}, []string{
+		StatusHumanReadableLabel,
+	})
+
+	RaftGCSEvictionCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "atime_update_gcs_count",
+		Help:      "Count of evictions from GCS.",
+	}, []string{
+		PartitionID,
+		StatusHumanReadableLabel,
 	})
 
 	APIKeyLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{

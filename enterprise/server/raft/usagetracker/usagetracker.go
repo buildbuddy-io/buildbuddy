@@ -111,6 +111,20 @@ func (k *evictionKey) String() string {
 	return string(k.bytes)
 }
 
+type metricSet struct {
+	cachePartitionSizeBytes     prometheus.Gauge
+	cachePartitionCapacityBytes prometheus.Gauge
+
+	gcsDeleteDropped         prometheus.Counter
+	cacheEvictionAgeMsec     prometheus.Observer
+	cacheLastEvictionAgeUsec prometheus.Gauge
+	cacheNumEvictions        prometheus.Counter
+	cacheBytesEvicted        prometheus.Counter
+
+	evictionSamplesChanSize prometheus.Gauge
+	evictionGCSChanSize     prometheus.Gauge
+}
+
 type partitionUsage struct {
 	part disk.Partition
 
@@ -140,6 +154,8 @@ type partitionUsage struct {
 	evictionBatchSize        int
 	numDeleteWorkers         int
 	fileStorer               filestore.Store
+
+	metrics metricSet
 }
 
 func (pu *partitionUsage) LocalSizeBytes() int64 {
@@ -160,7 +176,6 @@ func (pu *partitionUsage) LocalSizeBytes() int64 {
 
 func (pu *partitionUsage) updateLocalSizeBytes(ctx context.Context) {
 	ticker := pu.clock.NewTicker(pu.localSizeUpdatePeriod)
-	lbls := prometheus.Labels{metrics.PartitionID: pu.part.ID, metrics.CacheNameLabel: constants.CacheName}
 	for {
 		select {
 		case <-ctx.Done():
@@ -171,8 +186,8 @@ func (pu *partitionUsage) updateLocalSizeBytes(ctx context.Context) {
 			pu.sizeBytes = sizeBytes
 			pu.mu.RUnlock()
 			pu.lru.UpdateLocalSizeBytes(sizeBytes)
-			metrics.DiskCachePartitionSizeBytes.With(lbls).Set(float64(sizeBytes))
-			metrics.DiskCachePartitionCapacityBytes.With(lbls).Set(float64(pu.part.MaxSizeBytes))
+			pu.metrics.cachePartitionSizeBytes.Set(float64(sizeBytes))
+			pu.metrics.cachePartitionCapacityBytes.Set(float64(pu.part.MaxSizeBytes))
 		}
 	}
 }
@@ -208,7 +223,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 		return
 	}
 	start := pu.clock.Now()
-	defer metrics.RaftBatchAtimeUpdateDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
+	defer metrics.RaftBatchDeleteDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
 
 	rsps, err := pu.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
 		batch := rbuilder.NewBatchBuilder()
@@ -266,9 +281,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 				select {
 				case pu.gcsDeletes <- gcsMD:
 				default:
-					metrics.RaftGCSDeleteDropped.With(prometheus.Labels{
-						metrics.PartitionID: pu.part.ID,
-					}).Inc()
+					pu.metrics.gcsDeleteDropped.Inc()
 					log.Warningf("GCS deletion queue full, dropping delete request for blob %s", gcsMD.GetBlobName())
 				}
 			}
@@ -322,9 +335,13 @@ func (pu *partitionUsage) processGCSDeletions(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case gcsMD := <-pu.gcsDeletes:
-			if err := pu.fileStorer.DeleteStoredBlob(ctx, gcsMD); err != nil {
+			err := pu.fileStorer.DeleteStoredBlob(ctx, gcsMD)
+			metrics.RaftGCSEvictionCount.With(prometheus.Labels{
+				metrics.PartitionID:              pu.part.ID,
+				metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+			}).Inc()
+			if err != nil {
 				log.Warningf("failed to delete blob %q: %s", gcsMD.GetBlobName(), err)
-				//TODO: add some metrics here
 			}
 		}
 	}
@@ -483,15 +500,14 @@ func (e *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*ev
 
 func (pu *partitionUsage) updateEvictionMetrics(samples []*approxlru.Sample[*evictionKey]) error {
 	sizeBytes := float64(0)
-	lbls := prometheus.Labels{metrics.PartitionID: pu.part.ID, metrics.CacheNameLabel: constants.CacheName}
 	for _, sample := range samples {
 		age := time.Since(sample.Timestamp)
 		sizeBytes += float64(sample.SizeBytes)
-		metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
-		metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
+		pu.metrics.cacheEvictionAgeMsec.Observe(float64(age.Milliseconds()))
+		pu.metrics.cacheLastEvictionAgeUsec.Set(float64(age.Microseconds()))
 	}
-	metrics.DiskCacheNumEvictions.With(lbls).Add(float64(len(samples)))
-	metrics.DiskCacheBytesEvicted.With(lbls).Add(sizeBytes)
+	pu.metrics.cacheNumEvictions.Add(float64(len(samples)))
+	pu.metrics.cacheBytesEvicted.Add(sizeBytes)
 
 	pu.mu.Lock()
 	defer pu.mu.Unlock()
@@ -528,13 +544,8 @@ func (pu *partitionUsage) updateMetrics() {
 	pu.mu.Lock()
 	defer pu.mu.Unlock()
 
-	metrics.RaftEvictionSamplesChanSize.With(prometheus.Labels{
-		metrics.PartitionID: pu.part.ID,
-	}).Set(float64(len(pu.samples)))
-
-	metrics.RaftEvictionGCSChanSize.With(prometheus.Labels{
-		metrics.PartitionID: pu.part.ID,
-	}).Set(float64(len(pu.gcsDeletes)))
+	pu.metrics.evictionSamplesChanSize.Set(float64(len(pu.samples)))
+	pu.metrics.evictionGCSChanSize.Set(float64(len(pu.gcsDeletes)))
 }
 
 func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces.GossipService, node *rfpb.NodeDescriptor, partitions []disk.Partition, clock clockwork.Clock, fileStorer filestore.Store) (*Tracker, error) {
@@ -553,6 +564,19 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 		if p.SoftDeleted {
 			continue
 		}
+		lbls := prometheus.Labels{metrics.PartitionID: p.ID, metrics.CacheNameLabel: constants.CacheName}
+		partitionLabel := prometheus.Labels{metrics.PartitionID: p.ID}
+		metricSet := metricSet{
+			cachePartitionSizeBytes:     metrics.DiskCachePartitionCapacityBytes.With(lbls),
+			cachePartitionCapacityBytes: metrics.DiskCachePartitionCapacityBytes.With(lbls),
+			gcsDeleteDropped:            metrics.RaftGCSDeleteDropped.With(partitionLabel),
+			cacheEvictionAgeMsec:        metrics.DiskCacheEvictionAgeMsec.With(lbls),
+			cacheLastEvictionAgeUsec:    metrics.DiskCacheLastEvictionAgeUsec.With(lbls),
+			cacheNumEvictions:           metrics.DiskCacheNumEvictions.With(lbls),
+			cacheBytesEvicted:           metrics.DiskCacheBytesEvicted.With(lbls),
+			evictionSamplesChanSize:     metrics.RaftEvictionSamplesChanSize.With(partitionLabel),
+			evictionGCSChanSize:         metrics.RaftEvictionGCSChanSize.With(partitionLabel),
+		}
 		u := &partitionUsage{
 			part:                     p,
 			sender:                   sender,
@@ -569,12 +593,9 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 			evictionBatchSize:        *evictionBatchSize,
 			numDeleteWorkers:         *numDeleteWorkers,
 			fileStorer:               fileStorer,
+			metrics:                  metricSet,
 		}
 		ut.byPartition[p.ID] = u
-		metricLbls := prometheus.Labels{
-			metrics.PartitionID:    p.ID,
-			metrics.CacheNameLabel: constants.CacheName,
-		}
 		maxSizeBytes := int64(EvictionCutoffThreshold * float64(p.MaxSizeBytes))
 		l, err := approxlru.New(&approxlru.Opts[*evictionKey]{
 			SamplePoolSize:              *samplePoolSize,
@@ -582,8 +603,8 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 			MaxSizeBytes:                maxSizeBytes,
 			DeletesPerEviction:          *deletesPerEviction,
 			RateLimit:                   float64(*evictionRateLimit),
-			EvictionResampleLatencyUsec: metrics.PebbleCacheEvictionResampleLatencyUsec.With(metricLbls),
-			EvictionEvictLatencyUsec:    metrics.PebbleCacheEvictionEvictLatencyUsec.With(metricLbls),
+			EvictionResampleLatencyUsec: metrics.PebbleCacheEvictionResampleLatencyUsec.With(lbls),
+			EvictionEvictLatencyUsec:    metrics.PebbleCacheEvictionEvictLatencyUsec.With(lbls),
 			Clock:                       clock,
 			OnEvict: func(ctx context.Context, sample *approxlru.Sample[*evictionKey]) error {
 				return u.evict(ctx, sample)
