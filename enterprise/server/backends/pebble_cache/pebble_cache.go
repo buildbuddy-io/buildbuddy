@@ -102,6 +102,7 @@ var (
 
 	// Chunking related flags
 	averageChunkSizeBytes = flag.Int("cache.pebble.average_chunk_size_bytes", 0, "Average size of chunks that's stored in the cache. Disabled if 0.")
+	minBytesToChunk       = flag.Int64("cache.pebble.min_bytes_to_chunk", 0, "Minimum file size in bytes to enable CDC chunking. Files smaller than this will not be chunked. Defaults to 0 (disabled).")
 
 	// GCS Large File Support
 	gcsBucket      = flag.String("cache.pebble.gcs.bucket", "", "The name of the GCS bucket to store build artifact files in.")
@@ -186,6 +187,7 @@ type Options struct {
 	BlockCacheSizeBytes    int64
 	MaxInlineFileSizeBytes int64
 	AverageChunkSizeBytes  int
+	MinBytesToChunk        int64
 
 	AtimeUpdateThreshold     *time.Duration
 	AtimeBufferSize          *int
@@ -239,6 +241,7 @@ type PebbleCache struct {
 	blockCacheSizeBytes    int64
 	maxInlineFileSizeBytes int64
 	averageChunkSizeBytes  int
+	minBytesToChunk        int64
 
 	includeMetadataSize bool
 
@@ -283,6 +286,12 @@ type PebbleCache struct {
 	minGCSFileSizeBytes int64
 	gcsTTLDays          int64
 }
+
+// compile-time checks to verify all interfaces are implemented
+var _ = []interface {
+	interfaces.Cache
+	interfaces.StoppableCache
+}{&PebbleCache{}}
 
 type keyMigrator interface {
 	FromVersion() filestore.PebbleKeyVersion
@@ -359,6 +368,7 @@ func Register(env *real_environment.RealEnv) error {
 		SamplerIterRefreshPeriod:    samplerIterRefreshPeriod,
 		MinEvictionAge:              minEvictionAgeFlag,
 		AverageChunkSizeBytes:       *averageChunkSizeBytes,
+		MinBytesToChunk:             *minBytesToChunk,
 		IncludeMetadataSize:         *includeMetadataSize,
 		ActiveKeyVersion:            activeKeyVersion,
 		GCSBucket:                   *gcsBucket,
@@ -476,6 +486,9 @@ func SetOptionDefaults(opts *Options) {
 	if opts.MinBytesAutoZstdCompression == nil {
 		opts.MinBytesAutoZstdCompression = &DefaultMinBytesAutoZstdCompression
 	}
+	if opts.MinBytesToChunk == 0 {
+		opts.MinBytesToChunk = *minBytesToChunk
+	}
 }
 
 func ensureDefaultPartitionExists(opts *Options) {
@@ -535,7 +548,7 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 	}
 	if *enableTableBloomFilter {
 		opts.Levels = []pebble.LevelOptions{
-			pebble.LevelOptions{
+			{
 				FilterPolicy: pebble.BloomFilterPolicy(10),
 			},
 		}
@@ -652,6 +665,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		blockCacheSizeBytes:         opts.BlockCacheSizeBytes,
 		maxInlineFileSizeBytes:      opts.MaxInlineFileSizeBytes,
 		averageChunkSizeBytes:       opts.AverageChunkSizeBytes,
+		minBytesToChunk:             opts.MinBytesToChunk,
 		atimeUpdateThreshold:        *opts.AtimeUpdateThreshold,
 		atimeBufferSize:             *opts.AtimeBufferSize,
 		numAtimeUpdateWorkers:       *opts.NumAtimeUpdateWorkers,
@@ -2162,7 +2176,6 @@ func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
 	}
 	rn := r.ToProto()
 	fileRecord, err := p.makeFileRecord(ctx, rn)
-
 	if err != nil {
 		return err
 	}
@@ -2307,9 +2320,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		return nil, err
 	}
 
-	if p.averageChunkSizeBytes > 0 && r.GetDigest().GetSizeBytes() >= int64(p.averageChunkSizeBytes) {
-		// Files smaller than averageChunkSizeBytes are highly like to only
-		// have one chunk, so we skip cdc-chunking step.
+	if p.averageChunkSizeBytes > 0 && p.minBytesToChunk > 0 && r.GetDigest().GetSizeBytes() >= p.minBytesToChunk {
 		return p.newCDCCommitedWriteCloser(ctx, fileRecord, key, shouldCompress, isCompressed)
 	}
 
@@ -2792,18 +2803,21 @@ func (e *partitionEvictor) updateMetrics() {
 	metrics.DiskCachePartitionNumItems.With(prometheus.Labels{
 		metrics.PartitionID:    e.part.ID,
 		metrics.CacheNameLabel: e.cacheName,
-		metrics.CacheTypeLabel: "ac"}).Set(float64(e.acCount))
+		metrics.CacheTypeLabel: "ac",
+	}).Set(float64(e.acCount))
 	metrics.DiskCachePartitionNumItems.With(prometheus.Labels{
 		metrics.PartitionID:    e.part.ID,
 		metrics.CacheNameLabel: e.cacheName,
-		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
+		metrics.CacheTypeLabel: "cas",
+	}).Set(float64(e.casCount))
 
 	estimatedSizeByGroup := computeEstimatedSizeByGroup(e.sizeByGroup, e.sizeBytes)
 	for g, sizeBytes := range estimatedSizeByGroup {
 		metrics.DiskCacheSampledPartitionGroupSizeBytes.With(prometheus.Labels{
 			metrics.PartitionID:    e.part.ID,
 			metrics.CacheNameLabel: e.cacheName,
-			metrics.GroupID:        g}).Set(float64(sizeBytes))
+			metrics.GroupID:        g,
+		}).Set(float64(sizeBytes))
 	}
 }
 

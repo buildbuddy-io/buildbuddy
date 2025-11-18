@@ -44,3 +44,9 @@ yarn(
         ":website",
     ],
 )
+
+filegroup(
+    name = "static_test_image",
+    srcs = ["static/img/bazel_6_0.png"],
+    visibility = ["//visibility:public"],
+)
