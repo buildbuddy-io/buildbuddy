@@ -142,7 +142,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 3,
         "x": 7,
         "y": 8
       },
@@ -211,8 +211,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 11,
+        "w": 3,
+        "x": 10,
         "y": 8
       },
       "id": 3,
@@ -284,8 +284,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 15,
+        "w": 3,
+        "x": 13,
         "y": 8
       },
       "id": 5,
@@ -322,6 +322,79 @@
         }
       ],
       "title": "Cache TTL",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-RdYlGr"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "dark-red"
+              },
+              {
+                "color": "#EAB839",
+                "value": 4
+              },
+              {
+                "color": "semi-dark-green",
+                "value": 4
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 16,
+        "y": 8
+      },
+      "id": 14,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "avg by (region) (buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{job=\"cache-proxy\", cache_name=\"pebble_cache\", partition_id=\"default\"}/1e6)",
+          "instant": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Cache Proxy TTL",
       "type": "stat"
     },
     {
