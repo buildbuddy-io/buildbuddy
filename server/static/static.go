@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"path"
 	"strings"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
@@ -85,7 +86,8 @@ func FSFromRelPath(relPath string) (fs.FS, error) {
 	if relPath != "" && !strings.HasPrefix(relPath, "/") {
 		moduleName = moduleName + "/"
 	}
-	return fs.Sub(runfilesFS, moduleName+relPath)
+	
+	return fs.Sub(runfilesFS, path.Clean(moduleName+relPath))
 }
 
 // StaticFileServer implements a static file http server that serves static
