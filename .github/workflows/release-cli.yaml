@@ -141,9 +141,9 @@ jobs:
             flags: --config=static
           - os: ubuntu-22.04-16cpu-arm64-arm-limited # linux arm64
             flags: --config=static-arm64
-          - os: macos-13 # macOS amd64
+          - os: macos-15-intel # macOS amd64
             flags: ""
-          - os: macos-13-xlarge # macOS arm64
+          - os: macos-15-xlarge # macOS arm64
             flags: ""
     runs-on: ${{ matrix.os }}
     needs: [push-tag, create-release]
