@@ -848,11 +848,15 @@ func (ws *workspace) prepareRunnerForNextInvocation(ctx context.Context, taskWor
 	// After the invocation is complete, ensure that the bazel lock is not
 	// still held. If it is, avoid recycling.
 	if err := ws.checkBazelWorkspaceLock(ctx); err != nil {
-		log.Printf("WARNING: command 'bazel --noblock_for_lock info workspace' failed: %s", err)
-		log.Printf("WARNING: bazel workspace lock check failed. Runner will not be recycled")
-		marker := filepath.Join(taskWorkspaceDir, ".BUILDBUDDY_DO_NOT_RECYCLE")
-		if err := os.WriteFile(marker, nil, 0644); err != nil {
-			log.Printf("ERROR: failed to create %s: %s", marker, err)
+		if strings.Contains(err.Error(), "command is only supported from within a workspace ") {
+			log.Printf("Not in a bazel workspace. Skipping workspace lock check.")
+		} else {
+			log.Printf("WARNING: command 'bazel --noblock_for_lock info workspace' failed: %s", err)
+			log.Printf("WARNING: bazel workspace lock check failed. Runner will not be recycled")
+			marker := filepath.Join(taskWorkspaceDir, ".BUILDBUDDY_DO_NOT_RECYCLE")
+			if err := os.WriteFile(marker, nil, 0644); err != nil {
+				log.Printf("ERROR: failed to create %s: %s", marker, err)
+			}
 		}
 	}
 
