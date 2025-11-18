@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
@@ -16,16 +15,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
 
 const (
@@ -514,7 +511,6 @@ func TestWeakLock(t *testing.T) {
 func TestShardsMigration(t *testing.T) {
 	ctx := t.Context()
 	env := testenv.GetTestEnv(t)
-	tmp := testfs.MakeTempDir(t)
 
 	ring := testredis.StartShardedTCP(t, 2)
 	// Configure a ring client with 2 configured shards but only 1 shard
@@ -522,31 +518,21 @@ func TestShardsMigration(t *testing.T) {
 	allAddrs := ring.Addrs()
 	defaultEnabledAddrs := allAddrs[:1]
 
-	// Write a flagd config with the "default" variant enabled by default.
-	allAddrsJSON, err := json.Marshal(allAddrs)
+	// Set up an in-memory provider to avoid race conditions with flagd's
+	// file watching goroutines.
+	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"test_redis.sharded.migration": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "default",
+			Variants: map[string]any{
+				"enable-all": map[string]any{"enabled_addrs": allAddrs},
+				"default":    map[string]any{},
+			},
+		},
+	})
+	err := openfeature.SetProviderAndWait(provider)
 	require.NoError(t, err)
-	getFlagdConfig := func(defaultVariant string) string {
-		return `{
-          "$schema": "https://flagd.dev/schema/v0/flags.json",
-          "flags": {
-            "test_redis.sharded.migration": {
-            "state": "ENABLED",
-            "variants": {
-                "enable-all": {"enabled_addrs": ` + string(allAddrsJSON) + `}, 
-                "default": {}
-              },
-              "defaultVariant": "` + defaultVariant + `"
-            }
-          }
-        }`
-	}
-	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", getFlagdConfig("default"))
-	provider := flagd.NewProvider(
-		flagd.WithInProcessResolver(),
-		flagd.WithOfflineFilePath(offlineFlagPath),
-	)
-	err = openfeature.SetProviderAndWait(provider)
-	require.NoError(t, err)
+
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
@@ -579,7 +565,18 @@ func TestShardsMigration(t *testing.T) {
 	require.Equal(t, 0, len(keys1))
 
 	// Now update the experiment config to enable both shards.
-	testfs.WriteFile(t, tmp, "config.flagd.json", getFlagdConfig("enable-all"))
+	provider = memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"test_redis.sharded.migration": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "enable-all",
+			Variants: map[string]any{
+				"enable-all": map[string]any{"enabled_addrs": allAddrs},
+				"default":    map[string]any{},
+			},
+		},
+	})
+	err = openfeature.SetProviderAndWait(provider)
+	require.NoError(t, err)
 
 	// Write random keys again. Eventually, one of them should land on the
 	// second shard now that it's enabled.
