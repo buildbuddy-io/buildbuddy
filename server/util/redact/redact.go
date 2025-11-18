@@ -644,6 +644,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 		}
 	case *bespb.BuildEvent_Aborted:
 		{
+			p.Aborted.Description = RedactText(p.Aborted.Description)
 		}
 	case *bespb.BuildEvent_Started:
 		{
@@ -691,6 +692,9 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 			p.Action.Stderr = stripURLSecretsFromFile(p.Action.Stderr)
 			p.Action.PrimaryOutput = stripURLSecretsFromFile(p.Action.PrimaryOutput)
 			p.Action.ActionMetadataLogs = stripURLSecretsFromFiles(p.Action.ActionMetadataLogs)
+			if p.Action.FailureDetail != nil {
+				p.Action.FailureDetail.Message = RedactText(p.Action.FailureDetail.Message)
+			}
 		}
 	case *bespb.BuildEvent_NamedSetOfFiles:
 		{
@@ -711,6 +715,9 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 		}
 	case *bespb.BuildEvent_Finished:
 		{
+			if p.Finished.FailureDetail != nil {
+				p.Finished.FailureDetail.Message = RedactText(p.Finished.FailureDetail.Message)
+			}
 		}
 	case *bespb.BuildEvent_BuildToolLogs:
 		{
