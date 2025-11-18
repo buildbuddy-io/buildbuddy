@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 )
@@ -355,4 +356,29 @@ type erroringWriter struct {
 func (ew *erroringWriter) Write(p []byte) (int, error) {
 	ew.errCount++
 	return 0, fmt.Errorf("error #%d", ew.errCount)
+}
+
+func TestNewZstdCompressingWriteCommiter(t *testing.T) {
+	counter := &ioutil.Counter{}
+	wc := ioutil.NewCustomCommitWriteCloser(counter)
+	var commited int64
+	wc.CommitFn = func(bytesWritten int64) error {
+		commited = bytesWritten
+		return nil
+	}
+	closed := false
+	wc.CloseFn = func() error {
+		closed = true
+		return nil
+	}
+	src := []byte("hello worldddddddddddddddddddddddddddddddddddddddddd")
+	compressWC, err := compression.NewZstdCompressingWriteCommiter(wc, int64(len(src)), "test_cache")
+	require.NoError(t, err)
+	n, err := compressWC.Write(src)
+	require.NoError(t, err)
+	require.Equal(t, len(src), n)
+	require.NoError(t, compressWC.Commit())
+	require.Greater(t, len(src), int(commited))
+	require.NoError(t, compressWC.Close())
+	require.True(t, closed)
 }

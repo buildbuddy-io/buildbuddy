@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -28,7 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/jonboulle/clockwork"
-	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
@@ -199,53 +197,6 @@ func New(env environment.Env, opts Options) (*Cache, error) {
 		bufferPool: bytebufferpool.VariableSize(CompressorBufSizeBytes),
 		opts:       localOpts,
 	}, nil
-}
-
-// zstdCompressor compresses bytes before writing them to the nested writer
-type zstdCompressor struct {
-	cacheName string
-
-	interfaces.CommittedWriteCloser
-	compressBuf []byte
-	bufferPool  *bytebufferpool.VariableSizePool
-
-	numDecompressedBytes int
-	numCompressedBytes   int
-}
-
-// TODO(tylerw): move to util/compression
-func NewZstdCompressor(cacheName string, wc interfaces.CommittedWriteCloser, bp *bytebufferpool.VariableSizePool, digestSize int64) *zstdCompressor {
-	compressBuf := bp.Get(digestSize)
-	return &zstdCompressor{
-		cacheName:            cacheName,
-		CommittedWriteCloser: wc,
-		compressBuf:          compressBuf,
-		bufferPool:           bp,
-	}
-}
-
-func (z *zstdCompressor) Write(decompressedBytes []byte) (int, error) {
-	z.compressBuf = compression.CompressZstd(z.compressBuf, decompressedBytes)
-	compressedBytesWritten, err := z.CommittedWriteCloser.Write(z.compressBuf)
-	if err != nil {
-		return 0, err
-	}
-
-	z.numDecompressedBytes += len(decompressedBytes)
-	z.numCompressedBytes += compressedBytesWritten
-
-	// Return the size of the original buffer even though a different compressed buffer size may have been written,
-	// or clients will return a short write error
-	return len(decompressedBytes), nil
-}
-
-func (z *zstdCompressor) Close() error {
-	metrics.CompressionRatio.
-		With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: z.cacheName}).
-		Observe(float64(z.numCompressedBytes) / float64(z.numDecompressedBytes))
-
-	z.bufferPool.Put(z.compressBuf)
-	return z.CommittedWriteCloser.Close()
 }
 
 func (c *Cache) encryptionEnabled(ctx context.Context) (bool, error) {
@@ -529,7 +480,12 @@ func (c *Cache) writer(ctx context.Context, r *rspb.ResourceName, sizeHint int64
 		return nil, err
 	}
 	if shouldCompress {
-		return NewZstdCompressor(c.opts.Name, wc, c.bufferPool, fileRecord.GetDigest().GetSizeBytes()), nil
+		compressWC, err := compression.NewZstdCompressingWriteCommiter(wc, fileRecord.GetDigest().GetSizeBytes(), c.opts.Name)
+		if err != nil {
+			wc.Close()
+			return nil, err
+		}
+		return compressWC, nil
 	}
 	return wc, nil
 }
