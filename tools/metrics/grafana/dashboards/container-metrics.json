@@ -104,12 +104,13 @@
       "options": {
         "legend": {
           "calcs": [
-            "last"
+            "max",
+            "lastNotNull"
           ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true,
-          "sortBy": "Last",
+          "sortBy": "Max",
           "sortDesc": true
         },
         "tooltip": {
@@ -123,7 +124,7 @@
         {
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by (namespace, pod, container) (\n    rate(container_cpu_usage_seconds_total{pod!=\"\", container!=\"\", region=\"${region}\"}[5m])\n)\n    /\nsum by (namespace, pod, container) (\n    container_spec_cpu_quota{pod!=\"\", container!=\"\", region=\"${region}\"}\n        /\n    container_spec_cpu_period{pod!=\"\", container!=\"\", region=\"${region}\"}\n)\n> 0.8",
+          "expr": "sum by (namespace, pod, container) (\n    rate(container_cpu_usage_seconds_total{pod!=\"\", container!=\"\", region=\"${region}\"}[5m])\n)\n    /\nsum by (namespace, pod, container) (\n    container_spec_cpu_quota{pod!=\"\", container!=\"\", region=\"${region}\"}\n        /\n    container_spec_cpu_period{pod!=\"\", container!=\"\", region=\"${region}\"}\n)\n> 0.80",
           "format": "time_series",
           "hide": false,
           "instant": false,
@@ -218,10 +219,15 @@
       "id": 3,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
         },
         "tooltip": {
           "hideZeros": false,
@@ -233,7 +239,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "(\ncontainer_memory_working_set_bytes{pod!=\"\", container!=\"\", region=\"${region}\"}\n    /\ncontainer_spec_memory_limit_bytes{pod!=\"\", container!=\"\", region=\"${region}\"}\n)\n> 0.8",
+          "expr": "(\ncontainer_memory_working_set_bytes{pod!=\"\", container!=\"\", region=\"${region}\"}\n    /\n(container_spec_memory_limit_bytes{pod!=\"\", container!=\"\", region=\"${region}\"} > 0)\n)\n> 0.8",
           "legendFormat": "{{namespace}}/{{pod}}/{{container}}",
           "range": true,
           "refId": "A"
