@@ -146,7 +146,7 @@ func setOptionDefaults(opts *Options) {
 		opts.MaxInlineFileSizeBytes = defaultMaxInlineFileSizeBytes
 	}
 	if opts.MinBytesAutoZstdCompression == 0 {
-		opts.MinBytesAutoZstdCompression = defaultMaxInlineFileSizeBytes
+		opts.MinBytesAutoZstdCompression = defaultMinBytesAutoZstdCompression
 	}
 	if opts.MaxWriteGoroutines == 0 {
 		opts.MaxWriteGoroutines = defaultMaxWriteGoroutines
