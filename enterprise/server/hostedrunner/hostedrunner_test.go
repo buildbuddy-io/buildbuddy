@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -14,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -102,14 +102,14 @@ func (c *fakeExecutionClient) WaitExecution(ctx context.Context, req *repb.WaitE
 
 type fakeExecuteStream struct{ grpc.ClientStream }
 
-func (*fakeExecuteStream) Recv() (*longrunning.Operation, error) {
+func (*fakeExecuteStream) Recv() (*longrunningpb.Operation, error) {
 	metadata, err := anypb.New(&repb.ExecuteOperationMetadata{
 		Stage: repb.ExecutionStage_COMPLETED,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &longrunning.Operation{Name: "fake-operation-name", Metadata: metadata}, nil
+	return &longrunningpb.Operation{Name: "fake-operation-name", Metadata: metadata}, nil
 }
 
 func TestRemoteHeaders_EnvOverrides(t *testing.T) {

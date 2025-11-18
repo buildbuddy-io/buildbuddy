@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
@@ -47,7 +48,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
-	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -568,7 +568,7 @@ func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *diges
 
 type streamLike interface {
 	Context() context.Context
-	Send(*longrunning.Operation) error
+	Send(*longrunningpb.Operation) error
 }
 
 // A streamLike that returns a background context and ignores all packets sent
@@ -579,7 +579,7 @@ func (s dummyStream) Context() context.Context {
 	return context.Background()
 }
 
-func (s dummyStream) Send(*longrunning.Operation) error {
+func (s dummyStream) Send(*longrunningpb.Operation) error {
 	return nil
 }
 
@@ -985,7 +985,7 @@ type InProgressExecution struct {
 	lastLogTime  time.Time
 }
 
-func (e *InProgressExecution) processOpUpdate(ctx context.Context, op *longrunning.Operation) (done bool, err error) {
+func (e *InProgressExecution) processOpUpdate(ctx context.Context, op *longrunningpb.Operation) (done bool, err error) {
 	stage := operation.ExtractStage(op)
 	// Log only on stage transitions or if it's been a while since we last
 	// logged.
@@ -1216,7 +1216,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	if err != nil {
 		return err
 	}
-	lastOp := &longrunning.Operation{}
+	lastOp := &longrunningpb.Operation{}
 	lastWrite := time.Now()
 	taskID := ""
 	// Once the executor has called PublishOperation, we're in EXECUTING stage.

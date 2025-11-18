@@ -155,7 +155,6 @@ require (
 	golang.org/x/time v0.12.0
 	golang.org/x/tools v0.38.0
 	google.golang.org/api v0.247.0
-	google.golang.org/genproto v0.0.0-20250603155806-513f23925822
 	google.golang.org/genproto/googleapis/api v0.0.0-20250818200422-3122310a409c
 	google.golang.org/genproto/googleapis/bytestream v0.0.0-20250804133106-a7a43d27e69b
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250818200422-3122310a409c
@@ -395,6 +394,7 @@ require (
 	golang.org/x/term v0.36.0 // indirect
 	golang.org/x/tools/go/expect v0.1.1-deprecated // indirect
 	golang.org/x/tools/go/vcs v0.1.0-deprecated // indirect
+	google.golang.org/genproto v0.0.0-20250603155806-513f23925822 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	k8s.io/apimachinery v0.31.4 // indirect
