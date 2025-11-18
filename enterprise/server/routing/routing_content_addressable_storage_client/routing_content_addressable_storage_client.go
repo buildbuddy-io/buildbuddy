@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 
 	gstatus "google.golang.org/grpc/status"
 )
@@ -135,9 +136,10 @@ func (r *RoutingCASClient) BatchUpdateBlobs(ctx context.Context, req *repb.Batch
 	if dualWrite && secondaryClient != nil {
 		var wg sync.WaitGroup
 		wg.Go(func() {
-			results, err := secondaryClient.BatchUpdateBlobs(ctx, req, opts...)
+			secondaryCtx := usageutil.DisableUsageTracking(ctx)
+			results, err := secondaryClient.BatchUpdateBlobs(secondaryCtx, req, opts...)
 			if err != nil {
-				log.CtxInfof(ctx, "synchronous secondary cas write failed: %s", err)
+				log.CtxInfof(secondaryCtx, "synchronous secondary cas write failed: %s", err)
 				metrics.ProxySecondarySyncWriteDigests.WithLabelValues(
 					"cas_server",
 					gstatus.Code(err).String(),
