@@ -27,6 +27,7 @@ go_library(
         "//server/environment",
         "//server/gossip",
         "//server/interfaces",
+        "//server/metrics",
         "//server/real_environment",
         "//server/util/background",
         "//server/util/disk",

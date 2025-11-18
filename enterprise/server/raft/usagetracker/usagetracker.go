@@ -207,6 +207,9 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 	if len(keys) == 0 {
 		return
 	}
+	start := pu.clock.Now()
+	defer metrics.RaftBatchAtimeUpdateDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
+
 	rsps, err := pu.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
@@ -263,7 +266,9 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 				select {
 				case pu.gcsDeletes <- gcsMD:
 				default:
-					// TODO: adding monitoring/alert
+					metrics.RaftGCSDeleteDropped.With(prometheus.Labels{
+						metrics.PartitionID: pu.part.ID,
+					}).Inc()
 					log.Warningf("GCS deletion queue full, dropping delete request for blob %s", gcsMD.GetBlobName())
 				}
 			}
@@ -526,6 +531,10 @@ func (pu *partitionUsage) updateMetrics() {
 	metrics.RaftEvictionSamplesChanSize.With(prometheus.Labels{
 		metrics.PartitionID: pu.part.ID,
 	}).Set(float64(len(pu.samples)))
+
+	metrics.RaftEvictionGCSChanSize.With(prometheus.Labels{
+		metrics.PartitionID: pu.part.ID,
+	}).Set(float64(len(pu.gcsDeletes)))
 }
 
 func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces.GossipService, node *rfpb.NodeDescriptor, partitions []disk.Partition, clock clockwork.Clock, fileStorer filestore.Store) (*Tracker, error) {

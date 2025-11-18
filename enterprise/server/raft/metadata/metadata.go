@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -443,6 +444,9 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 			return
 		}
 
+		start := rc.clock.Now()
+		defer metrics.RaftBatchAtimeUpdateDurationUsec.Observe(float64(rc.clock.Since(start).Microseconds()))
+
 		_, err := rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
 			batch := rbuilder.NewBatchBuilder()
 			for _, k := range keys {
@@ -474,6 +478,7 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 		case accessTimeUpdate := <-rc.accesses:
 			key := accessTimeUpdate.key
 			if err := rc.maybeUpdateGCSAtime(ctx, accessTimeUpdate.gcsMetadata); err != nil {
+				metrics.RaftAtimeUpdateGCSErrorCount.Inc()
 				log.Errorf("Error updating GCS custom time (%q): %s", key, err)
 				// Don't update the atime on raft if gcs atime update fails. This is to prevent the situation where the gcs file is deleted but the metadata still exist.
 				continue
