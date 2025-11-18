@@ -20,7 +20,7 @@ install_buildbuddy_cli() (
   release="${1:-latest}"
 
   # Check if gh cli tool installed, get around Github REST API rate limit
-  if command -v gh; then
+  if command -v gh && gh auth status --hostname github.com; then
     latest_binary_url=$(
     gh api repos/buildbuddy-io/bazel/releases/"$release" \
         --jq '.assets[] | select(.browser_download_url | contains("-'"${os}-${arch}"'")) | .browser_download_url' |
