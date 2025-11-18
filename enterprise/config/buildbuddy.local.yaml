@@ -23,6 +23,9 @@ cache:
     name: "pebble_cache"
     active_key_version: 5
     root_directory: /tmp/${USER}-buildbuddy-enterprise-pebble-cache
+    # Enable CDC chunking
+    average_chunk_size_bytes: 1024  # 256KB average chunk size
+    min_bytes_to_chunk: 1024        # 512KB minimum file size to enable chunking
 auth:
   enable_anonymous_usage: true
   enable_self_auth: true

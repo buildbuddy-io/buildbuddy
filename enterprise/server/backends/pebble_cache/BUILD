@@ -52,6 +52,7 @@ go_test(
     name = "pebble_cache_test",
     size = "medium",
     srcs = ["pebble_cache_test.go"],
+    data = glob(["testdata/**"]),
     shard_count = 2,
     deps = [
         ":pebble_cache",

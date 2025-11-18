@@ -306,6 +306,21 @@ type StoppableCache interface {
 	Stop() error
 }
 
+// ChunkableCache extends the Cache interface with methods for explicit chunking control.
+// This allows callers to split blobs into chunks and splice them back together.
+type ChunkableCache interface {
+	Cache
+
+	// Split splits a blob into chunks using Content-Defined Chunking (CDC) by reading from
+	// the provided reader and stores each chunk separately in the cache. Returns ChunkedMetadata
+	// containing references to all stored chunks.
+	Split(ctx context.Context, r *rspb.ResourceName, reader io.ReadCloser, shouldCompress bool) (*sgpb.StorageMetadata_ChunkedMetadata, error)
+
+	// Splice reconstructs a blob from chunks specified in ChunkedMetadata by returning
+	// a reader that streams all chunks sequentially.
+	Splice(ctx context.Context, chunkedMD *sgpb.StorageMetadata_ChunkedMetadata, shouldDecompress bool) (io.ReadCloser, error)
+}
+
 type PooledByteStreamClient interface {
 	StreamBytestreamFile(ctx context.Context, url *url.URL, writer io.Writer) error
 	FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error)
@@ -363,8 +378,10 @@ type DB interface {
 	DialectName() string
 }
 
-type TxRunner func(tx *gorm.DB) error
-type NewTxRunner func(tx DB) error
+type (
+	TxRunner    func(tx *gorm.DB) error
+	NewTxRunner func(tx DB) error
+)
 
 // DBHandle is the API for interacting with the database.
 //
