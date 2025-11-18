@@ -26,8 +26,6 @@ var (
 	// using DecodeAll. The returned decoders *must not* be closed.
 	zstdDecoderPool = NewZstdDecoderPool()
 
-	bufPool = bytebufferpool.VariableSize(4e6) // 4MB
-
 	// These are used a bunch and the labels are constant so just do it once.
 	zstdCompressedBytesMetric   = metrics.BytesCompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"})
 	zstdDecompressedBytesMetric = metrics.BytesDecompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"})
