@@ -29,7 +29,6 @@ import (
 	_ "honnef.co/go/tools/staticcheck"
 
 	// Protobuf and grpc deps
-	_ "cloud.google.com/go/longrunning"
 	_ "github.com/planetscale/vtprotobuf/vtproto"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 

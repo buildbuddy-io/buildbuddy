@@ -8,13 +8,13 @@ import (
 	"sync"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -60,7 +60,7 @@ func (p *Publisher) Context() context.Context {
 }
 
 // Send publishes a message on the stream. It is safe for concurrent use.
-func (p *Publisher) Send(op *longrunning.Operation) error {
+func (p *Publisher) Send(op *longrunningpb.Operation) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.stream.Send(op)
@@ -112,7 +112,7 @@ type retryingClient struct {
 	ctx          context.Context
 	client       repb.ExecutionClient
 	clientStream repb.Execution_PublishOperationClient
-	lastMsg      *longrunning.Operation
+	lastMsg      *longrunningpb.Operation
 }
 
 // Publish begins a PublishOperation stream and transparently reconnects the
@@ -140,7 +140,7 @@ func (c *retryingClient) Context() context.Context {
 	return c.ctx
 }
 
-func (c *retryingClient) Send(msg *longrunning.Operation) error {
+func (c *retryingClient) Send(msg *longrunningpb.Operation) error {
 	// If CloseAndRecv fails, this message isn't guaranteed to be ack'd by the
 	// server, so when retrying CloseAndRecv we need to re-send this message
 	// first to ensure it is ack'd.
@@ -148,7 +148,7 @@ func (c *retryingClient) Send(msg *longrunning.Operation) error {
 	return c.sendWithRetry(msg)
 }
 
-func (c *retryingClient) sendWithRetry(msg *longrunning.Operation) error {
+func (c *retryingClient) sendWithRetry(msg *longrunningpb.Operation) error {
 	var lastErr error
 	retryCtx, cancel := context.WithTimeout(c.ctx, reconnectTimeout)
 	defer cancel()
@@ -270,8 +270,8 @@ func Metadata(stage repb.ExecutionStage_Value, d *repb.Digest) *repb.ExecuteOper
 
 // Assemble creates an Operation out of the parts specified by the remote
 // execution API.
-func Assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteResponse) (*longrunning.Operation, error) {
-	op := &longrunning.Operation{
+func Assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteResponse) (*longrunningpb.Operation, error) {
+	op := &longrunningpb.Operation{
 		Name: name,
 		Done: md.GetStage() == repb.ExecutionStage_COMPLETED,
 	}
@@ -287,7 +287,7 @@ func Assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteR
 		if err != nil {
 			return nil, err
 		}
-		op.Result = &longrunning.Operation_Response{Response: resultAny}
+		op.Result = &longrunningpb.Operation_Response{Response: resultAny}
 	}
 	return op, nil
 }
@@ -300,7 +300,7 @@ func ErrorResponse(err error) *repb.ExecuteResponse {
 
 type StreamLike interface {
 	Context() context.Context
-	Send(*longrunning.Operation) error
+	Send(*longrunningpb.Operation) error
 }
 
 type StateChangeFunc func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error
@@ -382,7 +382,7 @@ func InProgressExecuteResponse() *repb.ExecuteResponse {
 	return ExecuteResponseWithResult(nil /*=result*/, nil /*=error*/)
 }
 
-func ExtractStage(op *longrunning.Operation) repb.ExecutionStage_Value {
+func ExtractStage(op *longrunningpb.Operation) repb.ExecutionStage_Value {
 	md := &repb.ExecuteOperationMetadata{}
 	if err := op.GetMetadata().UnmarshalTo(md); err != nil {
 		return repb.ExecutionStage_UNKNOWN
@@ -390,7 +390,7 @@ func ExtractStage(op *longrunning.Operation) repb.ExecutionStage_Value {
 	return md.GetStage()
 }
 
-func ExtractExecuteResponse(op *longrunning.Operation) *repb.ExecuteResponse {
+func ExtractExecuteResponse(op *longrunningpb.Operation) *repb.ExecuteResponse {
 	if response := op.GetResponse(); response != nil {
 		er := &repb.ExecuteResponse{}
 		if err := response.UnmarshalTo(er); err == nil {
@@ -400,8 +400,8 @@ func ExtractExecuteResponse(op *longrunning.Operation) *repb.ExecuteResponse {
 	return nil
 }
 
-func Decode(serializedOperation string) (*longrunning.Operation, error) {
-	op := &longrunning.Operation{}
+func Decode(serializedOperation string) (*longrunningpb.Operation, error) {
+	op := &longrunningpb.Operation{}
 	data, err := base64.StdEncoding.DecodeString(serializedOperation)
 	if err != nil {
 		return nil, err

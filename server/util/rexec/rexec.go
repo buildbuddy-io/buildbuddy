@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -17,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/genproto/googleapis/longrunning"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -346,7 +346,7 @@ func (s *RetryingStream) CloseSend() error {
 
 // Response contains an operation along with its execution-specific payload.
 type Response struct {
-	*longrunning.Operation
+	*longrunningpb.Operation
 
 	// ExecuteOperationMetadata contains any metadata unpacked from the
 	// operation.
@@ -359,7 +359,7 @@ type Response struct {
 
 // UnpackOperation unmarshals all expected execution-specific fields from the
 // given operationn.
-func UnpackOperation(op *longrunning.Operation) (*Response, error) {
+func UnpackOperation(op *longrunningpb.Operation) (*Response, error) {
 	msg := &Response{Operation: op}
 	if op.GetResponse() != nil {
 		msg.ExecuteResponse = &repb.ExecuteResponse{}

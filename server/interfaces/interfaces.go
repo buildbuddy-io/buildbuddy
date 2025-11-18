@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
@@ -58,7 +59,6 @@ import (
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-	"google.golang.org/genproto/googleapis/longrunning"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -971,7 +971,7 @@ type ExecutionNode interface {
 
 type Publisher interface {
 	Context() context.Context
-	Send(op *longrunning.Operation) error
+	Send(op *longrunningpb.Operation) error
 	Ping() error
 	SetState(state repb.ExecutionProgress_ExecutionState) error
 	CloseAndRecv() (*repb.PublishOperationResponse, error)

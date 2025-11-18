@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -25,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -36,7 +36,7 @@ import (
 
 type mockExecutionServer struct {
 	repb.UnimplementedExecutionServer
-	operations []*longrunning.Operation
+	operations []*longrunningpb.Operation
 	finished   chan struct{}
 }
 
@@ -71,7 +71,7 @@ func (p *mockPublisher) Context() context.Context {
 	return context.Background()
 }
 
-func (p *mockPublisher) Send(op *longrunning.Operation) error {
+func (p *mockPublisher) Send(op *longrunningpb.Operation) error {
 	if p.sendFailure {
 		return status.InternalError("uh oh")
 	}

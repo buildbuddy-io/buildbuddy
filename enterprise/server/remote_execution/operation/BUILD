@@ -14,7 +14,7 @@ go_library(
         "//server/util/proto",
         "//server/util/retry",
         "//server/util/status",
-        "@org_golang_google_genproto//googleapis/longrunning",
+        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_google_protobuf//types/known/timestamppb",

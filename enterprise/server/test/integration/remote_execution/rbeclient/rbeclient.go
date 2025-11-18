@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -15,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -95,7 +95,7 @@ type Command struct {
 	afterExecuteTime  time.Time
 
 	// Complete list of operations received on the stream.
-	operations []*longrunning.Operation
+	operations []*longrunningpb.Operation
 
 	mu     sync.Mutex
 	opName string
@@ -113,7 +113,7 @@ func (c *Command) GetActionResourceName() *digest.ACResourceName {
 	return c.actionResourceName
 }
 
-func (c *Command) GetOperations() []*longrunning.Operation {
+func (c *Command) GetOperations() []*longrunningpb.Operation {
 	return c.operations
 }
 
