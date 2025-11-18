@@ -135,9 +135,9 @@ func RegisterTracker(env *real_environment.RealEnv) error {
 		return err
 	}
 	env.SetUsageTracker(ut)
-	ut.StartDBFlush()
+	ut.startDBFlush()
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		ut.StopDBFlush()
+		ut.stopDBFlush()
 		return nil
 	})
 	return nil
@@ -237,9 +237,9 @@ func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc
 	return nil
 }
 
-// StartDBFlush starts a goroutine that periodically flushes usage data from
+// startDBFlush starts a goroutine that periodically flushes usage data from
 // Redis to the DB.
-func (ut *tracker) StartDBFlush() {
+func (ut *tracker) startDBFlush() {
 	go func() {
 		ctx := context.Background()
 		ticker := time.NewTicker(flushInterval)
@@ -257,8 +257,8 @@ func (ut *tracker) StartDBFlush() {
 	}()
 }
 
-// StopDBFlush cancels the goroutine started by StartDBFlush.
-func (ut *tracker) StopDBFlush() {
+// stopDBFlush cancels the goroutine started by StartDBFlush.
+func (ut *tracker) stopDBFlush() {
 	ut.stopFlush <- struct{}{}
 }
 
