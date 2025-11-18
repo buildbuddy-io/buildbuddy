@@ -35,7 +35,6 @@ go_test(
         "@com_github_google_go_cmp//cmp/cmpopts",
         "@com_github_open_feature_go_sdk//openfeature",
         "@com_github_open_feature_go_sdk//openfeature/memprovider",
-        "@com_github_open_feature_go_sdk//openfeature/testing",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
