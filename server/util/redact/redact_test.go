@@ -167,7 +167,7 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 			name: "redact _json_key_base64 credentials in action failure detail message",
 			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
 				FailureDetail: &fdpb.FailureDetail{
-					Message: "ERROR: loading failure: end: failure command: pip install --requirement 'graphviz==0.20.1' --index-url https://_json_key_base64:eyJrZXkiOiJ2YWx1ZSJ9@artifactregistry.googleapis.com/pypi/repo/simple",
+					Message: "ERROR: loading failure: end: failure command: pip install --requirement 'graphviz==0.20.1' --index-url https://_json_key_base64:totallysecretkey@artifactregistry.googleapis.com/pypi/repo/simple",
 				},
 			}}},
 			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
