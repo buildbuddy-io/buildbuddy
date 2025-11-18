@@ -2350,23 +2350,11 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 	}
 
 	if shouldCompress {
-		compressor, err := compression.NewZstdCompressingWriter(wc, fileRecord.GetDigest().GetSizeBytes())
+		compressWC, err := compression.NewZstdCompressingWriteCommiter(wc, fileRecord.GetDigest().GetSizeBytes(), p.name)
 		if err != nil {
 			wc.Close()
 			return nil, err
 		}
-		compressWC := ioutil.NewCustomCommitWriteCloser(compressor)
-		compressWC.CommitFn = func(inputBytes int64) error {
-			// Close the compressor to flush the buffer and return it to the pool.
-			if err := compressor.Close(); err != nil {
-				return err
-			}
-			metrics.CompressionRatio.
-				With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: p.name}).
-				Observe(float64(compressor.CompressedBytesWritten) / float64(inputBytes))
-			return wc.Commit()
-		}
-		compressWC.CloseFn = wc.Close
 		return compressWC, nil
 	}
 	return wc, nil

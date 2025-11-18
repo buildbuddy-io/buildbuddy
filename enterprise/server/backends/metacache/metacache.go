@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -27,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/jonboulle/clockwork"
-	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
@@ -437,22 +435,11 @@ func (c *Cache) writerWithSizeHint(ctx context.Context, r *rspb.ResourceName, si
 		return nil, err
 	}
 	if shouldCompress {
-		compressor, err := compression.NewZstdCompressingWriter(wc, fileRecord.GetDigest().GetSizeBytes())
+		compressWC, err := compression.NewZstdCompressingWriteCommiter(wc, fileRecord.GetDigest().GetSizeBytes(), c.opts.Name)
 		if err != nil {
+			wc.Close()
 			return nil, err
 		}
-		compressWC := ioutil.NewCustomCommitWriteCloser(compressor)
-		compressWC.CommitFn = func(inputBytes int64) error {
-			// Close the compressor to flush the buffer and return it to the pool.
-			if err := compressor.Close(); err != nil {
-				return err
-			}
-			metrics.CompressionRatio.
-				With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: c.opts.Name}).
-				Observe(float64(compressor.CompressedBytesWritten) / float64(inputBytes))
-			return wc.Commit()
-		}
-		compressWC.CloseFn = wc.Close
 		return compressWC, nil
 	}
 	return wc, nil

@@ -6,8 +6,10 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
@@ -186,6 +188,28 @@ func NewZstdCompressingWriter(writer io.Writer, bufSize int64) (*ZstdCompressing
 			bufPool.Put(b)
 		},
 	}, nil
+}
+
+// NewZstdCompressingWriteCommiter is like NewZstdCompressingWriter, but
+// handles committing and metric exports as well.
+func NewZstdCompressingWriteCommiter(wc interfaces.CommittedWriteCloser, bufSize int64, cacheName string) (interfaces.CommittedWriteCloser, error) {
+	compressor, err := NewZstdCompressingWriter(wc, bufSize)
+	if err != nil {
+		return nil, err
+	}
+	compressWC := ioutil.NewCustomCommitWriteCloser(compressor)
+	compressWC.CommitFn = func(inputBytes int64) error {
+		// Close the compressor to flush the buffer and return it to the pool.
+		if err := compressor.Close(); err != nil {
+			return err
+		}
+		metrics.CompressionRatio.
+			With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: cacheName}).
+			Observe(float64(compressor.CompressedBytesWritten) / float64(inputBytes))
+		return wc.Commit()
+	}
+	compressWC.CloseFn = wc.Close
+	return compressWC, nil
 }
 
 // DecompressZstd decompresses a full chunk of zstd data into dst. If dst is
