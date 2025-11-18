@@ -2873,7 +2873,7 @@ var (
 	RaftGCSEvictionCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",
-		Name:      "atime_update_gcs_count",
+		Name:      "gcs_eviction_count",
 		Help:      "Count of evictions from GCS.",
 	}, []string{
 		PartitionID,
