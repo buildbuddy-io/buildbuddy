@@ -1,5 +1,8 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_push")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+load("@rules_img//img:layer.bzl", "image_layer")
+load("@rules_img//img:image.bzl", "image_manifest")
+load("@rules_img//img:pull.bzl", "pull")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 container_image(
@@ -65,4 +68,28 @@ oci_push(
     image = ":probers_oci_image",
     remote_tags = "//deployment:oci_tag.txt",
     repository = "gcr.io/flame-build/probers-oci",
+)
+
+image_layer(
+    name = "probers_img_layer",
+    srcs = {
+        "/bazelcache": "//tools/probers/bazelcache",
+        "/bazelrbe": "//tools/probers/bazelrbe",
+        "/remote_runner": "//tools/probers/remote_runner",
+        "/cloudprober": "@cloudprober"
+    },
+    compress = "zstd",  # Use zstd compression (optional, uses global default otherwise)
+)
+
+image_manifest(
+    name = "probers_img_image",
+    base = "@bazel_img_image_base",
+    entrypoint = [
+        "/cloudprober",
+        "--logtostderr",
+    ],
+    layers = [
+        ":probers_img_layer"
+    ],
+    visibility = ["//visibility:public"],
 )
