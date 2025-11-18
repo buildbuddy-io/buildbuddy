@@ -16,7 +16,6 @@ go_library(
         "//server/backends/blobstore/gcs",
         "//server/environment",
         "//server/interfaces",
-        "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/digest",
         "//server/util/authutil",
@@ -30,7 +29,6 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_jonboulle_clockwork//:clockwork",
-        "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
     ],
 )
