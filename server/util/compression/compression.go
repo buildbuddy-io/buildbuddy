@@ -174,26 +174,26 @@ func (c *ZstdCompressingWriter) Close() error {
 // > 0 and determines how much data is buffered before being compressed and
 // written out. Larger buffer sizes generally result in better compression
 // ratios, but will be capped to an implementation-defined maximum.
-func NewZstdCompressingWriter(writer io.Writer, bufSize int64) (*ZstdCompressingWriter, error) {
+func NewZstdCompressingWriter(writer io.Writer, bufferPool *bytebufferpool.VariableSizePool, bufSize int64) (*ZstdCompressingWriter, error) {
 	if bufSize <= 0 {
 		return nil, errors.New("bufSize must be > 0")
 	}
-	a, b := bufPool.Get(bufSize), bufPool.Get(bufSize)
+	a, b := bufferPool.Get(bufSize), bufferPool.Get(bufSize)
 	return &ZstdCompressingWriter{
 		writer:         writer,
 		buffer:         a,
 		compressBuffer: b,
 		returnBuffers: func() {
-			bufPool.Put(a)
-			bufPool.Put(b)
+			bufferPool.Put(a)
+			bufferPool.Put(b)
 		},
 	}, nil
 }
 
 // NewZstdCompressingWriteCommiter is like NewZstdCompressingWriter, but
 // handles committing and metric exports as well.
-func NewZstdCompressingWriteCommiter(wc interfaces.CommittedWriteCloser, bufSize int64, cacheName string) (interfaces.CommittedWriteCloser, error) {
-	compressor, err := NewZstdCompressingWriter(wc, bufSize)
+func NewZstdCompressingWriteCommiter(wc interfaces.CommittedWriteCloser, bufferPool *bytebufferpool.VariableSizePool, bufSize int64, cacheName string) (interfaces.CommittedWriteCloser, error) {
+	compressor, err := NewZstdCompressingWriter(wc, bufferPool, bufSize)
 	if err != nil {
 		return nil, err
 	}

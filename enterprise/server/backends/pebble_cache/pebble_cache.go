@@ -2336,7 +2336,7 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 	}
 
 	if shouldCompress {
-		compressWC, err := compression.NewZstdCompressingWriteCommiter(wc, fileRecord.GetDigest().GetSizeBytes(), p.name)
+		compressWC, err := compression.NewZstdCompressingWriteCommiter(wc, p.bufferPool, fileRecord.GetDigest().GetSizeBytes(), p.name)
 		if err != nil {
 			wc.Close()
 			return nil, err
