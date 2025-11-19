@@ -14,14 +14,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/authn"
-	ctrname "github.com/google/go-containerregistry/pkg/name"
-	ctr "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
