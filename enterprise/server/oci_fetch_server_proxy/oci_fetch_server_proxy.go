@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/ocirefactor/fetch"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -15,6 +14,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/metadata"
@@ -27,11 +28,15 @@ import (
 const (
 	// Max chunk size for streaming blob data (1MB)
 	maxChunkSize = 1024 * 1024
+
+	// cacheDigestFunction is the digest function used for storing OCI artifacts in CAS
+	cacheDigestFunction = repb.DigestFunction_SHA256
 )
 
 type OCIFetchServerProxy struct {
-	env     environment.Env
-	fetcher fetch.Fetcher
+	env            environment.Env
+	fetcher        fetch.Fetcher
+	cachingEnabled bool // Whether caching is enabled (use_cache_percent > 0)
 
 	// Singleflight groups to deduplicate concurrent requests
 	manifestGroup   singleflight.Group[string, []byte]
@@ -55,15 +60,30 @@ func credKey(creds *rgpb.Credentials) string {
 	return hash.Strings(creds.GetUsername(), creds.GetPassword())
 }
 
-// parseDigestFromBlobRef extracts the digest from an OCI blob reference.
-// Blob refs are in the format: registry.example.com/repo@sha256:hash
-// Returns the digest in the format: sha256:hash
-func parseDigestFromBlobRef(blobRef string) (string, error) {
-	parts := strings.Split(blobRef, "@")
-	if len(parts) != 2 {
-		return "", status.InvalidArgumentErrorf("invalid blob ref format: %s", blobRef)
+// parseDigestRef parses an OCI reference that must contain a digest.
+// Returns an error if the reference doesn't contain a digest.
+func parseDigestRef(ref string) (ctrname.Digest, error) {
+	digestRef, err := ctrname.NewDigest(ref)
+	if err != nil {
+		return ctrname.Digest{}, status.InvalidArgumentErrorf("ref must contain digest, got %q: %s", ref, err)
 	}
-	return parts[1], nil
+	return digestRef, nil
+}
+
+// blobCASResourceName generates a CAS resource name for a blob.
+// Blobs are stored with ZSTD compression in CAS (matching ocicache behavior).
+func blobCASResourceName(hash ctr.Hash, contentLength int64) *digest.CASResourceName {
+	blobDigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
+	}
+	rn := digest.NewCASResourceName(
+		blobDigest,
+		"",
+		cacheDigestFunction,
+	)
+	rn.SetCompressor(repb.Compressor_ZSTD)
+	return rn
 }
 
 // ociStreamAdapter adapts OCI stream to ByteStream read server interface
@@ -117,6 +137,7 @@ func New(env environment.Env) (*OCIFetchServerProxy, error) {
 
 	// Create the appropriate fetcher based on cache configuration
 	var f fetch.Fetcher
+	cachingEnabled := useCachePercent > 0
 
 	if useCachePercent == 0 {
 		// No caching - use RegistryFetcher only
@@ -139,8 +160,9 @@ func New(env environment.Env) (*OCIFetchServerProxy, error) {
 	}
 
 	return &OCIFetchServerProxy{
-		env:     env,
-		fetcher: f,
+		env:            env,
+		fetcher:        f,
+		cachingEnabled: cachingEnabled,
 	}, nil
 }
 
@@ -178,25 +200,23 @@ func (s *OCIFetchServerProxy) FetchManifest(ctx context.Context, req *ocipb.Fetc
 
 // writeBlobToCAS writes blob data from a reader to the CAS (Content Addressable Storage).
 // This ensures the blob is available for streaming to all concurrent requesters.
-func (s *OCIFetchServerProxy) writeBlobToCAS(ctx context.Context, d *repb.Digest, reader io.Reader) error {
+// Used only when caching is disabled (use_cache_percent=0).
+func (s *OCIFetchServerProxy) writeBlobToCAS(ctx context.Context, rn *digest.CASResourceName, reader io.Reader) error {
 	cache := s.env.GetCache()
 	if cache == nil {
 		return status.UnavailableError("cache not available for blob storage")
 	}
-
-	// Create CAS resource name for the blob
-	rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
 
 	// Get a writer from the cache
 	writer, err := cache.Writer(ctx, rn.ToProto())
 	if err != nil {
 		return err
 	}
+	defer writer.Close()
 
 	// Stream data from reader to cache writer
 	_, err = io.Copy(writer, reader)
 	if err != nil {
-		writer.Close()
 		return status.InternalErrorf("failed to write blob to CAS: %s", err)
 	}
 
@@ -215,75 +235,41 @@ func (s *OCIFetchServerProxy) FetchBlob(req *ocipb.FetchBlobRequest, stream ocip
 		return status.InvalidArgumentError("blob_ref is required")
 	}
 
-	// First, get blob metadata to determine the size
-	// This is needed to construct the complete Digest
-	metaReq := &ocipb.FetchBlobMetadataRequest{
-		BlobRef:     req.GetBlobRef(),
-		Credentials: req.GetCredentials(),
-	}
-	metaResp, err := s.FetchBlobMetadata(ctx, metaReq)
-	if err != nil {
-		return err
+	var creds *rgpb.Credentials
+	if req.GetCredentials() != nil {
+		creds = req.GetCredentials()
 	}
 
-	// Parse digest from blob ref (format: registry.example.com/repo@sha256:hash)
-	digestStr, err := parseDigestFromBlobRef(req.GetBlobRef())
-	if err != nil {
-		return err
-	}
-
-	// Extract hash (remove "sha256:" or other algorithm prefix)
-	hashStr := strings.TrimPrefix(digestStr, "sha256:")
-	hashStr = strings.TrimPrefix(hashStr, "sha1:")
-	hashStr = strings.TrimPrefix(hashStr, "blake3:")
-
-	// Construct complete Digest with hash and size
-	d := &repb.Digest{
-		Hash:      hashStr,
-		SizeBytes: metaResp.GetSizeBytes(),
-	}
-
-	// Use singleflight to coordinate writing the blob to CAS
-	// Include credentials in the key to prevent authorization leakage
-	// All requests (first + concurrent) wait for the write to complete, then stream from CAS
-	key := fmt.Sprintf("%s:%s", req.GetBlobRef(), credKey(req.GetCredentials()))
-	_, _, err = s.blobStreamGroup.Do(ctx, key, func(ctx context.Context) (*repb.Digest, error) {
-		var creds *rgpb.Credentials
-		if req.GetCredentials() != nil {
-			creds = req.GetCredentials()
-		}
-
-		// Fetch blob from registry (or cache if using CachingFetcher)
-		rc, err := s.fetcher.FetchBlob(ctx, req.GetBlobRef(), creds)
-		if err != nil {
-			return nil, err
-		}
-		defer rc.Close()
-
-		// Write blob to CAS
-		if err := s.writeBlobToCAS(ctx, d, rc); err != nil {
-			return nil, err
-		}
-
-		return d, nil
-	})
-
+	// Fetch blob from the fetcher
+	// - When caching is enabled (CachingFetcher): returns a write-through cacher on cache miss
+	//   that automatically writes to CAS as we read, or a reader from CAS on cache hit
+	// - When caching is disabled (RegistryFetcher): returns a plain reader from the registry
+	// This eliminates double uploads when caching is enabled and avoids unwanted CAS writes when disabled
+	rc, err := s.fetcher.FetchBlob(ctx, req.GetBlobRef(), creds)
 	if err != nil {
 		log.CtxWarningf(ctx, "Error fetching blob for %s: %s", req.GetBlobRef(), err)
 		return err
 	}
+	defer rc.Close()
 
-	// Stream from CAS to all clients (first + concurrent requesters)
-	// Create CAS resource name for reading
-	casRN := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
-	adapter := &ociStreamAdapter{stream: stream}
-	bsServer := s.env.GetLocalByteStreamServer()
-	if bsServer == nil {
-		return status.UnavailableError("local ByteStreamServer not available")
+	// Stream directly to client in chunks
+	buf := make([]byte, maxChunkSize)
+	for {
+		n, readErr := rc.Read(buf)
+		if n > 0 {
+			if sendErr := stream.Send(&ocipb.FetchBlobResponse{Data: buf[:n]}); sendErr != nil {
+				log.CtxWarningf(ctx, "Error streaming blob chunk for %s: %s", req.GetBlobRef(), sendErr)
+				return sendErr
+			}
+		}
+		if readErr == io.EOF {
+			return nil
+		}
+		if readErr != nil {
+			log.CtxWarningf(ctx, "Error reading blob for %s: %s", req.GetBlobRef(), readErr)
+			return readErr
+		}
 	}
-
-	// Read entire blob (offset=0, limit=0 means read all)
-	return bsServer.ReadCASResource(ctx, casRN, 0, 0, adapter)
 }
 
 func (s *OCIFetchServerProxy) FetchBlobMetadata(ctx context.Context, req *ocipb.FetchBlobMetadataRequest) (*ocipb.FetchBlobMetadataResponse, error) {
