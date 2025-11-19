@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -3376,5 +3377,51 @@ func TestGCSBlobStorageReadAfterTTL(t *testing.T) {
 	for _, rn := range written {
 		_, err := pc.Get(ctx, rn)
 		require.True(t, status.IsNotFoundError(err), err)
+	}
+}
+
+func TestAtimeUpdaters(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	threshold := time.Microsecond
+	workers := 1
+	opts := &pebble_cache.Options{
+		RootDirectory:         testfs.MakeTempDir(t),
+		MaxSizeBytes:          1_000_000_000,
+		AtimeUpdateThreshold:  &threshold,
+		NumAtimeUpdateWorkers: &workers,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	// Create the resource name that we'll update
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, pc.Set(ctx, r, buf))
+
+	// Register updaters now to prevent calling when the file was created above
+	numUpdaters := 1
+	updateCalls := []*atomic.Int32{}
+	for range numUpdaters {
+		calls := atomic.Int32{}
+		updateCalls = append(updateCalls, &calls)
+		te.AddAtimeUpdater(func(_ context.Context, _ *repb.Digest, _ string, _ repb.DigestFunction_Value) {
+			calls.Add(1)
+		})
+	}
+
+	// Call Get() to trigger an atime update
+	_, err = pc.Get(ctx, r)
+	require.NoError(t, err)
+
+	// Verify the atime updaters were called
+	for i := range numUpdaters {
+		calledFunc := func() bool {
+			return updateCalls[i].Load() > 0
+		}
+		require.Eventually(t, calledFunc, time.Minute, 100*time.Millisecond)
 	}
 }

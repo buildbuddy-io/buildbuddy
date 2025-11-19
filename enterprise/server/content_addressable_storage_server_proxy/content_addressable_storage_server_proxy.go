@@ -193,7 +193,6 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 			mergedDigests = append(mergedDigests, resp.Digest)
 		}
 	}
-	s.atimeUpdater.Enqueue(ctx, req.InstanceName, mergedDigests, req.DigestFunction)
 
 	digestsInLocalResp := len(mergedResp.Responses)
 	bytesInLocalResp := bytesInResponse(&mergedResp)

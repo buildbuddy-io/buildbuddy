@@ -123,7 +123,6 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 		// Recover from local error if no frames have been sent
 		return metrics.MissStatusLabel, s.readRemoteWriteLocal(req, stream)
 	} else {
-		s.atimeUpdater.EnqueueByResourceName(ctx, rn)
 		return metrics.HitStatusLabel, localErr
 	}
 }

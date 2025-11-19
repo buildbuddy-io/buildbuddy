@@ -133,7 +133,8 @@ type Env interface {
 	GetRegistryService() interfaces.RegistryService
 	GetPubSub() interfaces.PubSub
 	GetClock() clockwork.Clock
-	GetAtimeUpdater() interfaces.AtimeUpdater
+	AddAtimeUpdater(interfaces.AtimeUpdater)
+	GetAtimeUpdaters() []interfaces.AtimeUpdater
 	GetCPULeaser() interfaces.CPULeaser
 	GetHitTrackerFactory() interfaces.HitTrackerFactory
 	GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer
