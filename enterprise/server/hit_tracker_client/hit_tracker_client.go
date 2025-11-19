@@ -307,8 +307,9 @@ func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 	hit := &hitpb.CacheHit{
 		RequestMetadata: t.requestMetadata,
 		Resource: &rspb.ResourceName{
-			Digest:    t.digest,
-			CacheType: t.cacheType,
+			Digest:     t.digest,
+			CacheType:  t.cacheType,
+			Compressor: compressor,
 		},
 		SizeBytes:        bytesTransferredClient,
 		Duration:         durationpb.New(time.Since(t.start)),
