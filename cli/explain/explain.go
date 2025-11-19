@@ -324,7 +324,7 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 					} else {
 						_, _ = fmt.Fprintln(w, "old only (pass --verbose to see details):")
 					}
-					writeMnemonicCounts(w, oldOnly, "  ")
+					writeMnemonicCounts(w, oldOnly, nil, "  ")
 					_, _ = fmt.Fprintln(w)
 				}
 			case newOnlyState:
@@ -334,7 +334,7 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 					} else {
 						_, _ = fmt.Fprintln(w, "new only (pass --verbose to see details):")
 					}
-					writeMnemonicCounts(w, newOnly, "  ")
+					writeMnemonicCounts(w, newOnly, nil, "  ")
 					_, _ = fmt.Fprintln(w)
 				}
 			default:
@@ -377,16 +377,17 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 			for _, sd := range td.Modified.Diffs {
 				writeSingleDiff(w, sd)
 			}
+			_, _ = fmt.Fprintf(w, "  total execution time: %s\n", td.Modified.UncachedExecutionTime.AsDuration())
 			if len(td.Modified.TransitivelyInvalidated) > 0 {
 				_, _ = fmt.Fprintf(w, "  transitively invalidated:\n")
-				writeMnemonicCounts(w, td.Modified.TransitivelyInvalidated, "    ")
+				writeMnemonicCounts(w, td.Modified.TransitivelyInvalidated, td.Modified.TransitivelyInvalidatedUncached, "    ")
 			}
 			_, _ = fmt.Fprintln(w)
 		}
 	}
 }
 
-func writeMnemonicCounts(w io.Writer, mnemonicsAndCounts map[string]uint32, indent string) {
+func writeMnemonicCounts(w io.Writer, mnemonicsAndCounts map[string]uint32, mnemonicsAndUncachedCounts map[string]uint32, indent string) {
 	type kv struct {
 		Mnemonic string
 		Count    uint32
@@ -404,7 +405,12 @@ func writeMnemonicCounts(w io.Writer, mnemonicsAndCounts map[string]uint32, inde
 	})
 
 	for _, mc := range sorted {
-		_, _ = fmt.Fprintf(w, "%s%6d %s\n", indent, mc.Count, mc.Mnemonic)
+		uncachedCount := mnemonicsAndUncachedCounts[mc.Mnemonic]
+		if uncachedCount > 0 {
+			_, _ = fmt.Fprintf(w, "%s%6d %s (%d not cached)\n", indent, mc.Count, mc.Mnemonic, uncachedCount)
+		} else {
+			_, _ = fmt.Fprintf(w, "%s%6d %s\n", indent, mc.Count, mc.Mnemonic)
+		}
 	}
 }
 
