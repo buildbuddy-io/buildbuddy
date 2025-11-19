@@ -480,7 +480,7 @@ func (c *Cache) writer(ctx context.Context, r *rspb.ResourceName, sizeHint int64
 		return nil, err
 	}
 	if shouldCompress {
-		compressWC, err := compression.NewZstdCompressingWriteCommiter(wc, fileRecord.GetDigest().GetSizeBytes(), c.opts.Name)
+		compressWC, err := compression.NewZstdCompressingWriteCommiter(wc, c.bufferPool, fileRecord.GetDigest().GetSizeBytes(), c.opts.Name)
 		if err != nil {
 			wc.Close()
 			return nil, err
