@@ -3,6 +3,7 @@ package scheduler_server
 import (
 	"context"
 	"io"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -641,11 +642,14 @@ func (e *fakeExecutor) Claim(taskID string) *taskLease {
 	return lease
 }
 
-func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props map[string]string) string {
+type scheduleOpts struct {
+	props map[string]string
+}
+
+func newScheduleRequest(ctx context.Context, t *testing.T, env environment.Env, opts scheduleOpts) *scpb.ScheduleTaskRequest {
 	id, err := uuid.NewRandom()
 	require.NoError(t, err)
 	taskID := id.String()
-
 	task := &repb.ExecutionTask{
 		ExecutionId: taskID,
 		Command: &repb.Command{
@@ -654,13 +658,13 @@ func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props 
 			},
 		},
 	}
-	for k, v := range props {
+	for k, v := range opts.props {
 		task.Command.Platform.Properties = append(task.Command.Platform.Properties, &repb.Platform_Property{Name: k, Value: v})
 	}
 	size := tasksize.Override(tasksize.Default(task), tasksize.Requested(task))
 	taskBytes, err := proto.Marshal(task)
 	require.NoError(t, err)
-	_, err = env.GetSchedulerService().ScheduleTask(ctx, &scpb.ScheduleTaskRequest{
+	return &scpb.ScheduleTaskRequest{
 		TaskId: taskID,
 		Metadata: &scpb.SchedulingMetadata{
 			Os:       defaultOS,
@@ -668,9 +672,14 @@ func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props 
 			TaskSize: size,
 		},
 		SerializedTask: taskBytes,
-	})
+	}
+}
+
+func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props map[string]string) string {
+	req := newScheduleRequest(ctx, t, env, scheduleOpts{props: props})
+	_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
 	require.NoError(t, err)
-	return taskID
+	return req.GetTaskId()
 }
 
 func enqueueTaskReservation(ctx context.Context, t *testing.T, env environment.Env, delay time.Duration) string {
@@ -937,6 +946,82 @@ func TestEnqueueTaskReservation_Exists(t *testing.T) {
 
 	require.Nil(t, err)
 	require.False(t, resp.GetExists())
+}
+
+func TestEnqueueTaskReservation_RoutingConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		routingConfig *scpb.RoutingConfig
+
+		expectRoutedToHosts   []string
+		expectSchedulingError bool
+	}{
+		{
+			name: "RequiredRoutingConfig_MatchesExecutorSubset_ShouldRouteOnlyToSubset",
+			routingConfig: &scpb.RoutingConfig{
+				HostnamePattern: "ex1",
+				BestEffort:      false,
+			},
+			expectRoutedToHosts: []string{"ex1"},
+		},
+		{
+			name: "RequiredRoutingConfig_PatternMatchesNoExecutors_ShouldFail",
+			routingConfig: &scpb.RoutingConfig{
+				HostnamePattern: "nonexistent-executor-pattern",
+				BestEffort:      false,
+			},
+			expectSchedulingError: true,
+		},
+		{
+			name: "BestEffortRoutingConfig_MatchesExecutorSubset_ShouldRouteOnlyToSubset",
+			routingConfig: &scpb.RoutingConfig{
+				HostnamePattern: "ex1",
+				BestEffort:      true,
+			},
+			expectRoutedToHosts: []string{"ex1"},
+		},
+		{
+			name: "BestEffortRoutingConfig_PatternMatchesNoExecutors_ShouldRouteToAllExecutors",
+			routingConfig: &scpb.RoutingConfig{
+				HostnamePattern: "nonexistent-executor-pattern",
+				BestEffort:      true,
+			},
+			expectRoutedToHosts: []string{"ex1", "ex2"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+			ex1 := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			ex1.node.Host = "ex1"
+			ex1.Register()
+			ex2 := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			ex2.node.Host = "ex2"
+			ex2.Register()
+
+			req := newScheduleRequest(ctx, t, env, scheduleOpts{})
+			req.Metadata.RoutingConfig = tc.routingConfig
+			_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+			if tc.expectSchedulingError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			for _, ex := range []*fakeExecutor{ex1, ex2} {
+				var msg *scpb.RegisterAndStreamWorkResponse
+				select {
+				case msg = <-ex.schedulerMessages:
+				default:
+				}
+				if slices.Contains(tc.expectRoutedToHosts, ex.node.GetHost()) {
+					require.Equal(t, req.GetTaskId(), msg.GetEnqueueTaskReservationRequest().GetTaskId())
+				} else {
+					require.Nil(t, msg)
+				}
+			}
+		})
+	}
 }
 
 func TestAskForMoreWork_OnlyEnqueuesTasksThatFitOnNode(t *testing.T) {

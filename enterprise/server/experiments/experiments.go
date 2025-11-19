@@ -14,8 +14,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/open-feature/go-sdk/openfeature"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
@@ -162,6 +164,23 @@ func ObjectToStruct(object map[string]any, dest any) error {
 		return fmt.Errorf("marshal: %w", err)
 	}
 	if err := json.Unmarshal(b, dest); err != nil {
+		return fmt.Errorf("unmarshal: %w", err)
+	}
+	return nil
+}
+
+// ObjectToProto is a utility function to unmarshal a proto from an object
+// returned by [interfaces.ExperimentFlagProvider.Object] or
+// [interfaces.ExperimentFlagProvider.ObjectDetails].
+//
+// For this to work, the originally specified JSON config must follow the
+// ProtoJSON format. See https://protobuf.dev/programming-guides/json/
+func ObjectToProto(object map[string]any, dest proto.Message) error {
+	b, err := json.Marshal(object)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+	if err := protojson.Unmarshal(b, dest); err != nil {
 		return fmt.Errorf("unmarshal: %w", err)
 	}
 	return nil
