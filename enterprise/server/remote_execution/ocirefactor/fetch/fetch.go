@@ -14,8 +14,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/authn"
-	gcrname "github.com/google/go-containerregistry/pkg/name"
-	gcr "github.com/google/go-containerregistry/pkg/v1"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
@@ -56,10 +56,10 @@ type Fetcher interface {
 
 // parseDigestRef parses an OCI reference that must contain a digest.
 // Returns an error if the reference doesn't contain a digest.
-func parseDigestRef(ref string) (gcrname.Digest, error) {
-	digestRef, err := gcrname.NewDigest(ref)
+func parseDigestRef(ref string) (ctrname.Digest, error) {
+	digestRef, err := ctrname.NewDigest(ref)
 	if err != nil {
-		return gcrname.Digest{}, status.InvalidArgumentErrorf("ref must contain digest, got %q: %s", ref, err)
+		return ctrname.Digest{}, status.InvalidArgumentErrorf("ref must contain digest, got %q: %s", ref, err)
 	}
 	return digestRef, nil
 }
@@ -77,7 +77,7 @@ func convertCredentials(creds *rgpb.Credentials) authn.Authenticator {
 
 // manifestACKey generates an AC key for a manifest, following the pattern from ocicache.
 // Uses hash of (registry, repo, MANIFEST, algorithm, hex, secret) as the digest.
-func manifestACKey(repo gcrname.Repository, refhash gcr.Hash, secret string) (*digest.ACResourceName, error) {
+func manifestACKey(repo ctrname.Repository, refhash ctr.Hash, secret string) (*digest.ACResourceName, error) {
 	s := hash.Strings(
 		repo.RegistryStr(),
 		repo.RepositoryStr(),
@@ -99,7 +99,7 @@ func manifestACKey(repo gcrname.Repository, refhash gcr.Hash, secret string) (*d
 
 // blobMetadataACKey generates an AC key for blob metadata.
 // Uses proto-marshaled OCIActionResultKey as the digest input.
-func blobMetadataACKey(repo gcrname.Repository, hash gcr.Hash) (*digest.ACResourceName, error) {
+func blobMetadataACKey(repo ctrname.Repository, hash ctr.Hash) (*digest.ACResourceName, error) {
 	arKey := &ocipb.OCIActionResultKey{
 		Registry:      repo.RegistryStr(),
 		Repository:    repo.RepositoryStr(),
@@ -124,7 +124,7 @@ func blobMetadataACKey(repo gcrname.Repository, hash gcr.Hash) (*digest.ACResour
 
 // blobCASResourceName generates a CAS resource name for a blob.
 // Blobs are stored compressed with ZSTD in the CAS.
-func blobCASResourceName(hash gcr.Hash, contentLength int64) *digest.CASResourceName {
+func blobCASResourceName(hash ctr.Hash, contentLength int64) *digest.CASResourceName {
 	blobDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -162,7 +162,7 @@ func (f *CacheFetcher) FetchManifest(ctx context.Context, ref string, platform *
 	}
 
 	repo := digestRef.Context()
-	hash, err := gcr.NewHash(digestRef.DigestStr())
+	hash, err := ctr.NewHash(digestRef.DigestStr())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid digest in ref %q: %s", ref, err)
 	}
@@ -211,7 +211,7 @@ func (f *CacheFetcher) FetchBlobMetadata(ctx context.Context, ref string, creds 
 	}
 
 	repo := digestRef.Context()
-	hash, err := gcr.NewHash(digestRef.DigestStr())
+	hash, err := ctr.NewHash(digestRef.DigestStr())
 	if err != nil {
 		return 0, "", status.InvalidArgumentErrorf("invalid digest in ref %q: %s", ref, err)
 	}
@@ -268,7 +268,7 @@ func (f *CacheFetcher) FetchBlob(ctx context.Context, ref string, creds *rgpb.Cr
 		return nil, err
 	}
 
-	hash, err := gcr.NewHash(digestRef.DigestStr())
+	hash, err := ctr.NewHash(digestRef.DigestStr())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid digest in ref %q: %s", ref, err)
 	}
@@ -311,10 +311,10 @@ func (f *RegistryFetcher) getRemoteOpts(ctx context.Context, platform *repb.Plat
 	}
 
 	if platform != nil {
-		// Convert repb.Platform to gcr.Platform by extracting arch/os from properties
+		// Convert repb.Platform to ctr.Platform by extracting arch/os from properties
 		// For now, we assume simple platform format. In production, you'd parse
 		// platform.Properties to extract "OSFamily", "Arch", etc.
-		opts = append(opts, remote.WithPlatform(gcr.Platform{
+		opts = append(opts, remote.WithPlatform(ctr.Platform{
 			Architecture: "amd64", // TODO: extract from platform.Properties
 			OS:           "linux",
 		}))
@@ -329,7 +329,7 @@ func (f *RegistryFetcher) getRemoteOpts(ctx context.Context, platform *repb.Plat
 
 // FetchManifest fetches a manifest from an upstream OCI registry.
 func (f *RegistryFetcher) FetchManifest(ctx context.Context, ref string, platform *repb.Platform, creds *rgpb.Credentials) ([]byte, error) {
-	imageRef, err := gcrname.ParseReference(ref)
+	imageRef, err := ctrname.ParseReference(ref)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image ref %q: %s", ref, err)
 	}
