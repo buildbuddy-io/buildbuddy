@@ -15,10 +15,13 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/real_environment",
+        "//server/remote_cache/digest",
         "//server/util/hash",
         "//server/util/log",
         "//server/util/status",
         "//third_party/singleflight",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
