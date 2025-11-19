@@ -342,6 +342,12 @@ func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 	if env.GetActionCacheServer() != nil {
 		env.SetActionCacheClient(repb.NewActionCacheClient(conn))
 	}
+	if env.GetBuildBuddyServer() != nil {
+		env.SetBuildBuddyServiceClient(bbspb.NewBuildBuddyServiceClient(conn))
+	}
+	if env.GetCASServer() != nil {
+		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	}
 	return nil
 }
 
