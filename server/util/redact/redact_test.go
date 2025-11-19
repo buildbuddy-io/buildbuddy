@@ -14,6 +14,7 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	fdpb "github.com/buildbuddy-io/buildbuddy/proto/failure_details"
 )
 
 func TestRedactPasswordsInURLs(t *testing.T) {
@@ -147,6 +148,54 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 					"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
 					"--some_other_flag=url://username:<REDACTED>@//foo",
 				},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in action failure detail message",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Error downloading https://username:passwordthatshouldberedacted@repo.example.com/package.tar.gz",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Error downloading https://username:<REDACTED>@repo.example.com/package.tar.gz",
+				},
+			}}},
+		},
+		{
+			name: "redact _json_key_base64 credentials in action failure detail message",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "ERROR: loading failure: end: failure command: pip install --requirement 'graphviz==0.20.1' --index-url https://_json_key_base64:totallysecretkey@artifactregistry.googleapis.com/pypi/repo/simple",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "ERROR: loading failure: end: failure command: pip install --requirement 'graphviz==0.20.1' --index-url https://_json_key_base64:<REDACTED>@artifactregistry.googleapis.com/pypi/repo/simple",
+				},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in finished failure detail message",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Finished{Finished: &bespb.BuildFinished{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Parsing failed: error loading repository from https://user:secret@github.com/org/repo.git",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Finished{Finished: &bespb.BuildFinished{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Parsing failed: error loading repository from https://user:<REDACTED>@github.com/org/repo.git",
+				},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in aborted description",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Aborted{Aborted: &bespb.Aborted{
+				Description: "Build aborted due to error: failed to fetch https://username:passwordthatshouldberedacted@example.com/resource",
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Aborted{Aborted: &bespb.Aborted{
+				Description: "Build aborted due to error: failed to fetch https://username:<REDACTED>@example.com/resource",
 			}}},
 		},
 	} {
