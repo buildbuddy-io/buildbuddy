@@ -46,8 +46,9 @@ func (r *fileResolver) OpenFromRlocation(rlocation string) (fs.File, error) {
 			Err:  fmt.Errorf("invalid rlocation for file resolver with module name %s", r.moduleName),
 		}
 	}
-	if strings.HasPrefix(rlocation, path.Join(r.moduleName, r.bundlePrefix)) {
-		f, err := r.bundleFS.Open(strings.TrimPrefix(rlocation, path.Join(r.moduleName, r.bundlePrefix)))
+	prefix := path.Join(r.moduleName, r.bundlePrefix) + "/"
+	if p, ok := strings.CutPrefix(rlocation, prefix); ok {
+		f, err := r.bundleFS.Open(p)
 		if err == nil {
 			return f, nil
 		}
@@ -72,18 +73,10 @@ func (r *fileResolver) OpenFromRlocation(rlocation string) (fs.File, error) {
 // be looked up from the bundle if they start with this prefix. We will always
 // consult runfiles regardless of whether they begin with this prefix.
 func New(bundleFS fs.FS, bundleRoot string) fs.FS {
-	// fs.FS as well as runfiles use forward slashes as path separators on all
-	// platforms.
-	if !strings.HasSuffix(bundleRoot, "/") {
-		bundleRoot = bundleRoot + "/"
-	}
-	if bundleRoot == "/" {
-		bundleRoot = ""
-	}
 	moduleName, _, _ := strings.Cut(fileresolverGoRlocation, "/")
 	return &fileResolver{
 		bundleFS:     bundleFS,
-		bundlePrefix: bundleRoot,
+		bundlePrefix: strings.TrimSuffix(bundleRoot, "/"),
 		moduleName:   moduleName,
 	}
 }
