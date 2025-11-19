@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net/http"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/ocirefactor/fetch"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -24,6 +26,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
@@ -362,4 +365,176 @@ func TestCacheFetcher_RoundTrip(t *testing.T) {
 	fetchedBlob, err := io.ReadAll(rc)
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff(blobData, fetchedBlob))
+}
+
+// RegistryFetcher Tests
+
+func TestRegistryFetcher_FetchManifest(t *testing.T) {
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	imageName, image := registry.PushNamedImageWithFiles(t, "test_manifest", map[string][]byte{
+		"/test/file": []byte("test content"),
+	})
+
+	expectedManifest, err := image.RawManifest()
+	require.NoError(t, err)
+
+	fetcher := fetch.NewRegistryFetcher(nil)
+	ctx := context.Background()
+	manifestBytes, err := fetcher.FetchManifest(ctx, imageName, nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(expectedManifest, manifestBytes))
+}
+
+func TestRegistryFetcher_FetchManifest_NotFound(t *testing.T) {
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	// Try to fetch non-existent image
+	imageName := registry.ImageAddress("nonexistent:latest")
+
+	fetcher := fetch.NewRegistryFetcher(nil)
+	ctx := context.Background()
+	_, err := fetcher.FetchManifest(ctx, imageName, nil, nil)
+	require.Error(t, err)
+	require.True(t, status.IsUnavailableError(err))
+}
+
+func TestRegistryFetcher_FetchManifest_Unauthorized(t *testing.T) {
+	// Create registry that requires auth for all requests
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if r.Header.Get("Authorization") == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Header().Set("WWW-Authenticate", "Basic realm=\"registry\"")
+				return false
+			}
+			return true
+		},
+	})
+
+	// Try to fetch non-existent image without credentials
+	// The important thing is that we get a 401, not that the image exists
+	imageName := registry.ImageAddress("test_unauth:latest")
+
+	fetcher := fetch.NewRegistryFetcher(nil)
+	ctx := context.Background()
+	_, err := fetcher.FetchManifest(ctx, imageName, nil, nil)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestRegistryFetcher_FetchManifest_WithCredentials(t *testing.T) {
+	var receivedAuth string
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			receivedAuth = r.Header.Get("Authorization")
+			return true
+		},
+	})
+
+	imageName, image := registry.PushNamedImage(t, "test_with_creds")
+	expectedManifest, err := image.RawManifest()
+	require.NoError(t, err)
+
+	creds := &rgpb.Credentials{
+		Username: "testuser",
+		Password: "testpass",
+	}
+
+	fetcher := fetch.NewRegistryFetcher(nil)
+	ctx := context.Background()
+	manifestBytes, err := fetcher.FetchManifest(ctx, imageName, nil, creds)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(expectedManifest, manifestBytes))
+
+	// Verify auth header was sent
+	require.Contains(t, receivedAuth, "Basic")
+}
+
+func TestRegistryFetcher_FetchBlobMetadata(t *testing.T) {
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	imageName, image := registry.PushNamedImageWithFiles(t, "test_blob_metadata", map[string][]byte{
+		"/layer/data": []byte("layer content"),
+	})
+
+	layers, err := image.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, 1)
+
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+
+	expectedSize, err := layer.Size()
+	require.NoError(t, err)
+
+	expectedMediaType, err := layer.MediaType()
+	require.NoError(t, err)
+
+	// Build digest ref
+	ref, err := ctrname.ParseReference(imageName)
+	require.NoError(t, err)
+	blobRef := ref.Context().Digest(layerDigest.String()).String()
+
+	fetcher := fetch.NewRegistryFetcher(nil)
+	ctx := context.Background()
+	size, mediaType, err := fetcher.FetchBlobMetadata(ctx, blobRef, nil)
+	require.NoError(t, err)
+	require.Equal(t, expectedSize, size)
+	require.Equal(t, string(expectedMediaType), mediaType)
+}
+
+func TestRegistryFetcher_FetchBlob(t *testing.T) {
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	imageName, image := registry.PushNamedImageWithFiles(t, "test_fetch_blob", map[string][]byte{
+		"/blob/content": []byte("blob data"),
+	})
+
+	layers, err := image.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, 1)
+
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+
+	// Get expected compressed bytes
+	expectedRC, err := layer.Compressed()
+	require.NoError(t, err)
+	defer expectedRC.Close()
+	expectedBytes, err := io.ReadAll(expectedRC)
+	require.NoError(t, err)
+
+	// Build digest ref
+	ref, err := ctrname.ParseReference(imageName)
+	require.NoError(t, err)
+	blobRef := ref.Context().Digest(layerDigest.String()).String()
+
+	fetcher := fetch.NewRegistryFetcher(nil)
+	ctx := context.Background()
+	rc, err := fetcher.FetchBlob(ctx, blobRef, nil)
+	require.NoError(t, err)
+	defer rc.Close()
+
+	fetchedBytes, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(expectedBytes, fetchedBytes))
+}
+
+func TestRegistryFetcher_FetchBlob_NotFound(t *testing.T) {
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	// Create a fake blob ref that doesn't exist
+	imageName := registry.ImageAddress("test:latest")
+	ref, err := ctrname.ParseReference(imageName)
+	require.NoError(t, err)
+	blobRef := ref.Context().Digest("sha256:0000000000000000000000000000000000000000000000000000000000000000").String()
+
+	fetcher := fetch.NewRegistryFetcher(nil)
+	ctx := context.Background()
+	_, err = fetcher.FetchBlob(ctx, blobRef, nil)
+	require.Error(t, err)
+	// Note: error type may vary depending on go-containerregistry internals
 }
