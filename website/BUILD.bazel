@@ -44,3 +44,5 @@ yarn(
         ":website",
     ],
 )
+
+exports_files(["yarn.lock"])
