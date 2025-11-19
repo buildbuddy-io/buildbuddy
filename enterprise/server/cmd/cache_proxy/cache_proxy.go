@@ -263,6 +263,8 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	if err != nil {
 		log.Fatalf("Error dialing remote cache: %s", err.Error())
 	}
+	// TODO: Before this can be enabled, https://github.com/buildbuddy-io/buildbuddy-internal/issues/6146
+	// must be resolved.
 	if routing_service.IsCacheRoutingEnabled() {
 		if err := routing_service.RegisterRoutingService(env); err != nil {
 			log.Fatalf("Error initializing routing service: %s", err.Error())

@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/cache"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -103,8 +104,14 @@ func NewFetchServer(env environment.Env) (*FetchServer, error) {
 }
 
 func checkPreconditions(env environment.Env) error {
-	if env.GetCache() == nil {
-		return status.FailedPreconditionError("missing Cache")
+	if env.GetBuildBuddyServiceClient() == nil {
+		return status.FailedPreconditionError("missing BuildBuddyServiceClient")
+	}
+	if env.GetByteStreamClient() == nil {
+		return status.FailedPreconditionError("missing ByteStreamClient")
+	}
+	if env.GetContentAddressableStorageClient() == nil {
+		return status.FailedPreconditionError("missing ContentAddressableStorageClient")
 	}
 	return nil
 }
@@ -233,6 +240,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	}
 
 	httpClient := httpclient.New(p.allowedPrivateIPNets, "fetch_server")
+	bsClient := getByteStreamClient(p.env)
 
 	ctx, cancel := context.WithTimeout(ctx, p.computeRequestTimeout(ctx, req.GetTimeout()))
 	defer cancel()
@@ -258,7 +266,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		}
 		blobDigest, err := mirrorToCache(
 			ctx,
-			p.env.GetByteStreamClient(),
+			bsClient,
 			req.GetInstanceName(),
 			httpClient,
 			uri,
@@ -313,28 +321,24 @@ func (p *FetchServer) FetchDirectory(ctx context.Context, req *rapb.FetchDirecto
 }
 
 func (p *FetchServer) rewriteToCache(ctx context.Context, blobDigest *repb.Digest, instanceName string, fromFunc, toFunc repb.DigestFunction_Value) *repb.Digest {
-	cacheRN := digest.NewCASResourceName(blobDigest, instanceName, fromFunc)
-	cache := p.env.GetCache()
-	reader, err := cache.Reader(ctx, cacheRN.ToProto(), 0, 0)
+	tmpFile, err := scratchspace.CreateTemp("remote-asset-fetch-*")
 	if err != nil {
-		log.CtxErrorf(ctx, "Failed to get cache reader for %s: %s", digest.String(blobDigest), err)
-		return nil
-	}
-	defer reader.Close()
-
-	tmpFilePath, err := tempCopy(reader)
-	if err != nil {
-		log.CtxErrorf(ctx, "Failed to copy from reader to temp for %s: %s", digest.String(blobDigest), err)
+		log.CtxErrorf(ctx, "failed to create temp file: %s", err)
 		return nil
 	}
 	defer func() {
-		if err := os.Remove(tmpFilePath); err != nil {
-			log.Errorf("Failed to remove temp file: %s", err)
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			log.CtxErrorf(ctx, "Failed to remove temp file: %s", err)
 		}
 	}()
 
-	bsClient := p.env.GetByteStreamClient()
-	storageDigest, err := cachetools.UploadFile(ctx, bsClient, instanceName, toFunc, tmpFilePath)
+	cacheRN := digest.NewCASResourceName(blobDigest, instanceName, fromFunc)
+	if err := cachetools.GetBlob(ctx, getByteStreamClient(p.env), cacheRN, tmpFile); err != nil {
+		log.CtxErrorf(ctx, "Failed to read blob from cache for %s: %s", digest.String(blobDigest), err)
+		return nil
+	}
+
+	storageDigest, err := cachetools.UploadFile(ctx, getByteStreamClient(p.env), instanceName, toFunc, tmpFile.Name())
 	if err != nil {
 		log.CtxErrorf(ctx, "Failed to re-upload blob with new digestFunc %s for %s: %s", toFunc, digest.String(blobDigest), err)
 		return nil
@@ -356,8 +360,13 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 
 	// Lookup metadata to get the correct digest size to be returned to
 	// the client.
-	cache := p.env.GetCache()
-	md, err := cache.Metadata(ctx, cacheRN.ToProto())
+	//
+	// TODO: https://github.com/buildbuddy-io/buildbuddy-internal/issues/6146
+	// Fix this metadata GRPC to use a GRPC that hits the correct cache when the routing_service is enabled.
+	// For now, we will always fetch metadata from the remote cache.
+	md, err := p.env.GetBuildBuddyServiceClient().GetCacheMetadata(ctx, &cache.GetCacheMetadataRequest{
+		ResourceName: cacheRN.ToProto(),
+	})
 	if err != nil {
 		log.CtxInfof(ctx, "FetchServer failed to get metadata for %s: %s", expectedChecksum, err)
 		return nil
@@ -365,16 +374,18 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 
 	blobDigest.SizeBytes = md.DigestSizeBytes
 
-	// Even though we successfully fetched metadata, we need to renew
-	// the cache entry (using Contains()) to ensure that it doesn't
-	// expire by the time the client requests it from cache.
-	cacheRN = digest.NewCASResourceName(blobDigest, instanceName, checksumFunc)
-	exists, err := cache.Contains(ctx, cacheRN.ToProto())
+	// The metadata API doesn't update the last access time, so we need to use the FindMissing API to renew the entry
+	// to ensure it doesn't expire by the time the client requests it from cache.
+	rsp, err := getCASClient(p.env).FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		InstanceName:   instanceName,
+		BlobDigests:    []*repb.Digest{blobDigest},
+		DigestFunction: checksumFunc,
+	})
 	if err != nil {
 		log.CtxErrorf(ctx, "Failed to renew %s: %s", digest.String(blobDigest), err)
 		return nil
 	}
-	if !exists {
+	if len(rsp.MissingBlobDigests) > 0 {
 		log.CtxInfof(ctx, "Blob %s expired before we could renew it", digest.String(blobDigest))
 		return nil
 	}
@@ -491,4 +502,22 @@ func tempCopy(r io.Reader) (path string, err error) {
 		return "", status.UnavailableErrorf("failed to copy HTTP response to temp file: %s", err)
 	}
 	return f.Name(), nil
+}
+
+// TODO: Support making requests to the local GRPC servers without GRPC overhead.
+func getByteStreamClient(env environment.Env) bspb.ByteStreamClient {
+	bsClient := env.GetByteStreamClient()
+	// If there is a local bytestream server, use it instead of the remote one.
+	if env.GetLocalByteStreamClient() != nil {
+		bsClient = env.GetLocalByteStreamClient()
+	}
+	return bsClient
+}
+func getCASClient(env environment.Env) repb.ContentAddressableStorageClient {
+	casClient := env.GetContentAddressableStorageClient()
+	// If there is a local content addressable storage server, use it instead of the remote one.
+	if env.GetLocalContentAddressableStorageClient() != nil {
+		casClient = env.GetLocalContentAddressableStorageClient()
+	}
+	return casClient
 }
