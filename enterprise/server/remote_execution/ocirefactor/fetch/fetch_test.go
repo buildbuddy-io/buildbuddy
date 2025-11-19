@@ -631,7 +631,14 @@ func TestCachingFetcher_FetchBlobMetadata(t *testing.T) {
 	require.Equal(t, expectedSize, contentLength)
 	require.Equal(t, expectedContentType, contentType)
 
-	// Second fetch should hit cache
+	// Fetch the blob (which will cache both blob and metadata via write-through)
+	rc, err := fetcher.FetchBlob(ctx, blobRef, nil)
+	require.NoError(t, err)
+	_, err = io.ReadAll(rc)
+	require.NoError(t, err)
+	rc.Close()
+
+	// Now metadata should be cached (because FetchBlob cached it with the blob)
 	contentLength2, contentType2, err := fetcher.FetchBlobMetadata(ctx, blobRef, nil)
 	require.NoError(t, err)
 	require.Equal(t, expectedSize, contentLength2)

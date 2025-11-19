@@ -124,7 +124,7 @@ func blobMetadataACKey(repo ctrname.Repository, hash ctr.Hash) (*digest.ACResour
 }
 
 // blobCASResourceName generates a CAS resource name for a blob.
-// Blobs are stored as-is (already compressed from registry) without additional compression.
+// Blobs are stored with ZSTD compression in CAS (matching ocicache behavior).
 func blobCASResourceName(hash ctr.Hash, contentLength int64) *digest.CASResourceName {
 	blobDigest := &repb.Digest{
 		Hash:      hash.Hex,
@@ -135,7 +135,7 @@ func blobCASResourceName(hash ctr.Hash, contentLength int64) *digest.CASResource
 		"",
 		cacheDigestFunction,
 	)
-	// Don't set compressor - blobs from registry are already compressed
+	rn.SetCompressor(repb.Compressor_ZSTD)
 	return rn
 }
 
@@ -259,6 +259,7 @@ func (f *CacheOnlyFetcher) FetchBlobMetadata(ctx context.Context, ref string, cr
 // Returns a ReadCloser that streams the compressed blob data.
 func (f *CacheOnlyFetcher) FetchBlob(ctx context.Context, ref string, creds *rgpb.Credentials) (io.ReadCloser, error) {
 	// First get the metadata to find the content length
+	// This acts as an existence check - if metadata is not in AC, blob is not cached
 	contentLength, _, err := f.FetchBlobMetadata(ctx, ref, creds)
 	if err != nil {
 		return nil, err
@@ -276,7 +277,7 @@ func (f *CacheOnlyFetcher) FetchBlob(ctx context.Context, ref string, creds *rgp
 
 	blobRN := blobCASResourceName(hash, contentLength)
 
-	// Create a pipe to stream the blob data
+	// Stream blob from CAS using a pipe (matches oci/ocicache pattern)
 	pr, pw := io.Pipe()
 
 	go func() {
@@ -407,6 +408,7 @@ type blobWriteThroughCacher struct {
 	rc            io.ReadCloser                   // upstream reader (from registry)
 	uploader      interfaces.CommittedWriteCloser // writes to CAS
 	ctx           context.Context
+	bsClient      bspb.ByteStreamClient
 	acClient      repb.ActionCacheClient
 	ref           string
 	contentType   string
@@ -439,15 +441,19 @@ func newBlobWriteThroughCacher(
 
 	// Create ByteStream uploader for the blob
 	blobRN := blobCASResourceName(hash, contentLength)
+	log.CtxInfof(ctx, "Creating write-through cacher for blob %s (hash: %s, size: %d)", ref, hash.Hex, contentLength)
 	uploader, err := cachetools.NewUploadWriter(ctx, bsClient, blobRN)
 	if err != nil {
+		log.CtxWarningf(ctx, "Failed to create UploadWriter for %s: %s", ref, err)
 		return nil, err
 	}
 
+	log.CtxInfof(ctx, "Write-through cacher created successfully for %s", ref)
 	return &blobWriteThroughCacher{
 		rc:            rc,
 		uploader:      uploader,
 		ctx:           ctx,
+		bsClient:      bsClient,
 		acClient:      acClient,
 		ref:           ref,
 		contentType:   contentType,
@@ -462,24 +468,31 @@ func (r *blobWriteThroughCacher) Read(p []byte) (int, error) {
 
 	// Write what we read to the uploader (if we haven't had a cache error)
 	if n > 0 && r.cacheErr == nil {
-		_, writeErr := r.uploader.Write(p[:n])
+		written, writeErr := r.uploader.Write(p[:n])
 		if writeErr != nil {
 			log.CtxWarningf(r.ctx, "Error writing to cache for %s: %s", r.ref, writeErr)
 			r.cacheErr = writeErr
+		} else if written != n {
+			log.CtxWarningf(r.ctx, "Partial write to cache for %s: wrote %d of %d bytes", r.ref, written, n)
 		}
 	}
 
 	// If we reached EOF and haven't committed yet, commit the uploader
 	if readErr == io.EOF && !r.eofReached && r.cacheErr == nil {
 		r.eofReached = true
+		log.CtxInfof(r.ctx, "Committing blob upload for %s (expected length: %d)", r.ref, r.contentLength)
 		if err := r.uploader.Commit(); err != nil {
 			log.CtxWarningf(r.ctx, "Error committing blob to cache for %s: %s", r.ref, err)
 			r.cacheErr = err
 		} else {
-			// Write metadata to AC (blob has been uploaded, so include blob reference)
-			// Note: We need a bsClient to upload the metadata proto itself
-			// For now, we skip metadata write here - it should have been written by FetchBlobMetadata call
 			log.CtxInfof(r.ctx, "Successfully cached blob %s", r.ref)
+
+			// Now cache the metadata (since blob is successfully in CAS)
+			if err := writeBlobMetadataToCache(r.ctx, r.bsClient, r.acClient, r.ref, r.contentType, r.contentLength, r.secret); err != nil {
+				log.CtxWarningf(r.ctx, "Error caching blob metadata for %s: %s", r.ref, err)
+			} else {
+				log.CtxDebugf(r.ctx, "Successfully cached blob metadata for %s", r.ref)
+			}
 		}
 	}
 
@@ -713,7 +726,8 @@ func (f *CachingFetcher) FetchManifest(ctx context.Context, ref string, platform
 	return manifestBytes, nil
 }
 
-// FetchBlobMetadata tries cache first, then falls back to registry with write-through caching.
+// FetchBlobMetadata tries cache first, then falls back to registry (read-only, no caching).
+// Metadata is only cached when the blob itself is cached via FetchBlob's write-through caching.
 func (f *CachingFetcher) FetchBlobMetadata(ctx context.Context, ref string, creds *rgpb.Credentials) (int64, string, error) {
 	// Try cache first
 	contentLength, contentType, err := f.cacheFetcher.FetchBlobMetadata(ctx, ref, creds)
@@ -721,44 +735,32 @@ func (f *CachingFetcher) FetchBlobMetadata(ctx context.Context, ref string, cred
 		return contentLength, contentType, nil
 	}
 
-	// If not found in cache, try registry
+	// If not found in cache, fetch from registry (but don't cache it)
+	// Metadata will be cached when FetchBlob is called with write-through caching
 	if !status.IsNotFoundError(err) {
 		log.CtxWarningf(ctx, "Error fetching blob metadata from cache for %s: %s", ref, err)
 	}
 
-	contentLength, contentType, err = f.registryFetcher.FetchBlobMetadata(ctx, ref, creds)
-	if err != nil {
-		return 0, "", err
-	}
-
-	// Write metadata to cache (best effort - don't fail on cache errors)
-	if err := writeBlobMetadataToCache(ctx, f.bsClient, f.acClient, ref, contentType, contentLength, f.secret); err != nil {
-		log.CtxWarningf(ctx, "Error writing blob metadata to cache for %s: %s", ref, err)
-	} else {
-		log.CtxDebugf(ctx, "Successfully cached blob metadata %s", ref)
-	}
-
-	return contentLength, contentType, nil
+	return f.registryFetcher.FetchBlobMetadata(ctx, ref, creds)
 }
 
 // FetchBlob tries cache first, then falls back to registry with write-through caching.
-// Fetches metadata first to check cache and get size/content-type needed for CAS writes.
 func (f *CachingFetcher) FetchBlob(ctx context.Context, ref string, creds *rgpb.Credentials) (io.ReadCloser, error) {
-	// First fetch metadata (which checks cache and gets size/content-type)
-	contentLength, contentType, err := f.FetchBlobMetadata(ctx, ref, creds)
-	if err != nil {
-		return nil, err
-	}
-
-	// Try to fetch blob from cache
+	// Try to fetch blob from cache (cacheFetcher.FetchBlob checks metadata internally)
 	rc, err := f.cacheFetcher.FetchBlob(ctx, ref, creds)
 	if err == nil {
 		return rc, nil
 	}
 
-	// If not found in cache, fetch from registry with write-through caching
+	// If not found in cache, fetch metadata and blob from registry with write-through caching
 	if !status.IsNotFoundError(err) {
 		log.CtxWarningf(ctx, "Error fetching blob from cache for %s: %s", ref, err)
+	}
+
+	// Fetch metadata from registry (don't cache it - write-through cacher will cache it with blob)
+	contentLength, contentType, metaErr := f.registryFetcher.FetchBlobMetadata(ctx, ref, creds)
+	if metaErr != nil {
+		return nil, metaErr
 	}
 
 	rc, err = f.registryFetcher.FetchBlob(ctx, ref, creds)
