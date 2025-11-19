@@ -60,6 +60,18 @@ var (
 	_ = flag.Bool("executor.container_registry.read_layers_from_cache", false, "", flag.Internal)
 )
 
+// GetCacheSecret returns the OCI cache secret flag value.
+// This is exported so cache proxy can use the same secret as executors.
+func GetCacheSecret() string {
+	return *cacheSecret
+}
+
+// GetUseCachePercent returns the cache usage percentage flag value.
+// This is exported so cache proxy can respect executor cache configuration.
+func GetUseCachePercent() int {
+	return *useCachePercent
+}
+
 type MirrorConfig struct {
 	OriginalURL string `yaml:"original_url" json:"original_url"`
 	MirrorURL   string `yaml:"mirror_url" json:"mirror_url"`

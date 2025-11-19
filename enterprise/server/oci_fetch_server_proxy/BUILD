@@ -9,11 +9,13 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/ocirefactor/fetch",
+        "//enterprise/server/util/oci",
         "//proto:ociregistry_go_proto",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/real_environment",
+        "//server/util/hash",
         "//server/util/log",
         "//server/util/status",
         "//third_party/singleflight",

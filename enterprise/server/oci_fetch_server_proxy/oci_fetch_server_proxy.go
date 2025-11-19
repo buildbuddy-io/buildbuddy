@@ -6,8 +6,10 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/ocirefactor/fetch"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -36,6 +38,17 @@ type blobMetadata struct {
 	contentType string
 }
 
+// credKey returns a key for the given credentials to use in singleflight.
+// This prevents authorization leakage where one user could receive data
+// fetched with another user's credentials.
+func credKey(creds *rgpb.Credentials) string {
+	if creds == nil || (creds.GetUsername() == "" && creds.GetPassword() == "") {
+		return "anon"
+	}
+	// Hash to avoid credential leakage in logs
+	return hash.Strings(creds.GetUsername(), creds.GetPassword())
+}
+
 func Register(env *real_environment.RealEnv) error {
 	proxy, err := New(env)
 	if err != nil {
@@ -46,19 +59,33 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env) (*OCIFetchServerProxy, error) {
-	// Check for required dependencies
-	acClient := env.GetActionCacheClient()
-	if acClient == nil {
-		return nil, fmt.Errorf("An ActionCacheClient is required to enable OCIFetchServerProxy")
-	}
-	bsClient := env.GetByteStreamClient()
-	if bsClient == nil {
-		return nil, fmt.Errorf("A ByteStreamClient is required to enable OCIFetchServerProxy")
-	}
+	// Read OCI cache configuration flags
+	// These flags control whether OCI content is cached and what secret is used
+	cacheSecret := oci.GetCacheSecret()
+	useCachePercent := oci.GetUseCachePercent()
 
-	// Create a CachingFetcher that will use the cache proxy's local cache
-	// as well as the remote app cache
-	f := fetch.NewCachingFetcher(acClient, bsClient, nil, "")
+	// Create the appropriate fetcher based on cache configuration
+	var f fetch.Fetcher
+
+	if useCachePercent == 0 {
+		// No caching - use RegistryFetcher only
+		// This respects the executor's cache configuration
+		f = fetch.NewRegistryFetcher(nil)
+	} else {
+		// Caching enabled - use CachingFetcher with the same secret as executors
+		// This ensures cache keys match between proxy and executors
+		acClient := env.GetActionCacheClient()
+		if acClient == nil {
+			return nil, fmt.Errorf("An ActionCacheClient is required to enable OCIFetchServerProxy with caching")
+		}
+		bsClient := env.GetByteStreamClient()
+		if bsClient == nil {
+			return nil, fmt.Errorf("A ByteStreamClient is required to enable OCIFetchServerProxy with caching")
+		}
+
+		// Use the cache proxy's local cache as well as the remote app cache
+		f = fetch.NewCachingFetcher(acClient, bsClient, nil, cacheSecret)
+	}
 
 	return &OCIFetchServerProxy{
 		fetcher: f,
@@ -71,7 +98,9 @@ func (s *OCIFetchServerProxy) FetchManifest(ctx context.Context, req *ocipb.Fetc
 	}
 
 	// Use singleflight to deduplicate concurrent requests for the same manifest
-	manifest, _, err := s.manifestGroup.Do(ctx, req.GetImageRef(), func(ctx context.Context) ([]byte, error) {
+	// Include credentials in the key to prevent authorization leakage
+	key := fmt.Sprintf("%s:%s", req.GetImageRef(), credKey(req.GetCredentials()))
+	manifest, _, err := s.manifestGroup.Do(ctx, key, func(ctx context.Context) ([]byte, error) {
 		var platform *repb.Platform
 		if req.GetPlatform() != nil {
 			platform = req.GetPlatform()
@@ -103,9 +132,11 @@ func (s *OCIFetchServerProxy) FetchBlob(req *ocipb.FetchBlobRequest, stream ocip
 	}
 
 	// Use singleflight to deduplicate concurrent requests for the same blob
+	// Include credentials in the key to prevent authorization leakage
 	// Note: This loads the entire blob into memory, which may not be ideal for very large blobs.
 	// An alternative would be to implement a more sophisticated caching mechanism.
-	blobData, _, err := s.blobStreamGroup.Do(ctx, req.GetBlobRef(), func(ctx context.Context) ([]byte, error) {
+	key := fmt.Sprintf("%s:%s", req.GetBlobRef(), credKey(req.GetCredentials()))
+	blobData, _, err := s.blobStreamGroup.Do(ctx, key, func(ctx context.Context) ([]byte, error) {
 		var creds *rgpb.Credentials
 		if req.GetCredentials() != nil {
 			creds = req.GetCredentials()
@@ -153,7 +184,9 @@ func (s *OCIFetchServerProxy) FetchBlobMetadata(ctx context.Context, req *ocipb.
 	}
 
 	// Use singleflight to deduplicate concurrent requests for the same blob metadata
-	meta, _, err := s.blobMetaGroup.Do(ctx, req.GetBlobRef(), func(ctx context.Context) (*blobMetadata, error) {
+	// Include credentials in the key to prevent authorization leakage
+	key := fmt.Sprintf("%s:%s", req.GetBlobRef(), credKey(req.GetCredentials()))
+	meta, _, err := s.blobMetaGroup.Do(ctx, key, func(ctx context.Context) (*blobMetadata, error) {
 		var creds *rgpb.Credentials
 		if req.GetCredentials() != nil {
 			creds = req.GetCredentials()
