@@ -2660,7 +2660,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "raft",
 		Name:      "split_duration_usec",
-		Buckets:   coarseMicrosecondToHour,
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 15*time.Second, 2),
 		Help:      "The time spent splitting a range in **microseconds**.",
 	}, []string{
 		RaftRangeIDLabel,
@@ -2670,7 +2670,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "raft",
 		Name:      "replica_update_duration_usec",
-		Buckets:   coarseMicrosecondToHour,
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 5*time.Second, 2),
 		Help:      "The time spent on replica.Update in **microseconds**.",
 	}, []string{
 		RaftRangeIDLabel,
@@ -2781,11 +2781,27 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "raft",
 		Name:      "nodehost_method_usec",
-		Buckets:   coarseMicrosecondToHour,
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 15*time.Second, 2),
 		Help:      "The duration of a nodehost method",
 	}, []string{
 		RaftNodeHostMethodLabel,
 		RaftRangeIDLabel,
+	})
+
+	RaftBatchAtimeUpdateDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "batch_atime_update_usec",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 15*time.Second, 2),
+		Help:      "The duration of the batch request to update atime",
+	})
+
+	RaftBatchDeleteDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "batch_delete_usec",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 15*time.Second, 2),
+		Help:      "The duration of the batch request to delete",
 	})
 
 	RaftDriverActionCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2825,6 +2841,43 @@ var (
 		Help:      "Num of items in eviction samples chan",
 	}, []string{
 		PartitionID,
+	})
+
+	RaftEvictionGCSChanSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "eviction_gcs_chan_size",
+		Help:      "Num of items in gcs eviction chan",
+	}, []string{
+		PartitionID,
+	})
+
+	RaftGCSDeleteDropped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "gcs_delete_dropped",
+		Help:      "The total number of dropped gcs deletes",
+	}, []string{
+		PartitionID,
+	})
+
+	RaftAtimeUpdateGCSCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "atime_update_gcs_count",
+		Help:      "Count of atime updates to GCS.",
+	}, []string{
+		StatusHumanReadableLabel,
+	})
+
+	RaftGCSEvictionCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "gcs_eviction_count",
+		Help:      "Count of evictions from GCS.",
+	}, []string{
+		PartitionID,
+		StatusHumanReadableLabel,
 	})
 
 	APIKeyLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{

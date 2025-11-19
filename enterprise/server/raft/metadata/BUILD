@@ -27,6 +27,7 @@ go_library(
         "//server/environment",
         "//server/gossip",
         "//server/interfaces",
+        "//server/metrics",
         "//server/real_environment",
         "//server/util/background",
         "//server/util/disk",
@@ -36,6 +37,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_x_sync//errgroup",
     ],
 )
