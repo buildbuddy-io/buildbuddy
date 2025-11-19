@@ -224,7 +224,7 @@ func createTestBlob(t *testing.T, imageName string, filesize int64) ([]byte, str
 	return layerBuf, layerRef.String(), contentType
 }
 
-func TestCacheFetcher_FetchManifest(t *testing.T) {
+func TestCacheOnlyFetcher_FetchManifest(t *testing.T) {
 	te := setupTestEnv(t)
 	ctx := context.Background()
 
@@ -235,26 +235,26 @@ func TestCacheFetcher_FetchManifest(t *testing.T) {
 	writeTestManifest(t, ctx, te.GetActionCacheClient(), ref, manifestBytes, contentType, secret)
 
 	// Create fetcher and fetch manifest
-	fetcher := fetch.NewCacheFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), secret)
+	fetcher := fetch.NewCacheOnlyFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), secret)
 	fetchedBytes, err := fetcher.FetchManifest(ctx, ref, nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff(manifestBytes, fetchedBytes))
 }
 
-func TestCacheFetcher_FetchManifest_NotFound(t *testing.T) {
+func TestCacheOnlyFetcher_FetchManifest_NotFound(t *testing.T) {
 	te := setupTestEnv(t)
 	ctx := context.Background()
 
 	// Create a ref that doesn't exist in cache
 	_, ref, _ := createTestManifest(t, "nonexistent_manifest")
 
-	fetcher := fetch.NewCacheFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), "")
+	fetcher := fetch.NewCacheOnlyFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), "")
 	_, err := fetcher.FetchManifest(ctx, ref, nil, nil)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
 }
 
-func TestCacheFetcher_FetchManifest_SecretMismatch(t *testing.T) {
+func TestCacheOnlyFetcher_FetchManifest_SecretMismatch(t *testing.T) {
 	te := setupTestEnv(t)
 	ctx := context.Background()
 
@@ -264,13 +264,13 @@ func TestCacheFetcher_FetchManifest_SecretMismatch(t *testing.T) {
 	writeTestManifest(t, ctx, te.GetActionCacheClient(), ref, manifestBytes, contentType, "secret-a")
 
 	// Try to fetch with different secret
-	fetcher := fetch.NewCacheFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), "secret-b")
+	fetcher := fetch.NewCacheOnlyFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), "secret-b")
 	_, err := fetcher.FetchManifest(ctx, ref, nil, nil)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
 }
 
-func TestCacheFetcher_FetchBlobMetadata(t *testing.T) {
+func TestCacheOnlyFetcher_FetchBlobMetadata(t *testing.T) {
 	te := setupTestEnv(t)
 	ctx := context.Background()
 
@@ -281,27 +281,27 @@ func TestCacheFetcher_FetchBlobMetadata(t *testing.T) {
 	writeTestBlob(t, ctx, te.GetByteStreamClient(), te.GetActionCacheClient(), ref, blobData, contentType, secret)
 
 	// Fetch metadata
-	fetcher := fetch.NewCacheFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), secret)
+	fetcher := fetch.NewCacheOnlyFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), secret)
 	size, mediaType, err := fetcher.FetchBlobMetadata(ctx, ref, nil)
 	require.NoError(t, err)
 	require.Equal(t, int64(len(blobData)), size)
 	require.Equal(t, contentType, mediaType)
 }
 
-func TestCacheFetcher_FetchBlobMetadata_NotFound(t *testing.T) {
+func TestCacheOnlyFetcher_FetchBlobMetadata_NotFound(t *testing.T) {
 	te := setupTestEnv(t)
 	ctx := context.Background()
 
 	// Create a ref that doesn't exist in cache
 	_, ref, _ := createTestBlob(t, "nonexistent_blob", 1024)
 
-	fetcher := fetch.NewCacheFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), "")
+	fetcher := fetch.NewCacheOnlyFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), "")
 	_, _, err := fetcher.FetchBlobMetadata(ctx, ref, nil)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
 }
 
-func TestCacheFetcher_FetchBlob(t *testing.T) {
+func TestCacheOnlyFetcher_FetchBlob(t *testing.T) {
 	te := setupTestEnv(t)
 	ctx := context.Background()
 
@@ -312,7 +312,7 @@ func TestCacheFetcher_FetchBlob(t *testing.T) {
 	writeTestBlob(t, ctx, te.GetByteStreamClient(), te.GetActionCacheClient(), ref, blobData, contentType, secret)
 
 	// Fetch blob
-	fetcher := fetch.NewCacheFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), secret)
+	fetcher := fetch.NewCacheOnlyFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), secret)
 	rc, err := fetcher.FetchBlob(ctx, ref, nil)
 	require.NoError(t, err)
 	defer rc.Close()
@@ -322,21 +322,21 @@ func TestCacheFetcher_FetchBlob(t *testing.T) {
 	require.Empty(t, cmp.Diff(blobData, fetchedData))
 }
 
-func TestCacheFetcher_FetchBlob_NotFound(t *testing.T) {
+func TestCacheOnlyFetcher_FetchBlob_NotFound(t *testing.T) {
 	te := setupTestEnv(t)
 	ctx := context.Background()
 
 	// Create a ref that doesn't exist in cache
 	_, ref, _ := createTestBlob(t, "nonexistent_blob_data", 1024)
 
-	fetcher := fetch.NewCacheFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), "")
+	fetcher := fetch.NewCacheOnlyFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), "")
 	_, err := fetcher.FetchBlob(ctx, ref, nil)
 	require.Error(t, err)
 	// Note: FetchBlob calls FetchBlobMetadata first, so we expect NotFound from that
 	require.True(t, status.IsNotFoundError(err))
 }
 
-func TestCacheFetcher_RoundTrip(t *testing.T) {
+func TestCacheOnlyFetcher_RoundTrip(t *testing.T) {
 	te := setupTestEnv(t)
 	ctx := context.Background()
 	secret := "round-trip-secret"
@@ -345,7 +345,7 @@ func TestCacheFetcher_RoundTrip(t *testing.T) {
 	manifestBytes, manifestRef, manifestContentType := createTestManifest(t, "roundtrip_manifest")
 	writeTestManifest(t, ctx, te.GetActionCacheClient(), manifestRef, manifestBytes, manifestContentType, secret)
 
-	fetcher := fetch.NewCacheFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), secret)
+	fetcher := fetch.NewCacheOnlyFetcher(te.GetActionCacheClient(), te.GetByteStreamClient(), secret)
 	fetchedManifest, err := fetcher.FetchManifest(ctx, manifestRef, nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff(manifestBytes, fetchedManifest))
@@ -537,4 +537,273 @@ func TestRegistryFetcher_FetchBlob_NotFound(t *testing.T) {
 	_, err = fetcher.FetchBlob(ctx, blobRef, nil)
 	require.Error(t, err)
 	// Note: error type may vary depending on go-containerregistry internals
+}
+
+// CachingFetcher tests
+
+func TestCachingFetcher_FetchManifest(t *testing.T) {
+	te := setupTestEnv(t)
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	// Create and push an image to the registry
+	imageName := registry.ImageAddress("caching_fetch_manifest:latest")
+	image := createTestImage(t, imageName, 512)
+
+	err := crane.Push(image, imageName)
+	require.NoError(t, err)
+
+	// Get manifest details
+	manifestBytes, err := image.RawManifest()
+	require.NoError(t, err)
+	manifestDigest, err := image.Digest()
+	require.NoError(t, err)
+
+	// Parse the manifest digest ref
+	ref, err := ctrname.ParseReference(imageName)
+	require.NoError(t, err)
+	manifestRef := ref.Context().Digest(manifestDigest.String()).String()
+
+	ctx := context.Background()
+	acClient := te.GetActionCacheClient()
+	bsClient := te.GetByteStreamClient()
+	secret := "test-secret"
+
+	fetcher := fetch.NewCachingFetcher(acClient, bsClient, nil, secret)
+
+	// First fetch should miss cache and hit registry
+	fetchedManifest, err := fetcher.FetchManifest(ctx, manifestRef, nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(manifestBytes, fetchedManifest))
+
+	// Second fetch should hit cache
+	fetchedManifest2, err := fetcher.FetchManifest(ctx, manifestRef, nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(manifestBytes, fetchedManifest2))
+
+	// Verify it was actually cached by fetching with cache-only fetcher
+	cacheFetcher := fetch.NewCacheOnlyFetcher(acClient, bsClient, secret)
+	cachedManifest, err := cacheFetcher.FetchManifest(ctx, manifestRef, nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(manifestBytes, cachedManifest))
+}
+
+func TestCachingFetcher_FetchBlobMetadata(t *testing.T) {
+	te := setupTestEnv(t)
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	// Create and push an image to the registry
+	imageName := registry.ImageAddress("caching_fetch_metadata:latest")
+	image := createTestImage(t, imageName, 1024)
+
+	err := crane.Push(image, imageName)
+	require.NoError(t, err)
+
+	// Get the layer digest
+	layers, err := image.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, 1)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+
+	// Get expected metadata
+	expectedSize, err := layer.Size()
+	require.NoError(t, err)
+	expectedMediaType, err := layer.MediaType()
+	require.NoError(t, err)
+	expectedContentType := string(expectedMediaType)
+
+	// Build blob ref
+	ref, err := ctrname.ParseReference(imageName)
+	require.NoError(t, err)
+	blobRef := ref.Context().Digest(layerDigest.String()).String()
+
+	ctx := context.Background()
+	acClient := te.GetActionCacheClient()
+	bsClient := te.GetByteStreamClient()
+	secret := "test-secret"
+
+	fetcher := fetch.NewCachingFetcher(acClient, bsClient, nil, secret)
+
+	// First fetch should miss cache and hit registry
+	contentLength, contentType, err := fetcher.FetchBlobMetadata(ctx, blobRef, nil)
+	require.NoError(t, err)
+	require.Equal(t, expectedSize, contentLength)
+	require.Equal(t, expectedContentType, contentType)
+
+	// Second fetch should hit cache
+	contentLength2, contentType2, err := fetcher.FetchBlobMetadata(ctx, blobRef, nil)
+	require.NoError(t, err)
+	require.Equal(t, expectedSize, contentLength2)
+	require.Equal(t, expectedContentType, contentType2)
+
+	// Verify it was actually cached by fetching with cache-only fetcher
+	cacheFetcher := fetch.NewCacheOnlyFetcher(acClient, bsClient, secret)
+	cachedLength, cachedType, err := cacheFetcher.FetchBlobMetadata(ctx, blobRef, nil)
+	require.NoError(t, err)
+	require.Equal(t, expectedSize, cachedLength)
+	require.Equal(t, expectedContentType, cachedType)
+}
+
+func TestCachingFetcher_FetchBlob(t *testing.T) {
+	te := setupTestEnv(t)
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	// Create and push an image to the registry
+	imageName := registry.ImageAddress("caching_fetch_blob:latest")
+	image := createTestImage(t, imageName, 2048)
+
+	err := crane.Push(image, imageName)
+	require.NoError(t, err)
+
+	// Get the layer digest and expected bytes
+	layers, err := image.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, 1)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+
+	expectedRC, err := layer.Compressed()
+	require.NoError(t, err)
+	defer expectedRC.Close()
+	expectedBytes, err := io.ReadAll(expectedRC)
+	require.NoError(t, err)
+
+	// Build blob ref
+	ref, err := ctrname.ParseReference(imageName)
+	require.NoError(t, err)
+	blobRef := ref.Context().Digest(layerDigest.String()).String()
+
+	ctx := context.Background()
+	acClient := te.GetActionCacheClient()
+	bsClient := te.GetByteStreamClient()
+	secret := "test-secret"
+
+	fetcher := fetch.NewCachingFetcher(acClient, bsClient, nil, secret)
+
+	// First fetch should miss cache and hit registry (with write-through caching)
+	rc, err := fetcher.FetchBlob(ctx, blobRef, nil)
+	require.NoError(t, err)
+	fetchedBytes, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	rc.Close()
+	require.Empty(t, cmp.Diff(expectedBytes, fetchedBytes))
+
+	// Second fetch should hit cache
+	rc2, err := fetcher.FetchBlob(ctx, blobRef, nil)
+	require.NoError(t, err)
+	fetchedBytes2, err := io.ReadAll(rc2)
+	require.NoError(t, err)
+	rc2.Close()
+	require.Empty(t, cmp.Diff(expectedBytes, fetchedBytes2))
+
+	// Verify it was actually cached by fetching with cache-only fetcher
+	cacheFetcher := fetch.NewCacheOnlyFetcher(acClient, bsClient, secret)
+	cachedRC, err := cacheFetcher.FetchBlob(ctx, blobRef, nil)
+	require.NoError(t, err)
+	cachedBytes, err := io.ReadAll(cachedRC)
+	require.NoError(t, err)
+	cachedRC.Close()
+	require.Empty(t, cmp.Diff(expectedBytes, cachedBytes))
+}
+
+func TestCachingFetcher_RoundTrip(t *testing.T) {
+	te := setupTestEnv(t)
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	// Create and push an image to the registry
+	imageName := registry.ImageAddress("caching_roundtrip:latest")
+	image := createTestImage(t, imageName, 1024)
+
+	err := crane.Push(image, imageName)
+	require.NoError(t, err)
+
+	// Get manifest
+	manifestBytes, err := image.RawManifest()
+	require.NoError(t, err)
+	manifestDigest, err := image.Digest()
+	require.NoError(t, err)
+
+	// Get layer
+	layers, err := image.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, 1)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	layerSize, err := layer.Size()
+	require.NoError(t, err)
+	layerMediaType, err := layer.MediaType()
+	require.NoError(t, err)
+
+	expectedRC, err := layer.Compressed()
+	require.NoError(t, err)
+	defer expectedRC.Close()
+	expectedLayerBytes, err := io.ReadAll(expectedRC)
+	require.NoError(t, err)
+
+	// Build refs
+	ref, err := ctrname.ParseReference(imageName)
+	require.NoError(t, err)
+	manifestRef := ref.Context().Digest(manifestDigest.String()).String()
+	blobRef := ref.Context().Digest(layerDigest.String()).String()
+
+	ctx := context.Background()
+	acClient := te.GetActionCacheClient()
+	bsClient := te.GetByteStreamClient()
+	secret := "test-secret"
+
+	fetcher := fetch.NewCachingFetcher(acClient, bsClient, nil, secret)
+
+	// Fetch manifest (should cache it)
+	fetchedManifest, err := fetcher.FetchManifest(ctx, manifestRef, nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(manifestBytes, fetchedManifest))
+
+	// Fetch blob metadata (should cache it)
+	contentLength, contentType, err := fetcher.FetchBlobMetadata(ctx, blobRef, nil)
+	require.NoError(t, err)
+	require.Equal(t, layerSize, contentLength)
+	require.Equal(t, string(layerMediaType), contentType)
+
+	// Fetch blob (should cache it via write-through)
+	rc, err := fetcher.FetchBlob(ctx, blobRef, nil)
+	require.NoError(t, err)
+	fetchedLayerBytes, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	rc.Close()
+	require.Empty(t, cmp.Diff(expectedLayerBytes, fetchedLayerBytes))
+
+	// Now verify everything is in cache by using cache-only fetcher
+	cacheFetcher := fetch.NewCacheOnlyFetcher(acClient, bsClient, secret)
+
+	cachedManifest, err := cacheFetcher.FetchManifest(ctx, manifestRef, nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(manifestBytes, cachedManifest))
+
+	cachedLength, cachedType, err := cacheFetcher.FetchBlobMetadata(ctx, blobRef, nil)
+	require.NoError(t, err)
+	require.Equal(t, layerSize, cachedLength)
+	require.Equal(t, string(layerMediaType), cachedType)
+
+	cachedRC, err := cacheFetcher.FetchBlob(ctx, blobRef, nil)
+	require.NoError(t, err)
+	cachedLayerBytes, err := io.ReadAll(cachedRC)
+	require.NoError(t, err)
+	cachedRC.Close()
+	require.Empty(t, cmp.Diff(expectedLayerBytes, cachedLayerBytes))
+}
+
+// Helper functions for CachingFetcher tests
+
+func createTestImage(t *testing.T, imageName string, filesize int64) ctr.Image {
+	_, filebuf := testdigest.RandomCASResourceBuf(t, filesize)
+	filename, err := random.RandomString(32)
+	require.NoError(t, err)
+	image, err := crane.Image(map[string][]byte{
+		"/tmp/" + filename: filebuf,
+	})
+	require.NoError(t, err)
+	return image
 }
