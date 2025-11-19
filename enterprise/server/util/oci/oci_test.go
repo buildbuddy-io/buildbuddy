@@ -724,11 +724,14 @@ func TestResolve_WithCache(t *testing.T) {
 				// Initially, nothing is cached, and we expect to make requests
 				// to resolve the manifest, as well as to fetch the manifest and
 				// layer contents.
+				// Note: RegistryFetcher makes GET /v2/ auth checks for each fetch operation,
+				// resulting in more auth requests than the old ocicache implementation.
 				expected := map[string]int{
-					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":             1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/latest":              1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(): 1,
+					http.MethodGet + " /v2/":                 5, // Auth check for each registry operation
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":                         1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/" + imageDigest.String():         2, // RegistryFetcher uses digest refs, not tag refs
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String():            1, // RegistryFetcher makes HEAD request before GET
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String():             1,
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 
@@ -769,6 +772,8 @@ func TestResolve_WithCache(t *testing.T) {
 			// Test with index manifest
 			{
 				indexAddress := registry.ImageAddress(tc.args.imageName + "_index")
+				indexDigest, err := index.Digest()
+				require.NoError(t, err)
 				imageDigest, err := pushedImage.Digest()
 				require.NoError(t, err)
 				pushedLayers, err := pushedImage.Layers()
@@ -782,13 +787,16 @@ func TestResolve_WithCache(t *testing.T) {
 				// layer contents. Note that we have one more GET request here
 				// compared to the non-index manifest case, since the index
 				// manifest points to the platform-specific image manifest.
+				// Note: RegistryFetcher makes GET /v2/ auth checks for each fetch operation,
+				// resulting in more auth requests than the old ocicache implementation.
 				expected := map[string]int{
-					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                   1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String():  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():      1,
+					http.MethodGet + " /v2/":                 7, // Auth check for each registry operation
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                        1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + indexDigest.String():        2, // RegistryFetcher uses digest refs, not tag refs
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String():       1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String():        2,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():           1, // RegistryFetcher makes HEAD request before GET
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():            1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 
@@ -858,16 +866,21 @@ func TestResolve_Concurrency(t *testing.T) {
 
 	configDigest, err := pushedImage.ConfigName()
 	require.NoError(t, err)
+	imageDigest, err := pushedImage.Digest()
+	require.NoError(t, err)
 
 	imageAddress := registry.ImageAddress(imageName + "_image")
+	// Note: RegistryFetcher makes GET /v2/ auth checks for each fetch operation,
+	// resulting in more auth requests than the old ocicache implementation.
 	expected := map[string]int{
-		http.MethodGet + " /v2/": 1,
-		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
-		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
-		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
-		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
+		http.MethodGet + " /v2/":                            5 + 2*len(pushedLayers), // Auth check for: HEAD manifest, 2x GET manifest, HEAD config, GET config, + HEAD/GET per layer
+		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":                    1,
+		http.MethodGet + " /v2/" + imageName + "_image/manifests/" + imageDigest.String():    2, // RegistryFetcher uses digest refs, not tag refs
+		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String():      1, // RegistryFetcher makes HEAD request before GET
+		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():       1,
 	}
 	for digest, _ := range pushedDigestToFiles {
+		expected[http.MethodHead+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1 // HEAD before GET
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
 	counter.reset()

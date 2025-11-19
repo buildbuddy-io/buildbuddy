@@ -7,8 +7,8 @@ go_library(
     srcs = ["oci.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci",
     deps = [
+        "//enterprise/server/remote_execution/ocirefactor/fetch",
         "//enterprise/server/remote_execution/platform",
-        "//enterprise/server/util/ocicache",
         "//enterprise/server/util/ocimanifest",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
