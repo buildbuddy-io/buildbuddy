@@ -83,11 +83,8 @@ func FSFromRelPath(relPath string) (fs.FS, error) {
 		return nil, err
 	}
 	moduleName, _, _ := strings.Cut(staticGoRlocation, "/")
-	if relPath != "" && !strings.HasPrefix(relPath, "/") {
-		moduleName = moduleName + "/"
-	}
 	
-	return fs.Sub(runfilesFS, path.Clean(moduleName+relPath))
+	return fs.Sub(runfilesFS, path.Clean(path.Join(moduleName, relPath)))
 }
 
 // StaticFileServer implements a static file http server that serves static

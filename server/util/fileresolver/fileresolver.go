@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
@@ -45,8 +46,8 @@ func (r *fileResolver) OpenFromRlocation(rlocation string) (fs.File, error) {
 			Err:  fmt.Errorf("invalid rlocation for file resolver with module name %s", r.moduleName),
 		}
 	}
-	if strings.HasPrefix(rlocation, r.moduleName+"/"+r.bundlePrefix) {
-		f, err := r.bundleFS.Open(strings.TrimPrefix(rlocation, r.moduleName+"/"+r.bundlePrefix))
+	if strings.HasPrefix(rlocation, path.Join(r.moduleName, r.bundlePrefix)) {
+		f, err := r.bundleFS.Open(strings.TrimPrefix(rlocation, path.Join(r.moduleName, r.bundlePrefix)))
 		if err == nil {
 			return f, nil
 		}
@@ -71,16 +72,18 @@ func (r *fileResolver) OpenFromRlocation(rlocation string) (fs.File, error) {
 // be looked up from the bundle if they start with this prefix. We will always
 // consult runfiles regardless of whether they begin with this prefix.
 func New(bundleFS fs.FS, bundleRoot string) fs.FS {
-	bundlePrefix := ""
 	// fs.FS as well as runfiles use forward slashes as path separators on all
 	// platforms.
-	if bundleRoot != "" && !strings.HasSuffix(bundleRoot, "/") {
-		bundlePrefix = bundleRoot + "/"
+	if !strings.HasSuffix(bundleRoot, "/") {
+		bundleRoot = bundleRoot + "/"
+	}
+	if bundleRoot == "/" {
+		bundleRoot = ""
 	}
 	moduleName, _, _ := strings.Cut(fileresolverGoRlocation, "/")
 	return &fileResolver{
 		bundleFS:     bundleFS,
-		bundlePrefix: bundlePrefix,
+		bundlePrefix: bundleRoot,
 		moduleName:   moduleName,
 	}
 }
