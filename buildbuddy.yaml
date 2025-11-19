@@ -13,6 +13,38 @@ actions:
           - "*"
     steps:
       - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-bare"
+  - name: Test internal repo
+    container_image: ubuntu-22.04
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    visibility: PRIVATE
+    steps:
+      # Clone buildbuddy-internal repo
+      # TODO: create some sort of "checkout" util to easily clone
+      # multiple repos?
+      - run: |
+          cd ..
+          if ! [[ -e buildbuddy-internal ]]; then
+            git clone https://github.com/buildbuddy-io/buildbuddy-internal --filter=blob:none
+          fi
+          cd buildbuddy-internal
+          git clean -fdx
+          git pull
+      # Test all targets from the internal repo, pointing bazel at the currently
+      # checked out commit of the OSS repo. Use --config=workflows to get
+      # caching+RBE, but override the remote instance name so we can share the
+      # cache with the other Test workflow.
+      - run: |
+          cd ../buildbuddy-internal
+          bazel test //... \
+            --override_repository=+_repo_rules+com_github_buildbuddy_io_buildbuddy=../repo-root \
+            --config=workflows \
+            --remote_instance_name=buildbuddy-io/buildbuddy/workflows
   - name: Check style
     container_image: ubuntu-22.04
     triggers:

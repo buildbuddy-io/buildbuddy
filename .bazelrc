@@ -49,6 +49,7 @@ common:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci
 
 # Configuration used for all BuildBuddy workflows
 common:workflows --config=ci-shared
+# Keep this instance name in sync with buildbuddy.yaml
 common:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
 
 
