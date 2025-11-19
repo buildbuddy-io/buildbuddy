@@ -83,7 +83,7 @@ func FSFromRelPath(relPath string) (fs.FS, error) {
 		return nil, err
 	}
 	moduleName, _, _ := strings.Cut(staticGoRlocation, "/")
-	
+
 	return fs.Sub(runfilesFS, path.Clean(path.Join(moduleName, relPath)))
 }
 
