@@ -879,6 +879,10 @@ proto_library(
 proto_library(
     name = "ociregistry_proto",
     srcs = ["ociregistry.proto"],
+    deps = [
+        ":registry_proto",
+        ":remote_execution_proto",
+    ],
 )
 
 proto_library(
@@ -2056,9 +2060,14 @@ go_proto_library(
     name = "ociregistry_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/ociregistry",
     proto = ":ociregistry_proto",
+    deps = [
+        ":registry_go_proto",
+        ":remote_execution_go_proto",
+    ],
 )
 
 go_proto_library(

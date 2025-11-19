@@ -777,3 +777,111 @@ func (f *CachingFetcher) FetchBlob(ctx context.Context, ref string, creds *rgpb.
 
 	return cachedRC, nil
 }
+
+// GRPCFetcher implements the Fetcher interface by calling a remote OCIFetchService.
+// This is used by executors to fetch OCI content through cache proxy nodes.
+type GRPCFetcher struct {
+	client ocipb.OCIFetchServiceClient
+}
+
+// NewGRPCFetcher creates a new GRPCFetcher that calls the given OCIFetchService client.
+func NewGRPCFetcher(client ocipb.OCIFetchServiceClient) *GRPCFetcher {
+	return &GRPCFetcher{
+		client: client,
+	}
+}
+
+// FetchManifest fetches a manifest from the remote OCIFetchService.
+func (f *GRPCFetcher) FetchManifest(ctx context.Context, ref string, platform *repb.Platform, creds *rgpb.Credentials) ([]byte, error) {
+	req := &ocipb.FetchManifestRequest{
+		ImageRef:    ref,
+		Platform:    platform,
+		Credentials: creds,
+	}
+
+	resp, err := f.client.FetchManifest(ctx, req)
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not retrieve manifest from OCIFetchService: %s", err)
+	}
+
+	return resp.GetManifest(), nil
+}
+
+// FetchBlobMetadata fetches blob metadata from the remote OCIFetchService.
+func (f *GRPCFetcher) FetchBlobMetadata(ctx context.Context, ref string, creds *rgpb.Credentials) (int64, string, error) {
+	req := &ocipb.FetchBlobMetadataRequest{
+		BlobRef:     ref,
+		Credentials: creds,
+	}
+
+	resp, err := f.client.FetchBlobMetadata(ctx, req)
+	if err != nil {
+		return 0, "", status.UnavailableErrorf("could not retrieve blob metadata from OCIFetchService: %s", err)
+	}
+
+	return resp.GetSizeBytes(), resp.GetContentType(), nil
+}
+
+// FetchBlob fetches a blob from the remote OCIFetchService.
+// The blob data is streamed from the server.
+func (f *GRPCFetcher) FetchBlob(ctx context.Context, ref string, creds *rgpb.Credentials) (io.ReadCloser, error) {
+	req := &ocipb.FetchBlobRequest{
+		BlobRef:     ref,
+		Credentials: creds,
+	}
+
+	stream, err := f.client.FetchBlob(ctx, req)
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not start blob stream from OCIFetchService: %s", err)
+	}
+
+	return &grpcBlobReader{stream: stream}, nil
+}
+
+// grpcBlobReader implements io.ReadCloser for streaming blob data from the gRPC service.
+type grpcBlobReader struct {
+	stream    ocipb.OCIFetchService_FetchBlobClient
+	buf       []byte // Buffer for current chunk
+	bufOffset int    // Offset into current chunk
+}
+
+func (r *grpcBlobReader) Read(p []byte) (int, error) {
+	totalRead := 0
+
+	for totalRead < len(p) {
+		// If we've consumed the current chunk, fetch the next one
+		if r.bufOffset >= len(r.buf) {
+			resp, err := r.stream.Recv()
+			if err == io.EOF {
+				if totalRead > 0 {
+					return totalRead, nil
+				}
+				return 0, io.EOF
+			}
+			if err != nil {
+				return totalRead, status.UnavailableErrorf("error receiving blob chunk: %s", err)
+			}
+
+			r.buf = resp.GetData()
+			r.bufOffset = 0
+
+			// If we got an empty chunk, continue to next one
+			if len(r.buf) == 0 {
+				continue
+			}
+		}
+
+		// Copy from current chunk to output buffer
+		n := copy(p[totalRead:], r.buf[r.bufOffset:])
+		r.bufOffset += n
+		totalRead += n
+	}
+
+	return totalRead, nil
+}
+
+func (r *grpcBlobReader) Close() error {
+	// gRPC streams don't need explicit closing, but we can drain remaining data
+	// to avoid leaving the stream hanging
+	return nil
+}

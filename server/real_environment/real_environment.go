@@ -100,6 +100,8 @@ type RealEnv struct {
 	byteStreamServer                 bspb.ByteStreamServer
 	localActionCacheServer           repb.ActionCacheServer
 	actionCacheServer                repb.ActionCacheServer
+	ociFetchClient                   interfaces.OCIFetchClient
+	ociFetchServer                   interfaces.OCIFetchServer
 	pushServer                       rapb.PushServer
 	fetchServer                      rapb.FetchServer
 	capabilitiesServer               repb.CapabilitiesServer
@@ -579,6 +581,22 @@ func (r *RealEnv) GetActionCacheServer() repb.ActionCacheServer {
 
 func (r *RealEnv) SetActionCacheServer(actionCacheServer repb.ActionCacheServer) {
 	r.actionCacheServer = actionCacheServer
+}
+
+func (r *RealEnv) GetOCIFetchClient() interfaces.OCIFetchClient {
+	return r.ociFetchClient
+}
+
+func (r *RealEnv) SetOCIFetchClient(client interfaces.OCIFetchClient) {
+	r.ociFetchClient = client
+}
+
+func (r *RealEnv) GetOCIFetchServer() interfaces.OCIFetchServer {
+	return r.ociFetchServer
+}
+
+func (r *RealEnv) SetOCIFetchServer(server interfaces.OCIFetchServer) {
+	r.ociFetchServer = server
 }
 
 func (r *RealEnv) GetPushServer() rapb.PushServer {

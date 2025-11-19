@@ -103,6 +103,8 @@ type Env interface {
 	GetByteStreamServer() bspb.ByteStreamServer
 	GetLocalActionCacheServer() repb.ActionCacheServer
 	GetActionCacheServer() repb.ActionCacheServer
+	GetOCIFetchClient() interfaces.OCIFetchClient
+	GetOCIFetchServer() interfaces.OCIFetchServer
 	GetPushServer() rapb.PushServer
 	GetFetchServer() rapb.FetchServer
 	GetCapabilitiesServer() repb.CapabilitiesServer

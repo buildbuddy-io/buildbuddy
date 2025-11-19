@@ -62,6 +62,7 @@ import (
 	_ "google.golang.org/grpc/encoding/gzip"                        // imported for side effects; DO NOT REMOVE.
 
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
+	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -167,6 +168,12 @@ func initializeCacheClientsOrDie(appTarget, cacheTarget string, cacheTargetTraff
 	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(client))
 	realEnv.SetActionCacheClient(repb.NewActionCacheClient(client))
 	realEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(client))
+
+	// Set OCI fetch client if connecting to cache proxy (cacheTarget is set and used)
+	// This allows executors to use the cache proxy's OCI fetch service with singleflighting
+	if cacheTarget != "" && cacheTargetTrafficPercent > 0 {
+		realEnv.SetOCIFetchClient(ocipb.NewOCIFetchServiceClient(client))
+	}
 }
 
 func getExecutorHostID() string {

@@ -50,8 +50,9 @@ var (
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 
-	useCachePercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
-	cacheSecret     = flag.String("oci.cache.secret", "", "Secret to add to OCI image cache keys.", flag.Secret)
+	useCachePercent         = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
+	cacheSecret             = flag.String("oci.cache.secret", "", "Secret to add to OCI image cache keys.", flag.Secret)
+	useOCICacheProxyFetch   = flag.Bool("oci.use_cache_proxy_fetch", true, "Use cache proxy's OCI fetch service when available (falls back to direct fetch if cache proxy not configured).")
 	// TODO: remove from configs and delete
 	_ = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "", flag.Internal)
 	_ = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "", flag.Internal)
@@ -278,9 +279,14 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 		return nil, err
 	}
 
-	// Create the appropriate fetcher based on useCachePercent
+	// Create the appropriate fetcher based on configuration
 	var f fetch.Fetcher
-	if *useCachePercent == 0 {
+
+	// First, check if we should use the cache proxy's OCI fetch service
+	if *useOCICacheProxyFetch && env.GetOCIFetchClient() != nil {
+		// Use gRPC client to fetch from cache proxy (which handles singleflighting and caching)
+		f = fetch.NewGRPCFetcher(env.GetOCIFetchClient())
+	} else if *useCachePercent == 0 {
 		// No caching - use RegistryFetcher only
 		f = fetch.NewRegistryFetcher(nil)
 	} else {

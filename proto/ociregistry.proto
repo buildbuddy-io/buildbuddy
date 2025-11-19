@@ -2,6 +2,9 @@ syntax = "proto3";
 
 package ociregistry;
 
+import "proto/registry.proto";
+import "proto/remote_execution.proto";
+
 // The `ociregistry` package contains an OCI mirror registry
 // that can pull OCI container images from upstream registries
 // and store them in the CAS. It is a read-through cache for OCI image
@@ -58,4 +61,61 @@ message OCIManifestContent {
   // The value of the Content-Type HTTP header received
   // from the upstream registry.
   string content_type = 2;
+}
+
+// Request/Response messages for OCIFetchService
+
+message FetchManifestRequest {
+  // OCI image reference (must be digest ref, e.g., "gcr.io/repo@sha256:...")
+  string image_ref = 1;
+  // Optional platform for multi-platform images (image indexes)
+  build.bazel.remote.execution.v2.Platform platform = 2;
+  // Optional credentials for authenticating with the registry
+  registry.Credentials credentials = 3;
+}
+
+message FetchManifestResponse {
+  // Raw manifest bytes
+  bytes manifest = 1;
+}
+
+message FetchBlobRequest {
+  // OCI blob reference (must be digest ref, e.g., "gcr.io/repo@sha256:...")
+  string blob_ref = 1;
+  // Optional credentials for authenticating with the registry
+  registry.Credentials credentials = 2;
+}
+
+message FetchBlobResponse {
+  // Chunk of blob data (streaming)
+  bytes data = 1;
+}
+
+message FetchBlobMetadataRequest {
+  // OCI blob reference (must be digest ref, e.g., "gcr.io/repo@sha256:...")
+  string blob_ref = 1;
+  // Optional credentials for authenticating with the registry
+  registry.Credentials credentials = 2;
+}
+
+message FetchBlobMetadataResponse {
+  // Size of the blob in bytes
+  int64 size_bytes = 1;
+  // Content type of the blob
+  string content_type = 2;
+}
+
+// OCIFetchService provides a gRPC API for fetching OCI manifests and blobs.
+// This service is exposed by cache proxy nodes to enable executors to fetch
+// OCI content through the cache proxy, which provides singleflighting and
+// caching to reduce network saturation when many executors pull the same images.
+service OCIFetchService {
+  // FetchManifest fetches an OCI manifest for the specified image reference.
+  rpc FetchManifest(FetchManifestRequest) returns (FetchManifestResponse);
+
+  // FetchBlob fetches an OCI blob (layer) with streaming response.
+  rpc FetchBlob(FetchBlobRequest) returns (stream FetchBlobResponse);
+
+  // FetchBlobMetadata fetches metadata about an OCI blob without downloading it.
+  rpc FetchBlobMetadata(FetchBlobMetadataRequest) returns (FetchBlobMetadataResponse);
 }

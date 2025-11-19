@@ -37,6 +37,7 @@ import (
 	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
+	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -1862,4 +1863,14 @@ type ExperimentFlagDetails interface {
 type ByteStreamServer interface {
 	bspb.ByteStreamServer
 	ReadCASResource(ctx context.Context, rn *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error
+}
+
+// OCIFetchClient wraps the OCI fetch service client
+type OCIFetchClient interface {
+	ocipb.OCIFetchServiceClient
+}
+
+// OCIFetchServer wraps the OCI fetch service server
+type OCIFetchServer interface {
+	ocipb.OCIFetchServiceServer
 }
