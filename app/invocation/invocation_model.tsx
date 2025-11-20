@@ -588,7 +588,7 @@ export default class InvocationModel {
   }
 
   isBazelInvocation() {
-    return !this.isWorkflowInvocation() && !this.isHostedBazelInvocation();
+    return !this.isWorkflowInvocation() && !this.isHostedBazelInvocation() && !this.isNinjaInvocation();
   }
 
   isNinjaInvocation() {
