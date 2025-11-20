@@ -221,8 +221,13 @@ func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numE
 	retrier := retry.DefaultWithContext(ctx)
 	var lastError error
 	if *asyncInsert {
-		// https://clickhouse.com/docs/optimize/asynchronous-inserts#deduplication-and-reliability
-		ctx = clickhouse.Context(ctx,
+		// Useful links about async inserts in ClickHouse:
+		// https://clickhouse.com/docs/optimize/asynchronous-inserts
+		// https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse
+		// https://altinity.com/blog/using-async-inserts-for-peak-data-loading-rates-in-clickhouse
+		// https://clickhouse.com/docs/integrations/go#async-insert-1
+		ctx = clickhouse.Context(
+			ctx,
 			clickhouse.WithAsync(true),
 			clickhouse.WithSettings(map[string]any{
 				// These two should be implied by WithAsync(true), but if we
