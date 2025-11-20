@@ -353,13 +353,13 @@ func getInnerInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocatio
 	return invResp.Invocation[0]
 }
 
-func TestCIRunner_RunsBashCommands(t *testing.T) {
+func TestCIRunner_RunsBashCommands_NoBazelWorkspace(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 
 	workspaceContentsWithBashCommands := map[string]string{
 		"buildbuddy.yaml": `
 actions:
-  - name: "Show bazel version"
+  - name: "Test"
     triggers:
       push: { branches: [ master ] }
       pull_request: { branches: [ master ] }
@@ -367,14 +367,15 @@ actions:
       - run: |
           for i in {1..2}; do
             echo "Loop $i: ";
-            bazel version;
           done
 `,
 	}
-	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBashCommands)
+
+	// Initialize a non-bazel repo
+	repoPath, headCommitSHA := testgit.MakeTempRepo(t, workspaceContentsWithBashCommands)
 	runnerFlags := []string{
 		"--workflow_id=test-workflow",
-		"--action_name=Show bazel version",
+		"--action_name=Test",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
 		"--pushed_branch=master",
@@ -391,9 +392,9 @@ actions:
 	checkRunnerResult(t, result)
 
 	runnerInvocation := getRunnerInvocation(t, app, result)
-	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Loop 1:")
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Loop 2:")
+	assert.False(t, result.DoNotRecycle)
 }
 
 func TestCIRunner_RunsBashCommands_BazelWithOptions(t *testing.T) {

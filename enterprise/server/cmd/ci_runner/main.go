@@ -848,15 +848,11 @@ func (ws *workspace) prepareRunnerForNextInvocation(ctx context.Context, taskWor
 	// After the invocation is complete, ensure that the bazel lock is not
 	// still held. If it is, avoid recycling.
 	if err := ws.checkBazelWorkspaceLock(ctx); err != nil {
-		if strings.Contains(err.Error(), "command is only supported from within a workspace ") {
-			log.Printf("Not in a bazel workspace. Skipping workspace lock check.")
-		} else {
-			log.Printf("WARNING: command 'bazel --noblock_for_lock info workspace' failed: %s", err)
-			log.Printf("WARNING: bazel workspace lock check failed. Runner will not be recycled")
-			marker := filepath.Join(taskWorkspaceDir, ".BUILDBUDDY_DO_NOT_RECYCLE")
-			if err := os.WriteFile(marker, nil, 0644); err != nil {
-				log.Printf("ERROR: failed to create %s: %s", marker, err)
-			}
+		log.Printf("WARNING: command 'bazel --noblock_for_lock info workspace' failed: %s", err)
+		log.Printf("WARNING: bazel workspace lock check failed. Runner will not be recycled")
+		marker := filepath.Join(taskWorkspaceDir, ".BUILDBUDDY_DO_NOT_RECYCLE")
+		if err := os.WriteFile(marker, nil, 0644); err != nil {
+			log.Printf("ERROR: failed to create %s: %s", marker, err)
 		}
 	}
 
@@ -2652,14 +2648,20 @@ func (ws *workspace) reclaimDiskSpace(ctx context.Context) error {
 // Creates a marker file that prevents the runner from being recycled if bazel
 // still has the workspace lock.
 func (ws *workspace) checkBazelWorkspaceLock(ctx context.Context) error {
-	ws.log.Printf("%s%s%s Checking Bazel workspace lock", ansiGray, formatNowUTC(), ansiReset)
-
-	var buf bytes.Buffer
 	bazelWorkspacePath, err := ws.bazelWorkspacePath()
 	if err != nil {
 		return fmt.Errorf("get bazel workspace path: %s", err)
 	}
 
+	_, err = bazel.FindWorkspaceFile(bazelWorkspacePath)
+	if status.IsNotFoundError(err) {
+		// If not in a bazel workspace, don't check for the lock.
+		return nil
+	}
+
+	ws.log.Printf("%s%s%s Checking Bazel workspace lock", ansiGray, formatNowUTC(), ansiReset)
+
+	var buf bytes.Buffer
 	lastUsedStartupOptions, err := ws.getLastUsedStartupOptions()
 	if err != nil {
 		backendLog.Errorf("Failed to get last used startup options when checking bazel lock: %s", err)
