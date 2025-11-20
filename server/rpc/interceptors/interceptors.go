@@ -38,9 +38,7 @@ const (
 	rpcQuotaPrefix          = "rpc:"
 )
 
-var (
-	headerContextKeys map[string]string
-)
+var headerContextKeys map[string]string
 
 func init() {
 	headerContextKeys = map[string]string{
@@ -339,8 +337,7 @@ func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if qm := env.GetQuotaManager(); qm != nil {
-			err := qm.Allow(ctx, rpcQuotaPrefix+info.FullMethod, 1)
-			if err != nil {
+			if err := qm.Allow(ctx, rpcQuotaPrefix+info.FullMethod, 1); err != nil {
 				return nil, err
 			}
 		}
@@ -351,8 +348,7 @@ func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerIntercepto
 func quotaStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if qm := env.GetQuotaManager(); qm != nil {
-			err := qm.Allow(stream.Context(), rpcQuotaPrefix+info.FullMethod, 1)
-			if err != nil {
+			if err := qm.Allow(stream.Context(), rpcQuotaPrefix+info.FullMethod, 1); err != nil {
 				return err
 			}
 		}
