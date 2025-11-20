@@ -48,6 +48,10 @@ common --@io_bazel_rules_docker//transitions:enable=false
 #   $ open cover/index.html
 common --combined_report=lcov
 
+# Disable gcc_coverage_map_format to avoid feature conflicts with custom toolchains.
+# This might mean we're not collecting coverage for some targets.
+coverage --features=-gcc_coverage_map_format
+
 # Include target names in timing profile so it's clickable.
 common --experimental_profile_include_target_label
 # Include primary output name in timing profile.
