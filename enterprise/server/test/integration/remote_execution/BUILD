@@ -12,7 +12,7 @@ go_test(
     exec_properties = {
         # TODO: figure out why this test needs such a high resource request in
         # order to not be flaky.
-        "EstimatedComputeUnits": "16",
+        # "EstimatedComputeUnits": "16",
     },
     shard_count = 11,
     tags = ["cpu:8"],

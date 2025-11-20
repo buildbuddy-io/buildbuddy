@@ -12,6 +12,14 @@ RUN \
     sed -i 's/^Suites: stable-security$/Suites: bookworm-security/' /etc/apt/sources.list.d/debian.sources && \
     apt-get update && \
     apt-get install -y \
+    # Necessary for rules_go
+    gcc \
+    # Necessary for rules_pkg
+    python3 \
+    # Necessary to build redis, for some reason???
+    libstdc++-14-dev \
+    # Necessary for firecracker
+    e2fsprogs \
     # FUSE support, used by vbd and vfs packages.
     # TODO: probably not needed since we use DirectMountStrict now?
     fuse \
@@ -22,7 +30,11 @@ RUN \
     amazon-ecr-credential-helper \
     # cgroup-aware proc mounts for OCI containers.
     lxcfs && \
-    apt-get upgrade -y && \
+    apt-get remove -y docker.io docker-cli containerd runc docker-buildx && \
+    # Can't safely run autoremove, too many builds have non-hermetic implicit dependencies.
+    # TODO(zoey): investigate common implicit deps and install them explicitly
+    # so we can run autoremove
+    # apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
 RUN DOCKER_VERSION="5:28.2.2-1~debian.12~bookworm" && \
