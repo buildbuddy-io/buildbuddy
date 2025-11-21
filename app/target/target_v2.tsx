@@ -41,7 +41,12 @@ import TargetTestLogCardComponent from "./target_test_log_card";
 
 const Status = api_common.v1.Status;
 
-export type SectionFilter = "all" | "documents" | "logs" | "coverage" | "actions" | "artifacts" | "cache";
+type SectionFilter = "all" | "documents" | "logs" | "coverage" | "actions" | "artifacts" | "cache";
+
+interface SectionTab {
+  id: SectionFilter;
+  label: string;
+}
 
 export interface TargetProps {
   invocationId: string;
@@ -470,33 +475,34 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
             .filter((_, index) => `#${index + 1}` == this.getTab())
             .map((buildEvent) => (
               <span>
-              {(activeSection === "all" || activeSection === "documents") && (
-                <TargetTestDocumentCardComponent
-                  dark={this.props.dark}
-                  invocationId={this.props.invocationId}
-                  buildEvent={buildEvent}
-                />
-              )}
-              {(activeSection === "all" || activeSection === "logs") && (
-                <TargetTestLogCardComponent
-                  dark={this.props.dark}
-                  invocationId={this.props.invocationId}
-                  buildEvent={buildEvent}
-                />
-              )}
-              {(activeSection === "all" || activeSection === "coverage") && (
-                <TargetTestCoverageCardComponent
-                  invocationId={this.props.invocationId}
-                  repo={this.props.repo || ""}
-                  commit={this.props.commit || ""}
-                  buildEvent={buildEvent}
-                />
-              )}
-            </span>
-          ))}
-          {(activeSection === "all" || activeSection === "actions") && actionEvents.map((action) => (
-            <ActionCardComponent dark={this.props.dark} invocationId={this.props.invocationId} buildEvent={action} />
-          ))}
+                {(activeSection === "all" || activeSection === "documents") && (
+                  <TargetTestDocumentCardComponent
+                    dark={this.props.dark}
+                    invocationId={this.props.invocationId}
+                    buildEvent={buildEvent}
+                  />
+                )}
+                {(activeSection === "all" || activeSection === "logs") && (
+                  <TargetTestLogCardComponent
+                    dark={this.props.dark}
+                    invocationId={this.props.invocationId}
+                    buildEvent={buildEvent}
+                  />
+                )}
+                {(activeSection === "all" || activeSection === "coverage") && (
+                  <TargetTestCoverageCardComponent
+                    invocationId={this.props.invocationId}
+                    repo={this.props.repo || ""}
+                    commit={this.props.commit || ""}
+                    buildEvent={buildEvent}
+                  />
+                )}
+              </span>
+            ))}
+          {(activeSection === "all" || activeSection === "actions") &&
+            actionEvents.map((action) => (
+              <ActionCardComponent dark={this.props.dark} invocationId={this.props.invocationId} buildEvent={action} />
+            ))}
           {(activeSection === "all" || activeSection === "artifacts") && Boolean(target.files.length) && (
             <TargetArtifactsCardComponent
               name={"Target outputs"}
@@ -506,16 +512,16 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
           )}
           {(activeSection === "all" || activeSection === "artifacts") &&
             resultEvents
-            .filter((event, index) => `#${index + 1}` == this.getTab() && event?.testResult?.testActionOutput)
-            .map((event) => (
-              <div>
-                <TargetArtifactsCardComponent
-                  name={this.generateRunName(event?.id?.testResult ?? {})}
-                  invocationId={this.props.invocationId}
-                  files={event?.testResult?.testActionOutput as build_event_stream.File[]}
-                />
-              </div>
-            ))}
+              .filter((event, index) => `#${index + 1}` == this.getTab() && event?.testResult?.testActionOutput)
+              .map((event) => (
+                <div>
+                  <TargetArtifactsCardComponent
+                    name={this.generateRunName(event?.id?.testResult ?? {})}
+                    invocationId={this.props.invocationId}
+                    files={event?.testResult?.testActionOutput as build_event_stream.File[]}
+                  />
+                </div>
+              ))}
 
           {(activeSection === "all" || activeSection === "cache") && capabilities.config.detailedCacheStatsEnabled && (
             <CacheRequestsCardComponent
