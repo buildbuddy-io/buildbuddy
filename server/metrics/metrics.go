@@ -1351,8 +1351,18 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "networking_command_duration_usec",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 10*time.Minute, 1.5),
+		Buckets:   durationUsecBuckets(100*time.Microsecond, 10*time.Minute, 10),
 		Help:      "Duration of networking commands, in **microseconds**.",
+	}, []string{
+		CommandName,
+	})
+
+	NetworkingCommandCPUUsageUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "networking_command_cpu_usage_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 10*time.Minute, 10),
+		Help:      "CPU usage of networking commands, in **CPU-microseconds**.",
 	}, []string{
 		CommandName,
 	})
@@ -1383,16 +1393,6 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "vfs_cas_files_accessed_bytes",
 		Help:      "Size of CAS files in VFS filesystems that were accessed by the action.",
-	})
-
-	NetworkingCommandCPUUsageUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "remote_execution",
-		Name:      "networking_command_cpu_usage_usec",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 10*time.Minute, 1.5),
-		Help:      "CPU usage of networking commands, in **CPU-microseconds**.",
-	}, []string{
-		CommandName,
 	})
 
 	FirecrackerStageDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
