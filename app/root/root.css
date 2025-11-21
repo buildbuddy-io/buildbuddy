@@ -1935,3 +1935,8 @@ code .comment {
 .coverage-total-label {
   font-weight: 600;
 }
+
+.target-history-button {
+  margin-left: 16px;
+  gap: 8px;
+}
