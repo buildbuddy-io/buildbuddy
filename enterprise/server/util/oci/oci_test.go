@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/fetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -952,6 +953,11 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	require.NoError(t, err)
 	require.NotNil(t, te.GetClientIdentityService())
 
+	// Register OCIFetcherServer for tests
+	err = fetcher.Register(te)
+	require.NoError(t, err)
+	require.NotNil(t, te.GetOCIFetcherServer())
+
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()
@@ -1013,6 +1019,7 @@ func (c *requestCounter) reset() {
 
 func TestResolveImageDigest_TagExists(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	require.NoError(t, fetcher.Register(te))
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	registry := testregistry.Run(t, testregistry.Opts{})
 
@@ -1037,6 +1044,7 @@ func TestResolveImageDigest_TagExists(t *testing.T) {
 
 func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	require.NoError(t, fetcher.Register(te))
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	registry := testregistry.Run(t, testregistry.Opts{})
 
@@ -1054,6 +1062,7 @@ func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
 
 func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	require.NoError(t, fetcher.Register(te))
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
 	counter := newRequestCounter()
@@ -1089,6 +1098,7 @@ func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 
 func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	require.NoError(t, fetcher.Register(te))
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
 	counter := newRequestCounter()
@@ -1167,6 +1177,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 
 func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	require.NoError(t, fetcher.Register(te))
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
 	counter := newRequestCounter()
