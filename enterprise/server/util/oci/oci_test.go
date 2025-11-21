@@ -525,6 +525,7 @@ func layerFiles(t *testing.T, layer v1.Layer) map[string][]byte {
 
 func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	require.NoError(t, fetcher.Register(te))
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	// Track requests to original and mirror registries.
 	var originalReqCount, mirrorReqCount atomic.Int32
