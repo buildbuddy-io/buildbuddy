@@ -523,3 +523,83 @@ func resetMetrics() {
 	metrics.CacheRequestedInlineSizeBytes.Reset()
 	metrics.CacheEvents.Reset()
 }
+
+func TestRecordOrigin(t *testing.T) {
+	flags.Set(t, "cache.record_action_result_origin", true)
+
+	// Setup clients
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	clientConn := runACServer(ctx, t, te)
+	acClient := repb.NewActionCacheClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	// Output file should be uploaded first
+	outputDigest, err := cachetools.UploadBlobToCAS(ctx, bsClient, "", repb.DigestFunction_SHA256, []byte("hello world"))
+	require.NoError(t, err)
+
+	// Make an AC request, setting request metadata for hit tracking
+	actionDigest := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}
+	invocationID := "f5b5e1f7-7e91-4e3f-88f6-aaaaaaaaaaaa"
+	invCtx1, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ActionId:         actionDigest.GetHash(),
+		ToolInvocationId: invocationID,
+	})
+	require.NoError(t, err)
+
+	// Upload action result
+	instanceName := "test"
+	digestFn := repb.DigestFunction_SHA256
+	require.NoError(t, err)
+	uploadedActionResult := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{
+				Path:   "hello.txt",
+				Digest: outputDigest,
+			},
+		},
+		ExecutionMetadata: &repb.ExecutedActionMetadata{
+			Worker:                  "this value doesnt matter, just defining it to be stable",
+			ExecutionStartTimestamp: timestamppb.New(time.Unix(20, 0)),
+		},
+	}
+	updatedActionResult, err := acClient.UpdateActionResult(invCtx1, &repb.UpdateActionResultRequest{
+		InstanceName:   instanceName,
+		DigestFunction: digestFn,
+		ActionDigest:   actionDigest,
+		ActionResult:   uploadedActionResult,
+	})
+	require.NoError(t, err)
+
+	// Assert that the uploaded AR has the OriginMetadata
+	require.NotNil(t, updatedActionResult)
+	am := updatedActionResult.GetExecutionMetadata().GetAuxiliaryMetadata()
+	require.Len(t, am, 1)
+	om := &repb.OriginMetadata{}
+	require.True(t, am[0].MessageIs(om))
+	err = am[0].UnmarshalTo(om)
+	require.NoError(t, err)
+	require.Equal(t, om.GetInvocationId(), invocationID)
+
+	// Assert that the GetActionResult from a different invocation context also has the same OriginMetadata
+	invocationID2 := "f5b5e1f7-7e91-4e3f-88f6-bbbbbbbbbbbb"
+	invCtx2, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ActionId:         actionDigest.GetHash(),
+		ToolInvocationId: invocationID2,
+	})
+	require.NoError(t, err)
+	got, err := acClient.GetActionResult(invCtx2, &repb.GetActionResultRequest{
+		InstanceName:   instanceName,
+		DigestFunction: digestFn,
+		ActionDigest:   actionDigest,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	am = updatedActionResult.GetExecutionMetadata().GetAuxiliaryMetadata()
+	require.Len(t, am, 1)
+	om2 := &repb.OriginMetadata{}
+	require.True(t, am[0].MessageIs(om2))
+	err = am[0].UnmarshalTo(om2)
+	require.NoError(t, err)
+	require.Equal(t, om2.GetInvocationId(), invocationID)
+}
