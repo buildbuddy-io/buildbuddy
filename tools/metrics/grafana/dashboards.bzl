@@ -5,7 +5,6 @@ DASHBOARD_NAMES = [
     "cache-proxy",
     "cache",
     "clickhouse",
-    "clusterstatus",
     "container-metrics",
     "envoy",
     "globalstatus",
