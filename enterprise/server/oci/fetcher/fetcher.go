@@ -3,10 +3,13 @@ package fetcher
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -23,13 +26,28 @@ const (
 	maxBlobChunkSize = 1024 * 1024
 )
 
+var (
+	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
+)
+
 type OCIFetcherServer struct {
-	env environment.Env
+	env               environment.Env
+	allowedPrivateIPs []*net.IPNet
 }
 
 func Register(env *real_environment.RealEnv) error {
+	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
+	for _, r := range *allowedPrivateIPs {
+		_, ipNet, err := net.ParseCIDR(r)
+		if err != nil {
+			return status.InvalidArgumentErrorf("invalid value %q for executor.container_registry_allowed_private_ips flag: %s", r, err)
+		}
+		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
+	}
+
 	server := &OCIFetcherServer{
-		env: env,
+		env:               env,
+		allowedPrivateIPs: allowedPrivateIPNets,
 	}
 	env.SetOCIFetcherServer(server)
 	return nil
@@ -46,6 +64,9 @@ func (s *OCIFetcherServer) getRemoteOpts(ctx context.Context, credentials *rgpb.
 			Password: credentials.GetPassword(),
 		}))
 	}
+
+	tr := httpclient.New(s.allowedPrivateIPs, "oci_fetcher").Transport
+	remoteOpts = append(remoteOpts, remote.WithTransport(tr))
 
 	return remoteOpts
 }
