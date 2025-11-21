@@ -6,12 +6,16 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/authn"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
@@ -25,12 +29,23 @@ import (
 const (
 	// Maximum chunk size for streaming blob responses (1MB)
 	maxBlobChunkSize = 1024 * 1024
+
+	// Maximum number of cached pullers
+	pullerCacheMaxEntries = 1024
+	// Duration for which cached pullers are valid
+	pullerCacheTTL = 15 * time.Minute
 )
 
 var (
 	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 	mirrors           = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
 )
+
+// cachedPuller wraps a remote.Puller with an expiration time for caching
+type cachedPuller struct {
+	puller    *remote.Puller
+	expiresAt time.Time
+}
 
 type MirrorConfig struct {
 	OriginalURL string `yaml:"original_url" json:"original_url"`
@@ -120,6 +135,10 @@ type OCIFetcherServer struct {
 	env               environment.Env
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []MirrorConfig
+
+	// Puller cache to reuse authenticated transports
+	pullerCache   *lru.LRU[*cachedPuller]
+	pullerCacheMu sync.Mutex
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -132,10 +151,19 @@ func Register(env *real_environment.RealEnv) error {
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
 
+	pullerCache, err := lru.NewLRU[*cachedPuller](&lru.Config[*cachedPuller]{
+		SizeFn:  func(_ *cachedPuller) int64 { return 1 },
+		MaxSize: pullerCacheMaxEntries,
+	})
+	if err != nil {
+		return status.InternalErrorf("failed to create puller cache: %s", err)
+	}
+
 	server := &OCIFetcherServer{
 		env:               env,
 		allowedPrivateIPs: allowedPrivateIPNets,
 		mirrors:           *mirrors,
+		pullerCache:       pullerCache,
 	}
 	env.SetOCIFetcherServer(server)
 	return nil
@@ -160,6 +188,83 @@ func (s *OCIFetcherServer) getRemoteOpts(ctx context.Context, credentials *rgpb.
 	remoteOpts = append(remoteOpts, remote.WithTransport(tr))
 
 	return remoteOpts
+}
+
+// getOrCreatePuller returns a cached puller for the given image reference and credentials,
+// or creates a new one if not cached or expired.
+func (s *OCIFetcherServer) getOrCreatePuller(ctx context.Context, imageRef gcrname.Reference, credentials *rgpb.Credentials) (*remote.Puller, error) {
+	registry := imageRef.Context().RegistryStr()
+	repository := imageRef.Context().RepositoryStr()
+	username := ""
+	password := ""
+	if credentials != nil {
+		username = credentials.GetUsername()
+		password = credentials.GetPassword()
+	}
+
+	// Create cache key from registry, repository, and credentials
+	cacheKey := hash.Strings(registry, repository, username, password)
+
+	s.pullerCacheMu.Lock()
+	cached, ok := s.pullerCache.Get(cacheKey)
+	s.pullerCacheMu.Unlock()
+
+	// Check if cached puller is still valid
+	if ok && cached != nil && time.Now().Before(cached.expiresAt) {
+		return cached.puller, nil
+	}
+
+	// Build remote options without context (context is passed to puller methods)
+	remoteOpts := []remote.Option{}
+
+	if credentials != nil && credentials.GetUsername() != "" {
+		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Basic{
+			Username: credentials.GetUsername(),
+			Password: credentials.GetPassword(),
+		}))
+	}
+
+	tr := httpclient.New(s.allowedPrivateIPs, "oci_fetcher").Transport
+	if len(s.mirrors) > 0 {
+		tr = newMirrorTransport(tr, s.mirrors)
+	}
+	remoteOpts = append(remoteOpts, remote.WithTransport(tr))
+
+	// Create new puller
+	puller, err := remote.NewPuller(remoteOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the puller with expiration
+	entry := &cachedPuller{
+		puller:    puller,
+		expiresAt: time.Now().Add(pullerCacheTTL),
+	}
+
+	s.pullerCacheMu.Lock()
+	s.pullerCache.Add(cacheKey, entry)
+	s.pullerCacheMu.Unlock()
+
+	return puller, nil
+}
+
+// invalidatePullerCache removes a puller from the cache
+func (s *OCIFetcherServer) invalidatePullerCache(imageRef gcrname.Reference, credentials *rgpb.Credentials) {
+	registry := imageRef.Context().RegistryStr()
+	repository := imageRef.Context().RepositoryStr()
+	username := ""
+	password := ""
+	if credentials != nil {
+		username = credentials.GetUsername()
+		password = credentials.GetPassword()
+	}
+
+	cacheKey := hash.Strings(registry, repository, username, password)
+
+	s.pullerCacheMu.Lock()
+	s.pullerCache.Remove(cacheKey)
+	s.pullerCacheMu.Unlock()
 }
 
 func (s *OCIFetcherServer) CanAccess(ctx context.Context, req *ocifetcherpb.CanAccessRequest) (*ocifetcherpb.CanAccessResponse, error) {
@@ -198,14 +303,15 @@ func (s *OCIFetcherServer) FetchManifest(ctx context.Context, req *ocifetcherpb.
 
 	log.CtxInfof(ctx, "Fetching manifest for %q", imageRef)
 
-	remoteOpts := s.getRemoteOpts(ctx, req.GetCredentials())
-	puller, err := remote.NewPuller(remoteOpts...)
+	puller, err := s.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
 	if err != nil {
 		return nil, status.InternalErrorf("error creating puller: %s", err)
 	}
 
 	remoteDesc, err := puller.Get(ctx, imageRef)
 	if err != nil {
+		// Invalidate cache on error
+		s.invalidatePullerCache(imageRef, req.GetCredentials())
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
 		}
@@ -234,14 +340,15 @@ func (s *OCIFetcherServer) FetchManifestMetadata(ctx context.Context, req *ocife
 
 	log.CtxInfof(ctx, "Fetching manifest metadata for %q", imageRef)
 
-	remoteOpts := s.getRemoteOpts(ctx, req.GetCredentials())
-	puller, err := remote.NewPuller(remoteOpts...)
+	puller, err := s.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
 	if err != nil {
 		return nil, status.InternalErrorf("error creating puller: %s", err)
 	}
 
 	desc, err := puller.Head(ctx, imageRef)
 	if err != nil {
+		// Invalidate cache on error
+		s.invalidatePullerCache(imageRef, req.GetCredentials())
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
 		}
@@ -274,8 +381,7 @@ func (s *OCIFetcherServer) FetchBlob(req *ocifetcherpb.FetchBlobRequest, stream 
 
 	log.CtxInfof(ctx, "Fetching blob for %q", blobRef)
 
-	remoteOpts := s.getRemoteOpts(ctx, req.GetCredentials())
-	puller, err := remote.NewPuller(remoteOpts...)
+	puller, err := s.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
 	if err != nil {
 		return status.InternalErrorf("error creating puller: %s", err)
 	}
@@ -283,6 +389,8 @@ func (s *OCIFetcherServer) FetchBlob(req *ocifetcherpb.FetchBlobRequest, stream 
 	// For blobs, we need to fetch them as layers
 	layer, err := puller.Layer(ctx, blobRef)
 	if err != nil {
+		// Invalidate cache on error
+		s.invalidatePullerCache(blobRef, req.GetCredentials())
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return status.PermissionDeniedErrorf("not authorized to retrieve blob: %s", err)
 		}
@@ -339,8 +447,7 @@ func (s *OCIFetcherServer) FetchBlobMetadata(ctx context.Context, req *ocifetche
 
 	log.CtxInfof(ctx, "Fetching blob metadata for %q", blobRef)
 
-	remoteOpts := s.getRemoteOpts(ctx, req.GetCredentials())
-	puller, err := remote.NewPuller(remoteOpts...)
+	puller, err := s.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
 	if err != nil {
 		return nil, status.InternalErrorf("error creating puller: %s", err)
 	}
@@ -348,6 +455,8 @@ func (s *OCIFetcherServer) FetchBlobMetadata(ctx context.Context, req *ocifetche
 	// Fetch the layer to get metadata
 	layer, err := puller.Layer(ctx, blobRef)
 	if err != nil {
+		// Invalidate cache on error
+		s.invalidatePullerCache(blobRef, req.GetCredentials())
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, status.PermissionDeniedErrorf("not authorized to retrieve blob: %s", err)
 		}
