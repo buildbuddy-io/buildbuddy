@@ -207,39 +207,13 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (job,version) (buildbuddy_version{region=~\"${region}\", job=\"buildbuddy-app\"})",
+          "expr": "sum by (region, job,version) (buildbuddy_version{region=~\"${region}\", job=~\"(buildbuddy-app|cache-proxy|.*executor.*)\"})",
           "hide": false,
           "interval": "",
-          "legendFormat": "{{job}} {{version}}",
+          "legendFormat": "{{region}} {{job}} {{version}}",
           "queryType": "randomWalk",
           "range": true,
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "expr": "sum by (job,version) (buildbuddy_version{region=~\"${region}\", job=~\".*executor.*\"})",
-          "hide": false,
-          "instant": false,
-          "legendFormat": "{{job}} {{version}}",
-          "range": true,
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "expr": "sum by (job,version) (buildbuddy_version{region=~\"${region}\", job=\"cache-proxy\"})",
-          "hide": false,
-          "instant": false,
-          "legendFormat": "{{job}} {{version}}",
-          "range": true,
-          "refId": "C"
         }
       ],
       "title": "Versions",
