@@ -44,6 +44,7 @@ go_test(
     deps = [
         ":oci",
         "//enterprise/server/clientidentity",
+        "//enterprise/server/oci/fetcher",
         "//enterprise/server/remote_execution/platform",
         "//proto:registry_go_proto",
         "//server/interfaces",
