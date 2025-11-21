@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+import "proto/registry.proto";
+
+package oci_fetcher;
+
+option go_package = "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher";
+
+service OCIFetcher {
+  rpc CanAccess(CanAccessRequest) returns (CanAccessResponse);
+
+  rpc FetchManifest(FetchManifestRequest) returns (FetchManifestResponse);
+  rpc FetchManifestMetadata(FetchManifestMetadataRequest)
+      returns (FetchManifestMetadataResponse);
+
+  rpc FetchBlob(FetchBlobRequest) returns (stream FetchBlobResponse);
+  rpc FetchBlobMetadata(FetchBlobMetadataRequest)
+      returns (FetchBlobMetadataResponse);
+}
+
+message CanAccessRequest {
+  string reference = 1;
+  registry.Credentials credentials = 2;
+}
+
+message CanAccessResponse {
+  bool can_access = 1;
+}
+
+message FetchManifestRequest {
+  // e.g. gcr.io/org/repo@sha256:... or gcr.io/org/repo:tag
+  string ref = 1;
+  registry.Credentials credentials = 2;
+}
+
+message FetchManifestResponse {
+  bytes manifest = 1;
+}
+
+message FetchManifestMetadataRequest {
+  string ref = 1;
+  registry.Credentials credentials = 2;
+}
+
+message FetchManifestMetadataResponse {
+  string digest = 1;
+  int64 size = 2;
+  string media_type = 3;
+}
+
+message FetchBlobRequest {
+  // e.g. gcr.io/org/repo@sha256:... (blob digest reference)
+  string ref = 1;
+  registry.Credentials credentials = 2;
+}
+
+message FetchBlobResponse {
+  bytes data = 1;
+}
+
+message FetchBlobMetadataRequest {
+  string ref = 1;
+  registry.Credentials credentials = 2;
+}
+
+message FetchBlobMetadataResponse {
+  int64 size_bytes = 1;
+  string media_type = 2;
+}

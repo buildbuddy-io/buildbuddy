@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/fetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
@@ -84,10 +85,11 @@ var (
 
 	listen            = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port              = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	monitoringPort    = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
-	monitoringSSLPort = flag.Int("monitoring.ssl_port", -1, "If non-negative, the SSL port to listen for monitoring traffic on. `ssl` config must have `ssl_enabled: true` and be properly configured.")
-	serverType        = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
-	maxThreads        = flag.Int("executor.max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
+	monitoringPort            = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
+	monitoringSSLPort         = flag.Int("monitoring.ssl_port", -1, "If non-negative, the SSL port to listen for monitoring traffic on. `ssl` config must have `ssl_enabled: true` and be properly configured.")
+	serverType                = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
+	maxThreads                = flag.Int("executor.max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
+	enableOCIFetcherService   = flag.Bool("executor.enable_oci_fetcher_service", false, "If true, enables the OCI fetcher service for testing. Allows calling OCI fetch operations via env.GetOCIFetcherServer().")
 )
 
 func init() {
@@ -263,6 +265,13 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 	realEnv.SetSchedulerClient(scpb.NewSchedulerClient(conn))
 	realEnv.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
 	realEnv.SetCommandRunner(&commandutil.CommandRunner{})
+
+	if *enableOCIFetcherService {
+		log.Info("Registering OCI fetcher service")
+		if err := fetcher.Register(realEnv); err != nil {
+			log.Fatalf("Failed to register OCI fetcher service: %s", err)
+		}
+	}
 
 	return realEnv
 }
