@@ -3,6 +3,9 @@ package oci
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
@@ -33,6 +36,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/jonboulle/clockwork"
 
+	ocifetcherpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
@@ -300,13 +304,20 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	}
 	log.CtxInfof(ctx, "Authenticating with registry %q", imageRef.Context().RegistryStr())
 
-	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	_, err = remote.Head(imageRef, remoteOpts...)
+	fetcher := r.env.GetOCIFetcherServer()
+	if fetcher == nil {
+		return status.FailedPreconditionError("OCIFetcherServer not available in environment")
+	}
+
+	resp, err := fetcher.CanAccess(ctx, &ocifetcherpb.CanAccessRequest{
+		Reference:   imageRef.String(),
+		Credentials: credentials.ToProto(),
+	})
 	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
-		}
-		return status.UnavailableErrorf("could not authorize to remote registry: %s", err)
+		return err
+	}
+	if !resp.GetCanAccess() {
+		return status.PermissionDeniedErrorf("not authorized to access image manifest")
 	}
 	return nil
 }
@@ -339,15 +350,21 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		r.mu.Unlock()
 	}
 
-	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	desc, err := remote.Head(tagRef, remoteOpts...)
-	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
-		}
-		return "", status.UnavailableErrorf("could not authorize to remote registry: %s", err)
+	fetcher := r.env.GetOCIFetcherServer()
+	if fetcher == nil {
+		return "", status.FailedPreconditionError("OCIFetcherServer not available in environment")
 	}
-	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
+
+	resp, err := fetcher.FetchManifestMetadata(ctx, &ocifetcherpb.FetchManifestMetadataRequest{
+		Ref:         tagRef.String(),
+		Credentials: credentials.ToProto(),
+	})
+	if err != nil {
+		return "", err
+	}
+
+	digestStr := resp.GetDigest()
+	imageNameWithDigest := tagRef.Context().Digest(digestStr).String()
 	entryToAdd := tagToDigestEntry{
 		nameWithDigest: imageNameWithDigest,
 		expiration:     r.clock.Now().Add(resolveImageDigestLRUDuration),
@@ -397,6 +414,70 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		)
 	}
 
+	fetcher := r.env.GetOCIFetcherServer()
+	if fetcher == nil {
+		return nil, status.FailedPreconditionError("OCIFetcherServer not available in environment")
+	}
+
+	resp, err := fetcher.FetchManifest(ctx, &ocifetcherpb.FetchManifestRequest{
+		Ref:         imageRef.String(),
+		Credentials: credentials.ToProto(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse manifest to determine media type and build descriptor
+	manifestBytes := resp.GetManifest()
+	mediaType, err := determineMediaType(manifestBytes)
+	if err != nil {
+		return nil, status.InternalErrorf("could not determine manifest media type: %s", err)
+	}
+
+	hash, err := gcr.NewHash(computeSHA256(manifestBytes))
+	if err != nil {
+		return nil, status.InternalErrorf("could not compute manifest digest: %s", err)
+	}
+
+	desc := gcr.Descriptor{
+		Digest:    hash,
+		Size:      int64(len(manifestBytes)),
+		MediaType: mediaType,
+	}
+
+	return newImageFromRawManifest(
+		ctx,
+		imageRef.Context(),
+		desc,
+		manifestBytes,
+		r.env.GetActionCacheClient(),
+		r.env.GetByteStreamClient(),
+		puller,
+	), nil
+}
+
+// computeSHA256 returns the sha256:hex_digest format string for the given bytes
+func computeSHA256(data []byte) string {
+	hash := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(hash[:])
+}
+
+// determineMediaType parses manifest bytes to determine the media type
+func determineMediaType(manifestBytes []byte) (types.MediaType, error) {
+	var manifest struct {
+		MediaType string `json:"mediaType"`
+	}
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		return "", err
+	}
+	if manifest.MediaType == "" {
+		// Docker V2 Schema 1 doesn't have a mediaType field
+		return types.DockerManifestSchema2, nil
+	}
+	return types.MediaType(manifest.MediaType), nil
+}
+
+func (r *Resolver) resolveWithPuller(ctx context.Context, imageRef gcrname.Reference, puller *remote.Puller) (gcr.Image, error) {
 	remoteDesc, err := puller.Get(ctx, imageRef)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
