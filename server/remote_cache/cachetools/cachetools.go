@@ -270,7 +270,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	bufSize := int64(digest.SafeBufferSize(r.ToProto(), uploadBufSizeBytes))
 	var rc io.ReadCloser = io.NopCloser(in)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		reader, err := compression.NewBufferedZstdCompressingReader(rc, uploadBufPool, bufSize)
+		reader, err := compression.NewZstdCompressingReader(rc, uploadBufPool, bufSize)
 		if err != nil {
 			return nil, 0, status.InternalErrorf("Failed to compress blob: %s", err)
 		}

@@ -286,15 +286,17 @@ func (d *zstdDecompressor) Close() error {
 	return lastErr
 }
 
-type compressingReader struct {
-	inputReader io.ReadCloser
-	readBuf     []byte
-	compressBuf []byte
-	leftover    []byte
-	readErr     error
+type ZstdCompressingReader struct {
+	inputReader   io.ReadCloser
+	readBuf       []byte
+	compressBuf   []byte
+	leftover      []byte
+	readErr       error
+	closed        bool
+	returnBuffers func()
 }
 
-func (r *compressingReader) Read(p []byte) (int, error) {
+func (r *ZstdCompressingReader) Read(p []byte) (int, error) {
 	var n int
 	if len(r.leftover) == 0 && r.readErr == nil {
 		n, r.readErr = r.inputReader.Read(r.readBuf)
@@ -313,69 +315,41 @@ func (r *compressingReader) Read(p []byte) (int, error) {
 	return n, r.readErr
 }
 
-func (r *compressingReader) Close() error {
+func (r *ZstdCompressingReader) Close() error {
+	if r.closed {
+		return nil
+	}
+	r.closed = true
+	r.returnBuffers()
 	return r.inputReader.Close()
 }
 
-// newZstdCompressingReader returns a reader that reads chunks from the given
-// reader into the read buffer, and makes the zstd-compressed chunks available
-// on the output reader. Each chunk read into the read buffer is immediately
-// compressed, independently of other chunks, and piped to the output reader.
+// NewZstdCompressingReader returns a reader that reads from the input, and
+// returns an io.ReadCloser that provides zstd-compressed data as output.
 // The default compression level is used.
 //
-// The read buffer must have a non-zero length, and should have a relatively
-// large length in order to get a good compression ratio, since chunks are
-// compressed independently. If the length of the byte stream provided by the
-// given reader is known, and is relatively small, then it is recommended to
-// provide a read buffer that can exactly fit the full contents of the stream.
+// bufSize must be greater than 0, and should be relatively large in order to
+// get a good compression ratio. If the length of the byte stream provided by
+// the given reader is known, and is relatively small, then it is recommended to
+// set bufSize to the length of the stream. Consider using digest.SafeBufferSize.
 //
-// The compression buffer is optional and is used as a staging buffer for
-// compressed contents before sending to the output reader. It is recommended to
-// set this to a buffer that has a capacity equal to the read buffer. If any
-// compressed chunk's size is greater than the uncompressed chunk, then a new
-// compression buffer is allocated internally. This scenario should be rare if
-// the data is even modestly compressible and the compression buffer capacity is
-// at least a few hundred bytes.
-func newZstdCompressingReader(reader io.ReadCloser, readBuf []byte, compressBuf []byte) (io.ReadCloser, error) {
-	if len(readBuf) == 0 {
+// bufferPool should have a max buffer size of at least bufSize.
+//
+// When the returned reader is closed, input will also be closed. It is safe to
+// call Close multiple times.
+func NewZstdCompressingReader(input io.ReadCloser, bufferPool *bytebufferpool.VariableSizePool, bufSize int64) (*ZstdCompressingReader, error) {
+	if bufSize <= 0 {
 		return nil, io.ErrShortBuffer
 	}
-	return &compressingReader{
-		inputReader: reader,
+	readBuf, compressBuf := bufferPool.Get(bufSize), bufferPool.Get(bufSize)
+	return &ZstdCompressingReader{
+		inputReader: input,
 		readBuf:     readBuf,
 		compressBuf: compressBuf,
-	}, nil
-}
-
-// bufPoolCompressingReader helps manage resources associated with a compression.NewZstdCompressingReader
-type bufPoolCompressingReader struct {
-	io.ReadCloser
-	readBuf     []byte
-	compressBuf []byte
-	bufferPool  *bytebufferpool.VariableSizePool
-}
-
-func (r *bufPoolCompressingReader) Close() error {
-	err := r.ReadCloser.Close()
-	r.bufferPool.Put(r.readBuf)
-	r.bufferPool.Put(r.compressBuf)
-	return err
-}
-
-func NewBufferedZstdCompressingReader(reader io.ReadCloser, bufferPool *bytebufferpool.VariableSizePool, bufSize int64) (io.ReadCloser, error) {
-	readBuf := bufferPool.Get(bufSize)
-	compressBuf := bufferPool.Get(bufSize)
-	cr, err := newZstdCompressingReader(reader, readBuf, compressBuf)
-	if err != nil {
-		bufferPool.Put(readBuf)
-		bufferPool.Put(compressBuf)
-		return nil, err
-	}
-	return &bufPoolCompressingReader{
-		ReadCloser:  cr,
-		readBuf:     readBuf,
-		compressBuf: compressBuf,
-		bufferPool:  bufferPool,
+		returnBuffers: func() {
+			bufferPool.Put(readBuf)
+			bufferPool.Put(compressBuf)
+		},
 	}, nil
 }
 

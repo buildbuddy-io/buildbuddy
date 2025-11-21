@@ -47,18 +47,18 @@ func TestLossless(t *testing.T) {
 			decompress: decompressWithNewZstdDecompressingReader,
 		},
 		{
-			name:       "NewBufferedZstdCompressingReader -> DecompressZstd",
-			compress:   compressWithNewBufferedZstdCompressingReader,
+			name:       "NewZstdCompressingReader -> DecompressZstd",
+			compress:   compressWithNewZstdCompressingReader,
 			decompress: decompressWithDecompressZstd,
 		},
 		{
-			name:       "NewBufferedZstdCompressingReader -> NewZstdDecompressor",
-			compress:   compressWithNewBufferedZstdCompressingReader,
+			name:       "NewZstdCompressingReader -> NewZstdDecompressor",
+			compress:   compressWithNewZstdCompressingReader,
 			decompress: decompressWithNewZstdDecompressor,
 		},
 		{
-			name:       "NewBufferedZstdCompressingReader -> NewZstdDecompressingReader",
-			compress:   compressWithNewBufferedZstdCompressingReader,
+			name:       "NewZstdCompressingReader -> NewZstdDecompressingReader",
+			compress:   compressWithNewZstdCompressingReader,
 			decompress: decompressWithNewZstdDecompressingReader,
 		},
 		{
@@ -100,13 +100,13 @@ func compressWithCompressZstd(t *testing.T, src []byte) []byte {
 	return compressed
 }
 
-func compressWithNewBufferedZstdCompressingReader(t *testing.T, src []byte) []byte {
+func compressWithNewZstdCompressingReader(t *testing.T, src []byte) []byte {
 	bufSize := int64(readBufferSize)
 	if l := int64(len(src)); l < bufSize {
 		bufSize = l
 	}
 	rc := io.NopCloser(bytes.NewReader(src))
-	c, err := compression.NewBufferedZstdCompressingReader(rc, bufPool, bufSize)
+	c, err := compression.NewZstdCompressingReader(rc, bufPool, bufSize)
 	require.NoError(t, err)
 
 	compressed, err := io.ReadAll(c)
@@ -168,7 +168,7 @@ func TestCompressingReader_BufferSizes(t *testing.T) {
 				name := fmt.Sprintf("%d_total_bytes_%d_buf_size_%d_p", totalBytes, bufSize, pSize)
 				t.Run(name, func(t *testing.T) {
 					_, in := testdigest.RandomCASResourceBuf(t, int64(totalBytes))
-					zrc, err := compression.NewBufferedZstdCompressingReader(
+					zrc, err := compression.NewZstdCompressingReader(
 						io.NopCloser(bytes.NewReader(in)),
 						bufPool,
 						bufSize,
@@ -234,7 +234,7 @@ func TestCompressingReader_HoldErrors(t *testing.T) {
 		bytesToAllow:  bytesToAllow,
 		errorToReturn: errorToReturn,
 	}
-	zrc, err := compression.NewBufferedZstdCompressingReader(
+	zrc, err := compression.NewZstdCompressingReader(
 		io.NopCloser(er),
 		bufPool,
 		bufSize,
