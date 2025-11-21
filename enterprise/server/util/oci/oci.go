@@ -425,16 +425,21 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		MediaType: mediaType,
 	}
 
-	return newImageFromRawManifest(
+	return imageFromDescriptorAndManifest(
 		ctx,
 		imageRef.Context(),
 		desc,
 		manifestBytes,
+		gcr.Platform{
+			Architecture: platform.GetArch(),
+			OS:           platform.GetOs(),
+			Variant:      platform.GetVariant(),
+		},
 		r.env.GetActionCacheClient(),
 		r.env.GetByteStreamClient(),
 		fetcher,
 		credentials,
-	), nil
+	)
 }
 
 // computeSHA256 returns the sha256:hex_digest format string for the given bytes
