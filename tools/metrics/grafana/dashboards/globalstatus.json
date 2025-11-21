@@ -107,14 +107,116 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(cloudprober_success[10m])) by (probe) / sum(increase(cloudprober_total[10m])) by (probe)",
+          "expr": "sum(increase(cloudprober_success{region=~\"${region}\"}[10m])) by (probe) / sum(increase(cloudprober_total{region=~\"${region}\"}[10m])) by (probe)",
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "{{region{{=={{",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Prober Health",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "log": 2,
+              "type": "log"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 7,
+        "y": 8
+      },
+      "id": 15,
+      "options": {
+        "alertThreshold": true,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (region, job,version) (buildbuddy_version{region=~\"${region}\", job=~\"(buildbuddy-app|cache-proxy|.*executor.*)\"})",
+          "hide": false,
+          "interval": "",
+          "legendFormat": "{{region}} {{job}} {{version}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Versions",
       "type": "timeseries"
     },
     {
@@ -142,9 +244,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 3,
+        "w": 4,
         "x": 7,
-        "y": 8
+        "y": 16
       },
       "id": 8,
       "options": {
@@ -211,9 +313,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 3,
-        "x": 10,
-        "y": 8
+        "w": 4,
+        "x": 11,
+        "y": 16
       },
       "id": 3,
       "options": {
@@ -284,9 +386,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 3,
-        "x": 13,
-        "y": 8
+        "w": 4,
+        "x": 15,
+        "y": 16
       },
       "id": 5,
       "options": {
@@ -332,6 +434,243 @@
       "fieldConfig": {
         "defaults": {
           "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "Bps"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 3,
+        "x": 7,
+        "y": 20
+      },
+      "id": 16,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "rate(sum(buildbuddy_proxy_action_cache_read_bytes{region=~\"${region}\", job=\"cache-proxy\"})) + rate(sum (buildbuddy_proxy_byte_stream_read_bytes{region=~\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_content_addressable_storage_bytes{region=~\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}))",
+          "interval": "",
+          "legendFormat": "__auto",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Cache Proxy Download",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "Bps"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 3,
+        "x": 10,
+        "y": 20
+      },
+      "id": 17,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "rate(sum(buildbuddy_proxy_action_cache_write_bytes{region=~\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_byte_stream_write_bytes{region=~\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_content_addressable_storage_bytes{region=~\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}))",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Cache Proxy Upload",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 3,
+        "x": 13,
+        "y": 20
+      },
+      "id": 18,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "(rate(sum(buildbuddy_proxy_action_cache_read_bytes{region=~\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"})) + rate(sum(buildbuddy_proxy_byte_stream_read_bytes{region=~\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"})) + rate(sum(buildbuddy_proxy_content_addressable_storage_bytes{region=~\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"})))/(rate(sum(buildbuddy_proxy_action_cache_read_bytes{region=~\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_byte_stream_read_bytes{region=~\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_content_addressable_storage_bytes{region=~\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"})))",
+          "interval": "",
+          "legendFormat": "__auto",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Cache Proxy Hit Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
             "mode": "continuous-RdYlGr"
           },
           "mappings": [],
@@ -356,10 +695,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
+        "h": 5,
         "w": 3,
         "x": 16,
-        "y": 8
+        "y": 20
       },
       "id": 14,
       "options": {
@@ -387,7 +726,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "avg by (region) (buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{job=\"cache-proxy\", cache_name=\"pebble_cache\", partition_id=\"default\"}/1e6)",
+          "expr": "avg by (region) (buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{region=~\"${region}\", job=\"cache-proxy\", cache_name=\"pebble_cache\", partition_id=\"default\"}/1e6)",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -476,7 +815,7 @@
         "h": 8,
         "w": 12,
         "x": 7,
-        "y": 12
+        "y": 25
       },
       "id": 10,
       "options": {
@@ -578,7 +917,7 @@
         "h": 8,
         "w": 12,
         "x": 7,
-        "y": 20
+        "y": 33
       },
       "id": 12,
       "options": {
@@ -613,7 +952,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "avg(sum by (instance, cpu) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\", nodename=~\".*app.*\"}[1m])))",
+          "expr": "avg(sum by (instance, cpu) (rate(node_cpu_seconds_total{region=~\"${region}\", mode!~\"idle|iowait|steal\", nodename=~\".*app.*\"}[1m])))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -625,7 +964,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "avg(sum by (instance, cpu) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\", nodename=~\".*executor.*\"}[1m])))",
+          "expr": "avg(sum by (instance, cpu) (rate(node_cpu_seconds_total{region=~\"${region}\", mode!~\"idle|iowait|steal\", nodename=~\".*executor.*\"}[1m])))",
           "hide": false,
           "instant": false,
           "legendFormat": "__auto",
@@ -638,7 +977,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "avg(sum by (instance, cpu) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\", nodename=~\".*cache-proxy.*\"}[1m])))",
+          "expr": "avg(sum by (instance, cpu) (rate(node_cpu_seconds_total{region=~\"${region}\", mode!~\"idle|iowait|steal\", nodename=~\".*cache-proxy.*\"}[1m])))",
           "hide": false,
           "instant": false,
           "legendFormat": "__auto",
@@ -676,7 +1015,7 @@
         "h": 4,
         "w": 4,
         "x": 7,
-        "y": 28
+        "y": 41
       },
       "id": 4,
       "options": {
@@ -704,7 +1043,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{job=~\".*executor\"}[1m]))",
+          "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{region=~\"${region}\", job=~\".*executor\"}[1m]))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -741,7 +1080,7 @@
         "h": 4,
         "w": 4,
         "x": 11,
-        "y": 28
+        "y": 41
       },
       "id": 7,
       "options": {
@@ -769,7 +1108,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{job=~\".*executor\"}[1m]))",
+          "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{region=~\"${region}\", job=~\".*executor\"}[1m]))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -806,7 +1145,7 @@
         "h": 4,
         "w": 4,
         "x": 15,
-        "y": 28
+        "y": 41
       },
       "id": 6,
       "options": {
@@ -834,7 +1173,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (status) (rate(buildbuddy_remote_execution_count{job=~\".*executor\", status=\"OK\"}[1m]))",
+          "expr": "sum by (status) (rate(buildbuddy_remote_execution_count{region=~\"${region}\", job=~\".*executor\", status=\"OK\"}[1m]))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -920,7 +1259,7 @@
         "h": 8,
         "w": 12,
         "x": 7,
-        "y": 32
+        "y": 45
       },
       "id": 9,
       "options": {
@@ -1075,7 +1414,7 @@
         "h": 8,
         "w": 12,
         "x": 7,
-        "y": 40
+        "y": 53
       },
       "id": 2,
       "options": {
@@ -1272,7 +1611,7 @@
         "h": 8,
         "w": 12,
         "x": 7,
-        "y": 48
+        "y": 61
       },
       "id": 11,
       "options": {
@@ -1437,7 +1776,7 @@
         "h": 8,
         "w": 12,
         "x": 7,
-        "y": 56
+        "y": 69
       },
       "id": 13,
       "options": {
@@ -1493,7 +1832,28 @@
     "file:globalstatus.json"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "allValue": ".*",
+        "allowCustomValue": false,
+        "current": {
+          "text": "All",
+          "value": ".*"
+        },
+        "definition": "label_values(up,region)",
+        "includeAll": true,
+        "name": "region",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(up,region)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      }
+    ]
   },
   "time": {
     "from": "now-6h",
@@ -1501,6 +1861,6 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "globalstatus",
+  "title": "Global Status",
   "uid": "a42a59ae-6753-4b18-baad-34dd8183d9d4"
 }
