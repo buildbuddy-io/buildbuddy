@@ -13,6 +13,7 @@ import (
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
+	ocifetcherpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -140,6 +141,7 @@ type RealEnv struct {
 	hitTrackerFactory                    interfaces.HitTrackerFactory
 	hitTrackerServiceServer              hitpb.HitTrackerServiceServer
 	experimentFlagProvider               interfaces.ExperimentFlagProvider
+	ociFetcherServer                     ocifetcherpb.OCIFetcherServer
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -862,6 +864,13 @@ func (r *RealEnv) GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer {
 }
 func (r *RealEnv) SetHitTrackerServiceServer(hitTrackerServiceServer hitpb.HitTrackerServiceServer) {
 	r.hitTrackerServiceServer = hitTrackerServiceServer
+}
+
+func (r *RealEnv) GetOCIFetcherServer() ocifetcherpb.OCIFetcherServer {
+	return r.ociFetcherServer
+}
+func (r *RealEnv) SetOCIFetcherServer(ociFetcherServer ocifetcherpb.OCIFetcherServer) {
+	r.ociFetcherServer = ociFetcherServer
 }
 
 func (r *RealEnv) GetExperimentFlagProvider() interfaces.ExperimentFlagProvider {

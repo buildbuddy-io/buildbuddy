@@ -12,6 +12,7 @@ import (
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
+	ocifetcherpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -141,5 +142,6 @@ type Env interface {
 	GetCPULeaser() interfaces.CPULeaser
 	GetHitTrackerFactory() interfaces.HitTrackerFactory
 	GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer
+	GetOCIFetcherServer() ocifetcherpb.OCIFetcherServer
 	GetExperimentFlagProvider() interfaces.ExperimentFlagProvider
 }
