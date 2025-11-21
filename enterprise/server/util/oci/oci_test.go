@@ -347,7 +347,7 @@ func TestResolve(t *testing.T) {
 		for _, useCachePercent := range []int{0, 100} {
 			t.Run(tc.name+fmt.Sprintf("/use_cache_percent_%d", useCachePercent), func(t *testing.T) {
 				te := testenv.GetTestEnv(t)
-				fetcher.Register(te)
+				require.NoError(t, fetcher.Register(te))
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
 				registry := testregistry.Run(t, tc.opts)
@@ -441,6 +441,7 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 			name := tc.name + "/use_cache_percent_" + strconv.Itoa(useCachePercent)
 			t.Run(name, func(t *testing.T) {
 				te := testenv.GetTestEnv(t)
+				require.NoError(t, fetcher.Register(te))
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
 				counter := newRequestCounter()
@@ -626,6 +627,7 @@ func TestAllowPrivateIPs(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
+			require.NoError(t, fetcher.Register(te))
 			flags.Set(t, "http.client.allow_localhost", false)
 			flags.Set(t, "executor.container_registry_allowed_private_ips", tc.allowedIPs)
 			registry := testregistry.Run(t, testregistry.Opts{})
