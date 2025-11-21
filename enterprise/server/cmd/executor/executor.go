@@ -83,13 +83,13 @@ var (
 	startupCommands           = flag.Slice("executor.startup_commands", []string{}, "Commands to run on startup. These are run sequentially and block executor startup.")
 	clientType                = flag.String("executor.grpc_client_type", "executor", "The client type label for requests from this executor, used to differentiate e.g. workflow executor traffic.")
 
-	listen            = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
-	port              = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	monitoringPort            = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
-	monitoringSSLPort         = flag.Int("monitoring.ssl_port", -1, "If non-negative, the SSL port to listen for monitoring traffic on. `ssl` config must have `ssl_enabled: true` and be properly configured.")
-	serverType                = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
-	maxThreads                = flag.Int("executor.max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
-	enableOCIFetcherService   = flag.Bool("executor.enable_oci_fetcher_service", false, "If true, enables the OCI fetcher service for testing. Allows calling OCI fetch operations via env.GetOCIFetcherServer().")
+	listen                  = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	port                    = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
+	monitoringPort          = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
+	monitoringSSLPort       = flag.Int("monitoring.ssl_port", -1, "If non-negative, the SSL port to listen for monitoring traffic on. `ssl` config must have `ssl_enabled: true` and be properly configured.")
+	serverType              = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
+	maxThreads              = flag.Int("executor.max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
+	enableOCIFetcherService = flag.Bool("executor.enable_oci_fetcher_service", false, "If true, enables the OCI fetcher service for testing. Allows calling OCI fetch operations via env.GetOCIFetcherServer().")
 )
 
 func init() {
