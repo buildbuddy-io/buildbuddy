@@ -210,7 +210,7 @@ func (s *OCIFetcherServer) getOrCreatePuller(ctx context.Context, imageRef gcrna
 	s.pullerCacheMu.Unlock()
 
 	// Check if cached puller is still valid
-	if ok && cached != nil && time.Now().Before(cached.expiresAt) {
+	if ok && cached != nil && s.env.GetClock().Now().Before(cached.expiresAt) {
 		return cached.puller, nil
 	}
 
@@ -239,7 +239,7 @@ func (s *OCIFetcherServer) getOrCreatePuller(ctx context.Context, imageRef gcrna
 	// Cache the puller with expiration
 	entry := &cachedPuller{
 		puller:    puller,
-		expiresAt: time.Now().Add(pullerCacheTTL),
+		expiresAt: s.env.GetClock().Now().Add(pullerCacheTTL),
 	}
 
 	s.pullerCacheMu.Lock()
