@@ -395,7 +395,7 @@ func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, b
 	if !writeBody {
 		return nil
 	}
-	return ocicache.FetchBlobFromCache(ctx, w, bsClient, hash, blobMetadata.GetContentLength())
+	return ocicache.FetchBlobFromCache(ctx, w, bsClient, hash)
 }
 
 func isDigest(identifier string) bool {

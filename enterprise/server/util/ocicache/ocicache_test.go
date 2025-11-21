@@ -231,7 +231,7 @@ func blobDoesNotExist(t *testing.T, ctx context.Context, te *testenv.TestEnv, re
 	require.Nil(t, metadata)
 
 	out := &bytes.Buffer{}
-	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
+	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash)
 	require.Error(t, err)
 }
 
@@ -390,7 +390,7 @@ func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, repo 
 	require.Equal(t, contentLength, metadata.GetContentLength())
 
 	out := &bytes.Buffer{}
-	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
+	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash)
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff(layerBuf, out.Bytes()))
 }
