@@ -41,6 +41,8 @@ import TargetTestLogCardComponent from "./target_test_log_card";
 
 const Status = api_common.v1.Status;
 
+export type SectionFilter = "all" | "documents" | "logs" | "coverage" | "actions" | "artifacts" | "cache";
+
 export interface TargetProps {
   invocationId: string;
   label: string;
@@ -60,12 +62,14 @@ interface State {
   loading: boolean;
   target?: target.Target;
   isLinkRepoModalOpen: boolean;
+  sectionFilter: SectionFilter;
 }
 
 export default class TargetV2Component extends React.Component<TargetProps, State> {
   state: State = {
     loading: false,
     isLinkRepoModalOpen: false,
+    sectionFilter: "all",
   };
 
   componentDidMount() {
@@ -309,6 +313,21 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     }
     const resultEvents = target.testResultEvents?.sort(this.resultSort) || [];
     const actionEvents = target.actionEvents?.sort(this.actionSort) || [];
+    const sectionTabs: SectionTab[] = [
+      { id: "all", label: "All" },
+      { id: "logs", label: "Test logs" },
+      { id: "coverage", label: "Coverage" },
+      { id: "artifacts", label: "Artifacts" },
+    ];
+    if (actionEvents.length > 0) {
+      sectionTabs.push({ id: "actions", label: "Actions" });
+    }
+    if (capabilities.config.detailedCacheStatsEnabled) {
+      sectionTabs.push({ id: "cache", label: "Cache" });
+    }
+    const activeSection = sectionTabs.some((tab) => tab.id === this.state.sectionFilter)
+      ? this.state.sectionFilter
+      : "all";
     return (
       <div className="target-page">
         <div className="shelf">
@@ -416,6 +435,16 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
         </div>
         <div className="container nopadding-dense">
           {this.renderTestShardingSuggestionCard(resultEvents)}
+          <div className="tabs target-section-tabs">
+            {sectionTabs.map((tab) => (
+              <span
+                key={tab.id}
+                className={`tab ${activeSection === tab.id ? "selected" : ""}`}
+                onClick={(e) => this.setState({ sectionFilter: tab.id })}>
+                {tab.label}
+              </span>
+            ))}
+          </div>
           {resultEvents.length > 1 && (
             <div className={`runs ${resultEvents.length > 9 && "run-grid"}`}>
               {resultEvents.map((event, index) => (
@@ -441,35 +470,42 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
             .filter((_, index) => `#${index + 1}` == this.getTab())
             .map((buildEvent) => (
               <span>
+              {(activeSection === "all" || activeSection === "documents") && (
                 <TargetTestDocumentCardComponent
                   dark={this.props.dark}
                   invocationId={this.props.invocationId}
                   buildEvent={buildEvent}
                 />
+              )}
+              {(activeSection === "all" || activeSection === "logs") && (
                 <TargetTestLogCardComponent
                   dark={this.props.dark}
                   invocationId={this.props.invocationId}
                   buildEvent={buildEvent}
                 />
+              )}
+              {(activeSection === "all" || activeSection === "coverage") && (
                 <TargetTestCoverageCardComponent
                   invocationId={this.props.invocationId}
                   repo={this.props.repo || ""}
                   commit={this.props.commit || ""}
                   buildEvent={buildEvent}
                 />
-              </span>
-            ))}
-          {actionEvents.map((action) => (
+              )}
+            </span>
+          ))}
+          {(activeSection === "all" || activeSection === "actions") && actionEvents.map((action) => (
             <ActionCardComponent dark={this.props.dark} invocationId={this.props.invocationId} buildEvent={action} />
           ))}
-          {Boolean(target.files.length) && (
+          {(activeSection === "all" || activeSection === "artifacts") && Boolean(target.files.length) && (
             <TargetArtifactsCardComponent
               name={"Target outputs"}
               invocationId={this.props.invocationId}
               files={target.files}
             />
           )}
-          {resultEvents
+          {(activeSection === "all" || activeSection === "artifacts") &&
+            resultEvents
             .filter((event, index) => `#${index + 1}` == this.getTab() && event?.testResult?.testActionOutput)
             .map((event) => (
               <div>
@@ -481,7 +517,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
               </div>
             ))}
 
-          {capabilities.config.detailedCacheStatsEnabled && (
+          {(activeSection === "all" || activeSection === "cache") && capabilities.config.detailedCacheStatsEnabled && (
             <CacheRequestsCardComponent
               model={this.props.model}
               query={this.props.label}
