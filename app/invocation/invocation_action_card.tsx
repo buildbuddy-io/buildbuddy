@@ -1077,7 +1077,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     {this.state.execution?.targetLabel && (
                       <div className="action-section">
                         <div className="action-property-title">Target label</div>
-                        <div debug-id="target-label">{this.state.execution?.targetLabel}</div>
+                        <div debug-id="target-label">
+                          <TextLink
+                            className="target-label-link"
+                            href={`/invocation/${this.props.model.getInvocationId()}?${new URLSearchParams({
+                              target: this.state.execution.targetLabel,
+                            })}`}>
+                            {this.state.execution.targetLabel}
+                          </TextLink>
+                        </div>
                       </div>
                     )}
                     {this.state.execution?.actionMnemonic && (
