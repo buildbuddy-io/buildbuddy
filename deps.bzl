@@ -5,9 +5,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file"
 # When changing this version, a new release of podman-static may be needed.
 # See dockerfiles/executor_image/README.md for instructions.
 # The checksums below will also need to be updated.
-PODMAN_VERSION = "v5.6.2"
-PODMAN_STATIC_SHA256_AMD64 = "4a4059c8c7c592ef5c41197e90e704d7cc16c48db0480fa8690a662792296fb2"
-PODMAN_STATIC_SHA256_ARM64 = "18922445162829db2627085659086d5deef1caf96b8c85bbf2495d693c8373a3"
+PODMAN_VERSION = "v5.7.0"
+PODMAN_STATIC_SHA256_AMD64 = "6a1c06b78d7dad15d8d7155a180874939a04bd39ce2f64726c7f11142ab7aa7d"
+PODMAN_STATIC_SHA256_ARM64 = "703ffad8972aa2db70a173c80804a88185e6c2dc8a88a247a8ebffeac424b0ba"
 
 # Manually created
 def install_static_dependencies(workspace_name = "buildbuddy"):
