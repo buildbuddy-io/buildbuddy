@@ -628,9 +628,9 @@ func TestAllowPrivateIPs(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
-			require.NoError(t, fetcher.Register(te))
 			flags.Set(t, "http.client.allow_localhost", false)
 			flags.Set(t, "executor.container_registry_allowed_private_ips", tc.allowedIPs)
+			require.NoError(t, fetcher.Register(te))
 			registry := testregistry.Run(t, testregistry.Opts{})
 			err := pushAndFetchRandomImage(t, te, registry)
 			if tc.expectError {
