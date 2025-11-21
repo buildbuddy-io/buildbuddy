@@ -26,7 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cachepb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -364,7 +364,7 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 	// TODO: https://github.com/buildbuddy-io/buildbuddy-internal/issues/6146
 	// Fix this metadata GRPC to use a GRPC that hits the correct cache when the routing_service is enabled.
 	// For now, we will always fetch metadata from the remote cache.
-	md, err := p.env.GetBuildBuddyServiceClient().GetCacheMetadata(ctx, &cache.GetCacheMetadataRequest{
+	md, err := p.env.GetBuildBuddyServiceClient().GetCacheMetadata(ctx, &cachepb.GetCacheMetadataRequest{
 		ResourceName: cacheRN.ToProto(),
 	})
 	if err != nil {
@@ -504,7 +504,7 @@ func tempCopy(r io.Reader) (path string, err error) {
 	return f.Name(), nil
 }
 
-// TODO: Support making requests to the local GRPC servers without GRPC overhead.
+// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/6187): Reduce gRPC overhead from self-RPCs.
 func getByteStreamClient(env environment.Env) bspb.ByteStreamClient {
 	bsClient := env.GetByteStreamClient()
 	// If there is a local bytestream server, use it instead of the remote one.
