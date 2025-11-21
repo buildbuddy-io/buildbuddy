@@ -82,10 +82,10 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 7,
+        "x": 6,
         "y": 0
       },
-      "id": 1,
+      "id": 3,
       "options": {
         "legend": {
           "calcs": [],
@@ -107,7 +107,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(cloudprober_success[10m])) by (probe) / sum(increase(cloudprober_total[10m])) by (probe)",
+          "expr": "sum(increase(cloudprober_success{region=\"${region}\"}[10m])) by (probe) / sum(increase(cloudprober_total{region=\"${region}\"}[10m])) by (probe)",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -115,6 +115,134 @@
         }
       ],
       "title": "Prober Health",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "log": 2,
+              "type": "log"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 6,
+        "y": 8
+      },
+      "id": 13,
+      "options": {
+        "alertThreshold": true,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (job,version) (buildbuddy_version{region=\"${region}\", job=\"buildbuddy-app\"})",
+          "hide": false,
+          "interval": "",
+          "legendFormat": "{{job}} {{version}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (job,version) (buildbuddy_version{region=\"${region}\", job=~\".*executor.*\"})",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "{{job}} {{version}}",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (job,version) (buildbuddy_version{region=\"${region}\", job=\"cache-proxy\"})",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "{{job}} {{version}}",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "Versions",
       "type": "timeseries"
     },
     {
@@ -138,15 +266,28 @@
           },
           "unit": "Bps"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
-        "h": 4,
+        "h": 5,
         "w": 3,
-        "x": 7,
-        "y": 8
+        "x": 6,
+        "y": 16
       },
-      "id": 8,
+      "id": 4,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -172,14 +313,15 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_remote_cache_download_size_bytes_sum{job=\"buildbuddy-app\"}[1m]))",
-          "instant": false,
+          "expr": "rate(sum(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum (buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}))",
+          "interval": "",
           "legendFormat": "__auto",
+          "queryType": "randomWalk",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Cache Download",
+      "title": "Cache Proxy Download",
       "type": "stat"
     },
     {
@@ -190,7 +332,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "mappings": [],
           "thresholds": {
@@ -198,95 +340,31 @@
             "steps": [
               {
                 "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           },
           "unit": "Bps"
         },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 3,
-        "x": 10,
-        "y": 8
-      },
-      "id": 3,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.6.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_remote_cache_upload_size_bytes_sum{job=\"buildbuddy-app\"}[1m]))",
-          "instant": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Cache Upload",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "vm"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "continuous-RdYlGr"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
               {
-                "color": "dark-red"
-              },
-              {
-                "color": "#EAB839",
-                "value": 4
-              },
-              {
-                "color": "semi-dark-green",
-                "value": 4
+                "id": "unit",
+                "value": "percentunit"
               }
             ]
-          },
-          "unit": "s"
-        },
-        "overrides": []
+          }
+        ]
       },
       "gridPos": {
-        "h": 4,
+        "h": 5,
         "w": 3,
-        "x": 13,
-        "y": 8
+        "x": 9,
+        "y": 16
       },
       "id": 5,
       "options": {
@@ -314,14 +392,94 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{job=\"buildbuddy-app\", cache_name=\"pebble_gcs_cache\", partition_id=\"default\"}/1e6)",
+          "expr": "rate(sum(buildbuddy_proxy_action_cache_write_bytes{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}))",
+          "hide": false,
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Cache TTL",
+      "title": "Cache Proxy Upload",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 3,
+        "x": 12,
+        "y": 16
+      },
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "(rate(sum(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"})) + rate(sum(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"})) + rate(sum(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"})))/(rate(sum(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"})))",
+          "interval": "",
+          "legendFormat": "__auto",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Cache Proxy Hit Rate",
       "type": "stat"
     },
     {
@@ -356,12 +514,12 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
+        "h": 5,
         "w": 3,
-        "x": 16,
-        "y": 8
+        "x": 15,
+        "y": 16
       },
-      "id": 14,
+      "id": 2,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -387,7 +545,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "avg by (region) (buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{job=\"cache-proxy\", cache_name=\"pebble_cache\", partition_id=\"default\"}/1e6)",
+          "expr": "avg by (region) (buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{region=\"${region}\", job=\"cache-proxy\", cache_name=\"pebble_cache\", partition_id=\"default\"}/1e6)",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -396,119 +554,6 @@
       ],
       "title": "Cache Proxy TTL",
       "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "vm"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineStyle": {
-              "fill": "solid"
-            },
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "reqps"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "A"
-            },
-            "properties": [
-              {
-                "id": "displayName"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 7,
-        "y": 12
-      },
-      "id": 10,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.6.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "expr": "sum by (region) (rate(buildbuddy_invocation_count{invocation_status=\"success\"}[1m]))",
-          "instant": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Invocation QPS (OK)",
-      "type": "timeseries"
     },
     {
       "datasource": {
@@ -544,18 +589,6 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "app"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "B"
-            },
-            "properties": [
-              {
-                "id": "displayName",
                 "value": "executor"
               }
             ]
@@ -563,7 +596,7 @@
           {
             "matcher": {
               "id": "byFrameRefID",
-              "options": "C"
+              "options": "B"
             },
             "properties": [
               {
@@ -577,10 +610,10 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 7,
-        "y": 20
+        "x": 6,
+        "y": 21
       },
-      "id": 12,
+      "id": 7,
       "options": {
         "displayMode": "lcd",
         "legend": {
@@ -613,7 +646,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "avg(sum by (instance, cpu) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\", nodename=~\".*app.*\"}[1m])))",
+          "expr": "avg(sum by (instance, cpu) (rate(node_cpu_seconds_total{region=\"${region}\", mode!~\"idle|iowait|steal\", nodename=~\".*executor.*\"}[1m])))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -625,25 +658,12 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "avg(sum by (instance, cpu) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\", nodename=~\".*executor.*\"}[1m])))",
+          "expr": "avg(sum by (instance, cpu) (rate(node_cpu_seconds_total{region=\"${region}\", mode!~\"idle|iowait|steal\", nodename=~\".*proxy.*\"}[1m])))",
           "hide": false,
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
           "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "expr": "avg(sum by (instance, cpu) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\", nodename=~\".*cache-proxy.*\"}[1m])))",
-          "hide": false,
-          "instant": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "C"
         }
       ],
       "title": "CPU",
@@ -673,12 +693,12 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
+        "h": 5,
         "w": 4,
-        "x": 7,
-        "y": 28
+        "x": 6,
+        "y": 29
       },
-      "id": 4,
+      "id": 8,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -704,7 +724,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{job=~\".*executor\"}[1m]))",
+          "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{region=\"${region}\", job=~\".*executor\"}[1m]))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -738,12 +758,12 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
+        "h": 5,
         "w": 4,
-        "x": 11,
-        "y": 28
+        "x": 10,
+        "y": 29
       },
-      "id": 7,
+      "id": 9,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -769,7 +789,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{job=~\".*executor\"}[1m]))",
+          "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{region=\"${region}\", job=~\".*executor\"}[1m]))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -803,12 +823,12 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
+        "h": 5,
         "w": 4,
-        "x": 15,
-        "y": 28
+        "x": 14,
+        "y": 29
       },
-      "id": 6,
+      "id": 10,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -834,7 +854,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (status) (rate(buildbuddy_remote_execution_count{job=~\".*executor\", status=\"OK\"}[1m]))",
+          "expr": "sum by (status) (rate(buildbuddy_remote_execution_count{region=\"${region}\", job=~\".*executor\", status=\"OK\"}[1m]))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -843,271 +863,6 @@
       ],
       "title": "Executor Actions",
       "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "vm"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "bars",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "A"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "macstadium"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 7,
-        "y": 32
-      },
-      "id": 9,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.6.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "expr": "sum(up{job=\"mac-executor\"})",
-          "instant": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "expr": "sum by (region) (up{region=\"us-sjc\", job=~\".*executor.*\"})",
-          "hide": false,
-          "instant": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "expr": "sum by (region) (up{region!=\"us-sjc\", job=\"executor\"})",
-          "hide": false,
-          "instant": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "B"
-        }
-      ],
-      "title": "Running Executors ",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "vm"
-      },
-      "description": "Spot (green) vs Non-spot (yellow) executors",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "bars",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "non-spot"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "semi-dark-yellow",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "spot"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 7,
-        "y": 40
-      },
-      "id": 2,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.6.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "expr": "sum by (pooltype) (\n    label_replace(\n    label_replace(\n    label_replace(\n    label_replace(\n        node_uname_info{component=\"node-exporter\", nodename=~\".*executor.*\", region=~\"(us-central1|us-west1|us-west2)\"},\n        \"nodepool\", \"$2\", \"nodename\", \"^gke-(dev|prod)-[^-]*-(.*)-[0-9a-f]{8}-(grp-)?.{4}$\"\n    ),\n        \"pooltype\", \"spot\", \"nodepool\", \"^spot-.*$\"\n    ),\n        \"pooltype\", \"non-spot\", \"nodepool\", \"^(bb|executor)-.*$\"\n    ),\n        \"pooltype\", \"workflows\", \"nodepool\", \"^(workflow-executor)-.*$\"\n    )\n)",
-          "instant": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Executors Spot vs Non-Spot",
-      "type": "timeseries"
     },
     {
       "datasource": {
@@ -1271,8 +1026,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 7,
-        "y": 48
+        "x": 6,
+        "y": 34
       },
       "id": 11,
       "options": {
@@ -1296,7 +1051,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{region!=\"us-sjc\", job=\"executor\"}))",
+          "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", region!=\"us-sjc\", job=~\".*executor.*\"}))",
           "interval": "",
           "legendFormat": "Avg executor queue length",
           "queryType": "randomWalk",
@@ -1309,7 +1064,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(up{job=\"executor\"})",
+          "expr": "sum(up{region=\"${region}\", job=~\".*executor.*\"})",
           "interval": "",
           "legendFormat": "Executor instances",
           "range": true,
@@ -1321,7 +1076,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"executor-autoscaler\"})",
+          "expr": "sum(kube_horizontalpodautoscaler_status_desired_replicas{region=\"${region}\", horizontalpodautoscaler=\"executor-autoscaler\"})",
           "interval": "",
           "legendFormat": "Autoscaler target",
           "range": true,
@@ -1333,7 +1088,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(buildbuddy_remote_execution_tasks_executing{job=\"executor\"})",
+          "expr": "sum(buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=~\".*executor.*\"})",
           "hide": false,
           "instant": false,
           "legendFormat": "Tasks running",
@@ -1436,10 +1191,10 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 7,
-        "y": 56
+        "x": 6,
+        "y": 42
       },
-      "id": 13,
+      "id": 12,
       "options": {
         "legend": {
           "calcs": [],
@@ -1461,7 +1216,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (region) (up{job=\"cache-proxy\"})",
+          "expr": "sum by (region) (up{region=\"${region}\", job=\"cache-proxy\"})",
           "hide": false,
           "instant": false,
           "legendFormat": "__auto",
@@ -1474,7 +1229,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"cache-proxy-autoscaler\"}) + sum(up{region=\"us-sjc\", job=\"cache-proxy\"}) + sum(up{region=~\"^aws-.*\", job=\"cache-proxy\"})",
+          "expr": "sum(kube_horizontalpodautoscaler_status_desired_replicas{region=\"${region}\",horizontalpodautoscaler=\"cache-proxy-autoscaler\"})",
           "hide": false,
           "instant": false,
           "legendFormat": "Autoscaler target",
@@ -1490,17 +1245,36 @@
   "refresh": "1m",
   "schemaVersion": 41,
   "tags": [
-    "file:globalstatus.json"
+    "file:clusterstatus.json"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {
+          "text": "aws-us-west-2",
+          "value": "aws-us-west-2"
+        },
+        "definition": "label_values(up,region)",
+        "description": "",
+        "name": "region",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(up,region)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      }
+    ]
   },
   "time": {
     "from": "now-6h",
     "to": "now"
   },
   "timepicker": {},
-  "timezone": "",
-  "title": "Global Status",
-  "uid": "a42a59ae-6753-4b18-baad-34dd8183d9d4"
+  "timezone": "America/Los_Angeles",
+  "title": "Cluster Status",
+  "uid": "ef4qwuclgsv0ga"
 }
