@@ -1188,7 +1188,6 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 
 		bazelCmd, _ := parser.GetBazelCommandAndIndex(bazelArgs)
 		if bazelCmd == "build" || (bazelCmd == "run" && !*runRemotely) {
-			fetchOutputs = true
 			if bazelCmd == "run" {
 				runOutputLocally = true
 			}
