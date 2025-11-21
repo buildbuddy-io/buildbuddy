@@ -154,7 +154,7 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		counter = &ioutil.Counter{}
 		rc := io.NopCloser(io.TeeReader(reader, counter))
 
-		reader, err = compression.NewBufferedZstdCompressingReader(rc, s.bufferPool, bufSize)
+		reader, err = compression.NewZstdCompressingReader(rc, s.bufferPool, bufSize)
 		if err != nil {
 			return status.InternalErrorf("Failed to compress blob: %s", err)
 		}

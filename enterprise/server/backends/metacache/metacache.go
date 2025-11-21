@@ -754,7 +754,7 @@ func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.Resou
 
 	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
 		bufSize := digest.SafeBufferSize(r, CompressorBufSizeBytes)
-		return compression.NewBufferedZstdCompressingReader(reader, c.bufferPool, int64(bufSize))
+		return compression.NewZstdCompressingReader(reader, c.bufferPool, int64(bufSize))
 	}
 
 	return reader, nil

@@ -3321,7 +3321,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
 		bufSize := digest.SafeBufferSize(r, CompressorBufSizeBytes)
 
-		return compression.NewBufferedZstdCompressingReader(reader, p.bufferPool, int64(bufSize))
+		return compression.NewZstdCompressingReader(reader, p.bufferPool, int64(bufSize))
 	}
 
 	return reader, nil
