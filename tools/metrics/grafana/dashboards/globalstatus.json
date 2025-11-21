@@ -1863,8 +1863,8 @@
         "allValue": ".*",
         "allowCustomValue": false,
         "current": {
-          "text": "aws-us-west-2",
-          "value": "aws-us-west-2"
+          "text": "All",
+          "value": ".*"
         },
         "definition": "label_values(up,region)",
         "includeAll": true,
