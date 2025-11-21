@@ -635,6 +635,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 		credentials,
 	), nil
 }
+
 // RuntimePlatform returns the platform on which the program is being executed,
 // as reported by the go runtime.
 func RuntimePlatform() *rgpb.Platform {
