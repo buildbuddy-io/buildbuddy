@@ -347,6 +347,7 @@ func TestResolve(t *testing.T) {
 		for _, useCachePercent := range []int{0, 100} {
 			t.Run(tc.name+fmt.Sprintf("/use_cache_percent_%d", useCachePercent), func(t *testing.T) {
 				te := testenv.GetTestEnv(t)
+				fetcher.Register(te)
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
 				registry := testregistry.Run(t, tc.opts)
