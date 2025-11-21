@@ -12,8 +12,10 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
+	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -24,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -35,23 +38,32 @@ import (
 func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
 	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
+	err = buildbuddy_server.Register(env)
+	require.NoError(t, err)
+	err = content_addressable_storage_server.Register(env)
+	require.NoError(t, err)
 
 	// Allow 127.0.0.1 so we can dial the server in the test.
 	flags.Set(t, "remote_asset.allowed_private_ips", []string{"127.0.0.0/8"})
 
-	fetchServer, err := fetch_server.NewFetchServer(env)
-	require.NoError(t, err)
-
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
-	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
-	rapb.RegisterFetchServer(grpcServer, fetchServer)
-
-	go runFunc()
-
 	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
 	require.NoError(t, err)
 
 	env.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
+	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(clientConn))
+	env.SetBuildBuddyServiceClient(bbspb.NewBuildBuddyServiceClient(clientConn))
+
+	fetchServer, err := fetch_server.NewFetchServer(env)
+	require.NoError(t, err)
+
+	rapb.RegisterFetchServer(grpcServer, fetchServer)
+	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
+	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
+	repb.RegisterContentAddressableStorageServer(grpcServer, env.GetCASServer())
+
+	go runFunc()
+
 	return clientConn
 }
 

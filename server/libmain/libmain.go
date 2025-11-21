@@ -326,6 +326,7 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	}
 }
 
+// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/6187): Reduce gRPC overhead from self-RPCs.
 func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 	// Identify ourselves as an app client in gRPC requests to other apps.
 	usageutil.SetServerName("app")
@@ -341,6 +342,12 @@ func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 	}
 	if env.GetActionCacheServer() != nil {
 		env.SetActionCacheClient(repb.NewActionCacheClient(conn))
+	}
+	if env.GetBuildBuddyServer() != nil {
+		env.SetBuildBuddyServiceClient(bbspb.NewBuildBuddyServiceClient(conn))
+	}
+	if env.GetCASServer() != nil {
+		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	}
 	return nil
 }
