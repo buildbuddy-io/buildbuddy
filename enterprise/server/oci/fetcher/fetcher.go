@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
@@ -28,11 +29,97 @@ const (
 
 var (
 	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
+	mirrors           = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
 )
+
+type MirrorConfig struct {
+	OriginalURL string `yaml:"original_url" json:"original_url"`
+	MirrorURL   string `yaml:"mirror_url" json:"mirror_url"`
+}
+
+func (mc MirrorConfig) matches(u *url.URL) (bool, error) {
+	originalURL, err := url.Parse(mc.OriginalURL)
+	if err != nil {
+		return false, err
+	}
+	match := originalURL.Host == u.Host
+	return match, nil
+}
+
+func (mc MirrorConfig) rewriteRequest(originalRequest *http.Request) (*http.Request, error) {
+	mirrorURL, err := url.Parse(mc.MirrorURL)
+	if err != nil {
+		return nil, err
+	}
+	originalURL := originalRequest.URL.String()
+	req := originalRequest.Clone(originalRequest.Context())
+	req.URL.Scheme = mirrorURL.Scheme
+	req.URL.Host = mirrorURL.Host
+	//Set X-Forwarded-Host so the mirror knows which remote registry to make requests to.
+	//ociregistry looks for this header and will default to forwarding requests to Docker Hub if not found.
+	req.Header.Set("X-Forwarded-Host", originalRequest.URL.Host)
+	log.Debugf("%q rewritten to %s", originalURL, req.URL.String())
+	return req, nil
+}
+
+func (mc MirrorConfig) rewriteFallbackRequest(originalRequest *http.Request) (*http.Request, error) {
+	originalURL, err := url.Parse(mc.OriginalURL)
+	if err != nil {
+		return nil, err
+	}
+	req := originalRequest.Clone(originalRequest.Context())
+	req.URL.Scheme = originalURL.Scheme
+	req.URL.Host = originalURL.Host
+	log.Debugf("(fallback) %q rewritten to %s", originalURL, req.URL.String())
+	return req, nil
+}
+
+// verify that mirrorTransport implements the RoundTripper interface.
+var _ http.RoundTripper = (*mirrorTransport)(nil)
+
+type mirrorTransport struct {
+	inner   http.RoundTripper
+	mirrors []MirrorConfig
+}
+
+func newMirrorTransport(inner http.RoundTripper, mirrors []MirrorConfig) http.RoundTripper {
+	return &mirrorTransport{
+		inner:   inner,
+		mirrors: mirrors,
+	}
+}
+
+func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err error) {
+	for _, mirror := range t.mirrors {
+		if match, err := mirror.matches(in.URL); err == nil && match {
+			mirroredRequest, err := mirror.rewriteRequest(in)
+			if err != nil {
+				log.Errorf("error mirroring request: %s", err)
+				continue
+			}
+			out, err := t.inner.RoundTrip(mirroredRequest)
+			if err != nil {
+				log.Errorf("mirror err: %s", err)
+				continue
+			}
+			if out.StatusCode < http.StatusOK || out.StatusCode >= 300 {
+				fallbackRequest, err := mirror.rewriteFallbackRequest(in)
+				if err != nil {
+					log.Errorf("error rewriting fallback request: %s", err)
+					continue
+				}
+				return t.inner.RoundTrip(fallbackRequest)
+			}
+			return out, nil // Return successful mirror response
+		}
+	}
+	return t.inner.RoundTrip(in)
+}
 
 type OCIFetcherServer struct {
 	env               environment.Env
 	allowedPrivateIPs []*net.IPNet
+	mirrors           []MirrorConfig
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -48,6 +135,7 @@ func Register(env *real_environment.RealEnv) error {
 	server := &OCIFetcherServer{
 		env:               env,
 		allowedPrivateIPs: allowedPrivateIPNets,
+		mirrors:           *mirrors,
 	}
 	env.SetOCIFetcherServer(server)
 	return nil
@@ -66,6 +154,9 @@ func (s *OCIFetcherServer) getRemoteOpts(ctx context.Context, credentials *rgpb.
 	}
 
 	tr := httpclient.New(s.allowedPrivateIPs, "oci_fetcher").Transport
+	if len(s.mirrors) > 0 {
+		tr = newMirrorTransport(tr, s.mirrors)
+	}
 	remoteOpts = append(remoteOpts, remote.WithTransport(tr))
 
 	return remoteOpts

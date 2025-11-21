@@ -525,7 +525,6 @@ func layerFiles(t *testing.T, layer v1.Layer) map[string][]byte {
 
 func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	require.NoError(t, fetcher.Register(te))
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	// Track requests to original and mirror registries.
 	var originalReqCount, mirrorReqCount atomic.Int32
@@ -560,12 +559,13 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	})
 
 	// Configure the resolver to use the mirror as a mirror for the original registry.
-	flags.Set(t, "executor.container_registry_mirrors", []oci.MirrorConfig{
+	flags.Set(t, "executor.container_registry_mirrors", []fetcher.MirrorConfig{
 		{
 			OriginalURL: "http://" + originalRegistry.Address(),
 			MirrorURL:   "http://" + mirrorRegistry.Address(),
 		},
 	})
+	require.NoError(t, fetcher.Register(te))
 
 	// Resolve the image, which should fall back to the original after mirror fails.
 	img, err := newResolver(t, te).Resolve(
