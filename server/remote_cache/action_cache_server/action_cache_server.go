@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -30,6 +31,7 @@ import (
 
 var (
 	checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
+	recordOrigin                   = flag.Bool("cache.record_action_result_origin", false, "If true, the origin of the action result will be added to it's auxiliary metadata.")
 
 	restrictedPrefixes = []string{interfaces.OCIImageInstanceNamePrefix}
 )
@@ -120,7 +122,7 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 	return checkFilesExist(ctx, cache, outputFileDigests)
 }
 
-func setWorkerMetadata(ar *repb.ActionResult) error {
+func setWorkerMetadata(ar *repb.ActionResult) {
 	if ar.ExecutionMetadata == nil {
 		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{
 			// This will return the Host ID in the normal case and
@@ -131,6 +133,29 @@ func setWorkerMetadata(ar *repb.ActionResult) error {
 			Worker: hostid.GetFailsafeHostID(""),
 		}
 	}
+}
+
+func setOriginMetadata(ar *repb.ActionResult, rm *repb.RequestMetadata) error {
+	if !*recordOrigin {
+		return nil
+	}
+	if ar == nil {
+		return nil
+	}
+	invocationID := rm.GetToolInvocationId()
+	if invocationID == "" {
+		return nil
+	}
+
+	om := &repb.OriginMetadata{InvocationId: invocationID}
+	am, err := anypb.New(om)
+	if err != nil {
+		return err
+	}
+	if ar.GetExecutionMetadata() == nil {
+		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{}
+	}
+	ar.GetExecutionMetadata().AuxiliaryMetadata = append(ar.GetExecutionMetadata().GetAuxiliaryMetadata(), am)
 	return nil
 }
 
@@ -277,7 +302,8 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return nil, err
 	}
 
-	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+	rm := bazel_request.GetRequestMetadata(ctx)
+	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, rm)
 	ht.SetExecutedActionMetadata(req.GetActionResult().GetExecutionMetadata())
 	d := req.GetActionDigest()
 	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
@@ -285,7 +311,9 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131
 	// More: https://github.com/buchgr/bazel-remote/commit/7de536f47bf163fb96bc1e38ffd5e444e2bcaa00
-	if err := setWorkerMetadata(req.ActionResult); err != nil {
+	setWorkerMetadata(req.GetActionResult())
+
+	if err := setOriginMetadata(req.GetActionResult(), rm); err != nil {
 		return nil, err
 	}
 
