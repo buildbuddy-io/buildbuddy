@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+QUIET_ARGS=(
+    --ui_event_filters=-info,-warning,-debug,-stdout,-stderr
+    --noshow_progress
+    --noshow_loading_progress
+)
+
+exec bazel run "${QUIET_ARGS[@]}" //:gazelle -- "$@"
