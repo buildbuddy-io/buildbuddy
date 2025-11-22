@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -473,7 +475,6 @@ func TestWrite(t *testing.T) {
 
 				require.Equal(t, int32(1), requestCounter.Load())
 			}
-
 		}
 
 		// Run all tests for both bazel 5.0.0 (which introduced compression) and
@@ -771,4 +772,270 @@ func BenchmarkWriteUnique(b *testing.B) {
 			})
 		}
 	}
+}
+
+func TestWriteCompressibleData_UncompressedToCompressed(t *testing.T) {
+	testDataPath := testfs.RunfilePath(t, "_main/website/yarn.lock")
+	compressibleData, err := os.ReadFile(testDataPath)
+	require.NoError(t, err)
+	require.NotEmpty(t, compressibleData, "test data should not be empty")
+
+	d, err := digest.Compute(bytes.NewReader(compressibleData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	rn := digest.NewCASResourceName(d, "" /*instanceName*/, repb.DigestFunction_SHA256)
+
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+	ctx := testContext()
+
+	flags.Set(t, "cache.unconditionally_compress_writes", true)
+	flags.Set(t, "cache.min_size_to_unconditionally_compress", 1024)
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+
+	proxyEnv.SetCache(&testcompression.CompressionCache{Cache: proxyEnv.GetCache()})
+
+	userWithEncryption := testauth.User("user", "group")
+	ta := testauth.NewTestAuthenticator(map[string]interfaces.UserInfo{"user": userWithEncryption})
+	proxyEnv.SetAuthenticator(ta)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, ta)
+	require.NoError(t, err)
+
+	remote, _, _, _ := runRemoteServices(ctx, remoteEnv, t)
+	proxy := runBSProxy(ctx, remote, proxyEnv, t)
+
+	// Upload uncompressed data
+	uploadResourceName := fmt.Sprintf("uploads/%s/blobs/%s/%d", uuid.New(), d.Hash, d.SizeBytes)
+	ctx = byte_stream.WithBazelVersion(t, ctx, "5.0.0")
+	uploadStream, err := proxy.Write(ctx)
+	require.NoError(t, err)
+
+	remaining := compressibleData
+	for len(remaining) > 0 {
+		chunkSize := 1_000
+		if chunkSize > len(remaining) {
+			chunkSize = len(remaining)
+		}
+		err = uploadStream.Send(&bspb.WriteRequest{
+			ResourceName: uploadResourceName,
+			WriteOffset:  int64(len(compressibleData) - len(remaining)),
+			Data:         remaining[:chunkSize],
+			FinishWrite:  chunkSize == len(remaining),
+		})
+		if err != io.EOF {
+			require.NoError(t, err)
+		}
+		remaining = remaining[chunkSize:]
+		if err == io.EOF {
+			break
+		}
+	}
+	_, err = uploadStream.CloseAndRecv()
+	require.NoError(t, err)
+
+	require.NoError(t, waitContains(ctx, proxyEnv, rn.ToProto()))
+
+	compressedResourceName := fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes)
+	compressedStream, err := remote.Read(ctx, &bspb.ReadRequest{
+		ResourceName: compressedResourceName,
+	})
+	require.NoError(t, err, "remote should have compressed version")
+
+	compressedData := []byte{}
+	for {
+		res, err := compressedStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		compressedData = append(compressedData, res.Data...)
+	}
+
+	require.Less(t, 2*len(compressedData), len(compressibleData), "compressed data should be smaller than original")
+
+	// Verify it's actually zstd compressed data by checking magic bytes
+	// ZSTD magic number is: 0x28 0xB5 0x2F 0xFD
+	require.GreaterOrEqual(t, len(compressedData), 4, "compressed data should have at least 4 bytes for magic number")
+	require.Equal(t, byte(0x28), compressedData[0], "first byte should be zstd magic 0x28")
+	require.Equal(t, byte(0xB5), compressedData[1], "second byte should be zstd magic 0xB5")
+	require.Equal(t, byte(0x2F), compressedData[2], "third byte should be zstd magic 0x2F")
+	require.Equal(t, byte(0xFD), compressedData[3], "fourth byte should be zstd magic 0xFD")
+
+	decompressed, err := compression.DecompressZstd(nil, compressedData)
+	require.NoError(t, err, "should be able to decompress zstd data")
+	require.Equal(t, compressibleData, decompressed, "decompressed data should match original")
+
+	downloadResourceName := fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes)
+	downloadBuf := []byte{}
+	downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{
+		ResourceName: downloadResourceName,
+	})
+	require.NoError(t, err)
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		downloadBuf = append(downloadBuf, res.Data...)
+	}
+
+	require.Equal(t, compressibleData, downloadBuf, "data should match after round-trip")
+}
+
+func TestWrite_SkipsCompression(t *testing.T) {
+	testDataPath := testfs.RunfilePath(t, "_main/website/yarn.lock")
+	rawData, err := os.ReadFile(testDataPath)
+	require.NoError(t, err)
+	require.NotEmpty(t, rawData, "test data should not be empty")
+
+	d, err := digest.Compute(bytes.NewReader(rawData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	rn := digest.NewCASResourceName(d, "" /*instanceName*/, repb.DigestFunction_SHA256)
+
+	t.Run("flag disabled", func(t *testing.T) {
+		remoteEnv := testenv.GetTestEnv(t)
+		proxyEnv := testenv.GetTestEnv(t)
+		ctx := testContext()
+
+		flags.Set(t, "cache.unconditionally_compress_writes", false)
+		flags.Set(t, "cache.zstd_transcoding_enabled", true)
+
+		proxyEnv.SetCache(&testcompression.CompressionCache{Cache: proxyEnv.GetCache()})
+
+		userWithEncryption := testauth.User("user", "group")
+		ta := testauth.NewTestAuthenticator(map[string]interfaces.UserInfo{"user": userWithEncryption})
+		proxyEnv.SetAuthenticator(ta)
+		ctx, err := prefix.AttachUserPrefixToContext(ctx, ta)
+		require.NoError(t, err)
+
+		remote, _, _, _ := runRemoteServices(ctx, remoteEnv, t)
+		proxy := runBSProxy(ctx, remote, proxyEnv, t)
+
+		uploadResourceName := fmt.Sprintf("uploads/%s/blobs/%s/%d", uuid.New(), d.Hash, d.SizeBytes)
+		byte_stream.MustUploadChunked(t, ctx, proxy, "5.0.0", uploadResourceName, rawData, true)
+		require.NoError(t, waitContains(ctx, proxyEnv, rn.ToProto()))
+
+		uncompressedResourceName := fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes)
+		uncompressedStream, err := remote.Read(ctx, &bspb.ReadRequest{
+			ResourceName: uncompressedResourceName,
+		})
+		require.NoError(t, err)
+
+		uncompressedData := []byte{}
+		for {
+			res, err := uncompressedStream.Recv()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			uncompressedData = append(uncompressedData, res.Data...)
+		}
+		require.Equal(t, rawData, uncompressedData, "remote should have uncompressed data")
+	})
+
+	t.Run("below threshold", func(t *testing.T) {
+		remoteEnv := testenv.GetTestEnv(t)
+		proxyEnv := testenv.GetTestEnv(t)
+		ctx := testContext()
+
+		flags.Set(t, "cache.unconditionally_compress_writes", true)
+		flags.Set(t, "cache.min_size_to_unconditionally_compress", int64(len(rawData)+1000))
+		flags.Set(t, "cache.zstd_transcoding_enabled", true)
+
+		proxyEnv.SetCache(&testcompression.CompressionCache{Cache: proxyEnv.GetCache()})
+
+		userWithEncryption := testauth.User("user", "group")
+		ta := testauth.NewTestAuthenticator(map[string]interfaces.UserInfo{"user": userWithEncryption})
+		proxyEnv.SetAuthenticator(ta)
+		ctx, err := prefix.AttachUserPrefixToContext(ctx, ta)
+		require.NoError(t, err)
+
+		remote, _, _, _ := runRemoteServices(ctx, remoteEnv, t)
+		proxy := runBSProxy(ctx, remote, proxyEnv, t)
+
+		uploadResourceName := fmt.Sprintf("uploads/%s/blobs/%s/%d", uuid.New(), d.Hash, d.SizeBytes)
+		byte_stream.MustUploadChunked(t, ctx, proxy, "5.0.0", uploadResourceName, rawData, true)
+		require.NoError(t, waitContains(ctx, proxyEnv, rn.ToProto()))
+
+		uncompressedResourceName := fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes)
+		uncompressedStream, err := remote.Read(ctx, &bspb.ReadRequest{
+			ResourceName: uncompressedResourceName,
+		})
+		require.NoError(t, err)
+
+		uncompressedData := []byte{}
+		for {
+			res, err := uncompressedStream.Recv()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			uncompressedData = append(uncompressedData, res.Data...)
+		}
+		require.Equal(t, rawData, uncompressedData, "remote should have uncompressed data")
+	})
+}
+
+func TestWriteCompressibleData_AlreadyCompressed(t *testing.T) {
+	testDataPath := testfs.RunfilePath(t, "_main/website/yarn.lock")
+	rawData, err := os.ReadFile(testDataPath)
+	require.NoError(t, err)
+	require.NotEmpty(t, rawData, "test data should not be empty")
+
+	uncompressedDigest, err := digest.Compute(bytes.NewReader(rawData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	compressedData := compression.CompressZstd(nil, rawData)
+
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+	ctx := testContext()
+
+	flags.Set(t, "cache.unconditionally_compress_writes", true)
+	flags.Set(t, "cache.min_size_to_unconditionally_compress", 1024)
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+
+	proxyEnv.SetCache(&testcompression.CompressionCache{Cache: proxyEnv.GetCache()})
+
+	userWithEncryption := testauth.User("user", "group")
+	ta := testauth.NewTestAuthenticator(map[string]interfaces.UserInfo{"user": userWithEncryption})
+	proxyEnv.SetAuthenticator(ta)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, ta)
+	require.NoError(t, err)
+
+	remote, _, _, _ := runRemoteServices(ctx, remoteEnv, t)
+	proxy := runBSProxy(ctx, remote, proxyEnv, t)
+
+	uploadResourceName := fmt.Sprintf("uploads/%s/compressed-blobs/zstd/blake3/%s/%d", uuid.New(), uncompressedDigest.Hash, uncompressedDigest.SizeBytes)
+	byte_stream.MustUploadChunked(t, ctx, proxy, "5.1.0", uploadResourceName, compressedData, true)
+
+	compressedRN := &rspb.ResourceName{
+		Digest:         uncompressedDigest,
+		InstanceName:   "",
+		Compressor:     repb.Compressor_ZSTD,
+		CacheType:      rspb.CacheType_CAS,
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+
+	require.NoError(t, waitContains(ctx, remoteEnv, compressedRN))
+
+	compressedResourceName := fmt.Sprintf("compressed-blobs/zstd/blake3/%s/%d", uncompressedDigest.Hash, uncompressedDigest.SizeBytes)
+	compressedStream, err := remote.Read(ctx, &bspb.ReadRequest{
+		ResourceName: compressedResourceName,
+	})
+	require.NoError(t, err)
+
+	remoteCompressedData := []byte{}
+	for {
+		res, err := compressedStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		remoteCompressedData = append(remoteCompressedData, res.Data...)
+	}
+
+	decompressedRemoteData, err := compression.DecompressZstd(nil, remoteCompressedData)
+	require.NoError(t, err, "should be able to decompress data from remote")
+	require.Equal(t, rawData, decompressedRemoteData, "decompressed data should match original uncompressed data")
 }

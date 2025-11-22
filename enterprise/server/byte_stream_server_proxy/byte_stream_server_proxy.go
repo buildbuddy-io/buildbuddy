@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
@@ -12,16 +13,22 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
+
+const compressBufSize = 4e6 // 4MB
 
 type ByteStreamServerProxy struct {
 	supportsEncryption func(context.Context) bool
@@ -29,6 +36,7 @@ type ByteStreamServerProxy struct {
 	authenticator      interfaces.Authenticator
 	local              interfaces.ByteStreamServer
 	remote             bspb.ByteStreamClient
+	bufferPool         *bytebufferpool.VariableSizePool
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -63,6 +71,7 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		authenticator:      authenticator,
 		local:              local,
 		remote:             remote,
+		bufferPool:         bytebufferpool.VariableSize(compressBufSize),
 	}, nil
 }
 
@@ -291,10 +300,22 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	stream = meteredStream
 	var err error
 	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
+		if config.UnconditionallyCompressWrites() {
+			stream, err = s.toCompressingStream(stream)
+			if err != nil {
+				return err
+			}
+		}
 		err = s.writeRemoteOnly(ctx, stream)
 	} else if proxy_util.SkipRemote(ctx) {
 		err = s.writeLocalOnly(stream)
 	} else {
+		if config.UnconditionallyCompressWrites() {
+			stream, err = s.toCompressingStream(stream)
+			if err != nil {
+				return err
+			}
+		}
 		err = s.dualWrite(ctx, stream)
 	}
 	recordWriteMetrics(meteredStream.bytes, err, requestTypeLabel)
@@ -427,6 +448,139 @@ func recordWriteMetrics(bytesWritten int64, err error, proxyRequestType string) 
 	if bytesWritten > 0 {
 		metrics.ByteStreamProxiedWriteBytes.With(labels).Add(float64(bytesWritten))
 	}
+}
+
+// toCompressingStream compresses the bytes written to the stream to a new stream
+// if the request is uncompressed. If compressed, it returns the original stream.
+//
+// Calling Recv on this stream may call multiple Recv calls on the original stream until
+// a zstd frame is ready.
+//
+// The compressing stream will use a zstd compressor from the buffer pool.
+func (s *ByteStreamServerProxy) toCompressingStream(stream bspb.ByteStream_WriteServer) (bspb.ByteStream_WriteServer, error) {
+	return &compressingWriteStream{
+		ByteStream_WriteServer: stream,
+		bufferPool:             s.bufferPool,
+		compressBuf:            make([]byte, 0, compressBufSize),
+	}, nil
+}
+
+// compressingWriteStream wraps a ByteStream_WriteServer and compresses the data
+// being written using zstd compression.
+type compressingWriteStream struct {
+	bspb.ByteStream_WriteServer
+
+	// if request is compressed or experimental flag `unconditionally_compress_writes` is not set.
+	useOriginalStream bool
+	bufferPool        *bytebufferpool.VariableSizePool
+	compressor        *compression.ZstdCompressingWriter
+	compressBuf       []byte
+	resourceName      string
+	writeOffset       int64
+	finishWriteSeen   bool
+}
+
+// Recv reads from the underlying stream and compresses the data.
+// It may call Recv multiple times on the underlying stream to accumulate enough
+// data to produce compressed output.
+func (c *compressingWriteStream) Recv() (*bspb.WriteRequest, error) {
+	if c.useOriginalStream { // skip on first request
+		return c.ByteStream_WriteServer.Recv()
+	}
+
+	for {
+		req, err := c.ByteStream_WriteServer.Recv()
+		if err != nil {
+			return nil, err
+		}
+
+		if c.compressor == nil {
+			if err := c.initializeCompressor(req); err != nil {
+				return nil, err
+			}
+
+			// If we decided to use the original stream, return the first request and
+			// all subsequent calls will use the original stream.
+			if c.useOriginalStream {
+				return req, nil
+			}
+		}
+
+		if len(req.GetData()) > 0 {
+			if _, err := c.compressor.Write(req.GetData()); err != nil {
+				return nil, err
+			}
+		}
+
+		if req.GetFinishWrite() {
+			c.finishWriteSeen = true
+			if err := c.compressor.Close(); err != nil {
+				return nil, err
+			}
+		}
+
+		if len(c.compressBuf) > 0 {
+			compressed := c.compressBuf
+			c.compressBuf = make([]byte, 0, compressBufSize)
+
+			outReq := &bspb.WriteRequest{
+				ResourceName: c.resourceName,
+				Data:         compressed,
+				WriteOffset:  c.writeOffset,
+				FinishWrite:  c.finishWriteSeen,
+			}
+			c.writeOffset += int64(len(compressed))
+			return outReq, nil
+		}
+
+		if c.finishWriteSeen {
+			return &bspb.WriteRequest{
+				ResourceName: c.resourceName,
+				Data:         nil,
+				WriteOffset:  c.writeOffset,
+				FinishWrite:  true,
+			}, nil
+		}
+	}
+}
+
+func (c *compressingWriteStream) initializeCompressor(req *bspb.WriteRequest) error {
+	// Check if we should skip compression
+	if shouldUseOriginalStream(req) {
+		c.useOriginalStream = true
+		return nil
+	}
+
+	c.resourceName = strings.Replace(req.GetResourceName(), "/blobs/", "/compressed-blobs/zstd/", 1)
+	var err error
+	c.compressor, err = compression.NewZstdCompressingWriter(&bufferWriter{buf: &c.compressBuf}, c.bufferPool, compressBufSize)
+	return err
+}
+
+func shouldUseOriginalStream(req *bspb.WriteRequest) bool {
+	rn, err := digest.ParseUploadResourceName(req.GetResourceName())
+	if err != nil {
+		return true
+	}
+
+	if rn.GetCompressor() == repb.Compressor_ZSTD {
+		return true
+	}
+
+	if rn.GetDigest().GetSizeBytes() < config.MinSizeToUnconditionallyCompress() {
+		return true
+	}
+
+	return false
+}
+
+type bufferWriter struct {
+	buf *[]byte
+}
+
+func (w *bufferWriter) Write(p []byte) (int, error) {
+	*w.buf = append(*w.buf, p...)
+	return len(p), nil
 }
 
 func (s *ByteStreamServerProxy) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
