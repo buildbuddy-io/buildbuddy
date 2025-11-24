@@ -25,7 +25,7 @@ Projects that build native libraries or binaries or depend on platform-specific 
 If your project uses [Bazel modules](https://bazel.build/external/module), you can add the BuildBuddy Toolchain as a dependency for your module:
 
 ```python title="MODULE.bazel"
-bazel_dep(name = "toolchains_buildbuddy", version = "0.0.3")
+bazel_dep(name = "toolchains_buildbuddy", version = "0.0.4")
 buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
 
 register_toolchains(
@@ -51,8 +51,9 @@ If your project still uses a [`WORKSPACE`](https://bazel.build/concepts/build-re
 ```python title="WORKSPACE"
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    integrity = "sha256-5zVDos35dx9w9zmrcenyTg8tKwSg1/nUAZPLK8mo5KI=",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/releases/download/v0.0.3/buildbuddy-toolchain-v0.0.3.tar.gz"],
+    integrity = "sha256-4rtmioGI2dzQey1h0fw7z2exUCCelNv0Uff7uwrQihc=",
+    strip_prefix = "buildbuddy-toolchain-v0.0.4",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/releases/download/v0.0.4/buildbuddy-toolchain-v0.0.4.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
