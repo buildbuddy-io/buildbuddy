@@ -208,48 +208,32 @@ func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
 	return &hash, nil
 }
 
-func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, bool, error) {
+// resolveManifestDigest makes a HEAD request to the upstream registry and returns
+// the digest from the Docker-Content-Digest header. Also validates that the client
+// has access to the resource - returns appropriate error types for auth failures.
+func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, error) {
 	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeader, authorizationHeader, ociResourceType, ref)
 	if err != nil {
-		return nil, false, status.UnavailableErrorf("error making %s request to upstream registry: %s", http.MethodHead, err)
-	}
-	defer headresp.Body.Close()
-
-	if headresp.StatusCode == http.StatusNotFound {
-		return nil, false, nil
-	}
-	if headresp.StatusCode != http.StatusOK {
-		return nil, false, status.UnavailableErrorf("could not fetch manifest for %s, upstream HTTP status %d", ref.Context(), headresp.StatusCode)
-	}
-	value := headresp.Header.Get(headerDockerContentDigest)
-	hash, err := parseDockerContentDigestHeader(value)
-	if err != nil {
-		return nil, true, status.InvalidArgumentErrorf("error parsing %s header: %s", headerDockerContentDigest, err)
-	}
-	return hash, true, nil
-}
-
-// validateUpstreamAccess makes a HEAD request to the upstream registry to verify
-// the client has access to the resource. Returns nil if access is granted (HTTP 200),
-// or an appropriate error otherwise. Implements fail-closed security model.
-func (r *registry) validateUpstreamAccess(ctx context.Context, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) error {
-	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeader, authorizationHeader, ociResourceType, ref)
-	if err != nil {
-		return status.UnavailableErrorf("error validating access to upstream registry: %s", err)
+		return nil, status.UnavailableErrorf("error making %s request to upstream registry: %s", http.MethodHead, err)
 	}
 	defer headresp.Body.Close()
 
 	switch headresp.StatusCode {
 	case http.StatusOK:
-		return nil
-	case http.StatusUnauthorized:
-		return status.PermissionDeniedErrorf("unauthorized access to %s", ref.Name())
-	case http.StatusForbidden:
-		return status.PermissionDeniedErrorf("forbidden access to %s", ref.Name())
+		value := headresp.Header.Get(headerDockerContentDigest)
+		hash, err := parseDockerContentDigestHeader(value)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("error parsing %s header: %s", headerDockerContentDigest, err)
+		}
+		return hash, nil
 	case http.StatusNotFound:
-		return status.NotFoundErrorf("resource not found: %s", ref.Name())
+		return nil, status.NotFoundErrorf("resource not found: %s", ref.Name())
+	case http.StatusUnauthorized:
+		return nil, status.PermissionDeniedErrorf("unauthorized access to %s", ref.Name())
+	case http.StatusForbidden:
+		return nil, status.PermissionDeniedErrorf("forbidden access to %s", ref.Name())
 	default:
-		return status.UnavailableErrorf("upstream registry returned status %d for %s", headresp.StatusCode, ref.Name())
+		return nil, status.UnavailableErrorf("upstream registry returned status %d for %s", headresp.StatusCode, ref.Name())
 	}
 }
 
@@ -279,13 +263,17 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		// Docker Hub does not count "version checks" (HEAD requests) against the rate limit.
 		// So make a HEAD request for the manifest, find its digest, and see if we can fetch from CAS.
 		// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
-		hash, exists, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
+		hash, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
 		if err != nil {
+			if status.IsNotFoundError(err) {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			if status.IsPermissionDeniedError(err) {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
 			http.Error(w, fmt.Sprintf("Could not resolve digest for manifest %q: %s", ref.Context(), err), http.StatusServiceUnavailable)
-			return
-		}
-		if !exists {
-			http.Error(w, fmt.Sprintf("Could not find manifest %q", ref.Context()), http.StatusNotFound)
 			return
 		}
 		if hash == nil {
@@ -316,7 +304,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		// - Blob requests (blobs don't require validation per requirements)
 		// - Tag requests (already validated by resolveManifestDigest above)
 		if ociResourceType == ocipb.OCIResourceType_MANIFEST && identifierIsDigest {
-			if err := r.validateUpstreamAccess(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef); err != nil {
+			if _, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef); err != nil {
 				if status.IsNotFoundError(err) {
 					http.Error(w, err.Error(), http.StatusNotFound)
 					return
