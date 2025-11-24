@@ -129,6 +129,11 @@ fi
 echo "Remote execution configuration created"
 echo "=================================================="
 
+echo "Updating lockfile with injected BuildBuddy toolchain..."
+${bazel} mod deps --lockfile_mode=update
+echo "Lockfile updated successfully"
+echo "=================================================="
+
 echo "Running Bazel command: ${bazel_command}"
 echo "=================================================="
 
