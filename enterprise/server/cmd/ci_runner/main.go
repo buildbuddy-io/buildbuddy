@@ -2657,6 +2657,8 @@ func (ws *workspace) checkBazelWorkspaceLock(ctx context.Context) error {
 	if status.IsNotFoundError(err) {
 		// If not in a bazel workspace, don't check for the lock.
 		return nil
+	} else if err != nil {
+		return fmt.Errorf("find bazel workspace file: %s", err)
 	}
 
 	ws.log.Printf("%s%s%s Checking Bazel workspace lock", ansiGray, formatNowUTC(), ansiReset)
