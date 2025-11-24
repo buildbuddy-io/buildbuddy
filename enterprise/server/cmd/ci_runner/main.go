@@ -2648,14 +2648,22 @@ func (ws *workspace) reclaimDiskSpace(ctx context.Context) error {
 // Creates a marker file that prevents the runner from being recycled if bazel
 // still has the workspace lock.
 func (ws *workspace) checkBazelWorkspaceLock(ctx context.Context) error {
-	ws.log.Printf("%s%s%s Checking Bazel workspace lock", ansiGray, formatNowUTC(), ansiReset)
-
-	var buf bytes.Buffer
 	bazelWorkspacePath, err := ws.bazelWorkspacePath()
 	if err != nil {
 		return fmt.Errorf("get bazel workspace path: %s", err)
 	}
 
+	_, err = bazel.FindWorkspaceFile(bazelWorkspacePath)
+	if status.IsNotFoundError(err) {
+		// If not in a bazel workspace, don't check for the lock.
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("find bazel workspace file: %s", err)
+	}
+
+	ws.log.Printf("%s%s%s Checking Bazel workspace lock", ansiGray, formatNowUTC(), ansiReset)
+
+	var buf bytes.Buffer
 	lastUsedStartupOptions, err := ws.getLastUsedStartupOptions()
 	if err != nil {
 		backendLog.Errorf("Failed to get last used startup options when checking bazel lock: %s", err)
