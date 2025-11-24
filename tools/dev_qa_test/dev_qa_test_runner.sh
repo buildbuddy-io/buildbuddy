@@ -129,10 +129,15 @@ fi
 echo "Remote execution configuration created"
 echo "=================================================="
 
-echo "Updating lockfile with injected BuildBuddy toolchain..."
-${bazel} mod deps --lockfile_mode=update
-echo "Lockfile updated successfully"
-echo "=================================================="
+if [[ "${UPDATE_LOCKFILE:-true}" == "true" ]]; then
+  echo "Updating lockfile with injected BuildBuddy toolchain..."
+  ${bazel} mod deps --lockfile_mode=update
+  echo "Lockfile updated successfully"
+  echo "=================================================="
+else
+  echo "Skipping lockfile update (UPDATE_LOCKFILE=false)"
+  echo "=================================================="
+fi
 
 echo "Running Bazel command: ${bazel_command}"
 echo "=================================================="

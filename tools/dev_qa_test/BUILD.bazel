@@ -68,6 +68,7 @@ bazel_integration_test(
         "QA_STRIP_PREFIX": "buildbuddy-2.224.1",
         "QA_BAZEL_COMMAND": "build //server/util/status",
         "INJECT_TOOLCHAIN": "false",
+        "UPDATE_LOCKFILE": "false",
     },
     tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
     test_runner = ":dev_qa_test_runner",
