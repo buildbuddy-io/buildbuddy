@@ -989,7 +989,7 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.Resou
 	if onlyCopyMissing {
 		alreadyCopied, err := conf.dest.Contains(ctx, r)
 		if err != nil {
-			log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
+			log.CtxWarningf(ctx, "Migration copy err, could not call Contains on dest cache: %s", err)
 			return
 		}
 

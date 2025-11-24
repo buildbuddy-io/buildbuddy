@@ -523,7 +523,7 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 
 	for _, fr := range req.GetFileRecords() {
 		if fr.GetIsolation().GetGroupId() != groupID {
-			return nil, status.UnauthenticatedError("user doesn't have access to the file")
+			return nil, status.UnauthenticatedErrorf("user %q doesn't have access to the file", groupID)
 		}
 	}
 
@@ -610,7 +610,7 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 
 	for _, fr := range req.GetFileRecords() {
 		if fr.GetIsolation().GetGroupId() != groupID {
-			return nil, status.UnauthenticatedError("user doesn't have access to the file")
+			return nil, status.UnauthenticatedErrorf("user %q doesn't have access to the file", groupID)
 		}
 	}
 
@@ -711,7 +711,7 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 
 	for _, op := range req.GetSetOperations() {
 		if op.GetFileMetadata().GetFileRecord().GetIsolation().GetGroupId() != groupID {
-			return nil, status.UnauthenticatedError("user doesn't have access to the file")
+			return nil, status.UnauthenticatedErrorf("user %q doesn't have access to the file", groupID)
 		}
 	}
 
@@ -772,7 +772,7 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 
 	for _, op := range req.GetDeleteOperations() {
 		if op.GetFileRecord().GetIsolation().GetGroupId() != groupID {
-			return nil, status.UnauthenticatedError("user doesn't have access to the file")
+			return nil, status.UnauthenticatedErrorf("user %q doesn't have access to the file", groupID)
 		}
 	}
 	keys, err := rc.deleteOperationsToKeyMetas(req.GetDeleteOperations())
