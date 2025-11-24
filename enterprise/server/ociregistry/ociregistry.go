@@ -211,8 +211,8 @@ func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
 // resolveManifestDigest makes a HEAD request to the upstream registry and returns
 // the digest from the Docker-Content-Digest header. Also validates that the client
 // has access to the resource - returns appropriate error types for auth failures.
-func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, error) {
-	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeader, authorizationHeader, ociResourceType, ref)
+func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeader, authorizationHeader string, ref gcrname.Reference) (*gcr.Hash, error) {
+	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeader, authorizationHeader, ocipb.OCIResourceType_MANIFEST, ref)
 	if err != nil {
 		return nil, status.UnavailableErrorf("error making %s request to upstream registry: %s", http.MethodHead, err)
 	}
@@ -263,7 +263,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		// Docker Hub does not count "version checks" (HEAD requests) against the rate limit.
 		// So make a HEAD request for the manifest, find its digest, and see if we can fetch from CAS.
 		// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
-		hash, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
+		hash, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ref)
 		if err != nil {
 			if status.IsNotFoundError(err) {
 				http.Error(w, err.Error(), http.StatusNotFound)
@@ -304,7 +304,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		// - Blob requests (blobs don't require validation per requirements)
 		// - Tag requests (already validated by resolveManifestDigest above)
 		if ociResourceType == ocipb.OCIResourceType_MANIFEST && identifierIsDigest {
-			if _, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef); err != nil {
+			if _, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), resolvedRef); err != nil {
 				if status.IsNotFoundError(err) {
 					http.Error(w, err.Error(), http.StatusNotFound)
 					return
