@@ -603,3 +603,71 @@ func TestRecordOrigin(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, om2.GetInvocationId(), invocationID)
 }
+
+func TestRecordOriginScorecard(t *testing.T) {
+	flags.Set(t, "cache.record_action_result_origin", true)
+	flags.Set(t, "cache.detailed_stats_enabled", true)
+	resetMetrics()
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	metricsCollector, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	require.NoError(t, err)
+	te.SetMetricsCollector(metricsCollector)
+	clientConn := runACServer(ctx, t, te)
+	acClient := repb.NewActionCacheClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	outputDigest, err := cachetools.UploadBlobToCAS(ctx, bsClient, "", repb.DigestFunction_SHA256, []byte("hello world"))
+	require.NoError(t, err)
+
+	actionDigest := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}
+	originInvocationID := "f5b5e1f7-7e91-4e3f-88f6-aaaaaaaaaaaa"
+	uploadCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ActionId:         actionDigest.GetHash(),
+		ToolInvocationId: originInvocationID,
+	})
+	require.NoError(t, err)
+
+	instanceName := "test"
+	digestFn := repb.DigestFunction_SHA256
+	uploadedActionResult := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{
+				Path:   "hello.txt",
+				Digest: outputDigest,
+			},
+		},
+		ExecutionMetadata: &repb.ExecutedActionMetadata{
+			Worker:                      "worker-1",
+			ExecutionStartTimestamp:     timestamppb.New(time.Unix(20, 0)),
+			ExecutionCompletedTimestamp: timestamppb.New(time.Unix(25, 0)),
+		},
+	}
+	_, err = acClient.UpdateActionResult(uploadCtx, &repb.UpdateActionResultRequest{
+		InstanceName:   instanceName,
+		DigestFunction: digestFn,
+		ActionDigest:   actionDigest,
+		ActionResult:   uploadedActionResult,
+	})
+	require.NoError(t, err)
+
+	hitInvocationID := "f5b5e1f7-7e91-4e3f-88f6-bbbbbbbbbbbb"
+	hitCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ActionId:         actionDigest.GetHash(),
+		ToolInvocationId: hitInvocationID,
+	})
+	require.NoError(t, err)
+	_, err = acClient.GetActionResult(hitCtx, &repb.GetActionResultRequest{
+		InstanceName:   instanceName,
+		DigestFunction: digestFn,
+		ActionDigest:   actionDigest,
+	})
+	require.NoError(t, err)
+
+	scorecard := hit_tracker.ScoreCard(ctx, te, hitInvocationID)
+	require.Len(t, scorecard.GetResults(), 1)
+	result := scorecard.GetResults()[0]
+	assert.Equal(t, actionDigest.GetHash(), result.GetActionId())
+	assert.Equal(t, originInvocationID, result.GetOriginInvocationId())
+}
