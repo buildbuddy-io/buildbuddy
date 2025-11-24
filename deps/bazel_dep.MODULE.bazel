@@ -1,14 +1,6 @@
 ## Overrides
 
-# abseil-cpp 20240722.0 in BCR does not have feature parity with its github analog
-bazel_dep(name = "abseil-cpp", repo_name = "com_google_absl")
-archive_override(
-    module_name = "abseil-cpp",
-    integrity = "sha256-9Q5awxGoE4Laf6dblzEOS5AGR0+VYKxG9UqZZ/B9SuM=",
-    strip_prefix = "abseil-cpp-20240722.0",
-    urls = ["https://github.com/abseil/abseil-cpp/releases/download/20240722.0/abseil-cpp-20240722.0.tar.gz"],
-)
-
+bazel_dep(name = "abseil-cpp", version = "20250814.1", repo_name = "com_google_absl")
 bazel_dep(name = "gazelle", repo_name = "bazel_gazelle")
 single_version_override(
     module_name = "gazelle",
