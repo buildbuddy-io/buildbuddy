@@ -138,12 +138,14 @@ func TestPull(t *testing.T) {
 			expectedUpstreamRequests: 1,
 		},
 		{
-			name:                     "HEAD request for existing manifest digest succeeds",
-			method:                   http.MethodHead,
-			blobsOrManifests:         "manifests",
-			expectedStatus:           http.StatusOK,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 1,
+			name:             "HEAD request for existing manifest digest succeeds",
+			method:           http.MethodHead,
+			blobsOrManifests: "manifests",
+			expectedStatus:   http.StatusOK,
+			expectedMirrorRequests: 1,
+			// Manifest-by-digest requests now make a HEAD to validate upstream access,
+			// then cache lookup (miss), then upstream request.
+			expectedUpstreamRequests: 2,
 		},
 		{
 			name:                     "GET request for nonexistent manifest fails",
@@ -166,12 +168,14 @@ func TestPull(t *testing.T) {
 			expectedUpstreamRequests: 2,
 		},
 		{
-			name:                     "GET request for existing manifest digest succeeds",
-			method:                   http.MethodHead,
-			blobsOrManifests:         "manifests",
-			expectedStatus:           http.StatusOK,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 1,
+			name:             "GET request for existing manifest digest succeeds",
+			method:           http.MethodHead,
+			blobsOrManifests: "manifests",
+			expectedStatus:   http.StatusOK,
+			expectedMirrorRequests: 1,
+			// Manifest-by-digest requests now make a HEAD to validate upstream access,
+			// then cache lookup (miss), then upstream request.
+			expectedUpstreamRequests: 2,
 		},
 		{
 			name:                     "POST request to /blobs/uploads/ fails",
@@ -263,13 +267,16 @@ func TestPull(t *testing.T) {
 			repeatRequestToHitCache:  true,
 		},
 		{
-			name:                     "repeated GET requests for existing manifest digest use CAS",
-			method:                   http.MethodGet,
-			blobsOrManifests:         "manifests",
-			expectedStatus:           http.StatusOK,
-			expectedMirrorRequests:   2,
-			expectedUpstreamRequests: 1,
-			repeatRequestToHitCache:  true,
+			name:                    "repeated GET requests for existing manifest digest use CAS",
+			method:                  http.MethodGet,
+			blobsOrManifests:        "manifests",
+			expectedStatus:          http.StatusOK,
+			expectedMirrorRequests:  2,
+			repeatRequestToHitCache: true,
+			// First request: HEAD (access validation) + cache miss + GET (fetch) = 2 upstream
+			// Second request: HEAD (access validation) + cache hit = 1 upstream
+			// Total: 3 upstream requests
+			expectedUpstreamRequests: 3,
 		},
 		{
 			name:                   "repeated GET requests for existing manifest tag use CAS",
@@ -382,4 +389,223 @@ func TestPull(t *testing.T) {
 			require.Equal(t, tc.expectedUpstreamRequests, upstreamCounter.Load()-upstreamRequestsAtStart)
 		})
 	}
+}
+
+// TestManifestAccessValidation tests that cached manifests require upstream validation
+// before being served. This prevents unauthorized access to cached private images.
+func TestManifestAccessValidation(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	err = clientidentity.Register(te)
+	require.NoError(t, err)
+
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	tests := []struct {
+		name                   string
+		upstreamStatusOnSecond int
+		expectedSecondStatus   int
+	}{
+		{
+			name:                   "upstream_401_denies_cached_manifest_access",
+			upstreamStatusOnSecond: http.StatusUnauthorized,
+			expectedSecondStatus:   http.StatusForbidden,
+		},
+		{
+			name:                   "upstream_403_denies_cached_manifest_access",
+			upstreamStatusOnSecond: http.StatusForbidden,
+			expectedSecondStatus:   http.StatusForbidden,
+		},
+		{
+			name:                   "upstream_404_returns_not_found_for_cached_manifest",
+			upstreamStatusOnSecond: http.StatusNotFound,
+			expectedSecondStatus:   http.StatusNotFound,
+		},
+		{
+			name:                   "upstream_500_denies_cached_manifest_access",
+			upstreamStatusOnSecond: http.StatusInternalServerError,
+			expectedSecondStatus:   http.StatusServiceUnavailable,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Track the manifest digest we're testing - only intercept requests to this specific digest
+			var targetDigest string
+			var interceptEnabled atomic.Bool
+
+			testreg := testregistry.Run(t, testregistry.Opts{
+				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+					// Only intercept after we've set up the target and enabled interception
+					if !interceptEnabled.Load() {
+						return true
+					}
+					// Only intercept HEAD requests for our specific manifest digest
+					if r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/") && strings.Contains(r.URL.Path, targetDigest) {
+						w.WriteHeader(tc.upstreamStatusOnSecond)
+						return false
+					}
+					return true
+				},
+			})
+			t.Cleanup(func() {
+				err := testreg.Shutdown(context.TODO())
+				require.NoError(t, err)
+			})
+
+			ocireg, err := ociregistry.New(te)
+			require.NoError(t, err)
+			port := testport.FindFree(t)
+
+			mirrorHostPort := fmt.Sprintf("localhost:%d", port)
+			mirrorServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ocireg.ServeHTTP(w, r)
+			})}
+			lis, err := net.Listen("tcp", mirrorHostPort)
+			require.NoError(t, err)
+			go func() { _ = mirrorServer.Serve(lis) }()
+			t.Cleanup(func() {
+				err := mirrorServer.Shutdown(context.TODO())
+				require.NoError(t, err)
+			})
+
+			repository := tc.name
+			testImageName, testImage := testreg.PushNamedImage(t, repository)
+
+			// Get the manifest digest
+			testManifest, err := testImage.RawManifest()
+			require.NoError(t, err)
+			testManifestDigest, err := testImage.Digest()
+			require.NoError(t, err)
+
+			// Set the target digest for interception
+			targetDigest = testManifestDigest.Hex
+
+			path := "/v2/" + testImageName + "/manifests/" + testManifestDigest.String()
+
+			// First request: GET manifest by digest - should succeed and cache
+			req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+			require.NoError(t, err)
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode, "first request should succeed")
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, testManifest, body)
+
+			// Enable interception for subsequent requests
+			interceptEnabled.Store(true)
+
+			// Second request: GET manifest by digest - should fail because upstream validation fails
+			req, err = http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+			require.NoError(t, err)
+			resp, err = http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedSecondStatus, resp.StatusCode, "second request should fail with expected status")
+		})
+	}
+}
+
+// TestManifestAccessValidationPassesAuthHeader verifies that the Authorization header
+// is passed to upstream during validation.
+func TestManifestAccessValidationPassesAuthHeader(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	err = clientidentity.Register(te)
+	require.NoError(t, err)
+
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	validToken := "Bearer valid-token"
+	invalidToken := "Bearer invalid-token"
+
+	// Track target digest and enable auth checking only after initial cache is populated
+	var targetDigest string
+	var authCheckEnabled atomic.Bool
+
+	testreg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			// Only check auth after we've enabled it and for our specific manifest
+			if !authCheckEnabled.Load() {
+				return true
+			}
+			if r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/") && strings.Contains(r.URL.Path, targetDigest) {
+				authHeader := r.Header.Get("Authorization")
+				if authHeader != validToken {
+					w.WriteHeader(http.StatusUnauthorized)
+					return false
+				}
+			}
+			return true
+		},
+	})
+	t.Cleanup(func() {
+		err := testreg.Shutdown(context.TODO())
+		require.NoError(t, err)
+	})
+
+	ocireg, err := ociregistry.New(te)
+	require.NoError(t, err)
+	port := testport.FindFree(t)
+
+	mirrorHostPort := fmt.Sprintf("localhost:%d", port)
+	mirrorServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ocireg.ServeHTTP(w, r)
+	})}
+	lis, err := net.Listen("tcp", mirrorHostPort)
+	require.NoError(t, err)
+	go func() { _ = mirrorServer.Serve(lis) }()
+	t.Cleanup(func() {
+		err := mirrorServer.Shutdown(context.TODO())
+		require.NoError(t, err)
+	})
+
+	repository := "auth_header_test"
+	testImageName, testImage := testreg.PushNamedImage(t, repository)
+	testManifestDigest, err := testImage.Digest()
+	require.NoError(t, err)
+
+	// Set the target digest for auth checking
+	targetDigest = testManifestDigest.Hex
+
+	path := "/v2/" + testImageName + "/manifests/" + testManifestDigest.String()
+
+	// First request with valid token - should succeed and cache
+	req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", validToken)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "first request with valid token should succeed")
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	// Enable auth checking for subsequent requests
+	authCheckEnabled.Store(true)
+
+	// Second request with invalid token - should fail because validation fails
+	req, err = http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", invalidToken)
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusForbidden, resp.StatusCode, "second request with invalid token should fail")
+
+	// Third request with valid token - should succeed (validation passes)
+	req, err = http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", validToken)
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "third request with valid token should succeed")
 }

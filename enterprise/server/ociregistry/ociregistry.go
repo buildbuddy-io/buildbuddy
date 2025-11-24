@@ -229,6 +229,30 @@ func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeader, auth
 	return hash, true, nil
 }
 
+// validateUpstreamAccess makes a HEAD request to the upstream registry to verify
+// the client has access to the resource. Returns nil if access is granted (HTTP 200),
+// or an appropriate error otherwise. Implements fail-closed security model.
+func (r *registry) validateUpstreamAccess(ctx context.Context, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) error {
+	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeader, authorizationHeader, ociResourceType, ref)
+	if err != nil {
+		return status.UnavailableErrorf("error validating access to upstream registry: %s", err)
+	}
+	defer headresp.Body.Close()
+
+	switch headresp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusUnauthorized:
+		return status.PermissionDeniedErrorf("unauthorized access to %s", ref.Name())
+	case http.StatusForbidden:
+		return status.PermissionDeniedErrorf("forbidden access to %s", ref.Name())
+	case http.StatusNotFound:
+		return status.NotFoundErrorf("resource not found: %s", ref.Name())
+	default:
+		return status.UnavailableErrorf("upstream registry returned status %d for %s", headresp.StatusCode, ref.Name())
+	}
+}
+
 func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, ociResourceType ocipb.OCIResourceType, repository, identifier string) {
 	if inreq.Header.Get(headerRange) != "" {
 		http.Error(w, "Range headers not supported", http.StatusNotImplemented)
@@ -286,6 +310,27 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	// If we successfully resolved a manifest tag to a digest above, it's safe
 	// to look up the manifest in the cache.
 	if resolvedRefIsDigest {
+		// For manifest requests by digest, validate access to upstream before serving from cache.
+		// This ensures clients cannot access cached private images without authorization.
+		// Skip validation for:
+		// - Blob requests (blobs don't require validation per requirements)
+		// - Tag requests (already validated by resolveManifestDigest above)
+		if ociResourceType == ocipb.OCIResourceType_MANIFEST && identifierIsDigest {
+			if err := r.validateUpstreamAccess(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef); err != nil {
+				if status.IsNotFoundError(err) {
+					http.Error(w, err.Error(), http.StatusNotFound)
+					return
+				}
+				if status.IsPermissionDeniedError(err) {
+					http.Error(w, err.Error(), http.StatusForbidden)
+					return
+				}
+				// Network errors, timeouts, unexpected status codes -> fail closed
+				http.Error(w, err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+		}
+
 		writeBody := inreq.Method == http.MethodGet
 		hash, err := gcr.NewHash(resolvedRef.Identifier())
 		if err != nil {
