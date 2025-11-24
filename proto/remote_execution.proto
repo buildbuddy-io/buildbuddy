@@ -2499,6 +2499,13 @@ message RequestMetadata {
 /*                                                                            */
 /******************************************************************************/
 
+// A metadata to attach to each ActionResult message through
+// [ExecutedActionMetadata][build.bazel.remote.execution.v2.ExecutedActionMetadata]'s
+// `auxiliary_metadata`. This should help us audit when/where/how the ActionResult was created.
+message OriginMetadata {
+  string invocation_id = 1;
+}
+
 // Next tag: 9
 message ExecutionTask {
   ExecuteRequest execute_request = 1;

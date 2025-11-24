@@ -23,6 +23,7 @@ go_library(
         "//server/util/proto",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_x_sync//errgroup",
     ],
 )
