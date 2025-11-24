@@ -83,7 +83,7 @@ if [[ "${INJECT_TOOLCHAIN:-true}" == "true" ]]; then
   cat >> MODULE.bazel <<'EOF'
 
 # BuildBuddy RBE toolchain (injected by qa_test_runner.sh)
-bazel_dep(name = "toolchains_buildbuddy", version = "0.0.2")
+bazel_dep(name = "toolchains_buildbuddy", version = "0.0.4")
 
 # Use the extension to create toolchain and platform targets
 buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
