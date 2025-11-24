@@ -96,6 +96,7 @@ go_test(
     },
     deps = [
         ":ociruntime",
+        "//enterprise/server/oci/fetcher",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/persistentworker",
         "//enterprise/server/remote_execution/platform",
