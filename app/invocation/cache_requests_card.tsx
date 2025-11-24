@@ -96,6 +96,10 @@ const filters: PresetFilter[] = [
     values: { cache: resource.CacheType.AC, request: cache.RequestType.READ, response: cache.ResponseType.NOT_FOUND },
   },
   {
+    label: "AC Writes",
+    values: { cache: resource.CacheType.AC, request: cache.RequestType.WRITE, response: cache.ResponseType.OK },
+  },
+  {
     label: "CAS Hits",
     values: { cache: resource.CacheType.CAS, request: cache.RequestType.READ, response: cache.ResponseType.OK },
   },
