@@ -119,9 +119,9 @@ REPO_CONFIGS = [
 BUILDBUDDY_TOOLCHAIN_SNIPPET = """
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    integrity = "sha256-VtJjefgP2Vq5S6DiGYczsupNkosybmSBGWwcLUAYz8c=",
-    strip_prefix = "buildbuddy-toolchain-66146a3015faa348391fcceea2120caa390abe03",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/66146a3015faa348391fcceea2120caa390abe03.tar.gz"],
+    integrity = "sha256-4rtmioGI2dzQey1h0fw7z2exUCCelNv0Uff7uwrQihc=",
+    strip_prefix = "buildbuddy-toolchain-v0.0.4",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/releases/download/v0.0.4/buildbuddy-toolchain-v0.0.4.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
