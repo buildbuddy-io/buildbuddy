@@ -54,7 +54,6 @@ var (
 	printSchemaChangesAndExit = flag.Bool("olap_database.print_schema_changes_and_exit", false, "If set, print schema changes from auto-migration, then exit the program.")
 
 	invocationBatchInsertInterval = flag.Duration("olap_database.invocation_batch_insert_interval", 1*time.Second, "The interval at which to insert invocation batches into clickhouse")
-	asyncInsert                   = flag.Bool("olap_database.async_insert", false, "If true, use async inserts for clickhouse. This will disable invocation_batch_insert_interval")
 )
 
 type DBHandle struct {
@@ -220,31 +219,6 @@ func isTimeout(err error) bool {
 func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numEntries int, value interface{}) error {
 	retrier := retry.DefaultWithContext(ctx)
 	var lastError error
-	if *asyncInsert {
-		// Useful links about async inserts in ClickHouse:
-		// https://clickhouse.com/docs/optimize/asynchronous-inserts
-		// https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse
-		// https://altinity.com/blog/using-async-inserts-for-peak-data-loading-rates-in-clickhouse
-		// https://clickhouse.com/docs/integrations/go#async-insert-1
-		ctx = clickhouse.Context(
-			ctx,
-			clickhouse.WithAsync(true),
-			clickhouse.WithSettings(map[string]any{
-				// These two should be implied by WithAsync(true), but if we
-				// want to set other settings below, we need to set them here.
-				// WithAsync(true) should be unnecessary when setting these, but
-				// the clickhouse-go code takes a slightly different path if
-				// it's used.
-				"async_insert":          1,
-				"wait_for_async_insert": 1,
-
-				"async_insert_deduplicate":         1,
-				"wait_for_async_insert_timeout":    30,  // In seconds. Default is 120.
-				"async_insert_busy_timeout_min_ms": 10,  // Default is 50
-				"async_insert_busy_timeout_max_ms": 200, // This is the default, but set in case it changes
-			}),
-		)
-	}
 	queryName := fmt.Sprintf("INSERT INTO '%v'", tableName)
 	for retrier.Next() {
 		res := h.GORM(ctx, queryName).Create(value)
@@ -277,7 +251,7 @@ func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numE
 
 func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
 	inv := schema.ToInvocationFromPrimaryDB(ti)
-	if *invocationBatchInsertInterval > 0 && !*asyncInsert {
+	if *invocationBatchInsertInterval > 0 {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -513,7 +487,7 @@ func Register(env *real_environment.RealEnv) error {
 		shutdown:     make(chan struct{}),
 		invocationCh: make(chan *schema.Invocation),
 	}
-	if *invocationBatchInsertInterval > 0 && !*asyncInsert {
+	if *invocationBatchInsertInterval > 0 {
 		stop := dbh.startInvocationBatchInserter(*invocationBatchInsertInterval)
 		if hc := env.GetHealthChecker(); hc != nil {
 			env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {

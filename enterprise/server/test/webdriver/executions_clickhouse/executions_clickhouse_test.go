@@ -59,7 +59,6 @@ func testInvocationWithRemoteExecutionWithClickHouse(t *testing.T, tc executions
 	clickhouseDSN := testclickhouse.Start(t, true /*=reuseServer*/)
 	bbFlags := append([]string{
 		"--olap_database.data_source=" + clickhouseDSN,
-		"--olap_database.async_insert=true",
 		"--remote_execution.enable_remote_exec=true",
 		"--remote_execution.olap_reads_enabled=true",
 	}, tc.flags...)
