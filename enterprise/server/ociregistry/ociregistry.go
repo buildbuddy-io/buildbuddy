@@ -257,12 +257,13 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 
 	resolvedRef := ref
 	resolvedRefIsDigest := identifierIsDigest
-	if ociResourceType == ocipb.OCIResourceType_MANIFEST && !identifierIsDigest && inreq.Method == http.MethodGet {
-		// Fetching a manifest by tag.
-		// Since the mapping from tag to digest can change, we only look up manifests and blobs in the CAS by digest.
-		// Docker Hub does not count "version checks" (HEAD requests) against the rate limit.
-		// So make a HEAD request for the manifest, find its digest, and see if we can fetch from CAS.
-		// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
+
+	// For manifest requests that will use cache, make a single HEAD request
+	// to validate access (and resolve the digest for tag requests).
+	// Skip for:
+	// - Blob requests (no validation needed)
+	// - Tag + HEAD requests (don't use cache, go directly to upstream)
+	if ociResourceType == ocipb.OCIResourceType_MANIFEST && (identifierIsDigest || inreq.Method == http.MethodGet) {
 		hash, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ref)
 		if err != nil {
 			if status.IsNotFoundError(err) {
@@ -273,19 +274,22 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 				http.Error(w, err.Error(), http.StatusForbidden)
 				return
 			}
-			http.Error(w, fmt.Sprintf("Could not resolve digest for manifest %q: %s", ref.Context(), err), http.StatusServiceUnavailable)
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
-		if hash == nil {
-			http.Error(w, fmt.Sprintf("Could not parse digest from manifest for %q", ref.Context()), http.StatusNotFound)
-			return
-		}
-		manifestRef, err := parseReference(repository, hash.String())
-		if err != nil {
-			log.CtxErrorf(ctx, "Could not parse manifest reference for %q: %s", repository, err)
-		} else {
-			resolvedRef = manifestRef
-			resolvedRefIsDigest = true
+		// For tag requests, update resolvedRef to use the resolved digest
+		if !identifierIsDigest {
+			if hash == nil {
+				http.Error(w, fmt.Sprintf("Could not parse digest from manifest for %q", ref.Context()), http.StatusNotFound)
+				return
+			}
+			manifestRef, err := parseReference(repository, hash.String())
+			if err != nil {
+				log.CtxErrorf(ctx, "Could not parse manifest reference for %q: %s", repository, err)
+			} else {
+				resolvedRef = manifestRef
+				resolvedRefIsDigest = true
+			}
 		}
 	}
 
@@ -295,30 +299,8 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	// To fetch a blob or manifest from the AC and CAS, you need a digest.
 	// Blob requests MUST be by digest.
 	// Manifest requests can be by digest or by tag.
-	// If we successfully resolved a manifest tag to a digest above, it's safe
-	// to look up the manifest in the cache.
+	// For manifests, access was already validated above.
 	if resolvedRefIsDigest {
-		// For manifest requests by digest, validate access to upstream before serving from cache.
-		// This ensures clients cannot access cached private images without authorization.
-		// Skip validation for:
-		// - Blob requests (blobs don't require validation per requirements)
-		// - Tag requests (already validated by resolveManifestDigest above)
-		if ociResourceType == ocipb.OCIResourceType_MANIFEST && identifierIsDigest {
-			if _, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), resolvedRef); err != nil {
-				if status.IsNotFoundError(err) {
-					http.Error(w, err.Error(), http.StatusNotFound)
-					return
-				}
-				if status.IsPermissionDeniedError(err) {
-					http.Error(w, err.Error(), http.StatusForbidden)
-					return
-				}
-				// Network errors, timeouts, unexpected status codes -> fail closed
-				http.Error(w, err.Error(), http.StatusServiceUnavailable)
-				return
-			}
-		}
-
 		writeBody := inreq.Method == http.MethodGet
 		hash, err := gcr.NewHash(resolvedRef.Identifier())
 		if err != nil {
