@@ -77,14 +77,9 @@ func New(env environment.Env, authenticator interfaces.Authenticator, clientIden
 		return refreshKey(ctx, ck, client, clientIdentityService)
 	}
 
+	// Don't start the asynchronous key refresher. Instead, rely on refetching
+	// encryption keys synchronously when needed.
 	cache := crypter_key_cache.New(env, refreshFn, clock)
-	quitChan := make(chan struct{})
-	cache.StartRefresher(quitChan)
-
-	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		close(quitChan)
-		return nil
-	})
 
 	return &RemoteCrypter{
 		authenticator: authenticator,
