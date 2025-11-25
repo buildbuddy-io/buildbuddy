@@ -55,11 +55,11 @@ archive_override(
 bazel_dep(name = "rules_k8s", repo_name = "io_bazel_rules_k8s")
 archive_override(
     module_name = "rules_k8s",
-    integrity = "sha256-3Mlx7XOFKElr7S+RjozqWqb7LPUf1pg48W0RV5XT4cc=",
-    strip_prefix = "rules_k8s-a40e8ad10fe00afd8bd149e558e5572793ca5873",
+    integrity = "sha256-J14gxzYpfnrt+fWUZR+xPZZ1qJAK0qeuC2nRLL+31sQ=",
+    strip_prefix = "rules_k8s-2457e25475c111168fc3de8e1169adfe2e817801",
     # This is our own fork of rules_k8s with bzlmod support.
     # Diff: https://github.com/bazelbuild/rules_k8s/compare/master...buildbuddy-io:rules_k8s:master
-    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/a40e8ad10fe00afd8bd149e558e5572793ca5873.tar.gz"],
+    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/2457e25475c111168fc3de8e1169adfe2e817801.tar.gz"],
 )
 
 bazel_dep(name = "toolchains_protoc", version = "0.6.0")  # must come BEFORE protobuf so the toolchain registration wins
