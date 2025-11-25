@@ -38,7 +38,6 @@ var (
 	actionRegexp = regexp.MustCompile(`^(?P<action_mnemonic>[[:alnum:]]*)\((?P<target_id>.+)\)/(?P<action_id>[[:alnum:]]+)$`)
 )
 
-type CacheMode int
 type counterType int
 
 const (
@@ -366,6 +365,26 @@ func (h *hitTracker) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) 
 	h.executedActionMetadata = md
 }
 
+func extractOriginInvocationID(md *repb.ExecutedActionMetadata) string {
+	if md == nil {
+		return ""
+	}
+	origin := &repb.OriginMetadata{}
+	for _, am := range md.GetAuxiliaryMetadata() {
+		if am == nil {
+			continue
+		}
+		if am.MessageIs(origin) {
+			if err := am.UnmarshalTo(origin); err != nil {
+				log.Debugf("Unable to unmarshal origin metadata: %v", err)
+				continue
+			}
+			return origin.GetInvocationId()
+		}
+	}
+	return ""
+}
+
 func (h *hitTracker) TrackMiss(d *repb.Digest) error {
 	start := time.Now()
 	metrics.CacheEvents.With(prometheus.Labels{
@@ -451,6 +470,11 @@ func (h *hitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 	if md := h.executedActionMetadata; md != nil {
 		result.ExecutionStartTimestamp = md.GetExecutionStartTimestamp()
 		result.ExecutionCompletedTimestamp = md.GetExecutionCompletedTimestamp()
+	}
+	if h.actionCache && stats.Status == Hit {
+		if originInvocationID := extractOriginInvocationID(h.executedActionMetadata); originInvocationID != "" {
+			result.OriginInvocationId = originInvocationID
+		}
 	}
 	// ScoreCard_Result.MarshalVT is slower, so we use MarshalOld for now.
 	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3018
