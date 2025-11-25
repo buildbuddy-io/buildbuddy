@@ -369,11 +369,11 @@ func extractOriginInvocationID(md *repb.ExecutedActionMetadata) string {
 	if md == nil {
 		return ""
 	}
+	origin := &repb.OriginMetadata{}
 	for _, am := range md.GetAuxiliaryMetadata() {
 		if am == nil {
 			continue
 		}
-		origin := &repb.OriginMetadata{}
 		if am.MessageIs(origin) {
 			if err := am.UnmarshalTo(origin); err != nil {
 				log.Debugf("Unable to unmarshal origin metadata: %v", err)
