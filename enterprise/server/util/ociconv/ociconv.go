@@ -150,7 +150,7 @@ func authenticateWithRegistry(ctx context.Context, resolver *oci.Resolver, conta
 
 	// Authenticate with the remote registry using these credentials to ensure they are valid.
 	if err := resolver.AuthenticateWithRegistry(ctx, containerImage, oci.RuntimePlatform(), creds); err != nil {
-		return status.WrapError(err, "authentice with registry")
+		return status.WrapError(err, "authenticate with registry")
 	}
 	return nil
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -145,7 +146,7 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 	// This should fail because the credentials are invalid.
 	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "401 Unauthorized")
+	assert.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
 
 	// This should succeed because the credentials are valid.
 	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{
@@ -158,7 +159,7 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 	// This should still fail.
 	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "401 Unauthorized")
+	assert.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
 
 	// Try a successful pull again with valid credentials now that the image
 	// is cached; this should succeed.

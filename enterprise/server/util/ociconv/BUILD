@@ -32,6 +32,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testregistry",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_containerregistry//pkg/v1/mutate",
