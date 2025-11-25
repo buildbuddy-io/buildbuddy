@@ -278,14 +278,16 @@ export default class InvocationModel {
     return this.invocation.acl?.groupId === "";
   }
 
+  hasActionCacheWriteCapability(): boolean {
+    return this.invocation.createdWithCapabilities?.includes(capability.Capability.CACHE_WRITE) ?? false;
+  }
+
+  hasCASWriteCapability(): boolean {
+    return this.invocation.createdWithCapabilities?.includes(capability.Capability.CAS_WRITE) ?? false;
+  }
+
   hasCacheWriteCapability(): boolean {
-    return Boolean(
-      this.invocation.createdWithCapabilities?.some(
-        (existingCapability) =>
-          existingCapability == capability.Capability.CACHE_WRITE ||
-          existingCapability == capability.Capability.CAS_WRITE
-      )
-    );
+    return this.hasActionCacheWriteCapability() || this.hasCASWriteCapability();
   }
 
   getInvocationId(): string {

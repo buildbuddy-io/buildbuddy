@@ -10,6 +10,7 @@ import {
   Github,
   GitPullRequest,
   HardDrive,
+  Key,
   LayoutGrid,
   Link as LinkIcon,
   Package,
@@ -50,6 +51,9 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
     const roleLabel = format.formatRole(this.props.model.getRole());
     const parentInvocationId = this.props.model.buildMetadataMap.get("PARENT_INVOCATION_ID");
     const parentWorkflowId = this.props.model.buildMetadataMap.get("WORKFLOW_ID");
+    const hasCapabilityMetadata = this.props.model.invocation.createdWithCapabilities != null;
+    const missingActionCacheWrite = hasCapabilityMetadata && !this.props.model.hasActionCacheWriteCapability();
+    const missingCASWrite = hasCapabilityMetadata && !this.props.model.hasCASWriteCapability();
 
     return (
       <div className="container">
@@ -203,6 +207,16 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               <Package className="icon" />
               {this.props.model.getCache()}
             </Link>
+          )}
+          {hasCapabilityMetadata && (missingActionCacheWrite || missingCASWrite) && (
+            <div className="detail" title="This invocation's API key could not write to the cache">
+              <Key className="icon" />
+              {missingActionCacheWrite && missingCASWrite
+                ? "Cache writes disabled"
+                : missingActionCacheWrite
+                  ? "AC writes disabled"
+                  : "CAS writes disabled"}
+            </div>
           )}
           {isBazelInvocation && (
             <Link
