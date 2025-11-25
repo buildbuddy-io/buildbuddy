@@ -212,9 +212,9 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             <div className="detail" title="This invocation's API key could not write to the cache">
               <PencilOff className="icon" />
               {missingActionCacheWrite && missingCASWrite
-                ? "Remote Cache writes disabled (AC and CAS)"
+                ? "Cache writes disabled"
                 : missingActionCacheWrite
-                  ? "Action Cache writes disabled"
+                  ? "AC writes disabled"
                   : "CAS writes disabled"}
             </div>
           )}
