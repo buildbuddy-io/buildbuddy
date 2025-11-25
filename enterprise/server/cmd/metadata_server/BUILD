@@ -12,6 +12,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/backends/configsecrets",
+        "//enterprise/server/clientidentity",
         "//enterprise/server/raft/metadata",
         "//enterprise/server/remoteauth",
         "//proto:metadata_service_go_proto",
