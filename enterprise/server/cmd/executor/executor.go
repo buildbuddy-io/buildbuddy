@@ -15,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/fetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
@@ -212,6 +213,10 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 			log.Fatalf("%v", err)
 		}
 		log.Infof("No authentication will be configured: %s", err)
+	}
+
+	if err := fetcher.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	xl := xcode.NewXcodeLocator()

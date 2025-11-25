@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"net"
-	"net/http"
-	"net/url"
 	"runtime"
 	"sync"
 	"time"
@@ -17,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -28,11 +24,10 @@ import (
 	"github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/jonboulle/clockwork"
 
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
@@ -48,9 +43,7 @@ const (
 
 var (
 	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
-	mirrors                = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
-	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 
 	useCachePercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
 	// TODO: remove from configs and delete
@@ -59,48 +52,6 @@ var (
 	_ = flag.Bool("executor.container_registry.write_layers_to_cache", false, "", flag.Internal)
 	_ = flag.Bool("executor.container_registry.read_layers_from_cache", false, "", flag.Internal)
 )
-
-type MirrorConfig struct {
-	OriginalURL string `yaml:"original_url" json:"original_url"`
-	MirrorURL   string `yaml:"mirror_url" json:"mirror_url"`
-}
-
-func (mc MirrorConfig) matches(u *url.URL) (bool, error) {
-	originalURL, err := url.Parse(mc.OriginalURL)
-	if err != nil {
-		return false, err
-	}
-	match := originalURL.Host == u.Host
-	return match, nil
-}
-
-func (mc MirrorConfig) rewriteRequest(originalRequest *http.Request) (*http.Request, error) {
-	mirrorURL, err := url.Parse(mc.MirrorURL)
-	if err != nil {
-		return nil, err
-	}
-	originalURL := originalRequest.URL.String()
-	req := originalRequest.Clone(originalRequest.Context())
-	req.URL.Scheme = mirrorURL.Scheme
-	req.URL.Host = mirrorURL.Host
-	//Set X-Forwarded-Host so the mirror knows which remote registry to make requests to.
-	//ociregistry looks for this header and will default to forwarding requests to Docker Hub if not found.
-	req.Header.Set("X-Forwarded-Host", originalRequest.URL.Host)
-	log.Debugf("%q rewritten to %s", originalURL, req.URL.String())
-	return req, nil
-}
-
-func (mc MirrorConfig) rewriteFallbackRequest(originalRequest *http.Request) (*http.Request, error) {
-	originalURL, err := url.Parse(mc.OriginalURL)
-	if err != nil {
-		return nil, err
-	}
-	req := originalRequest.Clone(originalRequest.Context())
-	req.URL.Scheme = originalURL.Scheme
-	req.URL.Host = originalURL.Host
-	log.Debugf("(fallback) %q rewritten to %s", originalURL, req.URL.String())
-	return req, nil
-}
 
 type Registry struct {
 	Hostnames []string `yaml:"hostnames" json:"hostnames"`
@@ -254,22 +205,12 @@ type tagToDigestEntry struct {
 type Resolver struct {
 	env environment.Env
 
-	allowedPrivateIPs []*net.IPNet
-
 	mu                  sync.Mutex
 	imageTagToDigestLRU *lru.LRU[tagToDigestEntry]
 	clock               clockwork.Clock
 }
 
 func NewResolver(env environment.Env) (*Resolver, error) {
-	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
-	for _, r := range *allowedPrivateIPs {
-		_, ipNet, err := net.ParseCIDR(r)
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("invald value %q for executor.container_registry_allowed_private_ips flag: %s", r, err)
-		}
-		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
-	}
 	imageTagToDigestLRU, err := lru.NewLRU[tagToDigestEntry](&lru.Config[tagToDigestEntry]{
 		SizeFn:  func(_ tagToDigestEntry) int64 { return 1 },
 		MaxSize: int64(resolveImageDigestLRUMaxEntries),
@@ -280,9 +221,12 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	return &Resolver{
 		env:                 env,
 		imageTagToDigestLRU: imageTagToDigestLRU,
-		allowedPrivateIPs:   allowedPrivateIPNets,
 		clock:               env.GetClock(),
 	}, nil
+}
+
+func (r *Resolver) fetcher() ofpb.OCIFetcherClient {
+	return r.env.GetOCIFetcherClient()
 }
 
 // AuthenticateWithRegistry makes a HEAD request to a remote registry with the input credentials.
@@ -300,13 +244,15 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	}
 	log.CtxInfof(ctx, "Authenticating with registry %q", imageRef.Context().RegistryStr())
 
-	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	_, err = remote.Head(imageRef, remoteOpts...)
+	resp, err := r.fetcher().CanAccess(ctx, &ofpb.CanAccessRequest{
+		Reference:   imageRef.String(),
+		Credentials: credentials.ToProto(),
+	})
 	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
-		}
-		return status.UnavailableErrorf("could not authorize to remote registry: %s", err)
+		return err
+	}
+	if !resp.GetCanAccess() {
+		return status.PermissionDeniedErrorf("not authorized to access image manifest")
 	}
 	return nil
 }
@@ -333,21 +279,20 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		if entry.expiration.After(r.clock.Now()) {
 			return entry.nameWithDigest, nil
 		}
-		// Expired; evict and refresh via remote.Head below.
+		// Expired; evict and refresh via FetchManifestMetadata below.
 		r.mu.Lock()
 		r.imageTagToDigestLRU.Remove(tagRef.String())
 		r.mu.Unlock()
 	}
 
-	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	desc, err := remote.Head(tagRef, remoteOpts...)
+	resp, err := r.fetcher().FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
+		Ref:         tagRef.String(),
+		Credentials: credentials.ToProto(),
+	})
 	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
-		}
-		return "", status.UnavailableErrorf("could not authorize to remote registry: %s", err)
+		return "", err
 	}
-	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
+	imageNameWithDigest := tagRef.Context().Digest(resp.GetDigest()).String()
 	entryToAdd := tagToDigestEntry{
 		nameWithDigest: imageNameWithDigest,
 		expiration:     r.clock.Now().Add(resolveImageDigestLRUDuration),
@@ -368,12 +313,6 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	}
 	log.CtxInfof(ctx, "Resolving image %q", imageRef)
 
-	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	puller, err := remote.NewPuller(remoteOpts...)
-	if err != nil {
-		return nil, status.InternalErrorf("error creating puller: %s", err)
-	}
-
 	useCache := false
 	if *useCachePercent >= 100 {
 		useCache = true
@@ -381,55 +320,29 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		useCache = rand.Intn(100) < *useCachePercent
 	}
 
-	if useCache {
-		return fetchImageFromCacheOrRemote(
-			ctx,
-			imageRef,
-			gcr.Platform{
-				Architecture: platform.GetArch(),
-				OS:           platform.GetOs(),
-				Variant:      platform.GetVariant(),
-			},
-			r.env.GetActionCacheClient(),
-			r.env.GetByteStreamClient(),
-			puller,
-			credentials.bypassRegistry,
-		)
-	}
-
-	remoteDesc, err := puller.Get(ctx, imageRef)
-	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
-	}
-
-	// Image() should resolve both images and image indices to an appropriate image
-	img, err := remoteDesc.Image()
-	if err != nil {
-		switch remoteDesc.MediaType {
-		// This is an "image index", a meta-manifest that contains a list of
-		// {platform props, manifest hash} properties to allow client to decide
-		// which manifest they want to use based on platform.
-		case types.OCIImageIndex, types.DockerManifestList:
-			return nil, status.UnknownErrorf("could not get image in image index from descriptor: %s", err)
-		case types.OCIManifestSchema1, types.DockerManifestSchema2:
-			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
-		default:
-			return nil, status.UnknownErrorf("descriptor has unknown media type %q, oci error: %s", remoteDesc.MediaType, err)
-		}
-	}
-	return img, nil
+	return r.fetchImageFromCacheOrRemote(
+		ctx,
+		imageRef,
+		gcr.Platform{
+			Architecture: platform.GetArch(),
+			OS:           platform.GetOs(),
+			Variant:      platform.GetVariant(),
+		},
+		r.env.GetActionCacheClient(),
+		r.env.GetByteStreamClient(),
+		credentials,
+		credentials.bypassRegistry,
+		useCache,
+	)
 }
 
 // fetchImageFromCacheOrRemote first tries to fetch the manifest for the given image reference from the cache,
 // then falls back to fetching from the upstream remote registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool) (gcr.Image, error) {
-	canUseCache := !isAnonymousUser(ctx)
-	if !canUseCache {
+func (r *Resolver) fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, credentials Credentials, bypassRegistry bool, useCache bool) (gcr.Image, error) {
+	canUseCache := useCache && !isAnonymousUser(ctx)
+	if useCache && !canUseCache {
 		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", digestOrTagRef)
 	}
 	if canUseCache {
@@ -445,13 +358,21 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		// - Authenticates with the registry (if not bypassing)
 		// - Resolves the tag to a digest (if not already present)
 		if !hasDigest || !bypassRegistry {
-			var err error
-			desc, err = puller.Head(ctx, digestOrTagRef)
+			metaResp, err := r.fetcher().FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
+				Ref:         digestOrTagRef.String(),
+				Credentials: credentials.ToProto(),
+			})
 			if err != nil {
-				if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-					return nil, status.PermissionDeniedErrorf("cannot access image manifest: %s", err)
-				}
-				return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
+				return nil, err
+			}
+			hash, err := gcr.NewHash(metaResp.GetDigest())
+			if err != nil {
+				return nil, status.InternalErrorf("invalid digest from manifest metadata: %s", err)
+			}
+			desc = &gcr.Descriptor{
+				Digest:    hash,
+				Size:      metaResp.GetSize(),
+				MediaType: types.MediaType(metaResp.GetMediaType()),
 			}
 			digest = desc.Digest
 		}
@@ -469,10 +390,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		if mc != nil && err == nil {
 			// If we skipped fetching the manifest descriptor (because the
 			// reference already contained a resolved digest), then build a
-			// descriptor from the cached manifest entry. We aren't populating
-			// all of the descriptor fields here, but this should still
-			// represent a complete manifest descriptor (the implementation of
-			// [puller.Head] only sets these fields as well).
+			// descriptor from the cached manifest entry.
 			if desc == nil {
 				desc = &gcr.Descriptor{
 					Digest:    digest,
@@ -480,7 +398,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 					MediaType: types.MediaType(mc.GetContentType()),
 				}
 			}
-			return imageFromDescriptorAndManifest(
+			return r.imageFromDescriptorAndManifest(
 				ctx,
 				digestOrTagRef.Context(),
 				*desc,
@@ -488,51 +406,65 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				platform,
 				acClient,
 				bsClient,
-				puller,
+				credentials,
 				bypassRegistry,
+				useCache,
 			)
 		}
 	}
 
-	remoteDesc, err := puller.Get(ctx, digestOrTagRef)
+	// Fetch manifest from remote
+	manifestResp, err := r.fetcher().FetchManifest(ctx, &ofpb.FetchManifestRequest{
+		Ref:         digestOrTagRef.String(),
+		Credentials: credentials.ToProto(),
+	})
 	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+		return nil, err
+	}
+
+	// Use metadata from the manifest response
+	hash, err := gcr.NewHash(manifestResp.GetDigest())
+	if err != nil {
+		return nil, status.InternalErrorf("invalid digest from manifest response: %s", err)
+	}
+	desc := gcr.Descriptor{
+		Digest:    hash,
+		Size:      manifestResp.GetSize(),
+		MediaType: types.MediaType(manifestResp.GetMediaType()),
 	}
 
 	if canUseCache {
 		err := ocicache.WriteManifestToAC(
 			ctx,
-			remoteDesc.Manifest,
+			manifestResp.GetManifest(),
 			acClient,
 			digestOrTagRef.Context(),
-			remoteDesc.Digest,
-			string(remoteDesc.MediaType),
+			desc.Digest,
+			string(desc.MediaType),
 			digestOrTagRef,
 		)
 		if err != nil {
 			log.CtxWarningf(ctx, "Could not write manifest to cache: %s", err)
 		}
 	}
-	return imageFromDescriptorAndManifest(
+	return r.imageFromDescriptorAndManifest(
 		ctx,
 		digestOrTagRef.Context(),
-		remoteDesc.Descriptor,
-		remoteDesc.Manifest,
+		desc,
+		manifestResp.GetManifest(),
 		platform,
 		acClient,
 		bsClient,
-		puller,
+		credentials,
 		bypassRegistry,
+		useCache,
 	)
 }
 
 // imageFromDescriptorAndManifest returns an Image from the given manifest (if the manifest is an image manifest),
 // finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
 // and otherwise returns an error.
-func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool) (gcr.Image, error) {
+func (r *Resolver) imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, credentials Credentials, bypassRegistry bool, useCache bool) (gcr.Image, error) {
 	if desc.MediaType.IsSchema1() {
 		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
 	}
@@ -543,58 +475,32 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 			return nil, status.UnknownErrorf("error parsing index manifest: %s", err)
 		}
 
-		desc, err := ocimanifest.FindFirstImageManifest(*indexManifest, platform)
+		childDesc, err := ocimanifest.FindFirstImageManifest(*indexManifest, platform)
 		if err != nil {
 			return nil, status.UnknownErrorf("Could not find child image for platform in index: %s", err)
 		}
-		ref := repo.Digest(desc.Digest.String())
-		return fetchImageFromCacheOrRemote(
+		ref := repo.Digest(childDesc.Digest.String())
+		return r.fetchImageFromCacheOrRemote(
 			ctx,
 			ref,
 			platform,
 			acClient,
 			bsClient,
-			puller,
+			credentials,
 			bypassRegistry,
+			useCache,
 		)
 	}
 
-	return newImageFromRawManifest(
+	return r.newImageFromRawManifest(
 		ctx,
 		repo,
 		desc,
 		rawManifest,
 		acClient,
 		bsClient,
-		puller,
+		credentials,
 	), nil
-}
-
-func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, credentials Credentials) []remote.Option {
-	remoteOpts := []remote.Option{
-		remote.WithContext(ctx),
-		remote.WithPlatform(
-			gcr.Platform{
-				Architecture: platform.GetArch(),
-				OS:           platform.GetOs(),
-				Variant:      platform.GetVariant(),
-			},
-		),
-	}
-	if !credentials.IsEmpty() {
-		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Basic{
-			Username: credentials.Username,
-			Password: credentials.Password,
-		}))
-	}
-
-	tr := httpclient.New(r.allowedPrivateIPs, "oci").Transport
-	if len(*mirrors) > 0 {
-		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
-	} else {
-		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
-	}
-	return remoteOpts
 }
 
 // RuntimePlatform returns the platform on which the program is being executed,
@@ -620,49 +526,7 @@ func getDigest(ref gcrname.Reference) (gcr.Hash, bool) {
 	return hash, true
 }
 
-// verify that mirrorTransport implements the RoundTripper interface.
-var _ http.RoundTripper = (*mirrorTransport)(nil)
-
-type mirrorTransport struct {
-	inner   http.RoundTripper
-	mirrors []MirrorConfig
-}
-
-func newMirrorTransport(inner http.RoundTripper, mirrors []MirrorConfig) http.RoundTripper {
-	return &mirrorTransport{
-		inner:   inner,
-		mirrors: mirrors,
-	}
-}
-
-func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err error) {
-	for _, mirror := range t.mirrors {
-		if match, err := mirror.matches(in.URL); err == nil && match {
-			mirroredRequest, err := mirror.rewriteRequest(in)
-			if err != nil {
-				log.Errorf("error mirroring request: %s", err)
-				continue
-			}
-			out, err := t.inner.RoundTrip(mirroredRequest)
-			if err != nil {
-				log.Errorf("mirror err: %s", err)
-				continue
-			}
-			if out.StatusCode < http.StatusOK || out.StatusCode >= 300 {
-				fallbackRequest, err := mirror.rewriteFallbackRequest(in)
-				if err != nil {
-					log.Errorf("error rewriting fallback request: %s", err)
-					continue
-				}
-				return t.inner.RoundTrip(fallbackRequest)
-			}
-			return out, nil // Return successful mirror response
-		}
-	}
-	return t.inner.RoundTrip(in)
-}
-
-func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller) *imageFromRawManifest {
+func (r *Resolver) newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, credentials Credentials) *imageFromRawManifest {
 	i := &imageFromRawManifest{
 		repo:        repo,
 		desc:        desc,
@@ -670,7 +534,8 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		ctx:         ctx,
 		acClient:    acClient,
 		bsClient:    bsClient,
-		puller:      puller,
+		fetcher:     r.fetcher(),
+		credentials: credentials,
 	}
 	i.fetchRawConfigOnce = sync.OnceValues(func() ([]byte, error) {
 		manifest, err := i.Manifest()
@@ -680,11 +545,8 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		if manifest.Config.Data != nil {
 			return manifest.Config.Data, nil
 		}
-		layer := newLayerFromDigest(
-			i.repo,
+		layer := i.newLayerFromDigest(
 			manifest.Config.Digest,
-			i,
-			i.puller,
 			nil,
 		)
 
@@ -709,10 +571,11 @@ type imageFromRawManifest struct {
 	desc        gcr.Descriptor
 	rawManifest []byte
 
-	ctx      context.Context
-	acClient repb.ActionCacheClient
-	bsClient bspb.ByteStreamClient
-	puller   *remote.Puller
+	ctx         context.Context
+	acClient    repb.ActionCacheClient
+	bsClient    bspb.ByteStreamClient
+	fetcher     ofpb.OCIFetcherClient
+	credentials Credentials
 
 	fetchRawConfigOnce func() ([]byte, error)
 }
@@ -775,27 +638,17 @@ func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
 	}
 	layers := make([]gcr.Layer, 0, len(m.Layers))
 	for _, layerDesc := range m.Layers {
-		layer := newLayerFromDigest(
-			i.repo,
+		layer := i.newLayerFromDigest(
 			layerDesc.Digest,
-			i,
-			i.puller,
 			&layerDesc,
 		)
-
 		layers = append(layers, layer)
 	}
 	return layers, nil
 }
 
 func (i *imageFromRawManifest) LayerByDigest(digest gcr.Hash) (gcr.Layer, error) {
-	return newLayerFromDigest(
-		i.repo,
-		digest,
-		i,
-		i.puller,
-		nil,
-	), nil
+	return i.newLayerFromDigest(digest, nil), nil
 }
 
 func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error) {
@@ -803,26 +656,26 @@ func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error)
 	if err != nil {
 		return nil, err
 	}
-	return newLayerFromDigest(
-		i.repo,
-		digest,
-		i,
-		i.puller,
-		nil,
-	), nil
+	return i.newLayerFromDigest(digest, nil), nil
 }
 
-func newLayerFromDigest(repo gcrname.Repository, digest gcr.Hash, image *imageFromRawManifest, puller *remote.Puller, desc *gcr.Descriptor) *layerFromDigest {
+func (i *imageFromRawManifest) newLayerFromDigest(digest gcr.Hash, desc *gcr.Descriptor) *layerFromDigest {
 	return &layerFromDigest{
-		repo:   repo,
+		repo:   i.repo,
 		digest: digest,
-		image:  image,
-		puller: puller,
+		image:  i,
 		desc:   desc,
-		createRemoteLayer: sync.OnceValues(func() (gcr.Layer, error) {
-			ref := repo.Digest(digest.String())
-			return puller.Layer(image.ctx, ref)
-		}),
+		fetchBlob: func() (io.ReadCloser, error) {
+			ref := i.repo.Digest(digest.String())
+			stream, err := i.fetcher.FetchBlob(i.ctx, &ofpb.FetchBlobRequest{
+				Ref:         ref.String(),
+				Credentials: i.credentials.ToProto(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			return &blobStreamReader{stream: stream}, nil
+		},
 	}
 }
 
@@ -834,11 +687,9 @@ type layerFromDigest struct {
 	repo   gcrname.Repository
 	digest gcr.Hash
 	image  *imageFromRawManifest
-
-	puller *remote.Puller
 	desc   *gcr.Descriptor
 
-	createRemoteLayer func() (gcr.Layer, error)
+	fetchBlob func() (io.ReadCloser, error)
 }
 
 func (l *layerFromDigest) Digest() (gcr.Hash, error) {
@@ -864,11 +715,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		}
 	}
 
-	remoteLayer, err := l.createRemoteLayer()
-	if err != nil {
-		return nil, err
-	}
-	upstream, err := remoteLayer.Compressed()
+	upstream, err := l.fetchBlob()
 	if err != nil {
 		return nil, err
 	}
@@ -917,11 +764,15 @@ func (l *layerFromDigest) Size() (int64, error) {
 	if l.desc != nil {
 		return l.desc.Size, nil
 	}
-	remoteLayer, err := l.createRemoteLayer()
+	// Fetch metadata to get size
+	metaResp, err := l.image.fetcher.FetchBlobMetadata(l.image.ctx, &ofpb.FetchBlobMetadataRequest{
+		Ref:         l.repo.Digest(l.digest.String()).String(),
+		Credentials: l.image.credentials.ToProto(),
+	})
 	if err != nil {
 		return 0, err
 	}
-	return remoteLayer.Size()
+	return metaResp.GetSizeBytes(), nil
 }
 
 func (l *layerFromDigest) MediaType() (types.MediaType, error) {
@@ -955,6 +806,38 @@ func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
 		}
 	}()
 	return pr, nil
+}
+
+// blobStreamReader wraps a gRPC streaming client into an io.ReadCloser
+type blobStreamReader struct {
+	stream ofpb.OCIFetcher_FetchBlobClient
+	buf    []byte
+}
+
+func (r *blobStreamReader) Read(p []byte) (n int, err error) {
+	// First drain any buffered data
+	if len(r.buf) > 0 {
+		n = copy(p, r.buf)
+		r.buf = r.buf[n:]
+		return n, nil
+	}
+
+	// Fetch next chunk from stream
+	resp, err := r.stream.Recv()
+	if err != nil {
+		return 0, err
+	}
+
+	// Copy what we can, buffer the rest
+	n = copy(p, resp.GetData())
+	if n < len(resp.GetData()) {
+		r.buf = resp.GetData()[n:]
+	}
+	return n, nil
+}
+
+func (r *blobStreamReader) Close() error {
+	return nil
 }
 
 func isAnonymousUser(ctx context.Context) bool {
