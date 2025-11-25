@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/fetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
@@ -25,7 +26,9 @@ import (
 
 func TestOciconv(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32", "::1/128"})
+	err := fetcher.Register(te)
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	root := testfs.MakeTempDir(t)
@@ -101,7 +104,9 @@ func TestOciconv(t *testing.T) {
 
 func TestOciconv_ChecksCredentials(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32", "::1/128"})
+	err := fetcher.Register(te)
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	root := testfs.MakeTempDir(t)
