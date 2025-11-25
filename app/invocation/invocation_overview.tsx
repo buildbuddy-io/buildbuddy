@@ -10,10 +10,10 @@ import {
   Github,
   GitPullRequest,
   HardDrive,
+  Key,
   LayoutGrid,
   Link as LinkIcon,
   Package,
-  PencilOff,
   Tag,
   Target,
   Terminal,
@@ -210,7 +210,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           )}
           {hasCapabilityMetadata && (missingActionCacheWrite || missingCASWrite) && (
             <div className="detail" title="This invocation's API key could not write to the cache">
-              <PencilOff className="icon" />
+              <Key className="icon" />
               {missingActionCacheWrite && missingCASWrite
                 ? "Cache writes disabled"
                 : missingActionCacheWrite
