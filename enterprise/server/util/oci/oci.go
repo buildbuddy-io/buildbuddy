@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/fetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
@@ -665,17 +666,6 @@ func (i *imageFromRawManifest) newLayerFromDigest(digest gcr.Hash, desc *gcr.Des
 		digest: digest,
 		image:  i,
 		desc:   desc,
-		fetchBlob: func() (io.ReadCloser, error) {
-			ref := i.repo.Digest(digest.String())
-			stream, err := i.fetcher.FetchBlob(i.ctx, &ofpb.FetchBlobRequest{
-				Ref:         ref.String(),
-				Credentials: i.credentials.ToProto(),
-			})
-			if err != nil {
-				return nil, err
-			}
-			return &blobStreamReader{stream: stream}, nil
-		},
 	}
 }
 
@@ -688,8 +678,6 @@ type layerFromDigest struct {
 	digest gcr.Hash
 	image  *imageFromRawManifest
 	desc   *gcr.Descriptor
-
-	fetchBlob func() (io.ReadCloser, error)
 }
 
 func (l *layerFromDigest) Digest() (gcr.Hash, error) {
@@ -715,7 +703,11 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		}
 	}
 
-	upstream, err := l.fetchBlob()
+	ref := l.repo.Digest(l.digest.String())
+	upstream, err := fetcher.FetchBlobReader(l.image.ctx, l.image.fetcher, &ofpb.FetchBlobRequest{
+		Ref:         ref.String(),
+		Credentials: l.image.credentials.ToProto(),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -806,38 +798,6 @@ func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
 		}
 	}()
 	return pr, nil
-}
-
-// blobStreamReader wraps a gRPC streaming client into an io.ReadCloser
-type blobStreamReader struct {
-	stream ofpb.OCIFetcher_FetchBlobClient
-	buf    []byte
-}
-
-func (r *blobStreamReader) Read(p []byte) (n int, err error) {
-	// First drain any buffered data
-	if len(r.buf) > 0 {
-		n = copy(p, r.buf)
-		r.buf = r.buf[n:]
-		return n, nil
-	}
-
-	// Fetch next chunk from stream
-	resp, err := r.stream.Recv()
-	if err != nil {
-		return 0, err
-	}
-
-	// Copy what we can, buffer the rest
-	n = copy(p, resp.GetData())
-	if n < len(resp.GetData()) {
-		r.buf = resp.GetData()[n:]
-	}
-	return n, nil
-}
-
-func (r *blobStreamReader) Close() error {
-	return nil
 }
 
 func isAnonymousUser(ctx context.Context) bool {

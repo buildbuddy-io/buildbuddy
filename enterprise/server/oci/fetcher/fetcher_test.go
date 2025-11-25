@@ -95,6 +95,42 @@ func TestFetchBlob(t *testing.T) {
 	require.Equal(t, expectedBytes, actualBytes)
 }
 
+func TestFetchBlobReader(t *testing.T) {
+	registry := testregistry.Run(t, testregistry.Opts{})
+	_, img := registry.PushNamedImage(t, "test_blob_reader")
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+
+	// Get expected bytes
+	expectedReader, err := layer.Compressed()
+	require.NoError(t, err)
+	expectedBytes, err := io.ReadAll(expectedReader)
+	require.NoError(t, err)
+	expectedReader.Close()
+
+	// Construct the blob reference: registry/repo@sha256:...
+	blobRef := registry.ImageAddress("test_blob_reader") + "@" + digest.String()
+
+	f := newFetcher(t)
+	rc, err := fetcher.FetchBlobReader(context.Background(), f, &ofpb.FetchBlobRequest{
+		Ref: blobRef,
+	})
+	require.NoError(t, err)
+	defer rc.Close()
+
+	// Read all using io.ReadAll - this is the key difference from TestFetchBlob
+	actualBytes, err := io.ReadAll(rc)
+	require.NoError(t, err)
+
+	require.Equal(t, expectedBytes, actualBytes)
+}
+
 func TestFetchBlobMetadata(t *testing.T) {
 	registry := testregistry.Run(t, testregistry.Opts{})
 	_, img := registry.PushNamedImage(t, "test_blob_metadata")

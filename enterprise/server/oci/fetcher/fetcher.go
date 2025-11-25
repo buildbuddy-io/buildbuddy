@@ -427,3 +427,45 @@ func (s *localBlobStream) RecvMsg(m any) error {
 	}
 	return status.InvalidArgumentError("RecvMsg called with wrong type")
 }
+
+// blobStreamReader wraps a gRPC streaming client into an io.ReadCloser.
+type blobStreamReader struct {
+	stream grpc.ServerStreamingClient[ofpb.FetchBlobResponse]
+	buf    []byte
+}
+
+func (r *blobStreamReader) Read(p []byte) (n int, err error) {
+	// First drain any buffered data
+	if len(r.buf) > 0 {
+		n = copy(p, r.buf)
+		r.buf = r.buf[n:]
+		return n, nil
+	}
+
+	// Fetch next chunk from stream
+	resp, err := r.stream.Recv()
+	if err != nil {
+		return 0, err
+	}
+
+	// Copy what we can, buffer the rest
+	n = copy(p, resp.GetData())
+	if n < len(resp.GetData()) {
+		r.buf = resp.GetData()[n:]
+	}
+	return n, nil
+}
+
+func (r *blobStreamReader) Close() error {
+	return nil
+}
+
+// FetchBlobReader calls FetchBlob on the given client and returns the response
+// as an io.ReadCloser for convenient streaming reads.
+func FetchBlobReader(ctx context.Context, client ofpb.OCIFetcherClient, req *ofpb.FetchBlobRequest) (io.ReadCloser, error) {
+	stream, err := client.FetchBlob(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &blobStreamReader{stream: stream}, nil
+}
