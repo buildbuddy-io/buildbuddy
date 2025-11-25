@@ -202,6 +202,10 @@ func (c *KeyCache) cacheGet(ck CacheKey) (*cacheEntry, bool) {
 	e := v.(*cacheEntry)
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if c.clock.Now().After(e.expiresAfter) {
+		c.data.Delete(ck)
+		return nil, false
+	}
 	e.lastUse = c.clock.Now()
 	return e, true
 }
