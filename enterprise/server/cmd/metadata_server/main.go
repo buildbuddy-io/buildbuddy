@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -72,10 +71,6 @@ func main() {
 	}
 
 	if err := gossip.Register(env); err != nil {
-		log.Fatal(err.Error())
-	}
-
-	if err := clientidentity.Register(env); err != nil {
 		log.Fatal(err.Error())
 	}
 
