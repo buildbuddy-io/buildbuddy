@@ -2,8 +2,6 @@ package build_event_handler
 
 import (
 	"context"
-	"crypto/md5"
-	"encoding/binary"
 	"flag"
 	"fmt"
 	"io"
@@ -210,7 +208,7 @@ func (b *BuildEventHandler) Stop() {
 	b.mu.Lock()
 	b.shuttingDown = true
 	b.mu.Unlock()
-	b.cancelFnsByInvID.Range(func(key, val interface{}) bool {
+	b.cancelFnsByInvID.Range(func(key, val any) bool {
 		iid := key.(string)
 		cancelFn := val.(context.CancelFunc)
 		log.Infof("Cancelling invocation %q because server received shutdown signal", iid)
@@ -319,7 +317,7 @@ func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEVal
 
 func (r *statsRecorder) Start() {
 	ctx := r.env.GetServerContext()
-	for i := 0; i < numStatsRecorderWorkers; i++ {
+	for range numStatsRecorderWorkers {
 		metrics.StatsRecorderWorkers.Inc()
 		r.eg.Go(func() error {
 			defer metrics.StatsRecorderWorkers.Dec()
@@ -510,7 +508,6 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 
 	artifactsUploaded := make(map[string]struct{}, 0)
 	for _, uri := range task.persist.URIs {
-		uri := uri
 		rn, err := digest.ParseDownloadResourceName(uri.Path)
 		if err != nil {
 			log.CtxErrorf(ctx, "Unparseable artifact URI: %s", err)
@@ -654,7 +651,7 @@ func (w *webhookNotifier) Start() {
 	ctx := w.env.GetServerContext()
 
 	w.lookupGroup = errgroup.Group{}
-	for i := 0; i < numWebhookInvocationLookupWorkers; i++ {
+	for range numWebhookInvocationLookupWorkers {
 		metrics.WebhookInvocationLookupWorkers.Inc()
 		w.lookupGroup.Go(func() error {
 			defer metrics.WebhookInvocationLookupWorkers.Dec()
@@ -670,7 +667,7 @@ func (w *webhookNotifier) Start() {
 	}
 
 	w.notifyGroup = errgroup.Group{}
-	for i := 0; i < numWebhookNotifyWorkers; i++ {
+	for range numWebhookNotifyWorkers {
 		metrics.WebhookNotifyWorkers.Inc()
 		w.notifyGroup.Go(func() error {
 			defer metrics.WebhookNotifyWorkers.Dec()
@@ -965,11 +962,6 @@ func (e *EventChannel) recordInvocationMetrics(ti *tables.Invocation) {
 		metrics.InvocationStatusLabel: statusLabel,
 		metrics.GroupID:               e.getGroupIDForMetrics(),
 	}).Observe(float64(ti.DurationUsec))
-}
-
-func md5Int64(text string) int64 {
-	hash := md5.Sum([]byte(text))
-	return int64(binary.BigEndian.Uint64(hash[:8]))
 }
 
 func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
@@ -1449,8 +1441,8 @@ func getOptionValues(options []string, optionName string) []string {
 		if option == "--" {
 			break
 		}
-		if strings.HasPrefix(option, flag+"=") {
-			values = append(values, strings.TrimPrefix(option, flag+"="))
+		if after, found := strings.CutPrefix(option, flag+"="); found {
+			values = append(values, after)
 		}
 	}
 	return values
