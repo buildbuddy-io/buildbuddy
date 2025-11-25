@@ -151,6 +151,7 @@ func parseChecksumQualifier(qualifier *rapb.Qualifier) (repb.DigestFunction_Valu
 				return repb.DigestFunction_UNKNOWN, "", status.FailedPreconditionErrorf("Error decoding qualifier %q: %s", qualifier.GetName(), err.Error())
 			}
 			expectedChecksum := hex.EncodeToString(decodedHash)
+			log.Debugf("MAG: Parsed checksum qualifier: %s -> %s", qualifier.GetName(), expectedChecksum)
 			return digestFunc, expectedChecksum, nil
 		}
 	}
@@ -174,6 +175,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	var expectedChecksum string
 	for _, qualifier := range req.GetQualifiers() {
 		if qualifier.GetName() == ChecksumQualifier {
+			log.Debugf("MAG: Found a checksum qualifier")
 			checksumFunc, expectedChecksum, err = parseChecksumQualifier(qualifier)
 			if err != nil {
 				return nil, err
@@ -221,7 +223,9 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	if len(unsupportedQualifierNames) > 0 {
 		return nil, makeUnsupportedQualifiersErrStatus(unsupportedQualifierNames)
 	}
+	log.Debugf("MAG: Expected checksum: %s, len is %v, bool is %v", expectedChecksum, len(expectedChecksum), len(expectedChecksum) != 0)
 	if len(expectedChecksum) != 0 {
+		log.Debugf("MAG: Looking up blob in cache")
 		blobDigest := p.findBlobInCache(ctx, req.GetInstanceName(), checksumFunc, expectedChecksum)
 		// If the digestFunc is supplied and differ from the checksum sri,
 		// after looking up the cached blob using checksum sri, re-upload
