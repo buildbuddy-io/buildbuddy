@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/features"
 	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
@@ -199,6 +200,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		MultipleSuggestionProviders:            env.GetSuggestionService() != nil && env.GetSuggestionService().MultipleProvidersConfigured(),
 		ExecutionSearchEnabled:                 *executionSearchEnabled,
 		TrendsSummaryEnabled:                   *trendsSummaryEnabled,
+		ActionResultOriginEnabled:              action_cache_server.RecordActionResultOriginEnabled(),
 		CustomerManagedEncryptionKeysEnabled:   *customerManagedEncryptionKeysEnabled,
 		TagsUiEnabled:                          *tagsUIEnabled,
 		TimeseriesChartsInTimingProfileEnabled: *timeseriesChartsInTimingProfileEnabled,

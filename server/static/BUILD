@@ -17,6 +17,7 @@ go_library(
         "//server/features",
         "//server/http/csp",
         "//server/invocation_stat_service/config",
+        "//server/remote_cache/action_cache_server",
         "//server/remote_cache/hit_tracker",
         "//server/remote_execution/config",
         "//server/scheduling/scheduler_server/config",
