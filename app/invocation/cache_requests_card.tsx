@@ -114,6 +114,8 @@ const filters: PresetFilter[] = [
 ];
 
 const defaultFilterIndex = 0; // All
+const CASHitsFilterIndex = 4;
+const CASWritesFilterIndex = 5;
 
 /**
  * CacheRequestsCardComponent shows all BuildBuddy cache requests for an invocation in a tabular form.
@@ -304,7 +306,11 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   private isOriginColumnVisible() {
     const filterIndex = this.getFilterIndex();
     // Hide origin column unless the backend records origin metadata and we're not in CAS-only views.
-    return capabilities.config.actionResultOriginEnabled && filterIndex !== 4 && filterIndex !== 5;
+    return (
+      capabilities.config.actionResultOriginEnabled &&
+      filterIndex !== CASHitsFilterIndex &&
+      filterIndex !== CASWritesFilterIndex
+    );
   }
   private getSearch() {
     return this.props.search.get("search") || this.props.query || "";
