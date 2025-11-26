@@ -1186,5 +1186,5 @@ function looksLikeDigest(actionId: string | null) {
 
 function redactInvocationId(invocationId: string) {
   if (invocationId.length <= 8) return invocationId;
-  return `${invocationId.slice(0, 4)}..${invocationId.slice(-4)}`;
+  return `${invocationId.slice(0, 4)}…${invocationId.slice(-4)}`;
 }

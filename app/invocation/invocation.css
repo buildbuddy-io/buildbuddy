@@ -404,7 +404,6 @@
   width: 10ch;
   overflow: hidden;
   white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .cache-requests-card .digest-component-size {
