@@ -190,6 +190,9 @@ message FrontendConfig {
   bool targets_page_enabled = 62;
 
   bool user_lists_ui_enabled = 63;
+
+  // Whether action result origin metadata is recorded and can be displayed.
+  bool action_result_origin_enabled = 64;
 }
 
 message Region {

@@ -400,6 +400,12 @@
   width: 168px;
 }
 
+.cache-requests-card .origin-column {
+  width: 10ch;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 .cache-requests-card .digest-component-size {
   text-align: right;
 }

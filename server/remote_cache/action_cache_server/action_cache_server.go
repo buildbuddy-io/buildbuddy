@@ -159,6 +159,12 @@ func setOriginMetadata(ar *repb.ActionResult, rm *repb.RequestMetadata) error {
 	return nil
 }
 
+// RecordActionResultOriginEnabled reports whether origin metadata should be recorded
+// and exposed to clients.
+func RecordActionResultOriginEnabled() bool {
+	return *recordOrigin
+}
+
 func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.ACResourceName, req *repb.GetActionResultRequest) (*repb.ActionResult, *repb.ExecutedActionMetadata, int64, error) {
 	blob, err := s.cache.Get(ctx, rn.ToProto())
 	if err != nil {
