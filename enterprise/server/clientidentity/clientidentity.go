@@ -42,6 +42,9 @@ type Service struct {
 }
 
 func New(clock clockwork.Clock) (*Service, error) {
+	if *signingKey == "" {
+		return nil, status.InvalidArgumentError("ClientIdentityService requires a signing key")
+	}
 	return &Service{
 		signingKey: []byte(*signingKey),
 		clock:      clock,
