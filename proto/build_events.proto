@@ -141,6 +141,11 @@ message BuildEvent {
     // An event that contains supplemental tool-specific information about
     // source fetching.
     google.protobuf.Any source_fetch_event = 62;
+
+    // BUILDBUDDY-SPECIFIC FIELD BELOW.
+    // Generic build tool-specific event payload (e.g. Buck2) emitted alongside
+    // the primary bazel_event stream.
+    google.protobuf.Any build_tool_event = 1000;
   }
 }
 
