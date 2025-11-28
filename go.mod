@@ -103,7 +103,7 @@ require (
 	github.com/hashicorp/memberlist v0.5.1
 	github.com/hashicorp/serf v0.10.1
 	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa
-	github.com/jackc/pgx/v5 v5.5.5
+	github.com/jackc/pgx/v5 v5.6.0
 	github.com/jhump/protoreflect v1.15.1
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/jotfs/fastcdc-go v0.2.0
@@ -177,11 +177,11 @@ require (
 	google.golang.org/protobuf v1.36.10
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
-	gorm.io/driver/clickhouse v0.5.1
-	gorm.io/driver/mysql v1.5.1
-	gorm.io/driver/postgres v1.5.2
-	gorm.io/driver/sqlite v1.5.2
-	gorm.io/gorm v1.25.2
+	gorm.io/driver/clickhouse v0.7.0
+	gorm.io/driver/mysql v1.6.0
+	gorm.io/driver/postgres v1.6.0
+	gorm.io/driver/sqlite v1.6.0
+	gorm.io/gorm v1.30.0
 	kythe.io v0.0.72
 )
 
@@ -322,7 +322,7 @@ require (
 	github.com/huandu/xstrings v1.4.0 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
-	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jinzhu/configor v1.2.1 // indirect
