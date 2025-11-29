@@ -1183,7 +1183,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "hedged_actions",
-		Help:      "Number of identicial execution request which were merged for which a hedged execution was run in the background.",
+		Help:      "Number of identical execution request which were merged for which a hedged execution was run in the background.",
 	}, []string{
 		GroupID,
 	})
@@ -2151,7 +2151,7 @@ var (
 
 	// #### `set` metrics
 	//
-	// `set` metrics track non-streamed cache writes (all data is wrtiten
+	// `set` metrics track non-streamed cache writes (all data is written
 	// in a single request).
 
 	CacheSetCount = promauto.NewCounterVec(prometheus.CounterOpts{
