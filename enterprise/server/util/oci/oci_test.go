@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/fetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -220,6 +221,8 @@ func TestCredentialsToProto(t *testing.T) {
 }
 
 func newResolver(t *testing.T, te *testenv.TestEnv) *oci.Resolver {
+	err := fetcher.Register(te)
+	require.NoError(t, err)
 	r, err := oci.NewResolver(te)
 	require.NoError(t, err)
 	return r
@@ -556,7 +559,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	})
 
 	// Configure the resolver to use the mirror as a mirror for the original registry.
-	flags.Set(t, "executor.container_registry_mirrors", []oci.MirrorConfig{
+	flags.Set(t, "executor.container_registry_mirrors", []fetcher.MirrorConfig{
 		{
 			OriginalURL: "http://" + originalRegistry.Address(),
 			MirrorURL:   "http://" + mirrorRegistry.Address(),
@@ -1248,8 +1251,9 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 
+	// With Puller caching, the cached Puller is already authenticated so we
+	// don't need a new GET /v2/ ping request - only the HEAD manifest request.
 	expectedRefresh := map[string]int{
-		http.MethodGet + " /v2/":                                    1,
 		http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
 	}
 	require.Empty(t, cmp.Diff(expectedRefresh, counter.snapshot()))

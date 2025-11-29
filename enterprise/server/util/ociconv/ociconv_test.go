@@ -10,12 +10,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/fetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -25,7 +27,9 @@ import (
 
 func TestOciconv(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32", "::1/128"})
+	err := fetcher.Register(te)
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	root := testfs.MakeTempDir(t)
@@ -101,7 +105,9 @@ func TestOciconv(t *testing.T) {
 
 func TestOciconv_ChecksCredentials(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32", "::1/128"})
+	err := fetcher.Register(te)
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	root := testfs.MakeTempDir(t)
@@ -140,7 +146,7 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 	// This should fail because the credentials are invalid.
 	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "401 Unauthorized")
+	assert.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
 
 	// This should succeed because the credentials are valid.
 	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{
@@ -153,7 +159,7 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 	// This should still fail.
 	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "401 Unauthorized")
+	assert.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
 
 	// Try a successful pull again with valid credentials now that the image
 	// is cached; this should succeed.

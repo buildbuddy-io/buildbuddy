@@ -12,6 +12,7 @@ import (
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -142,4 +143,5 @@ type Env interface {
 	GetHitTrackerFactory() interfaces.HitTrackerFactory
 	GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer
 	GetExperimentFlagProvider() interfaces.ExperimentFlagProvider
+	GetOCIFetcherClient() ofpb.OCIFetcherClient
 }

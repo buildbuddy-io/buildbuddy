@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/fetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
@@ -101,16 +102,22 @@ func imageConfigTestImage(t *testing.T) string {
 	return "gcr.io/flame-public/image-config-test@sha256:44dc4623f3709eef89b0a6d6c8e1c3a9d54db73f6beb8cf99f402052ba9abe56"
 }
 
-func installLeaserInEnv(t testing.TB, env *real_environment.RealEnv) {
+func getTestEnv(t testing.TB) *real_environment.RealEnv {
+	env := testenv.GetTestEnv(t)
+	// Register fetcher with allowed private IPs for localhost test registries
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32", "::1/128"})
+	err := fetcher.Register(env)
+	require.NoError(t, err)
+	// Install CPU leaser
 	leaser, err := cpuset.NewLeaser(cpuset.LeaserOpts{})
 	require.NoError(t, err)
 	env.SetCPULeaser(leaser)
 	flags.Set(t, "executor.cpu_leaser.enable", true)
-
 	t.Cleanup(func() {
 		orphanedLeases := leaser.TestOnlyGetOpenLeases()
 		require.Equal(t, 0, len(orphanedLeases))
 	})
+	return env
 }
 
 func TestRun(t *testing.T) {
@@ -119,8 +126,7 @@ func TestRun(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -168,8 +174,7 @@ func TestCgroupSettings(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -222,8 +227,7 @@ func TestRunUsageStats(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -262,8 +266,7 @@ func TestRunWithImage(t *testing.T) {
 	image := imageConfigTestImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -315,8 +318,7 @@ func TestRunOOM(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -405,8 +407,7 @@ func TestCreateExecRemove(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -452,8 +453,7 @@ func TestTini_Run(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
@@ -487,8 +487,7 @@ func TestTini_CreateExec(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
@@ -549,8 +548,7 @@ func TestExecUsageStats(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -596,8 +594,7 @@ func TestStatsPostExec(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -654,8 +651,7 @@ func TestPullCreateExecRemove(t *testing.T) {
 	image := imageConfigTestImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -735,8 +731,7 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -842,8 +837,7 @@ func TestCreateFailureHasStderr(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -877,8 +871,7 @@ func TestDevices(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -933,8 +926,7 @@ func TestSignal(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1016,8 +1008,7 @@ func TestNetworking(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			env := testenv.GetTestEnv(t)
-			installLeaserInEnv(t, env)
+			env := getTestEnv(t)
 
 			runtimeRoot := testfs.MakeTempDir(t)
 			flags.Set(t, "executor.network_stats_enabled", true)
@@ -1079,8 +1070,7 @@ func TestUser(t *testing.T) {
 	setupNetworking(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1189,8 +1179,7 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 	image := imageConfigTestImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1265,8 +1254,7 @@ func TestHighLayerCount(t *testing.T) {
 			// Start container to verify content
 			setupNetworking(t)
 			ctx := context.Background()
-			env := testenv.GetTestEnv(t)
-			installLeaserInEnv(t, env)
+			env := getTestEnv(t)
 			buildRoot := testfs.MakeTempDir(t)
 			cacheRoot := testfs.MakeTempDir(t)
 			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
@@ -1307,8 +1295,7 @@ func TestEntrypoint(t *testing.T) {
 	image := reg.Push(t, img, "test-entrypoint:latest")
 	// Set up the container
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
@@ -1386,8 +1373,7 @@ func TestFileOwnership(t *testing.T) {
 	image := reg.Push(t, img, "test-file-ownership:latest")
 	// Set up the container
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
@@ -1445,7 +1431,7 @@ func TestPathSanitization(t *testing.T) {
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
-			te := testenv.GetTestEnv(t)
+			te := getTestEnv(t)
 			cacheRoot := testfs.MakeTempDir(t)
 			testfs.WriteAllFileContents(t, cacheRoot, map[string]string{
 				"test-link-target": "Hello",
@@ -1481,8 +1467,7 @@ func TestPersistentWorker(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1560,8 +1545,7 @@ func TestPersistentWorker_WorkerCrashesBeforeReadingRequest(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1621,8 +1605,7 @@ func TestPersistentWorker_WorkerCrashesAfterReadingRequest(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1682,8 +1665,7 @@ func TestCancelRun(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1737,8 +1719,7 @@ func TestCancelExec(t *testing.T) {
 	image := busyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1858,7 +1839,7 @@ func TestPullImage(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			te := testenv.GetTestEnv(t)
+			te := getTestEnv(t)
 			resolver, err := oci.NewResolver(te)
 			require.NoError(t, err)
 			require.NotNil(t, resolver)
@@ -1878,8 +1859,7 @@ func TestMounts(t *testing.T) {
 	setupNetworking(t)
 	image := busyboxImage(t)
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
@@ -1926,8 +1906,7 @@ func TestPersistentVolumes(t *testing.T) {
 	setupNetworking(t)
 	image := busyboxImage(t)
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	env := getTestEnv(t)
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	flags.Set(t, "executor.oci.enable_persistent_volumes", true)

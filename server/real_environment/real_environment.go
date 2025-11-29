@@ -13,6 +13,7 @@ import (
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -137,6 +138,7 @@ type RealEnv struct {
 	atimeUpdater                         interfaces.AtimeUpdater
 	cpuLeaser                            interfaces.CPULeaser
 	ociRegistry                          interfaces.OCIRegistry
+	ociFetcherClient                     ofpb.OCIFetcherClient
 	hitTrackerFactory                    interfaces.HitTrackerFactory
 	hitTrackerServiceServer              hitpb.HitTrackerServiceServer
 	experimentFlagProvider               interfaces.ExperimentFlagProvider
@@ -848,6 +850,13 @@ func (r *RealEnv) GetOCIRegistry() interfaces.OCIRegistry {
 }
 func (r *RealEnv) SetOCIRegistry(ociRegistry interfaces.OCIRegistry) {
 	r.ociRegistry = ociRegistry
+}
+
+func (r *RealEnv) GetOCIFetcherClient() ofpb.OCIFetcherClient {
+	return r.ociFetcherClient
+}
+func (r *RealEnv) SetOCIFetcherClient(ociFetcherClient ofpb.OCIFetcherClient) {
+	r.ociFetcherClient = ociFetcherClient
 }
 
 func (r *RealEnv) GetHitTrackerFactory() interfaces.HitTrackerFactory {
