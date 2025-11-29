@@ -208,25 +208,33 @@ func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
 	return &hash, nil
 }
 
-func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, bool, error) {
-	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeader, authorizationHeader, ociResourceType, ref)
+// resolveManifestDigest makes a HEAD request to the upstream registry and returns
+// the digest from the Docker-Content-Digest header. Also validates that the client
+// has access to the resource - returns appropriate error types for auth failures.
+func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeader, authorizationHeader string, ref gcrname.Reference) (*gcr.Hash, error) {
+	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeader, authorizationHeader, ocipb.OCIResourceType_MANIFEST, ref)
 	if err != nil {
-		return nil, false, status.UnavailableErrorf("error making %s request to upstream registry: %s", http.MethodHead, err)
+		return nil, status.UnavailableErrorf("error making %s request to upstream registry: %s", http.MethodHead, err)
 	}
 	defer headresp.Body.Close()
 
-	if headresp.StatusCode == http.StatusNotFound {
-		return nil, false, nil
+	switch headresp.StatusCode {
+	case http.StatusOK:
+		value := headresp.Header.Get(headerDockerContentDigest)
+		hash, err := parseDockerContentDigestHeader(value)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("error parsing %s header: %s", headerDockerContentDigest, err)
+		}
+		return hash, nil
+	case http.StatusNotFound:
+		return nil, status.NotFoundErrorf("resource not found: %s", ref.Name())
+	case http.StatusUnauthorized:
+		return nil, status.PermissionDeniedErrorf("unauthorized access to %s", ref.Name())
+	case http.StatusForbidden:
+		return nil, status.PermissionDeniedErrorf("forbidden access to %s", ref.Name())
+	default:
+		return nil, status.UnavailableErrorf("upstream registry returned status %d for %s", headresp.StatusCode, ref.Name())
 	}
-	if headresp.StatusCode != http.StatusOK {
-		return nil, false, status.UnavailableErrorf("could not fetch manifest for %s, upstream HTTP status %d", ref.Context(), headresp.StatusCode)
-	}
-	value := headresp.Header.Get(headerDockerContentDigest)
-	hash, err := parseDockerContentDigestHeader(value)
-	if err != nil {
-		return nil, true, status.InvalidArgumentErrorf("error parsing %s header: %s", headerDockerContentDigest, err)
-	}
-	return hash, true, nil
 }
 
 func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, ociResourceType ocipb.OCIResourceType, repository, identifier string) {
@@ -249,31 +257,39 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 
 	resolvedRef := ref
 	resolvedRefIsDigest := identifierIsDigest
-	if ociResourceType == ocipb.OCIResourceType_MANIFEST && !identifierIsDigest && inreq.Method == http.MethodGet {
-		// Fetching a manifest by tag.
-		// Since the mapping from tag to digest can change, we only look up manifests and blobs in the CAS by digest.
-		// Docker Hub does not count "version checks" (HEAD requests) against the rate limit.
-		// So make a HEAD request for the manifest, find its digest, and see if we can fetch from CAS.
-		// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
-		hash, exists, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
+
+	// For manifest requests that will use cache, make a single HEAD request
+	// to validate access (and resolve the digest for tag requests).
+	// Skip for:
+	// - Blob requests (no validation needed)
+	// - Tag + HEAD requests (don't use cache, go directly to upstream)
+	if ociResourceType == ocipb.OCIResourceType_MANIFEST && (identifierIsDigest || inreq.Method == http.MethodGet) {
+		hash, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ref)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Could not resolve digest for manifest %q: %s", ref.Context(), err), http.StatusServiceUnavailable)
+			if status.IsNotFoundError(err) {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			if status.IsPermissionDeniedError(err) {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
-		if !exists {
-			http.Error(w, fmt.Sprintf("Could not find manifest %q", ref.Context()), http.StatusNotFound)
-			return
-		}
-		if hash == nil {
-			http.Error(w, fmt.Sprintf("Could not parse digest from manifest for %q", ref.Context()), http.StatusNotFound)
-			return
-		}
-		manifestRef, err := parseReference(repository, hash.String())
-		if err != nil {
-			log.CtxErrorf(ctx, "Could not parse manifest reference for %q: %s", repository, err)
-		} else {
-			resolvedRef = manifestRef
-			resolvedRefIsDigest = true
+		// For tag requests, update resolvedRef to use the resolved digest
+		if !identifierIsDigest {
+			if hash == nil {
+				http.Error(w, fmt.Sprintf("Could not parse digest from manifest for %q", ref.Context()), http.StatusNotFound)
+				return
+			}
+			manifestRef, err := parseReference(repository, hash.String())
+			if err != nil {
+				log.CtxErrorf(ctx, "Could not parse manifest reference for %q: %s", repository, err)
+			} else {
+				resolvedRef = manifestRef
+				resolvedRefIsDigest = true
+			}
 		}
 	}
 
@@ -283,8 +299,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	// To fetch a blob or manifest from the AC and CAS, you need a digest.
 	// Blob requests MUST be by digest.
 	// Manifest requests can be by digest or by tag.
-	// If we successfully resolved a manifest tag to a digest above, it's safe
-	// to look up the manifest in the cache.
+	// For manifests, access was already validated above.
 	if resolvedRefIsDigest {
 		writeBody := inreq.Method == http.MethodGet
 		hash, err := gcr.NewHash(resolvedRef.Identifier())
