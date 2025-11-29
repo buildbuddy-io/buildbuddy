@@ -248,7 +248,8 @@ export default class InvocationModel {
       return invocationUser;
     }
     // TODO: shouldn't the server be populating invocation.user based on these?
-    let username = this.workspaceStatusMap.get("BUILD_USER") || this.clientEnvMap.get("USER") || "";
+    let username =
+      this.workspaceStatusMap.get("BUILD_USER") || this.clientEnvMap.get("USER") || this.started?.user || "";
     if (username === "<REDACTED>") {
       return "";
     }
@@ -299,7 +300,7 @@ export default class InvocationModel {
   }
 
   getHost() {
-    return this.invocation.host || this.workspaceStatusMap.get("BUILD_HOST") || "";
+    return this.invocation.host || this.workspaceStatusMap.get("BUILD_HOST") || this.started?.host || "";
   }
 
   getTags(): invocation.Invocation.Tag[] {
