@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/fetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -346,6 +347,7 @@ func TestResolve(t *testing.T) {
 		for _, useCachePercent := range []int{0, 100} {
 			t.Run(tc.name+fmt.Sprintf("/use_cache_percent_%d", useCachePercent), func(t *testing.T) {
 				te := testenv.GetTestEnv(t)
+				require.NoError(t, fetcher.Register(te))
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
 				registry := testregistry.Run(t, tc.opts)
@@ -439,6 +441,7 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 			name := tc.name + "/use_cache_percent_" + strconv.Itoa(useCachePercent)
 			t.Run(name, func(t *testing.T) {
 				te := testenv.GetTestEnv(t)
+				require.NoError(t, fetcher.Register(te))
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
 				counter := newRequestCounter()
@@ -556,12 +559,13 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	})
 
 	// Configure the resolver to use the mirror as a mirror for the original registry.
-	flags.Set(t, "executor.container_registry_mirrors", []oci.MirrorConfig{
+	flags.Set(t, "executor.container_registry_mirrors", []fetcher.MirrorConfig{
 		{
 			OriginalURL: "http://" + originalRegistry.Address(),
 			MirrorURL:   "http://" + mirrorRegistry.Address(),
 		},
 	})
+	require.NoError(t, fetcher.Register(te))
 
 	// Resolve the image, which should fall back to the original after mirror fails.
 	img, err := newResolver(t, te).Resolve(
@@ -626,6 +630,7 @@ func TestAllowPrivateIPs(t *testing.T) {
 			te := testenv.GetTestEnv(t)
 			flags.Set(t, "http.client.allow_localhost", false)
 			flags.Set(t, "executor.container_registry_allowed_private_ips", tc.allowedIPs)
+			require.NoError(t, fetcher.Register(te))
 			registry := testregistry.Run(t, testregistry.Opts{})
 			err := pushAndFetchRandomImage(t, te, registry)
 			if tc.expectError {
@@ -735,9 +740,8 @@ func TestResolve_WithCache(t *testing.T) {
 				// Try resolving again - the image should now be cached and we
 				// should be able to avoid GET requests for manifests and blobs,
 				// but we still expect some requests to resolve the tag to a
-				// digest.
+				// digest. Note: No GET /v2/ since the Puller is cached.
 				expected = map[string]int{
-					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest": 1,
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
@@ -745,9 +749,9 @@ func TestResolve_WithCache(t *testing.T) {
 				// Try resolving again but fetch using a digest ref - we should
 				// still do a HEAD request for auth purposes, even though we
 				// don't need to resolve the tag to a digest.
+				// Note: No GET /v2/ since the Puller is cached.
 				imageAddressWithDigest := imageAddress + "@" + imageDigest.String()
 				expected = map[string]int{
-					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/" + imageDigest.String(): 1,
 				}
 				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter)
@@ -795,9 +799,8 @@ func TestResolve_WithCache(t *testing.T) {
 				// Try resolving again - the image should now be cached and we
 				// should be able to avoid GET requests for manifests and blobs,
 				// but we still expect some requests to resolve the tag to a
-				// digest.
+				// digest. Note: No GET /v2/ since the Puller is cached.
 				expected = map[string]int{
-					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
 				}
@@ -806,9 +809,9 @@ func TestResolve_WithCache(t *testing.T) {
 				// Try resolving again but fetch using a digest ref - should be
 				// able to avoid contacting the registry entirely, since we
 				// don't need to resolve the tag to a digest.
+				// Note: No GET /v2/ since the Puller is cached.
 				imageAddressWithDigest := indexAddress + "@" + imageDigest.String()
 				expected = map[string]int{
-					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
 				}
 				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter)
@@ -952,6 +955,11 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	require.NoError(t, err)
 	require.NotNil(t, te.GetClientIdentityService())
 
+	// Register OCIFetcherServer for tests
+	err = fetcher.Register(te)
+	require.NoError(t, err)
+	require.NotNil(t, te.GetOCIFetcherServer())
+
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()
@@ -1013,6 +1021,7 @@ func (c *requestCounter) reset() {
 
 func TestResolveImageDigest_TagExists(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	require.NoError(t, fetcher.Register(te))
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	registry := testregistry.Run(t, testregistry.Opts{})
 
@@ -1037,6 +1046,7 @@ func TestResolveImageDigest_TagExists(t *testing.T) {
 
 func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	require.NoError(t, fetcher.Register(te))
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	registry := testregistry.Run(t, testregistry.Opts{})
 
@@ -1054,6 +1064,7 @@ func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
 
 func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	require.NoError(t, fetcher.Register(te))
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
 	counter := newRequestCounter()
@@ -1089,6 +1100,7 @@ func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 
 func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	require.NoError(t, fetcher.Register(te))
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
 	counter := newRequestCounter()
@@ -1167,6 +1179,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 
 func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	require.NoError(t, fetcher.Register(te))
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
 	counter := newRequestCounter()

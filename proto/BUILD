@@ -657,6 +657,12 @@ proto_library(
 )
 
 proto_library(
+    name = "oci_fetcher_proto",
+    srcs = ["oci_fetcher.proto"],
+    deps = [":registry_proto"],
+)
+
+proto_library(
     name = "remote_asset_proto",
     srcs = ["remote_asset.proto"],
     deps = [
@@ -1659,6 +1665,18 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/registry",
     proto = ":registry_proto",
     deps = [":remote_execution_go_proto"],
+)
+
+go_proto_library(
+    name = "oci_fetcher_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher",
+    proto = ":oci_fetcher_proto",
+    deps = [":registry_go_proto"],
 )
 
 go_proto_library(
