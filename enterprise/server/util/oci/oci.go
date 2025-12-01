@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/fetcher"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
@@ -255,7 +255,7 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	}
 
 	log.CtxInfof(ctx, "Authenticating with registry for %q", imageName)
-	client := fetcher.NewClient(r.allowedPrivateIPs, *mirrors)
+	client := ocifetcher.NewClient(r.allowedPrivateIPs, *mirrors)
 	_, err := client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
 		Credentials: &rgpb.Credentials{
@@ -548,7 +548,7 @@ func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, c
 
 	tr := httpclient.New(r.allowedPrivateIPs, "oci").Transport
 	if len(*mirrors) > 0 {
-		remoteOpts = append(remoteOpts, remote.WithTransport(fetcher.NewMirrorTransport(tr, *mirrors)))
+		remoteOpts = append(remoteOpts, remote.WithTransport(ocifetcher.NewMirrorTransport(tr, *mirrors)))
 	} else {
 		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
 	}

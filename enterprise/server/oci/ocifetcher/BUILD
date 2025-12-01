@@ -3,9 +3,9 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
-    name = "fetcher",
+    name = "ocifetcher",
     srcs = ["fetcher.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/fetcher",
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher",
     deps = [
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
