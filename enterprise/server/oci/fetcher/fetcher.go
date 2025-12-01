@@ -115,7 +115,7 @@ func rewriteFallback(mc interfaces.MirrorConfig, originalRequest *http.Request) 
 func (c *OCIFetcherClient) getRemoteOpts(ctx context.Context, creds *rgpb.Credentials) []remote.Option {
 	opts := []remote.Option{remote.WithContext(ctx)}
 
-	if creds.GetUsername() != "" && creds.GetPassword() != "" {
+	if creds != nil && creds.GetUsername() != "" && creds.GetPassword() != "" {
 		opts = append(opts, remote.WithAuth(&authn.Basic{
 			Username: creds.GetUsername(),
 			Password: creds.GetPassword(),
