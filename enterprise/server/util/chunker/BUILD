@@ -6,6 +6,7 @@ go_library(
     name = "chunker",
     srcs = ["chunker.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/chunker",
+    visibility = ["//visibility:public"],
     deps = [
         "//server/util/status",
         "@com_github_jotfs_fastcdc_go//:fastcdc-go",

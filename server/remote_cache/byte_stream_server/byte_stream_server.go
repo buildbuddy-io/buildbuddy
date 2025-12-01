@@ -1,14 +1,20 @@
 package byte_stream_server
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
+	"fmt"
 	"hash"
 	"io"
 
+	"google.golang.org/grpc/peer"
+
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/chunker"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_deprecation"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -20,12 +26,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/grpc/peer"
+
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -34,7 +40,11 @@ const (
 	// but experiments in dev show that 256KiB is better. Values smaller than
 	// 256KiB or larger than 1MiB are both slower and allocate more bytes.
 	readBufSizeBytes = 256 * 1024
-	compressBufSize  = 4e6 // 4MB
+	compressBufSize  = 4e6       // 4MB
+	minSizeToChunk   = 256 << 10 // 256KB
+	chunkSize        = 64 << 10  // 64KB
+
+	experimentFlagChunkingEnabled = "cache.chunking_enabled"
 )
 
 var (
@@ -130,17 +140,51 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	}
 	downloadTracker := ht.TrackDownload(r.GetDigest())
 
-	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
 	passthroughCompressionEnabled := s.cache.SupportsCompressor(r.GetCompressor()) && offset == 0 && limit == 0
-	if passthroughCompressionEnabled {
-		cacheRN.SetCompressor(r.GetCompressor())
-	}
-	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
-	if err != nil {
-		if err := ht.TrackMiss(r.GetDigest()); err != nil {
-			log.Debugf("ByteStream Read: hit tracker TrackMiss error: %s", err)
+	cacheSupportsZstd := s.cache.SupportsCompressor(repb.Compressor_ZSTD)
+
+	chunkingEnabled := s.env.GetExperimentFlagProvider().Boolean(ctx, experimentFlagChunkingEnabled, true)
+	shouldChunk := chunkingEnabled && r.GetDigest().GetSizeBytes() > minSizeToChunk && offset == 0 && limit == 0
+
+	var reader io.ReadCloser
+	var readerIsCompressed bool
+	if shouldChunk {
+		chunkedManifest, err := chunking.Load(ctx, s.cache, r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
+		if err == nil {
+			log.Debugf("Reading blob from %d chunks: blob=%s size=%d", len(chunkedManifest.ChunkDigests), r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
+			reader, readerIsCompressed, err = readFromChunks(ctx, s.cache, chunkedManifest, cacheSupportsZstd, r.GetCompressor())
+			if err != nil {
+				return err
+			}
+			if readerIsCompressed {
+				passthroughCompressionEnabled = true
+			}
+		} else {
+			log.Debugf("Chunked manifest not found (will read as full blob): blob=%s instance=%s error=%s", r.GetDigest().GetHash(), r.GetInstanceName(), err)
+			cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
+			if passthroughCompressionEnabled {
+				cacheRN.SetCompressor(r.GetCompressor())
+			}
+			reader, err = s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
+			if err != nil {
+				if err := ht.TrackMiss(r.GetDigest()); err != nil {
+					log.Debugf("ByteStream Read: hit tracker TrackMiss error: %s", err)
+				}
+				return err
+			}
 		}
-		return err
+	} else {
+		cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
+		if passthroughCompressionEnabled {
+			cacheRN.SetCompressor(r.GetCompressor())
+		}
+		reader, err = s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
+		if err != nil {
+			if err := ht.TrackMiss(r.GetDigest()); err != nil {
+				log.Debugf("ByteStream Read: hit tracker TrackMiss error: %s", err)
+			}
+			return err
+		}
 	}
 	defer reader.Close()
 
@@ -190,6 +234,50 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	return err
 }
 
+func readFromChunks(ctx context.Context, cache interfaces.Cache, chunkedManifest *chunking.ChunkedManifest, cacheSupportsZstd bool, requestedCompressor repb.Compressor_Value) (io.ReadCloser, bool, error) {
+	readCompressed := cacheSupportsZstd && requestedCompressor == repb.Compressor_ZSTD
+
+	pr, pw := io.Pipe()
+	go func() {
+		defer pw.Close()
+
+		for i, d := range chunkedManifest.ChunkDigests {
+			if ctx.Err() != nil {
+				pw.CloseWithError(ctx.Err())
+				return
+			}
+
+			rn := digest.NewCASResourceName(d, chunkedManifest.InstanceName, chunkedManifest.DigestFunction)
+			if readCompressed {
+				rn.SetCompressor(repb.Compressor_ZSTD)
+			} else {
+				rn.SetCompressor(repb.Compressor_IDENTITY)
+			}
+
+			rc, err := cache.Reader(ctx, rn.ToProto(), 0, 0)
+			if err != nil {
+				log.Debugf("Error reading chunk %d/%d for blob %s: %s",
+					i+1, len(chunkedManifest.ChunkDigests),
+					chunkedManifest.BlobDigest.GetHash(), err)
+				pw.CloseWithError(err)
+				return
+			}
+
+			_, err = io.Copy(pw, rc)
+			rc.Close() // Close immediately after copy to free resources
+
+			if err != nil {
+				log.Debugf("Error copying chunk %d/%d for blob %s: %s",
+					i+1, len(chunkedManifest.ChunkDigests),
+					chunkedManifest.BlobDigest.GetHash(), err)
+				pw.CloseWithError(err)
+				return
+			}
+		}
+	}()
+	return pr, readCompressed, nil
+}
+
 // writeHandler enapsulates an on-going ByteStream write to a cache,
 // freeing the caller of having to manage writing and committing-to the cache
 // tracking cache hits, verifying checksums, etc. Here is how it must be used:
@@ -208,6 +296,7 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 type writeHandler struct {
 	// Top-level writer that handles incoming bytes.
 	writer io.Writer
+	ctx    context.Context
 
 	bytesUploadedFromClient int
 	transferTimer           interfaces.TransferTimer
@@ -220,6 +309,10 @@ type writeHandler struct {
 	resourceName       *digest.CASResourceName
 	resourceNameString string
 	offset             int64
+
+	chunkedManifest []*repb.Digest
+	chunkerCloser   io.Closer
+	cache           interfaces.Cache
 }
 
 func checkInitialPreconditions(req *bspb.WriteRequest) error {
@@ -266,14 +359,14 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		transferTimer:      hitTracker.TrackUpload(r.GetDigest()),
 		resourceName:       r,
 		resourceNameString: req.ResourceName,
+		ctx:                ctx,
+		cache:              s.cache,
 	}
 	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
 	if err != nil {
 		return nil, err
 	}
 	if !canWrite {
-		// Return already-exists error if the API key may not write so that
-		// higher-level code can detect and short-circuit this case.
 		return nil, status.AlreadyExistsError("The provided API Key does not have permission to write to the cache")
 	}
 
@@ -288,14 +381,6 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 	}
 
 	if r.GetDigest().GetSizeBytes() >= *maxDirectWriteSizeBytes {
-		// The protocol says it is *optional* to allow overwriting, but does
-		// not specify what errors should be returned in that case. We would
-		// like to return an "AlreadyExists" error here, but it causes errors
-		// with parallel actions during remote execution.
-		//
-		// Protocol does say that if another parallel write had finished while
-		// this one was ongoing, we can immediately return a response with the
-		// committed size, so we'll just do that.
 		exists, err := s.cache.Contains(ctx, casRN.ToProto())
 		if err != nil {
 			return nil, err
@@ -305,8 +390,12 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		}
 	}
 
+	chunkingEnabled := s.env.GetExperimentFlagProvider().Boolean(ctx, experimentFlagChunkingEnabled, true)
+	shouldChunk := chunkingEnabled && r.GetDigest().GetSizeBytes() > minSizeToChunk
+
+	// Setup cache writer (use discard when chunking)
 	var committedWriteCloser interfaces.CommittedWriteCloser
-	if r.IsEmpty() {
+	if r.IsEmpty() || shouldChunk {
 		committedWriteCloser = ioutil.DiscardWriteCloser()
 	} else {
 		cacheWriter, err := s.cache.Writer(ctx, casRN.ToProto())
@@ -328,6 +417,14 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 	// wait to flush writes.
 	ws.writer = io.MultiWriter(committedWriteCloser, ws.checksum)
 
+	if shouldChunk {
+		if err := s.setupChunking(ctx, r, ws); err != nil {
+			return nil, err
+		}
+		return ws, nil
+	}
+
+	// Setup compression/decompression for non-chunked writes
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		// The incoming data is compressed.
 		if s.cache.SupportsCompressor(r.GetCompressor()) {
@@ -362,6 +459,56 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 	}
 
 	return ws, nil
+}
+
+func (s *ByteStreamServer) setupChunking(ctx context.Context, r *digest.CASResourceName, ws *writeHandler) error {
+	chunkWriteFunc := func(chunk []byte) error {
+		if len(chunk) == 0 {
+			return nil
+		}
+
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunk), r.GetDigestFunction())
+		if err != nil {
+			return fmt.Errorf("failed to compute chunk digest: %w", err)
+		}
+
+		chunkRN := digest.NewCASResourceName(chunkDigest, r.GetInstanceName(), r.GetDigestFunction())
+		var chunkData []byte
+		if s.cache.SupportsCompressor(repb.Compressor_ZSTD) {
+			chunkRN.SetCompressor(repb.Compressor_ZSTD)
+			chunkData = compression.CompressZstd(nil, chunk)
+		} else {
+			chunkRN.SetCompressor(repb.Compressor_IDENTITY)
+			chunkData = chunk
+		}
+
+		if err := s.cache.Set(ctx, chunkRN.ToProto(), chunkData); err != nil {
+			return err
+		}
+
+		ws.chunkedManifest = append(ws.chunkedManifest, chunkRN.GetDigest())
+		return nil
+	}
+
+	chunkerWriter, err := chunker.New(ctx, chunkSize, chunkWriteFunc)
+	if err != nil {
+		return err
+	}
+
+	multiWriter := io.MultiWriter(chunkerWriter, ws.checksum)
+	ws.chunkerCloser = chunkerWriter
+	if r.GetCompressor() == repb.Compressor_ZSTD {
+		decompressor, err := compression.NewZstdDecompressor(multiWriter)
+		if err != nil {
+			return err
+		}
+		ws.writer = decompressor
+		ws.bufioCloser = decompressor
+	} else {
+		ws.writer = multiWriter
+		ws.bufioCloser = chunkerWriter
+	}
+	return nil
 }
 
 func (w *writeHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error) {
@@ -399,12 +546,35 @@ func (w *writeHandler) commit() error {
 		}
 	}
 
+	// If chunking is enabled and we have a separate chunkerWriter (when ZSTD compression is used),
+	// close it to ensure all chunks are processed before committing.
+	if w.chunkerCloser != nil && w.bufioCloser != w.chunkerCloser {
+		if err := w.chunkerCloser.Close(); err != nil {
+			log.Warningf("Error closing chunker: %s", err)
+			return err
+		}
+		w.chunkerCloser = nil
+	}
+
 	// Verify the checksum. If it does not match, note that the cache writer is
 	// not committed, since that persists the file to cache.
 	if err := w.checksum.Check(w.resourceName); err != nil {
 		return err
 	}
 
+	// If chunked, store manifest and skip committing the blob
+	// If there's only 1 chunk, it's already stored under its own digest.
+	if len(w.chunkedManifest) > 1 {
+		if err := chunking.ChunkedManifest{
+			BlobDigest:     w.resourceName.GetDigest(),
+			ChunkDigests:   w.chunkedManifest,
+			InstanceName:   w.resourceName.GetInstanceName(),
+			DigestFunction: w.resourceName.GetDigestFunction(),
+		}.Store(w.ctx, w.cache); err != nil {
+			return err
+		}
+		return nil
+	}
 	return w.cacheCommitter.Commit()
 }
 

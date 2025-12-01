@@ -19,9 +19,7 @@ const (
 	MaxExecutionPriority = 1000
 )
 
-var (
-	bazel6 = bazel_request.MustParseVersion("6.0.0")
-)
+var bazel6 = bazel_request.MustParseVersion("6.0.0")
 
 type CapabilitiesServer struct {
 	env environment.Env
@@ -63,6 +61,11 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 		compressors = []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD}
 	}
 	if s.supportCAS {
+		chunkingEnabled := false
+		if efp := s.env.GetExperimentFlagProvider(); efp != nil {
+			chunkingEnabled = efp.Boolean(ctx, "cache.chunking_enabled", false)
+		}
+
 		c.CacheCapabilities = &repb.CacheCapabilities{
 			DigestFunctions: digest.SupportedDigestFunctions(),
 			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
@@ -80,6 +83,8 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 			SymlinkAbsolutePathStrategy:     repb.SymlinkAbsolutePathStrategy_ALLOWED,
 			SupportedCompressors:            compressors,
 			SupportedBatchUpdateCompressors: compressors,
+			BlobSplitSupport:                chunkingEnabled,
+			BlobSpliceSupport:               chunkingEnabled,
 		}
 	}
 	if s.supportRemoteExec {
