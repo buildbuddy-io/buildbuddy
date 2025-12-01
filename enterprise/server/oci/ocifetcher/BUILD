@@ -4,7 +4,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "ocifetcher",
-    srcs = ["fetcher.go"],
+    srcs = ["ocifetcher.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher",
     deps = [
         "//proto:oci_fetcher_go_proto",
