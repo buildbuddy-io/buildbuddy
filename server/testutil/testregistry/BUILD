@@ -9,6 +9,8 @@ go_library(
     deps = [
         "//server/testutil/testdigest",
         "//server/testutil/testport",
+        "//server/util/basicauth",
+        "@com_github_google_go_containerregistry//pkg/authn",
         "@com_github_google_go_containerregistry//pkg/crane",
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/registry",

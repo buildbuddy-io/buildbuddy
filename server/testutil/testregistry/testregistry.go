@@ -18,6 +18,8 @@ import (
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/basicauth"
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
@@ -41,16 +43,30 @@ type Opts struct {
 	// An interceptor applied to HTTP calls. Returns true if the request
 	// should be processed post-interception, or false if not.
 	HttpInterceptor func(w http.ResponseWriter, r *http.Request) bool
+	// Auth configures basic authentication. If set, requests must include
+	// valid credentials to access the registry.
+	Auth *AuthConfig
+}
+
+// AuthConfig configures basic authentication for the test registry.
+type AuthConfig struct {
+	Username string
+	Password string
 }
 
 type Registry struct {
 	host   string
 	port   int
 	server *http.Server
+	auth   *AuthConfig
 }
 
 func Run(t *testing.T, opts Opts) *Registry {
-	handler := registry.New()
+	var handler http.Handler = registry.New()
+	if opts.Auth != nil {
+		creds := map[string]string{opts.Auth.Username: opts.Auth.Password}
+		handler = basicauth.Middleware("registry", creds)(handler)
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/", handler)
 
@@ -84,6 +100,7 @@ func Run(t *testing.T, opts Opts) *Registry {
 		host:   "localhost",
 		port:   testport.FindFree(t),
 		server: server,
+		auth:   opts.Auth,
 	}
 	lis, err := net.Listen("tcp", registry.Address())
 	require.NoError(t, err)
@@ -99,11 +116,23 @@ func (r *Registry) ImageAddress(imageName string) string {
 	return fmt.Sprintf("%s:%d/%s", r.host, r.port, imageName)
 }
 
+func (r *Registry) remoteOpts() []remote.Option {
+	if r.auth == nil {
+		return nil
+	}
+	return []remote.Option{
+		remote.WithAuth(&authn.Basic{
+			Username: r.auth.Username,
+			Password: r.auth.Password,
+		}),
+	}
+}
+
 func (r *Registry) Push(t *testing.T, image gcr.Image, imageName string) string {
 	fullImageName := r.ImageAddress(imageName)
 	ref, err := name.ParseReference(fullImageName)
 	require.NoError(t, err)
-	err = remote.Write(ref, image)
+	err = remote.Write(ref, image, r.remoteOpts()...)
 	require.NoError(t, err)
 	return fullImageName
 }
@@ -112,7 +141,7 @@ func (r *Registry) PushIndex(t *testing.T, idx gcr.ImageIndex, imageName string)
 	fullImageName := r.ImageAddress(imageName)
 	ref, err := name.ParseReference(fullImageName)
 	require.NoError(t, err)
-	err = remote.WriteIndex(ref, idx)
+	err = remote.WriteIndex(ref, idx, r.remoteOpts()...)
 	require.NoError(t, err)
 	return fullImageName
 }
