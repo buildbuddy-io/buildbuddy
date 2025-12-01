@@ -255,7 +255,7 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	}
 
 	log.CtxInfof(ctx, "Authenticating with registry for %q", imageName)
-	client := fetcher.New(r.allowedPrivateIPs, *mirrors)
+	client := fetcher.NewClient(r.allowedPrivateIPs, *mirrors)
 	_, err := client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
 		Credentials: &rgpb.Credentials{

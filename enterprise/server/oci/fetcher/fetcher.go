@@ -25,7 +25,7 @@ type ociFetcherClient struct {
 	mirrors           []interfaces.MirrorConfig
 }
 
-func New(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) ofpb.OCIFetcherClient {
+func NewClient(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) ofpb.OCIFetcherClient {
 	return &ociFetcherClient{
 		allowedPrivateIPs: allowedPrivateIPs,
 		mirrors:           mirrors,
