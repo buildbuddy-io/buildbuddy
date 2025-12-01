@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -26,10 +27,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
+	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 )
 
 var (
-	region = flag.String("app.region", "", "The region in which the app is running.")
+	region      = flag.String("app.region", "", "The region in which the app is running.")
+	writeToOLAP = flag.Bool("app.write_usage_to_olap_db", false, "If true, write usage data to OLAP DB.")
 )
 
 const (
@@ -117,6 +120,8 @@ type tracker struct {
 	rdb    redis.UniversalClient
 	clock  clockwork.Clock
 	region string
+	// See docs for [olaptables.RawUsage.BufferID]
+	bufferID string
 
 	flushLock interfaces.DistributedLock
 	stopFlush chan struct{}
@@ -160,6 +165,7 @@ func NewTracker(env environment.Env, clock clockwork.Clock, flushLock interfaces
 		clock:     clock,
 		flushLock: flushLock,
 		stopFlush: make(chan struct{}),
+		bufferID:  fmt.Sprintf("%s:redis", *region),
 	}, nil
 }
 
@@ -353,6 +359,9 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 				return err
 			}
 			// Update counts in the DB
+			// TODO: for ClickHouse, we should flush everything in a single
+			// query, so that we don't have to rely on async_insert being
+			// enabled in order to properly batch the inserts.
 			if err := ut.flushCounts(ctx, collection.GroupID, p, collection.UsageLabels(), counts); err != nil {
 				return err
 			}
@@ -370,6 +379,115 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 }
 
 func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
+	if err := ut.flushCountsToPrimaryDB(ctx, groupID, p, labels, counts); err != nil {
+		return err
+	}
+	if *writeToOLAP {
+		if err := ut.flushCountsToOLAPDB(ctx, groupID, p, labels, counts); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (ut *tracker) flushCountsToOLAPDB(ctx context.Context, groupID string, p period, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
+	var rows []*olaptables.RawUsage
+	baseRow := olaptables.RawUsage{
+		GroupID:     groupID,
+		Labels:      toLabelMap(labels),
+		PeriodStart: p.Start(),
+		BufferID:    ut.bufferID,
+	}
+	if counts.ActionCacheHits > 0 {
+		row := baseRow // copy
+		row.SKU = sku.RemoteCacheACHits
+		row.Count = counts.ActionCacheHits
+		rows = append(rows, &row)
+	}
+	if counts.CASCacheHits > 0 {
+		row := baseRow // copy
+		row.SKU = sku.RemoteCacheCASHits
+		row.Count = counts.CASCacheHits
+		rows = append(rows, &row)
+	}
+	if counts.Invocations > 0 {
+		row := baseRow // copy
+		row.SKU = sku.BuildEventsBESCount
+		row.Count = counts.Invocations
+		rows = append(rows, &row)
+	}
+	if counts.LinuxExecutionDurationUsec > 0 {
+		row := baseRow // copy
+		row.SKU = sku.RemoteExecutionExecuteWorkerDurationNanos
+		row.Count = counts.LinuxExecutionDurationUsec
+		row.Labels = appendExecutionLabels(row.Labels, sku.OSLinux, sku.SelfHostedFalse)
+		rows = append(rows, &row)
+	}
+	if counts.MacExecutionDurationUsec > 0 {
+		row := baseRow // copy
+		row.SKU = sku.RemoteExecutionExecuteWorkerDurationNanos
+		row.Count = counts.MacExecutionDurationUsec
+		row.Labels = appendExecutionLabels(row.Labels, sku.OSMac, sku.SelfHostedFalse)
+		rows = append(rows, &row)
+	}
+	if counts.SelfHostedLinuxExecutionDurationUsec > 0 {
+		row := baseRow // copy
+		row.SKU = sku.RemoteExecutionExecuteWorkerDurationNanos
+		row.Count = counts.SelfHostedLinuxExecutionDurationUsec
+		row.Labels = appendExecutionLabels(row.Labels, sku.OSLinux, sku.SelfHostedTrue)
+		rows = append(rows, &row)
+	}
+	if counts.SelfHostedMacExecutionDurationUsec > 0 {
+		row := baseRow // copy
+		row.SKU = sku.RemoteExecutionExecuteWorkerDurationNanos
+		row.Count = counts.SelfHostedMacExecutionDurationUsec
+		row.Labels = appendExecutionLabels(row.Labels, sku.OSMac, sku.SelfHostedTrue)
+		rows = append(rows, &row)
+	}
+	if counts.TotalDownloadSizeBytes > 0 {
+		row := baseRow // copy
+		row.SKU = sku.RemoteCacheCASDownloadedBytes
+		row.Count = counts.TotalDownloadSizeBytes
+		rows = append(rows, &row)
+	}
+	if counts.TotalUploadSizeBytes > 0 {
+		row := baseRow // copy
+		row.SKU = sku.RemoteCacheCASUploadedBytes
+		row.Count = counts.TotalUploadSizeBytes
+		rows = append(rows, &row)
+	}
+	if counts.TotalCachedActionExecUsec > 0 {
+		row := baseRow // copy
+		row.SKU = sku.RemoteExecutionExecuteWorkerDurationNanos
+		row.Count = counts.TotalCachedActionExecUsec
+		rows = append(rows, &row)
+	}
+	if counts.CPUNanos > 0 {
+		row := baseRow // copy
+		row.SKU = sku.RemoteExecutionExecuteWorkerCPUNanos
+		row.Count = counts.CPUNanos
+		// NOTE: we currently only report CPU usage for cloud Linux executors.
+		row.Labels = appendExecutionLabels(row.Labels, sku.OSLinux, sku.SelfHostedFalse)
+		rows = append(rows, &row)
+	}
+	if counts.MemoryGBUsec > 0 {
+		row := baseRow // copy
+		row.SKU = sku.RemoteExecutionExecuteWorkerMemoryGBNanos
+		row.Count = counts.MemoryGBUsec
+		// NOTE: we currently only report memory usage for cloud Linux executors.
+		row.Labels = appendExecutionLabels(row.Labels, sku.OSLinux, sku.SelfHostedFalse)
+		rows = append(rows, &row)
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	if err := ut.env.GetOLAPDBHandle().FlushUsages(ctx, rows); err != nil {
+		return fmt.Errorf("insert OLAP usage records: %w", err)
+	}
+	return nil
+}
+
+func (ut *tracker) flushCountsToPrimaryDB(ctx context.Context, groupID string, p period, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
 	dbh := ut.env.GetDBHandle()
 	return dbh.Transaction(ctx, func(tx interfaces.DB) error {
 		tu := &tables.Usage{
@@ -592,4 +710,40 @@ func stringMapToCounts(h map[string]string) (*tables.UsageCounts, error) {
 		CPUNanos:                             hInt64["cpu_nanos"],
 		MemoryGBUsec:                         hInt64["memory_gb_usec"],
 	}, nil
+}
+
+// toLabelMap converts primary DB labels to new OLAP labels.
+func toLabelMap(labels *tables.UsageLabels) map[sku.LabelName]sku.LabelValue {
+	mapSize := 0
+	if labels.Origin != "" {
+		mapSize++
+	}
+	if labels.Client != "" {
+		mapSize++
+	}
+	if labels.Server != "" {
+		mapSize++
+	}
+	m := make(map[sku.LabelName]sku.LabelValue, mapSize)
+	if labels.Origin != "" {
+		m[sku.Origin] = sku.LabelValue(labels.Origin)
+	}
+	if labels.Client != "" {
+		m[sku.Client] = sku.LabelValue(labels.Client)
+	}
+	if labels.Server != "" {
+		m[sku.Server] = sku.LabelValue(labels.Server)
+	}
+	return m
+}
+
+// appendEntry creates a copy of the given map and appends the given entry.
+func appendExecutionLabels(m map[sku.LabelName]sku.LabelValue, os, selfHosted sku.LabelValue) map[sku.LabelName]sku.LabelValue {
+	out := make(map[sku.LabelName]sku.LabelValue, len(m)+2)
+	for k, v := range m {
+		out[k] = v
+	}
+	out[sku.OS] = os
+	out[sku.SelfHosted] = selfHosted
+	return out
 }

@@ -485,6 +485,16 @@ func (i *RawUsage) AdditionalFields() []string {
 	return nil
 }
 
+// Usage represents a row queried from the Usage view, which is the deduped
+// and aggregated version of RawUsage.
+type Usage struct {
+	GroupID     string
+	PeriodStart time.Time
+	SKU         sku.SKU
+	Labels      map[sku.LabelName]sku.LabelValue `gorm:"type:Map(LowCardinality(String), LowCardinality(String))"`
+	Count       int64
+}
+
 // hasProjection checks whether a projection exist in the clickhouse
 // schema.
 // gorm-clickhouse doesn't support migration projection.
