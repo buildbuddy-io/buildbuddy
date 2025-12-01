@@ -57,3 +57,15 @@ go_test(
         "//conditions:default": [],
     }),
 )
+
+go_test(
+    name = "disk_vfs_test",
+    srcs = ["disk_vfs_test.go"],
+    deps = [
+        ":disk",
+        "//server/testutil/testfs",
+        "//server/util/fsync",
+        "//server/util/random",
+        "@com_github_stretchr_testify//require",
+    ],
+)
