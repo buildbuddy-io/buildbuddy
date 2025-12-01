@@ -556,7 +556,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	})
 
 	// Configure the resolver to use the mirror as a mirror for the original registry.
-	flags.Set(t, "executor.container_registry_mirrors", []oci.MirrorConfig{
+	flags.Set(t, "executor.container_registry_mirrors", []interfaces.MirrorConfig{
 		{
 			OriginalURL: "http://" + originalRegistry.Address(),
 			MirrorURL:   "http://" + mirrorRegistry.Address(),
