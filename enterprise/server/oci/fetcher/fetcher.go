@@ -1,0 +1,179 @@
+package fetcher
+
+import (
+	"context"
+	"net"
+	"net/http"
+	"net/url"
+
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
+
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	gcrname "github.com/google/go-containerregistry/pkg/name"
+)
+
+// OCIFetcherClient implements the OCIFetcher service by making HTTP requests
+// directly to OCI registries.
+type OCIFetcherClient struct {
+	allowedPrivateIPs []*net.IPNet
+	mirrors           []interfaces.MirrorConfig
+}
+
+// New creates a new OCIFetcherClient.
+func New(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) *OCIFetcherClient {
+	return &OCIFetcherClient{
+		allowedPrivateIPs: allowedPrivateIPs,
+		mirrors:           mirrors,
+	}
+}
+
+// NewMirrorTransport wraps an http.RoundTripper with registry mirror support.
+// Requests matching a mirror's OriginalURL are rewritten to the MirrorURL,
+// with automatic fallback to the original URL on failure.
+func NewMirrorTransport(inner http.RoundTripper, mirrors []interfaces.MirrorConfig) http.RoundTripper {
+	return &mirrorTransport{
+		inner:   inner,
+		mirrors: mirrors,
+	}
+}
+
+// verify that mirrorTransport implements the RoundTripper interface.
+var _ http.RoundTripper = (*mirrorTransport)(nil)
+
+type mirrorTransport struct {
+	inner   http.RoundTripper
+	mirrors []interfaces.MirrorConfig
+}
+
+func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err error) {
+	for _, mirror := range t.mirrors {
+		if match, err := matchesMirror(mirror, in.URL); err == nil && match {
+			mirroredRequest, err := rewriteToMirror(mirror, in)
+			if err != nil {
+				log.Errorf("error mirroring request: %s", err)
+				continue
+			}
+			out, err := t.inner.RoundTrip(mirroredRequest)
+			if err != nil {
+				log.Errorf("mirror err: %s", err)
+				continue
+			}
+			if out.StatusCode < http.StatusOK || out.StatusCode >= 300 {
+				fallbackRequest, err := rewriteFallback(mirror, in)
+				if err != nil {
+					log.Errorf("error rewriting fallback request: %s", err)
+					continue
+				}
+				return t.inner.RoundTrip(fallbackRequest)
+			}
+			return out, nil // Return successful mirror response
+		}
+	}
+	return t.inner.RoundTrip(in)
+}
+
+func matchesMirror(mc interfaces.MirrorConfig, u *url.URL) (bool, error) {
+	originalURL, err := url.Parse(mc.OriginalURL)
+	if err != nil {
+		return false, err
+	}
+	return originalURL.Host == u.Host, nil
+}
+
+func rewriteToMirror(mc interfaces.MirrorConfig, originalRequest *http.Request) (*http.Request, error) {
+	mirrorURL, err := url.Parse(mc.MirrorURL)
+	if err != nil {
+		return nil, err
+	}
+	originalURL := originalRequest.URL.String()
+	req := originalRequest.Clone(originalRequest.Context())
+	req.URL.Scheme = mirrorURL.Scheme
+	req.URL.Host = mirrorURL.Host
+	// Set X-Forwarded-Host so the mirror knows which remote registry to make requests to.
+	// ociregistry looks for this header and will default to forwarding requests to Docker Hub if not found.
+	req.Header.Set("X-Forwarded-Host", originalRequest.URL.Host)
+	log.Debugf("%q rewritten to %s", originalURL, req.URL.String())
+	return req, nil
+}
+
+func rewriteFallback(mc interfaces.MirrorConfig, originalRequest *http.Request) (*http.Request, error) {
+	originalURL, err := url.Parse(mc.OriginalURL)
+	if err != nil {
+		return nil, err
+	}
+	req := originalRequest.Clone(originalRequest.Context())
+	req.URL.Scheme = originalURL.Scheme
+	req.URL.Host = originalURL.Host
+	log.Debugf("(fallback) %q rewritten to %s", originalURL, req.URL.String())
+	return req, nil
+}
+
+func (c *OCIFetcherClient) getRemoteOpts(ctx context.Context, creds *rgpb.Credentials) []remote.Option {
+	opts := []remote.Option{remote.WithContext(ctx)}
+
+	// Add basic auth if credentials provided
+	if creds.GetUsername() != "" && creds.GetPassword() != "" {
+		opts = append(opts, remote.WithAuth(&authn.Basic{
+			Username: creds.GetUsername(),
+			Password: creds.GetPassword(),
+		}))
+	}
+
+	// Use httpclient for transport (includes metrics, timeouts, IP blocking)
+	tr := httpclient.New(c.allowedPrivateIPs, "oci_fetcher").Transport
+
+	// Wrap with mirror transport if mirrors configured
+	if len(c.mirrors) > 0 {
+		opts = append(opts, remote.WithTransport(NewMirrorTransport(tr, c.mirrors)))
+	} else {
+		opts = append(opts, remote.WithTransport(tr))
+	}
+
+	return opts
+}
+
+// FetchManifestMetadata performs a HEAD request to get manifest metadata (digest, size, media type)
+// without downloading the full manifest content.
+func (c *OCIFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
+	imageRef, err := gcrname.ParseReference(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
+	}
+
+	remoteOpts := c.getRemoteOpts(ctx, req.GetCredentials())
+	desc, err := remote.Head(imageRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch manifest metadata from remote registry: %s", err)
+	}
+
+	return &ofpb.FetchManifestMetadataResponse{
+		Digest:    desc.Digest.String(),
+		Size:      desc.Size,
+		MediaType: string(desc.MediaType),
+	}, nil
+}
+
+// FetchManifest downloads the full manifest content.
+func (c *OCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
+	return nil, status.UnimplementedError("FetchManifest not implemented")
+}
+
+// FetchBlob streams blob content.
+func (c *OCIFetcherClient) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	return status.UnimplementedError("FetchBlob not implemented")
+}
+
+// FetchBlobMetadata performs a HEAD request to get blob metadata.
+func (c *OCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
+	return nil, status.UnimplementedError("FetchBlobMetadata not implemented")
+}

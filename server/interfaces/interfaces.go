@@ -96,6 +96,12 @@ type APIKeyInfo struct {
 	OwnerGroupID string
 }
 
+// MirrorConfig configures a registry mirror for OCI image fetching.
+type MirrorConfig struct {
+	OriginalURL string `yaml:"original_url" json:"original_url"`
+	MirrorURL   string `yaml:"mirror_url" json:"mirror_url"`
+}
+
 type UserInfo interface {
 	jwt.Claims
 
