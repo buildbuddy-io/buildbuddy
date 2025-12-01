@@ -96,7 +96,7 @@ type APIKeyInfo struct {
 	OwnerGroupID string
 }
 
-// MirrorConfig configures a registry mirror for OCI image fetching.
+// MirrorConfig allows executors to point to mirrors for OCI remote registries.
 type MirrorConfig struct {
 	OriginalURL string `yaml:"original_url" json:"original_url"`
 	MirrorURL   string `yaml:"mirror_url" json:"mirror_url"`

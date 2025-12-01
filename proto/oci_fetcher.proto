@@ -24,11 +24,10 @@ message FetchManifestRequest {
 }
 
 message FetchManifestResponse {
-  bytes manifest = 1;
-  // Descriptor metadata for the manifest
-  string digest = 2;
-  int64 size = 3;
-  string media_type = 4;
+  string digest = 1;
+  int64 size = 2;
+  string media_type = 3;
+  bytes manifest = 4;
 }
 
 message FetchManifestMetadataRequest {
