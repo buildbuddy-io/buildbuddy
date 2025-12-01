@@ -659,7 +659,7 @@ func (fs *fileStorer) FilePath(fileDir string, f *sgpb.StorageMetadata_FileMetad
 // fileKey is the partial path where a file will be written.
 // For example, given a fileRecord with fileKey: "foo/bar", the filestore will
 // write the file at a path like "/root/dir/blobs/foo/bar".
-func (fs *fileStorer) fileKey(r *sgpb.FileRecord) ([]byte, error) {
+func (fs *fileStorer) fileKey(r *sgpb.FileRecord) (string, error) {
 	// This function cannot change without a data migration.
 	// filekeys look like this:
 	//   // {partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
@@ -668,16 +668,16 @@ func (fs *fileStorer) fileKey(r *sgpb.FileRecord) ([]byte, error) {
 	//   //   PART123/GR124/cas/abcd/abcd12345asdasdasd123123123asdasdasd
 	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	if r.GetEncryption().GetKeyId() != "" {
 		hash += "_" + r.GetEncryption().GetKeyId()
 	}
 	partDir := PartitionDirectoryPrefix + partID
 	if r.GetIsolation().GetCacheType() == rspb.CacheType_AC {
-		return []byte(filepath.Join(partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
+		return filepath.Join(partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash), nil
 	} else {
-		return []byte(filepath.Join(partDir, isolation, remoteInstanceHash, hash[:4], hash)), nil
+		return filepath.Join(partDir, isolation, remoteInstanceHash, hash[:4], hash), nil
 	}
 }
 
@@ -798,7 +798,7 @@ func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord
 	if err != nil {
 		return nil, err
 	}
-	fileName := filepath.Join(fileDir, string(file))
+	fileName := filepath.Join(fileDir, file)
 	tmpDir := fileDir
 	if fs.tmpDir != "" {
 		tmpDir = fs.tmpDir
@@ -809,7 +809,7 @@ func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord
 	}
 	return &fileChunker{
 		CommittedWriteCloser: wc,
-		fileName:             string(file),
+		fileName:             file,
 	}, nil
 }
 
