@@ -13,19 +13,20 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
+	"google.golang.org/grpc"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 )
 
-type OCIFetcherClient struct {
+type ociFetcherClient struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
 }
 
-func New(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) *OCIFetcherClient {
-	return &OCIFetcherClient{
+func New(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) ofpb.OCIFetcherClient {
+	return &ociFetcherClient{
 		allowedPrivateIPs: allowedPrivateIPs,
 		mirrors:           mirrors,
 	}
@@ -112,7 +113,7 @@ func rewriteFallback(mc interfaces.MirrorConfig, originalRequest *http.Request) 
 	return req, nil
 }
 
-func (c *OCIFetcherClient) getRemoteOpts(ctx context.Context, creds *rgpb.Credentials) []remote.Option {
+func (c *ociFetcherClient) getRemoteOpts(ctx context.Context, creds *rgpb.Credentials) []remote.Option {
 	opts := []remote.Option{remote.WithContext(ctx)}
 
 	if creds != nil && creds.GetUsername() != "" && creds.GetPassword() != "" {
@@ -135,7 +136,7 @@ func (c *OCIFetcherClient) getRemoteOpts(ctx context.Context, creds *rgpb.Creden
 
 // FetchManifestMetadata performs a HEAD request to get manifest metadata (digest, size, media type)
 // without downloading the full manifest content.
-func (c *OCIFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
+func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
 	imageRef, err := gcrname.ParseReference(req.GetRef())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
@@ -157,14 +158,14 @@ func (c *OCIFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.
 	}, nil
 }
 
-func (c *OCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
+func (c *ociFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
 	return nil, status.UnimplementedError("FetchManifest not implemented")
 }
 
-func (c *OCIFetcherClient) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
-	return status.UnimplementedError("FetchBlob not implemented")
+func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
+	return nil, status.UnimplementedError("FetchBlob not implemented")
 }
 
-func (c *OCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
+func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
 	return nil, status.UnimplementedError("FetchBlobMetadata not implemented")
 }
