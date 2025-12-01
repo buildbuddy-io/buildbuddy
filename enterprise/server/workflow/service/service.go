@@ -1001,6 +1001,7 @@ func (ws *workflowService) createBBURL(ctx context.Context, path string) (string
 // Returns the digest of the action as well as the invocation ID that the CI runner
 // will assign to the workflow invocation.
 func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, ak *tables.APIKey, instanceName string, workflowAction *config.Action, invocationID string, extraArgs []string, env map[string]string, retry bool) (*repb.Digest, error) {
+	// XXX: yikes
 	cache := ws.env.GetCache()
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
@@ -1084,6 +1085,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		timeout = *workflowAction.Timeout
 	}
 
+	// XXX: yikes
 	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, ws.env.GetByteStreamClient(), ws.env.GetCache(), instanceName, os, workflowAction.Arch)
 	if err != nil {
 		return nil, err

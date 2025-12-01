@@ -65,6 +65,7 @@ type ContentAddressableStorageServer struct {
 func Register(env *real_environment.RealEnv) error {
 	// OPTIONAL CACHE API -- only enable if configured.
 	if env.GetCache() == nil {
+		// XXX: Harder error? shouldn't call register if there's no cache..
 		return nil
 	}
 	casServer, err := NewContentAddressableStorageServer(env)

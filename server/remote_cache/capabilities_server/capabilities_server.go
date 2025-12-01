@@ -36,6 +36,7 @@ func Register(env *real_environment.RealEnv) error {
 	// that this server supports CAS functionality.
 	env.SetCapabilitiesServer(NewCapabilitiesServer(
 		env,
+		// XXX
 		/*supportCAS=*/ env.GetCache() != nil,
 		/*supportRemoteExec=*/ env.GetRemoteExecutionService() != nil,
 		/*supportZstd=*/ remote_cache_config.ZstdTranscodingEnabled(),

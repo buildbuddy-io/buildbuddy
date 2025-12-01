@@ -86,6 +86,7 @@ func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
 // uploading any logs to an invcocation page with the specified ID.
 // TODO(Maggie): Refactor this function to use rexec.Prepare
 func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, invocationID string) (*repb.Digest, error) {
+	// XXX: yikes
 	cache := r.env.GetCache()
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
@@ -112,6 +113,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	in := instanceName(req)
+	// XXX: yikes
 	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), in, os, arch)
 	if err != nil {
 		return nil, status.WrapError(err, "upload input root")

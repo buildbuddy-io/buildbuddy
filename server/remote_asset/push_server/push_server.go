@@ -17,6 +17,7 @@ type PushServer struct {
 func Register(env *real_environment.RealEnv) error {
 	// OPTIONAL CACHE API -- only enable if configured.
 	if env.GetCache() == nil {
+		// XXX: yikes
 		return nil
 	}
 	env.SetPushServer(NewPushServer(env))
