@@ -6,12 +6,37 @@ package oci_fetcher;
 
 option go_package = "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher";
 
+// The OCIFetcher service fetches OCI blob and manifest contents and metadata
+// from a remote registry.
+//
+// This service started its life as a Go library, but eventually
+// we needed to centralize HTTP requests for the same OCI blobs
+// in order to reduce network IO.
 service OCIFetcher {
+
+  // FetchManifest returns the raw bytes for an OCI manifest along with
+  // the manifest's digest, size, and media type.
+  // Implementations may cache the manifest contents and serve those
+  // contents from cache. When serving manifests from cache, implementations
+  // should still make a HEAD request to the remote registry to prove
+  // that the given credentials grant access to the manifest.
   rpc FetchManifest(FetchManifestRequest) returns (FetchManifestResponse);
+
+  // FetchManifestMetadata makes a HEAD request to the remote registry
+  // and returns the digest, size, and media type for the requested manifest.
+  // Implementations must always make this HEAD request, as callers
+  // can depend on FetchManifestMetadata to prove that credentials
+  // provide access to the manifest.
   rpc FetchManifestMetadata(FetchManifestMetadataRequest)
       returns (FetchManifestMetadataResponse);
 
+  // FetchBlob streams the raw bytes for an OCI blob as well as
+  // returning the blob's digest, size, and media type.
+  // Implementations may cache the blob contents. Be warned: blobs can
+  // be very large (tens of gigabytes).
   rpc FetchBlob(FetchBlobRequest) returns (stream FetchBlobResponse);
+
+  // FetchBlobMetadata returns the blob's digest, size, and media type.
   rpc FetchBlobMetadata(FetchBlobMetadataRequest)
       returns (FetchBlobMetadataResponse);
 }
