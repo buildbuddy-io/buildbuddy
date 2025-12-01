@@ -1,10 +1,8 @@
 # oci packages
 
-The packages underneath this directory implement fetching OCI blobs and manifests from remote registries,
-writing to OCI image layers to disk, writing OCI blobs to (and reading from) a byte stream server, and
-writing OCI manifests to (and reading from) the action cache.
+## Current state of the world
 
-Currently this functionality lives in a variety of packages:
+Libraries for fetching, caching, mirroring, and materializing OCI images are currently spread across multiple packages:
 
 - [//enterprise/server/ociregistry](../ociregistry) provides an HTTP mirror for Docker Hub that caches blobs and manifests on read.
 - [//enterprise/server/remote_execution/containers/ociruntime](../remote_execution/containers/ociruntime) has functions for writing OCI image layer tarballs to disk.
@@ -13,3 +11,9 @@ Currently this functionality lives in a variety of packages:
 - [//enterprise/server/util/ocicache](../util/ocicache) provides functions for writing to and reading from the action cache and a
   byte stream server.
 - [//enterprise/server/util/ociconv](../util/ociconv) converts OCI image layer tarballs to ext4 filesystems.
+
+## End goal
+
+Eventually, all libraries for working with OCI images should live under this package.
+
+To start, the [ocifetcher](ocifetcher) package, which provides a client for fetching OCI blobs and manifests from remote registries, lives here.
