@@ -116,10 +116,9 @@ REPO_CONFIGS = [
     },
 ]
 
+# Keep this at an older version until we fix WORKSPACE deps
+# resolution in Buildbuddy Toolchain.
 BUILDBUDDY_TOOLCHAIN_SNIPPET = """
-
-// Keep this at an older version until we fix WORKSPACE deps
-// resolution in Buildbuddy Toolchain.
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
     integrity = "sha256-VtJjefgP2Vq5S6DiGYczsupNkosybmSBGWwcLUAYz8c=",
