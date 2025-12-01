@@ -1,3 +1,13 @@
+// Package ocifetcher provides an OCIFetcherClient
+// that fetches OCI blobs and manifests from remote registries.
+//
+// The client currently only implements FetchManifestMetadata.
+// Once the client implements the entire OCIFetcherClient interface,
+// all fetches of OCI blobs and manifests should go through this client
+// in order to allow the corresponding OCIFetcherServer to deduplicate requests
+// for the same blob or manifest.
+//
+// It is safe to construct multiple clients.
 package ocifetcher
 
 import (
