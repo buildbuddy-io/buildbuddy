@@ -45,16 +45,12 @@ def _coverage_free_tool_impl(ctx):
 # executor platform.
 coverage_free_tool = rule(
     implementation = _coverage_free_tool_impl,
-    cfg = coverage_free_exec_transition,
     attrs = {
         "target": attr.label(
-            cfg = "exec",
+            cfg = coverage_free_exec_transition,
             executable = True,
             mandatory = True,
             providers = [DefaultInfo],
-        ),
-        "_allowlist_function_transition": attr.label(
-            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
     },
 )
