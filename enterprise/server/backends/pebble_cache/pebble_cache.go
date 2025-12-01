@@ -1297,7 +1297,6 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 	pr := message.NewPrinter(language.English)
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
-	blobDir := ""
 
 	modLim := rate.NewLimiter(rate.Limit(*backgroundRepairQPSLimit), 1)
 	lastUpdate := time.Now()
