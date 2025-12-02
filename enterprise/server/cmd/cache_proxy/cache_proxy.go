@@ -222,7 +222,7 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 
 	// Start and register internal servers first because the external proxy
 	// services rely on the internal servers.
-	if err := registerInternalServices(env, env.GetInternalGRPCServer()); err != nil {
+	if err := registerInternalServices(env); err != nil {
 		return err
 	}
 
@@ -234,6 +234,14 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 	if err := s.Start(); err != nil {
 		return err
 	}
+
+	// Register local clients pointing to the proxy servers.
+	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort()))
+	if err != nil {
+		return status.InternalErrorf("Error dialing local gRPC server: %s", err.Error())
+	}
+	env.SetLocalByteStreamClient(bspb.NewByteStreamClient(conn))
+	env.SetLocalContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
 	if env.GetSSLService().IsEnabled() {
 		s, err = grpc_server.New(env, grpc_server.GRPCSPort(), true, grpcServerConfig)
@@ -338,33 +346,23 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	log.Infof("Cache proxy proxying requests to %s", *remoteCache)
 }
 
-func registerInternalServices(env *real_environment.RealEnv, grpcServer *grpc.Server) error {
+func registerInternalServices(env *real_environment.RealEnv) error {
 	localBSS, err := byte_stream_server.NewByteStreamServer(env)
 	if err != nil {
 		return status.InternalErrorf("CacheProxy: error starting local bytestream server: %s", err.Error())
 	}
 	env.SetLocalByteStreamServer(localBSS)
-	bspb.RegisterByteStreamServer(grpcServer, localBSS)
 
 	localCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	if err != nil {
 		return status.InternalErrorf("CacheProxy: error starting local contentaddressablestorage server: %s", err.Error())
 	}
 	env.SetLocalCASServer(localCAS)
-	repb.RegisterContentAddressableStorageServer(grpcServer, localCAS)
 
 	localAC, err := action_cache_server.NewActionCacheServer(env)
 	if err != nil {
 		return status.InternalErrorf("CacheProxy: error starting local actioncache server: %s", err.Error())
 	}
 	env.SetLocalActionCacheServer(localAC)
-
-	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.InternalGRPCPort()))
-	if err != nil {
-		return status.InternalErrorf("CacheProxy: error starting local bytestream gRPC server: %s", err.Error())
-	}
-	env.SetLocalByteStreamClient(bspb.NewByteStreamClient(conn))
-	env.SetLocalContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
-
 	return nil
 }
