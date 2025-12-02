@@ -40,7 +40,7 @@ import (
 
 var (
 	upgradeInsecure  = flag.Bool("ssl.upgrade_insecure", false, "True if http requests should be redirected to https. Assumes http traffic is served on port 80 and https traffic is served on port 443 (typically via an ingress / load balancer).")
-	strictCspEnabled = flag.Bool("app.strict_csp_enabled", false, "If set, set a strict CSP header. Violations are logged at warning level.")
+	strictCspEnabled = flag.Bool("app.strict_csp_enabled", true, "If set, set a strict CSP header. Violations are logged at warning level.")
 )
 
 const contentSecurityPolicyReportingEndpointName = "csp-endpoint"
