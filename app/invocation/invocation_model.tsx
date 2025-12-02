@@ -283,7 +283,12 @@ export default class InvocationModel {
   }
 
   hasCASWriteCapability(): boolean {
-    return this.invocation.createdWithCapabilities?.includes(capability.Capability.CAS_WRITE) ?? false;
+    return (
+      this.invocation.createdWithCapabilities?.includes(capability.Capability.CAS_WRITE) ||
+      // CACHE_WRITE implies CAS_WRITE.
+      this.invocation.createdWithCapabilities?.includes(capability.Capability.CACHE_WRITE) ||
+      false
+    );
   }
 
   hasCacheWriteCapability(): boolean {
