@@ -366,7 +366,7 @@ func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity in
 			metrics.QuotaNamespace: namespace,
 			metrics.QuotaKey:       key,
 		}).Inc()
-		return status.ResourceExhaustedErrorf("quota exceeded for %q", namespace)
+		return status.ResourceExhaustedErrorf("quota exceeded for %q - to increase quota, request a quote at https://buildbuddy.io/request-quote", namespace)
 	}
 }
 
