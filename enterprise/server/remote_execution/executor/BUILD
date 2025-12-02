@@ -61,6 +61,7 @@ go_test(
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/util/rexec",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_jonboulle_clockwork//:clockwork",

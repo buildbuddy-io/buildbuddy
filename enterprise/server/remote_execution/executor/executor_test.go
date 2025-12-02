@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
@@ -340,6 +341,14 @@ func TestExecuteTaskAndStreamResults_InternalInputDownloadTimeout(t *testing.T) 
 	require.GreaterOrEqual(t, len(mockServer.operations), 1)
 	completedOp := mockServer.operations[len(mockServer.operations)-1]
 	require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+	// We should still report the input fetch completed timestamp if fetching
+	// inputs fails.
+	rsp, err := rexec.UnpackOperation(completedOp)
+	require.NoError(t, err)
+	actionResult := rsp.ExecuteResponse.GetResult()
+	inputFetchStart := actionResult.GetExecutionMetadata().GetInputFetchStartTimestamp().AsTime()
+	inputFetchCompleted := actionResult.GetExecutionMetadata().GetInputFetchCompletedTimestamp().AsTime()
+	require.GreaterOrEqual(t, inputFetchCompleted, inputFetchStart)
 }
 
 func TestExecuteTaskAndStreamResults_MissingInput(t *testing.T) {
@@ -433,6 +442,14 @@ func TestExecuteTaskAndStreamResults_MissingInput(t *testing.T) {
 			require.GreaterOrEqual(t, len(mockServer.operations), 1)
 			completedOp := mockServer.operations[len(mockServer.operations)-1]
 			require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+			// We should still report the input fetch completed timestamp if fetching
+			// inputs fails.
+			rsp, err := rexec.UnpackOperation(completedOp)
+			require.NoError(t, err)
+			actionResult := rsp.ExecuteResponse.GetResult()
+			inputFetchStart := actionResult.GetExecutionMetadata().GetInputFetchStartTimestamp().AsTime()
+			inputFetchCompleted := actionResult.GetExecutionMetadata().GetInputFetchCompletedTimestamp().AsTime()
+			require.GreaterOrEqual(t, inputFetchCompleted, inputFetchStart)
 		})
 	}
 }
