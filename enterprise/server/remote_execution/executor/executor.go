@@ -330,7 +330,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	log.CtxDebugf(ctx, "Downloading inputs.")
 	stage.Set("input_fetch")
 	_ = stream.SetState(repb.ExecutionProgress_DOWNLOADING_INPUTS)
-	if err := r.DownloadInputs(ctx); err != nil {
+	err = r.DownloadInputs(ctx)
+	md.InputFetchCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
+	if err != nil {
 		// If we failed to download inputs, and preserve-workspace is not
 		// enabled, then it should be safe to attempt recycling:
 		//
@@ -375,7 +377,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return finishWithErrFn(status.WrapError(err, "download inputs"))
 	}
 
-	md.InputFetchCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	md.ExecutionStartTimestamp = timestamppb.New(s.env.GetClock().Now())
 	execTimeouts, err := parseTimeouts(task)
 	if err != nil {
