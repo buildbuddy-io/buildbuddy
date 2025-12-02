@@ -111,6 +111,9 @@ build:dev_qa_test --remote_timeout=10m
 build:dev_qa_test --jobs=100
 build:dev_qa_test --build_metadata=TAGS=qa-integration-test
 build:dev_qa_test --workspace_status_command=
+build:dev_qa_test --compilation_mode=fastbuild
+build:dev_qa_test --host_compilation_mode=fastbuild
+build:dev_qa_test --test_tag_filters=-block-network
 EOF
 
 cat >> .bazelrc <<EOF
