@@ -24,9 +24,9 @@ go_test(
     },
     deps = [
         "//enterprise/server/test/integration/remote_execution/rbetest",
+        "//enterprise/server/testutil/testregistry",
         "//proto:remote_execution_go_proto",
         "//server/testutil/testfs",
-        "//enterprise/server/testutil/testregistry",
         "//server/util/disk",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",

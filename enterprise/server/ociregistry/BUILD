@@ -30,11 +30,11 @@ go_test(
     deps = [
         ":ociregistry",
         "//enterprise/server/clientidentity",
+        "//enterprise/server/testutil/testregistry",
         "//server/interfaces",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testport",
-        "//enterprise/server/testutil/testregistry",
         "//server/util/random",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",

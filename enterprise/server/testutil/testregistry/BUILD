@@ -26,3 +26,5 @@ go_library(
         "@io_bazel_rules_go//go/runfiles",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])
