@@ -111,7 +111,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testnetworking",
-        "//server/testutil/testregistry",
+        "//enterprise/server/testutil/testregistry",
         "//server/testutil/testshell",
         "//server/testutil/testtar",
         "//server/util/disk",

@@ -28,7 +28,7 @@ go_test(
         ":ocifetcher",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
-        "//server/testutil/testregistry",
+        "//enterprise/server/testutil/testregistry",
         "//server/util/status",
         "@com_github_stretchr_testify//require",
     ],

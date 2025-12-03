@@ -26,7 +26,7 @@ go_test(
         "//enterprise/server/test/integration/remote_execution/rbetest",
         "//proto:remote_execution_go_proto",
         "//server/testutil/testfs",
-        "//server/testutil/testregistry",
+        "//enterprise/server/testutil/testregistry",
         "//server/util/disk",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",

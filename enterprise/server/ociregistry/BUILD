@@ -34,7 +34,7 @@ go_test(
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testport",
-        "//server/testutil/testregistry",
+        "//enterprise/server/testutil/testregistry",
         "//server/util/random",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",

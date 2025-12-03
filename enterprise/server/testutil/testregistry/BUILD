@@ -4,7 +4,7 @@ go_library(
     name = "testregistry",
     testonly = 1,
     srcs = ["testregistry.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry",
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry",
     visibility = ["//visibility:public"],
     deps = [
         "//server/testutil/testdigest",

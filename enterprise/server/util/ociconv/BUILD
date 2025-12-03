@@ -30,7 +30,7 @@ go_test(
         "//enterprise/server/util/oci",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
-        "//server/testutil/testregistry",
+        "//enterprise/server/testutil/testregistry",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_containerregistry//pkg/v1/mutate",
