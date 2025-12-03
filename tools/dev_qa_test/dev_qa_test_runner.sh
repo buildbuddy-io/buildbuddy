@@ -114,6 +114,7 @@ build:dev_qa_test --workspace_status_command=
 build:dev_qa_test --compilation_mode=fastbuild
 build:dev_qa_test --host_compilation_mode=fastbuild
 build:dev_qa_test --test_tag_filters=-performance,-webdriver,-docker,-bare
+build:dev_qa_test --nocache_test_results
 EOF
 
 cat >> .bazelrc <<EOF
