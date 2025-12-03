@@ -1,9 +1,18 @@
 actions:
-  - name: Maggie
+  - name: VM
     container_image: ubuntu-22.04
     resource_requests:
       disk: 27GB
     triggers:
+    pool: workflows-maggie-test-vm
+    steps:
+      - run: "bazel clean --expunge && bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-bare"
+  - name: BM
+    container_image: ubuntu-22.04
+    resource_requests:
+      disk: 27GB
+    triggers:
+    pool: workflows-maggie-test-bm
     steps:
       - run: "bazel clean --expunge && bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-bare"
   - name: Test
