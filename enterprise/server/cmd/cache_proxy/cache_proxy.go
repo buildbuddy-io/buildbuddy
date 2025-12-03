@@ -236,7 +236,7 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 	}
 
 	// Register local clients pointing to the proxy servers.
-	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort()))
+	conn, err := grpc_client.DialInternalWithoutPooling(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort()))
 	if err != nil {
 		return status.InternalErrorf("Error dialing local gRPC server: %s", err.Error())
 	}
