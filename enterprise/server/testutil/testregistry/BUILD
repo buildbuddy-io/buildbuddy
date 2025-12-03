@@ -5,7 +5,6 @@ go_library(
     testonly = 1,
     srcs = ["testregistry.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry",
-    visibility = ["//visibility:public"],
     deps = [
         "//server/testutil/testdigest",
         "//server/testutil/testport",
