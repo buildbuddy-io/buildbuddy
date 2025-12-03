@@ -16,7 +16,6 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/http/httpclient",
-        "//server/interfaces",
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/flag",
