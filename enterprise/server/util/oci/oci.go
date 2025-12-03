@@ -291,21 +291,27 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		if entry.expiration.After(r.clock.Now()) {
 			return entry.nameWithDigest, nil
 		}
-		// Expired; evict and refresh via remote.Head below.
+		// The entry has expired. Evict it!
 		r.mu.Lock()
 		r.imageTagToDigestLRU.Remove(tagRef.String())
 		r.mu.Unlock()
 	}
 
-	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	desc, err := remote.Head(tagRef, remoteOpts...)
+	client := ocifetcher.NewClient(r.allowedPrivateIPs, *mirrors)
+	resp, err := client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
+		Ref: imageName,
+		Credentials: &rgpb.Credentials{
+			Username: credentials.Username,
+			Password: credentials.Password,
+		},
+	})
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
 		}
 		return "", status.UnavailableErrorf("could not authorize to remote registry: %s", err)
 	}
-	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
+	imageNameWithDigest := tagRef.Context().Digest(resp.GetDigest()).String()
 	entryToAdd := tagToDigestEntry{
 		nameWithDigest: imageNameWithDigest,
 		expiration:     r.clock.Now().Add(resolveImageDigestLRUDuration),
