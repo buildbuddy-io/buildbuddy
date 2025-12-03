@@ -47,54 +47,6 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
 
     http_file(
-        name = "io_bazel_bazel-5.3.2-darwin-arm64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-darwin-arm64"],
-        sha256 = "d3ce116379b835e2a0ae16b924a485c48330db434b192f090c8f875238e584cb",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-5.3.2-darwin-x86_64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-darwin-x86_64"],
-        sha256 = "fe01824013184899386a4807435e38811949ca13f46713e7fc39c70fa1528a17",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-5.3.2-linux-arm64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-linux-arm64"],
-        sha256 = "dcad413da286ac1d3f88e384ff05c2ed796f903be85b253591d170ce258db721",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-5.3.2-linux-x86_64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-linux-x86_64"],
-        sha256 = "973e213b1e9207ccdd3ea4730c0f92cbef769ec112ac2b84980583220d8db845",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-6.2.1-darwin-arm64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/6.2.1/bazel-6.2.1-darwin-arm64"],
-        sha256 = "0e4409d3243bf04bb709d3f1cc8a32ec0c36475c6d2aeda8475a213c40470793",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-6.2.1-darwin-x86_64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/6.2.1/bazel-6.2.1-darwin-x86_64"],
-        sha256 = "dd69512405d7a07c14ee2b33c8e1cb434b2eac203b3d46e17e7acb797608db22",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-6.2.1-linux-arm64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/6.2.1/bazel-6.2.1-linux-arm64"],
-        sha256 = "98d17ba59885957fe0dda423a52cfc3edf91176d4a7b3bdc5b573975a3785e1e",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-6.2.1-linux-x86_64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/6.2.1/bazel-6.2.1-linux-x86_64"],
-        sha256 = "cdf349dc938b1f11db5a7172269d66e91ce18c0ca134b38bb3997a3e3be782b8",
-        executable = True,
-    )
-    http_file(
         name = "io_bazel_bazel-6.5.0-darwin-arm64",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/6.5.0/bazel-6.5.0-darwin-arm64"],
         sha256 = "c6b6dc17efcdf13fba484c6fe0b6c3361b888ae7b9573bc25a2dbe8c502448eb",
@@ -116,30 +68,6 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "io_bazel_bazel-6.5.0-linux-x86_64",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/6.5.0/bazel-6.5.0-linux-x86_64"],
         sha256 = "a40ac69263440761199fcb8da47ad4e3f328cbe79ffbf4ecc14e5ba252857307",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-7.1.0-darwin-arm64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/7.1.0/bazel-7.1.0-darwin-arm64"],
-        sha256 = "fb5e7bc62fc3c8f2511e3b64d795296444129b26f13d8dece4d4cee1845b758f",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-7.1.0-darwin-x86_64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/7.1.0/bazel-7.1.0-darwin-x86_64"],
-        sha256 = "52ad8d57c22e4f873c724473a09ecfd98966c3a2950e102a7bd7e8c612b8001c",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-7.1.0-linux-arm64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/7.1.0/bazel-7.1.0-linux-arm64"],
-        sha256 = "b8cb5f842ce457606fbff3dba7a47e973f72bba0af1b7575ae500ca5a3d44282",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-7.1.0-linux-x86_64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/7.1.0/bazel-7.1.0-linux-x86_64"],
-        sha256 = "62d62c699c1eb9f9be6a88030912a54d19fe45ae29329c7e5c53aba787492522",
         executable = True,
     )
     http_file(
