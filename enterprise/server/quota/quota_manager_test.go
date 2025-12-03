@@ -7,14 +7,18 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/pubsub"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -24,10 +28,10 @@ import (
 )
 
 type testBucket struct {
-	config *tables.QuotaBucket
+	config *bucketConfig
 }
 
-func (tb *testBucket) Config() tables.QuotaBucket {
+func (tb *testBucket) Config() bucketConfig {
 	return *tb.config
 }
 
@@ -39,7 +43,7 @@ func stringPtr(str string) *string {
 	return &str
 }
 
-func createTestBucket(env environment.Env, config *tables.QuotaBucket) (Bucket, error) {
+func createTestBucket(env environment.Env, config *bucketConfig) (Bucket, error) {
 	return &testBucket{
 		config: config,
 	}, nil
@@ -121,19 +125,19 @@ func TestQuotaManagerFindBucket(t *testing.T) {
 		name       string
 		quotaKey   string
 		namespace  string
-		wantConfig tables.QuotaBucket
+		wantConfig bucketConfig
 	}{
 		{
 			name:       "restricted bucket",
 			quotaKey:   "GR123456",
 			namespace:  "remote_execution",
-			wantConfig: *buckets[1],
+			wantConfig: *bucketConfigFromRow(buckets[1]),
 		},
 		{
 			name:       "default bucket",
 			quotaKey:   "GR0000",
 			namespace:  "remote_execution",
-			wantConfig: *buckets[0],
+			wantConfig: *bucketConfigFromRow(buckets[0]),
 		},
 	}
 
@@ -198,7 +202,6 @@ func TestGetNamespace(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-
 			resp, err := qm.GetNamespace(ctx, tc.req)
 			require.NoError(t, err)
 			// use sortProtos to ignore orders
@@ -218,7 +221,6 @@ func TestGetNamespace(t *testing.T) {
 							},
 						},
 						{
-
 							Bucket: &qpb.Bucket{
 								Name: "restricted",
 								MaxRate: &qpb.Rate{
@@ -427,8 +429,8 @@ func TestModifyNamespace_UpdateBucket(t *testing.T) {
 			b := qm.findBucket("remote_execution", "GR123456")
 			require.NotNil(t, b)
 			config := b.Config()
-			config.Model = tables.Model{}
-			assert.Empty(t, cmp.Diff(config, *tc.wantBucket, protocmp.Transform()))
+			wantConfig := bucketConfigFromRow(tc.wantBucket)
+			assert.Empty(t, cmp.Diff(config, *wantConfig, cmp.AllowUnexported(bucketConfig{}), protocmp.Transform()))
 		})
 	}
 }
@@ -808,5 +810,177 @@ func TestQuotaManagerApplyBucket(t *testing.T) {
 			}
 		})
 	}
+}
 
+type testLimitingBucket struct {
+	numRequests int64
+	maxRequests int64
+	config      *bucketConfig
+}
+
+func (tb *testLimitingBucket) Config() bucketConfig {
+	return *tb.config
+}
+
+func (tb *testLimitingBucket) Allow(ctx context.Context, key string, quantity int64) (bool, error) {
+	tb.numRequests += quantity
+	return tb.numRequests <= tb.maxRequests, nil
+}
+
+func createTestLimitingBucket(env environment.Env, config *bucketConfig, limit int64) (Bucket, error) {
+	return &testLimitingBucket{
+		config:      config,
+		numRequests: 0,
+		maxRequests: limit,
+	}, nil
+}
+
+func TestQuotaFlagdBuckets(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	testUsers := testauth.TestUsers("US001", "GR001")
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testUsers["US001"])
+
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+	env.SetAuthDB(adb)
+	udb, err := userdb.NewUserDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+	env.SetUserDB(udb)
+
+	alreadyCreated := false
+
+	// This might get called if the test is run with --config=race from
+	// the subscribed hook to the flagd config. Debounce the bucket creation.
+	var cb Bucket
+	customBucketCreator := func(env environment.Env, config *bucketConfig) (Bucket, error) {
+		if alreadyCreated {
+			return cb, nil
+		}
+		cb, err = createTestLimitingBucket(env, config, 5)
+		if err != nil {
+			return nil, err
+		}
+		alreadyCreated = true
+		return cb, nil
+	}
+
+	flags := map[string]memprovider.InMemoryFlag{
+		bucketQuotaExperimentName: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "custom",
+			Variants: map[string]any{
+				"custom": map[string]any{
+					"rpc:/google.bytestream.ByteStream/Read": map[string]any{
+						"name": "restrictRead",
+						"maxRate": map[string]any{
+							"numRequests": int64(10),
+							"periodUsec":  int64(60 * 1000 * 1000),
+						},
+						"maxBurst": int64(5),
+					},
+				},
+			},
+		},
+	}
+	provider := memprovider.NewInMemoryProvider(flags)
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	qm, err := newQuotaManager(env, pubsub.NewTestPubSub(), customBucketCreator)
+	require.NoError(t, err)
+
+	assert.NoError(t, qm.Allow(ctx, "rpc:/google.bytestream.ByteStream/Read", 1))
+
+	// The next 4 requests are allowed, but the 5th is blocked.
+	for i := 0; i < 4; i++ {
+		assert.NoError(t, qm.Allow(ctx, "rpc:/google.bytestream.ByteStream/Read", 1))
+	}
+	assert.Error(t, qm.Allow(ctx, "rpc:/google.bytestream.ByteStream/Read", 1))
+
+	bucket := qm.findBucket("rpc:/google.bytestream.ByteStream/Read", "GR001")
+	require.NotNil(t, bucket)
+	config := bucket.Config()
+	assert.Equal(t, "rpc:/google.bytestream.ByteStream/Read", config.namespace)
+	assert.Equal(t, "flagd:rpc:/google.bytestream.ByteStream/Read:10:60000000:5", config.name)
+	assert.Equal(t, int64(10), config.numRequests)
+	assert.Equal(t, int64(60000000), config.periodDurationUsec)
+	assert.Equal(t, int64(5), config.maxBurst)
+}
+
+func TestBucketRowFromMap(t *testing.T) {
+	testCases := []struct {
+		name       string
+		namespace  string
+		bucketMap  map[string]interface{}
+		wantBucket *bucketConfig
+		wantError  bool
+	}{
+		{
+			name:      "valid bucket",
+			namespace: "rpc:/google.bytestream.ByteStream/Read",
+			bucketMap: map[string]interface{}{
+				"maxRate": map[string]any{
+					"numRequests": float64(10),
+					"periodUsec":  float64(60 * 1000 * 1000),
+				},
+				"maxBurst": float64(5),
+			},
+			wantBucket: &bucketConfig{
+				namespace:          "rpc:/google.bytestream.ByteStream/Read",
+				name:               "flagd:rpc:/google.bytestream.ByteStream/Read:10:60000000:5",
+				numRequests:        10,
+				periodDurationUsec: 60000000,
+				maxBurst:           5,
+			},
+			wantError: false,
+		},
+		{
+			name:      "missing maxRate",
+			namespace: "test",
+			bucketMap: map[string]interface{}{
+				"maxBurst": int64(5),
+			},
+			wantError: true,
+		},
+		{
+			name:      "invalid numRequests",
+			namespace: "test",
+			bucketMap: map[string]interface{}{
+				"maxRate": map[string]interface{}{
+					"numRequests": int64(-1),
+					"periodUsec":  int64(60 * 1000 * 1000),
+				},
+				"maxBurst": int64(5),
+			},
+			wantError: true,
+		},
+		{
+			name:      "zero periodUsec",
+			namespace: "test",
+			bucketMap: map[string]interface{}{
+				"maxRate": map[string]interface{}{
+					"numRequests": int64(10),
+					"periodUsec":  int64(0),
+				},
+				"maxBurst": int64(5),
+			},
+			wantError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			bucket, err := bucketConfigFromMap(tc.namespace, tc.bucketMap)
+			if tc.wantError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.wantBucket, bucket)
+			}
+		})
+	}
 }
