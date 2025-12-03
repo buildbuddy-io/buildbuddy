@@ -859,7 +859,7 @@ func (s cleanupStack) Cleanup(ctx context.Context) error {
 		s = s[:len(s)-1]
 		if err := f(ctx); err != nil {
 			// Short-circuit on the first error.
-			alert.UnexpectedEvent("network_cleanup_failed", "Networking cleanup failed. If too many of these errors accumulate, networking may stop functioning correctly. Error: %s", err)
+			alert.CtxUnexpectedEvent(ctx, "network_cleanup_failed", "Networking cleanup failed. If too many of these errors accumulate, networking may stop functioning correctly. Error: %s", err)
 			return err
 		}
 	}
