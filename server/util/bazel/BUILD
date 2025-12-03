@@ -6,7 +6,7 @@ bazel_pkg_tar(
     versions = [
         "6.5.0",
         "7.6.1",
-        "8.1.1", # used by testbazel
+        "8.1.1",  # used by testbazel
         "8.2.1",
         "8.3.1",
     ],
