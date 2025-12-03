@@ -248,8 +248,7 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	}
 
 	log.CtxInfof(ctx, "Authenticating with registry for %q", imageName)
-	client := ocifetcher.NewClient(r.allowedPrivateIPs, ocifetcher.Mirrors())
-	_, err := client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
+	_, err := r.env.GetOCIFetcherClient().FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
 		Credentials: &rgpb.Credentials{
 			Username: credentials.Username,
@@ -290,8 +289,7 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		r.mu.Unlock()
 	}
 
-	client := ocifetcher.NewClient(r.allowedPrivateIPs, ocifetcher.Mirrors())
-	resp, err := client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
+	resp, err := r.env.GetOCIFetcherClient().FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
 		Credentials: &rgpb.Credentials{
 			Username: credentials.Username,
