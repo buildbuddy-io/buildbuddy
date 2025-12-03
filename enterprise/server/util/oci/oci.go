@@ -291,6 +291,7 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		if entry.expiration.After(r.clock.Now()) {
 			return entry.nameWithDigest, nil
 		}
+		// The entry has expired. Evict it!
 		r.mu.Lock()
 		r.imageTagToDigestLRU.Remove(tagRef.String())
 		r.mu.Unlock()
