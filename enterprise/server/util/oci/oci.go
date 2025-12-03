@@ -50,9 +50,7 @@ const (
 
 var (
 	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
-	mirrors                = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
-	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 
 	useCachePercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
 	// TODO: remove from configs and delete
@@ -222,13 +220,9 @@ type Resolver struct {
 }
 
 func NewResolver(env environment.Env) (*Resolver, error) {
-	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
-	for _, r := range *allowedPrivateIPs {
-		_, ipNet, err := net.ParseCIDR(r)
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("invald value %q for executor.container_registry_allowed_private_ips flag: %s", r, err)
-		}
-		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
+	allowedPrivateIPNets, err := ocifetcher.ParseAllowedPrivateIPs()
+	if err != nil {
+		return nil, err
 	}
 	imageTagToDigestLRU, err := lru.NewLRU[tagToDigestEntry](&lru.Config[tagToDigestEntry]{
 		SizeFn:  func(_ tagToDigestEntry) int64 { return 1 },
@@ -255,7 +249,7 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	}
 
 	log.CtxInfof(ctx, "Authenticating with registry for %q", imageName)
-	client := ocifetcher.NewClient(r.allowedPrivateIPs, *mirrors)
+	client := ocifetcher.NewClient(r.allowedPrivateIPs, ocifetcher.Mirrors())
 	_, err := client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
 		Credentials: &rgpb.Credentials{
@@ -297,7 +291,7 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		r.mu.Unlock()
 	}
 
-	client := ocifetcher.NewClient(r.allowedPrivateIPs, *mirrors)
+	client := ocifetcher.NewClient(r.allowedPrivateIPs, ocifetcher.Mirrors())
 	resp, err := client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
 		Credentials: &rgpb.Credentials{
@@ -553,8 +547,9 @@ func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, c
 	}
 
 	tr := httpclient.New(r.allowedPrivateIPs, "oci").Transport
-	if len(*mirrors) > 0 {
-		remoteOpts = append(remoteOpts, remote.WithTransport(ocifetcher.NewMirrorTransport(tr, *mirrors)))
+	mirrors := ocifetcher.Mirrors()
+	if len(mirrors) > 0 {
+		remoteOpts = append(remoteOpts, remote.WithTransport(ocifetcher.NewMirrorTransport(tr, mirrors)))
 	} else {
 		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
 	}

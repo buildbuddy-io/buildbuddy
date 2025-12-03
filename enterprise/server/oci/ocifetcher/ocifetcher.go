@@ -18,6 +18,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -30,6 +32,11 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 )
 
+var (
+	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
+	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
+)
+
 type ociFetcherClient struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
@@ -40,6 +47,36 @@ func NewClient(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig
 		allowedPrivateIPs: allowedPrivateIPs,
 		mirrors:           mirrors,
 	}
+}
+
+// RegisterClient registers an OCIFetcherClient with the environment.
+func RegisterClient(env *real_environment.RealEnv) error {
+	allowedPrivateIPNets, err := ParseAllowedPrivateIPs()
+	if err != nil {
+		return err
+	}
+	client := NewClient(allowedPrivateIPNets, *mirrors)
+	env.SetOCIFetcherClient(client)
+	return nil
+}
+
+// ParseAllowedPrivateIPs parses the allowedPrivateIPs flag into a slice of
+// *net.IPNet.
+func ParseAllowedPrivateIPs() ([]*net.IPNet, error) {
+	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
+	for _, r := range *allowedPrivateIPs {
+		_, ipNet, err := net.ParseCIDR(r)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid value %q for executor.container_registry_allowed_private_ips flag: %s", r, err)
+		}
+		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
+	}
+	return allowedPrivateIPNets, nil
+}
+
+// Mirrors returns the configured container registry mirrors.
+func Mirrors() []interfaces.MirrorConfig {
+	return *mirrors
 }
 
 // NewMirrorTransport wraps an http.RoundTripper with registry mirror support.

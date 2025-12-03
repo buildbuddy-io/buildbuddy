@@ -11,6 +11,8 @@ go_library(
         "//proto:registry_go_proto",
         "//server/http/httpclient",
         "//server/interfaces",
+        "//server/real_environment",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
         "@com_github_google_go_containerregistry//pkg/authn",
