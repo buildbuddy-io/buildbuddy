@@ -525,7 +525,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
       role: this.state.model.getRole(),
       denseMode: this.props.preferences.denseModeEnabled,
     });
-    const isWorkflowInvocation = this.state.model.isWorkflowInvocation();
+    const isRemoteRunnerInvocation =
+      this.state.model.isWorkflowInvocation() || this.state.model.isHostedBazelInvocation();
     const fetchBuildLogs = () => {
       rpcService.downloadLog(this.props.invocationId, Number(this.state.model?.invocation.attempt ?? 0));
     };
@@ -545,13 +546,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
           ) : (
             <InvocationOverviewComponent user={this.props.user} model={this.state.model} />
           )}
-          {isWorkflowInvocation && (
+          {isRemoteRunnerInvocation && (
             <div className="container">
               <ChildInvocations childInvocations={this.state.childInvocations} />
             </div>
           )}
         </div>
-        {isWorkflowInvocation && (
+        {isRemoteRunnerInvocation && (
           <div className="container">
             <div className="workflow-details-header">
               <h2>Run results</h2>
@@ -563,11 +564,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             tab={this.props.tab}
             denseMode={this.props.preferences.denseModeEnabled}
             role={this.state.model.getRole()}
-            executionsEnabled={
-              this.state.model.getIsRBEEnabled() ||
-              this.state.model.isWorkflowInvocation() ||
-              this.state.model.isHostedBazelInvocation()
-            }
+            executionsEnabled={this.state.model.getIsRBEEnabled() || isRemoteRunnerInvocation}
             hasCoverage={this.state.model.hasCoverage()}
             hasSuggestions={suggestions.length > 0}
             hasExecutionLogs={this.state.model.getIsExecutionLogEnabled()}
@@ -594,7 +591,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
           {(activeTab === "all" || activeTab === "log") && <ErrorCardComponent model={this.state.model} />}
 
-          {!isWorkflowInvocation && (activeTab === "all" || activeTab === "targets") && (
+          {!isRemoteRunnerInvocation && (activeTab === "all" || activeTab === "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="failing"
@@ -610,7 +607,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
           {(activeTab === "all" || activeTab === "log") && (
             <BuildLogsCardComponent
-              title={!isWorkflowInvocation ? "Build logs" : "Runner logs"}
+              title={!isRemoteRunnerInvocation ? "Build logs" : "Runner logs"}
               dark={!this.props.preferences.lightTerminalEnabled}
               value={this.getBuildLogs(this.state.model)}
               loading={this.areBuildLogsLoading(this.state.model)}
@@ -627,7 +624,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {!isWorkflowInvocation && (activeTab === "all" || activeTab === "targets") && (
+          {!isRemoteRunnerInvocation && (activeTab === "all" || activeTab === "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="passing"
@@ -640,13 +637,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <InvocationDetailsCardComponent model={this.state.model} limitResults={!activeTab} />
           )}
 
-          {!isWorkflowInvocation && (activeTab === "all" || activeTab === "cache") && (
+          {!isRemoteRunnerInvocation && (activeTab === "all" || activeTab === "cache") && (
             <CacheCardComponent model={this.state.model} />
           )}
-          {!isWorkflowInvocation &&
+          {!isRemoteRunnerInvocation &&
             (activeTab === "all" || activeTab === "cache") &&
             !capabilities.config.detailedCacheStatsEnabled && <ScorecardCardComponent model={this.state.model} />}
-          {!isWorkflowInvocation &&
+          {!isRemoteRunnerInvocation &&
             (activeTab === "all" || activeTab === "cache") &&
             capabilities.config.detailedCacheStatsEnabled && (
               <CacheRequestsCardComponent model={this.state.model} search={this.props.search} />
