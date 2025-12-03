@@ -57,7 +57,7 @@ type Registry struct {
 	host   string
 	port   int
 	server *http.Server
-	creds   *BasicAuthCreds
+	creds  *BasicAuthCreds
 }
 
 func Run(t *testing.T, opts Opts) *Registry {
@@ -99,7 +99,7 @@ func Run(t *testing.T, opts Opts) *Registry {
 		host:   "localhost",
 		port:   testport.FindFree(t),
 		server: server,
-		creds:   opts.Creds,
+		creds:  opts.Creds,
 	}
 	lis, err := net.Listen("tcp", registry.Address())
 	require.NoError(t, err)
