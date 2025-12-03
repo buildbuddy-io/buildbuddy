@@ -14,7 +14,7 @@ import (
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 )
 
-func allowLocalhostIPs(t *testing.T) []*net.IPNet {
+func localhostIPs(t *testing.T) []*net.IPNet {
 	_, ipv4Net, err := net.ParseCIDR("127.0.0.0/8")
 	require.NoError(t, err)
 	_, ipv6Net, err := net.ParseCIDR("::1/128")
@@ -26,7 +26,7 @@ func TestFetchManifestMetadata_NoAuth(t *testing.T) {
 	reg := testregistry.Run(t, testregistry.Opts{})
 	imageName, img := reg.PushNamedImage(t, "test-image")
 
-	client := ocifetcher.NewClient(allowLocalhostIPs(t), nil)
+	client := ocifetcher.NewClient(localhostIPs(t), nil)
 	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
 	})
@@ -48,7 +48,7 @@ func TestFetchManifestMetadata_WithValidCredentials(t *testing.T) {
 	})
 	imageName, img := reg.PushNamedImage(t, "test-image")
 
-	client := ocifetcher.NewClient(allowLocalhostIPs(t), nil)
+	client := ocifetcher.NewClient(localhostIPs(t), nil)
 	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
 		Credentials: &rgpb.Credentials{
@@ -74,7 +74,7 @@ func TestFetchManifestMetadata_WithInvalidCredentials(t *testing.T) {
 	})
 	imageName, _ := reg.PushNamedImage(t, "test-image")
 
-	client := ocifetcher.NewClient(allowLocalhostIPs(t), nil)
+	client := ocifetcher.NewClient(localhostIPs(t), nil)
 	_, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
 		Credentials: &rgpb.Credentials{
@@ -95,7 +95,7 @@ func TestFetchManifestMetadata_MissingCredentials(t *testing.T) {
 	})
 	imageName, _ := reg.PushNamedImage(t, "test-image")
 
-	client := ocifetcher.NewClient(allowLocalhostIPs(t), nil)
+	client := ocifetcher.NewClient(localhostIPs(t), nil)
 	_, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
 		// No credentials provided
