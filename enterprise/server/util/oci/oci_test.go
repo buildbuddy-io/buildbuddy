@@ -349,7 +349,7 @@ func TestResolve(t *testing.T) {
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
 				registry := testregistry.Run(t, tc.opts)
-				_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles)
+				_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles, nil)
 
 				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
 					Add: pushedImage,
@@ -357,7 +357,7 @@ func TestResolve(t *testing.T) {
 						Platform: &tc.imagePlatform,
 					},
 				})
-				registry.PushIndex(t, index, tc.imageName+"_index")
+				registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
 				for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
 					pulledImage, err := newResolver(t, te).Resolve(
@@ -448,7 +448,7 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 						return true
 					},
 				})
-				_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, tc.imageName+"_image")
+				_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, tc.imageName+"_image", nil)
 
 				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
 					Add: pushedImage,
@@ -456,7 +456,7 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 						Platform: &tc.imagePlatform,
 					},
 				})
-				registry.PushIndex(t, index, tc.imageName+"_index")
+				registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
 				for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
 					pulledImage, err := newResolver(t, te).Resolve(
@@ -537,7 +537,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 			return true
 		},
 	})
-	imageName, image := originalRegistry.PushRandomImage(t)
+	imageName, image := originalRegistry.PushRandomImage(t, nil)
 	imageDigest, err := image.Digest()
 	require.NoError(t, err)
 
@@ -556,7 +556,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	})
 
 	// Configure the resolver to use the mirror as a mirror for the original registry.
-	flags.Set(t, "executor.container_registry_mirrors", []oci.MirrorConfig{
+	flags.Set(t, "executor.container_registry_mirrors", []interfaces.MirrorConfig{
 		{
 			OriginalURL: "http://" + originalRegistry.Address(),
 			MirrorURL:   "http://" + mirrorRegistry.Address(),
@@ -586,7 +586,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 }
 
 func pushAndFetchRandomImage(t *testing.T, te *testenv.TestEnv, registry *testregistry.Registry) error {
-	imageName, _ := registry.PushRandomImage(t)
+	imageName, _ := registry.PushRandomImage(t, nil)
 	_, err := newResolver(t, te).Resolve(
 		context.Background(),
 		imageName,
@@ -700,7 +700,7 @@ func TestResolve_WithCache(t *testing.T) {
 					return true
 				},
 			})
-			_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles)
+			_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles, nil)
 
 			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
 				Add: pushedImage,
@@ -708,7 +708,7 @@ func TestResolve_WithCache(t *testing.T) {
 					Platform: &tc.imagePlatform,
 				},
 			})
-			registry.PushIndex(t, index, tc.imageName+"_index")
+			registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
 			// Test with normal image manifest
 			{
@@ -841,7 +841,7 @@ func TestResolve_Concurrency(t *testing.T) {
 		},
 	})
 	imageName := "test_resolve_concurrency"
-	_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, imageName+"_image")
+	_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, imageName+"_image", nil)
 	pushedLayers, err := pushedImage.Layers()
 	require.NoError(t, err)
 	pushedDigestToFiles := make(map[v1.Hash]map[string][]byte, len(pushedLayers))
@@ -1017,7 +1017,7 @@ func TestResolveImageDigest_TagExists(t *testing.T) {
 	registry := testregistry.Run(t, testregistry.Opts{})
 
 	imageName := "image_tag_exists"
-	_, img := registry.PushNamedImage(t, imageName)
+	_, img := registry.PushNamedImage(t, imageName, nil)
 	pushedDigest, err := img.Digest()
 	require.NoError(t, err)
 	nameToResolve := registry.ImageAddress(imageName)
@@ -1065,7 +1065,7 @@ func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 	})
 
 	imageName := "cache_hit"
-	_, img := registry.PushNamedImage(t, imageName)
+	_, img := registry.PushNamedImage(t, imageName, nil)
 	pushedDigest, err := img.Digest()
 	require.NoError(t, err)
 	nameToResolve := registry.ImageAddress(imageName + "@" + pushedDigest.String())
@@ -1100,7 +1100,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 	})
 
 	imageName := "cache_hit"
-	_, img := registry.PushNamedImage(t, imageName)
+	_, img := registry.PushNamedImage(t, imageName, nil)
 	pushedDigest, err := img.Digest()
 	require.NoError(t, err)
 	nameToResolve := registry.ImageAddress(imageName)
@@ -1178,7 +1178,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	})
 
 	imageName := "cache_expiration"
-	_, img := registry.PushNamedImage(t, imageName)
+	_, img := registry.PushNamedImage(t, imageName, nil)
 	pushedDigest, err := img.Digest()
 	require.NoError(t, err)
 	nameToResolve := registry.ImageAddress(imageName)

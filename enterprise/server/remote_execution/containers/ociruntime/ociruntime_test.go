@@ -81,7 +81,7 @@ func setupNetworking(t *testing.T) {
 func serveImageFromRunfiles(t *testing.T, name, rlocationpath string) string {
 	registry := testregistry.Run(t, testregistry.Opts{})
 	image := testregistry.ImageFromRlocationpath(t, rlocationpath)
-	registry.Push(t, image, name)
+	registry.Push(t, image, name, nil)
 	return registry.ImageAddress(name)
 }
 
@@ -1260,7 +1260,7 @@ func TestHighLayerCount(t *testing.T) {
 
 			// Start registry and push our new image there
 			reg := testregistry.Run(t, testregistry.Opts{})
-			imageRef := reg.Push(t, testImg, "foo:latest")
+			imageRef := reg.Push(t, testImg, "foo:latest", nil)
 
 			// Start container to verify content
 			setupNetworking(t)
@@ -1304,7 +1304,7 @@ func TestEntrypoint(t *testing.T) {
 	require.NoError(t, err)
 	// Start a test registry and push the mutated busybox image to it
 	reg := testregistry.Run(t, testregistry.Opts{})
-	image := reg.Push(t, img, "test-entrypoint:latest")
+	image := reg.Push(t, img, "test-entrypoint:latest", nil)
 	// Set up the container
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -1383,7 +1383,7 @@ func TestFileOwnership(t *testing.T) {
 	require.NoError(t, err)
 	// Start a test registry and push the mutated busybox image to it
 	reg := testregistry.Run(t, testregistry.Opts{})
-	image := reg.Push(t, img, "test-file-ownership:latest")
+	image := reg.Push(t, img, "test-file-ownership:latest", nil)
 	// Set up the container
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -1463,7 +1463,7 @@ func TestPathSanitization(t *testing.T) {
 			require.NoError(t, err)
 			// Start a test registry and push the mutated busybox image to it
 			reg := testregistry.Run(t, testregistry.Opts{})
-			image := reg.Push(t, img, "test-file-ownership:latest")
+			image := reg.Push(t, img, "test-file-ownership:latest", nil)
 
 			// Make sure we get an error when pulling this image.
 			ctx := context.Background()

@@ -293,7 +293,7 @@ func TestPull(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			repository := strings.ToLower(strings.ReplaceAll(tc.name, " ", "_"))
-			testImageName, testImage := testreg.PushNamedImage(t, repository)
+			testImageName, testImage := testreg.PushNamedImage(t, repository, nil)
 
 			var identifier string
 			var expectedDockerContentDigest string

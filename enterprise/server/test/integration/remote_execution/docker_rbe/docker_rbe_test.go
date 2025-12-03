@@ -86,6 +86,6 @@ func TestDockerWithOverlayfs_InputFilesAreImmutable(t *testing.T) {
 func serveBusyboxImage(t *testing.T) string {
 	registry := testregistry.Run(t, testregistry.Opts{})
 	image := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
-	registry.Push(t, image, "busybox")
+	registry.Push(t, image, "busybox", nil)
 	return registry.ImageAddress("busybox")
 }
