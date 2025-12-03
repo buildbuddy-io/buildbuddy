@@ -32,7 +32,7 @@ func TestOciconv(t *testing.T) {
 
 	reg := testregistry.Run(t, testregistry.Opts{})
 
-	ref, img := reg.PushNamedImage(t, "ociconv-test-image:latest")
+	ref, img := reg.PushNamedImage(t, "ociconv-test-image:latest", nil)
 
 	resolver, err := oci.NewResolver(te)
 	require.NoError(t, err)
@@ -131,7 +131,7 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 
 	// Bypass auth while pushing the image.
 	authEnabled = false
-	ref, _ := reg.PushNamedImage(t, "test-empty-image:latest")
+	ref, _ := reg.PushNamedImage(t, "test-empty-image:latest", nil)
 	authEnabled = true
 
 	resolver, err := oci.NewResolver(te)

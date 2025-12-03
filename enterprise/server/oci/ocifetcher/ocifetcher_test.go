@@ -24,7 +24,7 @@ func localhostIPs(t *testing.T) []*net.IPNet {
 
 func TestFetchManifestMetadata_NoAuth(t *testing.T) {
 	reg := testregistry.Run(t, testregistry.Opts{})
-	imageName, img := reg.PushNamedImage(t, "test-image")
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
 
 	client := ocifetcher.NewClient(localhostIPs(t), nil)
 	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
@@ -40,13 +40,14 @@ func TestFetchManifestMetadata_NoAuth(t *testing.T) {
 }
 
 func TestFetchManifestMetadata_WithValidCredentials(t *testing.T) {
+	creds := &testregistry.BasicAuthCreds{
+		Username: "testuser",
+		Password: "testpass",
+	}
 	reg := testregistry.Run(t, testregistry.Opts{
-		Auth: &testregistry.AuthConfig{
-			Username: "testuser",
-			Password: "testpass",
-		},
+		Creds: creds,
 	})
-	imageName, img := reg.PushNamedImage(t, "test-image")
+	imageName, img := reg.PushNamedImage(t, "test-image", creds)
 
 	client := ocifetcher.NewClient(localhostIPs(t), nil)
 	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
@@ -66,13 +67,14 @@ func TestFetchManifestMetadata_WithValidCredentials(t *testing.T) {
 }
 
 func TestFetchManifestMetadata_WithInvalidCredentials(t *testing.T) {
+	creds := &testregistry.BasicAuthCreds{
+		Username: "testuser",
+		Password: "testpass",
+	}
 	reg := testregistry.Run(t, testregistry.Opts{
-		Auth: &testregistry.AuthConfig{
-			Username: "testuser",
-			Password: "testpass",
-		},
+		Creds: creds,
 	})
-	imageName, _ := reg.PushNamedImage(t, "test-image")
+	imageName, _ := reg.PushNamedImage(t, "test-image", creds)
 
 	client := ocifetcher.NewClient(localhostIPs(t), nil)
 	_, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
@@ -87,13 +89,14 @@ func TestFetchManifestMetadata_WithInvalidCredentials(t *testing.T) {
 }
 
 func TestFetchManifestMetadata_MissingCredentials(t *testing.T) {
+	creds := &testregistry.BasicAuthCreds{
+		Username: "testuser",
+		Password: "testpass",
+	}
 	reg := testregistry.Run(t, testregistry.Opts{
-		Auth: &testregistry.AuthConfig{
-			Username: "testuser",
-			Password: "testpass",
-		},
+		Creds: creds,
 	})
-	imageName, _ := reg.PushNamedImage(t, "test-image")
+	imageName, _ := reg.PushNamedImage(t, "test-image", creds)
 
 	client := ocifetcher.NewClient(localhostIPs(t), nil)
 	_, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{

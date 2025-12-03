@@ -43,13 +43,12 @@ type Opts struct {
 	// An interceptor applied to HTTP calls. Returns true if the request
 	// should be processed post-interception, or false if not.
 	HttpInterceptor func(w http.ResponseWriter, r *http.Request) bool
-	// Auth configures basic authentication. If set, requests must include
+	// Creds configures basic authentication. If set, requests must include
 	// valid credentials to access the registry.
-	Auth *AuthConfig
+	Creds *BasicAuthCreds
 }
 
-// AuthConfig configures basic authentication for the test registry.
-type AuthConfig struct {
+type BasicAuthCreds struct {
 	Username string
 	Password string
 }
@@ -58,13 +57,13 @@ type Registry struct {
 	host   string
 	port   int
 	server *http.Server
-	auth   *AuthConfig
+	creds   *BasicAuthCreds
 }
 
 func Run(t *testing.T, opts Opts) *Registry {
-	var handler http.Handler = registry.New()
-	if opts.Auth != nil {
-		creds := map[string]string{opts.Auth.Username: opts.Auth.Password}
+	handler := registry.New()
+	if opts.Creds != nil {
+		creds := map[string]string{opts.Creds.Username: opts.Creds.Password}
 		handler = basicauth.Middleware("registry", creds)(handler)
 	}
 	mux := http.NewServeMux()
@@ -100,7 +99,7 @@ func Run(t *testing.T, opts Opts) *Registry {
 		host:   "localhost",
 		port:   testport.FindFree(t),
 		server: server,
-		auth:   opts.Auth,
+		creds:   opts.Creds,
 	}
 	lis, err := net.Listen("tcp", registry.Address())
 	require.NoError(t, err)
@@ -116,37 +115,37 @@ func (r *Registry) ImageAddress(imageName string) string {
 	return fmt.Sprintf("%s:%d/%s", r.host, r.port, imageName)
 }
 
-func (r *Registry) remoteOpts() []remote.Option {
-	if r.auth == nil {
-		return nil
+func remoteOpts(creds *BasicAuthCreds) []remote.Option {
+	if creds == nil {
+		return []remote.Option{}
 	}
 	return []remote.Option{
 		remote.WithAuth(&authn.Basic{
-			Username: r.auth.Username,
-			Password: r.auth.Password,
+			Username: creds.Username,
+			Password: creds.Password,
 		}),
 	}
 }
 
-func (r *Registry) Push(t *testing.T, image gcr.Image, imageName string) string {
+func (r *Registry) Push(t *testing.T, image gcr.Image, imageName string, creds *BasicAuthCreds) string {
 	fullImageName := r.ImageAddress(imageName)
 	ref, err := name.ParseReference(fullImageName)
 	require.NoError(t, err)
-	err = remote.Write(ref, image, r.remoteOpts()...)
+	err = remote.Write(ref, image, remoteOpts(creds)...)
 	require.NoError(t, err)
 	return fullImageName
 }
 
-func (r *Registry) PushIndex(t *testing.T, idx gcr.ImageIndex, imageName string) string {
+func (r *Registry) PushIndex(t *testing.T, idx gcr.ImageIndex, imageName string, creds *BasicAuthCreds) string {
 	fullImageName := r.ImageAddress(imageName)
 	ref, err := name.ParseReference(fullImageName)
 	require.NoError(t, err)
-	err = remote.WriteIndex(ref, idx, r.remoteOpts()...)
+	err = remote.WriteIndex(ref, idx, remoteOpts(creds)...)
 	require.NoError(t, err)
 	return fullImageName
 }
 
-func (r *Registry) PushRandomImage(t *testing.T) (string, gcr.Image) {
+func (r *Registry) PushRandomImage(t *testing.T, creds *BasicAuthCreds) (string, gcr.Image) {
 	files := map[string][]byte{}
 	buffer := bytes.Buffer{}
 	buffer.Grow(1024)
@@ -159,22 +158,22 @@ func (r *Registry) PushRandomImage(t *testing.T) (string, gcr.Image) {
 	}
 	image, err := imageFromFiles(files)
 	require.NoError(t, err)
-	return r.Push(t, image, "test"), image
+	return r.Push(t, image, "test", creds), image
 }
 
-func (r *Registry) PushNamedImage(t *testing.T, imageName string) (string, gcr.Image) {
+func (r *Registry) PushNamedImage(t *testing.T, imageName string, creds *BasicAuthCreds) (string, gcr.Image) {
 	files := map[string][]byte{
 		"/tmp/" + imageName: []byte(imageName),
 	}
 	image, err := imageFromFiles(files)
 	require.NoError(t, err)
-	return r.Push(t, image, imageName), image
+	return r.Push(t, image, imageName, creds), image
 }
 
-func (r *Registry) PushNamedImageWithFiles(t *testing.T, imageName string, files map[string][]byte) (string, gcr.Image) {
+func (r *Registry) PushNamedImageWithFiles(t *testing.T, imageName string, files map[string][]byte, creds *BasicAuthCreds) (string, gcr.Image) {
 	image, err := imageFromFiles(files)
 	require.NoError(t, err)
-	return r.Push(t, image, imageName), image
+	return r.Push(t, image, imageName, creds), image
 }
 
 // imageFromFiles reimplements crane.Image() but with proper permission added to each tar.Header.
@@ -220,7 +219,7 @@ func imageFromFiles(files map[string][]byte) (gcr.Image, error) {
 	return mutate.AppendLayers(empty.Image, layer)
 }
 
-func (r *Registry) PushNamedImageWithMultipleLayers(t *testing.T, imageName string) (string, gcr.Image) {
+func (r *Registry) PushNamedImageWithMultipleLayers(t *testing.T, imageName string, creds *BasicAuthCreds) (string, gcr.Image) {
 	base := empty.Image
 	layers := make([]gcr.Layer, 0, 9)
 	for i := 0; i < 9; i++ {
@@ -233,7 +232,7 @@ func (r *Registry) PushNamedImageWithMultipleLayers(t *testing.T, imageName stri
 	}
 	image, err := mutate.AppendLayers(base, layers...)
 	require.NoError(t, err)
-	return r.Push(t, image, imageName), image
+	return r.Push(t, image, imageName, creds), image
 }
 
 func (r *Registry) Shutdown(ctx context.Context) error {
