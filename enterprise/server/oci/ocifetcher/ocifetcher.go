@@ -65,18 +65,18 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 		if match, err := matchesMirror(mirror, in.URL); err == nil && match {
 			mirroredRequest, err := rewriteToMirror(mirror, in)
 			if err != nil {
-				log.Errorf("error mirroring request: %s", err)
+				log.CtxErrorf(in.Context(), "error mirroring request: %s", err)
 				continue
 			}
 			out, err := t.inner.RoundTrip(mirroredRequest)
 			if err != nil {
-				log.Errorf("mirror err: %s", err)
+				log.CtxErrorf(in.Context(), "mirror err: %s", err)
 				continue
 			}
 			if out.StatusCode < http.StatusOK || out.StatusCode >= 300 {
 				fallbackRequest, err := rewriteFallback(mirror, in)
 				if err != nil {
-					log.Errorf("error rewriting fallback request: %s", err)
+					log.CtxErrorf(in.Context(), "error rewriting fallback request: %s", err)
 					continue
 				}
 				return t.inner.RoundTrip(fallbackRequest)
@@ -107,7 +107,7 @@ func rewriteToMirror(mc interfaces.MirrorConfig, originalRequest *http.Request) 
 	// Set X-Forwarded-Host so the mirror knows which remote registry to make requests to.
 	// ociregistry looks for this header and will default to forwarding requests to Docker Hub if not found.
 	req.Header.Set("X-Forwarded-Host", originalRequest.URL.Host)
-	log.Debugf("%q rewritten to %s", originalURL, req.URL.String())
+	log.CtxDebugf(originalRequest.Context(), "%q rewritten to %s", originalURL, req.URL.String())
 	return req, nil
 }
 
@@ -119,7 +119,7 @@ func rewriteFallback(mc interfaces.MirrorConfig, originalRequest *http.Request) 
 	req := originalRequest.Clone(originalRequest.Context())
 	req.URL.Scheme = originalURL.Scheme
 	req.URL.Host = originalURL.Host
-	log.Debugf("(fallback) %q rewritten to %s", originalURL, req.URL.String())
+	log.CtxDebugf(originalRequest.Context(), "(fallback) %q rewritten to %s", originalURL, req.URL.String())
 	return req, nil
 }
 
