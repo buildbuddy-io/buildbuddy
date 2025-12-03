@@ -309,7 +309,7 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
 		}
-		return "", status.UnavailableErrorf("could not resolve image digest: %s", err)
+		return "", status.UnavailableErrorf("could not authorize to remote registry: %s", err)
 	}
 	imageNameWithDigest := tagRef.Context().Digest(resp.GetDigest()).String()
 	entryToAdd := tagToDigestEntry{
