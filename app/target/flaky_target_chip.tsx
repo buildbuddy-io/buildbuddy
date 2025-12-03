@@ -57,7 +57,7 @@ export default class FlakyTargetChipComponent extends React.Component<Props, Sta
         this.props.labels.length === 1
           ? "This target was recently flaky--click to see samples."
           : "Some failed targets were recently flaky--click to see samples.";
-      const href = `${Path.tapPath}?${params.toString()}#flakes`;
+      const href = `${Path.tapPath}?${params}#flakes`;
       return (
         <OutlinedLinkButton href={href} title={title} className="flaky-target-chip">
           <HelpCircle className="icon orange" /> Recently flaky
