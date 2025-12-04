@@ -115,7 +115,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "(sum(rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"us-west1\", job=\"executor-workflows\", status=\"hit\"}[60m])) * 60 * 60)\n/\n((sum(rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"us-west1\", job=\"executor-workflows\"}[60m])) > 0)* 60 * 60 > 10)",
+          "expr": "(sum(rate(buildbuddy_remote_execution_recycle_runner_requests{region=~\"$region\", job=\"executor-workflows\", status=\"hit\"}[60m])) * 60 * 60)\n/\n((sum(rate(buildbuddy_remote_execution_recycle_runner_requests{region=~\"$region\", job=\"executor-workflows\"}[60m])) > 0)* 60 * 60 > 10)",
           "legendFormat": "runner reuse rate (1h window, where at least 10 workflows executed)",
           "range": true,
           "refId": "A"
@@ -126,7 +126,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "clamp_max(\n  sum(\n    (up{region=\"us-west1\", job=\"executor-workflows\"} offset 3m)\n      unless\n     up{region=\"us-west1\", job=\"executor-workflows\"}\n  )\n    /\n  sum(up{region=\"us-west1\", job=\"executor-workflows\"}),\n1)",
+          "expr": "clamp_max(\n  sum(\n    (up{region=~\"$region\", job=\"executor-workflows\"} offset 3m)\n      unless\n     up{region=~\"$region\", job=\"executor-workflows\"}\n  )\n    /\n  sum(up{region=~\"$region\", job=\"executor-workflows\"}),\n1)",
           "hide": false,
           "legendFormat": "event: fraction of executors shutdown (approx)",
           "range": true,
@@ -234,7 +234,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le, stage) (\n\t     rate(buildbuddy_firecracker_stage_duration_usec_bucket{job=\"executor-workflows\"}[10m])\n\t    )\n) / 1e6 / 60",
+          "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le, stage) (\n\t     rate(buildbuddy_firecracker_stage_duration_usec_bucket{region=~\"$region\", job=\"executor-workflows\"}[10m])\n\t    )\n) / 1e6 / 60",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -314,7 +314,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{file_name=\"memory\", job=\"executor-workflows\"}[5m])) by (le)",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{region=~\"$region\", file_name=\"memory\", job=\"executor-workflows\"}[5m])) by (le)",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
@@ -396,7 +396,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{file_name=\"rootfs\", job=\"executor-workflows\"}[5m])) by (le)",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{region=~\"$region\", file_name=\"rootfs\", job=\"executor-workflows\"}[5m])) by (le)",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
@@ -495,7 +495,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (file_name) (rate(buildbuddy_firecracker_snapshot_remote_cache_upload_size_bytes[10m]))",
+          "expr": "sum by (file_name) (rate(buildbuddy_firecracker_snapshot_remote_cache_upload_size_bytes{region=~\"$region\"}[10m]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -589,7 +589,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (region)(increase(buildbuddy_remote_execution_file_cache_added_file_size_bytes_sum{ job=\"executor-workflows\"}[5m])) / 1000000000",
+          "expr": "sum(increase(buildbuddy_remote_execution_file_cache_added_file_size_bytes_sum{region=~\"$region\", job=\"executor-workflows\"}[5m])) / 1000000000",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -686,7 +686,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (pod_name) (buildbuddy_firecracker_cow_snapshot_memory_mapped_bytes{job=\"executor-workflows\"})",
+          "expr": "sum by (pod_name) (buildbuddy_firecracker_cow_snapshot_memory_mapped_bytes{region=~\"$region\", job=\"executor-workflows\"})",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -780,7 +780,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": " histogram_quantile(0.95, \n    sum by(le, op, region) (\n      rate(buildbuddy_remote_execution_file_cache_op_latency_usec_bucket{job=\"executor-workflows\"}[5m])\n    )\n  )",
+          "expr": " histogram_quantile(0.95, \n    sum by(le, op) (\n      rate(buildbuddy_remote_execution_file_cache_op_latency_usec_bucket{region=~\"$region\", job=\"executor-workflows\"}[5m])\n    )\n  )",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -860,7 +860,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{job=\"executor-workflows\", chunk_source=\"unmapped\"}[5m])) by (le) ",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\", job=\"executor-workflows\", chunk_source=\"unmapped\"}[5m])) by (le) ",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
@@ -957,7 +957,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le) (\n\t     rate(buildbuddy_firecracker_exec_dial_duration_usec_bucket[3m])\n\t    )\n) / 1e6",
+          "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le) (\n\t     rate(buildbuddy_firecracker_exec_dial_duration_usec_bucket{region=~\"$region\"}[3m])\n\t    )\n) / 1e6",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -1068,7 +1068,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le, file_name, name) (\n\t     rate(buildbuddy_firecracker_cow_snapshot_chunk_operation_duration_usec_bucket[3m])\n\t    )\n) / 1e6",
+          "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le, file_name, name) (\n\t     rate(buildbuddy_firecracker_cow_snapshot_chunk_operation_duration_usec_bucket{region=~\"$region\"}[3m])\n\t    )\n) / 1e6",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -1080,7 +1080,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(\n     0.95,\n     sum by(le, stage) (\n        rate(buildbuddy_firecracker_cow_snapshot_page_fault_total_duration_usec_bucket[3m])\n       )\n) / 1e6",
+          "expr": "histogram_quantile(\n     0.95,\n     sum by(le, stage) (\n        rate(buildbuddy_firecracker_cow_snapshot_page_fault_total_duration_usec_bucket{region=~\"$region\"}[3m])\n       )\n) / 1e6",
           "hide": false,
           "instant": false,
           "legendFormat": "__auto",
@@ -1162,7 +1162,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{job=\"executor-workflows\", chunk_source=\"remote_cache\"}[5m])) by (le)",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\", job=\"executor-workflows\", chunk_source=\"remote_cache\"}[5m])) by (le)",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
@@ -1171,104 +1171,6 @@
       ],
       "title": "% of Chunks Fetched from Remote Cache",
       "type": "heatmap"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "vm"
-      },
-      "description": "Time to initialize a single chunk (fetch the data and mmap it)",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 48
-      },
-      "id": 21,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.6.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "expr": "histogram_quantile(\n     0.95,\n     sum by(le, chunk_source) (\n        rate(buildbuddy_firecracker_cow_snapshot_init_chunk_duration_usec_bucket[3m])\n       )\n) / 1e6",
-          "instant": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Chunk Initialization Duration (sec)",
-      "type": "timeseries"
     },
     {
       "datasource": {
@@ -1341,7 +1243,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{job=\"executor-workflows\", chunk_source=\"local_filecache\"}[5m])) by (le) ",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\",  job=\"executor-workflows\", chunk_source=\"local_filecache\"}[5m])) by (le) ",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
@@ -1359,7 +1261,27 @@
     "file:workflow.json"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {
+          "text": "us-sjc",
+          "value": "us-sjc"
+        },
+        "definition": "label_values(up,region)",
+        "multi": true,
+        "name": "region",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(up,region)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      }
+    ]
   },
   "time": {
     "from": "now-6h",
