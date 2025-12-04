@@ -241,6 +241,27 @@ func (c *ociFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 	}, nil
 }
 
+func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	blobRef, err := gcrname.ParseReference(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid blob reference %q: %s", req.GetRef(), err)
+	}
+
+	remoteOpts := c.getRemoteOpts(ctx, req.GetCredentials())
+	desc, err := remote.Head(blobRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access blob: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch blob metadata from remote registry: %s", err)
+	}
+
+	return &ofpb.FetchBlobMetadataResponse{
+		Size:      desc.Size,
+		MediaType: string(desc.MediaType),
+	}, nil
+}
+
 func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
 	blobRef, err := gcrname.NewDigest(req.GetRef())
 	if err != nil {
@@ -276,8 +297,6 @@ func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobReq
 	}, nil
 }
 
-// fetchBlobStreamClient implements grpc.ServerStreamingClient[ofpb.FetchBlobResponse]
-// by wrapping an io.ReadCloser and chunking the data.
 type fetchBlobStreamClient struct {
 	ctx    context.Context
 	reader io.ReadCloser
@@ -311,27 +330,6 @@ func (s *fetchBlobStreamClient) Trailer() metadata.MD { return nil }
 func (s *fetchBlobStreamClient) RecvMsg(m any) error  { panic("not implemented") }
 func (s *fetchBlobStreamClient) SendMsg(m any) error  { panic("not implemented") }
 
-func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
-	blobRef, err := gcrname.ParseReference(req.GetRef())
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid blob reference %q: %s", req.GetRef(), err)
-	}
-
-	remoteOpts := c.getRemoteOpts(ctx, req.GetCredentials())
-	desc, err := remote.Head(blobRef, remoteOpts...)
-	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("not authorized to access blob: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not fetch blob metadata from remote registry: %s", err)
-	}
-
-	return &ofpb.FetchBlobMetadataResponse{
-		Size:      desc.Size,
-		MediaType: string(desc.MediaType),
-	}, nil
-}
-
 // ReadBlob provides a convenient io.ReadCloser interface for fetching blobs.
 // Callers should prefer this over FetchBlob when they need an io.Reader.
 func ReadBlob(ctx context.Context, client ofpb.OCIFetcherClient, ref string, creds *rgpb.Credentials) (io.ReadCloser, error) {
@@ -345,7 +343,6 @@ func ReadBlob(ctx context.Context, client ofpb.OCIFetcherClient, ref string, cre
 	return &blobReader{stream: stream}, nil
 }
 
-// blobReader wraps a FetchBlob stream as an io.ReadCloser.
 type blobReader struct {
 	stream grpc.ServerStreamingClient[ofpb.FetchBlobResponse]
 	buf    []byte // leftover data from last Recv
