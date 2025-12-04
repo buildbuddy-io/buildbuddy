@@ -11,6 +11,7 @@ bazel_pkg_tar(
         "8.2.1",
         "8.3.1",
         "8.4.2",
+        "9.0.0rc3",
     ],
     visibility = ["//visibility:public"],
 )

@@ -193,7 +193,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     http_file(
         name = "io_bazel_bazel-8.4.2-darwin-arm64",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/8.4.2/bazel-8.4.2-darwin-arm64"],
-        sha256 = "ce73346274c379f77880db8bd8b9c8569885fe56f19386173760949da9078df0",
+        sha256 = "45e9388abf21d1107e146ea366ad080eb93cb6a5f3a4a3b048f78de0bc3faffa",
         executable = True,
     )
     http_file(
@@ -212,6 +212,30 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "io_bazel_bazel-8.4.2-linux-x86_64",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/8.4.2/bazel-8.4.2-linux-x86_64"],
         sha256 = "4dc8e99dfa802e252dac176d08201fd15c542ae78c448c8a89974b6f387c282c",
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-9.0.0rc3-darwin-arm64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.0.0rc3/bazel-9.0.0rc3-darwin-arm64"],
+        sha256 = "fa1d0189a8ab1a0c20a402e9d2a9480720e82364a47b461f8d6c15dcb8632f56",
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-9.0.0rc3-darwin-x86_64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.0.0rc3/bazel-9.0.0rc3-darwin-x86_64"],
+        sha256 = "eb6973ad87d2d0b85b0d35752f4bc30de02fa190aa6ca76c30270f55c0427723",
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-9.0.0rc3-linux-arm64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.0.0rc3/bazel-9.0.0rc3-linux-arm64"],
+        sha256 = "a957c3a39813ff3f09103165370bcfbeb48e62ae512547024b68c6541e2c538b",
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-9.0.0rc3-linux-x86_64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.0.0rc3/bazel-9.0.0rc3-linux-x86_64"],
+        sha256 = "de62d93b6d58b344c382cb374f940117e75d9a37e047feffd1803e29022a507d",
         executable = True,
     )
     http_file(
