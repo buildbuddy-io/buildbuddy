@@ -5,9 +5,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file"
 # When changing this version, a new release of podman-static may be needed.
 # See dockerfiles/executor_image/README.md for instructions.
 # The checksums below will also need to be updated.
-PODMAN_VERSION = "v5.5.0"
-PODMAN_STATIC_SHA256_AMD64 = "8ce959cd2b0ea68ae8ac7ccbb181cad59504086d54d4c9521954ee49dae013eb"
-PODMAN_STATIC_SHA256_ARM64 = "ef1e84ab80ee5d78d4d2e59e128ff963038f39e1e4259a83e08d7c8f85faf90d"
+PODMAN_VERSION = "v5.7.0"
+PODMAN_STATIC_SHA256_AMD64 = "6a1c06b78d7dad15d8d7155a180874939a04bd39ce2f64726c7f11142ab7aa7d"
+PODMAN_STATIC_SHA256_ARM64 = "703ffad8972aa2db70a173c80804a88185e6c2dc8a88a247a8ebffeac424b0ba"
 
 # Manually created
 def install_static_dependencies(workspace_name = "buildbuddy"):
@@ -332,8 +332,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
             'filegroup(name = "ctr.bin", srcs = ["ctr"])',
         ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v2.1.1/containerd-2.1.1-linux-amd64.tar.gz"],
-        sha256 = "918e88fd393c28c89424e6535df0546ca36c1dfa7d8a5d685dee70b449380a9b",
+        urls = ["https://github.com/containerd/containerd/releases/download/v2.2.0/containerd-2.2.0-linux-amd64.tar.gz"],
+        sha256 = "b9626a94ab93b00bcbcbf13d98deef972c6fb064690e57940632df54ad39ee71",
     )
     http_archive(
         name = "com_github_containerd_containerd-linux-arm64",
@@ -344,8 +344,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
             'filegroup(name = "ctr.bin", srcs = ["ctr"])',
         ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v2.1.1/containerd-2.1.1-linux-arm64.tar.gz"],
-        sha256 = "4e3c8c0c2e61438bb393a9ea6bb94f8f56b559ec3243d7b1a2943117bca4dcb4",
+        urls = ["https://github.com/containerd/containerd/releases/download/v2.2.0/containerd-2.2.0-linux-arm64.tar.gz"],
+        sha256 = "8805c2123d3b7c7ee2030e9f8fc07a1167d8a3f871d6a7d7ec5d1deb0b51a4a7",
     )
 
     http_archive(
@@ -358,15 +358,15 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
 
     http_file(
         name = "com_github_opencontainers_runc_runc-linux-amd64",
-        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.0/runc.amd64"],
-        sha256 = "028986516ab5646370edce981df2d8e8a8d12188deaf837142a02097000ae2f2",
+        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.3/runc.amd64"],
+        sha256 = "8781ab9f71c12f314d21c8e85f13ca1a82d90cf475aa5131a7b543fcc5487543",
         downloaded_file_path = "runc",
         executable = True,
     )
     http_file(
         name = "com_github_opencontainers_runc_runc-linux-arm64",
-        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.0/runc.arm64"],
-        sha256 = "85c5e4e4f72e442c8c17bac07527cd4f961ee48e4f2b71797f7533c94f4a52b9",
+        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.3/runc.arm64"],
+        sha256 = "3c9a8e9e6dafd00db61f4611692447ebab4a56388bae4f82192aed67b66df712",
         downloaded_file_path = "runc",
         executable = True,
     )
