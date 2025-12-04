@@ -502,7 +502,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(interfaces_interface_state_counters_in_pkts{region=\"${region}\", interface_name!~\"Port-Channel.*\"}[1m])) by (source) * 8",
+          "expr": "sum(rate(interfaces_interface_state_counters_in_pkts{region=\"${region}\", interface_name!~\"Port-Channel.*\"}[1m])) by (source)",
           "legendFormat": "ingress {{source}}",
           "range": true,
           "refId": "A"
@@ -513,7 +513,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(interfaces_interface_state_counters_out_pkts{region=\"${region}\", interface_name!~\"Port-Channel.*\"}[1m])) by (source) * 8",
+          "expr": "sum(rate(interfaces_interface_state_counters_out_pkts{region=\"${region}\", interface_name!~\"Port-Channel.*\"}[1m])) by (source)",
           "hide": false,
           "instant": false,
           "legendFormat": "egress {{source}}",
@@ -612,7 +612,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(interfaces_interface_state_counters_in_broadcast_pkts{region=\"${region}\", interface_name!~\"Port-Channel.*\"}[1m])) by (source) * 8",
+          "expr": "sum(rate(interfaces_interface_state_counters_in_broadcast_pkts{region=\"${region}\", interface_name!~\"Port-Channel.*\"}[1m])) by (source)",
           "legendFormat": "ingress {{source}}",
           "range": true,
           "refId": "A"
@@ -623,7 +623,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(interfaces_interface_state_counters_out_broadcast_pkts{region=\"${region}\", interface_name!~\"Port-Channel.*\"}[1m])) by (source) * 8",
+          "expr": "sum(rate(interfaces_interface_state_counters_out_broadcast_pkts{region=\"${region}\", interface_name!~\"Port-Channel.*\"}[1m])) by (source)",
           "hide": false,
           "instant": false,
           "legendFormat": "egress {{source}}",
@@ -1003,7 +1003,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(interfaces_interface_state_counters_in_pkts{region=\"${region}\", source=\"${device}\"}[1m])) by (interface_name) * 8",
+              "expr": "sum(rate(interfaces_interface_state_counters_in_pkts{region=\"${region}\", source=\"${device}\"}[1m])) by (interface_name)",
               "legendFormat": "ingress {{interface_name}}",
               "range": true,
               "refId": "A"
@@ -1014,7 +1014,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(interfaces_interface_state_counters_out_pkts{region=\"${region}\", source=\"${device}\"}[1m])) by (interface_name) * 8",
+              "expr": "sum(rate(interfaces_interface_state_counters_out_pkts{region=\"${region}\", source=\"${device}\"}[1m])) by (interface_name)",
               "hide": false,
               "instant": false,
               "legendFormat": "egress {{interface_name}}",
@@ -1113,7 +1113,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(interfaces_interface_state_counters_in_broadcast_pkts{region=\"${region}\", source=\"${device}\"}[1m])) by (interface_name) * 8",
+              "expr": "sum(rate(interfaces_interface_state_counters_in_broadcast_pkts{region=\"${region}\", source=\"${device}\"}[1m])) by (interface_name)",
               "legendFormat": "ingress {{interface_name}}",
               "range": true,
               "refId": "A"
@@ -1124,7 +1124,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(interfaces_interface_state_counters_out_broadcast_pkts{region=\"${region}\", source=\"${device}\"}[1m])) by (interface_name) * 8",
+              "expr": "sum(rate(interfaces_interface_state_counters_out_broadcast_pkts{region=\"${region}\", source=\"${device}\"}[1m])) by (interface_name)",
               "hide": false,
               "instant": false,
               "legendFormat": "egress {{interface_name}}",
