@@ -42,6 +42,12 @@ type ociFetcherClient struct {
 	mirrors           []interfaces.MirrorConfig
 }
 
+// NewClient constructs a new OCI Fetcher client.
+// For now, this client is "thick", meaning that it actually fetches blobs and manifests from remote OCI registries.
+// Eventually, this functionality will live in an OCIFetcherServer and the client will simply make gRPC calls
+// to that server.
+// TODO(dan): Stop passing private IPs, mirror config to client once server owns the fetching logic.
+// TODO(dan): Update this comment once server is implemented!
 func NewClient(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) ofpb.OCIFetcherClient {
 	return &ociFetcherClient{
 		allowedPrivateIPs: allowedPrivateIPs,
