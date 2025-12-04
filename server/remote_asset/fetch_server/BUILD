@@ -19,6 +19,7 @@ go_library(
         "//server/util/prefix",
         "//server/util/scratchspace",
         "//server/util/status",
+        "//third_party/singleflight",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_genproto_googleapis_rpc//status",

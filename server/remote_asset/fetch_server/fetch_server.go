@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	cachepb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -49,6 +51,18 @@ const (
 
 	maxHTTPTimeout = 60 * time.Minute
 )
+
+type fetchDedupeKey struct {
+	instanceName     string
+	uri              string
+	storageFunc      repb.DigestFunction_Value
+	checksumFunc     repb.DigestFunction_Value
+	expectedChecksum string
+	headerKey        string
+	canonicalID      string
+}
+
+var fetchDeduper singleflight.Group[fetchDedupeKey, *repb.Digest]
 
 // makeUnsupportedQualifiersErrStatus creates a gRPC status error that includes a list of unsupported qualifiers.
 func makeUnsupportedQualifiersErrStatus(qualifierNames []string) error {
@@ -138,6 +152,36 @@ func (s *FetchServer) computeRequestTimeout(ctx context.Context, protoTimeout *d
 		timeout = maxHTTPTimeout
 	}
 	return timeout
+}
+
+// headerDedupeKey returns a deterministic string representation of headers so
+// that requests with equivalent headers dedupe correctly even if map order
+// differs.
+func headerDedupeKey(header http.Header) string {
+	if len(header) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(header))
+	for k := range header {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteString(":")
+		vals := append([]string(nil), header[k]...)
+		sort.Strings(vals)
+		for i, v := range vals {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			b.WriteString(v)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 // parseChecksumQualifier returns a digest function and digest hash
@@ -275,22 +319,40 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				}
 			}
 		}
-		blobDigest, err := mirrorToCache(
+		key := fetchDedupeKey{
+			instanceName:     req.GetInstanceName(),
+			uri:              uri,
+			storageFunc:      storageFunc,
+			checksumFunc:     checksumFunc,
+			expectedChecksum: expectedChecksum,
+			headerKey:        headerDedupeKey(header),
+			canonicalID:      canonicalID,
+		}
+
+		blobDigest, shared, err := fetchDeduper.Do(
 			ctx,
-			bsClient,
-			req.GetInstanceName(),
-			httpClient,
-			uri,
-			header,
-			storageFunc,
-			checksumFunc,
-			expectedChecksum,
-		)
+			key,
+			func(sfCtx context.Context) (*repb.Digest, error) {
+				return mirrorToCache(
+					sfCtx,
+					bsClient,
+					req.GetInstanceName(),
+					httpClient,
+					uri,
+					header,
+					storageFunc,
+					checksumFunc,
+					expectedChecksum,
+				)
+			})
 		if err != nil {
 			lastFetchErr = fmt.Errorf("%s: %w", uri, err)
 			lastFetchUri = uri
 			log.CtxWarningf(ctx, "Failed to mirror %q to cache: %s", uri, err)
 			continue
+		}
+		if shared {
+			log.CtxDebugf(ctx, "Fetch deduped for %q", uri)
 		}
 		p.writeCanonicalActionResult(ctx, canonicalID, blobDigest, req.GetInstanceName(), storageFunc, checksumFunc, expectedChecksum)
 		return &rapb.FetchBlobResponse{

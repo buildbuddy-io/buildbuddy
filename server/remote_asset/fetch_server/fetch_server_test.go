@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -428,6 +430,57 @@ func TestSubsequentRequestCacheHit(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConcurrentRequestsAreDeduped(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	require.NoError(t, scratchspace.Init())
+	clientConn := runFetchServer(ctx, t, te)
+	fetchClient := rapb.NewFetchClient(clientConn)
+
+	checksumDigest, err := digest.Compute(bytes.NewReader([]byte(content)), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	qualifiers := []*rapb.Qualifier{
+		{
+			Name:  fetch_server.ChecksumQualifier,
+			Value: checksumQualifierFromContent(t, checksumDigest.GetHash(), repb.DigestFunction_SHA256),
+		},
+	}
+
+	var upstreamHits atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits.Add(1)
+		time.Sleep(100 * time.Millisecond)
+		fmt.Fprint(w, content)
+	}))
+	defer ts.Close()
+
+	request := &rapb.FetchBlobRequest{
+		Uris:           []string{ts.URL},
+		DigestFunction: repb.DigestFunction_SHA256,
+		Qualifiers:     qualifiers,
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			resp, err := fetchClient.FetchBlob(ctx, proto.Clone(request).(*rapb.FetchBlobRequest))
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			assert.Equal(t, int32(0), resp.GetStatus().Code)
+			assert.Equal(t, checksumDigest.GetHash(), resp.GetBlobDigest().GetHash())
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+
+	assert.Equal(t, int32(1), upstreamHits.Load(), "singleflight should dedupe concurrent fetches to the same URI")
 }
 
 func TestCanonicalIDUsesActionCache(t *testing.T) {
