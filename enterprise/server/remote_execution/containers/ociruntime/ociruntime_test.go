@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
@@ -1450,6 +1451,8 @@ func TestPathSanitization(t *testing.T) {
 			testfs.WriteAllFileContents(t, cacheRoot, map[string]string{
 				"test-link-target": "Hello",
 			})
+			err := ocifetcher.RegisterClient(te)
+			require.NoError(t, err)
 			resolver, err := oci.NewResolver(te)
 			require.NoError(t, err)
 			require.NotNil(t, resolver)
@@ -1859,6 +1862,8 @@ func TestPullImage(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
+			err := ocifetcher.RegisterClient(te)
+			require.NoError(t, err)
 			resolver, err := oci.NewResolver(te)
 			require.NoError(t, err)
 			require.NotNil(t, resolver)
