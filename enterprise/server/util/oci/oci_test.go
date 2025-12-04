@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -220,6 +221,10 @@ func TestCredentialsToProto(t *testing.T) {
 }
 
 func newResolver(t *testing.T, te *testenv.TestEnv) *oci.Resolver {
+	if te.GetOCIFetcherClient() == nil {
+		err := ocifetcher.RegisterClient(te)
+		require.NoError(t, err)
+	}
 	r, err := oci.NewResolver(te)
 	require.NoError(t, err)
 	return r

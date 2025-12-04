@@ -219,6 +219,9 @@ type Resolver struct {
 }
 
 func NewResolver(env environment.Env) (*Resolver, error) {
+	if env.GetOCIFetcherClient() == nil {
+		return nil, status.FailedPreconditionError("OCIFetcherClient is required")
+	}
 	allowedPrivateIPNets, err := ocifetcher.ParseAllowedPrivateIPs()
 	if err != nil {
 		return nil, err
