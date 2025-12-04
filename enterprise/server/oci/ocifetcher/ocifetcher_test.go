@@ -25,7 +25,7 @@ func localhostIPs(t *testing.T) []*net.IPNet {
 	return []*net.IPNet{ipv4Net, ipv6Net}
 }
 
-func newTestClient(t *testing.T) *ocifetcher.Client {
+func newTestClient(t *testing.T) ofpb.OCIFetcherClient {
 	return ocifetcher.NewClient(localhostIPs(t), nil)
 }
 
@@ -282,7 +282,7 @@ func TestReadBlob_WithInvalidCredentials(t *testing.T) {
 	blobRef := blobRefForLayer(t, imageName, firstLayer(t, img))
 
 	client := newTestClient(t)
-	_, err = ocifetcher.ReadBlob(context.Background(), client, blobRef, &rgpb.Credentials{
+	_, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, &rgpb.Credentials{
 		Username: "wronguser",
 		Password: "wrongpass",
 	})
