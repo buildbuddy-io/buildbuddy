@@ -144,8 +144,7 @@ func (s *FetchServer) computeRequestTimeout(ctx context.Context, protoTimeout *d
 func parseChecksumQualifier(qualifier *rapb.Qualifier) (repb.DigestFunction_Value, string, error) {
 	for _, digestFunc := range digest.SupportedDigestFunctions() {
 		pr := fmt.Sprintf("%s-", strings.ToLower(repb.DigestFunction_Value_name[int32(digestFunc)]))
-		if strings.HasPrefix(qualifier.GetValue(), pr) {
-			b64hash := strings.TrimPrefix(qualifier.GetValue(), pr)
+		if b64hash, found := strings.CutPrefix(qualifier.GetValue(), pr); found {
 			decodedHash, err := base64.StdEncoding.DecodeString(b64hash)
 			if err != nil {
 				return repb.DigestFunction_UNKNOWN, "", status.FailedPreconditionErrorf("Error decoding qualifier %q: %s", qualifier.GetName(), err.Error())
@@ -180,22 +179,21 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			}
 			continue
 		}
-		if strings.HasPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier) {
+		if httpHeader, found := strings.CutPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier); found {
 			sharedHeader.Add(
-				strings.TrimPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier),
+				httpHeader,
 				qualifier.GetValue(),
 			)
 			continue
 		}
-		if strings.HasPrefix(qualifier.GetName(), BazelHttpHeaderUrlPrefixQualifier) {
-			idxAndKey := strings.TrimPrefix(qualifier.GetName(), BazelHttpHeaderUrlPrefixQualifier)
-			halves := strings.Split(idxAndKey, ":")
+		if httpHeaderUrl, found := strings.CutPrefix(qualifier.GetName(), BazelHttpHeaderUrlPrefixQualifier); found {
+			halves := strings.Split(httpHeaderUrl, ":")
 			if len(halves) != 2 {
 				// The http_header_url qualifier should be in the form
 				//   http_header_url:<url_index>:<header_name>
 				// Note: Avoid raising log level above DEBUG.
 				// The header name + value may contains sensitive information.
-				log.CtxDebugf(ctx, "Invalid http_header_url qualifier: %s", idxAndKey)
+				log.CtxDebugf(ctx, "Invalid http_header_url qualifier: %s", httpHeaderUrl)
 				continue
 			}
 			uriIndex, err := strconv.Atoi(halves[0])
