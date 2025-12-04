@@ -31,7 +31,6 @@ var enableGetTreeCaching = flag.Bool("cache_proxy.enable_get_tree_caching", fals
 
 type CASServerProxy struct {
 	supportsEncryption func(context.Context) bool
-	atimeUpdater       interfaces.AtimeUpdater
 	authenticator      interfaces.Authenticator
 	local              repb.ContentAddressableStorageServer
 	remote             repb.ContentAddressableStorageClient
@@ -47,10 +46,6 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env) (*CASServerProxy, error) {
-	atimeUpdater := env.GetAtimeUpdater()
-	if atimeUpdater == nil {
-		return nil, fmt.Errorf("An AtimeUpdater is required to enable the ContentAddressableStorageServerProxy")
-	}
 	authenticator := env.GetAuthenticator()
 	if authenticator == nil {
 		return nil, fmt.Errorf("An Authenticator is required to enable the ContentAddressableStorageServerProxy")
@@ -65,7 +60,6 @@ func New(env environment.Env) (*CASServerProxy, error) {
 	}
 	proxy := CASServerProxy{
 		supportsEncryption: remote_crypter.SupportsEncryption(env),
-		atimeUpdater:       atimeUpdater,
 		authenticator:      authenticator,
 		local:              local,
 		remote:             remote,
@@ -166,8 +160,7 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	defer spn.End()
 	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.Digests)))
 
-	// Store auth headers in context so they can be reused between the
-	// atime_updater and the hit_tracker_client.
+	// Store auth headers in context for reuse in the hit_tracker_client.
 	ctx = authutil.ContextWithCachedAuthHeaders(ctx, s.authenticator)
 
 	mergedResp := repb.BatchReadBlobsResponse{}
@@ -193,7 +186,6 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 			mergedDigests = append(mergedDigests, resp.Digest)
 		}
 	}
-	s.atimeUpdater.Enqueue(ctx, req.InstanceName, mergedDigests, req.DigestFunction)
 
 	digestsInLocalResp := len(mergedResp.Responses)
 	bytesInLocalResp := bytesInResponse(&mergedResp)

@@ -224,7 +224,8 @@ type sizeUpdate struct {
 }
 
 type accessTimeUpdate struct {
-	key filestore.PebbleKey
+	key         filestore.PebbleKey
+	authHeaders map[string][]string
 }
 
 // PebbleCache implements the cache interface by storing metadata in a pebble
@@ -899,7 +900,7 @@ func (p *PebbleCache) updateDatabaseVersions(minVersion, maxVersion filestore.Pe
 	return nil
 }
 
-func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
+func (p *PebbleCache) updateAtime(ctx context.Context, key filestore.PebbleKey) error {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return err
@@ -926,16 +927,7 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
 		return nil
 	}
-
 	newAtime := p.clock.Now()
-
-	if atime.After(newAtime) {
-		// Atime updates are queued -- if an object was overwritten
-		// before the atime update is processed, and has a later
-		// atime, don't attempt to update it.
-		return nil
-	}
-
 	lbls := prometheus.Labels{
 		metrics.PartitionID:    md.GetFileRecord().GetIsolation().GetPartitionId(),
 		metrics.CacheNameLabel: p.name,
@@ -961,7 +953,18 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 		return err
 	}
 	metrics.PebbleCacheAtimeUpdateCount.With(lbls).Inc()
-	return db.Set(keyBytes, protoBytes, pebble.NoSync)
+	if err := db.Set(keyBytes, protoBytes, pebble.NoSync); err != nil {
+		return err
+	}
+
+	// If there are any atime updaters registered, call them now.
+	d := md.GetFileRecord().GetDigest()
+	instanceName := md.GetFileRecord().GetIsolation().GetRemoteInstanceName()
+	digestFunction := md.GetFileRecord().GetDigestFunction()
+	for _, updater := range p.env.GetAtimeUpdaters() {
+		updater.Enqueue(ctx, instanceName, []*repb.Digest{d}, digestFunction)
+	}
+	return nil
 }
 
 func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
@@ -1112,11 +1115,13 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 	return p.updateDatabaseVersions(minVersion, maxVersion)
 }
 
+// TODO(iain): i think this is copying auth headers in the wrong place.
 func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
 	for {
 		select {
 		case accessTimeUpdate := <-p.accesses:
-			if err := p.updateAtime(accessTimeUpdate.key); err != nil {
+			ctx := authutil.AddAuthHeadersToContext(context.Background(), accessTimeUpdate.authHeaders, p.env.GetAuthenticator())
+			if err := p.updateAtime(ctx, accessTimeUpdate.key); err != nil {
 				log.Warningf("[%s] Error updating atime: %s", p.name, err)
 			}
 		case <-quitChan:
@@ -1124,7 +1129,8 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
 			for {
 				select {
 				case u := <-p.accesses:
-					if err := p.updateAtime(u.key); err != nil {
+					ctx := authutil.AddAuthHeadersToContext(context.Background(), u.authHeaders, p.env.GetAuthenticator())
+					if err := p.updateAtime(ctx, u.key); err != nil {
 						log.Warningf("[%s] Error updating atime: %s", p.name, err)
 					}
 				default:
@@ -1709,7 +1715,7 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, r *r
 		}
 	}
 
-	p.sendAtimeUpdate(key, md.GetLastAccessUsec())
+	p.sendAtimeUpdate(ctx, key, md.GetLastAccessUsec())
 	return nil
 }
 
@@ -1796,7 +1802,7 @@ func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op
 	p.edits <- up
 }
 
-func (p *PebbleCache) sendAtimeUpdate(key filestore.PebbleKey, lastAccessUsec int64) {
+func (p *PebbleCache) sendAtimeUpdate(ctx context.Context, key filestore.PebbleKey, lastAccessUsec int64) {
 	atime := time.UnixMicro(lastAccessUsec)
 
 	metrics.PebbleCacheAtimeDeltaWhenRead.With(prometheus.Labels{
@@ -1807,7 +1813,10 @@ func (p *PebbleCache) sendAtimeUpdate(key filestore.PebbleKey, lastAccessUsec in
 		return
 	}
 
-	up := &accessTimeUpdate{key}
+	up := &accessTimeUpdate{
+		key:         key,
+		authHeaders: authutil.GetAuthHeaders(ctx),
+	}
 
 	// If the atimeBufferSize is 0, non-blocking writes do not make sense,
 	// so in that case just do a regular channel send. Otherwise; use a non-
@@ -3226,6 +3235,8 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 		return nil, err
 	}
 
+	p.sendAtimeUpdate(ctx, key, fileMetadata.GetLastAccessUsec())
+
 	// If this object was not chunked, and is somehow stored as a zero-
 	// length file, pretend it does not exist.
 	md := fileMetadata.GetStorageMetadata()
@@ -3288,7 +3299,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 		}
 		return nil, err
 	}
-	p.sendAtimeUpdate(key, fileMetadata.GetLastAccessUsec())
+	p.sendAtimeUpdate(ctx, key, fileMetadata.GetLastAccessUsec())
 
 	if !rawStorage {
 		if shouldDecrypt {
