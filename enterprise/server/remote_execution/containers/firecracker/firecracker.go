@@ -3267,7 +3267,7 @@ func getCPUID() *fcpb.CPUID {
 	return &fcpb.CPUID{
 		VendorId: int64(cpuid.CPU.VendorID),
 		Family:   int64(cpuid.CPU.Family),
-		Model:    int64(cpuid.CPU.Model),
+		// Don't include the model number, so that different models can share snapshots.
 	}
 }
 
