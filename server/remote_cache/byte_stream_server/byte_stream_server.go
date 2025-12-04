@@ -6,6 +6,8 @@ import (
 	"hash"
 	"io"
 
+	"google.golang.org/grpc/peer"
+
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -20,12 +22,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/grpc/peer"
+
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -281,8 +283,11 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 	if s.cache.SupportsCompressor(r.GetCompressor()) {
 		casRN.SetCompressor(r.GetCompressor())
 	}
+
 	compressData := false
-	if casRN.GetCompressor() == repb.Compressor_IDENTITY && s.cache.SupportsCompressor(repb.Compressor_ZSTD) && r.GetDigest().GetSizeBytes() >= 100 {
+	requestIsAboveCompressionThreshold := r.GetDigest().GetSizeBytes() >= 100
+	cacheSupportsCompression := s.cache.SupportsCompressor(repb.Compressor_ZSTD)
+	if casRN.GetCompressor() == repb.Compressor_IDENTITY && cacheSupportsCompression && requestIsAboveCompressionThreshold {
 		casRN.SetCompressor(repb.Compressor_ZSTD)
 		compressData = true
 	}
@@ -323,45 +328,99 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		return nil, err
 	}
 	ws.checksum = NewChecksum(hasher, r.GetDigestFunction())
+
+	// Build the writer pipeline based on compression requirements.
+	// This may wrap the writer or checksum in a compressor or decompressor.
+	ws.writer, ws.bufioCloser, err = buildWriterPipeline(writerPipelineConfig{
+		committedWriteCloser: committedWriteCloser,
+		checksum:             ws.checksum,
+		bufferPool:           s.bufferPool,
+		digestSize:           r.GetDigest().GetSizeBytes(),
+		compression: compressionWrapperConfig{
+			requestIsCompressed:      r.GetCompressor() == repb.Compressor_ZSTD,
+			cacheSupportsCompression: cacheSupportsCompression,
+			shouldCompressData:       compressData,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return ws, nil
+}
+
+type compressionWrapperConfig struct {
+	requestIsCompressed      bool
+	cacheSupportsCompression bool
+	shouldCompressData       bool
+}
+
+type writerPipelineConfig struct {
+	committedWriteCloser interfaces.CommittedWriteCloser
+	checksum             *Checksum
+	bufferPool           *bytebufferpool.VariableSizePool
+	digestSize           int64
+	compression          compressionWrapperConfig
+}
+
+func buildWriterPipeline(cfg writerPipelineConfig) (writer io.Writer, bufioCloser io.Closer, err error) {
+	treatment := selectCompressionWrapperTreatment(cfg.compression)
+	return treatment(cfg)
+}
+
+func selectCompressionWrapperTreatment(compression compressionWrapperConfig) func(writerPipelineConfig) (io.Writer, io.Closer, error) {
+	switch {
+	case compression.requestIsCompressed && compression.cacheSupportsCompression:
+		return wrapChecksumWithDecompressor
+	case compression.requestIsCompressed && !compression.cacheSupportsCompression:
+		return wrapWriterWithDecompressor
+	case !compression.requestIsCompressed && compression.shouldCompressData:
+		return wrapWriterWithCompressor
+	default:
+		return noCompressionWrapper
+	}
+}
+
+func wrapChecksumWithDecompressor(cfg writerPipelineConfig) (io.Writer, io.Closer, error) {
+	// If the cache supports compression, write the already compressed
+	// bytes to the cache with committedWriteCloser but wrap the
+	// checksum in a decompressor to validate the decompressed data.
+	decompressingChecksum, err := compression.NewZstdDecompressor(cfg.checksum)
+	if err != nil {
+		return nil, nil, err
+	}
+	writer := io.MultiWriter(cfg.committedWriteCloser, decompressingChecksum)
+	return writer, decompressingChecksum, nil
+}
+
+func wrapWriterWithDecompressor(cfg writerPipelineConfig) (io.Writer, io.Closer, error) {
+	// If the cache doesn't support compression, wrap both the checksum and cache writer in a decompressor
+	baseWriter := io.MultiWriter(cfg.committedWriteCloser, cfg.checksum)
+	decompressor, err := compression.NewZstdDecompressor(baseWriter)
+	if err != nil {
+		return nil, nil, err
+	}
+	return decompressor, decompressor, nil
+}
+
+func wrapWriterWithCompressor(cfg writerPipelineConfig) (io.Writer, io.Closer, error) {
+	// If the cache supports compression but the request isn't compressed,
+	// wrap the cache writer in a compressor. This is faster than sending
+	// uncompressed data to the cache and letting it compress it.
+	compressor, err := compression.NewZstdCompressingWriter(cfg.committedWriteCloser, cfg.bufferPool, cfg.digestSize)
+	if err != nil {
+		return nil, nil, err
+	}
+	writer := io.MultiWriter(compressor, cfg.checksum)
+	return writer, compressor, nil
+}
+
+func noCompressionWrapper(cfg writerPipelineConfig) (io.Writer, io.Closer, error) {
+	// No compression/decompression needed.
 	// Write to the cache first. This gives more time between the final cache
 	// write and the commit, reducing the amount of time that the commit has to
 	// wait to flush writes.
-	ws.writer = io.MultiWriter(committedWriteCloser, ws.checksum)
-
-	if r.GetCompressor() == repb.Compressor_ZSTD {
-		// The incoming data is compressed.
-		if s.cache.SupportsCompressor(r.GetCompressor()) {
-			// If the cache supports compression, write the already compressed
-			// bytes to the cache with committedWriteCloser but wrap the
-			// checksum in a decompressor to validate the decompressed data.
-			decompressingChecksum, err := compression.NewZstdDecompressor(ws.checksum)
-			if err != nil {
-				return nil, err
-			}
-			ws.writer = io.MultiWriter(committedWriteCloser, decompressingChecksum)
-			ws.bufioCloser = decompressingChecksum
-		} else {
-			// If the cache doesn't support compression, wrap both the checksum and cache writer in a decompressor
-			decompressor, err := compression.NewZstdDecompressor(ws.writer)
-			if err != nil {
-				return nil, err
-			}
-			ws.writer = decompressor
-			ws.bufioCloser = decompressor
-		}
-	} else if compressData {
-		// If the cache supports compression but the request isn't compressed,
-		// wrap the cache writer in a compressor. This is faster than sending
-		// uncompressed data to the cache and letting it compress it.
-		compressor, err := compression.NewZstdCompressingWriter(committedWriteCloser, s.bufferPool, r.GetDigest().GetSizeBytes())
-		if err != nil {
-			return nil, err
-		}
-		ws.writer = io.MultiWriter(compressor, ws.checksum)
-		ws.bufioCloser = compressor
-	}
-
-	return ws, nil
+	writer := io.MultiWriter(cfg.committedWriteCloser, cfg.checksum)
+	return writer, nil, nil
 }
 
 func (w *writeHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error) {
