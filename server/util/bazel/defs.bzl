@@ -45,6 +45,13 @@ def _extract_bazel_installation_impl(ctx):
                 _bazel
             else
                 # Download dependencies of commonly used rules in tests.
+                # For Bazel 9+, sh_binary and sh_test are no longer native rules;
+                # they must be loaded from @rules_shell.
+                if [ "$USE_RULES_SHELL" = "1" ]; then
+                    echo >>MODULE.bazel 'bazel_dep(name = "rules_shell", version = "0.6.1")'
+                    echo >>BUILD 'load("@rules_shell//shell:sh_binary.bzl", "sh_binary")'
+                    echo >>BUILD 'load("@rules_shell//shell:sh_test.bzl", "sh_test")'
+                fi
                 echo >>BUILD 'genrule(name = "genrule", outs = ["genrule.out"], cmd = "touch $@")'
                 echo >>BUILD 'sh_binary(name = "sh_binary", srcs = ["empty.sh"])'
                 echo >>BUILD 'sh_test(name = "sh_test", srcs = ["empty.sh"])'
@@ -58,6 +65,7 @@ def _extract_bazel_installation_impl(ctx):
             "BAZEL": ctx.executable.bazel.path,
             "OUT_DIR": out_dir.path,
             "WARM_REPOSITORY_CACHE": "1" if ctx.attr.warm_repository_cache else "0",
+            "USE_RULES_SHELL": "1" if ctx.attr.use_rules_shell else "0",
         },
     )
     return [DefaultInfo(files = depset([out_dir]))]
@@ -68,6 +76,7 @@ extract_bazel_installation = rule(
         "bazel": attr.label(executable = True, cfg = "exec", mandatory = True, allow_single_file = True),
         "out_dir": attr.string(mandatory = True),
         "warm_repository_cache": attr.bool(default = False),
+        "use_rules_shell": attr.bool(default = False),
     },
     doc = "Pre-extract a bazel installation and optionally a repository cache to the given output directory.",
 )
@@ -92,12 +101,17 @@ def bazel_pkg_tar(name, versions = [], **kwargs):
         # Pre-warm repository cache only for bazel 8+, where we've started
         # using repository_cache combined with MODULE.bazel.lock to make
         # bazel work without network access.
-        warm_repository_cache = int(version.split(".")[0]) >= 8
+        major_version = int(version.split(".")[0])
+        warm_repository_cache = major_version >= 8
+
+        # For Bazel 9+, sh_binary and sh_test are no longer native rules.
+        use_rules_shell = major_version >= 9
         extract_bazel_installation(
             name = "bazel-{}_extract_installation".format(version),
             bazel = ":bazel-{}_crossplatform".format(version),
             out_dir = "bazel-{}_outdir".format(version),
             warm_repository_cache = warm_repository_cache,
+            use_rules_shell = use_rules_shell,
             # If we are warming the repository cache then we need network access
             # so that this rule can download the dependencies. Targets that use
             # this rule can then use the cached dependencies without needing the

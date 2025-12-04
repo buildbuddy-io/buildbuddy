@@ -6,9 +6,12 @@ bazel_pkg_tar(
     versions = [
         "6.5.0",
         "7.6.1",
+        "7.7.1",
         "8.1.1",  # used by testbazel
         "8.2.1",
         "8.3.1",
+        "8.4.2",
+        "9.0.0rc3",
     ],
     visibility = ["//visibility:public"],
 )
