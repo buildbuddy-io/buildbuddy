@@ -103,6 +103,7 @@ def bazel_pkg_tar(name, versions = [], **kwargs):
         # bazel work without network access.
         major_version = int(version.split(".")[0])
         warm_repository_cache = major_version >= 8
+
         # For Bazel 9+, sh_binary and sh_test are no longer native rules.
         use_rules_shell = major_version >= 9
         extract_bazel_installation(
