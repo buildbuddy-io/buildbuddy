@@ -164,6 +164,9 @@ const (
 	// Origin of the cache request (for usage tracking): should be "internal" or "external"
 	CacheRequestOrigin = "origin"
 
+	// The Methods exposed in interfaces.Cache.
+	CacheMethod = "cache_method"
+
 	// Whether or not billable usage was recorded for this request ("true", "false")
 	UsageTracked = "tracked"
 
@@ -663,6 +666,28 @@ var (
 	//   sum(rate(buildbuddy_remote_cache_upload_duration_usec{cache_type="cas"}[5m])) by (le)
 	// )
 	// ```
+
+	CacheMethodHandledTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "method_handled_total",
+		Help:      "Total number of methods completed on the cache, regardless of success or failure.",
+	}, []string{
+		CacheNameLabel,
+		CacheMethod,
+		StatusHumanReadableLabel,
+	})
+
+	CacheMethodHandlingSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "method_handling_seconds",
+		Buckets:   prometheus.DefBuckets,
+		Help:      "Upload duration for each file uploaded to the remote cache, in **microseconds**.",
+	}, []string{
+		CacheNameLabel,
+		CacheMethod,
+	})
 
 	DiskCacheLastEvictionAgeUsec = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
