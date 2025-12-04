@@ -199,7 +199,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     http_file(
         name = "io_bazel_bazel-8.4.2-darwin-x86_64",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/8.4.2/bazel-8.4.2-darwin-x86_64"],
-        sha256 = "0425c87f4d540fdf292b5a77d70401fb5e7a52165956a9e522bebe46acb6e1b2",
+        sha256 = "ce73346274c379f77880db8bd8b9c8569885fe56f19386173760949da9078df0",
         executable = True,
     )
     http_file(
