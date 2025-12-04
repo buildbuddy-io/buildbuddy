@@ -16,7 +16,6 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/http/httpclient",
-        "//server/interfaces",
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/flag",
@@ -45,6 +44,7 @@ go_test(
     deps = [
         ":oci",
         "//enterprise/server/clientidentity",
+        "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/testutil/testregistry",
         "//proto:registry_go_proto",

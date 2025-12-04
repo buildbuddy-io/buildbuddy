@@ -21,6 +21,7 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
@@ -1314,6 +1315,8 @@ type TestRunnerOverrides struct {
 }
 
 func NewTestRunnerPool(t testing.TB, env environment.Env, cacheRoot string, opts TestRunnerOverrides) interfaces.RunnerPool {
+	err := ocifetcher.RegisterClient(env.(*testenv.TestEnv))
+	require.NoError(t, err)
 	realPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{})
 	require.NoError(t, err)
 	return &testRunnerPool{realPool, opts.RunInterceptor, opts.RecycleInterceptor}

@@ -18,6 +18,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -30,16 +32,53 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 )
 
+var (
+	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
+	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
+)
+
 type ociFetcherClient struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
 }
 
+// NewClient constructs a new OCI Fetcher client.
+// For now, this client is "thick", meaning that it actually fetches blobs and manifests from remote OCI registries.
+// Eventually, this functionality will live in an OCIFetcherServer and the client will simply make gRPC calls
+// to that server.
+// TODO(dan): Stop passing private IPs, mirror config to client once server owns the fetching logic.
+// TODO(dan): Update this comment once server is implemented!
 func NewClient(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) ofpb.OCIFetcherClient {
 	return &ociFetcherClient{
 		allowedPrivateIPs: allowedPrivateIPs,
 		mirrors:           mirrors,
 	}
+}
+
+func RegisterClient(env *real_environment.RealEnv) error {
+	allowedPrivateIPNets, err := ParseAllowedPrivateIPs()
+	if err != nil {
+		return err
+	}
+	client := NewClient(allowedPrivateIPNets, *mirrors)
+	env.SetOCIFetcherClient(client)
+	return nil
+}
+
+func ParseAllowedPrivateIPs() ([]*net.IPNet, error) {
+	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
+	for _, r := range *allowedPrivateIPs {
+		_, ipNet, err := net.ParseCIDR(r)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid value %q for executor.container_registry_allowed_private_ips flag: %s", r, err)
+		}
+		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
+	}
+	return allowedPrivateIPNets, nil
+}
+
+func Mirrors() []interfaces.MirrorConfig {
+	return *mirrors
 }
 
 // NewMirrorTransport wraps an http.RoundTripper with registry mirror support.

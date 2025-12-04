@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
@@ -121,6 +122,8 @@ func TestRun(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -170,6 +173,8 @@ func TestCgroupSettings(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -224,6 +229,8 @@ func TestRunUsageStats(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -264,6 +271,8 @@ func TestRunWithImage(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -317,6 +326,8 @@ func TestRunOOM(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -407,6 +418,8 @@ func TestCreateExecRemove(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -454,6 +467,8 @@ func TestTini_Run(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
@@ -489,6 +504,8 @@ func TestTini_CreateExec(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
@@ -551,6 +568,8 @@ func TestExecUsageStats(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -598,6 +617,8 @@ func TestStatsPostExec(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -656,6 +677,8 @@ func TestPullCreateExecRemove(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -737,6 +760,8 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -844,6 +869,8 @@ func TestCreateFailureHasStderr(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -879,6 +906,8 @@ func TestDevices(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -935,6 +964,8 @@ func TestSignal(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1018,6 +1049,8 @@ func TestNetworking(t *testing.T) {
 			ctx := context.Background()
 			env := testenv.GetTestEnv(t)
 			installLeaserInEnv(t, env)
+			err := ocifetcher.RegisterClient(env)
+			require.NoError(t, err)
 
 			runtimeRoot := testfs.MakeTempDir(t)
 			flags.Set(t, "executor.network_stats_enabled", true)
@@ -1081,6 +1114,8 @@ func TestUser(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1191,6 +1226,8 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1267,6 +1304,8 @@ func TestHighLayerCount(t *testing.T) {
 			ctx := context.Background()
 			env := testenv.GetTestEnv(t)
 			installLeaserInEnv(t, env)
+			err = ocifetcher.RegisterClient(env)
+			require.NoError(t, err)
 			buildRoot := testfs.MakeTempDir(t)
 			cacheRoot := testfs.MakeTempDir(t)
 			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
@@ -1309,6 +1348,8 @@ func TestEntrypoint(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err = ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
@@ -1388,6 +1429,8 @@ func TestFileOwnership(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err = ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
@@ -1450,6 +1493,8 @@ func TestPathSanitization(t *testing.T) {
 			testfs.WriteAllFileContents(t, cacheRoot, map[string]string{
 				"test-link-target": "Hello",
 			})
+			err := ocifetcher.RegisterClient(te)
+			require.NoError(t, err)
 			resolver, err := oci.NewResolver(te)
 			require.NoError(t, err)
 			require.NotNil(t, resolver)
@@ -1483,6 +1528,8 @@ func TestPersistentWorker(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1562,6 +1609,8 @@ func TestPersistentWorker_WorkerCrashesBeforeReadingRequest(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1623,6 +1672,8 @@ func TestPersistentWorker_WorkerCrashesAfterReadingRequest(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1684,6 +1735,8 @@ func TestCancelRun(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1739,6 +1792,8 @@ func TestCancelExec(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1859,6 +1914,8 @@ func TestPullImage(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
+			err := ocifetcher.RegisterClient(te)
+			require.NoError(t, err)
 			resolver, err := oci.NewResolver(te)
 			require.NoError(t, err)
 			require.NotNil(t, resolver)
@@ -1880,6 +1937,8 @@ func TestMounts(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
@@ -1928,6 +1987,8 @@ func TestPersistentVolumes(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	err := ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	flags.Set(t, "executor.oci.enable_persistent_volumes", true)

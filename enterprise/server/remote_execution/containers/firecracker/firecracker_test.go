@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
@@ -177,6 +178,8 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	flags.Set(t, "executor.network_lock_directory", "/tmp/buildbuddy/networking/locks")
 
 	env := testenv.GetTestEnv(t)
+	err = ocifetcher.RegisterClient(env)
+	require.NoError(t, err)
 
 	// Use a permissive image cache authenticator to avoid registry requests.
 	env.SetImageCacheAuthenticator(testcontainer.PermissiveImageCacheAuthenticator())

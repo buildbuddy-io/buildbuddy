@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
@@ -237,6 +238,9 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 		log.Fatal(err.Error())
 	}
 	if err := clientidentity.Register(realEnv); err != nil {
+		log.Fatal(err.Error())
+	}
+	if err := ocifetcher.RegisterClient(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
 
