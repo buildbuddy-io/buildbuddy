@@ -176,9 +176,6 @@ func run(ctx context.Context, env environment.Env) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if err := networking.DeleteNetNamespaces(ctx); err != nil {
-		log.Warningf("Failed to clean up network namespaces: %s", err)
-	}
 	if err := vbd.CleanStaleMounts(); err != nil {
 		log.Warningf("Failed to clean stale VBD mounts: %s", err)
 	}
