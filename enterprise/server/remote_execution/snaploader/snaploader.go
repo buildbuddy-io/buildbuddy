@@ -967,6 +967,23 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	if cacheOpts.CacheSnapshotRemotely {
+		metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+			metrics.Stage: "write_remote_snapshot",
+		}).Inc()
+		defer metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+			metrics.Stage: "write_remote_snapshot",
+		}).Dec()
+	}
+	if cacheOpts.CacheSnapshotLocally {
+		metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+			metrics.Stage: "write_local_snapshot",
+		}).Inc()
+		defer metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+			metrics.Stage: "write_local_snapshot",
+		}).Dec()
+	}
+
 	var dirtyBytes, dirtyChunkCount, emptyBytes, emptyChunkCount, compressedBytesWrittenRemotely int64
 	start := time.Now()
 	defer func() {
