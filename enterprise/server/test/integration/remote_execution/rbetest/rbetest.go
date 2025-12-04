@@ -1315,10 +1315,8 @@ type TestRunnerOverrides struct {
 }
 
 func NewTestRunnerPool(t testing.TB, env environment.Env, cacheRoot string, opts TestRunnerOverrides) interfaces.RunnerPool {
-	if env.GetOCIFetcherClient() == nil {
-		err := ocifetcher.RegisterClient(env.(*testenv.TestEnv))
-		require.NoError(t, err)
-	}
+	err := ocifetcher.RegisterClient(env.(*testenv.TestEnv))
+	require.NoError(t, err)
 	realPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{})
 	require.NoError(t, err)
 	return &testRunnerPool{realPool, opts.RunInterceptor, opts.RecycleInterceptor}
