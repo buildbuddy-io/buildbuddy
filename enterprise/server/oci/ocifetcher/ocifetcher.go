@@ -12,6 +12,7 @@ package ocifetcher
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -26,10 +27,15 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
+)
+
+const (
+	blobChunkSize = 32 * 1024 // 32KB streaming chunks
 )
 
 var (
@@ -208,13 +214,161 @@ func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.
 }
 
 func (c *ociFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
-	return nil, status.UnimplementedError("FetchManifest not implemented")
+	imageRef, err := gcrname.ParseReference(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
+	}
+
+	remoteOpts := c.getRemoteOpts(ctx, req.GetCredentials())
+	puller, err := remote.NewPuller(remoteOpts...)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to create puller: %s", err)
+	}
+
+	remoteDesc, err := puller.Get(ctx, imageRef)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch manifest from remote registry: %s", err)
+	}
+
+	return &ofpb.FetchManifestResponse{
+		Digest:    remoteDesc.Digest.String(),
+		Size:      remoteDesc.Size,
+		MediaType: string(remoteDesc.MediaType),
+		Manifest:  remoteDesc.Manifest,
+	}, nil
 }
 
 func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
-	return nil, status.UnimplementedError("FetchBlob not implemented")
+	blobRef, err := gcrname.NewDigest(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid blob digest reference %q: %s", req.GetRef(), err)
+	}
+
+	remoteOpts := c.getRemoteOpts(ctx, req.GetCredentials())
+	puller, err := remote.NewPuller(remoteOpts...)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to create puller: %s", err)
+	}
+
+	layer, err := puller.Layer(ctx, blobRef)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access blob: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch blob from remote registry: %s", err)
+	}
+
+	rc, err := layer.Compressed()
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access blob: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not read blob content: %s", err)
+	}
+
+	return &fetchBlobStreamClient{
+		ctx:    ctx,
+		reader: rc,
+		buf:    make([]byte, blobChunkSize),
+	}, nil
 }
 
+// fetchBlobStreamClient implements grpc.ServerStreamingClient[ofpb.FetchBlobResponse]
+// by wrapping an io.ReadCloser and chunking the data.
+type fetchBlobStreamClient struct {
+	ctx    context.Context
+	reader io.ReadCloser
+	buf    []byte
+}
+
+var _ grpc.ServerStreamingClient[ofpb.FetchBlobResponse] = (*fetchBlobStreamClient)(nil)
+
+func (s *fetchBlobStreamClient) Recv() (*ofpb.FetchBlobResponse, error) {
+	n, err := s.reader.Read(s.buf)
+	if err == io.EOF {
+		s.reader.Close()
+		return nil, io.EOF
+	}
+	if err != nil {
+		s.reader.Close()
+		return nil, err
+	}
+	return &ofpb.FetchBlobResponse{Data: s.buf[:n]}, nil
+}
+
+func (s *fetchBlobStreamClient) Context() context.Context { return s.ctx }
+func (s *fetchBlobStreamClient) CloseSend() error         { return s.reader.Close() }
+func (s *fetchBlobStreamClient) Header() (metadata.MD, error) {
+	return nil, nil
+}
+func (s *fetchBlobStreamClient) Trailer() metadata.MD { return nil }
+func (s *fetchBlobStreamClient) RecvMsg(m any) error  { panic("not implemented") }
+func (s *fetchBlobStreamClient) SendMsg(m any) error  { panic("not implemented") }
+
 func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
-	return nil, status.UnimplementedError("FetchBlobMetadata not implemented")
+	blobRef, err := gcrname.ParseReference(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid blob reference %q: %s", req.GetRef(), err)
+	}
+
+	remoteOpts := c.getRemoteOpts(ctx, req.GetCredentials())
+	desc, err := remote.Head(blobRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access blob: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch blob metadata from remote registry: %s", err)
+	}
+
+	return &ofpb.FetchBlobMetadataResponse{
+		Size:      desc.Size,
+		MediaType: string(desc.MediaType),
+	}, nil
+}
+
+// ReadBlob provides a convenient io.ReadCloser interface for fetching blobs.
+// Callers should prefer this over FetchBlob when they need an io.Reader.
+func ReadBlob(ctx context.Context, client ofpb.OCIFetcherClient, ref string, creds *rgpb.Credentials) (io.ReadCloser, error) {
+	stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:         ref,
+		Credentials: creds,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &blobReader{stream: stream}, nil
+}
+
+// blobReader wraps a FetchBlob stream as an io.ReadCloser.
+type blobReader struct {
+	stream grpc.ServerStreamingClient[ofpb.FetchBlobResponse]
+	buf    []byte // leftover data from last Recv
+}
+
+func (r *blobReader) Read(p []byte) (n int, err error) {
+	// Return buffered data first
+	if len(r.buf) > 0 {
+		n = copy(p, r.buf)
+		r.buf = r.buf[n:]
+		return n, nil
+	}
+
+	// Get more data from stream
+	resp, err := r.stream.Recv()
+	if err != nil {
+		return 0, err
+	}
+
+	n = copy(p, resp.GetData())
+	if n < len(resp.GetData()) {
+		r.buf = resp.GetData()[n:]
+	}
+	return n, nil
+}
+
+func (r *blobReader) Close() error {
+	return r.stream.CloseSend()
 }

@@ -2,6 +2,7 @@ package ocifetcher_test
 
 import (
 	"context"
+	"io"
 	"net"
 	"testing"
 
@@ -102,6 +103,199 @@ func TestFetchManifestMetadata_MissingCredentials(t *testing.T) {
 	_, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
 		// No credentials provided
+	})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
+}
+
+func TestFetchManifest_NoAuth(t *testing.T) {
+	reg := testregistry.Run(t, testregistry.Opts{})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	client := ocifetcher.NewClient(localhostIPs(t), nil)
+	resp, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
+		Ref: imageName,
+	})
+	require.NoError(t, err)
+
+	digest, err := img.Digest()
+	require.NoError(t, err)
+	require.Equal(t, digest.String(), resp.GetDigest())
+	require.NotZero(t, resp.GetSize())
+	require.NotEmpty(t, resp.GetMediaType())
+	require.NotEmpty(t, resp.GetManifest())
+}
+
+func TestFetchManifest_WithValidCredentials(t *testing.T) {
+	creds := &testregistry.BasicAuthCreds{
+		Username: "testuser",
+		Password: "testpass",
+	}
+	reg := testregistry.Run(t, testregistry.Opts{
+		Creds: creds,
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", creds)
+
+	client := ocifetcher.NewClient(localhostIPs(t), nil)
+	resp, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
+		Ref: imageName,
+		Credentials: &rgpb.Credentials{
+			Username: "testuser",
+			Password: "testpass",
+		},
+	})
+	require.NoError(t, err)
+
+	digest, err := img.Digest()
+	require.NoError(t, err)
+	require.Equal(t, digest.String(), resp.GetDigest())
+	require.NotZero(t, resp.GetSize())
+	require.NotEmpty(t, resp.GetMediaType())
+	require.NotEmpty(t, resp.GetManifest())
+}
+
+func TestFetchManifest_WithInvalidCredentials(t *testing.T) {
+	creds := &testregistry.BasicAuthCreds{
+		Username: "testuser",
+		Password: "testpass",
+	}
+	reg := testregistry.Run(t, testregistry.Opts{
+		Creds: creds,
+	})
+	imageName, _ := reg.PushNamedImage(t, "test-image", creds)
+
+	client := ocifetcher.NewClient(localhostIPs(t), nil)
+	_, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
+		Ref: imageName,
+		Credentials: &rgpb.Credentials{
+			Username: "wronguser",
+			Password: "wrongpass",
+		},
+	})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
+}
+
+func TestFetchBlob_NoAuth(t *testing.T) {
+	reg := testregistry.Run(t, testregistry.Opts{})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	// Get the layer digest from the image
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layerDigest, err := layers[0].Digest()
+	require.NoError(t, err)
+
+	// Construct blob reference: registry/repo@sha256:...
+	blobRef := imageName + "@" + layerDigest.String()
+
+	client := ocifetcher.NewClient(localhostIPs(t), nil)
+	stream, err := client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{
+		Ref: blobRef,
+	})
+	require.NoError(t, err)
+
+	// Read all data from stream - just verify we can read without errors
+	var data []byte
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		data = append(data, resp.GetData()...)
+	}
+
+	// The stream should complete without error
+	_ = data
+}
+
+func TestReadBlob_NoAuth(t *testing.T) {
+	reg := testregistry.Run(t, testregistry.Opts{})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	// Get the layer digest from the image
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layerDigest, err := layers[0].Digest()
+	require.NoError(t, err)
+
+	// Construct blob reference
+	blobRef := imageName + "@" + layerDigest.String()
+
+	client := ocifetcher.NewClient(localhostIPs(t), nil)
+	rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, nil)
+	require.NoError(t, err)
+	defer rc.Close()
+
+	// Read all data - just verify we can read without errors
+	_, err = io.ReadAll(rc)
+	require.NoError(t, err)
+}
+
+func TestReadBlob_WithValidCredentials(t *testing.T) {
+	creds := &testregistry.BasicAuthCreds{
+		Username: "testuser",
+		Password: "testpass",
+	}
+	reg := testregistry.Run(t, testregistry.Opts{
+		Creds: creds,
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", creds)
+
+	// Get the layer digest from the image
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layerDigest, err := layers[0].Digest()
+	require.NoError(t, err)
+
+	// Construct blob reference
+	blobRef := imageName + "@" + layerDigest.String()
+
+	client := ocifetcher.NewClient(localhostIPs(t), nil)
+	rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, &rgpb.Credentials{
+		Username: "testuser",
+		Password: "testpass",
+	})
+	require.NoError(t, err)
+	defer rc.Close()
+
+	// Read all data - just verify we can read without errors
+	_, err = io.ReadAll(rc)
+	require.NoError(t, err)
+}
+
+func TestReadBlob_WithInvalidCredentials(t *testing.T) {
+	creds := &testregistry.BasicAuthCreds{
+		Username: "testuser",
+		Password: "testpass",
+	}
+	reg := testregistry.Run(t, testregistry.Opts{
+		Creds: creds,
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", creds)
+
+	// Get the layer digest from the image
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layerDigest, err := layers[0].Digest()
+	require.NoError(t, err)
+
+	// Construct blob reference
+	blobRef := imageName + "@" + layerDigest.String()
+
+	client := ocifetcher.NewClient(localhostIPs(t), nil)
+	_, err = ocifetcher.ReadBlob(context.Background(), client, blobRef, &rgpb.Credentials{
+		Username: "wronguser",
+		Password: "wrongpass",
 	})
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
