@@ -2,6 +2,7 @@ package ocifetcher_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"testing"
@@ -299,4 +300,62 @@ func TestReadBlob_WithInvalidCredentials(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
+}
+
+func TestReadBlob_BufferSizes(t *testing.T) {
+	reg := testregistry.Run(t, testregistry.Opts{})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	// Get the layer digest from the image
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layerDigest, err := layers[0].Digest()
+	require.NoError(t, err)
+
+	// Construct blob reference
+	blobRef := imageName + "@" + layerDigest.String()
+
+	// Get expected data for comparison
+	layerReader, err := layers[0].Compressed()
+	require.NoError(t, err)
+	expectedData, err := io.ReadAll(layerReader)
+	require.NoError(t, err)
+	layerReader.Close()
+
+	client := ocifetcher.NewClient(localhostIPs(t), nil)
+
+	// Test various read buffer sizes
+	for _, readSize := range []int{
+		1,            // tiny reads
+		64,           // small reads
+		1024,         // medium reads
+		32*1024 - 1,  // just under chunk size
+		32 * 1024,    // exactly chunk size
+		32*1024 + 1,  // just over chunk size
+		64 * 1024,    // larger than chunk
+	} {
+		t.Run(fmt.Sprintf("read_%d", readSize), func(t *testing.T) {
+			rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, nil)
+			require.NoError(t, err)
+			defer rc.Close()
+
+			// Read all data using specified buffer size
+			var result []byte
+			buf := make([]byte, readSize)
+			for {
+				n, err := rc.Read(buf)
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err)
+				require.LessOrEqual(t, n, len(buf))
+				result = append(result, buf[:n]...)
+			}
+
+			// Verify data integrity
+			require.Equal(t, expectedData, result, "data mismatch for readSize=%d", readSize)
+		})
+	}
 }

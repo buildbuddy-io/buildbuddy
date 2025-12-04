@@ -288,15 +288,18 @@ var _ grpc.ServerStreamingClient[ofpb.FetchBlobResponse] = (*fetchBlobStreamClie
 
 func (s *fetchBlobStreamClient) Recv() (*ofpb.FetchBlobResponse, error) {
 	n, err := s.reader.Read(s.buf)
-	if err == io.EOF {
-		s.reader.Close()
-		return nil, io.EOF
+	// Per io.Reader contract, n > 0 means data was read even if err is set.
+	// Return the data first; EOF will surface on the next Recv() call.
+	if n > 0 {
+		return &ofpb.FetchBlobResponse{Data: s.buf[:n]}, nil
 	}
 	if err != nil {
 		s.reader.Close()
 		return nil, err
 	}
-	return &ofpb.FetchBlobResponse{Data: s.buf[:n]}, nil
+	// n == 0 and err == nil is unusual but valid; treat as EOF
+	s.reader.Close()
+	return nil, io.EOF
 }
 
 func (s *fetchBlobStreamClient) Context() context.Context { return s.ctx }
