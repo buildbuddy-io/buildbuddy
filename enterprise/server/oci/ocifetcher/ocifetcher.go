@@ -49,7 +49,6 @@ func NewClient(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig
 	}
 }
 
-// RegisterClient registers an OCIFetcherClient with the environment.
 func RegisterClient(env *real_environment.RealEnv) error {
 	allowedPrivateIPNets, err := ParseAllowedPrivateIPs()
 	if err != nil {
@@ -60,8 +59,6 @@ func RegisterClient(env *real_environment.RealEnv) error {
 	return nil
 }
 
-// ParseAllowedPrivateIPs parses the allowedPrivateIPs flag into a slice of
-// *net.IPNet.
 func ParseAllowedPrivateIPs() ([]*net.IPNet, error) {
 	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
 	for _, r := range *allowedPrivateIPs {
@@ -74,7 +71,6 @@ func ParseAllowedPrivateIPs() ([]*net.IPNet, error) {
 	return allowedPrivateIPNets, nil
 }
 
-// Mirrors returns the configured container registry mirrors.
 func Mirrors() []interfaces.MirrorConfig {
 	return *mirrors
 }
