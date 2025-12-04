@@ -15,6 +15,7 @@ go_library(
     },
     deps = [
         "//enterprise/server/backends/redis_execution_collector",
+        "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/remote_execution/executor",
         "//enterprise/server/remote_execution/filecache",
