@@ -798,9 +798,6 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
 	}
 
-	start := c.opts.Clock.Now()
-	defer c.recordMetrics("Reader", resultErr, start)
-
 	fileRecord, err := c.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
@@ -821,9 +818,6 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 }
 
 func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (cwc interfaces.CommittedWriteCloser, resultErr error) {
-	start := c.opts.Clock.Now()
-	defer c.recordMetrics("Writer", resultErr, start)
-
 	return c.writerWithImmediateCommit(ctx, r, r.GetDigest().GetSizeBytes())
 }
 
@@ -844,8 +838,8 @@ func (c *Cache) recordMetrics(method string, err error, start time.Time) {
 		metrics.CacheMethod:              method,
 		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
 	}).Inc()
-	metrics.CacheMethodHandlingSeconds.With(prometheus.Labels{
+	metrics.CacheMethodHandlingUsec.With(prometheus.Labels{
 		metrics.CacheNameLabel: c.opts.Name,
 		metrics.CacheMethod:    method,
-	}).Observe(float64(c.opts.Clock.Since(start)))
+	}).Observe(float64(c.opts.Clock.Since(start).Microseconds()))
 }

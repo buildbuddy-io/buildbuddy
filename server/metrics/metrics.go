@@ -678,12 +678,12 @@ var (
 		StatusHumanReadableLabel,
 	})
 
-	CacheMethodHandlingSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	CacheMethodHandlingUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
-		Name:      "method_handling_seconds",
-		Buckets:   prometheus.DefBuckets,
-		Help:      "Upload duration for each file uploaded to the remote cache, in **microseconds**.",
+		Name:      "method_handling_usec",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 15*time.Second, 2),
+		Help:      "Histogram of response latency(microseconds) of cache methods",
 	}, []string{
 		CacheNameLabel,
 		CacheMethod,
