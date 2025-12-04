@@ -95,6 +95,30 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
+        name = "io_bazel_bazel-7.7.1-darwin-arm64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/7.7.1/bazel-7.7.1-darwin-arm64"],
+        sha256 = "fe8a1ee9064e94afae075c0dd4efb453db9c1373b9df12fecbff8479d408eb08",
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-7.7.1-darwin-x86_64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/7.7.1/bazel-7.7.1-darwin-x86_64"],
+        sha256 = "8582aea5ee2d8d0448bbda10fd7034734db1a21cbe4ea351a10012b969aa5d31",
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-7.7.1-linux-arm64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/7.7.1/bazel-7.7.1-linux-arm64"],
+        sha256 = "71df04ec724f1b577f1f47ec9a6b81d13f39683f6c3215cacf45fdaf40b2c5c1",
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-7.7.1-linux-x86_64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/7.7.1/bazel-7.7.1-linux-x86_64"],
+        sha256 = "115a1b62be95f29e5821d4dddffba1b058905a48019b499919c285e7f708d5e2",
+        executable = True,
+    )
+    http_file(
         name = "io_bazel_bazel-8.1.1-darwin-arm64",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/8.1.1/bazel-8.1.1-darwin-arm64"],
         sha256 = "ac72ad67f7a8c6b18bf605d8602425182b417de4369715bf89146daf62f7ae48",
