@@ -829,6 +829,13 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "merge_diff_snapshot",
+	}).Inc()
+	defer metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "merge_diff_snapshot",
+	}).Dec()
+
 	var out io.WriterAt
 	var storeChunkSizeBytes int64
 	if baseSnapshotStore == nil {
@@ -1410,6 +1417,14 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunkDir string) (*copy_on_write.COWStore, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
+	metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "convert_to_cow",
+	}).Inc()
+	defer metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "convert_to_cow",
+	}).Dec()
+
 	start := time.Now()
 	if err := os.Mkdir(chunkDir, 0755); err != nil {
 		return nil, status.WrapError(err, "make chunk dir")
@@ -2845,6 +2860,13 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "balloon_memory_reclaim",
+	}).Inc()
+	defer metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "balloon_memory_reclaim",
+	}).Dec()
+
 	// Drop the page cache to free up more memory for the balloon.
 	// The balloon will only allocate free memory.
 	conn, err := c.vmExecConn(ctx)
@@ -2980,6 +3002,14 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) *snapshotDet
 func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetails *snapshotDetails) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
+	metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "create_snapshot",
+	}).Inc()
+	defer metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "create_snapshot",
+	}).Dec()
+
 	machineStart := time.Now()
 	snapshotTypeOpt := func(params *operations.CreateSnapshotParams) {
 		params.Body.SnapshotType = snapshotDetails.snapshotType

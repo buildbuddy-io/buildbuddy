@@ -1459,6 +1459,15 @@ var (
 	//  )
 	// ```
 
+	SnapshotSaveWorkloadsExecuting = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "snapshot_save_workloads_executing",
+		Help:      "Number of snapshot save workloads currently being executed by the executor.",
+	}, []string{
+		Stage,
+	})
+
 	FirecrackerExecDialDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
