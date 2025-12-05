@@ -17,60 +17,22 @@ import (
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 )
 
-func localhostIPs(t *testing.T) []*net.IPNet {
-	_, ipv4Net, err := net.ParseCIDR("127.0.0.0/8")
-	require.NoError(t, err)
-	_, ipv6Net, err := net.ParseCIDR("::1/128")
-	require.NoError(t, err)
-	return []*net.IPNet{ipv4Net, ipv6Net}
-}
-
-func newTestClient(t *testing.T) ofpb.OCIFetcherClient {
-	return ocifetcher.NewClient(localhostIPs(t), nil)
-}
-
-func pushTestImage(t *testing.T, opts testregistry.Opts, pushCreds *testregistry.BasicAuthCreds) (string, v1.Image) {
-	reg := testregistry.Run(t, opts)
-	imageName, img := reg.PushNamedImage(t, "test-image", pushCreds)
-	return imageName, img
-}
-
-func firstLayer(t *testing.T, img v1.Image) v1.Layer {
-	layers, err := img.Layers()
-	require.NoError(t, err)
-	require.NotEmpty(t, layers)
-	return layers[0]
-}
-
-func blobRefForLayer(t *testing.T, imageName string, layer v1.Layer) string {
-	layerDigest, err := layer.Digest()
-	require.NoError(t, err)
-	return imageName + "@" + layerDigest.String()
-}
-
-func layerBytes(t *testing.T, layer v1.Layer) []byte {
-	layerReader, err := layer.Compressed()
-	require.NoError(t, err)
-	data, err := io.ReadAll(layerReader)
-	require.NoError(t, err)
-	require.NoError(t, layerReader.Close())
-	return data
-}
-
 func TestFetchManifestMetadata_NoAuth(t *testing.T) {
 	imageName, img := pushTestImage(t, testregistry.Opts{}, nil)
-
-	client := newTestClient(t)
-	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
-		Ref: imageName,
-	})
-	require.NoError(t, err)
-
 	digest, err := img.Digest()
 	require.NoError(t, err)
+	size, err := img.Size()
+	require.NoError(t, err)
+	mediaType, err := img.MediaType()
+	require.NoError(t, err)
+
+	client := newTestClient(t)
+	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName,})
+	require.NoError(t, err)
+
 	require.Equal(t, digest.String(), resp.GetDigest())
-	require.NotZero(t, resp.GetSize())
-	require.NotEmpty(t, resp.GetMediaType())
+	require.Equal(t, size, resp.GetSize())
+	require.NotEmpty(t, mediaType, resp.GetMediaType())
 }
 
 func TestFetchManifestMetadata_WithValidCredentials(t *testing.T) {
@@ -326,3 +288,44 @@ func TestReadBlob_BufferSizes(t *testing.T) {
 		require.Equal(t, expectedData, result, "data mismatch for readSize=%d", readSize)
 	}
 }
+
+func localhostIPs(t *testing.T) []*net.IPNet {
+	_, ipv4Net, err := net.ParseCIDR("127.0.0.0/8")
+	require.NoError(t, err)
+	_, ipv6Net, err := net.ParseCIDR("::1/128")
+	require.NoError(t, err)
+	return []*net.IPNet{ipv4Net, ipv6Net}
+}
+
+func newTestClient(t *testing.T) ofpb.OCIFetcherClient {
+	return ocifetcher.NewClient(localhostIPs(t), nil)
+}
+
+func pushTestImage(t *testing.T, opts testregistry.Opts, pushCreds *testregistry.BasicAuthCreds) (string, v1.Image) {
+	reg := testregistry.Run(t, opts)
+	imageName, img := reg.PushNamedImage(t, "test-image", pushCreds)
+	return imageName, img
+}
+
+func firstLayer(t *testing.T, img v1.Image) v1.Layer {
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	return layers[0]
+}
+
+func blobRefForLayer(t *testing.T, imageName string, layer v1.Layer) string {
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	return imageName + "@" + layerDigest.String()
+}
+
+func layerBytes(t *testing.T, layer v1.Layer) []byte {
+	layerReader, err := layer.Compressed()
+	require.NoError(t, err)
+	data, err := io.ReadAll(layerReader)
+	require.NoError(t, err)
+	require.NoError(t, layerReader.Close())
+	return data
+}
+
