@@ -15,16 +15,22 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
+	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
@@ -32,14 +38,31 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 )
 
+const (
+	// pullerLRUMaxEntries limits the number of entries in the puller cache.
+	pullerLRUMaxEntries = 1000
+	// pullerLRUExpiration is the TTL for puller cache entries.
+	pullerLRUExpiration = 15 * time.Minute
+)
+
 var (
 	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
 	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 )
 
+// pullerCacheEntry holds a cached Puller with its expiration time.
+type pullerCacheEntry struct {
+	puller     *remote.Puller
+	expiration time.Time
+}
+
 type ociFetcherClient struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
+
+	mu          sync.Mutex
+	pullerCache *lru.LRU[pullerCacheEntry]
+	clock       clockwork.Clock
 }
 
 // NewClient constructs a new OCI Fetcher client.
@@ -48,11 +71,20 @@ type ociFetcherClient struct {
 // to that server.
 // TODO(dan): Stop passing private IPs, mirror config to client once server owns the fetching logic.
 // TODO(dan): Update this comment once server is implemented!
-func NewClient(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) ofpb.OCIFetcherClient {
+func NewClient(env environment.Env, allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) (ofpb.OCIFetcherClient, error) {
+	pullerCache, err := lru.NewLRU[pullerCacheEntry](&lru.Config[pullerCacheEntry]{
+		SizeFn:  func(_ pullerCacheEntry) int64 { return 1 },
+		MaxSize: int64(pullerLRUMaxEntries),
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &ociFetcherClient{
 		allowedPrivateIPs: allowedPrivateIPs,
 		mirrors:           mirrors,
-	}
+		pullerCache:       pullerCache,
+		clock:             env.GetClock(),
+	}, nil
 }
 
 func RegisterClient(env *real_environment.RealEnv) error {
@@ -60,7 +92,10 @@ func RegisterClient(env *real_environment.RealEnv) error {
 	if err != nil {
 		return err
 	}
-	client := NewClient(allowedPrivateIPNets, *mirrors)
+	client, err := NewClient(env, allowedPrivateIPNets, *mirrors)
+	if err != nil {
+		return err
+	}
 	env.SetOCIFetcherClient(client)
 	return nil
 }
@@ -183,6 +218,51 @@ func (c *ociFetcherClient) getRemoteOpts(ctx context.Context, creds *rgpb.Creden
 	return opts
 }
 
+// getOrCreatePuller returns a cached Puller for the given image reference and credentials,
+// or creates a new one if not found or expired.
+func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*remote.Puller, error) {
+	// Generate key from registry, repository, and credentials
+	key := hash.Strings(
+		imageRef.Context().RegistryStr(),
+		imageRef.Context().RepositoryStr(),
+		creds.GetUsername(),
+		creds.GetPassword(),
+	)
+
+	// Check cache (with lock)
+	c.mu.Lock()
+	entry, ok := c.pullerCache.Get(key)
+	c.mu.Unlock()
+
+	if ok && entry.expiration.After(c.clock.Now()) {
+		return entry.puller, nil
+	}
+
+	// Evict expired entry
+	if ok {
+		c.mu.Lock()
+		c.pullerCache.Remove(key)
+		c.mu.Unlock()
+	}
+
+	// Create new puller
+	remoteOpts := c.getRemoteOpts(ctx, creds)
+	puller, err := remote.NewPuller(remoteOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add to cache
+	c.mu.Lock()
+	c.pullerCache.Add(key, pullerCacheEntry{
+		puller:     puller,
+		expiration: c.clock.Now().Add(pullerLRUExpiration),
+	})
+	c.mu.Unlock()
+
+	return puller, nil
+}
+
 // FetchManifestMetadata performs a HEAD request to get manifest metadata (digest, size, media type)
 // without downloading the full manifest content.
 func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
@@ -191,8 +271,11 @@ func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
 	}
 
-	remoteOpts := c.getRemoteOpts(ctx, req.GetCredentials())
-	desc, err := remote.Head(imageRef, remoteOpts...)
+	puller, err := c.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+	desc, err := puller.Head(ctx, imageRef)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
