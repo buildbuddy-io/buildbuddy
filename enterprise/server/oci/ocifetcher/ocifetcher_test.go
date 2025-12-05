@@ -270,35 +270,40 @@ func TestFetchBlob_NoAuth(t *testing.T) {
 			return true
 		},
 	}, nil)
-	layer := firstLayer(t, img)
-	layerDigest, err := layer.Digest()
+	layers, err := img.Layers()
 	require.NoError(t, err)
-	blobRef := blobRefForLayer(t, imageName, layer)
-	expectedData := layerBytes(t, layer)
 
 	counter.Reset()
 	client := newTestClient(t)
-	stream, err := client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{
-		Ref: blobRef,
-	})
-	require.NoError(t, err)
-
-	var data []byte
-	for {
-		resp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		require.NoError(t, err)
-		data = append(data, resp.GetData()...)
-	}
-
-	require.Empty(t, cmp.Diff(expectedData, data))
-
 	expectedRequests := map[string]int{
-		"GET /v2/": 1,
-		"GET /v2/test-image/blobs/" + layerDigest.String(): 1,
+		"GET /v2/": len(layers),
 	}
+
+	for _, layer := range layers {
+		layerDigest, err := layer.Digest()
+		require.NoError(t, err)
+		blobRef := blobRefForLayer(t, imageName, layer)
+		expectedData := layerBytes(t, layer)
+
+		stream, err := client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{
+			Ref: blobRef,
+		})
+		require.NoError(t, err)
+
+		var data []byte
+		for {
+			resp, err := stream.Recv()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			data = append(data, resp.GetData()...)
+		}
+
+		require.Empty(t, cmp.Diff(expectedData, data))
+		expectedRequests["GET /v2/test-image/blobs/"+layerDigest.String()] = 1
+	}
+
 	require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
 }
 
@@ -310,27 +315,32 @@ func TestReadBlob_NoAuth(t *testing.T) {
 			return true
 		},
 	}, nil)
-	layer := firstLayer(t, img)
-	layerDigest, err := layer.Digest()
+	layers, err := img.Layers()
 	require.NoError(t, err)
-	blobRef := blobRefForLayer(t, imageName, layer)
-	expectedData := layerBytes(t, layer)
 
 	counter.Reset()
 	client := newTestClient(t)
-	rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, nil)
-	require.NoError(t, err)
-	defer rc.Close()
-
-	actualData, err := io.ReadAll(rc)
-	require.NoError(t, err)
-
-	require.Empty(t, cmp.Diff(expectedData, actualData))
-
 	expectedRequests := map[string]int{
-		"GET /v2/": 1,
-		"GET /v2/test-image/blobs/" + layerDigest.String(): 1,
+		"GET /v2/": len(layers),
 	}
+
+	for _, layer := range layers {
+		layerDigest, err := layer.Digest()
+		require.NoError(t, err)
+		blobRef := blobRefForLayer(t, imageName, layer)
+		expectedData := layerBytes(t, layer)
+
+		rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, nil)
+		require.NoError(t, err)
+
+		actualData, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		rc.Close()
+
+		require.Empty(t, cmp.Diff(expectedData, actualData))
+		expectedRequests["GET /v2/test-image/blobs/"+layerDigest.String()] = 1
+	}
+
 	require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
 }
 
@@ -347,27 +357,33 @@ func TestReadBlob_WithValidCredentials(t *testing.T) {
 			return true
 		},
 	}, creds)
-	layer := firstLayer(t, img)
-	layerDigest, err := layer.Digest()
+	layers, err := img.Layers()
 	require.NoError(t, err)
-	blobRef := blobRefForLayer(t, imageName, layer)
 
 	counter.Reset()
 	client := newTestClient(t)
-	rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, &rgpb.Credentials{
-		Username: "testuser",
-		Password: "testpass",
-	})
-	require.NoError(t, err)
-	defer rc.Close()
-
-	_, err = io.ReadAll(rc)
-	require.NoError(t, err)
-
 	expectedRequests := map[string]int{
-		"GET /v2/": 1,
-		"GET /v2/test-image/blobs/" + layerDigest.String(): 1,
+		"GET /v2/": len(layers),
 	}
+
+	for _, layer := range layers {
+		layerDigest, err := layer.Digest()
+		require.NoError(t, err)
+		blobRef := blobRefForLayer(t, imageName, layer)
+
+		rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, &rgpb.Credentials{
+			Username: "testuser",
+			Password: "testpass",
+		})
+		require.NoError(t, err)
+
+		_, err = io.ReadAll(rc)
+		require.NoError(t, err)
+		rc.Close()
+
+		expectedRequests["GET /v2/test-image/blobs/"+layerDigest.String()] = 1
+	}
+
 	require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
 }
 
@@ -384,24 +400,30 @@ func TestReadBlob_WithInvalidCredentials(t *testing.T) {
 			return true
 		},
 	}, creds)
-	layer := firstLayer(t, img)
-	layerDigest, err := layer.Digest()
+	layers, err := img.Layers()
 	require.NoError(t, err)
-	blobRef := blobRefForLayer(t, imageName, layer)
 
 	counter.Reset()
 	client := newTestClient(t)
-	_, err = ocifetcher.ReadBlob(context.Background(), client, blobRef, &rgpb.Credentials{
-		Username: "wronguser",
-		Password: "wrongpass",
-	})
-	require.Error(t, err)
-	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
-
 	expectedRequests := map[string]int{
-		"GET /v2/": 1,
-		"GET /v2/test-image/blobs/" + layerDigest.String(): 1,
+		"GET /v2/": len(layers),
 	}
+
+	for _, layer := range layers {
+		layerDigest, err := layer.Digest()
+		require.NoError(t, err)
+		blobRef := blobRefForLayer(t, imageName, layer)
+
+		_, err = ocifetcher.ReadBlob(context.Background(), client, blobRef, &rgpb.Credentials{
+			Username: "wronguser",
+			Password: "wrongpass",
+		})
+		require.Error(t, err)
+		require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
+
+		expectedRequests["GET /v2/test-image/blobs/"+layerDigest.String()] = 1
+	}
+
 	require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
 }
 
@@ -413,11 +435,8 @@ func TestReadBlob_BufferSizes(t *testing.T) {
 			return true
 		},
 	}, nil)
-	layer := firstLayer(t, img)
-	layerDigest, err := layer.Digest()
+	layers, err := img.Layers()
 	require.NoError(t, err)
-	blobRef := blobRefForLayer(t, imageName, layer)
-	expectedData := layerBytes(t, layer)
 
 	client := newTestClient(t)
 
@@ -432,30 +451,39 @@ func TestReadBlob_BufferSizes(t *testing.T) {
 	}
 
 	counter.Reset()
-	for _, readSize := range readSizes {
-		rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, nil)
-		require.NoError(t, err)
-		defer rc.Close()
+	expectedRequests := map[string]int{
+		"GET /v2/": len(layers) * len(readSizes),
+	}
 
-		var result []byte
-		buf := make([]byte, readSize)
-		for {
-			n, err := rc.Read(buf)
-			if err == io.EOF {
-				break
-			}
+	for _, layer := range layers {
+		layerDigest, err := layer.Digest()
+		require.NoError(t, err)
+		blobRef := blobRefForLayer(t, imageName, layer)
+		expectedData := layerBytes(t, layer)
+
+		for _, readSize := range readSizes {
+			rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, nil)
 			require.NoError(t, err)
-			require.LessOrEqual(t, n, len(buf))
-			result = append(result, buf[:n]...)
+
+			var result []byte
+			buf := make([]byte, readSize)
+			for {
+				n, err := rc.Read(buf)
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err)
+				require.LessOrEqual(t, n, len(buf))
+				result = append(result, buf[:n]...)
+			}
+			rc.Close()
+
+			require.Equal(t, expectedData, result, "data mismatch for readSize=%d", readSize)
 		}
 
-		require.Equal(t, expectedData, result, "data mismatch for readSize=%d", readSize)
+		expectedRequests["GET /v2/test-image/blobs/"+layerDigest.String()] = len(readSizes)
 	}
 
-	expectedRequests := map[string]int{
-		"GET /v2/": len(readSizes),
-		"GET /v2/test-image/blobs/" + layerDigest.String(): len(readSizes),
-	}
 	require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
 }
 
@@ -475,13 +503,6 @@ func pushTestImage(t *testing.T, opts testregistry.Opts, pushCreds *testregistry
 	reg := testregistry.Run(t, opts)
 	imageName, img := reg.PushNamedImage(t, "test-image", pushCreds)
 	return imageName, img
-}
-
-func firstLayer(t *testing.T, img v1.Image) v1.Layer {
-	layers, err := img.Layers()
-	require.NoError(t, err)
-	require.NotEmpty(t, layers)
-	return layers[0]
 }
 
 func blobRefForLayer(t *testing.T, imageName string, layer v1.Layer) string {
