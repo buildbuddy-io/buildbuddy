@@ -315,7 +315,10 @@ export default class GitHubLink extends React.Component<Props, State> {
                 <p>Any workflows linked using this account will also be deleted.</p>
                 <p>
                   After unlinking, the linked account owner may revoke app access via{" "}
-                  <TextLink href="https://github.com/settings/applications">GitHub OAuth app settings</TextLink>.
+                  <TextLink href="https://github.com/settings/apps/authorizations">
+                    GitHub Applications settings
+                  </TextLink>
+                  .
                 </p>
               </DialogBody>
               <DialogFooter>
