@@ -44,7 +44,7 @@ func TestFetchManifestMetadata_NoAuth(t *testing.T) {
 	require.Equal(t, string(mediaType), resp.GetMediaType())
 
 	expectedRequests := map[string]int{
-		"GET /v2/":                              1,
+		"GET /v2/":                             1,
 		"HEAD /v2/test-image/manifests/latest": 1,
 	}
 	require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
@@ -83,7 +83,7 @@ func TestFetchManifestMetadata_WithValidCredentials(t *testing.T) {
 	require.Equal(t, string(mediaType), resp.GetMediaType())
 
 	expectedRequests := map[string]int{
-		"GET /v2/":                              1,
+		"GET /v2/":                             1,
 		"HEAD /v2/test-image/manifests/latest": 1,
 	}
 	require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
@@ -116,7 +116,7 @@ func TestFetchManifestMetadata_WithInvalidCredentials(t *testing.T) {
 	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
 
 	expectedRequests := map[string]int{
-		"GET /v2/":                              1,
+		"GET /v2/":                             1,
 		"HEAD /v2/test-image/manifests/latest": 1,
 	}
 	require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
@@ -146,7 +146,7 @@ func TestFetchManifestMetadata_MissingCredentials(t *testing.T) {
 	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
 
 	expectedRequests := map[string]int{
-		"GET /v2/":                              1,
+		"GET /v2/":                             1,
 		"HEAD /v2/test-image/manifests/latest": 1,
 	}
 	require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
@@ -180,7 +180,7 @@ func TestFetchManifest_NoAuth(t *testing.T) {
 	require.NotEmpty(t, resp.GetManifest())
 
 	expectedRequests := map[string]int{
-		"GET /v2/":                             1,
+		"GET /v2/":                            1,
 		"GET /v2/test-image/manifests/latest": 1,
 	}
 	require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
@@ -223,7 +223,7 @@ func TestFetchManifest_WithValidCredentials(t *testing.T) {
 	require.NotEmpty(t, resp.GetManifest())
 
 	expectedRequests := map[string]int{
-		"GET /v2/":                             1,
+		"GET /v2/":                            1,
 		"GET /v2/test-image/manifests/latest": 1,
 	}
 	require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
@@ -256,7 +256,7 @@ func TestFetchManifest_WithInvalidCredentials(t *testing.T) {
 	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
 
 	expectedRequests := map[string]int{
-		"GET /v2/":                             1,
+		"GET /v2/":                            1,
 		"GET /v2/test-image/manifests/latest": 1,
 	}
 	require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
@@ -498,4 +498,3 @@ func layerBytes(t *testing.T, layer v1.Layer) []byte {
 	require.NoError(t, layerReader.Close())
 	return data
 }
-
