@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -27,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
@@ -491,7 +494,10 @@ func (c *Cache) writer(ctx context.Context, r *rspb.ResourceName, sizeHint int64
 }
 
 // Normal cache-like operations
-func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
+func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (contains bool, resultErr error) {
+	start := c.opts.Clock.Now()
+	defer c.recordMetrics("Contains", resultErr, start)
+
 	missing, err := c.FindMissing(ctx, []*rspb.ResourceName{r})
 	if err != nil {
 		return false, err
@@ -499,7 +505,10 @@ func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error
 	return len(missing) == 0, nil
 }
 
-func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
+func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (cm *interfaces.CacheMetadata, resultErr error) {
+	start := c.opts.Clock.Now()
+	defer c.recordMetrics("Metadata", resultErr, start)
+
 	fileRecord, err := c.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
@@ -520,9 +529,13 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces
 	}, nil
 }
 
-func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) (digests []*repb.Digest, resultErr error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
+
+	start := c.opts.Clock.Now()
+	defer c.recordMetrics("FindMissing", resultErr, start)
+
 	req := &mdpb.FindRequest{
 		FileRecords: make([]*sgpb.FileRecord, len(resources)),
 	}
@@ -546,7 +559,10 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	return missing, nil
 }
 
-func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
+func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) (res []byte, resultErr error) {
+	start := c.opts.Clock.Now()
+	defer c.recordMetrics("Get", resultErr, start)
+
 	rc, err := c.Reader(ctx, r, 0, 0)
 	if err != nil {
 		return nil, err
@@ -558,7 +574,10 @@ func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m map[*repb.Digest][]byte, resultErr error) {
+	start := c.opts.Clock.Now()
+	defer c.recordMetrics("GetMulti", resultErr, start)
+
 	// Convert resources to fileRecords
 	fileRecords := make([]*sgpb.FileRecord, 0, len(resources))
 	for _, r := range resources {
@@ -610,7 +629,10 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 	return foundMap, nil
 }
 
-func (c *Cache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
+func (c *Cache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) (resultErr error) {
+	start := c.opts.Clock.Now()
+	defer c.recordMetrics("Set", resultErr, start)
+
 	wc, err := c.writerWithImmediateCommit(ctx, r, int64(len(data)))
 	if err != nil {
 		return err
@@ -622,7 +644,10 @@ func (c *Cache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) erro
 	return wc.Commit()
 }
 
-func (c *Cache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
+func (c *Cache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) (resultErr error) {
+	start := c.opts.Clock.Now()
+	defer c.recordMetrics("SetMulti", resultErr, start)
+
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.SetLimit(c.opts.MaxWriteGoroutines)
 
@@ -657,7 +682,10 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte)
 	return c.setMetadatas(ctx, mds...)
 }
 
-func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
+func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) (resultErr error) {
+	start := c.opts.Clock.Now()
+	defer c.recordMetrics("Delete", resultErr, start)
+
 	fileRecord, err := c.makeFileRecord(ctx, r)
 	if err != nil {
 		return err
@@ -761,7 +789,7 @@ func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.Resou
 }
 
 // Low level interface used for seeking and stream-writing.
-func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64) (io.ReadCloser, error) {
+func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64) (rc io.ReadCloser, resultErr error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	if spn.IsRecording() {
@@ -769,6 +797,7 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 			attribute.String("digest_hash", r.GetDigest().GetHash()),
 			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
 	}
+
 	fileRecord, err := c.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
@@ -788,7 +817,7 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 
 }
 
-func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (cwc interfaces.CommittedWriteCloser, resultErr error) {
 	return c.writerWithImmediateCommit(ctx, r, r.GetDigest().GetSizeBytes())
 }
 
@@ -801,4 +830,16 @@ func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	default:
 		return false
 	}
+}
+
+func (c *Cache) recordMetrics(method string, err error, start time.Time) {
+	metrics.CacheMethodHandledTotal.With(prometheus.Labels{
+		metrics.CacheNameLabel:           c.opts.Name,
+		metrics.CacheMethod:              method,
+		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+	}).Inc()
+	metrics.CacheMethodHandlingUsec.With(prometheus.Labels{
+		metrics.CacheNameLabel: c.opts.Name,
+		metrics.CacheMethod:    method,
+	}).Observe(float64(c.opts.Clock.Since(start).Microseconds()))
 }
