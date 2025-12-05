@@ -32,17 +32,18 @@ func TestFetchManifestMetadata_NoAuth(t *testing.T) {
 
 	require.Equal(t, digest.String(), resp.GetDigest())
 	require.Equal(t, size, resp.GetSize())
-	require.NotEmpty(t, mediaType, resp.GetMediaType())
+	require.Equal(t, string(mediaType), resp.GetMediaType())
 }
 
 func TestFetchManifestMetadata_WithValidCredentials(t *testing.T) {
-	creds := &testregistry.BasicAuthCreds{
-		Username: "testuser",
-		Password: "testpass",
-	}
-	imageName, img := pushTestImage(t, testregistry.Opts{
-		Creds: creds,
-	}, creds)
+	creds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
+	imageName, img := pushTestImage(t, testregistry.Opts{Creds: creds}, creds)
+	digest, err := img.Digest()
+	require.NoError(t, err)
+	size, err := img.Size()
+	require.NoError(t, err)
+	mediaType, err := img.MediaType()
+	require.NoError(t, err)
 
 	client := newTestClient(t)
 	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
@@ -54,11 +55,9 @@ func TestFetchManifestMetadata_WithValidCredentials(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	digest, err := img.Digest()
-	require.NoError(t, err)
 	require.Equal(t, digest.String(), resp.GetDigest())
-	require.NotZero(t, resp.GetSize())
-	require.NotEmpty(t, resp.GetMediaType())
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, string(mediaType), resp.GetMediaType())
 }
 
 func TestFetchManifestMetadata_WithInvalidCredentials(t *testing.T) {
