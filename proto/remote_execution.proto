@@ -20,6 +20,7 @@ syntax = "proto3";
 
 package build.bazel.remote.execution.v2;
 
+import "proto/cache.proto";
 import "proto/semver.proto";
 import "google/api/annotations.proto";
 import "google/longrunning/operations.proto";
@@ -209,6 +210,10 @@ service ActionCache {
   rpc UpdateActionResult(UpdateActionResultRequest) returns (ActionResult) {
     option (google.api.http) = { put: "/v2/{instance_name=**}/actionResults/{action_digest.hash}/{action_digest.size_bytes}" body: "action_result" };
   }
+
+  // BUILDBUDDY-SPECIFIC RPC.
+  // Returns cache metadata for a given action result.
+  rpc GetCacheMetadata(cache.GetCacheMetadataRequest) returns (cache.GetCacheMetadataResponse);
 }
 
 // The CAS (content-addressable storage) is used to store the inputs to and
@@ -559,6 +564,10 @@ service ContentAddressableStorage {
   rpc SpliceBlob(SpliceBlobRequest) returns (SpliceBlobResponse) {
     option (google.api.http) = { post: "/v2/{instance_name=**}/blobs:spliceBlob" body: "*" };
   }
+
+  // BUILDBUDDY-SPECIFIC RPC.
+  // Returns cache metadata for a given blob.
+  rpc GetCacheMetadata(cache.GetCacheMetadataRequest) returns (cache.GetCacheMetadataResponse);
 }
 
 // The Capabilities service may be used by remote execution clients to query

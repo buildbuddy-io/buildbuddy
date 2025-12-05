@@ -688,6 +688,7 @@ proto_library(
     name = "remote_execution_proto",
     srcs = ["remote_execution.proto"],
     deps = [
+        ":cache_proto",
         ":scheduler_proto",
         ":semver_proto",
         "@com_google_protobuf//:any_proto",
