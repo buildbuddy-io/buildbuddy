@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
@@ -44,6 +45,10 @@ import (
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
+)
+
+const (
+	experimentFlagChunkingEnabled = "cache.chunking_enabled"
 )
 
 var (
@@ -1114,10 +1119,65 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 	return true
 }
 
+// SpliceBlob is used to tell the server how it can assemble a blob from a list of CAS digests.
+// The server will verify the chunks assembled from the digests match the expected blob digest.
 func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
-	return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently implemented")
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+
+	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, experimentFlagChunkingEnabled, false) {
+		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently enabled")
+	}
+
+	if req.GetBlobDigest() == nil {
+		return nil, status.UnimplementedError("SpliceBlob with no blob_digest is not supported")
+	}
+	if nDigests := len(req.GetChunkDigests()); nDigests == 0 {
+		return nil, status.InvalidArgumentError("chunk_digests cannot be empty")
+	} else if nDigests == 1 {
+		return nil, status.UnimplementedError("SpliceBlob with only one chunk is not supported")
+	}
+
+	manifest := &chunked_manifest.ChunkedManifest{
+		BlobDigest:     req.GetBlobDigest(),
+		ChunkDigests:   req.GetChunkDigests(),
+		InstanceName:   req.GetInstanceName(),
+		DigestFunction: req.GetDigestFunction(),
+	}
+
+	if err := manifest.Store(ctx, s.cache); err != nil {
+		return nil, err
+	}
+
+	return &repb.SpliceBlobResponse{
+		BlobDigest: req.GetBlobDigest(),
+	}, nil
 }
 
+// SplitBlob is used to get the digests of the chunks that make up a blob. Clients can then see if
+// any chunks are available locally to reduce download from the remote CAS.
 func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
-	return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently implemented")
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+
+	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, experimentFlagChunkingEnabled, false) {
+		return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently enabled")
+	}
+
+	if req.GetBlobDigest() == nil {
+		return nil, status.InvalidArgumentError("blob_digest is required")
+	}
+
+	manifest, err := chunked_manifest.Load(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
+	if err != nil {
+		// TODO(buildbuddy-internal#6426): Unimplemented is returned when the blob
+		// exists but wasn't stored with chunking. In the future, we could return
+		// the blob as a single chunk to better comply with the RE API contract.
+		return nil, err
+	}
+	return manifest.ToSplitBlobResponse(), nil
 }

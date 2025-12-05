@@ -5,9 +5,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -23,8 +26,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
+	"github.com/jotfs/fastcdc-go"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -107,7 +114,6 @@ func TestBatchUpdateBlobs(t *testing.T) {
 	}
 	_, err = casClient.BatchReadBlobs(ctx, readReq)
 	require.NoError(t, err)
-
 }
 
 func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
@@ -463,11 +469,11 @@ func TestGetTree(t *testing.T) {
 	// Upload a root directory containing both child directories.
 	rootDir := &repb.Directory{
 		Directories: []*repb.DirectoryNode{
-			&repb.DirectoryNode{
+			{
 				Name:   "child1",
 				Digest: child1Digest,
 			},
-			&repb.DirectoryNode{
+			{
 				Name:   "child2",
 				Digest: child2Digest,
 			},
@@ -507,11 +513,11 @@ func TestGetTreeCaching(t *testing.T) {
 	// Upload a root directory containing both child directories.
 	rootDir1 := &repb.Directory{
 		Directories: []*repb.DirectoryNode{
-			&repb.DirectoryNode{
+			{
 				Name:   "child1",
 				Digest: child1Digest,
 			},
-			&repb.DirectoryNode{
+			{
 				Name:   "child2",
 				Digest: child2Digest,
 			},
@@ -522,11 +528,11 @@ func TestGetTreeCaching(t *testing.T) {
 
 	rootDir2 := &repb.Directory{
 		Directories: []*repb.DirectoryNode{
-			&repb.DirectoryNode{
+			{
 				Name:   "child2",
 				Digest: child2Digest,
 			},
-			&repb.DirectoryNode{
+			{
 				Name:   "child3",
 				Digest: child3Digest,
 			},
@@ -564,7 +570,7 @@ func NestForTest(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClie
 		outFiles = append(outFiles, name)
 		rootDir = &repb.Directory{
 			Directories: []*repb.DirectoryNode{
-				&repb.DirectoryNode{
+				{
 					Name:   name,
 					Digest: rootDigest,
 				},
@@ -604,11 +610,11 @@ func TestGetTreeCachingWithSplitting(t *testing.T) {
 	// Upload a root directory containing both child directories.
 	rootDir1 := &repb.Directory{
 		Directories: []*repb.DirectoryNode{
-			&repb.DirectoryNode{
+			{
 				Name:   "child1",
 				Digest: child1Digest,
 			},
-			&repb.DirectoryNode{
+			{
 				Name:   "node_modules",
 				Digest: nodeModulesDigest,
 			},
@@ -618,11 +624,11 @@ func TestGetTreeCachingWithSplitting(t *testing.T) {
 
 	rootDir2 := &repb.Directory{
 		Directories: []*repb.DirectoryNode{
-			&repb.DirectoryNode{
+			{
 				Name:   "node_modules",
 				Digest: nodeModulesDigest,
 			},
-			&repb.DirectoryNode{
+			{
 				Name:   "child3",
 				Digest: child3Digest,
 			},
@@ -678,11 +684,11 @@ func TestGetTreeWithSubtrees(t *testing.T) {
 	// Upload a root directory containing both child directories.
 	rootDir1 := &repb.Directory{
 		Directories: []*repb.DirectoryNode{
-			&repb.DirectoryNode{
+			{
 				Name:   "child1",
 				Digest: child1Digest,
 			},
-			&repb.DirectoryNode{
+			{
 				Name:   "node_modules",
 				Digest: nodeModulesDigest,
 			},
@@ -692,11 +698,11 @@ func TestGetTreeWithSubtrees(t *testing.T) {
 
 	rootDir2 := &repb.Directory{
 		Directories: []*repb.DirectoryNode{
-			&repb.DirectoryNode{
+			{
 				Name:   "node_modules",
 				Digest: nodeModulesDigest,
 			},
-			&repb.DirectoryNode{
+			{
 				Name:   "child3",
 				Digest: child3Digest,
 			},
@@ -806,11 +812,11 @@ func TestGetTreeMissingRoot(t *testing.T) {
 	// Upload a root directory containing both child directories.
 	rootDir := &repb.Directory{
 		Directories: []*repb.DirectoryNode{
-			&repb.DirectoryNode{
+			{
 				Name:   "child11",
 				Digest: child1Digest,
 			},
-			&repb.DirectoryNode{
+			{
 				Name:   "child2",
 				Digest: child2Digest,
 			},
@@ -831,4 +837,214 @@ func TestGetTreeMissingRoot(t *testing.T) {
 	_, err = stream.Recv()
 	require.Error(t, err)
 	require.True(t, hasMissingDigestError(err))
+}
+
+func TestSpliceAndSplitBlob(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	te.SetExperimentFlagProvider(fp)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	testFile := "testdata/server_notification.a"
+	fileData, err := os.ReadFile(testFile)
+	require.NoError(t, err)
+	require.Greater(t, len(fileData), 0)
+
+	avgChunkSize := 64 << 10 // 64KB
+	cdcOpts := fastcdc.Options{
+		AverageSize: avgChunkSize,
+		MinSize:     avgChunkSize / 4,
+		MaxSize:     avgChunkSize * 4,
+		Seed:        0,
+	}
+
+	chunker, err := fastcdc.NewChunker(bytes.NewReader(fileData), cdcOpts)
+	require.NoError(t, err)
+
+	var chunks [][]byte
+	var chunkDigests []*repb.Digest
+
+	for {
+		chunk, err := chunker.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+
+		chunkData := make([]byte, len(chunk.Data))
+		copy(chunkData, chunk.Data)
+		chunks = append(chunks, chunkData)
+
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), repb.DigestFunction_BLAKE3)
+		require.NoError(t, err)
+		chunkDigests = append(chunkDigests, chunkDigest)
+	}
+
+	require.Equal(t, len(chunks), 11)
+	batchReq := &repb.BatchUpdateBlobsRequest{
+		Requests:       make([]*repb.BatchUpdateBlobsRequest_Request, len(chunks)),
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+	for i, chunk := range chunks {
+		batchReq.Requests[i] = &repb.BatchUpdateBlobsRequest_Request{
+			Digest: chunkDigests[i],
+			Data:   chunk,
+		}
+	}
+
+	blobDigest, err := digest.Compute(bytes.NewReader(fileData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	spliceReq := &repb.SpliceBlobRequest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   chunkDigests,
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+
+	// First, show that SpliceBlob fails if the chunks are not yet uploaded.
+	_, err = casClient.SpliceBlob(ctx, spliceReq)
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err))
+
+	// Upload the chunks, then show successful SpliceBlob and SplitBlob.
+	_, err = casClient.BatchUpdateBlobs(ctx, batchReq)
+	require.NoError(t, err)
+
+	spliceResp, err := casClient.SpliceBlob(ctx, spliceReq)
+	require.NoError(t, err)
+	require.Equal(t, blobDigest.Hash, spliceResp.BlobDigest.Hash)
+	require.Equal(t, blobDigest.SizeBytes, spliceResp.BlobDigest.SizeBytes)
+
+	splitReq := &repb.SplitBlobRequest{
+		BlobDigest:     blobDigest,
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+
+	splitResp, err := casClient.SplitBlob(ctx, splitReq)
+	require.NoError(t, err)
+	require.Equal(t, len(chunkDigests), len(splitResp.ChunkDigests))
+
+	for i, expectedDigest := range chunkDigests {
+		actualDigest := splitResp.ChunkDigests[i]
+		assert.Equal(t, expectedDigest.Hash, actualDigest.Hash)
+		assert.Equal(t, expectedDigest.SizeBytes, actualDigest.SizeBytes)
+	}
+}
+
+func TestSplitBlobNotFound(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	te.SetExperimentFlagProvider(fp)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	// Create a digest for a blob that has never been spliced
+	blobDigest := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 12345,
+	}
+
+	splitReq := &repb.SplitBlobRequest{
+		BlobDigest:     blobDigest,
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+
+	_, err = casClient.SplitBlob(ctx, splitReq)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
+}
+
+func TestSpliceBlobSingleChunk(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	te.SetExperimentFlagProvider(fp)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	// Upload a single chunk. This is not supported by the server.
+	chunkData := []byte("this is a single chunk of data")
+	chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	batchReq := &repb.BatchUpdateBlobsRequest{
+		Requests: []*repb.BatchUpdateBlobsRequest_Request{
+			{
+				Digest: chunkDigest,
+				Data:   chunkData,
+			},
+		},
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+	_, err = casClient.BatchUpdateBlobs(ctx, batchReq)
+	require.NoError(t, err)
+
+	blobDigest := chunkDigest
+
+	spliceReq := &repb.SpliceBlobRequest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunkDigest},
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+
+	_, err = casClient.SpliceBlob(ctx, spliceReq)
+	require.Error(t, err)
+	require.True(t, status.IsUnimplementedError(err), "expected UnimplementedError, got: %v", err)
 }
