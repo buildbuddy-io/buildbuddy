@@ -216,7 +216,6 @@ func (t *TaskLease) closed() bool {
 func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	log.CtxInfof(ctx, "TaskLeaser %q Close() called with err: %v", t.taskID, taskErr)
 	if t.closed() {
 		log.CtxInfof(ctx, "TaskLeaser %q was already closed. Short-circuiting.", t.taskID)
 		return
