@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/httpcounter"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -446,7 +447,7 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 				te := testenv.GetTestEnv(t)
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
-				counter := newRequestCounter()
+				counter := httpcounter.New()
 				registry := testregistry.Run(t, testregistry.Opts{
 					HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 						counter.Inc(r)
@@ -472,13 +473,13 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 					)
 					require.NoError(t, err)
 
-					counter.reset()
+					counter.Reset()
 
 					layers, err := pulledImage.Layers()
 					require.NoError(t, err)
 
 					expected := map[string]int{}
-					require.Empty(t, cmp.Diff(expected, counter.snapshot()))
+					require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 
 					configDigest, err := pulledImage.ConfigName()
 					require.NoError(t, err)
@@ -491,12 +492,12 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 					// Layer.DiffID() call will make a request to fetch the config file.
 					_, err = pulledImage.ConfigFile()
 					require.NoError(t, err)
-					require.Empty(t, cmp.Diff(expected, counter.snapshot()))
+					require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 
 					for _, layer := range layers {
 						_, err := layer.DiffID()
 						require.NoError(t, err)
-						require.Empty(t, cmp.Diff(expected, counter.snapshot()))
+						require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 					}
 				}
 			})
@@ -698,7 +699,7 @@ func TestResolve_WithCache(t *testing.T) {
 			te := setupTestEnvWithCache(t)
 			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 			flags.Set(t, "executor.container_registry.use_cache_percent", 100)
-			counter := newRequestCounter()
+			counter := httpcounter.New()
 			registry := testregistry.Run(t, testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 					counter.Inc(r)
@@ -838,7 +839,7 @@ func TestResolve_Concurrency(t *testing.T) {
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
-	counter := newRequestCounter()
+	counter := httpcounter.New()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
@@ -875,7 +876,7 @@ func TestResolve_Concurrency(t *testing.T) {
 	for digest, _ := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
-	counter.reset()
+	counter.Reset()
 	c := &claims.Claims{UserID: "US123"}
 	testContext := contextWithUnverifiedJWT(c)
 	pulledImage, err := newResolver(t, te).Resolve(
@@ -926,7 +927,7 @@ func TestResolve_Concurrency(t *testing.T) {
 	}
 	layerWG.Wait()
 	close(layerChan)
-	require.Empty(t, cmp.Diff(expected, counter.snapshot()))
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 
 	for result := range layerChan {
 		require.NoError(t, result.digestErr)
@@ -963,8 +964,8 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	return te
 }
 
-func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, expected map[string]int, counter *requestCounter) {
-	counter.reset()
+func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, expected map[string]int, counter *httpcounter.Counter) {
+	counter.Reset()
 	c := &claims.Claims{UserID: "US123"}
 	testContext := contextWithUnverifiedJWT(c)
 	pulledImage, err := newResolver(t, te).Resolve(
@@ -982,38 +983,7 @@ func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imag
 	files := layerFiles(t, layers[0])
 	require.Empty(t, cmp.Diff(tc.imageFiles, files))
 
-	require.Empty(t, cmp.Diff(expected, counter.snapshot()))
-}
-
-type requestCounter struct {
-	mu     sync.Mutex
-	counts map[string]int
-}
-
-func newRequestCounter() *requestCounter {
-	return &requestCounter{counts: make(map[string]int)}
-}
-
-func (c *requestCounter) Inc(r *http.Request) {
-	c.mu.Lock()
-	c.counts[r.Method+" "+r.URL.Path]++
-	c.mu.Unlock()
-}
-
-func (c *requestCounter) snapshot() map[string]int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	snap := make(map[string]int, len(c.counts))
-	for k, v := range c.counts {
-		snap[k] = v
-	}
-	return snap
-}
-
-func (c *requestCounter) reset() {
-	c.mu.Lock()
-	c.counts = map[string]int{}
-	c.mu.Unlock()
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 }
 
 func TestResolveImageDigest_TagExists(t *testing.T) {
@@ -1061,7 +1031,7 @@ func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
-	counter := newRequestCounter()
+	counter := httpcounter.New()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
@@ -1077,7 +1047,7 @@ func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 
 	resolver := newResolver(t, te)
 
-	counter.reset()
+	counter.Reset()
 	nameWithDigest, err := resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
@@ -1089,14 +1059,14 @@ func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 
-	require.Empty(t, counter.snapshot())
+	require.Empty(t, counter.Snapshot())
 }
 
 func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
-	counter := newRequestCounter()
+	counter := httpcounter.New()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
@@ -1113,7 +1083,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 	resolver := newResolver(t, te)
 
 	{
-		counter.reset()
+		counter.Reset()
 		nameWithDigest, err := resolver.ResolveImageDigest(
 			context.Background(),
 			nameToResolve,
@@ -1129,11 +1099,11 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 			http.MethodGet + " /v2/":                                    1,
 			http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
 		}
-		require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
+		require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
 	}
 
 	{
-		counter.reset()
+		counter.Reset()
 		nameWithDigest, err := resolver.ResolveImageDigest(
 			context.Background(),
 			nameToResolve,
@@ -1146,14 +1116,14 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 
-		require.Empty(t, counter.snapshot())
+		require.Empty(t, counter.Snapshot())
 	}
 
 	{
 		ref, err := name.ParseReference(nameToResolve)
 		require.NoError(t, err)
 		registryAndRepoNoTag := ref.Context().String()
-		counter.reset()
+		counter.Reset()
 		nameWithDigest, err := resolver.ResolveImageDigest(
 			context.Background(),
 			registryAndRepoNoTag,
@@ -1166,7 +1136,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 
-		require.Empty(t, counter.snapshot())
+		require.Empty(t, counter.Snapshot())
 	}
 }
 
@@ -1174,7 +1144,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
-	counter := newRequestCounter()
+	counter := httpcounter.New()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
@@ -1192,7 +1162,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	te.SetClock(fakeClock)
 	resolver := newResolver(t, te)
 
-	counter.reset()
+	counter.Reset()
 	nameWithDigest, err := resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
@@ -1208,10 +1178,10 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 		http.MethodGet + " /v2/":                                    1,
 		http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
 	}
-	require.Empty(t, cmp.Diff(expectedFirst, counter.snapshot()))
+	require.Empty(t, cmp.Diff(expectedFirst, counter.Snapshot()))
 
 	// Immediate resolve should be a cache hit; no HTTP requests.
-	counter.reset()
+	counter.Reset()
 	nameWithDigest, err = resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
@@ -1222,11 +1192,11 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	resolvedDigest, err = name.NewDigest(nameWithDigest)
 	require.NoError(t, err)
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
-	require.Empty(t, counter.snapshot())
+	require.Empty(t, counter.Snapshot())
 
 	// Advance time to just before TTL expiry; still a cache hit.
 	fakeClock.Advance(15*time.Minute - time.Second)
-	counter.reset()
+	counter.Reset()
 	nameWithDigest, err = resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
@@ -1237,11 +1207,11 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	resolvedDigest, err = name.NewDigest(nameWithDigest)
 	require.NoError(t, err)
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
-	require.Empty(t, counter.snapshot())
+	require.Empty(t, counter.Snapshot())
 
 	// Advance past TTL; expect cache refresh (GET /v2/ and HEAD manifest).
 	fakeClock.Advance(2 * time.Second)
-	counter.reset()
+	counter.Reset()
 	nameWithDigest, err = resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
@@ -1257,5 +1227,5 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 		http.MethodGet + " /v2/":                                    1,
 		http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
 	}
-	require.Empty(t, cmp.Diff(expectedRefresh, counter.snapshot()))
+	require.Empty(t, cmp.Diff(expectedRefresh, counter.Snapshot()))
 }
