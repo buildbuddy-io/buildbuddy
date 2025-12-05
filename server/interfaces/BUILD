@@ -21,7 +21,6 @@ go_library(
         "//proto:invocation_go_proto",
         "//proto:iprules_go_proto",
         "//proto:publish_build_event_go_proto",
-        "//proto:quota_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:repo_go_proto",
         "//proto:resource_go_proto",

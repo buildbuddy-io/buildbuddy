@@ -812,6 +812,9 @@ func (*Usage) TableName() string {
 	return "Usages"
 }
 
+// DEPRECATED: QuotaBucket is no longer used by the quota manager, which now loads
+// quota configuration exclusively from flagd. This table can be safely removed once
+// any existing quota data has been migrated to flagd configuration.
 type QuotaBucket struct {
 	Model
 	// The namespace indicates a single resource to be protected from abusive
@@ -834,6 +837,9 @@ func (*QuotaBucket) TableName() string {
 	return "QuotaBuckets"
 }
 
+// DEPRECATED: QuotaGroup is no longer used by the quota manager, which now loads
+// quota configuration exclusively from flagd. This table can be safely removed once
+// any existing quota data has been migrated to flagd configuration.
 // QuotaGroup defines the relationship between a QuotaBucket to a QuotaKey. For,
 // example, user:X is in bucket:restricted.
 type QuotaGroup struct {
