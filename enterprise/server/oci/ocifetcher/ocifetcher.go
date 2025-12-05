@@ -349,14 +349,12 @@ type blobReader struct {
 }
 
 func (r *blobReader) Read(p []byte) (n int, err error) {
-	// Return buffered data first
 	if len(r.buf) > 0 {
 		n = copy(p, r.buf)
 		r.buf = r.buf[n:]
 		return n, nil
 	}
 
-	// Get more data from stream
 	resp, err := r.stream.Recv()
 	if err != nil {
 		return 0, err
