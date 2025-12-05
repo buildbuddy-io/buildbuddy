@@ -101,6 +101,12 @@ func TestFetchManifestMetadata_MissingCredentials(t *testing.T) {
 
 func TestFetchManifest_NoAuth(t *testing.T) {
 	imageName, img := pushTestImage(t, testregistry.Opts{}, nil)
+	digest, err := img.Digest()
+	require.NoError(t, err)
+	size, err := img.Size()
+	require.NoError(t, err)
+	mediaType, err := img.MediaType()
+	require.NoError(t, err)
 
 	client := newTestClient(t)
 	resp, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
@@ -108,11 +114,9 @@ func TestFetchManifest_NoAuth(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	digest, err := img.Digest()
-	require.NoError(t, err)
 	require.Equal(t, digest.String(), resp.GetDigest())
-	require.NotZero(t, resp.GetSize())
-	require.NotEmpty(t, resp.GetMediaType())
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, string(mediaType), resp.GetMediaType())
 	require.NotEmpty(t, resp.GetManifest())
 }
 
@@ -124,6 +128,12 @@ func TestFetchManifest_WithValidCredentials(t *testing.T) {
 	imageName, img := pushTestImage(t, testregistry.Opts{
 		Creds: creds,
 	}, creds)
+	digest, err := img.Digest()
+	require.NoError(t, err)
+	size, err := img.Size()
+	require.NoError(t, err)
+	mediaType, err := img.MediaType()
+	require.NoError(t, err)
 
 	client := newTestClient(t)
 	resp, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
@@ -135,11 +145,9 @@ func TestFetchManifest_WithValidCredentials(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	digest, err := img.Digest()
-	require.NoError(t, err)
 	require.Equal(t, digest.String(), resp.GetDigest())
-	require.NotZero(t, resp.GetSize())
-	require.NotEmpty(t, resp.GetMediaType())
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, string(mediaType), resp.GetMediaType())
 	require.NotEmpty(t, resp.GetManifest())
 }
 
