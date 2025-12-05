@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"net"
+	"net/http"
+	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
@@ -18,7 +20,13 @@ import (
 )
 
 func TestFetchManifestMetadata_NoAuth(t *testing.T) {
-	imageName, img := pushTestImage(t, testregistry.Opts{}, nil)
+	counter := newRequestCounter()
+	imageName, img := pushTestImage(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	}, nil)
 	digest, err := img.Digest()
 	require.NoError(t, err)
 	size, err := img.Size()
@@ -26,18 +34,32 @@ func TestFetchManifestMetadata_NoAuth(t *testing.T) {
 	mediaType, err := img.MediaType()
 	require.NoError(t, err)
 
+	counter.reset()
 	client := newTestClient(t)
-	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName,})
+	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
 
 	require.Equal(t, digest.String(), resp.GetDigest())
 	require.Equal(t, size, resp.GetSize())
 	require.Equal(t, string(mediaType), resp.GetMediaType())
+
+	expectedRequests := map[string]int{
+		"GET /v2/":                              1,
+		"HEAD /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
 }
 
 func TestFetchManifestMetadata_WithValidCredentials(t *testing.T) {
+	counter := newRequestCounter()
 	creds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
-	imageName, img := pushTestImage(t, testregistry.Opts{Creds: creds}, creds)
+	imageName, img := pushTestImage(t, testregistry.Opts{
+		Creds: creds,
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	}, creds)
 	digest, err := img.Digest()
 	require.NoError(t, err)
 	size, err := img.Size()
@@ -45,6 +67,7 @@ func TestFetchManifestMetadata_WithValidCredentials(t *testing.T) {
 	mediaType, err := img.MediaType()
 	require.NoError(t, err)
 
+	counter.reset()
 	client := newTestClient(t)
 	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
@@ -58,17 +81,29 @@ func TestFetchManifestMetadata_WithValidCredentials(t *testing.T) {
 	require.Equal(t, digest.String(), resp.GetDigest())
 	require.Equal(t, size, resp.GetSize())
 	require.Equal(t, string(mediaType), resp.GetMediaType())
+
+	expectedRequests := map[string]int{
+		"GET /v2/":                              1,
+		"HEAD /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
 }
 
 func TestFetchManifestMetadata_WithInvalidCredentials(t *testing.T) {
+	counter := newRequestCounter()
 	creds := &testregistry.BasicAuthCreds{
 		Username: "testuser",
 		Password: "testpass",
 	}
 	imageName, _ := pushTestImage(t, testregistry.Opts{
 		Creds: creds,
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
 	}, creds)
 
+	counter.reset()
 	client := newTestClient(t)
 	_, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
@@ -79,17 +114,29 @@ func TestFetchManifestMetadata_WithInvalidCredentials(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
+
+	expectedRequests := map[string]int{
+		"GET /v2/":                              1,
+		"HEAD /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
 }
 
 func TestFetchManifestMetadata_MissingCredentials(t *testing.T) {
+	counter := newRequestCounter()
 	creds := &testregistry.BasicAuthCreds{
 		Username: "testuser",
 		Password: "testpass",
 	}
 	imageName, _ := pushTestImage(t, testregistry.Opts{
 		Creds: creds,
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
 	}, creds)
 
+	counter.reset()
 	client := newTestClient(t)
 	_, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
@@ -97,10 +144,22 @@ func TestFetchManifestMetadata_MissingCredentials(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
+
+	expectedRequests := map[string]int{
+		"GET /v2/":                              1,
+		"HEAD /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
 }
 
 func TestFetchManifest_NoAuth(t *testing.T) {
-	imageName, img := pushTestImage(t, testregistry.Opts{}, nil)
+	counter := newRequestCounter()
+	imageName, img := pushTestImage(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	}, nil)
 	digest, err := img.Digest()
 	require.NoError(t, err)
 	size, err := img.Size()
@@ -108,6 +167,7 @@ func TestFetchManifest_NoAuth(t *testing.T) {
 	mediaType, err := img.MediaType()
 	require.NoError(t, err)
 
+	counter.reset()
 	client := newTestClient(t)
 	resp, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
 		Ref: imageName,
@@ -118,15 +178,26 @@ func TestFetchManifest_NoAuth(t *testing.T) {
 	require.Equal(t, size, resp.GetSize())
 	require.Equal(t, string(mediaType), resp.GetMediaType())
 	require.NotEmpty(t, resp.GetManifest())
+
+	expectedRequests := map[string]int{
+		"GET /v2/":                             1,
+		"GET /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
 }
 
 func TestFetchManifest_WithValidCredentials(t *testing.T) {
+	counter := newRequestCounter()
 	creds := &testregistry.BasicAuthCreds{
 		Username: "testuser",
 		Password: "testpass",
 	}
 	imageName, img := pushTestImage(t, testregistry.Opts{
 		Creds: creds,
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
 	}, creds)
 	digest, err := img.Digest()
 	require.NoError(t, err)
@@ -135,6 +206,7 @@ func TestFetchManifest_WithValidCredentials(t *testing.T) {
 	mediaType, err := img.MediaType()
 	require.NoError(t, err)
 
+	counter.reset()
 	client := newTestClient(t)
 	resp, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
 		Ref: imageName,
@@ -149,17 +221,29 @@ func TestFetchManifest_WithValidCredentials(t *testing.T) {
 	require.Equal(t, size, resp.GetSize())
 	require.Equal(t, string(mediaType), resp.GetMediaType())
 	require.NotEmpty(t, resp.GetManifest())
+
+	expectedRequests := map[string]int{
+		"GET /v2/":                             1,
+		"GET /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
 }
 
 func TestFetchManifest_WithInvalidCredentials(t *testing.T) {
+	counter := newRequestCounter()
 	creds := &testregistry.BasicAuthCreds{
 		Username: "testuser",
 		Password: "testpass",
 	}
 	imageName, _ := pushTestImage(t, testregistry.Opts{
 		Creds: creds,
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
 	}, creds)
 
+	counter.reset()
 	client := newTestClient(t)
 	_, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
 		Ref: imageName,
@@ -170,14 +254,29 @@ func TestFetchManifest_WithInvalidCredentials(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
+
+	expectedRequests := map[string]int{
+		"GET /v2/":                             1,
+		"GET /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
 }
 
 func TestFetchBlob_NoAuth(t *testing.T) {
-	imageName, img := pushTestImage(t, testregistry.Opts{}, nil)
+	counter := newRequestCounter()
+	imageName, img := pushTestImage(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	}, nil)
 	layer := firstLayer(t, img)
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
 	blobRef := blobRefForLayer(t, imageName, layer)
 	expectedData := layerBytes(t, layer)
 
+	counter.reset()
 	client := newTestClient(t)
 	stream, err := client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{
 		Ref: blobRef,
@@ -194,17 +293,30 @@ func TestFetchBlob_NoAuth(t *testing.T) {
 		data = append(data, resp.GetData()...)
 	}
 
-	if diff := cmp.Diff(expectedData, data); diff != "" {
-		t.Fatalf("blob payload mismatch (-want +got):\n%s", diff)
+	require.Empty(t, cmp.Diff(expectedData, data))
+
+	expectedRequests := map[string]int{
+		"GET /v2/": 1,
+		"GET /v2/test-image/blobs/" + layerDigest.String(): 1,
 	}
+	require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
 }
 
 func TestReadBlob_NoAuth(t *testing.T) {
-	imageName, img := pushTestImage(t, testregistry.Opts{}, nil)
+	counter := newRequestCounter()
+	imageName, img := pushTestImage(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	}, nil)
 	layer := firstLayer(t, img)
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
 	blobRef := blobRefForLayer(t, imageName, layer)
 	expectedData := layerBytes(t, layer)
 
+	counter.reset()
 	client := newTestClient(t)
 	rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, nil)
 	require.NoError(t, err)
@@ -213,21 +325,34 @@ func TestReadBlob_NoAuth(t *testing.T) {
 	actualData, err := io.ReadAll(rc)
 	require.NoError(t, err)
 
-	if diff := cmp.Diff(expectedData, actualData); diff != "" {
-		t.Fatalf("blob payload mismatch (-want +got):\n%s", diff)
+	require.Empty(t, cmp.Diff(expectedData, actualData))
+
+	expectedRequests := map[string]int{
+		"GET /v2/": 1,
+		"GET /v2/test-image/blobs/" + layerDigest.String(): 1,
 	}
+	require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
 }
 
 func TestReadBlob_WithValidCredentials(t *testing.T) {
+	counter := newRequestCounter()
 	creds := &testregistry.BasicAuthCreds{
 		Username: "testuser",
 		Password: "testpass",
 	}
 	imageName, img := pushTestImage(t, testregistry.Opts{
 		Creds: creds,
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
 	}, creds)
-	blobRef := blobRefForLayer(t, imageName, firstLayer(t, img))
+	layer := firstLayer(t, img)
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	blobRef := blobRefForLayer(t, imageName, layer)
 
+	counter.reset()
 	client := newTestClient(t)
 	rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, &rgpb.Credentials{
 		Username: "testuser",
@@ -238,36 +363,65 @@ func TestReadBlob_WithValidCredentials(t *testing.T) {
 
 	_, err = io.ReadAll(rc)
 	require.NoError(t, err)
+
+	expectedRequests := map[string]int{
+		"GET /v2/": 1,
+		"GET /v2/test-image/blobs/" + layerDigest.String(): 1,
+	}
+	require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
 }
 
 func TestReadBlob_WithInvalidCredentials(t *testing.T) {
+	counter := newRequestCounter()
 	creds := &testregistry.BasicAuthCreds{
 		Username: "testuser",
 		Password: "testpass",
 	}
 	imageName, img := pushTestImage(t, testregistry.Opts{
 		Creds: creds,
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
 	}, creds)
-	blobRef := blobRefForLayer(t, imageName, firstLayer(t, img))
+	layer := firstLayer(t, img)
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	blobRef := blobRefForLayer(t, imageName, layer)
 
+	counter.reset()
 	client := newTestClient(t)
-	_, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, &rgpb.Credentials{
+	_, err = ocifetcher.ReadBlob(context.Background(), client, blobRef, &rgpb.Credentials{
 		Username: "wronguser",
 		Password: "wrongpass",
 	})
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
+
+	expectedRequests := map[string]int{
+		"GET /v2/": 1,
+		"GET /v2/test-image/blobs/" + layerDigest.String(): 1,
+	}
+	require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
 }
 
 func TestReadBlob_BufferSizes(t *testing.T) {
-	imageName, img := pushTestImage(t, testregistry.Opts{}, nil)
+	counter := newRequestCounter()
+	imageName, img := pushTestImage(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	}, nil)
 	layer := firstLayer(t, img)
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
 	blobRef := blobRefForLayer(t, imageName, layer)
 	expectedData := layerBytes(t, layer)
 
 	client := newTestClient(t)
 
-	for _, readSize := range []int{
+	readSizes := []int{
 		1,           // tiny reads
 		64,          // small reads
 		1024,        // medium reads
@@ -275,7 +429,10 @@ func TestReadBlob_BufferSizes(t *testing.T) {
 		32 * 1024,   // exactly chunk size
 		32*1024 + 1, // just over chunk size
 		64 * 1024,   // larger than chunk
-	} {
+	}
+
+	counter.reset()
+	for _, readSize := range readSizes {
 		rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, nil)
 		require.NoError(t, err)
 		defer rc.Close()
@@ -294,6 +451,12 @@ func TestReadBlob_BufferSizes(t *testing.T) {
 
 		require.Equal(t, expectedData, result, "data mismatch for readSize=%d", readSize)
 	}
+
+	expectedRequests := map[string]int{
+		"GET /v2/": len(readSizes),
+		"GET /v2/test-image/blobs/" + layerDigest.String(): len(readSizes),
+	}
+	require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
 }
 
 func localhostIPs(t *testing.T) []*net.IPNet {
@@ -334,5 +497,36 @@ func layerBytes(t *testing.T, layer v1.Layer) []byte {
 	require.NoError(t, err)
 	require.NoError(t, layerReader.Close())
 	return data
+}
+
+type requestCounter struct {
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+func newRequestCounter() *requestCounter {
+	return &requestCounter{counts: make(map[string]int)}
+}
+
+func (c *requestCounter) Inc(r *http.Request) {
+	c.mu.Lock()
+	c.counts[r.Method+" "+r.URL.Path]++
+	c.mu.Unlock()
+}
+
+func (c *requestCounter) snapshot() map[string]int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	snap := make(map[string]int, len(c.counts))
+	for k, v := range c.counts {
+		snap[k] = v
+	}
+	return snap
+}
+
+func (c *requestCounter) reset() {
+	c.mu.Lock()
+	c.counts = map[string]int{}
+	c.mu.Unlock()
 }
 
