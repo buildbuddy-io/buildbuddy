@@ -216,8 +216,9 @@ func (t *TaskLease) closed() bool {
 func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	log.CtxInfof(ctx, "Closing task lease")
 	if t.closed() {
-		log.CtxInfof(ctx, "TaskLeaser %q was already closed. Short-circuiting.", t.taskID)
+		log.CtxInfof(ctx, "Lease was already closed. Short-circuiting.")
 		return
 	}
 	close(t.quit) // This cancels our lease-keep-alive background goroutine.
@@ -248,14 +249,14 @@ func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 			break
 		}
 		if err != nil {
-			log.CtxWarningf(ctx, "TaskLeaser %q: got non-EOF err: %s", t.taskID, err)
+			log.CtxWarningf(ctx, "Lease stream recv failed: %s", err)
 			break
 		}
 		closedCleanly = rsp.GetClosedCleanly()
 	}
 
 	if !closedCleanly {
-		log.CtxWarningf(ctx, "TaskLeaser %q: did not close cleanly but should have. Will re-enqueue.", t.taskID)
+		log.CtxWarningf(ctx, "Lease did not close cleanly; re-enqueueing task")
 		reason := ""
 		if taskErr != nil {
 			reason = taskErr.Error()
@@ -265,11 +266,11 @@ func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 			ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 		}
 		if err := t.reEnqueueTask(ctx, reason); err != nil {
-			log.CtxWarningf(ctx, "TaskLeaser %q: error re-enqueueing task: %s", t.taskID, err.Error())
+			log.CtxWarningf(ctx, "Error re-enqueueing task: %s", err)
 		} else {
-			log.CtxInfof(ctx, "TaskLeaser %q: Successfully re-enqueued.", t.taskID)
+			log.CtxInfof(ctx, "Successfully re-enqueued task")
 		}
 	} else {
-		log.CtxInfof(ctx, "TaskLeaser %q: closed cleanly :)", t.taskID)
+		log.CtxInfof(ctx, "Task lease closed cleanly")
 	}
 }
