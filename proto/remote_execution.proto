@@ -20,7 +20,7 @@ syntax = "proto3";
 
 package build.bazel.remote.execution.v2;
 
-import "proto/cache.proto";
+import "proto/context.proto";
 import "proto/semver.proto";
 import "google/api/annotations.proto";
 import "google/longrunning/operations.proto";
@@ -213,7 +213,7 @@ service ActionCache {
 
   // BUILDBUDDY-SPECIFIC RPC.
   // Returns cache metadata for a given action result.
-  rpc GetCacheMetadata(cache.GetCacheMetadataRequest) returns (cache.GetCacheMetadataResponse);
+  rpc GetCacheMetadata(GetCacheMetadataRequest) returns (GetCacheMetadataResponse);
 }
 
 // The CAS (content-addressable storage) is used to store the inputs to and
@@ -567,7 +567,7 @@ service ContentAddressableStorage {
 
   // BUILDBUDDY-SPECIFIC RPC.
   // Returns cache metadata for a given blob.
-  rpc GetCacheMetadata(cache.GetCacheMetadataRequest) returns (cache.GetCacheMetadataResponse);
+  rpc GetCacheMetadata(GetCacheMetadataRequest) returns (GetCacheMetadataResponse);
 }
 
 // The Capabilities service may be used by remote execution clients to query
@@ -2906,4 +2906,27 @@ message StoredExecution {
   // The requested pool name from platform properties, before resolution to effective pool.
   string requested_pool = 77;
   string effective_pool = 78;
+}
+
+// Fetches metadata about a cache resource.
+message GetCacheMetadataRequest {
+  context.RequestContext request_context = 1;
+
+  // The digest of this resource.
+  Digest digest = 2;
+
+  // The namespace (remote instance name) this resource is stored in.
+  // Ex. "", "ios/1", "my_remote_instance"
+  string instance_name = 3;
+
+  // The digest function used to hash this resource and create the digest.
+  DigestFunction.Value digest_function = 4;
+}
+
+message GetCacheMetadataResponse {
+  context.ResponseContext response_context = 1;
+  int64 stored_size_bytes = 2;
+  int64 last_access_usec = 3;
+  int64 last_modify_usec = 4;
+  int64 digest_size_bytes = 5;
 }
