@@ -49,7 +49,7 @@ go_test(
         "//enterprise/server/testutil/testregistry",
         "//proto:registry_go_proto",
         "//server/interfaces",
-        "//server/testutil/httpcounter",
+        "//server/testutil/testhttp",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testfs",

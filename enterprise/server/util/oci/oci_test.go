@@ -23,8 +23,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/httpcounter"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -447,7 +447,7 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 				te := testenv.GetTestEnv(t)
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
-				counter := httpcounter.New()
+				counter := testhttp.NewRequestCounter()
 				registry := testregistry.Run(t, testregistry.Opts{
 					HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 						counter.Inc(r)
@@ -699,7 +699,7 @@ func TestResolve_WithCache(t *testing.T) {
 			te := setupTestEnvWithCache(t)
 			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 			flags.Set(t, "executor.container_registry.use_cache_percent", 100)
-			counter := httpcounter.New()
+			counter := testhttp.NewRequestCounter()
 			registry := testregistry.Run(t, testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 					counter.Inc(r)
@@ -839,7 +839,7 @@ func TestResolve_Concurrency(t *testing.T) {
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
@@ -964,7 +964,7 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	return te
 }
 
-func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, expected map[string]int, counter *httpcounter.Counter) {
+func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, expected map[string]int, counter *testhttp.RequestCounter) {
 	counter.Reset()
 	c := &claims.Claims{UserID: "US123"}
 	testContext := contextWithUnverifiedJWT(c)
@@ -1031,7 +1031,7 @@ func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
@@ -1066,7 +1066,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
@@ -1144,7 +1144,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)

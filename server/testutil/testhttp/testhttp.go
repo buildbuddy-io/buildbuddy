@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
@@ -58,4 +59,40 @@ func (w *ResponseWriter) Header() http.Header {
 }
 func (w *ResponseWriter) Write(p []byte) (int, error) {
 	return len(p), nil
+}
+
+// RequestCounter tracks HTTP requests by method and path.
+type RequestCounter struct {
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+// NewRequestCounter creates a new RequestCounter.
+func NewRequestCounter() *RequestCounter {
+	return &RequestCounter{counts: make(map[string]int)}
+}
+
+// Inc increments the count for the given request's method and path.
+func (c *RequestCounter) Inc(r *http.Request) {
+	c.mu.Lock()
+	c.counts[r.Method+" "+r.URL.Path]++
+	c.mu.Unlock()
+}
+
+// Snapshot returns a copy of the current counts.
+func (c *RequestCounter) Snapshot() map[string]int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	snap := make(map[string]int, len(c.counts))
+	for k, v := range c.counts {
+		snap[k] = v
+	}
+	return snap
+}
+
+// Reset clears all counts.
+func (c *RequestCounter) Reset() {
+	c.mu.Lock()
+	c.counts = map[string]int{}
+	c.mu.Unlock()
 }

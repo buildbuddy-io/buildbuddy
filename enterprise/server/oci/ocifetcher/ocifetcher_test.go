@@ -9,7 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/httpcounter"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -20,7 +20,7 @@ import (
 )
 
 func TestFetchManifestMetadata_NoAuth(t *testing.T) {
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	imageName, img := pushTestImage(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
@@ -51,7 +51,7 @@ func TestFetchManifestMetadata_NoAuth(t *testing.T) {
 }
 
 func TestFetchManifestMetadata_WithValidCredentials(t *testing.T) {
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	creds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
 	imageName, img := pushTestImage(t, testregistry.Opts{
 		Creds: creds,
@@ -90,7 +90,7 @@ func TestFetchManifestMetadata_WithValidCredentials(t *testing.T) {
 }
 
 func TestFetchManifestMetadata_WithInvalidCredentials(t *testing.T) {
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	creds := &testregistry.BasicAuthCreds{
 		Username: "testuser",
 		Password: "testpass",
@@ -123,7 +123,7 @@ func TestFetchManifestMetadata_WithInvalidCredentials(t *testing.T) {
 }
 
 func TestFetchManifestMetadata_MissingCredentials(t *testing.T) {
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	creds := &testregistry.BasicAuthCreds{
 		Username: "testuser",
 		Password: "testpass",
@@ -153,7 +153,7 @@ func TestFetchManifestMetadata_MissingCredentials(t *testing.T) {
 }
 
 func TestFetchManifest_NoAuth(t *testing.T) {
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	imageName, img := pushTestImage(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
@@ -187,7 +187,7 @@ func TestFetchManifest_NoAuth(t *testing.T) {
 }
 
 func TestFetchManifest_WithValidCredentials(t *testing.T) {
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	creds := &testregistry.BasicAuthCreds{
 		Username: "testuser",
 		Password: "testpass",
@@ -230,7 +230,7 @@ func TestFetchManifest_WithValidCredentials(t *testing.T) {
 }
 
 func TestFetchManifest_WithInvalidCredentials(t *testing.T) {
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	creds := &testregistry.BasicAuthCreds{
 		Username: "testuser",
 		Password: "testpass",
@@ -263,7 +263,7 @@ func TestFetchManifest_WithInvalidCredentials(t *testing.T) {
 }
 
 func TestFetchBlob_NoAuth(t *testing.T) {
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	// Use 2 layers of 50KB each to exercise multi-chunk reads (chunk size is 32KB)
 	imageName, img := pushTestImageWithLayerSize(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -309,7 +309,7 @@ func TestFetchBlob_NoAuth(t *testing.T) {
 }
 
 func TestReadBlob_NoAuth(t *testing.T) {
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	// Use 2 layers of 50KB each to exercise multi-chunk reads (chunk size is 32KB)
 	imageName, img := pushTestImageWithLayerSize(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -347,7 +347,7 @@ func TestReadBlob_NoAuth(t *testing.T) {
 }
 
 func TestReadBlob_WithValidCredentials(t *testing.T) {
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	creds := &testregistry.BasicAuthCreds{
 		Username: "testuser",
 		Password: "testpass",
@@ -391,7 +391,7 @@ func TestReadBlob_WithValidCredentials(t *testing.T) {
 }
 
 func TestReadBlob_WithInvalidCredentials(t *testing.T) {
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	creds := &testregistry.BasicAuthCreds{
 		Username: "testuser",
 		Password: "testpass",
@@ -432,7 +432,7 @@ func TestReadBlob_WithInvalidCredentials(t *testing.T) {
 }
 
 func TestReadBlob_BufferSizes(t *testing.T) {
-	counter := httpcounter.New()
+	counter := testhttp.NewRequestCounter()
 	// Use 2 layers of 2MB each to exercise larger streaming behavior
 	imageName, img := pushTestImageWithLayerSize(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
