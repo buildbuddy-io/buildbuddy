@@ -212,6 +212,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(inputRootURL, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
         let inputRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
+        let inputFiles: TreeNode[] = inputRoot.files.map((node) => ({
+          obj: node,
+          type: "file",
+        }));
         let inputDirectories: TreeNode[] = inputRoot.directories.map((node) => ({
           obj: node,
           type: "dir",
@@ -220,7 +224,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           obj: node,
           type: "symlink",
         }));
-        const inputNodes = [...inputDirectories, ...inputSymlinks];
+        const inputNodes = [...inputDirectories, ...inputFiles, ...inputSymlinks];
         this.setState({ inputRoot, inputNodes });
       })
       .catch((e) => console.error("Failed to fetch input root:", e));
