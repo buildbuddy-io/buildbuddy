@@ -235,6 +235,22 @@ func (r *Registry) PushNamedImageWithMultipleLayers(t *testing.T, imageName stri
 	return r.Push(t, image, imageName, creds), image
 }
 
+func (r *Registry) PushNamedImageWithLayerSize(t *testing.T, imageName string, numLayers int, layerSize int64, creds *BasicAuthCreds) (string, gcr.Image) {
+	base := empty.Image
+	layers := make([]gcr.Layer, 0, numLayers)
+	for i := 0; i < numLayers; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, layerSize)
+		layer, err := crane.Layer(map[string][]byte{
+			"/layer/" + rn.Digest.Hash: buf,
+		})
+		require.NoError(t, err)
+		layers = append(layers, layer)
+	}
+	image, err := mutate.AppendLayers(base, layers...)
+	require.NoError(t, err)
+	return r.Push(t, image, imageName, creds), image
+}
+
 func (r *Registry) Shutdown(ctx context.Context) error {
 	if r.server != nil {
 		return r.server.Shutdown(ctx)

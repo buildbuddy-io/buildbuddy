@@ -264,12 +264,13 @@ func TestFetchManifest_WithInvalidCredentials(t *testing.T) {
 
 func TestFetchBlob_NoAuth(t *testing.T) {
 	counter := httpcounter.New()
-	imageName, img := pushTestImage(t, testregistry.Opts{
+	// Use 2 layers of 50KB each to exercise multi-chunk reads (chunk size is 32KB)
+	imageName, img := pushTestImageWithLayerSize(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
 			return true
 		},
-	}, nil)
+	}, nil, 2, 50*1024)
 	layers, err := img.Layers()
 	require.NoError(t, err)
 
@@ -309,12 +310,13 @@ func TestFetchBlob_NoAuth(t *testing.T) {
 
 func TestReadBlob_NoAuth(t *testing.T) {
 	counter := httpcounter.New()
-	imageName, img := pushTestImage(t, testregistry.Opts{
+	// Use 2 layers of 50KB each to exercise multi-chunk reads (chunk size is 32KB)
+	imageName, img := pushTestImageWithLayerSize(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
 			return true
 		},
-	}, nil)
+	}, nil, 2, 50*1024)
 	layers, err := img.Layers()
 	require.NoError(t, err)
 
@@ -350,13 +352,14 @@ func TestReadBlob_WithValidCredentials(t *testing.T) {
 		Username: "testuser",
 		Password: "testpass",
 	}
-	imageName, img := pushTestImage(t, testregistry.Opts{
+	// Use 2 layers of 50KB each to exercise multi-chunk reads (chunk size is 32KB)
+	imageName, img := pushTestImageWithLayerSize(t, testregistry.Opts{
 		Creds: creds,
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
 			return true
 		},
-	}, creds)
+	}, creds, 2, 50*1024)
 	layers, err := img.Layers()
 	require.NoError(t, err)
 
@@ -393,13 +396,14 @@ func TestReadBlob_WithInvalidCredentials(t *testing.T) {
 		Username: "testuser",
 		Password: "testpass",
 	}
-	imageName, img := pushTestImage(t, testregistry.Opts{
+	// Use 2 layers of 50KB each to exercise multi-chunk reads (chunk size is 32KB)
+	imageName, img := pushTestImageWithLayerSize(t, testregistry.Opts{
 		Creds: creds,
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
 			return true
 		},
-	}, creds)
+	}, creds, 2, 50*1024)
 	layers, err := img.Layers()
 	require.NoError(t, err)
 
@@ -429,12 +433,13 @@ func TestReadBlob_WithInvalidCredentials(t *testing.T) {
 
 func TestReadBlob_BufferSizes(t *testing.T) {
 	counter := httpcounter.New()
-	imageName, img := pushTestImage(t, testregistry.Opts{
+	// Use 2 layers of 2MB each to exercise larger streaming behavior
+	imageName, img := pushTestImageWithLayerSize(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
 			return true
 		},
-	}, nil)
+	}, nil, 2, 2*1024*1024)
 	layers, err := img.Layers()
 	require.NoError(t, err)
 
@@ -502,6 +507,13 @@ func newTestClient(t *testing.T) ofpb.OCIFetcherClient {
 func pushTestImage(t *testing.T, opts testregistry.Opts, pushCreds *testregistry.BasicAuthCreds) (string, v1.Image) {
 	reg := testregistry.Run(t, opts)
 	imageName, img := reg.PushNamedImage(t, "test-image", pushCreds)
+	return imageName, img
+}
+
+// pushTestImageWithLayerSize creates an image with numLayers layers, each of the specified size.
+func pushTestImageWithLayerSize(t *testing.T, opts testregistry.Opts, pushCreds *testregistry.BasicAuthCreds, numLayers int, layerSize int64) (string, v1.Image) {
+	reg := testregistry.Run(t, opts)
+	imageName, img := reg.PushNamedImageWithLayerSize(t, "test-image", numLayers, layerSize, pushCreds)
 	return imageName, img
 }
 
