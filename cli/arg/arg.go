@@ -130,7 +130,7 @@ func GetExecutableArgs(args []string) []string {
 	return nil
 }
 
-// Returns any arugments to be passed to bazel in args (those to the left of the
+// Returns any arguments to be passed to bazel in args (those to the left of the
 // first " -- ", if any)
 // Ex. bb remote build //... <bazel_args>
 func GetBazelArgs(args []string) []string {
