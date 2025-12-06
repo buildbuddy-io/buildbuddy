@@ -6,6 +6,10 @@ package sku
 // constants defined below.
 type SKU string
 
+func (s SKU) String() string {
+	return string(s)
+}
+
 // SKU constants - enumerated explicitly to ensure low cardinality.
 //
 // The format is roughly "<service>.<category>.<metric>". This hierarchical
@@ -17,6 +21,7 @@ const (
 
 	RemoteCacheCASHits                   SKU = "remote_cache.content_addressable_storage.hits"
 	RemoteCacheCASDownloadedBytes        SKU = "remote_cache.content_addressable_storage.downloaded_bytes"
+	RemoteCacheCASUploadedBytes          SKU = "remote_cache.content_addressable_storage.uploaded_bytes"
 	RemoteCacheACHits                    SKU = "remote_cache.action_cache_hits.hits"
 	RemoteCacheACCachedExecDurationNanos SKU = "remote_cache.action_cache.cached_execution_duration_nanos"
 
@@ -26,16 +31,20 @@ const (
 )
 
 // LabelName is a usage counter label, which further qualifies the SKU.
-type LabelName string
+//
+// TODO: make this a type instead of type alias. GORM's ClickHouse plugin
+// doesn't support automatic conversion of `map[LabelName][LabelValue]` to
+// `map[string]string`.
+type LabelName = string
 
 // Label name constants - enumerated explicitly to ensure low cardinality.
 const (
 	// Client identifies the type of client that generated the usage, such as
 	// "bazel" or "executor".
-	Client LabelName = "client_type"
+	Client LabelName = "client"
 	// Server identifies the type of server that ultimately handled generating
 	// the response, for example "cache-proxy" or "app".
-	Server LabelName = "server_type"
+	Server LabelName = "server"
 	// Origin identifies internal vs. external traffic origin.
 	Origin LabelName = "origin"
 	// OS identifies the operating system for execution usage.
@@ -47,7 +56,11 @@ const (
 )
 
 // LabelValue is the value of a label.
-type LabelValue string
+//
+// TODO: make this a type instead of type alias. GORM's ClickHouse plugin
+// doesn't support automatic conversion of `map[LabelName][LabelValue]` to
+// `map[string]string`.
+type LabelValue = string
 
 // Label name values - enumerated explicitly to ensure low cardinality.
 const (
