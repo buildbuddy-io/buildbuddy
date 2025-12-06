@@ -47,6 +47,7 @@ go_library(
         "//server/endpoint_urls/remote_exec_api_url",
         "//server/environment",
         "//server/eventlog",
+        "//server/http/interceptors",
         "//server/interfaces",
         "//server/real_environment",
         "//server/remote_cache/directory_size",

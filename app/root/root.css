@@ -1168,11 +1168,10 @@ code .comment {
 
 .artifact-view {
   font-weight: 600;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 2px;
   padding: 0 8px;
-  color: #888;
   white-space: nowrap;
 }
 

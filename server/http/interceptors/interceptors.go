@@ -113,6 +113,57 @@ func SetSecurityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// BasicMIMETypeFromExtension returns a safe MIME type guessed from the given
+// extension. Only some basic media formats are supported. This function may be
+// useful in some cases where the user has requested to view their uploaded file
+// contents, but our default strict `X-Content-Type-Options: nosniff` header is
+// preventing the content from being displayed.
+//
+// The returned MIME types are all "inert" - executable contents such as JS, SVG
+// (which can contain embedded <script> tags), and PDF, are treated as generic
+// octet streams.
+func BasicMIMETypeFromExtension(ext string) string {
+	switch strings.ToLower(ext) {
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg", ".jfif":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".bmp":
+		return "image/bmp"
+	case ".webp":
+		return "image/webp"
+	case ".ico":
+		return "image/x-icon"
+	case ".tif", ".tiff":
+		return "image/tiff"
+	case ".mp4", ".m4v":
+		return "video/mp4"
+	case ".mov":
+		return "video/quicktime"
+	case ".avi":
+		return "video/x-msvideo"
+	case ".mkv":
+		return "video/x-matroska"
+	case ".webm":
+		return "video/webm"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".wav":
+		return "audio/wav"
+	case ".ogg":
+		return "audio/ogg"
+	case ".flac":
+		return "audio/flac"
+	case ".m4a", ".m4b", ".m4p", ".m4r":
+		return "audio/mp4"
+	case ".aac":
+		return "audio/aac"
+	}
+	return "application/octet-stream"
+}
+
 func RedirectIfNotForwardedHTTPS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		protocol := r.Header.Get("X-Forwarded-Proto") // Set by load balancer
@@ -382,7 +433,7 @@ func routeLabel(r *http.Request) string {
 	if path == "" || path == "/" {
 		return "/"
 	}
-	if path == "/readyz" || path == "/healthz" || path == "/file/download" {
+	if path == "/readyz" || path == "/healthz" || path == "/file/download" || path == "/file/view" {
 		return path
 	}
 	if strings.HasPrefix(path, "/image/") {

@@ -70,6 +70,7 @@ ts_library(
         "//app/components/link",
         "//app/service:rpc_service",
         "//app/util:cache",
+        "//app/util:file_types",
         "//proto:build_event_stream_ts_proto",
         "//proto:zip_ts_proto",
     ],
