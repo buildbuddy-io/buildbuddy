@@ -688,6 +688,7 @@ proto_library(
     name = "remote_execution_proto",
     srcs = ["remote_execution.proto"],
     deps = [
+        ":context_proto",
         ":scheduler_proto",
         ":semver_proto",
         "@com_google_protobuf//:any_proto",
@@ -1849,6 +1850,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_execution",
     proto = ":remote_execution_proto",
     deps = [
+        ":context_go_proto",
         ":scheduler_go_proto",
         ":semver_go_proto",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
