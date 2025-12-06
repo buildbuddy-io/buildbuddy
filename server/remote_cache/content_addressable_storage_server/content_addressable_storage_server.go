@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
@@ -42,6 +43,11 @@ import (
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
+)
+
+const (
+	experimentFlagChunkingEnabled     = "cache.chunking_enabled"
+	experimentFlagVerifySpliceContent = "cache.verify_splice_content"
 )
 
 var (
@@ -477,7 +483,7 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 		return nil
 	}
 
-	var childBytesWritten = 0
+	childBytesWritten := 0
 	if len(childCaches) > 0 {
 		mu := &sync.Mutex{}
 		eg, egCtx := errgroup.WithContext(ctx)
@@ -1092,10 +1098,68 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 	return true
 }
 
+// SpliceBlob reports how to assemble a blob from a list of chunk digests.
 func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
-	return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently implemented")
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+
+	efp := s.env.GetExperimentFlagProvider()
+	if efp == nil || !efp.Boolean(ctx, experimentFlagChunkingEnabled, true) {
+		return nil, status.UnimplementedError("chunking is not enabled")
+	}
+
+	if req.GetBlobDigest() == nil {
+		return nil, status.InvalidArgumentError("blob_digest is required")
+	}
+	if len(req.GetChunkDigests()) == 0 {
+		return nil, status.InvalidArgumentError("chunk_digests cannot be empty")
+	}
+
+	manifest := &chunked_manifest.ChunkedManifest{
+		BlobDigest:     req.GetBlobDigest(),
+		ChunkDigests:   req.GetChunkDigests(),
+		InstanceName:   req.GetInstanceName(),
+		DigestFunction: req.GetDigestFunction(),
+	}
+
+	if efp.Boolean(ctx, experimentFlagVerifySpliceContent, true) {
+		if err := manifest.VerifyChunks(ctx, s.cache); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := manifest.Store(ctx, s.cache); err != nil {
+		return nil, err
+	}
+
+	return &repb.SpliceBlobResponse{
+		BlobDigest: req.GetBlobDigest(),
+	}, nil
 }
 
+// SplitBlob reports how to split a blob into a list of chunk digests.
 func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
-	return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently implemented")
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+
+	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, experimentFlagChunkingEnabled, true) {
+		return nil, status.UnimplementedError("chunking is not enabled")
+	}
+
+	if req.GetBlobDigest() == nil {
+		return nil, status.InvalidArgumentError("blob_digest is required")
+	}
+
+	manifest, err := chunked_manifest.Load(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
+	if err != nil {
+		return nil, err
+	}
+
+	return &repb.SplitBlobResponse{
+		ChunkDigests: manifest.ChunkDigests,
+	}, nil
 }
