@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
@@ -578,6 +579,10 @@ type Spawn struct {
 	Tools          *InputSet
 	Outputs        []Input
 	ExitCode       int32
+
+	// Metrics only, not relevant for diffing.
+	CacheHit      bool
+	ExecutionTime time.Duration
 }
 
 const testRunnerXmlGeneration = "TestRunner (XML generation)"
@@ -718,6 +723,8 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input, 
 		Tools:          previousInputs[s.ToolSetId].(*InputSet),
 		Outputs:        outputs,
 		ExitCode:       s.ExitCode,
+		CacheHit:       s.CacheHit,
+		ExecutionTime:  s.Metrics.ExecutionWallTime.AsDuration(),
 	}, outputPaths
 }
 
