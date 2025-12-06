@@ -52,6 +52,7 @@ type ByteStreamServer struct {
 func Register(env *real_environment.RealEnv) error {
 	// OPTIONAL CACHE API -- only enable if configured.
 	if env.GetCache() == nil {
+		// XXX: is this ok?
 		return nil
 	}
 	byteStreamServer, err := NewByteStreamServer(env)
@@ -65,6 +66,7 @@ func Register(env *real_environment.RealEnv) error {
 func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	cache := env.GetCache()
 	if cache == nil {
+		// XXX: is this ok?
 		return nil, status.FailedPreconditionError("A cache is required to enable the ByteStreamServer")
 	}
 	return &ByteStreamServer{
