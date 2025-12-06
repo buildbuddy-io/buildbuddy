@@ -52,6 +52,7 @@ go_test(
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/testutil/testhttp",
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/proto",
