@@ -34,6 +34,8 @@ import { target } from "../../../proto/target_ts_proto";
 import {
   COLOR_MODE_PARAM,
   ColorMode,
+  GROUPING_MODE_PARAM,
+  GroupingMode,
   SORT_DIRECTION_PARAM,
   SORT_MODE_PARAM,
   SortDirection,
@@ -47,7 +49,7 @@ interface Props {
   repo: string;
 }
 
-interface State extends CommitGrouping {
+interface State extends CommitGrouping, DayGrouping {
   targetHistory: target.TargetHistory[];
   nextPageToken: string;
   loading: boolean;
@@ -64,8 +66,18 @@ interface CommitGrouping {
   commitToTargetLabelToStatuses: Map<string, Map<string, target.ITargetStatus[]>> | null;
 }
 
+interface DayGrouping {
+  days: string[] | null;
+  dayToTargetLabelToStatuses: Map<string, Map<string, target.ITargetStatus[]>> | null;
+}
+
 interface CommitStatus {
   commitSha: string;
+  statuses: target.ITargetStatus[] | null;
+}
+
+interface DayOrCommitStatus {
+  key: string; // Either commitSha or day string (YYYY-MM-DD)
   statuses: target.ITargetStatus[] | null;
 }
 
@@ -91,6 +103,8 @@ export default class TestGridComponent extends React.Component<Props, State> {
     commits: null,
     commitToTargetLabelToStatuses: null,
     commitToMaxInvocationCreatedAtUsec: null,
+    days: null,
+    dayToTargetLabelToStatuses: null,
     loading: true,
     targetLimit: 100,
     invocationLimit: capabilities.config.testGridV2Enabled
@@ -124,6 +138,9 @@ export default class TestGridComponent extends React.Component<Props, State> {
     if (this.props.repo !== prevProps.repo || this.props.search.get("branch") !== prevProps.search.get("branch")) {
       // Repo or branch filter changed; re-fetch targets starting from scratch.
       this.fetchTargets(/*initial=*/ true);
+    } else if (this.props.search.get(GROUPING_MODE_PARAM) !== prevProps.search.get(GROUPING_MODE_PARAM)) {
+      // Grouping mode changed; re-group existing data.
+      this.regroupData();
     }
   }
 
@@ -204,10 +221,16 @@ export default class TestGridComponent extends React.Component<Props, State> {
       maxDuration: maxDuration,
     });
     if (this.isV2) {
-      this.setState({
-        ...this.groupByCommit(histories),
-      });
+      this.regroupData(histories);
     }
+  }
+
+  regroupData(histories?: target.ITargetHistory[]) {
+    const targetHistories = histories || this.state.targetHistory;
+    this.setState({
+      ...this.groupByCommit(targetHistories),
+      ...this.groupByDay(targetHistories),
+    });
   }
 
   groupByCommit(targetHistories: target.ITargetHistory[]): CommitGrouping {
@@ -243,6 +266,39 @@ export default class TestGridComponent extends React.Component<Props, State> {
     );
 
     return { commits, commitToMaxInvocationCreatedAtUsec, commitToTargetLabelToStatuses };
+  }
+
+  groupByDay(targetHistories: target.ITargetHistory[]): DayGrouping {
+    const dayToTargetLabelToStatuses = new Map<string, Map<string, target.ITargetStatus[]>>();
+    const daySet = new Set<string>();
+
+    for (const history of targetHistories) {
+      for (const targetStatus of history.targetStatus || []) {
+        const timestamp = Number(targetStatus.invocationCreatedAtUsec);
+        const day = moment(timestamp / 1000).format("YYYY-MM-DD");
+        daySet.add(day);
+
+        let targetLabelToStatus = dayToTargetLabelToStatuses.get(day);
+        if (!targetLabelToStatus) {
+          targetLabelToStatus = new Map<string, target.ITargetStatus[]>();
+          dayToTargetLabelToStatuses.set(day, targetLabelToStatus);
+        }
+
+        if (history.target) {
+          const existing = targetLabelToStatus.get(history.target!.label);
+          if (existing) {
+            existing.push(targetStatus);
+          } else {
+            targetLabelToStatus.set(history.target!.label, [targetStatus]);
+          }
+        }
+      }
+    }
+
+    // Sort days in descending order (most recent first)
+    const days = [...daySet].sort((a, b) => b.localeCompare(a));
+
+    return { days, dayToTargetLabelToStatuses };
   }
 
   navigateTo(destination: string, event: React.MouseEvent) {
@@ -364,6 +420,10 @@ export default class TestGridComponent extends React.Component<Props, State> {
     return (this.props.search.get(COLOR_MODE_PARAM) as ColorMode) || "status";
   }
 
+  getGroupingMode(): GroupingMode {
+    return (this.props.search.get(GROUPING_MODE_PARAM) as GroupingMode) || "commit";
+  }
+
   sort(a: target.ITargetHistory, b: target.ITargetHistory) {
     let first = this.getSortDirection() == "asc" ? a : b;
     let second = this.getSortDirection() == "asc" ? b : a;
@@ -411,19 +471,123 @@ export default class TestGridComponent extends React.Component<Props, State> {
     return 0;
   }
 
-  getTargetStatuses(history: target.ITargetHistory): CommitStatus[] {
+  getTargetStatuses(history: target.ITargetHistory): DayOrCommitStatus[] {
     if (!this.isV2) {
+      return history.targetStatus?.map((status) => ({ key: status.commitSha, statuses: [status] })) || [];
+    }
+    // For test grid V2, use the appropriate grouping based on grouping mode
+    const groupingMode = this.getGroupingMode();
+    if (groupingMode === "day") {
       return (
-        history.targetStatus?.map((status) => ({ commitSha: status.commitSha, statuses: [status], count: 1 })) || []
+        this.state.days?.map((day) => ({
+          key: day,
+          statuses: this.state.dayToTargetLabelToStatuses?.get(day)?.get(history.target?.label || "") || null,
+        })) || []
+      );
+    } else {
+      return (
+        this.state.commits?.map((commitSha) => ({
+          key: commitSha,
+          statuses: this.state.commitToTargetLabelToStatuses?.get(commitSha)?.get(history.target?.label || "") || null,
+        })) || []
       );
     }
-    // For test grid V2, ignore the incoming history (for now) and use the indexes we
-    // built to order by commit.
+  }
+
+  /**
+   * Renders a single aggregated status block for a day grouping.
+   * Shows green (PASSED) if all runs passed, red (FAILED) if all runs failed,
+   * orange (FLAKY) if mixed results, grey (SKIPPED) if all runs skipped.
+   */
+  renderDayAggregatedStatus(
+    day: string,
+    statuses: target.ITargetStatus[],
+    targetHistory: target.ITargetHistory,
+    stats: Stat | undefined
+  ): JSX.Element {
+    // Aggregate status logic:
+    // - FAILED if all runs failed
+    // - FLAKY if mixed results (some passed, some failed)
+    // - SKIPPED if all runs were skipped
+    // - PASSED if all runs passed
+    let hasFailure = false;
+    let hasPassed = false;
+    let hasFlaky = false;
+    let hasNonSkipped = false;
+    let totalDuration = 0;
+
+    for (const status of statuses) {
+      totalDuration += this.durationToNum(status.timing?.duration || undefined);
+
+      if (
+        status.status === Status.FAILED ||
+        status.status === Status.FAILED_TO_BUILD ||
+        status.status === Status.TIMED_OUT ||
+        status.status === Status.TOOL_FAILED
+      ) {
+        hasFailure = true;
+        hasNonSkipped = true;
+      } else if (status.status === Status.FLAKY) {
+        hasFlaky = true;
+        hasNonSkipped = true;
+      } else if (status.status === Status.PASSED) {
+        hasPassed = true;
+        hasNonSkipped = true;
+      } else if (status.status !== Status.SKIPPED) {
+        // Any other non-skipped status
+        hasNonSkipped = true;
+      }
+    }
+
+    // Determine final aggregated status
+    let aggregatedStatus: api.v1.Status;
+    if (!hasNonSkipped) {
+      // All runs were skipped
+      aggregatedStatus = Status.SKIPPED;
+    } else if (hasFailure && hasPassed) {
+      // Mixed results - some passed, some failed
+      aggregatedStatus = Status.FLAKY;
+    } else if (hasFlaky) {
+      // At least one flaky result
+      aggregatedStatus = Status.FLAKY;
+    } else if (hasFailure) {
+      // All runs failed
+      aggregatedStatus = Status.FAILED;
+    } else {
+      // All runs passed
+      aggregatedStatus = Status.PASSED;
+    }
+
+    const avgDuration = totalDuration / statuses.length;
+    const runCount = statuses.length;
+
+    // Link to the first invocation (most recent)
+    const firstStatus = statuses[0];
+    const destinationUrl = `/invocation/${firstStatus.invocationId}?${new URLSearchParams({
+      target: targetHistory.target?.label || "",
+      targetStatus: String(firstStatus),
+    })}`;
+
+    let title = `${this.statusToString(aggregatedStatus)} (${runCount} run${runCount > 1 ? "s" : ""})`;
+    title += ` on ${day}`;
+    title += `, avg ${avgDuration.toFixed(2)}s`;
+
     return (
-      this.state.commits?.map((commitSha) => ({
-        commitSha,
-        statuses: this.state.commitToTargetLabelToStatuses?.get(commitSha)?.get(history.target?.label || "") || null,
-      })) || []
+      <div className="tap-commit-container" key={day}>
+        <a
+          href={destinationUrl}
+          onClick={this.navigateTo.bind(this, destinationUrl)}
+          title={title}
+          style={{
+            opacity:
+              this.getColorMode() == "timing"
+                ? Math.max(MIN_OPACITY, (1.0 * avgDuration) / (stats?.maxDuration || 1))
+                : undefined,
+          }}
+          className={`tap-block ${this.getColorMode() == "status" ? `status-${aggregatedStatus}` : "timing"} clickable`}>
+          {this.statusToIcon(aggregatedStatus)}
+        </a>
+      </div>
     );
   }
 
@@ -476,10 +640,12 @@ export default class TestGridComponent extends React.Component<Props, State> {
         <div className="container tap-grid-container">
           {this.isV2 && (
             <InnerTopBar
+              groupingMode={this.getGroupingMode()}
               commits={this.state.commits || []}
               commitToMaxInvocationCreatedAtUsec={
                 this.state.commitToMaxInvocationCreatedAtUsec || new Map<string, number>()
               }
+              days={this.state.days || []}
               moreInvocationsButton={moreInvocationsButton}
             />
           )}
@@ -505,25 +671,34 @@ export default class TestGridComponent extends React.Component<Props, State> {
                 <div className="tap-row">
                   {this.getTargetStatuses(targetHistory)
                     .slice(0, this.state.invocationLimit)
-                    .map((commitStatus: CommitStatus) => {
-                      let statuses = commitStatus.statuses?.sort(
+                    .map((groupStatus: DayOrCommitStatus) => {
+                      let statuses = groupStatus.statuses?.sort(
                         (a, b) => Number(b.invocationCreatedAtUsec) - Number(a.invocationCreatedAtUsec)
                       );
                       if (!statuses || statuses.length == 0) {
-                        // For V2, null means the target was not run for this commit.
+                        // For V2, null means the target was not run for this grouping.
+                        const groupingMode = this.getGroupingMode();
                         return (
                           <div className="tap-commit-container">
                             <div
                               className="tap-block no-status"
                               title={
-                                commitStatus.commitSha
-                                  ? `Target status not reported at commit ${commitStatus.commitSha}`
+                                groupStatus.key
+                                  ? `Target status not reported for ${groupingMode} ${groupStatus.key}`
                                   : "No status reported"
                               }
                             />
                           </div>
                         );
                       }
+
+                      const groupingMode = this.getGroupingMode();
+                      // For day grouping, show a single aggregated status
+                      if (groupingMode === "day") {
+                        return this.renderDayAggregatedStatus(groupStatus.key, statuses, targetHistory, stats);
+                      }
+
+                      // For commit grouping, show individual statuses (existing behavior)
                       return (
                         <div className="tap-commit-container">
                           {statuses.map((status) => {
@@ -534,8 +709,8 @@ export default class TestGridComponent extends React.Component<Props, State> {
                             let title = `${this.statusToString(
                               status.status || Status.STATUS_UNSPECIFIED
                             )} in ${this.durationToNum(status.timing?.duration || undefined).toFixed(2)}s`;
-                            if (this.isV2 && commitStatus.commitSha) {
-                              title += ` at commit ${commitStatus.commitSha}`;
+                            if (this.isV2 && groupStatus.key) {
+                              title += ` at commit ${groupStatus.key}`;
                             }
 
                             let cached = isCached(status);
@@ -594,8 +769,10 @@ function isCached(status: target.ITargetStatus) {
 }
 
 interface InnerTopBarProps {
+  groupingMode: GroupingMode;
   commits: string[];
   commitToMaxInvocationCreatedAtUsec: Map<string, number>;
+  days: string[];
   moreInvocationsButton: JSX.Element;
 }
 
@@ -683,10 +860,14 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
   }
 
   render() {
+    const isDay = this.props.groupingMode === "day";
+    const items = isDay ? this.props.days : this.props.commits;
+    const label = isDay ? "Days (most recent first)" : "Commits (most recent first)";
+
     return (
       <>
         <div className="inner-top-bar-underlay" />
-        <div className="commit-timeline-label">Commits (most recent first)</div>
+        <div className="commit-timeline-label">{label}</div>
         <div className="inner-top-bar">
           <div className="hovered-commit-row" ref={this.hoveredCommitRow}>
             {this.state.hoveredCommit &&
@@ -694,8 +875,9 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
                 <>
                   <div className="tap-hovered-commit-pointer" ref={this.hoveredCommitPointer} />
                   <div className="tap-hovered-commit-info" ref={this.hoveredCommitInfo}>
-                    {format.formatTimestampUsec(this.state.hoveredCommit.timestampUsec)}, commit{" "}
-                    {this.state.hoveredCommit.commitSha.substring(0, 6)}
+                    {isDay
+                      ? this.state.hoveredCommit.commitSha
+                      : `${format.formatTimestampUsec(this.state.hoveredCommit.timestampUsec)}, commit ${this.state.hoveredCommit.commitSha.substring(0, 6)}`}
                   </div>
                 </>,
                 this.tooltipPortal!
@@ -706,12 +888,13 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
             onMouseLeave={this.onMouseLeaveCommitTimeline.bind(this)}
             ref={this.commitTimeline}>
             <div className="commits-list">
-              {this.props.commits.map((commitSha) => (
+              {items.map((item) => (
                 <a
+                  key={item}
                   className="commit-link"
-                  href={`/history/commit/${commitSha}`}
-                  onClick={this.onClickCommitLink.bind(this)}
-                  onMouseOver={this.onMouseOverCommit.bind(this, commitSha)}
+                  href={isDay ? "#" : `/history/commit/${item}`}
+                  onClick={isDay ? (e) => e.preventDefault() : this.onClickCommitLink.bind(this)}
+                  onMouseOver={this.onMouseOverItem.bind(this, item, isDay)}
                 />
               ))}
             </div>
@@ -720,6 +903,22 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
         </div>
       </>
     );
+  }
+
+  onMouseOverItem(item: string, isDay: boolean, event: React.MouseEvent) {
+    if (isDay) {
+      this.setState({
+        hoveredCommit: {
+          commitSha: item,
+          timestampUsec: 0,
+        },
+      });
+    } else {
+      this.onMouseOverCommit(item, event);
+    }
+
+    const hoveredElement = event.target as HTMLElement;
+    setTimeout(() => this.centerHoveredCommitWith(hoveredElement));
   }
 }
 

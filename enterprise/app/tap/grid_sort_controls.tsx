@@ -4,6 +4,8 @@ import router from "../../../app/router/router";
 import {
   COLOR_MODE_PARAM,
   ColorMode,
+  GROUPING_MODE_PARAM,
+  GroupingMode,
   SORT_DIRECTION_PARAM,
   SORT_MODE_PARAM,
   SortDirection,
@@ -27,6 +29,10 @@ export default class GridSortControlsComponent extends React.Component<Props> {
     router.setQueryParam(COLOR_MODE_PARAM, event.target.value);
   }
 
+  handleGroupingChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    router.setQueryParam(GROUPING_MODE_PARAM, event.target.value);
+  }
+
   getSortMode(): SortMode {
     return (this.props.search.get(SORT_MODE_PARAM) as SortMode) || "pass";
   }
@@ -39,9 +45,20 @@ export default class GridSortControlsComponent extends React.Component<Props> {
     return (this.props.search.get(COLOR_MODE_PARAM) as ColorMode) || "status";
   }
 
+  getGroupingMode(): GroupingMode {
+    return (this.props.search.get(GROUPING_MODE_PARAM) as GroupingMode) || "commit";
+  }
+
   render() {
     return (
       <div className="tap-sort-controls">
+        <div className="tap-sort-control">
+          <span className="tap-sort-title">Group by</span>
+          <Select onChange={this.handleGroupingChange.bind(this)} value={this.getGroupingMode()}>
+            <Option value="commit">Commit</Option>
+            <Option value="day">Day</Option>
+          </Select>
+        </div>
         <div className="tap-sort-control">
           <span className="tap-sort-title">Sort by</span>
           <Select onChange={this.handleSortChange.bind(this)} value={this.getSortMode()}>
