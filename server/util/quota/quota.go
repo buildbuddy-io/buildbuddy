@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
@@ -30,4 +31,8 @@ func GetKey(ctx context.Context, env environment.Env) (string, error) {
 	}
 	return "", status.InternalErrorf("quota key is empty")
 
+}
+
+func GetSKUKey(sku sku.SKU) string {
+	return "sku:" + string(sku)
 }

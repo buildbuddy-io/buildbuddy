@@ -17,6 +17,7 @@ const (
 
 	RemoteCacheCASHits                   SKU = "remote_cache.content_addressable_storage.hits"
 	RemoteCacheCASDownloadedBytes        SKU = "remote_cache.content_addressable_storage.downloaded_bytes"
+	RemoteCacheCASUploadedBytes          SKU = "remote_cache.content_addressable_storage.uploaded_bytes"
 	RemoteCacheACHits                    SKU = "remote_cache.action_cache_hits.hits"
 	RemoteCacheACCachedExecDurationNanos SKU = "remote_cache.action_cache.cached_execution_duration_nanos"
 
