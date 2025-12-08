@@ -110,7 +110,10 @@ build:dev_qa_test --bes_results_url=https://${bb_endpoint}/invocation/
 build:dev_qa_test --remote_timeout=10m
 build:dev_qa_test --jobs=100
 build:dev_qa_test --build_metadata=TAGS=qa-integration-test
-build:dev_qa_test --workspace_status_command=
+build:dev_qa_test --test_tag_filters=-performance,-webdriver,-docker,-bare
+build:dev_qa_test --nocache_test_results
+build:dev_qa_test --remote_cache_compression
+build:dev_qa_Test --remote_download_minimal
 EOF
 
 cat >> .bazelrc <<EOF
