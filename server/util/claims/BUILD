@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:capability_go_proto",
+        "//proto:group_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/tables",
@@ -31,6 +32,7 @@ go_test(
         ":claims",
         "//proto:capability_go_proto",
         "//proto:context_go_proto",
+        "//proto:group_go_proto",
         "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testenv",

@@ -216,6 +216,7 @@ type apiKeyGroup struct {
 	UseGroupOwnedExecutors bool
 	CacheEncryptionEnabled bool
 	EnforceIPRules         bool
+	Status                 int32
 }
 
 func (g *apiKeyGroup) GetAPIKeyID() string {
@@ -252,6 +253,10 @@ func (g *apiKeyGroup) GetCacheEncryptionEnabled() bool {
 
 func (g *apiKeyGroup) GetEnforceIPRules() bool {
 	return g.EnforceIPRules
+}
+
+func (g *apiKeyGroup) GetGroupStatus() grpb.Group_GroupStatus {
+	return grpb.Group_GroupStatus(g.Status)
 }
 
 func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string, session *tables.Session) error {
@@ -548,7 +553,8 @@ func (d *AuthDB) newAPIKeyGroupQuery(subDomain string, allowUserOwnedKeys bool) 
 			g.use_group_owned_executors,
 			g.cache_encryption_enabled,
 			g.enforce_ip_rules,
-			g.is_parent
+			g.is_parent,
+			g.status
 		FROM "Groups" AS g,
 		"APIKeys" AS ak
 	`)

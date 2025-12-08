@@ -13,12 +13,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/throttled/throttled/v2"
 	"github.com/throttled/throttled/v2/store/goredisstore.v8"
+
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
 
 var (
@@ -29,7 +32,12 @@ const (
 	maxRedisRetry                = 3
 	redisQuotaKeyPrefix          = "quota"
 	bucketQuotaExperimentName    = "quota.buckets"
+	disallowBlockedGroupsFlagKey = "quota.disallow_blocked_groups"
 	quotaExceededMessageTemplate = "quota exceeded for %q - to increase quota, request a quote at https://buildbuddy.io/request-quote"
+)
+
+var (
+	errBlocked = status.UnavailableError("There was an issue with your request. Please contact support.")
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -54,7 +62,38 @@ type QuotaManager struct {
 	bucketFactory bucketFactory
 }
 
+func (qm *QuotaManager) checkGroupBlocked(ctx context.Context) error {
+	fp := qm.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return nil
+	}
+
+	if !fp.Boolean(ctx, disallowBlockedGroupsFlagKey, false) {
+		return nil
+	}
+
+	c, err := claims.ClaimsFromContext(ctx)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get claims from context: %s", err)
+		return nil
+	}
+
+	// Allow impersonating requests and requests without an API key (web UI requests)
+	if c.IsImpersonating() || c.GetAPIKeyInfo().ID == "" {
+		return nil
+	}
+
+	if c.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS {
+		return errBlocked
+	}
+	return nil
+}
+
 func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) error {
+	if err := qm.checkGroupBlocked(ctx); err != nil {
+		return err
+	}
+
 	key, err := quota.GetKey(ctx, qm.env)
 	if err != nil {
 		metrics.QuotaKeyEmptyCount.With(prometheus.Labels{
