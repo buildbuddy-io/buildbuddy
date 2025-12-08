@@ -38,7 +38,6 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -1389,11 +1388,6 @@ type QuotaManager interface {
 	// If the rate limit has not been exceeded, the underlying storage is updated
 	// by the supplied quantity.
 	Allow(ctx context.Context, namespace string, quantity int64) error
-
-	GetNamespace(ctx context.Context, req *qpb.GetNamespaceRequest) (*qpb.GetNamespaceResponse, error)
-	RemoveNamespace(ctx context.Context, req *qpb.RemoveNamespaceRequest) (*qpb.RemoveNamespaceResponse, error)
-	ApplyBucket(ctx context.Context, req *qpb.ApplyBucketRequest) (*qpb.ApplyBucketResponse, error)
-	ModifyNamespace(ctx context.Context, req *qpb.ModifyNamespaceRequest) (*qpb.ModifyNamespaceResponse, error)
 }
 
 // A Metadater implements the Metadata() method and returns a StorageMetadata
