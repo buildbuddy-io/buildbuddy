@@ -245,7 +245,6 @@ type PebbleCache struct {
 	atimeUpdateThreshold  time.Duration
 	atimeBufferSize       int
 	numAtimeUpdateWorkers int
-	minEvictionAge        time.Duration
 
 	versionMu        *sync.RWMutex // PROTECTS(minDBVersion,maxDBVersion)
 	activeKeyVersion int64
@@ -655,7 +654,6 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		atimeUpdateThreshold:        *opts.AtimeUpdateThreshold,
 		atimeBufferSize:             *opts.AtimeBufferSize,
 		numAtimeUpdateWorkers:       *opts.NumAtimeUpdateWorkers,
-		minEvictionAge:              *opts.MinEvictionAge,
 		versionMu:                   &sync.RWMutex{},
 		activeKeyVersion:            *opts.ActiveKeyVersion,
 		env:                         env,
