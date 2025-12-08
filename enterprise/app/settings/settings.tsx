@@ -19,6 +19,7 @@ import QuotaComponent from "../quota/quota";
 import SecretsComponent from "../secrets/secrets";
 import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
 import GitHubLink from "./github_link";
+import GroupStatusComponent from "./group_status";
 import UserGitHubLink from "./user_github_link";
 
 export interface SettingsProps {
@@ -247,6 +248,11 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                         <div className="settings-section-subtitle">{this.props.user.selectedGroupName()}</div>
                       )}
                       {capabilities.createOrg && <EditOrgComponent search={this.props.search} user={this.props.user} />}
+                      {this.props.user.isImpersonating && (
+                        <div className="settings-internal-section">
+                          <GroupStatusComponent user={this.props.user} />
+                        </div>
+                      )}
                     </>
                   )}
                   {activeTabId === TabId.OrgMembers && (

@@ -12,11 +12,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 func authUserCtx(ctx context.Context, env environment.Env, t *testing.T, userID string) context.Context {
@@ -88,4 +92,54 @@ func TestCreateGroup(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, parentGroup.SamlIdpMetadataUrl, g.SamlIdpMetadataUrl)
 	require.False(t, g.IsParent)
+}
+
+func TestSetGroupStatus(t *testing.T) {
+	te := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, te)
+
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+
+	ctx := context.Background()
+	err := te.GetUserDB().InsertUser(ctx, &tables.User{UserID: "US1", SubID: "US1SubID"})
+	require.NoError(t, err)
+	userCtx := authUserCtx(ctx, te, t, "US1")
+	group := getGroup(t, userCtx, te).Group
+
+	flags.Set(t, "auth.admin_group_id", group.GroupID)
+	adminRole, err := role.ToProto(role.Admin)
+	require.NoError(t, err)
+	err = te.GetUserDB().UpdateGroupUsers(userCtx, group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+		{
+			UserId: &uidpb.UserId{Id: "US1"},
+			Role:   adminRole,
+		},
+	})
+	require.NoError(t, err)
+	userCtx = authUserCtx(ctx, te, t, "US1")
+
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	req := &grpb.SetGroupStatusRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+		Status:         grpb.Group_UNKNOWN_GROUP_STATUS,
+	}
+	rsp, err := server.SetGroupStatus(userCtx, req)
+	require.NoError(t, err)
+	require.NotNil(t, rsp)
+
+	updatedGroup, err := te.GetUserDB().GetGroupByID(ctx, group.GroupID)
+	require.NoError(t, err)
+	assert.Equal(t, grpb.Group_UNKNOWN_GROUP_STATUS, updatedGroup.Status)
+
+	req.Status = grpb.Group_BLOCKED_GROUP_STATUS
+	rsp, err = server.SetGroupStatus(userCtx, req)
+	require.NoError(t, err)
+	require.NotNil(t, rsp)
+
+	updatedGroup, err = te.GetUserDB().GetGroupByID(ctx, group.GroupID)
+	require.NoError(t, err)
+	assert.Equal(t, grpb.Group_BLOCKED_GROUP_STATUS, updatedGroup.Status)
 }

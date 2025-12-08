@@ -18,6 +18,7 @@ go_library(
         "//server/tables",
         "//server/util/authutil",
         "//server/util/capabilities",
+        "//server/util/claims",
         "//server/util/db",
         "//server/util/log",
         "//server/util/query_builder",

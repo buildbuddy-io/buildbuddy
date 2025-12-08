@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -394,6 +395,19 @@ func (d *UserDB) UpdateGroup(ctx context.Context, g *tables.Group) (string, erro
 		return "", err
 	}
 	return groupID, nil
+}
+
+func (d *UserDB) UpdateGroupStatus(ctx context.Context, groupID string, status grpb.Group_GroupStatus) error {
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return err
+	}
+
+	return d.h.NewQuery(ctx, "userdb_update_group_status").Raw(`
+		UPDATE "Groups" SET status = ?
+		WHERE group_id = ?`,
+		int32(status),
+		groupID,
+	).Exec().Error
 }
 
 func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) error {

@@ -214,6 +214,9 @@ var (
 
 		// Impersonation
 		"CreateImpersonationApiKey",
+
+		// Org management
+		"SetGroupStatus",
 	}
 )
 
