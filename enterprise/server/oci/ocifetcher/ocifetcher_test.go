@@ -48,8 +48,8 @@ func TestFetchManifestMetadata_NoAuth(t *testing.T) {
 	require.Equal(t, string(mediaType), resp.GetMediaType())
 
 	expected := map[string]int{
-		http.MethodGet + " /v2/":                                1,
-		http.MethodHead + " /v2/test-image/manifests/latest":    1,
+		http.MethodGet + " /v2/":                             1,
+		http.MethodHead + " /v2/test-image/manifests/latest": 1,
 	}
 	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 }
