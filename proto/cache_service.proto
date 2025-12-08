@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+import "proto/cache.proto";
+
+package cache.service;
+
+option go_package = "cache_service";
+
+service CacheService {
+  rpc GetCacheMetadata(cache.GetCacheMetadataRequest)
+      returns (cache.GetCacheMetadataResponse);
+}
