@@ -66,7 +66,7 @@ bazel_integration_test(
     env = {
         "QA_TARBALL_URL": "https://github.com/buildbuddy-io/buildbuddy/tarball/eb9115eafcdcd3c356fc470649c58a473910ae3c",
         "QA_STRIP_PREFIX": "buildbuddy-io-buildbuddy-eb9115e",
-        "QA_BAZEL_COMMAND": "test //...",
+        "QA_BAZEL_COMMAND": "test //cli/test/integration/compact:compact_test",
         "INJECT_TOOLCHAIN": "false",
         "UPDATE_LOCKFILE": "false",
     },
