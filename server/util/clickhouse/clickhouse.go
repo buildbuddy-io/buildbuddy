@@ -414,6 +414,17 @@ func (h *DBHandle) FlushTestTargetStatuses(ctx context.Context, entries []*schem
 	return nil
 }
 
+func (h *DBHandle) FlushUsages(ctx context.Context, entries []*schema.RawUsage) error {
+	num := len(entries)
+	if num == 0 {
+		return nil
+	}
+	if err := h.insertWithRetrier(ctx, (&schema.RawUsage{}).TableName(), num, &entries); err != nil {
+		return status.UnavailableErrorf("failed to insert %d usage records, err: %s", num, err)
+	}
+	return nil
+}
+
 func (h *DBHandle) InsertAuditLog(ctx context.Context, entry *schema.AuditLog) error {
 	if err := h.insertWithRetrier(ctx, (&schema.AuditLog{}).TableName(), 1, entry); err != nil {
 		return status.UnavailableErrorf("failed to create audit log: %s", err)

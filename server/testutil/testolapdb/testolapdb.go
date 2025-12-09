@@ -57,6 +57,10 @@ func (h *Handle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation
 	return nil
 }
 
+func (h *Handle) FlushUsages(ctx context.Context, rows []*schema.RawUsage) error {
+	return nil
+}
+
 func (h *Handle) InsertAuditLog(ctx context.Context, entry *schema.AuditLog) error {
 	return nil
 }
