@@ -198,6 +198,8 @@ type CustomResource struct {
 func GetAllocatedCustomResources() ([]*scpb.CustomResource, error) {
 	out := make([]*scpb.CustomResource, 0, len(*customResources))
 	for _, r := range *customResources {
+		// Bazel doesn't support custom resource names that contain periods:
+		// https://github.com/bazelbuild/bazel/issues/27911
 		if strings.Contains(r.Name, ".") {
 			return []*scpb.CustomResource{}, status.InvalidArgumentError("Custom resource names may not contain periods")
 		}
