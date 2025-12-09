@@ -71,13 +71,18 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 		supportedTypes = append(supportedTypes, string(t))
 	}
 
+	customResources, err := resources.GetAllocatedCustomResources()
+	if err != nil {
+		return nil, err
+	}
+
 	return &scpb.ExecutionNode{
 		Host: hostname,
 		// TODO: stop setting port once the scheduler no longer requires it.
 		Port:                      1,
 		AssignableMemoryBytes:     resources.GetAllocatedRAMBytes(),
 		AssignableMilliCpu:        resources.GetAllocatedCPUMillis(),
-		AssignableCustomResources: resources.GetAllocatedCustomResources(),
+		AssignableCustomResources: customResources,
 		OsFamily:                  resources.GetOSFamily(),
 		OsDisplayName:             resources.GetOSDisplayName(),
 		Arch:                      resources.GetArch(),
