@@ -185,17 +185,21 @@ func TestFetchManifestMetadata_PullerCacheHit(t *testing.T) {
 	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
 
-	firstCallSnapshot := counter.Snapshot()
-	require.Equal(t, 1, firstCallSnapshot[http.MethodGet+" /v2/"], "first call should make one /v2/ auth request")
+	expected := map[string]int{
+		http.MethodGet + " /v2/":                             1,
+		http.MethodHead + " /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 
 	// Second call - should reuse the cached Puller and NOT make another /v2/ auth request
 	counter.Reset()
 	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
 
-	secondCallSnapshot := counter.Snapshot()
-	require.Equal(t, 0, secondCallSnapshot[http.MethodGet+" /v2/"], "second call should not make /v2/ auth request (puller cached)")
-	require.Equal(t, 1, secondCallSnapshot[http.MethodHead+" /v2/test-image/manifests/latest"], "second call should still make HEAD request")
+	expected = map[string]int{
+		http.MethodHead + " /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 }
 
 // TestFetchManifestMetadata_DifferentCredentials_DifferentPullers verifies that
@@ -226,8 +230,11 @@ func TestFetchManifestMetadata_DifferentCredentials_DifferentPullers(t *testing.
 	})
 	require.NoError(t, err)
 
-	firstCallSnapshot := counter.Snapshot()
-	require.Equal(t, 1, firstCallSnapshot[http.MethodGet+" /v2/"], "first call with creds A should make /v2/ auth request")
+	expected := map[string]int{
+		http.MethodGet + " /v2/":                             1,
+		http.MethodHead + " /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 
 	// Second call with different credentials B - should create a new Puller
 	counter.Reset()
@@ -240,8 +247,11 @@ func TestFetchManifestMetadata_DifferentCredentials_DifferentPullers(t *testing.
 	})
 	require.NoError(t, err)
 
-	secondCallSnapshot := counter.Snapshot()
-	require.Equal(t, 1, secondCallSnapshot[http.MethodGet+" /v2/"], "call with different creds should create new puller and make /v2/ auth request")
+	expected = map[string]int{
+		http.MethodGet + " /v2/":                             1,
+		http.MethodHead + " /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 }
 
 // TestFetchManifestMetadata_SameRepoDifferentTags_SamePuller verifies that
@@ -268,17 +278,21 @@ func TestFetchManifestMetadata_SameRepoDifferentTags_SamePuller(t *testing.T) {
 	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName1})
 	require.NoError(t, err)
 
-	firstCallSnapshot := counter.Snapshot()
-	require.Equal(t, 1, firstCallSnapshot[http.MethodGet+" /v2/"], "first call should make /v2/ auth request")
+	expected := map[string]int{
+		http.MethodGet + " /v2/":                          1,
+		http.MethodHead + " /v2/test-image/manifests/v1": 1,
+	}
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 
 	// Second call for tag v2 - should reuse the same Puller (same repo + creds)
 	counter.Reset()
 	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName2})
 	require.NoError(t, err)
 
-	secondCallSnapshot := counter.Snapshot()
-	require.Equal(t, 0, secondCallSnapshot[http.MethodGet+" /v2/"], "second call for different tag should reuse puller (no /v2/ request)")
-	require.Equal(t, 1, secondCallSnapshot[http.MethodHead+" /v2/test-image/manifests/v2"], "should make HEAD request for v2 tag")
+	expected = map[string]int{
+		http.MethodHead + " /v2/test-image/manifests/v2": 1,
+	}
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 }
 
 // TestFetchManifestMetadata_PullerExpiration verifies that Pullers are expired
@@ -305,16 +319,21 @@ func TestFetchManifestMetadata_PullerExpiration(t *testing.T) {
 	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
 
-	firstCallSnapshot := counter.Snapshot()
-	require.Equal(t, 1, firstCallSnapshot[http.MethodGet+" /v2/"], "first call should make /v2/ auth request")
+	expected := map[string]int{
+		http.MethodGet + " /v2/":                             1,
+		http.MethodHead + " /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 
 	// Second call (within TTL) - should reuse the cached Puller
 	counter.Reset()
 	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
 
-	secondCallSnapshot := counter.Snapshot()
-	require.Equal(t, 0, secondCallSnapshot[http.MethodGet+" /v2/"], "second call should reuse cached puller")
+	expected = map[string]int{
+		http.MethodHead + " /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 
 	// Advance clock past the 15-minute TTL
 	fakeClock.Advance(16 * time.Minute)
@@ -324,6 +343,9 @@ func TestFetchManifestMetadata_PullerExpiration(t *testing.T) {
 	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
 
-	thirdCallSnapshot := counter.Snapshot()
-	require.Equal(t, 1, thirdCallSnapshot[http.MethodGet+" /v2/"], "third call (after TTL) should create new puller and make /v2/ auth request")
+	expected = map[string]int{
+		http.MethodGet + " /v2/":                             1,
+		http.MethodHead + " /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 }
