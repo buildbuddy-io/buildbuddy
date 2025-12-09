@@ -883,9 +883,11 @@ func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag
 }
 
 func (sm *Replica) fetchRanges(db ReplicaReader, req *rfpb.FetchRangesRequest) (*rfpb.FetchRangesResponse, error) {
-	if len(req.GetRangeIds()) == 0 {
-		return nil, status.InvalidArgumentError("fetchRanges requires range_ids")
+	// At least one filter must be provided
+	if len(req.GetRangeIds()) == 0 && req.GetNhid() == "" {
+		return nil, status.InvalidArgumentError("either range_ids or nhid must be specified")
 	}
+
 	scanReq := &rfpb.ScanRequest{
 		Start:    constants.MetaRangePrefix,
 		End:      constants.SystemPrefix,
@@ -896,18 +898,42 @@ func (sm *Replica) fetchRanges(db ReplicaReader, req *rfpb.FetchRangesRequest) (
 	if err != nil {
 		return nil, err
 	}
-	rangeIDSet := make(map[uint64]struct{}, len(req.GetRangeIds()))
-	for _, rangeID := range req.GetRangeIds() {
-		rangeIDSet[rangeID] = struct{}{}
+
+	var rangeIDSet map[uint64]struct{}
+	if len(req.GetRangeIds()) > 0 {
+		rangeIDSet = make(map[uint64]struct{}, len(req.GetRangeIds()))
+		for _, rangeID := range req.GetRangeIds() {
+			rangeIDSet[rangeID] = struct{}{}
+		}
 	}
+
+	nhid := req.GetNhid()
 	rsp := &rfpb.FetchRangesResponse{}
 	for _, kv := range scanRsp.GetKvs() {
 		rd := &rfpb.RangeDescriptor{}
 		if err := proto.Unmarshal(kv.GetValue(), rd); err != nil {
 			return nil, status.InternalErrorf("scan returned unparsable kv: %w", err)
 		}
-		if _, ok := rangeIDSet[rd.GetRangeId()]; ok {
-			rsp.Ranges = append(rsp.Ranges, rd)
+		// Filter by range ID if specified.
+		if rangeIDSet != nil {
+			if _, ok := rangeIDSet[rd.GetRangeId()]; ok {
+				rsp.Ranges = append(rsp.Ranges, rd)
+				continue
+			}
+		}
+		// Filter by NHID if specified.
+		if nhid != "" {
+			found := false
+			for _, replica := range rd.GetReplicas() {
+				if replica.GetNhid() == nhid {
+					found = true
+					break
+				}
+			}
+			if found {
+				rsp.Ranges = append(rsp.Ranges, rd)
+				continue
+			}
 		}
 	}
 	return rsp, nil

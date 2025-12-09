@@ -119,10 +119,8 @@ func lookupRangeDescriptor(ctx context.Context, c rfspb.ApiClient, h *rfpb.Heade
 	return res[0], nil
 }
 
-func fetchRanges(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, rangeIDs []uint64) (*rfpb.FetchRangesResponse, error) {
-	batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.FetchRangesRequest{
-		RangeIds: rangeIDs,
-	}).ToProto()
+func fetchRanges(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, req *rfpb.FetchRangesRequest) (*rfpb.FetchRangesResponse, error) {
+	batchReq, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +233,30 @@ func (s *Sender) LookupRangeDescriptorsByIDs(ctx context.Context, rangeIDs []uin
 	}
 	var ranges []*rfpb.RangeDescriptor
 	fn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
-		rsp, err := fetchRanges(ctx, c, h, rangeIDs)
+		rsp, err := fetchRanges(ctx, c, h, &rfpb.FetchRangesRequest{
+			RangeIds: rangeIDs,
+		})
+		if err != nil {
+			return err
+		}
+		ranges = rsp.GetRanges()
+		return nil
+	}
+	if err := s.runOnMetaRange(ctx, fn); err != nil {
+		return nil, err
+	}
+	return ranges, nil
+}
+
+// LookupRangeDescriptorsByNHID returns all range descriptors that have a
+// replica with the given NHID.
+func (s *Sender) LookupRangeDescriptorsByIDsOrNHID(ctx context.Context, rangeIDs []uint64, nhid string) ([]*rfpb.RangeDescriptor, error) {
+	var ranges []*rfpb.RangeDescriptor
+	fn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
+		rsp, err := fetchRanges(ctx, c, h, &rfpb.FetchRangesRequest{
+			RangeIds: rangeIDs,
+			Nhid:     nhid,
+		})
 		if err != nil {
 			return err
 		}
