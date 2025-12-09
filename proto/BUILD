@@ -818,6 +818,14 @@ proto_library(
 )
 
 proto_library(
+    name = "cache_service_proto",
+    srcs = ["cache_service.proto"],
+    deps = [
+        ":cache_proto",
+    ],
+)
+
+proto_library(
     name = "codesearch_service_proto",
     srcs = ["codesearch_service.proto"],
     deps = [
@@ -2020,6 +2028,20 @@ go_proto_library(
     deps = [
         ":git_go_proto",
         ":search_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "cache_service_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/cache_service",
+    proto = ":cache_service_proto",
+    deps = [
+        ":cache_go_proto",
     ],
 )
 
