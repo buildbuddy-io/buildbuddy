@@ -72,6 +72,9 @@ type ociFetcherClient struct {
 // TODO(dan): Stop passing private IPs, mirror config to client once server owns the fetching logic.
 // TODO(dan): Update this comment once server is implemented!
 func NewClient(env environment.Env, allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) (ofpb.OCIFetcherClient, error) {
+	if env.GetClock() == nil {
+		return nil, status.FailedPreconditionError("need non-nil clock to create OCIFetcherClient")
+	}
 	pullerCache, err := lru.NewLRU[pullerCacheEntry](&lru.Config[pullerCacheEntry]{
 		SizeFn:  func(_ pullerCacheEntry) int64 { return 1 },
 		MaxSize: int64(pullerLRUMaxEntries),
