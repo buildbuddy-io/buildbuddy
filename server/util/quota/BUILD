@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/environment",
+        "//server/usage/sku",
         "//server/util/clientip",
         "//server/util/status",
     ],

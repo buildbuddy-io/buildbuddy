@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -28,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -168,6 +170,16 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		return rsp, nil
 	}
 
+	if qm := s.env.GetQuotaManager(); qm != nil {
+		totalUploadSize := int64(0)
+		for _, uploadRequest := range req.Requests {
+			totalUploadSize += uploadRequest.GetDigest().GetSizeBytes()
+		}
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), totalUploadSize); err != nil {
+			return nil, err
+		}
+	}
+
 	rsp.Responses = make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(req.Requests))
 
 	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
@@ -293,6 +305,16 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
+	}
+
+	if qm := s.env.GetQuotaManager(); qm != nil {
+		totalDownloadSize := int64(0)
+		for _, readDigest := range req.GetDigests() {
+			totalDownloadSize += readDigest.GetSizeBytes()
+		}
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), totalDownloadSize); err != nil {
+			return nil, err
+		}
 	}
 
 	type closeTrackerFunc func(data downloadTrackerData)
@@ -477,7 +499,7 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 		return nil
 	}
 
-	var childBytesWritten = 0
+	childBytesWritten := 0
 	if len(childCaches) > 0 {
 		mu := &sync.Mutex{}
 		eg, egCtx := errgroup.WithContext(ctx)
