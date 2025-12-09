@@ -2036,6 +2036,7 @@ go_proto_library(
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//proto:vtprotobuf_compiler",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/cache_service",
     proto = ":cache_service_proto",
