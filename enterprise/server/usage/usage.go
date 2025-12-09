@@ -158,6 +158,9 @@ func NewTracker(env environment.Env, clock clockwork.Clock, flushLock interfaces
 	if env.GetMetricsCollector() == nil {
 		return nil, status.FailedPreconditionError("Metrics Collector must be configured for usage tracker.")
 	}
+	if *writeToOLAP && env.GetOLAPDBHandle() == nil {
+		return nil, status.FailedPreconditionError("OLAP DB handle must be configured for usage tracker when 'app.write_usage_to_olap_db' is true.")
+	}
 	return &tracker{
 		env:       env,
 		rdb:       env.GetDefaultRedisClient(),
