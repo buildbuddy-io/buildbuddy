@@ -50,8 +50,7 @@ var (
 	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 )
 
-// pullerCacheEntry holds a cached Puller with its expiration time.
-type pullerCacheEntry struct {
+type pullerLRUEntry struct {
 	puller     *remote.Puller
 	expiration time.Time
 }
@@ -60,9 +59,9 @@ type ociFetcherClient struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
 
-	mu          sync.Mutex
-	pullerCache *lru.LRU[pullerCacheEntry]
-	clock       clockwork.Clock
+	mu        sync.Mutex
+	pullerLRU *lru.LRU[pullerLRUEntry]
+	clock     clockwork.Clock
 }
 
 // NewClient constructs a new OCI Fetcher client.
@@ -75,8 +74,8 @@ func NewClient(env environment.Env, allowedPrivateIPs []*net.IPNet, mirrors []in
 	if env.GetClock() == nil {
 		return nil, status.FailedPreconditionError("need non-nil clock to create OCIFetcherClient")
 	}
-	pullerCache, err := lru.NewLRU[pullerCacheEntry](&lru.Config[pullerCacheEntry]{
-		SizeFn:  func(_ pullerCacheEntry) int64 { return 1 },
+	pullerLRU, err := lru.NewLRU[pullerLRUEntry](&lru.Config[pullerLRUEntry]{
+		SizeFn:  func(_ pullerLRUEntry) int64 { return 1 },
 		MaxSize: int64(pullerLRUMaxEntries),
 	})
 	if err != nil {
@@ -85,7 +84,7 @@ func NewClient(env environment.Env, allowedPrivateIPs []*net.IPNet, mirrors []in
 	return &ociFetcherClient{
 		allowedPrivateIPs: allowedPrivateIPs,
 		mirrors:           mirrors,
-		pullerCache:       pullerCache,
+		pullerLRU:         pullerLRU,
 		clock:             env.GetClock(),
 	}, nil
 }
@@ -224,7 +223,6 @@ func (c *ociFetcherClient) getRemoteOpts(ctx context.Context, creds *rgpb.Creden
 // getOrCreatePuller returns a cached Puller for the given image reference and credentials,
 // or creates a new one if not found or expired.
 func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*remote.Puller, error) {
-	// Generate key from registry, repository, and credentials
 	key := hash.Strings(
 		imageRef.Context().RegistryStr(),
 		imageRef.Context().RepositoryStr(),
@@ -232,32 +230,28 @@ func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrna
 		creds.GetPassword(),
 	)
 
-	// Check cache (with lock)
 	c.mu.Lock()
-	entry, ok := c.pullerCache.Get(key)
+	entry, ok := c.pullerLRU.Get(key)
 	c.mu.Unlock()
 
 	if ok && entry.expiration.After(c.clock.Now()) {
 		return entry.puller, nil
 	}
 
-	// Evict expired entry
 	if ok {
 		c.mu.Lock()
-		c.pullerCache.Remove(key)
+		c.pullerLRU.Remove(key)
 		c.mu.Unlock()
 	}
 
-	// Create new puller
 	remoteOpts := c.getRemoteOpts(ctx, creds)
 	puller, err := remote.NewPuller(remoteOpts...)
 	if err != nil {
 		return nil, err
 	}
 
-	// Add to cache
 	c.mu.Lock()
-	c.pullerCache.Add(key, pullerCacheEntry{
+	c.pullerLRU.Add(key, pullerLRUEntry{
 		puller:     puller,
 		expiration: c.clock.Now().Add(pullerLRUExpiration),
 	})

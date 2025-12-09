@@ -279,7 +279,7 @@ func TestFetchManifestMetadata_SameRepoDifferentTags_SamePuller(t *testing.T) {
 	require.NoError(t, err)
 
 	expected := map[string]int{
-		http.MethodGet + " /v2/":                          1,
+		http.MethodGet + " /v2/":                         1,
 		http.MethodHead + " /v2/test-image/manifests/v1": 1,
 	}
 	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
