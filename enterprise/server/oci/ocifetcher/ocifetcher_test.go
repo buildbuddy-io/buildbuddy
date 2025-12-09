@@ -4,6 +4,8 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -339,6 +341,67 @@ func TestFetchManifestMetadata_PullerExpiration(t *testing.T) {
 	fakeClock.Advance(16 * time.Minute)
 
 	// Third call (after TTL) - should create a new Puller
+	counter.Reset()
+	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.NoError(t, err)
+
+	expected = map[string]int{
+		http.MethodGet + " /v2/":                             1,
+		http.MethodHead + " /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
+}
+
+// TestFetchManifestMetadata_PullerEvictionOnHeadError verifies that when Head()
+// returns an error, the Puller is evicted from the cache and a new one is
+// created on the next request.
+func TestFetchManifestMetadata_PullerEvictionOnHeadError(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	counter := testhttp.NewRequestCounter()
+	var failHead atomic.Bool
+	reg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			if failHead.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/") {
+				w.WriteHeader(http.StatusInternalServerError)
+				return false
+			}
+			return true
+		},
+	})
+	imageName, _ := reg.PushNamedImage(t, "test-image", nil)
+
+	client, err := ocifetcher.NewClient(env, localhostIPs(t), nil)
+	require.NoError(t, err)
+
+	// First call - should create a new Puller
+	counter.Reset()
+	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.NoError(t, err)
+
+	expected := map[string]int{
+		http.MethodGet + " /v2/":                             1,
+		http.MethodHead + " /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
+
+	// Second call - should reuse cached Puller (no /v2/ auth request)
+	counter.Reset()
+	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.NoError(t, err)
+
+	expected = map[string]int{
+		http.MethodHead + " /v2/test-image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
+
+	// Third call - Head() fails, Puller should be evicted
+	failHead.Store(true)
+	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.Error(t, err)
+
+	// Fourth call - should create a NEW Puller because the old one was evicted
+	failHead.Store(false)
 	counter.Reset()
 	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
