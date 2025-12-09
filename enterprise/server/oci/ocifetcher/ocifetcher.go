@@ -260,6 +260,18 @@ func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrna
 	return puller, nil
 }
 
+func (c *ociFetcherClient) evictPuller(imageRef gcrname.Reference, creds *rgpb.Credentials) {
+	key := hash.Strings(
+		imageRef.Context().RegistryStr(),
+		imageRef.Context().RepositoryStr(),
+		creds.GetUsername(),
+		creds.GetPassword(),
+	)
+	c.mu.Lock()
+	c.pullerLRU.Remove(key)
+	c.mu.Unlock()
+}
+
 // FetchManifestMetadata performs a HEAD request to get manifest metadata (digest, size, media type)
 // without downloading the full manifest content.
 func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
@@ -274,6 +286,7 @@ func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.
 	}
 	desc, err := puller.Head(ctx, imageRef)
 	if err != nil {
+		c.evictPuller(imageRef, req.GetCredentials())
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
 		}
