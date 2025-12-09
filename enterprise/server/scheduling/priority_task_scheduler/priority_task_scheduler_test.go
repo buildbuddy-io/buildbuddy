@@ -124,7 +124,8 @@ func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t 
 	runnerPool := &FakeRunnerPool{}
 	leaser := NewFakeTaskLeaser()
 
-	scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
 	scheduler.Start()
 	ctx := context.Background()
 	t.Cleanup(func() {
@@ -220,7 +221,8 @@ func TestPriorityTaskScheduler_QueueSkipping_LargeCustomResourceTasksNotIndefini
 	runnerPool := &FakeRunnerPool{}
 	leaser := NewFakeTaskLeaser()
 
-	scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
 	scheduler.Start()
 	ctx := context.Background()
 	t.Cleanup(func() {
@@ -334,7 +336,8 @@ func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 			executor := NewFakeExecutor()
 			runnerPool := &FakeRunnerPool{}
 			leaser := NewFakeTaskLeaser()
-			scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+			scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+			require.NoError(t, err)
 			scheduler.Start()
 			ctx := context.Background()
 			t.Cleanup(func() {
@@ -348,7 +351,7 @@ func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 
 			// Start a task.
 			reservation := &scpb.EnqueueTaskReservationRequest{TaskId: fakeTaskID("task1")}
-			_, err := scheduler.EnqueueTaskReservation(ctx, reservation)
+			_, err = scheduler.EnqueueTaskReservation(ctx, reservation)
 			require.NoError(t, err)
 
 			// Fail the task with an error that is normally non-retryable, but because
@@ -381,7 +384,8 @@ func TestLocalEnqueueTimestamp(t *testing.T) {
 	executor := NewFakeExecutor()
 	runnerPool := &FakeRunnerPool{}
 	leaser := NewFakeTaskLeaser()
-	scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
 	scheduler.Start()
 	t.Cleanup(func() {
 		err := scheduler.Stop()
@@ -391,7 +395,7 @@ func TestLocalEnqueueTimestamp(t *testing.T) {
 
 	// Start a task.
 	reservation := &scpb.EnqueueTaskReservationRequest{TaskId: fakeTaskID("task1")}
-	_, err := scheduler.EnqueueTaskReservation(ctx, reservation)
+	_, err = scheduler.EnqueueTaskReservation(ctx, reservation)
 	require.NoError(t, err)
 	task := <-executor.StartedExecutions
 	task.Complete()

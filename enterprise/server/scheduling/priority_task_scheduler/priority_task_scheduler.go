@@ -356,7 +356,7 @@ type PriorityTaskScheduler struct {
 	exclusiveTaskScheduling bool
 }
 
-func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool interfaces.RunnerPool, taskLeaser interfaces.TaskLeaser, options *Options) *PriorityTaskScheduler {
+func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool interfaces.RunnerPool, taskLeaser interfaces.TaskLeaser, options *Options) (*PriorityTaskScheduler, error) {
 	ramBytesCapacity := options.RAMBytesCapacityOverride
 	if ramBytesCapacity == 0 {
 		ramBytesCapacity = int64(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio)
@@ -367,7 +367,11 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 	}
 	customResourcesCapacity := map[string]customResourceCount{}
 	customResourcesUsed := map[string]customResourceCount{}
-	for _, r := range resources.GetAllocatedCustomResources() {
+	customResourcesAllocated, err := resources.GetAllocatedCustomResources()
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range customResourcesAllocated {
 		customResourcesCapacity[r.GetName()] = customResource(r.GetValue())
 		customResourcesUsed[r.GetName()] = 0
 	}
@@ -413,7 +417,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 
 	log.CtxInfof(qes.rootContext, "Initialized task scheduler: %s", qes.stats())
 
-	return qes
+	return qes, nil
 }
 
 func (q *PriorityTaskScheduler) enrichContext(ctx context.Context) context.Context {

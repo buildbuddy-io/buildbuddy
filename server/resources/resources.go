@@ -195,15 +195,18 @@ type CustomResource struct {
 	Value float64 `yaml:"value" json:"value"`
 }
 
-func GetAllocatedCustomResources() []*scpb.CustomResource {
+func GetAllocatedCustomResources() ([]*scpb.CustomResource, error) {
 	out := make([]*scpb.CustomResource, 0, len(*customResources))
 	for _, r := range *customResources {
+		if strings.Contains(r.Name, ".") {
+			return []*scpb.CustomResource{}, status.InvalidArgumentError("Custom resource names may not contain periods")
+		}
 		out = append(out, &scpb.CustomResource{
 			Name:  r.Name,
 			Value: float32(r.Value),
 		})
 	}
-	return out
+	return out, nil
 }
 
 func GetNodeName() string {

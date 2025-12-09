@@ -367,7 +367,10 @@ func main() {
 		log.Fatalf("Error initializing ExecutionServer: %s", err)
 	}
 	taskLeaser := task_leaser.NewTaskLeaser(env, executorID, executorHostName)
-	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, runnerPool, taskLeaser, &priority_task_scheduler.Options{})
+	taskScheduler, err := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, runnerPool, taskLeaser, &priority_task_scheduler.Options{})
+	if err != nil {
+		log.Fatalf("Error creating task scheduler: %v", err)
+	}
 	if err := taskScheduler.Start(); err != nil {
 		log.Fatalf("Error starting task scheduler: %v", err)
 	}
