@@ -61,7 +61,7 @@ type ociFetcherClient struct {
 	mirrors           []interfaces.MirrorConfig
 
 	mu        sync.Mutex
-	pullerLRU *lru.LRU[pullerLRUEntry]
+	pullerLRU *lru.LRU[*pullerLRUEntry]
 	clock     clockwork.Clock
 }
 
