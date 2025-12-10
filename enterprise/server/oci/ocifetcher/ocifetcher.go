@@ -12,6 +12,7 @@ package ocifetcher
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/url"
@@ -292,8 +293,25 @@ func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.
 		return nil, status.InternalErrorf("error creating puller: %s", err)
 	}
 	desc, err := puller.Head(ctx, imageRef)
+	if err == nil {
+		return &ofpb.FetchManifestMetadataResponse{
+			Digest:    desc.Digest.String(),
+			Size:      desc.Size,
+			MediaType: string(desc.MediaType),
+		}, nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+
+	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
+	c.evictPuller(imageRef, req.GetCredentials())
+	puller, err = c.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
 	if err != nil {
-		c.evictPuller(imageRef, req.GetCredentials())
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+	desc, err = puller.Head(ctx, imageRef)
+	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
 		}
