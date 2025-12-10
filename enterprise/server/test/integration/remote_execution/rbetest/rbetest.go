@@ -61,6 +61,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -1356,23 +1357,23 @@ func (r *testRunner) Run(ctx context.Context, ioStats *repb.IOStats) *interfaces
 }
 
 type FakeTaskSizer struct {
-	GetImpl func(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize
+	GetImpl func(ctx context.Context, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize
 }
 
 var _ interfaces.TaskSizer = (*FakeTaskSizer)(nil)
 
-func (f *FakeTaskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+func (f *FakeTaskSizer) Get(ctx context.Context, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
 	if f.GetImpl == nil {
 		return nil
 	}
-	return f.GetImpl(ctx, task)
+	return f.GetImpl(ctx, cmd, props)
 }
 
-func (f *FakeTaskSizer) Update(ctx context.Context, action *repb.Action, cmd *repb.Command, md *repb.ExecutedActionMetadata) error {
+func (f *FakeTaskSizer) Update(ctx context.Context, cmd *repb.Command, props *platform.Properties, md *repb.ExecutedActionMetadata) error {
 	return nil
 }
 
-func (f *FakeTaskSizer) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+func (f *FakeTaskSizer) Predict(ctx context.Context, action *repb.Action, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
 	return nil
 }
 

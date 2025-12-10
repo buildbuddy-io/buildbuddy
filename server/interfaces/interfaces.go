@@ -1008,14 +1008,14 @@ type TaskRouter interface {
 type TaskSizer interface {
 	// Get returns the previously measured size for a task, or nil if this data
 	// is not available.
-	Get(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize
+	Get(ctx context.Context, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize
 
 	// Predict returns a predicted task size using a model, or nil if no model
 	// is configured.
-	Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize
+	Predict(ctx context.Context, action *repb.Action, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize
 
 	// Update records a measured task size.
-	Update(ctx context.Context, action *repb.Action, cmd *repb.Command, md *repb.ExecutedActionMetadata) error
+	Update(ctx context.Context, cmd *repb.Command, props *platform.Properties, md *repb.ExecutedActionMetadata) error
 }
 
 // ScheduledTask represents an execution task along with its scheduling metadata
