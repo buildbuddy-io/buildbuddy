@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/v1"
-	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
@@ -149,7 +148,7 @@ func setupRegistry(t *testing.T, creds *testregistry.BasicAuthCreds, interceptor
 }
 
 func newTestClient(t *testing.T, env environment.Env) ofpb.OCIFetcherClient {
-	client, err := ocifetcher.NewClient(env, localhostIPs(t), nil)
+	client, err := ocifetcher.NewClient(localhostIPs(t), nil)
 	require.NoError(t, err)
 	return client
 }
@@ -249,51 +248,6 @@ func TestFetchManifestMetadata_SameRepoDifferentTags_SamePuller(t *testing.T) {
 	assertMetadata(t, resp, digest2, size2, mediaType2)
 	assertRequests(t, counter, map[string]int{
 		http.MethodHead + " /v2/test-image/manifests/v2": 1,
-	})
-}
-
-// TestFetchManifestMetadata_PullerExpiration verifies that Pullers are expired
-// and recreated after the TTL.
-func TestFetchManifestMetadata_PullerExpiration(t *testing.T) {
-	env := testenv.GetTestEnv(t)
-	fakeClock := clockwork.NewFakeClock()
-	env.SetClock(fakeClock)
-
-	reg, counter := setupRegistry(t, nil, nil)
-	imageName, img := reg.PushNamedImage(t, "test-image", nil)
-	digest, size, mediaType := imageMetadata(t, img)
-	client := newTestClient(t, env)
-
-	// First call - should create a new Puller
-	counter.Reset()
-	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/":                             1,
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
-	})
-
-	// Second call (within TTL) - should reuse the cached Puller
-	counter.Reset()
-	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-	assertRequests(t, counter, map[string]int{
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
-	})
-
-	// Advance clock past the 15-minute TTL
-	fakeClock.Advance(16 * time.Minute)
-
-	// Third call (after TTL) - should create a new Puller
-	counter.Reset()
-	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/":                             1,
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
 	})
 }
 
