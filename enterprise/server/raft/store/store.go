@@ -2012,7 +2012,11 @@ func (j *replicaJanitor) scanForZombies(ctx context.Context) {
 		if rd.GetDeleted() || isSoftDeleted(softDeletedPartitions, rd) {
 			continue
 		}
-		// Check if shard already exists locally.
+		// Check if the shard has been opened on this node before. Skip if this
+		// shard have been started in the past. We only deal with shards that
+		// have never started here to prevent from accidentally starting a shard
+		// that is stopped by other goroutines for example soft-deleting a
+		// partition.
 		if _, exists := shardStateMap[rangeID]; exists {
 			continue
 		}
