@@ -856,3 +856,313 @@ func TestFetchManifest_HTTPErrorThenHTTPError(t *testing.T) {
 		http.MethodGet + " /v2/test-image/manifests/latest": 1,
 	})
 }
+
+// ==================== FetchBlobMetadata Tests ====================
+
+func blobMetadata(t *testing.T, img v1.Image) (digest string, size int64, mediaType string) {
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+
+	d, err := layer.Digest()
+	require.NoError(t, err)
+	s, err := layer.Size()
+	require.NoError(t, err)
+	m, err := layer.MediaType()
+	require.NoError(t, err)
+	return d.String(), s, string(m)
+}
+
+func assertBlobMetadataResponse(t *testing.T, resp *ofpb.FetchBlobMetadataResponse, size int64, mediaType string) {
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, mediaType, resp.GetMediaType())
+}
+
+func TestFetchBlobMetadata_AuthVariants(t *testing.T) {
+	cases := []struct {
+		name           string
+		registryCreds  *testregistry.BasicAuthCreds
+		requestCreds   *rgpb.Credentials
+		expectError    bool
+		checkError     func(error) bool
+		expectedCounts map[string]int
+	}{
+		{
+			name:          "NoAuth",
+			registryCreds: nil,
+			requestCreds:  nil,
+			expectError:   false,
+		},
+		{
+			name:          "WithValidCredentials",
+			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
+			requestCreds:  &rgpb.Credentials{Username: "testuser", Password: "testpass"},
+			expectError:   false,
+		},
+		{
+			name:          "WithInvalidCredentials",
+			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
+			requestCreds:  &rgpb.Credentials{Username: "wronguser", Password: "wrongpass"},
+			expectError:   true,
+			checkError:    status.IsPermissionDeniedError,
+		},
+		{
+			name:          "MissingCredentials",
+			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
+			requestCreds:  nil,
+			expectError:   true,
+			checkError:    status.IsPermissionDeniedError,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			reg, _ := setupRegistry(t, tc.registryCreds, nil)
+			imageName, img := reg.PushNamedImage(t, "test-image", tc.registryCreds)
+			blobDigest, blobSize, blobMediaType := blobMetadata(t, img)
+
+			// Construct blob reference: registry/repo@digest
+			// imageName is like "localhost:port/test-image:latest", we need "localhost:port/test-image@sha256:..."
+			parts := strings.Split(imageName, ":")
+			blobRefStr := parts[0] + ":" + parts[1] + "@" + blobDigest
+
+			client := newTestClient(t, env)
+			resp, err := client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
+				Ref:         blobRefStr,
+				Credentials: tc.requestCreds,
+			})
+
+			if tc.expectError {
+				require.Error(t, err)
+				if tc.checkError != nil {
+					require.True(t, tc.checkError(err), "unexpected error type: %v", err)
+				}
+			} else {
+				require.NoError(t, err)
+				assertBlobMetadataResponse(t, resp, blobSize, blobMediaType)
+			}
+		})
+	}
+}
+
+// TestFetchBlobMetadata_PullerCacheHit verifies that the same Puller is
+// reused when fetching the same blob with the same credentials.
+func TestFetchBlobMetadata_PullerCacheHit(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	reg, counter := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	blobDigest, blobSize, blobMediaType := blobMetadata(t, img)
+
+	parts := strings.Split(imageName, ":")
+	blobRefStr := parts[0] + ":" + parts[1] + "@" + blobDigest
+
+	client := newTestClient(t, env)
+
+	// First call - should create a new Puller and make a /v2/ auth request
+	counter.Reset()
+	resp, err := client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	assertBlobMetadataResponse(t, resp, blobSize, blobMediaType)
+	firstCounts := counter.Snapshot()
+	require.Equal(t, 1, firstCounts[http.MethodGet+" /v2/"], "expected /v2/ auth request on first call")
+
+	// Second call - should reuse the cached Puller and NOT make another /v2/ auth request
+	counter.Reset()
+	resp, err = client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	assertBlobMetadataResponse(t, resp, blobSize, blobMediaType)
+	secondCounts := counter.Snapshot()
+	require.Equal(t, 0, secondCounts[http.MethodGet+" /v2/"], "expected no /v2/ auth request on second call (cached puller)")
+}
+
+// TestFetchBlobMetadata_PullerEvictionOnError verifies that when blob fetch
+// returns an error, the Puller is evicted from the cache and a new one is
+// created on the next request.
+func TestFetchBlobMetadata_PullerEvictionOnError(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	var failBlob atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if failBlob.Load() && strings.Contains(r.URL.Path, "/blobs/") {
+			w.WriteHeader(http.StatusInternalServerError)
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	blobDigest, blobSize, blobMediaType := blobMetadata(t, img)
+
+	parts := strings.Split(imageName, ":")
+	blobRefStr := parts[0] + ":" + parts[1] + "@" + blobDigest
+
+	client := newTestClient(t, env)
+
+	// First call - should create a new Puller
+	counter.Reset()
+	resp, err := client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	assertBlobMetadataResponse(t, resp, blobSize, blobMediaType)
+	firstCounts := counter.Snapshot()
+	require.Equal(t, 1, firstCounts[http.MethodGet+" /v2/"], "expected /v2/ auth request on first call")
+
+	// Second call - should reuse cached Puller (no /v2/ auth request)
+	counter.Reset()
+	resp, err = client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	assertBlobMetadataResponse(t, resp, blobSize, blobMediaType)
+	secondCounts := counter.Snapshot()
+	require.Equal(t, 0, secondCounts[http.MethodGet+" /v2/"], "expected no /v2/ auth request on second call")
+
+	// Third call - blob fetch fails, Puller should be evicted
+	failBlob.Store(true)
+	_, err = client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.Error(t, err)
+
+	// Fourth call - should create a NEW Puller because the old one was evicted
+	failBlob.Store(false)
+	counter.Reset()
+	resp, err = client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	assertBlobMetadataResponse(t, resp, blobSize, blobMediaType)
+	fourthCounts := counter.Snapshot()
+	require.Equal(t, 1, fourthCounts[http.MethodGet+" /v2/"], "expected /v2/ auth request after eviction")
+}
+
+// TestFetchBlobMetadata_ContextErrorNoRetry verifies that when blob fetch
+// returns a context error (canceled or deadline exceeded), no retry is
+// attempted and the Puller is NOT evicted from the cache.
+func TestFetchBlobMetadata_ContextErrorNoRetry(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	var blockBlob atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if blockBlob.Load() && strings.Contains(r.URL.Path, "/blobs/") {
+			time.Sleep(100 * time.Millisecond) // Block until context times out
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	blobDigest, blobSize, blobMediaType := blobMetadata(t, img)
+
+	parts := strings.Split(imageName, ":")
+	blobRefStr := parts[0] + ":" + parts[1] + "@" + blobDigest
+
+	client := newTestClient(t, env)
+
+	// First call - should create a new Puller and cache it
+	counter.Reset()
+	resp, err := client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	assertBlobMetadataResponse(t, resp, blobSize, blobMediaType)
+	firstCounts := counter.Snapshot()
+	require.Equal(t, 1, firstCounts[http.MethodGet+" /v2/"], "expected /v2/ auth request on first call")
+
+	// Second call - context times out during blob request
+	blockBlob.Store(true)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	_, err = client.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.Error(t, err)
+	require.True(t, errors.Is(err, context.DeadlineExceeded), "expected DeadlineExceeded error, got: %v", err)
+
+	// Third call - Puller should still be cached (no /v2/ auth request)
+	blockBlob.Store(false)
+	counter.Reset()
+	resp, err = client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	assertBlobMetadataResponse(t, resp, blobSize, blobMediaType)
+	thirdCounts := counter.Snapshot()
+	require.Equal(t, 0, thirdCounts[http.MethodGet+" /v2/"], "expected no /v2/ auth request (puller still cached)")
+}
+
+// TestFetchBlobMetadata_HTTPErrorThenSuccess verifies that when blob fetch
+// returns an HTTP error on the first attempt, the Puller is refreshed and
+// the retry succeeds. The refreshed Puller should remain in the cache.
+func TestFetchBlobMetadata_HTTPErrorThenSuccess(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	var blobAttempts atomic.Int32
+	var failFirstBlob atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if failFirstBlob.Load() && strings.Contains(r.URL.Path, "/blobs/") {
+			if blobAttempts.Add(1) == 1 {
+				w.WriteHeader(http.StatusInternalServerError)
+				return false
+			}
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	blobDigest, blobSize, blobMediaType := blobMetadata(t, img)
+
+	parts := strings.Split(imageName, ":")
+	blobRefStr := parts[0] + ":" + parts[1] + "@" + blobDigest
+
+	client := newTestClient(t, env)
+
+	// First call - should create a new Puller and cache it
+	counter.Reset()
+	resp, err := client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	assertBlobMetadataResponse(t, resp, blobSize, blobMediaType)
+	firstCounts := counter.Snapshot()
+	require.Equal(t, 1, firstCounts[http.MethodGet+" /v2/"], "expected /v2/ auth request on first call")
+
+	// Second call - first blob attempt fails, Puller refreshed, retry succeeds
+	blobAttempts.Store(0)
+	failFirstBlob.Store(true)
+	resp, err = client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	assertBlobMetadataResponse(t, resp, blobSize, blobMediaType)
+
+	// Third call - refreshed Puller should still be cached (no /v2/ auth request)
+	failFirstBlob.Store(false)
+	counter.Reset()
+	resp, err = client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	assertBlobMetadataResponse(t, resp, blobSize, blobMediaType)
+	thirdCounts := counter.Snapshot()
+	require.Equal(t, 0, thirdCounts[http.MethodGet+" /v2/"], "expected no /v2/ auth request (refreshed puller cached)")
+}
+
+// TestFetchBlobMetadata_HTTPErrorThenHTTPError verifies that when blob fetch
+// returns HTTP errors on both the first attempt and the retry, the refreshed
+// Puller is evicted from the cache.
+func TestFetchBlobMetadata_HTTPErrorThenHTTPError(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	var failBlob atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if failBlob.Load() && strings.Contains(r.URL.Path, "/blobs/") {
+			w.WriteHeader(http.StatusInternalServerError)
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	blobDigest, blobSize, blobMediaType := blobMetadata(t, img)
+
+	parts := strings.Split(imageName, ":")
+	blobRefStr := parts[0] + ":" + parts[1] + "@" + blobDigest
+
+	client := newTestClient(t, env)
+
+	// First call - should create a new Puller and cache it
+	counter.Reset()
+	resp, err := client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	assertBlobMetadataResponse(t, resp, blobSize, blobMediaType)
+	firstCounts := counter.Snapshot()
+	require.Equal(t, 1, firstCounts[http.MethodGet+" /v2/"], "expected /v2/ auth request on first call")
+
+	// Second call - both blob attempts fail
+	failBlob.Store(true)
+	_, err = client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.Error(t, err)
+
+	// Third call - refreshed Puller should have been evicted (needs /v2/ auth request)
+	failBlob.Store(false)
+	counter.Reset()
+	resp, err = client.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	assertBlobMetadataResponse(t, resp, blobSize, blobMediaType)
+	thirdCounts := counter.Snapshot()
+	require.Equal(t, 1, thirdCounts[http.MethodGet+" /v2/"], "expected /v2/ auth request after eviction")
+}

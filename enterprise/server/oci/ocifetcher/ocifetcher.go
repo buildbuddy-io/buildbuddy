@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/jonboulle/clockwork"
@@ -392,6 +393,84 @@ func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobReq
 	return nil, status.UnimplementedError("FetchBlob not implemented")
 }
 
+// FetchBlobMetadata performs a HEAD request to get blob metadata (size, media type)
+// without downloading the full blob content.
 func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
-	return nil, status.UnimplementedError("FetchBlobMetadata not implemented")
+	blobRef, err := gcrname.NewDigest(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid blob reference %q: %s", req.GetRef(), err)
+	}
+
+	puller, err := c.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+
+	layer, err := puller.Layer(ctx, blobRef)
+	if err == nil {
+		size, mediaType, err := getBlobMetadata(layer)
+		if err == nil {
+			return &ofpb.FetchBlobMetadataResponse{
+				Size:      size,
+				MediaType: mediaType,
+			}, nil
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+	} else {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+	}
+
+	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
+	c.evictPuller(blobRef, req.GetCredentials())
+	puller, err = c.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+
+	layer, err = puller.Layer(ctx, blobRef)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		c.evictPuller(blobRef, req.GetCredentials())
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access blob: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch blob metadata from remote registry: %s", err)
+	}
+
+	size, mediaType, err := getBlobMetadata(layer)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+	if err != nil {
+		c.evictPuller(blobRef, req.GetCredentials())
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access blob: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch blob metadata from remote registry: %s", err)
+	}
+
+	return &ofpb.FetchBlobMetadataResponse{
+		Size:      size,
+		MediaType: mediaType,
+	}, nil
+}
+
+// getBlobMetadata fetches size and media type from a layer.
+// These calls may trigger network requests to the registry.
+func getBlobMetadata(layer v1.Layer) (int64, string, error) {
+	size, err := layer.Size()
+	if err != nil {
+		return 0, "", err
+	}
+	mediaType, err := layer.MediaType()
+	if err != nil {
+		return 0, "", err
+	}
+	return size, string(mediaType), nil
 }
