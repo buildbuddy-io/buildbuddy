@@ -75,8 +75,8 @@ func NewClient(env environment.Env, allowedPrivateIPs []*net.IPNet, mirrors []in
 	if env.GetClock() == nil {
 		return nil, status.FailedPreconditionError("need non-nil clock to create OCIFetcherClient")
 	}
-	pullerLRU, err := lru.NewLRU[pullerLRUEntry](&lru.Config[pullerLRUEntry]{
-		SizeFn:  func(_ pullerLRUEntry) int64 { return 1 },
+	pullerLRU, err := lru.NewLRU[*pullerLRUEntry](&lru.Config[*pullerLRUEntry]{
+		SizeFn:  func(_ *pullerLRUEntry) int64 { return 1 },
 		MaxSize: int64(pullerLRUMaxEntries),
 	})
 	if err != nil {
@@ -264,7 +264,7 @@ func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrna
 	}
 
 	c.mu.Lock()
-	c.pullerLRU.Add(key, pullerLRUEntry{
+	c.pullerLRU.Add(key, &pullerLRUEntry{
 		puller:     puller,
 		expiration: c.clock.Now().Add(pullerLRUExpiration),
 	})
