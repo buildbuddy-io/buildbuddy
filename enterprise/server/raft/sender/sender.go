@@ -248,7 +248,7 @@ func (s *Sender) LookupRangeDescriptorsByIDs(ctx context.Context, rangeIDs []uin
 	return ranges, nil
 }
 
-// LookupRangeDescriptorsByNHID returns all range descriptors that have a
+// LookupRangeDescriptorsByIDsOrNHID returns all range descriptors that have a
 // replica with the given NHID.
 func (s *Sender) LookupRangeDescriptorsByIDsOrNHID(ctx context.Context, rangeIDs []uint64, nhid string) ([]*rfpb.RangeDescriptor, error) {
 	var ranges []*rfpb.RangeDescriptor
