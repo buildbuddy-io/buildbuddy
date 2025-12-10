@@ -310,3 +310,10 @@
 .settings .settings-option-title:not(:first-child) {
   margin-top: 32px;
 }
+
+.settings-internal-section {
+  margin-top: 32px;
+  padding: 12px;
+  border-radius: 8px;
+  background-color: #ffc107;
+}

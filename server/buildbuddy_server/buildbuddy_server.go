@@ -337,6 +337,7 @@ func makeGroups(groupRoles []*tables.GroupRole) ([]*grpb.Group, error) {
 			Url:                               getGroupUrl(&gr.Group),
 			ExternalUserManagement:            g.ExternalUserManagement,
 			AllowedUserApiKeyCapabilities:     allowedUserAPIKeyCapabilities,
+			Status:                            g.Status,
 		})
 	}
 	return groups, nil
@@ -645,6 +646,24 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 		al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_UPDATE, req)
 	}
 	return &grpb.UpdateGroupResponse{}, nil
+}
+
+func (s *BuildBuddyServer) SetGroupStatus(ctx context.Context, req *grpb.SetGroupStatusRequest) (*grpb.SetGroupStatusResponse, error) {
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+
+	groupID := req.GetRequestContext().GetGroupId()
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("Missing organization identifier")
+	}
+
+	if err := userDB.UpdateGroupStatus(ctx, groupID, req.GetStatus()); err != nil {
+		return nil, err
+	}
+
+	return &grpb.SetGroupStatusResponse{}, nil
 }
 
 func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupRequest) (*grpb.JoinGroupResponse, error) {

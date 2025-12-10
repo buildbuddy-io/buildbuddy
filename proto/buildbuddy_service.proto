@@ -85,6 +85,8 @@ service BuildBuddyService {
   rpc JoinGroup(grp.JoinGroupRequest) returns (grp.JoinGroupResponse);
   rpc CreateGroup(grp.CreateGroupRequest) returns (grp.CreateGroupResponse);
   rpc UpdateGroup(grp.UpdateGroupRequest) returns (grp.UpdateGroupResponse);
+  rpc SetGroupStatus(grp.SetGroupStatusRequest)
+      returns (grp.SetGroupStatusResponse);
 
   // User Lists API
   rpc GetUserLists(user_list.GetUserListsRequest)

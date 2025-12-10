@@ -260,6 +260,9 @@ type Group struct {
 	// When a Group is designated as a "parent" then any Admin keys from that
 	// org also work for managing groups with the same SAML IDP Metadata URL.
 	IsParent bool `gorm:"not null;default:0"`
+
+	// The status of the group: free tier, enterprise, etc.
+	Status grpb.Group_GroupStatus `gorm:"not null;default:0"`
 }
 
 func (g *Group) TableName() string {
