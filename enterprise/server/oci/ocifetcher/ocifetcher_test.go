@@ -177,15 +177,24 @@ func TestFetchManifestMetadata_PullerCacheHit(t *testing.T) {
 			return true
 		},
 	})
-	imageName, _ := reg.PushNamedImage(t, "test-image", nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	digest, err := img.Digest()
+	require.NoError(t, err)
+	size, err := img.Size()
+	require.NoError(t, err)
+	mediaType, err := img.MediaType()
+	require.NoError(t, err)
 
 	client, err := ocifetcher.NewClient(env, localhostIPs(t), nil)
 	require.NoError(t, err)
 
 	// First call - should create a new Puller and make a /v2/ auth request
 	counter.Reset()
-	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
+	require.Equal(t, digest.String(), resp.GetDigest())
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, string(mediaType), resp.GetMediaType())
 
 	expected := map[string]int{
 		http.MethodGet + " /v2/":                             1,
@@ -195,8 +204,11 @@ func TestFetchManifestMetadata_PullerCacheHit(t *testing.T) {
 
 	// Second call - should reuse the cached Puller and NOT make another /v2/ auth request
 	counter.Reset()
-	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
+	require.Equal(t, digest.String(), resp.GetDigest())
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, string(mediaType), resp.GetMediaType())
 
 	expected = map[string]int{
 		http.MethodHead + " /v2/test-image/manifests/latest": 1,
@@ -216,14 +228,20 @@ func TestFetchManifestMetadata_DifferentCredentials_DifferentPullers(t *testing.
 			return true
 		},
 	})
-	imageName, _ := reg.PushNamedImage(t, "test-image", nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	digest, err := img.Digest()
+	require.NoError(t, err)
+	size, err := img.Size()
+	require.NoError(t, err)
+	mediaType, err := img.MediaType()
+	require.NoError(t, err)
 
 	client, err := ocifetcher.NewClient(env, localhostIPs(t), nil)
 	require.NoError(t, err)
 
 	// First call with credentials A
 	counter.Reset()
-	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
+	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
 		Credentials: &rgpb.Credentials{
 			Username: "userA",
@@ -231,6 +249,9 @@ func TestFetchManifestMetadata_DifferentCredentials_DifferentPullers(t *testing.
 		},
 	})
 	require.NoError(t, err)
+	require.Equal(t, digest.String(), resp.GetDigest())
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, string(mediaType), resp.GetMediaType())
 
 	expected := map[string]int{
 		http.MethodGet + " /v2/":                             1,
@@ -240,7 +261,7 @@ func TestFetchManifestMetadata_DifferentCredentials_DifferentPullers(t *testing.
 
 	// Second call with different credentials B - should create a new Puller
 	counter.Reset()
-	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
+	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
 		Credentials: &rgpb.Credentials{
 			Username: "userB",
@@ -248,6 +269,9 @@ func TestFetchManifestMetadata_DifferentCredentials_DifferentPullers(t *testing.
 		},
 	})
 	require.NoError(t, err)
+	require.Equal(t, digest.String(), resp.GetDigest())
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, string(mediaType), resp.GetMediaType())
 
 	expected = map[string]int{
 		http.MethodGet + " /v2/":                             1,
@@ -269,16 +293,32 @@ func TestFetchManifestMetadata_SameRepoDifferentTags_SamePuller(t *testing.T) {
 	})
 
 	// Push two images with different tags under the same repository
-	imageName1, _ := reg.PushNamedImage(t, "test-image:v1", nil)
-	imageName2, _ := reg.PushNamedImage(t, "test-image:v2", nil)
+	imageName1, img1 := reg.PushNamedImage(t, "test-image:v1", nil)
+	digest1, err := img1.Digest()
+	require.NoError(t, err)
+	size1, err := img1.Size()
+	require.NoError(t, err)
+	mediaType1, err := img1.MediaType()
+	require.NoError(t, err)
+
+	imageName2, img2 := reg.PushNamedImage(t, "test-image:v2", nil)
+	digest2, err := img2.Digest()
+	require.NoError(t, err)
+	size2, err := img2.Size()
+	require.NoError(t, err)
+	mediaType2, err := img2.MediaType()
+	require.NoError(t, err)
 
 	client, err := ocifetcher.NewClient(env, localhostIPs(t), nil)
 	require.NoError(t, err)
 
 	// First call for tag v1
 	counter.Reset()
-	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName1})
+	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName1})
 	require.NoError(t, err)
+	require.Equal(t, digest1.String(), resp.GetDigest())
+	require.Equal(t, size1, resp.GetSize())
+	require.Equal(t, string(mediaType1), resp.GetMediaType())
 
 	expected := map[string]int{
 		http.MethodGet + " /v2/":                         1,
@@ -288,8 +328,11 @@ func TestFetchManifestMetadata_SameRepoDifferentTags_SamePuller(t *testing.T) {
 
 	// Second call for tag v2 - should reuse the same Puller (same repo + creds)
 	counter.Reset()
-	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName2})
+	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName2})
 	require.NoError(t, err)
+	require.Equal(t, digest2.String(), resp.GetDigest())
+	require.Equal(t, size2, resp.GetSize())
+	require.Equal(t, string(mediaType2), resp.GetMediaType())
 
 	expected = map[string]int{
 		http.MethodHead + " /v2/test-image/manifests/v2": 1,
@@ -311,15 +354,24 @@ func TestFetchManifestMetadata_PullerExpiration(t *testing.T) {
 			return true
 		},
 	})
-	imageName, _ := reg.PushNamedImage(t, "test-image", nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	digest, err := img.Digest()
+	require.NoError(t, err)
+	size, err := img.Size()
+	require.NoError(t, err)
+	mediaType, err := img.MediaType()
+	require.NoError(t, err)
 
 	client, err := ocifetcher.NewClient(env, localhostIPs(t), nil)
 	require.NoError(t, err)
 
 	// First call - should create a new Puller
 	counter.Reset()
-	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
+	require.Equal(t, digest.String(), resp.GetDigest())
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, string(mediaType), resp.GetMediaType())
 
 	expected := map[string]int{
 		http.MethodGet + " /v2/":                             1,
@@ -329,8 +381,11 @@ func TestFetchManifestMetadata_PullerExpiration(t *testing.T) {
 
 	// Second call (within TTL) - should reuse the cached Puller
 	counter.Reset()
-	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
+	require.Equal(t, digest.String(), resp.GetDigest())
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, string(mediaType), resp.GetMediaType())
 
 	expected = map[string]int{
 		http.MethodHead + " /v2/test-image/manifests/latest": 1,
@@ -342,8 +397,11 @@ func TestFetchManifestMetadata_PullerExpiration(t *testing.T) {
 
 	// Third call (after TTL) - should create a new Puller
 	counter.Reset()
-	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
+	require.Equal(t, digest.String(), resp.GetDigest())
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, string(mediaType), resp.GetMediaType())
 
 	expected = map[string]int{
 		http.MethodGet + " /v2/":                             1,
@@ -369,15 +427,24 @@ func TestFetchManifestMetadata_PullerEvictionOnHeadError(t *testing.T) {
 			return true
 		},
 	})
-	imageName, _ := reg.PushNamedImage(t, "test-image", nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	digest, err := img.Digest()
+	require.NoError(t, err)
+	size, err := img.Size()
+	require.NoError(t, err)
+	mediaType, err := img.MediaType()
+	require.NoError(t, err)
 
 	client, err := ocifetcher.NewClient(env, localhostIPs(t), nil)
 	require.NoError(t, err)
 
 	// First call - should create a new Puller
 	counter.Reset()
-	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
+	require.Equal(t, digest.String(), resp.GetDigest())
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, string(mediaType), resp.GetMediaType())
 
 	expected := map[string]int{
 		http.MethodGet + " /v2/":                             1,
@@ -387,8 +454,11 @@ func TestFetchManifestMetadata_PullerEvictionOnHeadError(t *testing.T) {
 
 	// Second call - should reuse cached Puller (no /v2/ auth request)
 	counter.Reset()
-	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
+	require.Equal(t, digest.String(), resp.GetDigest())
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, string(mediaType), resp.GetMediaType())
 
 	expected = map[string]int{
 		http.MethodHead + " /v2/test-image/manifests/latest": 1,
@@ -403,8 +473,11 @@ func TestFetchManifestMetadata_PullerEvictionOnHeadError(t *testing.T) {
 	// Fourth call - should create a NEW Puller because the old one was evicted
 	failHead.Store(false)
 	counter.Reset()
-	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.NoError(t, err)
+	require.Equal(t, digest.String(), resp.GetDigest())
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, string(mediaType), resp.GetMediaType())
 
 	expected = map[string]int{
 		http.MethodGet + " /v2/":                             1,
