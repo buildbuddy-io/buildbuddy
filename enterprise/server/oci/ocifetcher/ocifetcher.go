@@ -241,12 +241,6 @@ func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrna
 		return entry.puller, nil
 	}
 
-	if ok {
-		c.mu.Lock()
-		c.pullerLRU.Remove(key)
-		c.mu.Unlock()
-	}
-
 	remoteOpts := c.getRemoteOpts(ctx, creds)
 
 	c.mu.Lock()
