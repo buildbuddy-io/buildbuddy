@@ -8,11 +8,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util",
     deps = [
         "//enterprise/server/cmd/ci_runner/bundle",
-        "//enterprise/server/remote_execution/platform",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/platform",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],

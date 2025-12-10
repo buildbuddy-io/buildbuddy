@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/operation",
-        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/util/ci_runner_util",
         "//enterprise/server/webhooks/webhook_data",
@@ -38,6 +37,7 @@ go_library(
         "//server/util/git",
         "//server/util/log",
         "//server/util/perms",
+        "//server/util/platform",
         "//server/util/prefix",
         "//server/util/query_builder",
         "//server/util/random",

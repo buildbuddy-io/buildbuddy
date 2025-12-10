@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -65,7 +65,7 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 	}
 
 	// Get supported isolation types from platform configuration
-	executorProps := platform.GetExecutorProperties()
+	executorProps := executorplatform.GetExecutorProperties()
 	supportedTypes := make([]string, 0, len(executorProps.SupportedIsolationTypes))
 	for _, t := range executorProps.SupportedIsolationTypes {
 		supportedTypes = append(supportedTypes, string(t))

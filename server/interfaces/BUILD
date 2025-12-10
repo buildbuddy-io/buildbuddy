@@ -43,6 +43,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/tables",
         "//server/util/clickhouse/schema",
+        "//server/util/platform",
         "//server/util/proto",
         "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_google_go_github_v59//github",

@@ -23,8 +23,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -44,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -626,7 +627,7 @@ type pool struct {
 
 func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, error) {
 	// Validate configured isolation types.
-	if err := platform.ValidateIsolationTypes(); err != nil {
+	if err := executorplatform.ValidateIsolationTypes(); err != nil {
 		return nil, status.WrapError(err, "invalid configuration")
 	}
 
@@ -662,7 +663,7 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 		p.overrideProvider = opts.ContainerProvider
 	} else {
 		providers := map[platform.ContainerType]container.Provider{}
-		if err := p.registerContainerProviders(env.GetServerContext(), providers, platform.GetExecutorProperties()); err != nil {
+		if err := p.registerContainerProviders(env.GetServerContext(), providers, executorplatform.GetExecutorProperties()); err != nil {
 			return nil, err
 		}
 		if len(providers) == 0 {
@@ -911,7 +912,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	if err != nil {
 		return err
 	}
-	platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), platProps, task.GetCommand())
+	executorplatform.ApplyOverrides(p.env, executorplatform.GetExecutorProperties(), platProps, task.GetCommand())
 	if *resolveImageDigests {
 		if err := p.resolveImageDigest(ctx, platProps); err != nil {
 			return err
@@ -986,7 +987,7 @@ func (p *pool) Warmup(ctx context.Context) {
 
 func (p *pool) warmupConfigs() []WarmupConfig {
 	var out []WarmupConfig
-	for _, isolation := range platform.GetExecutorProperties().SupportedIsolationTypes {
+	for _, isolation := range executorplatform.GetExecutorProperties().SupportedIsolationTypes {
 		// Bare/sandbox isolation types don't support container images.
 		if isolation == platform.BareContainerType || isolation == platform.SandboxContainerType {
 			continue
@@ -1006,7 +1007,7 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 		// Warm up the default execution image for all isolation types, as well
 		// as the new Ubuntu 20.04 image.
 		out = append(out, WarmupConfig{
-			Image:     platform.DefaultImage(),
+			Image:     executorplatform.DefaultImage(),
 			Isolation: string(isolation),
 		})
 		out = append(out, WarmupConfig{
@@ -1035,7 +1036,7 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 		return nil, err
 	}
 	// TODO: This mutates the task; find a cleaner way to do this.
-	if err := platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
+	if err := executorplatform.ApplyOverrides(p.env, executorplatform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
 		return nil, err
 	}
 	if *resolveImageDigests {

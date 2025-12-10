@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -22,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
@@ -147,7 +147,7 @@ func main() {
 	flagutil.SetValueForFlagName("executor.enable_remote_snapshot_sharing", true, nil, false)
 	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
 		RemoteReadEnabled: true,
-		ReadPolicy:        snaputil.AlwaysReadNewestSnapshot,
+		ReadPolicy:        platform.AlwaysReadNewestSnapshot,
 	})
 	if err != nil {
 		log.Fatalf("Snapshot upload failed. Snapshot is not in the remote cache after it should've been uploaded.")
