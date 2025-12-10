@@ -744,8 +744,7 @@ func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
 }
 
 func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
-	canUseCache := l.image.useCache
-	if canUseCache {
+	if l.image.useCache {
 		rc, err := l.fetchLayerFromCache()
 		if err != nil && !status.IsNotFoundError(err) {
 			log.CtxWarningf(l.image.ctx, "Error fetching layer from cache: %s", err)
@@ -764,7 +763,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	if canUseCache {
+	if l.image.useCache {
 		mediaType, err := l.MediaType()
 		if err != nil {
 			log.CtxWarningf(l.image.ctx, "Could not get media type for layer: %s", err)
