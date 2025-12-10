@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/codesearch"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
@@ -141,6 +142,9 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 
 	auth_service.Register(env)
 	hit_tracker_service.Register(env)
+	if err := cache_service.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	env.SetSplashPrinter(&splash.Printer{})
 }

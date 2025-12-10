@@ -60,6 +60,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -321,6 +322,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	if ht := env.GetHitTrackerServiceServer(); ht != nil {
 		hitpb.RegisterHitTrackerServiceServer(grpcServer, ht)
 	}
+	if cs := env.GetCacheServiceServer(); cs != nil {
+		cspb.RegisterCacheServiceServer(grpcServer, cs)
+	}
 	if crypter := env.GetCrypter(); crypter != nil {
 		enpb.RegisterEncryptionServiceServer(grpcServer, crypter)
 	}
@@ -439,6 +443,15 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	}
 	mux.Handle("/app/", interceptors.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
 	mux.Handle("/rpc/BuildBuddyService/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", protoletHandler))
+
+	// Generate HTTP (protolet) handlers for the CacheService API.
+	if cs := env.GetCacheServiceServer(); cs != nil {
+		cacheServiceProtoletHandler, err := protolet.GenerateHTTPHandlers("/rpc/CacheService/", "cache.service.CacheService", cs, env.GetGRPCServer())
+		if err != nil {
+			log.Fatalf("Error initializing RPC over HTTP handlers for CacheService: %s", err)
+		}
+		mux.Handle("/rpc/CacheService/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/CacheService/", cacheServiceProtoletHandler))
+	}
 	mux.Handle("/file/download", interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
