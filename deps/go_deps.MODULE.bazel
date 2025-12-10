@@ -65,6 +65,9 @@ go_deps.module_override(
         # server gracefully, it's safe for us to allow gRPC to wait for all
         # ongoing requests to finish.
         "@com_github_buildbuddy_io_buildbuddy//buildpatches:org_golang_google_grpc_remove_drain_panic.patch",
+        # Add more buffer sizes to grpc mem buffer pool to reduce allocations.
+        # This speeds up large reads/writes.
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:org_golang_google_grpc_more_buffer_sizes.patch",
     ],
     path = "google.golang.org/grpc",
 )
