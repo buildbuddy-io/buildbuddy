@@ -1209,7 +1209,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 	require.Empty(t, counter.Snapshot())
 
-	// Advance past TTL; expect cache refresh (GET /v2/ and HEAD manifest).
+	// Advance past TTL; expect cache refresh (HEAD manifest).
 	fakeClock.Advance(2 * time.Second)
 	counter.Reset()
 	nameWithDigest, err = resolver.ResolveImageDigest(
@@ -1224,7 +1224,6 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 
 	expectedRefresh := map[string]int{
-		http.MethodGet + " /v2/":                                    1,
 		http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
 	}
 	require.Empty(t, cmp.Diff(expectedRefresh, counter.Snapshot()))
