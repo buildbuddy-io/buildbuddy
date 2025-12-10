@@ -51,12 +51,7 @@ var (
 	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 
-	useCachePercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
-	// TODO: remove from configs and delete
-	_ = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "", flag.Internal)
-	_ = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "", flag.Internal)
-	_ = flag.Bool("executor.container_registry.write_layers_to_cache", false, "", flag.Internal)
-	_ = flag.Bool("executor.container_registry.read_layers_from_cache", false, "", flag.Internal)
+	cacheEnabledPercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
 )
 
 type Registry struct {
@@ -332,12 +327,13 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		return nil, status.InternalErrorf("error creating puller: %s", err)
 	}
 
-	useCache := false
-	if *useCachePercent >= 100 {
-		useCache = true
-	} else if *useCachePercent > 0 && *useCachePercent < 100 {
-		useCache = rand.Intn(100) < *useCachePercent
+	cacheEnabled := false
+	if *cacheEnabledPercent >= 100 {
+		cacheEnabled = true
+	} else if *cacheEnabledPercent > 0 && *cacheEnabledPercent < 100 {
+		cacheEnabled = rand.Intn(100) < *cacheEnabledPercent
 	}
+	useCache := cacheEnabled && !isAnonymousUser(ctx)
 
 	return fetchImageFromCacheOrRemote(
 		ctx,
@@ -360,11 +356,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
 func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool, useCache bool) (gcr.Image, error) {
-	canUseCache := useCache && !isAnonymousUser(ctx)
-	if useCache && !canUseCache {
-		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", digestOrTagRef)
-	}
-	if canUseCache {
+	if useCache {
 		var desc *gcr.Descriptor
 		digest, hasDigest := getDigest(digestOrTagRef)
 		// For now, we cannot bypass the registry for tag references,
@@ -422,7 +414,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				bsClient,
 				puller,
 				bypassRegistry,
-				canUseCache,
+				useCache,
 			)
 		}
 	}
@@ -435,7 +427,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
-	if canUseCache {
+	if useCache {
 		err := ocicache.WriteManifestToAC(
 			ctx,
 			remoteDesc.Manifest,
@@ -449,6 +441,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 			log.CtxWarningf(ctx, "Could not write manifest to cache: %s", err)
 		}
 	}
+
 	return imageFromDescriptorAndManifest(
 		ctx,
 		digestOrTagRef.Context(),
@@ -459,7 +452,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		bsClient,
 		puller,
 		bypassRegistry,
-		canUseCache,
+		useCache,
 	)
 }
 
