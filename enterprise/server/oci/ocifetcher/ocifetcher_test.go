@@ -1383,3 +1383,185 @@ func TestFetchBlob_StreamsContent(t *testing.T) {
 	require.Equal(t, expectedContent, allData, "streamed content doesn't match expected blob content")
 	require.GreaterOrEqual(t, chunkCount, 1, "expected at least one chunk")
 }
+
+// ==================== ReadBlob Tests ====================
+
+func readAllFromReadCloser(t *testing.T, rc io.ReadCloser) []byte {
+	defer rc.Close()
+	data, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	return data
+}
+
+func TestReadBlob_AuthVariants(t *testing.T) {
+	cases := []struct {
+		name          string
+		registryCreds *testregistry.BasicAuthCreds
+		requestCreds  *rgpb.Credentials
+		expectError   bool
+		checkError    func(error) bool
+	}{
+		{
+			name:          "NoAuth",
+			registryCreds: nil,
+			requestCreds:  nil,
+			expectError:   false,
+		},
+		{
+			name:          "WithValidCredentials",
+			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
+			requestCreds:  &rgpb.Credentials{Username: "testuser", Password: "testpass"},
+			expectError:   false,
+		},
+		{
+			name:          "WithInvalidCredentials",
+			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
+			requestCreds:  &rgpb.Credentials{Username: "wronguser", Password: "wrongpass"},
+			expectError:   true,
+			checkError:    status.IsPermissionDeniedError,
+		},
+		{
+			name:          "MissingCredentials",
+			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
+			requestCreds:  nil,
+			expectError:   true,
+			checkError:    status.IsPermissionDeniedError,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			reg, _ := setupRegistry(t, tc.registryCreds, nil)
+			imageName, img := reg.PushNamedImage(t, "test-image", tc.registryCreds)
+			blobDigest, _, _ := blobMetadata(t, img)
+			expectedContent := blobContent(t, img)
+
+			parts := strings.Split(imageName, ":")
+			blobRefStr := parts[0] + ":" + parts[1] + "@" + blobDigest
+
+			client := newTestClient(t, env)
+			rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRefStr, tc.requestCreds)
+
+			if tc.expectError {
+				require.Error(t, err)
+				if tc.checkError != nil {
+					require.True(t, tc.checkError(err), "unexpected error type: %v", err)
+				}
+			} else {
+				require.NoError(t, err)
+				content := readAllFromReadCloser(t, rc)
+				require.Equal(t, expectedContent, content, "blob content mismatch")
+			}
+		})
+	}
+}
+
+// TestReadBlob_PullerCacheHit verifies that the same Puller is
+// reused when fetching the same blob with the same credentials.
+func TestReadBlob_PullerCacheHit(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	reg, counter := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	blobDigest, _, _ := blobMetadata(t, img)
+	expectedContent := blobContent(t, img)
+
+	parts := strings.Split(imageName, ":")
+	blobRefStr := parts[0] + ":" + parts[1] + "@" + blobDigest
+
+	client := newTestClient(t, env)
+
+	// First call - should create a new Puller and make a /v2/ auth request
+	counter.Reset()
+	rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRefStr, nil)
+	require.NoError(t, err)
+	content := readAllFromReadCloser(t, rc)
+	require.Equal(t, expectedContent, content)
+	firstCounts := counter.Snapshot()
+	require.Equal(t, 1, firstCounts[http.MethodGet+" /v2/"], "expected /v2/ auth request on first call")
+
+	// Second call - should reuse the cached Puller and NOT make another /v2/ auth request
+	counter.Reset()
+	rc, err = ocifetcher.ReadBlob(context.Background(), client, blobRefStr, nil)
+	require.NoError(t, err)
+	content = readAllFromReadCloser(t, rc)
+	require.Equal(t, expectedContent, content)
+	secondCounts := counter.Snapshot()
+	require.Equal(t, 0, secondCounts[http.MethodGet+" /v2/"], "expected no /v2/ auth request on second call (cached puller)")
+}
+
+// TestReadBlob_PullerEvictionOnError verifies that when blob fetch
+// returns an error, the Puller is evicted from the cache and a new one is
+// created on the next request.
+func TestReadBlob_PullerEvictionOnError(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	var failBlob atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if failBlob.Load() && strings.Contains(r.URL.Path, "/blobs/") {
+			w.WriteHeader(http.StatusInternalServerError)
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	blobDigest, _, _ := blobMetadata(t, img)
+	expectedContent := blobContent(t, img)
+
+	parts := strings.Split(imageName, ":")
+	blobRefStr := parts[0] + ":" + parts[1] + "@" + blobDigest
+
+	client := newTestClient(t, env)
+
+	// First call - should create a new Puller
+	counter.Reset()
+	rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRefStr, nil)
+	require.NoError(t, err)
+	content := readAllFromReadCloser(t, rc)
+	require.Equal(t, expectedContent, content)
+	firstCounts := counter.Snapshot()
+	require.Equal(t, 1, firstCounts[http.MethodGet+" /v2/"], "expected /v2/ auth request on first call")
+
+	// Second call - should reuse cached Puller (no /v2/ auth request)
+	counter.Reset()
+	rc, err = ocifetcher.ReadBlob(context.Background(), client, blobRefStr, nil)
+	require.NoError(t, err)
+	content = readAllFromReadCloser(t, rc)
+	require.Equal(t, expectedContent, content)
+	secondCounts := counter.Snapshot()
+	require.Equal(t, 0, secondCounts[http.MethodGet+" /v2/"], "expected no /v2/ auth request on second call")
+
+	// Third call - blob fetch fails, Puller should be evicted
+	failBlob.Store(true)
+	_, err = ocifetcher.ReadBlob(context.Background(), client, blobRefStr, nil)
+	require.Error(t, err)
+
+	// Fourth call - should create a NEW Puller because the old one was evicted
+	failBlob.Store(false)
+	counter.Reset()
+	rc, err = ocifetcher.ReadBlob(context.Background(), client, blobRefStr, nil)
+	require.NoError(t, err)
+	content = readAllFromReadCloser(t, rc)
+	require.Equal(t, expectedContent, content)
+	fourthCounts := counter.Snapshot()
+	require.Equal(t, 1, fourthCounts[http.MethodGet+" /v2/"], "expected /v2/ auth request after eviction")
+}
+
+// TestReadBlob_ReturnsCorrectContent verifies that ReadBlob returns the correct
+// compressed blob content.
+func TestReadBlob_ReturnsCorrectContent(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	reg, _ := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	blobDigest, _, _ := blobMetadata(t, img)
+	expectedContent := blobContent(t, img)
+
+	parts := strings.Split(imageName, ":")
+	blobRefStr := parts[0] + ":" + parts[1] + "@" + blobDigest
+
+	client := newTestClient(t, env)
+
+	rc, err := ocifetcher.ReadBlob(context.Background(), client, blobRefStr, nil)
+	require.NoError(t, err)
+
+	content := readAllFromReadCloser(t, rc)
+	require.Equal(t, expectedContent, content, "blob content doesn't match expected")
+}

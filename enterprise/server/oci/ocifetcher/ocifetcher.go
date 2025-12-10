@@ -496,6 +496,46 @@ func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobReq
 	}, nil
 }
 
+// ReadBlob fetches an OCI blob and returns an io.ReadCloser for the compressed blob bytes.
+func ReadBlob(ctx context.Context, client ofpb.OCIFetcherClient, ref string, creds *rgpb.Credentials) (io.ReadCloser, error) {
+	stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:         ref,
+		Credentials: creds,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &blobStreamReader{stream: stream}, nil
+}
+
+type blobStreamReader struct {
+	stream ofpb.OCIFetcher_FetchBlobClient
+	buf    []byte
+}
+
+func (r *blobStreamReader) Read(p []byte) (n int, err error) {
+	// Return buffered data first
+	if len(r.buf) > 0 {
+		n = copy(p, r.buf)
+		r.buf = r.buf[n:]
+		return n, nil
+	}
+	// Fetch next chunk from stream
+	resp, err := r.stream.Recv()
+	if err != nil {
+		return 0, err
+	}
+	n = copy(p, resp.GetData())
+	if n < len(resp.GetData()) {
+		r.buf = resp.GetData()[n:]
+	}
+	return n, nil
+}
+
+func (r *blobStreamReader) Close() error {
+	return nil
+}
+
 // FetchBlobMetadata performs a HEAD request to get blob metadata (size, media type)
 // without downloading the full blob content.
 func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
