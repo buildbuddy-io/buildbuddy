@@ -335,7 +335,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	}
 	isAnon := isAnonymousUser(ctx)
 	if cacheEnabled && isAnon {
-		log.CtxWarningf(ctx, "Anonymous user request, skipping manifest and layer cache for %q", imageRef)
+		log.CtxInfof(ctx, "Anonymous user request, skipping manifest and layer cache for %q", imageRef)
 	}
 	useCache := cacheEnabled && !isAnon
 
