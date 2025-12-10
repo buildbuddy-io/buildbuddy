@@ -13,6 +13,7 @@ package ocifetcher
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -34,6 +35,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
@@ -389,8 +391,109 @@ func (c *ociFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 	}, nil
 }
 
+// blobStreamClient implements grpc.ServerStreamingClient for streaming blob content.
+type blobStreamClient struct {
+	ctx    context.Context
+	reader io.ReadCloser
+	buf    []byte
+}
+
+// Verify blobStreamClient implements the interface.
+var _ grpc.ServerStreamingClient[ofpb.FetchBlobResponse] = (*blobStreamClient)(nil)
+
+func (s *blobStreamClient) Recv() (*ofpb.FetchBlobResponse, error) {
+	n, err := s.reader.Read(s.buf)
+	if n > 0 {
+		// Return a copy of the data since buf is reused
+		data := make([]byte, n)
+		copy(data, s.buf[:n])
+		return &ofpb.FetchBlobResponse{Data: data}, nil
+	}
+	if err == io.EOF {
+		return nil, io.EOF
+	}
+	if err != nil {
+		return nil, err
+	}
+	return nil, io.EOF
+}
+
+func (s *blobStreamClient) Header() (metadata.MD, error) { return nil, nil }
+func (s *blobStreamClient) Trailer() metadata.MD         { return nil }
+func (s *blobStreamClient) CloseSend() error             { return nil }
+func (s *blobStreamClient) Context() context.Context     { return s.ctx }
+func (s *blobStreamClient) RecvMsg(m any) error          { return nil }
+func (s *blobStreamClient) SendMsg(m any) error          { return nil }
+
+const blobStreamChunkSize = 32 * 1024 // 32KB chunks
+
+// FetchBlob streams the raw bytes for an OCI blob.
 func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
-	return nil, status.UnimplementedError("FetchBlob not implemented")
+	blobRef, err := gcrname.NewDigest(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid blob reference %q: %s", req.GetRef(), err)
+	}
+
+	puller, err := c.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+
+	layer, err := puller.Layer(ctx, blobRef)
+	if err == nil {
+		reader, err := layer.Compressed()
+		if err == nil {
+			return &blobStreamClient{
+				ctx:    ctx,
+				reader: reader,
+				buf:    make([]byte, blobStreamChunkSize),
+			}, nil
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+	} else {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+	}
+
+	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
+	c.evictPuller(blobRef, req.GetCredentials())
+	puller, err = c.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+
+	layer, err = puller.Layer(ctx, blobRef)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		c.evictPuller(blobRef, req.GetCredentials())
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access blob: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch blob from remote registry: %s", err)
+	}
+
+	reader, err := layer.Compressed()
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+	if err != nil {
+		c.evictPuller(blobRef, req.GetCredentials())
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access blob: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch blob from remote registry: %s", err)
+	}
+
+	return &blobStreamClient{
+		ctx:    ctx,
+		reader: reader,
+		buf:    make([]byte, blobStreamChunkSize),
+	}, nil
 }
 
 // FetchBlobMetadata performs a HEAD request to get blob metadata (size, media type)

@@ -3,6 +3,7 @@ package ocifetcher_test
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -1165,4 +1166,220 @@ func TestFetchBlobMetadata_HTTPErrorThenHTTPError(t *testing.T) {
 	assertBlobMetadataResponse(t, resp, blobSize, blobMediaType)
 	thirdCounts := counter.Snapshot()
 	require.Equal(t, 1, thirdCounts[http.MethodGet+" /v2/"], "expected /v2/ auth request after eviction")
+}
+
+// ==================== FetchBlob Tests ====================
+
+func blobContent(t *testing.T, img v1.Image) []byte {
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	reader, err := layers[0].Compressed()
+	require.NoError(t, err)
+	defer reader.Close()
+	data, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	return data
+}
+
+func readAllFromStream(t *testing.T, stream ofpb.OCIFetcher_FetchBlobClient) []byte {
+	var result []byte
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			return result
+		}
+		require.NoError(t, err)
+		result = append(result, resp.GetData()...)
+	}
+}
+
+func TestFetchBlob_AuthVariants(t *testing.T) {
+	cases := []struct {
+		name          string
+		registryCreds *testregistry.BasicAuthCreds
+		requestCreds  *rgpb.Credentials
+		expectError   bool
+		checkError    func(error) bool
+	}{
+		{
+			name:          "NoAuth",
+			registryCreds: nil,
+			requestCreds:  nil,
+			expectError:   false,
+		},
+		{
+			name:          "WithValidCredentials",
+			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
+			requestCreds:  &rgpb.Credentials{Username: "testuser", Password: "testpass"},
+			expectError:   false,
+		},
+		{
+			name:          "WithInvalidCredentials",
+			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
+			requestCreds:  &rgpb.Credentials{Username: "wronguser", Password: "wrongpass"},
+			expectError:   true,
+			checkError:    status.IsPermissionDeniedError,
+		},
+		{
+			name:          "MissingCredentials",
+			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
+			requestCreds:  nil,
+			expectError:   true,
+			checkError:    status.IsPermissionDeniedError,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			reg, _ := setupRegistry(t, tc.registryCreds, nil)
+			imageName, img := reg.PushNamedImage(t, "test-image", tc.registryCreds)
+			blobDigest, _, _ := blobMetadata(t, img)
+			expectedContent := blobContent(t, img)
+
+			parts := strings.Split(imageName, ":")
+			blobRefStr := parts[0] + ":" + parts[1] + "@" + blobDigest
+
+			client := newTestClient(t, env)
+			stream, err := client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{
+				Ref:         blobRefStr,
+				Credentials: tc.requestCreds,
+			})
+
+			if tc.expectError {
+				require.Error(t, err)
+				if tc.checkError != nil {
+					require.True(t, tc.checkError(err), "unexpected error type: %v", err)
+				}
+			} else {
+				require.NoError(t, err)
+				content := readAllFromStream(t, stream)
+				require.Equal(t, expectedContent, content, "blob content mismatch")
+			}
+		})
+	}
+}
+
+// TestFetchBlob_PullerCacheHit verifies that the same Puller is
+// reused when fetching the same blob with the same credentials.
+func TestFetchBlob_PullerCacheHit(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	reg, counter := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	blobDigest, _, _ := blobMetadata(t, img)
+	expectedContent := blobContent(t, img)
+
+	parts := strings.Split(imageName, ":")
+	blobRefStr := parts[0] + ":" + parts[1] + "@" + blobDigest
+
+	client := newTestClient(t, env)
+
+	// First call - should create a new Puller and make a /v2/ auth request
+	counter.Reset()
+	stream, err := client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	content := readAllFromStream(t, stream)
+	require.Equal(t, expectedContent, content)
+	firstCounts := counter.Snapshot()
+	require.Equal(t, 1, firstCounts[http.MethodGet+" /v2/"], "expected /v2/ auth request on first call")
+
+	// Second call - should reuse the cached Puller and NOT make another /v2/ auth request
+	counter.Reset()
+	stream, err = client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	content = readAllFromStream(t, stream)
+	require.Equal(t, expectedContent, content)
+	secondCounts := counter.Snapshot()
+	require.Equal(t, 0, secondCounts[http.MethodGet+" /v2/"], "expected no /v2/ auth request on second call (cached puller)")
+}
+
+// TestFetchBlob_PullerEvictionOnError verifies that when blob fetch
+// returns an error, the Puller is evicted from the cache and a new one is
+// created on the next request.
+func TestFetchBlob_PullerEvictionOnError(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	var failBlob atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if failBlob.Load() && strings.Contains(r.URL.Path, "/blobs/") {
+			w.WriteHeader(http.StatusInternalServerError)
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	blobDigest, _, _ := blobMetadata(t, img)
+	expectedContent := blobContent(t, img)
+
+	parts := strings.Split(imageName, ":")
+	blobRefStr := parts[0] + ":" + parts[1] + "@" + blobDigest
+
+	client := newTestClient(t, env)
+
+	// First call - should create a new Puller
+	counter.Reset()
+	stream, err := client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	content := readAllFromStream(t, stream)
+	require.Equal(t, expectedContent, content)
+	firstCounts := counter.Snapshot()
+	require.Equal(t, 1, firstCounts[http.MethodGet+" /v2/"], "expected /v2/ auth request on first call")
+
+	// Second call - should reuse cached Puller (no /v2/ auth request)
+	counter.Reset()
+	stream, err = client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	content = readAllFromStream(t, stream)
+	require.Equal(t, expectedContent, content)
+	secondCounts := counter.Snapshot()
+	require.Equal(t, 0, secondCounts[http.MethodGet+" /v2/"], "expected no /v2/ auth request on second call")
+
+	// Third call - blob fetch fails, Puller should be evicted
+	failBlob.Store(true)
+	_, err = client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: blobRefStr})
+	require.Error(t, err)
+
+	// Fourth call - should create a NEW Puller because the old one was evicted
+	failBlob.Store(false)
+	counter.Reset()
+	stream, err = client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+	content = readAllFromStream(t, stream)
+	require.Equal(t, expectedContent, content)
+	fourthCounts := counter.Snapshot()
+	require.Equal(t, 1, fourthCounts[http.MethodGet+" /v2/"], "expected /v2/ auth request after eviction")
+}
+
+// TestFetchBlob_StreamsContent verifies that FetchBlob streams all blob
+// content correctly, including for larger blobs that require multiple chunks.
+func TestFetchBlob_StreamsContent(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	reg, _ := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	blobDigest, _, _ := blobMetadata(t, img)
+	expectedContent := blobContent(t, img)
+
+	parts := strings.Split(imageName, ":")
+	blobRefStr := parts[0] + ":" + parts[1] + "@" + blobDigest
+
+	client := newTestClient(t, env)
+
+	stream, err := client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: blobRefStr})
+	require.NoError(t, err)
+
+	// Verify we get data in chunks and it all matches
+	var allData []byte
+	chunkCount := 0
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		require.NotEmpty(t, resp.GetData(), "received empty chunk")
+		allData = append(allData, resp.GetData()...)
+		chunkCount++
+	}
+
+	require.Equal(t, expectedContent, allData, "streamed content doesn't match expected blob content")
+	require.GreaterOrEqual(t, chunkCount, 1, "expected at least one chunk")
 }
