@@ -311,7 +311,11 @@ func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.
 		return nil, status.InternalErrorf("error creating puller: %s", err)
 	}
 	desc, err = puller.Head(ctx, imageRef)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
 	if err != nil {
+		c.evictPuller(imageRef, req.GetCredentials())
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
 		}
