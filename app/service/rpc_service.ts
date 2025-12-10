@@ -79,6 +79,9 @@ const structuredErrors = capabilities.config.streamingHttpEnabled;
 
 const SUBDOMAIN_REGEX = /^[a-zA-Z0-9-]+$/;
 
+const BUILDBUDDY_SERVICE_NAME = "BuildBuddyService";
+const CACHE_SERVICE_NAME = "CacheService";
+
 class RpcService {
   service: ExtendedBuildBuddyService;
   cacheService: ExtendedCacheService;
@@ -92,19 +95,19 @@ class RpcService {
   });
 
   constructor() {
-    this.service = this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, "", "BuildBuddyService")));
-    this.cacheService = this.getExtendedCacheService(new cache.service.CacheService(this.rpc.bind(this, "", "CacheService")));
+    this.service = this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, "", BUILDBUDDY_SERVICE_NAME)));
+    this.cacheService = this.getExtendedCacheService(new cache.service.CacheService(this.rpc.bind(this, "", CACHE_SERVICE_NAME)));
     this.events = new Subject();
 
     if (capabilities.config.regions) {
       for (let r of capabilities.config.regions) {
         this.regionalServices.set(
           r.name,
-          this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, r.server, "BuildBuddyService")))
+          this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, r.server, BUILDBUDDY_SERVICE_NAME)))
         );
         this.regionalCacheServices.set(
           r.name,
-          this.getExtendedCacheService(new cache.service.CacheService(this.rpc.bind(this, r.server, "CacheService")))
+          this.getExtendedCacheService(new cache.service.CacheService(this.rpc.bind(this, r.server, CACHE_SERVICE_NAME)))
         );
       }
     }
@@ -348,7 +351,7 @@ class RpcService {
     callback: (error: any, data?: Uint8Array) => void,
     streamParams?: $stream.StreamingRPCParams
   ): Promise<void> {
-    const url = `${server || ""}/rpc/${serviceName || "BuildBuddyService"}/${method.name}`;
+    const url = `${server || ""}/rpc/${serviceName || BUILDBUDDY_SERVICE_NAME}/${method.name}`;
     const init: RequestInit = { method: "POST", body: requestData };
     if (capabilities.config.regions?.map((r) => r.server).includes(server)) {
       init.credentials = "include";
