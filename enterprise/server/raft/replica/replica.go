@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
@@ -899,13 +901,7 @@ func (sm *Replica) fetchRanges(db ReplicaReader, req *rfpb.FetchRangesRequest) (
 		return nil, err
 	}
 
-	var rangeIDSet map[uint64]struct{}
-	if len(req.GetRangeIds()) > 0 {
-		rangeIDSet = make(map[uint64]struct{}, len(req.GetRangeIds()))
-		for _, rangeID := range req.GetRangeIds() {
-			rangeIDSet[rangeID] = struct{}{}
-		}
-	}
+	rangeIDSet := set.From(req.GetRangeIds()...)
 
 	nhid := req.GetNhid()
 	rsp := &rfpb.FetchRangesResponse{}
@@ -914,23 +910,14 @@ func (sm *Replica) fetchRanges(db ReplicaReader, req *rfpb.FetchRangesRequest) (
 		if err := proto.Unmarshal(kv.GetValue(), rd); err != nil {
 			return nil, status.InternalErrorf("scan returned unparsable kv: %w", err)
 		}
-		// Filter by range ID if specified.
-		if rangeIDSet != nil {
-			if _, ok := rangeIDSet[rd.GetRangeId()]; ok {
-				rsp.Ranges = append(rsp.Ranges, rd)
-				continue
-			}
+		if rangeIDSet.Contains(rd.GetRangeId()) {
+			rsp.Ranges = append(rsp.Ranges, rd)
+			continue
 		}
-		// Filter by NHID if specified.
 		if nhid != "" {
-			found := false
-			for _, replica := range rd.GetReplicas() {
-				if replica.GetNhid() == nhid {
-					found = true
-					break
-				}
-			}
-			if found {
+			if slices.ContainsFunc(rd.GetReplicas(), func(e *rfpb.ReplicaDescriptor) bool {
+				return e.GetNhid() == nhid
+			}) {
 				rsp.Ranges = append(rsp.Ranges, rd)
 				continue
 			}
