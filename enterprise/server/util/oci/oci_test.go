@@ -741,9 +741,9 @@ func TestResolve_WithCache(t *testing.T) {
 				// Try resolving again - the image should now be cached and we
 				// should be able to avoid GET requests for manifests and blobs,
 				// but we still expect some requests to resolve the tag to a
-				// digest.
+				// digest. Note: No GET /v2/ because OCIFetcherClient caches
+				// the authenticated puller.
 				expected = map[string]int{
-					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest": 1,
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
@@ -753,7 +753,6 @@ func TestResolve_WithCache(t *testing.T) {
 				// don't need to resolve the tag to a digest.
 				imageAddressWithDigest := imageAddress + "@" + imageDigest.String()
 				expected = map[string]int{
-					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/" + imageDigest.String(): 1,
 				}
 				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter)
@@ -801,20 +800,19 @@ func TestResolve_WithCache(t *testing.T) {
 				// Try resolving again - the image should now be cached and we
 				// should be able to avoid GET requests for manifests and blobs,
 				// but we still expect some requests to resolve the tag to a
-				// digest.
+				// digest. Note: No GET /v2/ because OCIFetcherClient caches
+				// the authenticated puller.
 				expected = map[string]int{
-					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 
-				// Try resolving again but fetch using a digest ref - should be
-				// able to avoid contacting the registry entirely, since we
+				// Try resolving again but fetch using a digest ref - we should
+				// still do a HEAD request for auth purposes, even though we
 				// don't need to resolve the tag to a digest.
 				imageAddressWithDigest := indexAddress + "@" + imageDigest.String()
 				expected = map[string]int{
-					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
 				}
 				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter)
