@@ -6,6 +6,7 @@ def _extract_bazel_installation_impl(ctx):
     ctx.actions.run_shell(
         outputs = [out_dir],
         inputs = [ctx.executable.bazel],
+        mnemonic = "ExtractBazelInstall",
         command = """
             set -e
 
