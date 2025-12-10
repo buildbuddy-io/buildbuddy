@@ -2560,6 +2560,8 @@ func (s *Store) BuildTxnForRangeSplit(leftRange *rfpb.RangeDescriptor, newRangeI
 	newRightRange.RangeId = newRangeID
 	newRightRange.Generation += 1
 	newRightRange.Replicas = replicas
+	newRightRange.LastAddedReplicaId = nil
+	newRightRange.LastReplicaAddedAtUsec = nil
 
 	updatedLeftRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
 	updatedLeftRange.End = splitKey
