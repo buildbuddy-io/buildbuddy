@@ -220,15 +220,27 @@ func (c *ociFetcherClient) getRemoteOpts(ctx context.Context, creds *rgpb.Creden
 	return opts
 }
 
-// getOrCreatePuller returns a cached Puller for the given image reference and credentials,
-// or creates a new one if not found or expired.
-func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*remote.Puller, error) {
-	key := hash.Strings(
-		imageRef.Context().RegistryStr(),
-		imageRef.Context().RepositoryStr(),
+func pullerKey(ref gcrname.Reference, creds *rgpb.Credentials) string {
+	if creds == nil {
+		return hash.Strings(
+			ref.Context().RegistryStr(),
+			ref.Context().RepositoryStr(),
+			"",
+			"",
+		)
+	}
+	return hash.Strings(
+		ref.Context().RegistryStr(),
+		ref.Context().RepositoryStr(),
 		creds.GetUsername(),
 		creds.GetPassword(),
 	)
+}
+
+// getOrCreatePuller returns a cached Puller for the given image reference and credentials,
+// or creates a new one if not found or expired.
+func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*remote.Puller, error) {
+	key := pullerKey(imageRef, creds)
 
 	c.mu.Lock()
 	entry, ok := c.pullerLRU.Get(key)
@@ -261,12 +273,7 @@ func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrna
 }
 
 func (c *ociFetcherClient) evictPuller(imageRef gcrname.Reference, creds *rgpb.Credentials) {
-	key := hash.Strings(
-		imageRef.Context().RegistryStr(),
-		imageRef.Context().RepositoryStr(),
-		creds.GetUsername(),
-		creds.GetPassword(),
-	)
+	key := pullerKey(imageRef, creds)
 	c.mu.Lock()
 	c.pullerLRU.Remove(key)
 	c.mu.Unlock()
