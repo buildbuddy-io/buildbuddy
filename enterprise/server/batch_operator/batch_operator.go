@@ -439,7 +439,7 @@ func (u *batchOperator) batch(eqd *enqueuedDigests) {
 		if batchesForGroup.numDigests+1 > u.maxDigestsPerGroup {
 			batchesForGroup.mu.Unlock()
 			dropped = len(eqd.digests) - enqueued - duplicate
-			log.Warningf("[%s] maxDigestsPerGroup exceeded for group %s, dropping %d digests", u.name, groupID, dropped)
+			log.Debugf("[%s] maxDigestsPerGroup exceeded for group %s, dropping %d digests", u.name, groupID, dropped)
 			break
 		}
 		batchesForGroup.numDigests++
