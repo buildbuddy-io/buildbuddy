@@ -119,10 +119,8 @@ func lookupRangeDescriptor(ctx context.Context, c rfspb.ApiClient, h *rfpb.Heade
 	return res[0], nil
 }
 
-func fetchRanges(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, rangeIDs []uint64) (*rfpb.FetchRangesResponse, error) {
-	batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.FetchRangesRequest{
-		RangeIds: rangeIDs,
-	}).ToProto()
+func fetchRanges(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, req *rfpb.FetchRangesRequest) (*rfpb.FetchRangesResponse, error) {
+	batchReq, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
 	if err != nil {
 		return nil, err
 	}
@@ -229,13 +227,16 @@ func (s *Sender) runOnMetaRange(ctx context.Context, fn runFunc) error {
 	return status.UnavailableErrorf("sender.runOnMetaRange exceeded retry, lastError: %s", lastError)
 }
 
-func (s *Sender) LookupRangeDescriptorsByIDs(ctx context.Context, rangeIDs []uint64) ([]*rfpb.RangeDescriptor, error) {
-	if len(rangeIDs) == 0 {
-		return nil, nil
+// FetchRangeDescriptors fetches range descriptors.
+// The filters in the request are ORed - ranges matching any of the criteria
+// will be returned.
+func (s *Sender) FetchRangeDescriptors(ctx context.Context, req *rfpb.FetchRangesRequest) ([]*rfpb.RangeDescriptor, error) {
+	if req == nil {
+		return nil, status.InvalidArgumentError("FetchRangesRequest cannot be nil")
 	}
 	var ranges []*rfpb.RangeDescriptor
 	fn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
-		rsp, err := fetchRanges(ctx, c, h, rangeIDs)
+		rsp, err := fetchRanges(ctx, c, h, req)
 		if err != nil {
 			return err
 		}
@@ -246,6 +247,16 @@ func (s *Sender) LookupRangeDescriptorsByIDs(ctx context.Context, rangeIDs []uin
 		return nil, err
 	}
 	return ranges, nil
+}
+
+// LookupRangeDescriptorsByIDs fetches range descriptors given the provided IDs.
+func (s *Sender) LookupRangeDescriptorsByIDs(ctx context.Context, rangeIDs []uint64) ([]*rfpb.RangeDescriptor, error) {
+	if len(rangeIDs) == 0 {
+		return nil, nil
+	}
+	return s.FetchRangeDescriptors(ctx, &rfpb.FetchRangesRequest{
+		RangeIds: rangeIDs,
+	})
 }
 
 func (s *Sender) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {

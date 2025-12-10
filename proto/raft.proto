@@ -94,7 +94,12 @@ message DeleteSessionsRequest {
 message DeleteSessionsResponse {}
 
 message FetchRangesRequest {
+  // The filters are ORed.
+
+  // If set, filter ranges with the specified range ids. 
   repeated uint64 range_ids = 1;
+  // If set, filter ranges that have a replica with this NHID.
+  string nhid = 2;
 }
 
 message FetchRangesResponse {
@@ -502,7 +507,7 @@ message RangeDescriptor {
   // from staging to the replicas field above.
   repeated ReplicaDescriptor staging = 9;
 
-  // If set, this range descriptor is deleted. Don't move, up-replicate, 
+  // If set, this range descriptor is deleted. Don't move, up-replicate,
   // down-replicate or rebalance.
   bool deleted = 10;
 }
@@ -720,8 +725,8 @@ message PartitionDescriptorChange {
 }
 
 message AdminUpdateDescriptorRequest {
-	RangeDescriptorChange range_descriptor_change = 1;
-	repeated PartitionDescriptorChange partition_descriptor_change = 2;
+  RangeDescriptorChange range_descriptor_change = 1;
+  repeated PartitionDescriptorChange partition_descriptor_change = 2;
 }
 
 message AdminUpdateDescriptorResponse {}

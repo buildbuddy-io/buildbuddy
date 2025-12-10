@@ -609,44 +609,119 @@ func TestReplicaFetchRanges(t *testing.T) {
 			End:        keys.Key{constants.UnsplittableMaxByte},
 			RangeId:    1,
 			Generation: 1,
+			Replicas: []*rfpb.ReplicaDescriptor{
+				{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+			},
 		},
 		{
 			Start:      keys.Key{constants.UnsplittableMaxByte},
 			End:        keys.Key("a"),
 			RangeId:    2,
 			Generation: 1,
+			Replicas: []*rfpb.ReplicaDescriptor{
+				{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+				{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+			},
 		},
 		{
 			Start:      keys.Key("a"),
 			End:        keys.Key("b"),
 			RangeId:    3,
 			Generation: 1,
+			Replicas: []*rfpb.ReplicaDescriptor{
+				{RangeId: 3, ReplicaId: 1, Nhid: proto.String("nhid-2")},
+			},
 		},
 		{
 			Start:      keys.Key("b"),
 			End:        keys.MaxByte,
 			RangeId:    4,
 			Generation: 1,
+			Replicas: []*rfpb.ReplicaDescriptor{
+				{RangeId: 4, ReplicaId: 1, Nhid: proto.String("nhid-3")},
+			},
 		},
 	}
 
 	for _, rd := range ranges {
 		writeMetaRangeDescriptor(t, em, repl.Replica, rd)
 	}
-	// Ensure that scan reads just the ranges we want.
-	// Scan b-c.
-	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.FetchRangesRequest{
-		RangeIds: []uint64{3, 4},
-	}).ToBuf()
-	require.NoError(t, err)
-	readRsp, err := repl.Lookup(buf)
-	require.NoError(t, err)
 
-	readBatch := rbuilder.NewBatchResponse(readRsp)
-	fetchRsp, err := readBatch.FetchRangesResponse(0)
-	require.NoError(t, err)
-	expected := []*rfpb.RangeDescriptor{ranges[2], ranges[3]}
-	require.ElementsMatch(t, fetchRsp.GetRanges(), expected)
+	testCases := []struct {
+		name        string
+		req         *rfpb.FetchRangesRequest
+		expected    []*rfpb.RangeDescriptor
+		expectError bool
+	}{
+		{
+			name: "filter by range IDs",
+			req: &rfpb.FetchRangesRequest{
+				RangeIds: []uint64{3, 4},
+			},
+			expected: []*rfpb.RangeDescriptor{ranges[2], ranges[3]},
+		},
+		{
+			name: "filter by nhid-1",
+			req: &rfpb.FetchRangesRequest{
+				Nhid: "nhid-1",
+			},
+			expected: []*rfpb.RangeDescriptor{ranges[0], ranges[1]},
+		},
+		{
+			name: "filter by nhid-2",
+			req: &rfpb.FetchRangesRequest{
+				Nhid: "nhid-2",
+			},
+			expected: []*rfpb.RangeDescriptor{ranges[1], ranges[2]},
+		},
+		{
+			name: "OR logic: range_ids and nhid",
+			req: &rfpb.FetchRangesRequest{
+				RangeIds: []uint64{1},
+				Nhid:     "nhid-2",
+			},
+			expected: []*rfpb.RangeDescriptor{ranges[0], ranges[1], ranges[2]},
+		},
+		{
+			name: "OR logic: non-overlapping sets",
+			req: &rfpb.FetchRangesRequest{
+				RangeIds: []uint64{4},
+				Nhid:     "nhid-1",
+			},
+			expected: []*rfpb.RangeDescriptor{ranges[0], ranges[1], ranges[3]},
+		},
+		{
+			name: "non-existent nhid",
+			req: &rfpb.FetchRangesRequest{
+				Nhid: "nhid-nonexistent",
+			},
+			expected: []*rfpb.RangeDescriptor{},
+		},
+		{
+			name:        "neither range_ids nor nhid specified",
+			req:         &rfpb.FetchRangesRequest{},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			buf, err := rbuilder.NewBatchBuilder().Add(tc.req).ToBuf()
+			require.NoError(t, err)
+			readRsp, err := repl.Lookup(buf)
+			require.NoError(t, err)
+
+			readBatch := rbuilder.NewBatchResponse(readRsp)
+			fetchRsp, err := readBatch.FetchRangesResponse(0)
+
+			if tc.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.ElementsMatch(t, tc.expected, fetchRsp.GetRanges())
+			}
+		})
+	}
 }
 
 func TestReplicaFileWriteSnapshotRestore(t *testing.T) {

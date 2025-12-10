@@ -16,6 +16,7 @@ go_library(
         "//proto:storage_go_proto",
         "//server/metrics",
         "//server/util/canary",
+        "//server/util/lib/set",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/qps",

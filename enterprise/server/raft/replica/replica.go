@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
@@ -883,9 +885,11 @@ func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag
 }
 
 func (sm *Replica) fetchRanges(db ReplicaReader, req *rfpb.FetchRangesRequest) (*rfpb.FetchRangesResponse, error) {
-	if len(req.GetRangeIds()) == 0 {
-		return nil, status.InvalidArgumentError("fetchRanges requires range_ids")
+	// At least one filter must be provided
+	if len(req.GetRangeIds()) == 0 && req.GetNhid() == "" {
+		return nil, status.InvalidArgumentError("either range_ids or nhid must be specified")
 	}
+
 	scanReq := &rfpb.ScanRequest{
 		Start:    constants.MetaRangePrefix,
 		End:      constants.SystemPrefix,
@@ -896,18 +900,27 @@ func (sm *Replica) fetchRanges(db ReplicaReader, req *rfpb.FetchRangesRequest) (
 	if err != nil {
 		return nil, err
 	}
-	rangeIDSet := make(map[uint64]struct{}, len(req.GetRangeIds()))
-	for _, rangeID := range req.GetRangeIds() {
-		rangeIDSet[rangeID] = struct{}{}
-	}
+
+	rangeIDSet := set.From(req.GetRangeIds()...)
+
+	nhid := req.GetNhid()
 	rsp := &rfpb.FetchRangesResponse{}
 	for _, kv := range scanRsp.GetKvs() {
 		rd := &rfpb.RangeDescriptor{}
 		if err := proto.Unmarshal(kv.GetValue(), rd); err != nil {
 			return nil, status.InternalErrorf("scan returned unparsable kv: %w", err)
 		}
-		if _, ok := rangeIDSet[rd.GetRangeId()]; ok {
+		if rangeIDSet.Contains(rd.GetRangeId()) {
 			rsp.Ranges = append(rsp.Ranges, rd)
+			continue
+		}
+		if nhid != "" {
+			if slices.ContainsFunc(rd.GetReplicas(), func(e *rfpb.ReplicaDescriptor) bool {
+				return e.GetNhid() == nhid
+			}) {
+				rsp.Ranges = append(rsp.Ranges, rd)
+				continue
+			}
 		}
 	}
 	return rsp, nil
