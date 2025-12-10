@@ -333,7 +333,11 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	} else if *cacheEnabledPercent > 0 && *cacheEnabledPercent < 100 {
 		cacheEnabled = rand.Intn(100) < *cacheEnabledPercent
 	}
-	useCache := cacheEnabled && !isAnonymousUser(ctx)
+	isAnon := isAnonymousUser(ctx)
+	if cacheEnabled && isAnon {
+		log.CtxWarningf(ctx, "Anonymous user request, skipping manifest and layer cache for %q", imageRef)
+	}
+	useCache := cacheEnabled && !isAnon
 
 	return fetchImageFromCacheOrRemote(
 		ctx,
