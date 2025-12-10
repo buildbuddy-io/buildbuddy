@@ -536,3 +536,323 @@ func TestFetchManifestMetadata_HTTPErrorThenContextError(t *testing.T) {
 		http.MethodHead + " /v2/test-image/manifests/latest": 1,
 	})
 }
+
+// ==================== FetchManifest Tests ====================
+
+func imageManifest(t *testing.T, img v1.Image) []byte {
+	manifest, err := img.RawManifest()
+	require.NoError(t, err)
+	return manifest
+}
+
+func assertManifestResponse(t *testing.T, resp *ofpb.FetchManifestResponse, digest string, size int64, mediaType string, manifest []byte) {
+	require.Equal(t, digest, resp.GetDigest())
+	require.Equal(t, size, resp.GetSize())
+	require.Equal(t, mediaType, resp.GetMediaType())
+	require.Equal(t, manifest, resp.GetManifest())
+}
+
+func TestFetchManifest_AuthVariants(t *testing.T) {
+	cases := []struct {
+		name           string
+		registryCreds  *testregistry.BasicAuthCreds
+		requestCreds   *rgpb.Credentials
+		expectError    bool
+		checkError     func(error) bool
+		expectedCounts map[string]int
+	}{
+		{
+			name:          "NoAuth",
+			registryCreds: nil,
+			requestCreds:  nil,
+			expectError:   false,
+			expectedCounts: map[string]int{
+				http.MethodGet + " /v2/":                            1,
+				http.MethodGet + " /v2/test-image/manifests/latest": 1,
+			},
+		},
+		{
+			name:          "WithValidCredentials",
+			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
+			requestCreds:  &rgpb.Credentials{Username: "testuser", Password: "testpass"},
+			expectError:   false,
+			expectedCounts: map[string]int{
+				http.MethodGet + " /v2/":                            1,
+				http.MethodGet + " /v2/test-image/manifests/latest": 1,
+			},
+		},
+		{
+			name:          "WithInvalidCredentials",
+			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
+			requestCreds:  &rgpb.Credentials{Username: "wronguser", Password: "wrongpass"},
+			expectError:   true,
+			checkError:    status.IsPermissionDeniedError,
+			expectedCounts: map[string]int{
+				http.MethodGet + " /v2/":                            2,
+				http.MethodGet + " /v2/test-image/manifests/latest": 2,
+			},
+		},
+		{
+			name:          "MissingCredentials",
+			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
+			requestCreds:  nil,
+			expectError:   true,
+			checkError:    status.IsPermissionDeniedError,
+			expectedCounts: map[string]int{
+				http.MethodGet + " /v2/":                            2,
+				http.MethodGet + " /v2/test-image/manifests/latest": 2,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			reg, counter := setupRegistry(t, tc.registryCreds, nil)
+			imageName, img := reg.PushNamedImage(t, "test-image", tc.registryCreds)
+			digest, size, mediaType := imageMetadata(t, img)
+			manifest := imageManifest(t, img)
+
+			counter.Reset()
+			client := newTestClient(t, env)
+			resp, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
+				Ref:         imageName,
+				Credentials: tc.requestCreds,
+			})
+
+			if tc.expectError {
+				require.Error(t, err)
+				if tc.checkError != nil {
+					require.True(t, tc.checkError(err), "unexpected error type: %v", err)
+				}
+			} else {
+				require.NoError(t, err)
+				assertManifestResponse(t, resp, digest, size, mediaType, manifest)
+			}
+			assertRequests(t, counter, tc.expectedCounts)
+		})
+	}
+}
+
+// TestFetchManifest_PullerCacheHit verifies that the same Puller is
+// reused when fetching the same image with the same credentials.
+func TestFetchManifest_PullerCacheHit(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	reg, counter := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	digest, size, mediaType := imageMetadata(t, img)
+	manifest := imageManifest(t, img)
+	client := newTestClient(t, env)
+
+	// First call - should create a new Puller and make a /v2/ auth request
+	counter.Reset()
+	resp, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertManifestResponse(t, resp, digest, size, mediaType, manifest)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/":                            1,
+		http.MethodGet + " /v2/test-image/manifests/latest": 1,
+	})
+
+	// Second call - should reuse the cached Puller and NOT make another /v2/ auth request
+	counter.Reset()
+	resp, err = client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertManifestResponse(t, resp, digest, size, mediaType, manifest)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/test-image/manifests/latest": 1,
+	})
+}
+
+// TestFetchManifest_PullerEvictionOnGetError verifies that when Get()
+// returns an error, the Puller is evicted from the cache and a new one is
+// created on the next request.
+func TestFetchManifest_PullerEvictionOnGetError(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	var failGet atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if failGet.Load() && r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/manifests/") {
+			w.WriteHeader(http.StatusInternalServerError)
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	digest, size, mediaType := imageMetadata(t, img)
+	manifest := imageManifest(t, img)
+	client := newTestClient(t, env)
+
+	// First call - should create a new Puller
+	counter.Reset()
+	resp, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertManifestResponse(t, resp, digest, size, mediaType, manifest)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/":                            1,
+		http.MethodGet + " /v2/test-image/manifests/latest": 1,
+	})
+
+	// Second call - should reuse cached Puller (no /v2/ auth request)
+	counter.Reset()
+	resp, err = client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertManifestResponse(t, resp, digest, size, mediaType, manifest)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/test-image/manifests/latest": 1,
+	})
+
+	// Third call - Get() fails, Puller should be evicted
+	failGet.Store(true)
+	_, err = client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.Error(t, err)
+
+	// Fourth call - should create a NEW Puller because the old one was evicted
+	failGet.Store(false)
+	counter.Reset()
+	resp, err = client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertManifestResponse(t, resp, digest, size, mediaType, manifest)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/":                            1,
+		http.MethodGet + " /v2/test-image/manifests/latest": 1,
+	})
+}
+
+// TestFetchManifest_ContextErrorNoRetry verifies that when Get()
+// returns a context error (canceled or deadline exceeded), no retry is
+// attempted and the Puller is NOT evicted from the cache.
+func TestFetchManifest_ContextErrorNoRetry(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	var blockGet atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if blockGet.Load() && r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/manifests/") {
+			time.Sleep(100 * time.Millisecond) // Block until context times out
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	digest, size, mediaType := imageMetadata(t, img)
+	manifest := imageManifest(t, img)
+	client := newTestClient(t, env)
+
+	// First call - should create a new Puller and cache it
+	counter.Reset()
+	resp, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertManifestResponse(t, resp, digest, size, mediaType, manifest)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/":                            1,
+		http.MethodGet + " /v2/test-image/manifests/latest": 1,
+	})
+
+	// Second call - context times out during Get request
+	blockGet.Store(true)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	_, err = client.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: imageName})
+	require.Error(t, err)
+	require.True(t, errors.Is(err, context.DeadlineExceeded), "expected DeadlineExceeded error, got: %v", err)
+
+	// Third call - Puller should still be cached (no /v2/ auth request)
+	blockGet.Store(false)
+	counter.Reset()
+	resp, err = client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertManifestResponse(t, resp, digest, size, mediaType, manifest)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/test-image/manifests/latest": 1,
+	})
+}
+
+// TestFetchManifest_HTTPErrorThenSuccess verifies that when Get()
+// returns an HTTP error on the first attempt, the Puller is refreshed and
+// the retry succeeds. The refreshed Puller should remain in the cache.
+func TestFetchManifest_HTTPErrorThenSuccess(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	var getAttempts atomic.Int32
+	var failFirstGet atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if failFirstGet.Load() && r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/manifests/") {
+			if getAttempts.Add(1) == 1 {
+				w.WriteHeader(http.StatusInternalServerError)
+				return false
+			}
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	digest, size, mediaType := imageMetadata(t, img)
+	manifest := imageManifest(t, img)
+	client := newTestClient(t, env)
+
+	// First call - should create a new Puller and cache it
+	counter.Reset()
+	resp, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertManifestResponse(t, resp, digest, size, mediaType, manifest)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/":                            1,
+		http.MethodGet + " /v2/test-image/manifests/latest": 1,
+	})
+
+	// Second call - first Get fails, Puller refreshed, retry succeeds
+	getAttempts.Store(0)
+	failFirstGet.Store(true)
+	resp, err = client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertManifestResponse(t, resp, digest, size, mediaType, manifest)
+
+	// Third call - refreshed Puller should still be cached (no /v2/ auth request)
+	failFirstGet.Store(false)
+	counter.Reset()
+	resp, err = client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertManifestResponse(t, resp, digest, size, mediaType, manifest)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/test-image/manifests/latest": 1,
+	})
+}
+
+// TestFetchManifest_HTTPErrorThenHTTPError verifies that when Get()
+// returns HTTP errors on both the first attempt and the retry, the refreshed
+// Puller is evicted from the cache.
+func TestFetchManifest_HTTPErrorThenHTTPError(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	var failGet atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if failGet.Load() && r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/manifests/") {
+			w.WriteHeader(http.StatusInternalServerError)
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	digest, size, mediaType := imageMetadata(t, img)
+	manifest := imageManifest(t, img)
+	client := newTestClient(t, env)
+
+	// First call - should create a new Puller and cache it
+	counter.Reset()
+	resp, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertManifestResponse(t, resp, digest, size, mediaType, manifest)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/":                            1,
+		http.MethodGet + " /v2/test-image/manifests/latest": 1,
+	})
+
+	// Second call - both Get attempts fail (don't assert exact counts due to internal retries)
+	failGet.Store(true)
+	_, err = client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.Error(t, err)
+
+	// Third call - refreshed Puller should have been evicted (needs /v2/ auth request)
+	failGet.Store(false)
+	counter.Reset()
+	resp, err = client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertManifestResponse(t, resp, digest, size, mediaType, manifest)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/":                            1,
+		http.MethodGet + " /v2/test-image/manifests/latest": 1,
+	})
+}

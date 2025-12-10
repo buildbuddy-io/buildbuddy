@@ -329,8 +329,63 @@ func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.
 	}, nil
 }
 
+// FetchManifest performs a GET request to retrieve the full manifest content
+// along with its metadata (digest, size, media type).
 func (c *ociFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
-	return nil, status.UnimplementedError("FetchManifest not implemented")
+	imageRef, err := gcrname.ParseReference(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
+	}
+
+	puller, err := c.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+	desc, err := puller.Get(ctx, imageRef)
+	if err == nil {
+		manifest, err := desc.RawManifest()
+		if err != nil {
+			return nil, status.InternalErrorf("error reading manifest: %s", err)
+		}
+		return &ofpb.FetchManifestResponse{
+			Digest:    desc.Digest.String(),
+			Size:      desc.Size,
+			MediaType: string(desc.MediaType),
+			Manifest:  manifest,
+		}, nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+
+	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
+	c.evictPuller(imageRef, req.GetCredentials())
+	puller, err = c.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+	desc, err = puller.Get(ctx, imageRef)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+	if err != nil {
+		c.evictPuller(imageRef, req.GetCredentials())
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch manifest from remote registry: %s", err)
+	}
+
+	manifest, err := desc.RawManifest()
+	if err != nil {
+		return nil, status.InternalErrorf("error reading manifest: %s", err)
+	}
+	return &ofpb.FetchManifestResponse{
+		Digest:    desc.Digest.String(),
+		Size:      desc.Size,
+		MediaType: string(desc.MediaType),
+		Manifest:  manifest,
+	}, nil
 }
 
 func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
