@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
-        "//server/environment",
         "//server/http/httpclient",
         "//server/interfaces",
         "//server/real_environment",
@@ -22,7 +21,6 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
-        "@com_github_jonboulle_clockwork//:clockwork",
         "@org_golang_google_grpc//:grpc",
     ],
 )
@@ -41,7 +39,6 @@ go_test(
         "//server/util/status",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
-        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
     ],
 )
