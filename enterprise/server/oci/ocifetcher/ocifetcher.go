@@ -252,6 +252,8 @@ func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrna
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// As of go-containerregistry v0.20.3, NewPuller does not perform IO
+	// and is safe to call with the mutex locked.
 	puller, err := remote.NewPuller(remoteOpts...)
 	if err != nil {
 		return nil, err
