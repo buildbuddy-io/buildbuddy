@@ -51,6 +51,10 @@ type ociFetcherClient struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
 
+	// On the first call to Head, Get, or Layer, Pullers make a GET /v2/ request,
+	// optionally followed by a POST request to an auth endpoint.
+	// To avoid making these requests for already-authed {image, credentials} pairs,
+	// we keep a small LRU cache of Pullers.
 	mu        sync.Mutex
 	pullerLRU *lru.LRU[*pullerLRUEntry]
 }
