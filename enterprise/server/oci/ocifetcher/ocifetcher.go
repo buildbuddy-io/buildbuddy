@@ -248,14 +248,15 @@ func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrna
 	}
 
 	remoteOpts := c.getRemoteOpts(ctx, creds)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	puller, err := remote.NewPuller(remoteOpts...)
 	if err != nil {
 		return nil, err
 	}
-
-	c.mu.Lock()
 	c.pullerLRU.Add(key, &pullerLRUEntry{puller: puller})
-	c.mu.Unlock()
 
 	return puller, nil
 }
