@@ -17,9 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
-	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -31,7 +29,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
-	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
@@ -39,12 +36,7 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 )
 
-const (
-	// pullerLRUMaxEntries limits the number of entries in the puller cache.
-	pullerLRUMaxEntries = 1000
-	// pullerLRUExpiration is the TTL for puller cache entries.
-	pullerLRUExpiration = 15 * time.Minute
-)
+const pullerLRUMaxEntries = 1000
 
 var (
 	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
@@ -53,7 +45,6 @@ var (
 
 type pullerLRUEntry struct {
 	puller     *remote.Puller
-	expiration time.Time
 }
 
 type ociFetcherClient struct {
@@ -62,7 +53,6 @@ type ociFetcherClient struct {
 
 	mu        sync.Mutex
 	pullerLRU *lru.LRU[*pullerLRUEntry]
-	clock     clockwork.Clock
 }
 
 // NewClient constructs a new OCI Fetcher client.
@@ -71,10 +61,7 @@ type ociFetcherClient struct {
 // to that server.
 // TODO(dan): Stop passing private IPs, mirror config to client once server owns the fetching logic.
 // TODO(dan): Update this comment once server is implemented!
-func NewClient(env environment.Env, allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) (ofpb.OCIFetcherClient, error) {
-	if env.GetClock() == nil {
-		return nil, status.FailedPreconditionError("need non-nil clock to create OCIFetcherClient")
-	}
+func NewClient(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) (ofpb.OCIFetcherClient, error) {
 	pullerLRU, err := lru.NewLRU[*pullerLRUEntry](&lru.Config[*pullerLRUEntry]{
 		SizeFn:  func(_ *pullerLRUEntry) int64 { return 1 },
 		MaxSize: int64(pullerLRUMaxEntries),
@@ -86,7 +73,6 @@ func NewClient(env environment.Env, allowedPrivateIPs []*net.IPNet, mirrors []in
 		allowedPrivateIPs: allowedPrivateIPs,
 		mirrors:           mirrors,
 		pullerLRU:         pullerLRU,
-		clock:             env.GetClock(),
 	}, nil
 }
 
@@ -95,7 +81,7 @@ func RegisterClient(env *real_environment.RealEnv) error {
 	if err != nil {
 		return err
 	}
-	client, err := NewClient(env, allowedPrivateIPNets, *mirrors)
+	client, err := NewClient(allowedPrivateIPNets, *mirrors)
 	if err != nil {
 		return err
 	}
@@ -239,7 +225,7 @@ func pullerKey(ref gcrname.Reference, creds *rgpb.Credentials) string {
 }
 
 // getOrCreatePuller returns a cached Puller for the given image reference and credentials,
-// or creates a new one if not found or expired.
+// or creates a new one if not found.
 func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*remote.Puller, error) {
 	key := pullerKey(imageRef, creds)
 
@@ -247,7 +233,7 @@ func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrna
 	entry, ok := c.pullerLRU.Get(key)
 	c.mu.Unlock()
 
-	if ok && entry.expiration.After(c.clock.Now()) {
+	if ok {
 		return entry.puller, nil
 	}
 
@@ -264,10 +250,7 @@ func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrna
 	}
 
 	c.mu.Lock()
-	c.pullerLRU.Add(key, &pullerLRUEntry{
-		puller:     puller,
-		expiration: c.clock.Now().Add(pullerLRUExpiration),
-	})
+	c.pullerLRU.Add(key, &pullerLRUEntry{puller:     puller})
 	c.mu.Unlock()
 
 	return puller, nil
