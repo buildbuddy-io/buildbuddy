@@ -1974,7 +1974,10 @@ func (j *replicaJanitor) scanForZombies(ctx context.Context) {
 	}
 
 	// Fetch all range descriptors that should have a replica on this node.
-	ranges, err := j.store.sender.LookupRangeDescriptorsByIDsOrNHID(ctx, rangeIDs, j.store.NHID())
+	ranges, err := j.store.sender.FetchRangeDescriptors(ctx, &rfpb.FetchRangesRequest{
+		RangeIds: rangeIDs,
+		Nhid:     j.store.NHID(),
+	})
 	if err != nil {
 		j.store.log.Warningf("failed to lookup ranges by NHID: %s", err)
 		return
