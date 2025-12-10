@@ -2,6 +2,7 @@ import { BrowserHeaders } from "browser-headers";
 import * as protobufjs from "protobufjs";
 import { Subject } from "rxjs";
 import { $stream, buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
+import { cache as cache_service } from "../../proto/cache_service_ts_proto";
 import { context } from "../../proto/context_ts_proto";
 import { google as google_code } from "../../proto/grpc_code_ts_proto";
 import { google as google_status } from "../../proto/grpc_status_ts_proto";
@@ -32,6 +33,7 @@ export type ServerStreamHandler<T> = $stream.ServerStreamHandler<T>;
  * instead of trying to transform the service types / classes like this.
  */
 export type ExtendedBuildBuddyService = CancelableService<buildbuddy.service.BuildBuddyService>;
+export type ExtendedCacheService = CancelableService<cache_service.service.CacheService>;
 
 /**
  * BuildBuddyServiceRpcName is a union type consisting of all BuildBuddyService
@@ -71,7 +73,9 @@ const SUBDOMAIN_REGEX = /^[a-zA-Z0-9-]+$/;
 
 class RpcService {
   service: ExtendedBuildBuddyService;
+  cacheService: ExtendedCacheService;
   regionalServices = new Map<string, ExtendedBuildBuddyService>();
+  regionalCacheServices = new Map<string, ExtendedCacheService>();
   events: Subject<string>;
   requestContext = new context.RequestContext({
     timezoneOffsetMinutes: new Date().getTimezoneOffset(),
@@ -80,14 +84,19 @@ class RpcService {
   });
 
   constructor() {
-    this.service = this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, "")));
+    this.service = this.extendService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, "")));
+    this.cacheService = this.extendService(new cache_service.service.CacheService(this.rpc.bind(this, "")));
     this.events = new Subject();
 
     if (capabilities.config.regions) {
       for (let r of capabilities.config.regions) {
         this.regionalServices.set(
           r.name,
-          this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, r.server)))
+          this.extendService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, r.server)))
+        );
+        this.regionalCacheServices.set(
+          r.name,
+          this.extendService(new cache_service.service.CacheService(this.rpc.bind(this, r.server)))
         );
       }
     }
@@ -105,19 +114,29 @@ class RpcService {
   }
 
   getRegionalServiceOrDefault(server: string): ExtendedBuildBuddyService {
-    if (!capabilities.config.regions) {
-      return this.service;
+    return this.selectRegionalService(server, this.regionalServices, this.service);
+  }
+
+  getRegionalCacheServiceOrDefault(server: string): ExtendedCacheService {
+    return this.selectRegionalService(server, this.regionalCacheServices, this.cacheService);
+  }
+
+  private selectRegionalService<T>(server: string, regionalServices: Map<string, T>, fallback: T): T {
+    if (!capabilities.config.regions || regionalServices.size === 0) {
+      return fallback;
     }
 
-    // grpcs uses https, let's just treat them as equivalent to make matching easier..
-    server = server.replace("grpcs://", "https://");
+    server = this.normalizeServerAddress(server);
 
-    let bestMatch = this.service;
+    let bestMatch = fallback;
     let bestMatchDepth = 0;
-    for (let i = 0; i < capabilities.config.regions.length; i++) {
-      const region = capabilities.config.regions[i];
+    for (const region of capabilities.config.regions) {
+      const candidate = regionalServices.get(region.name);
+      if (!candidate) {
+        continue;
+      }
       if (region.server === server) {
-        return this.regionalServices.get(region.name) ?? this.service;
+        return candidate;
       }
       const chunks = region.subdomains.split("*");
       // Only one wildcard is allowed for the subdomain.
@@ -125,21 +144,26 @@ class RpcService {
         continue;
       }
 
-      // Trim the http:// prefix bit and the top level domain suffix.
       if (!server.startsWith(chunks[0]) || !server.endsWith(chunks[1])) {
         continue;
       }
-      const subdomain = server.substring(0, server.length - chunks[1].length).substring(chunks[0].length);
+      const subdomain = server.substring(chunks[0].length, server.length - chunks[1].length);
       // Make sure the subdomain doesn't have any non alphanumeric or dash characters.
-      if (subdomain.match(SUBDOMAIN_REGEX)) {
-        const domainSuffixDepth = chunks[1].split(".").length;
-        if (domainSuffixDepth > bestMatchDepth) {
-          bestMatchDepth = domainSuffixDepth;
-          bestMatch = this.regionalServices.get(region.name) ?? this.service;
-        }
+      if (!subdomain.match(SUBDOMAIN_REGEX)) {
+        continue;
+      }
+      const domainSuffixDepth = chunks[1].split(".").length;
+      if (domainSuffixDepth > bestMatchDepth) {
+        bestMatchDepth = domainSuffixDepth;
+        bestMatch = candidate;
       }
     }
     return bestMatch;
+  }
+
+  private normalizeServerAddress(server: string): string {
+    // grpcs uses https, let's just treat them as equivalent to make matching easier..
+    return server.replace("grpcs://", "https://");
   }
 
   /**
@@ -356,9 +380,10 @@ class RpcService {
     }
   }
 
-  private getExtendedService(service: buildbuddy.service.BuildBuddyService): ExtendedBuildBuddyService {
+  private extendService<Service extends protobufjs.rpc.Service>(service: Service): CancelableService<Service> {
     const extendedService = Object.create(service);
-    for (const rpcName of getRpcMethodNames(buildbuddy.service.BuildBuddyService)) {
+    const serviceClass = service.constructor as typeof protobufjs.rpc.Service;
+    for (const rpcName of getRpcMethodNames(serviceClass)) {
       const originalMethod = (service as any)[rpcName] as BaseRpcMethod<any, any>;
       const method = (request: Record<string, any>, subscriber?: any) => {
         if (this.requestContext && !request.requestContext) {

@@ -2593,6 +2593,14 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "cache_service_ts_proto",
+    proto = ":cache_service_proto",
+    deps = [
+        ":cache_ts_proto",
+    ],
+)
+
+ts_proto_library(
     name = "capability_ts_proto",
     proto = ":capability_proto",
 )

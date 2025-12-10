@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "cache_service",
+    srcs = ["cache_service.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_service",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto:cache_go_proto",
+        "//proto:cache_service_go_proto",
+        "//server/environment",
+        "//server/real_environment",
+        "//server/util/prefix",
+        "//server/util/status",
+    ],
+)
