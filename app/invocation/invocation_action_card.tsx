@@ -1,4 +1,15 @@
-import { ArrowRight, Copy, Download, File, FileQuestion, FileSymlink, Folder, Info, MoreVertical } from "lucide-react";
+import {
+  ArrowRight,
+  Copy,
+  Download,
+  File,
+  FileQuestion,
+  FileSymlink,
+  Folder,
+  History,
+  Info,
+  MoreVertical,
+} from "lucide-react";
 import React, { ReactElement } from "react";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
@@ -22,6 +33,7 @@ import Menu, { MenuItem } from "../components/menu/menu";
 import Modal from "../components/modal/modal";
 import Popup from "../components/popup/popup";
 import Spinner from "../components/spinner/spinner";
+import router from "../router/router";
 import errorService from "../errors/error_service";
 import format, { durationUsec } from "../format/format";
 import UserPreferences from "../preferences/preferences";
@@ -35,6 +47,7 @@ import { BuildBuddyError, HTTPStatusError } from "../util/errors";
 import { MessageClass, timestampToDate } from "../util/proto";
 import { getErrorReason } from "../util/rpc";
 import { quote } from "../util/shlex";
+import { encodeActionMnemonicUrlParam, encodeTargetLabelUrlParam } from "../../enterprise/app/trends/common";
 import ActionCompareButtonComponent from "./action_compare_button";
 import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
 import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
@@ -1063,6 +1076,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const executionId = this.getExecutionId();
     const platformOverrides = this.getPlatformOverrides();
 
+    this.state.execution = {
+      targetLabel: "@//foo:bar",
+      actionMnemonic: "bar",
+    };
+
     return (
       <div className="invocation-action-card">
         {this.state.loadingAction && (
@@ -1076,7 +1094,21 @@ export default class InvocationActionCardComponent extends React.Component<Props
             <div className="content">
               {executionId && (
                 <>
-                  <div className="title">Execution details</div>
+                  <div className="action-header">
+                    <div className="title">Execution details</div>
+                    {this.state.execution?.targetLabel && this.state.execution?.actionMnemonic && (
+                      <OutlinedButton
+                        className="view-history-button"
+                        onClick={() =>
+                          router.navigateTo(
+                            getDrilldownUrl(this.state.execution.targetLabel, this.state.execution.actionMnemonic)
+                          )
+                        }>
+                        <History className="icon" />
+                        <span>View history</span>
+                      </OutlinedButton>
+                    )}
+                  </div>
                   <div className="details">
                     {this.state.execution?.targetLabel && (
                       <div className="action-section">
@@ -1523,4 +1555,9 @@ function timestampToUnixSeconds(timestamp: ITimestamp): number {
 function parseActionDigestHashFromExecutionId(executionId: string): string | undefined {
   const parts = executionId.split("/");
   return parts[parts.length - 2];
+}
+
+function getDrilldownUrl(targetLabel: string, actionMnemonic: string): string {
+  const dimensionParam = `${encodeTargetLabelUrlParam(targetLabel)}|${encodeActionMnemonicUrlParam(actionMnemonic)}`;
+  return `/trends/?d=${encodeURIComponent(dimensionParam)}#drilldown`;
 }
