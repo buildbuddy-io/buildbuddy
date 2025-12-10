@@ -1752,6 +1752,7 @@ const (
 	zombieCleanupRemoveReplica
 	zombieCleanupRemoveData
 	zombieCleanupStopReplica
+	zombieCleanupStartShard
 	zombieCleanupWait
 )
 
@@ -1972,10 +1973,13 @@ func (j *replicaJanitor) scanForZombies(ctx context.Context) {
 		}
 	}
 
-	// Fetch the range descriptors from meta range
-	ranges, err := j.store.sender.LookupRangeDescriptorsByIDs(ctx, rangeIDs)
+	// Fetch all range descriptors that should have a replica on this node.
+	ranges, err := j.store.sender.FetchRangeDescriptors(ctx, &rfpb.FetchRangesRequest{
+		RangeIds: rangeIDs,
+		Nhid:     j.store.NHID(),
+	})
 	if err != nil {
-		j.store.log.Warningf("failed to scan zombie nodes: %s", err)
+		j.store.log.Warningf("failed to lookup ranges by NHID: %s", err)
 		return
 	}
 	rangeMap := make(map[uint64]*rfpb.RangeDescriptor, len(ranges))
@@ -1983,6 +1987,7 @@ func (j *replicaJanitor) scanForZombies(ctx context.Context) {
 		rangeMap[rd.GetRangeId()] = rd
 	}
 
+	// Find zombie shards: shards that exist locally but shouldn't.
 	for rangeID, ss := range shardStateMap {
 		if rangeIDsToSkip.Contains(rangeID) {
 			continue
@@ -2002,6 +2007,50 @@ func (j *replicaJanitor) scanForZombies(ctx context.Context) {
 		j.rangeIDsInQueue[rangeID] = true
 		j.mu.Unlock()
 	}
+
+	// Find missing shards: ranges that should have a replica on this node but don't.
+	// This can happen when a range is split while this node is down.
+	for _, rd := range ranges {
+		rangeID := rd.GetRangeId()
+		if rd.GetDeleted() || isSoftDeleted(softDeletedPartitions, rd) {
+			continue
+		}
+		// Check if the shard has been opened on this node before. Skip if this
+		// shard have been started in the past. We only deal with shards that
+		// have never started here to prevent from accidentally starting a shard
+		// that is stopped by other goroutines for example soft-deleting a
+		// partition.
+		if _, exists := shardStateMap[rangeID]; exists {
+			continue
+		}
+		// Find our replica in the range descriptor.
+		var ourReplica *rfpb.ReplicaDescriptor
+		for _, r := range rd.GetReplicas() {
+			if r.GetNhid() == j.store.NHID() {
+				ourReplica = r
+				break
+			}
+		}
+		if ourReplica == nil {
+			continue
+		}
+		j.mu.Lock()
+		inQueue := j.rangeIDsInQueue[rangeID]
+		j.mu.Unlock()
+		if !inQueue {
+			j.store.log.Infof("Found missing shard c%dn%d, scheduling start", rangeID, ourReplica.GetReplicaId())
+			j.tasks <- zombieCleanupTask{
+				rangeID:   rangeID,
+				replicaID: ourReplica.GetReplicaId(),
+				rd:        rd,
+				action:    zombieCleanupStartShard,
+			}
+		}
+		j.mu.Lock()
+		j.rangeIDsInQueue[rangeID] = true
+		j.mu.Unlock()
+	}
+
 	metrics.RaftZombieCleanupTasks.Set(float64(len(j.tasks)))
 }
 
@@ -2021,6 +2070,26 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 	if task.action == zombieCleanupStopReplica {
 		if err := j.store.stopReplica(ctx, task.rangeID, task.replicaID); err != nil {
 			return zombieCleanupStopReplica, status.WrapErrorf(err, "failed to stop replica c%dn%d", task.rangeID, task.replicaID)
+		}
+		return zombieCleanupNoAction, nil
+	}
+
+	if task.action == zombieCleanupStartShard {
+		if task.rd == nil {
+			return zombieCleanupNoAction, status.InternalErrorf("missing range descriptor for starting shard c%dn%d", task.rangeID, task.replicaID)
+		}
+		initialMembers := make(map[uint64]string, len(task.rd.GetReplicas()))
+		for _, r := range task.rd.GetReplicas() {
+			initialMembers[r.GetReplicaId()] = r.GetNhid()
+		}
+		j.store.log.Infof("Starting missing shard c%dn%d", task.rangeID, task.replicaID)
+		_, err := j.store.StartShard(ctx, &rfpb.StartShardRequest{
+			RangeId:       task.rangeID,
+			ReplicaId:     task.replicaID,
+			InitialMember: initialMembers,
+		})
+		if err != nil && !status.IsAlreadyExistsError(err) {
+			return zombieCleanupStartShard, status.WrapErrorf(err, "failed to start shard c%dn%d", task.rangeID, task.replicaID)
 		}
 		return zombieCleanupNoAction, nil
 	}
