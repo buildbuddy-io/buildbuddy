@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/operation",
-        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/util/ci_runner_util",
         "//enterprise/server/workflow/config",
@@ -28,6 +27,7 @@ go_library(
         "//server/util/db",
         "//server/util/git",
         "//server/util/log",
+        "//server/util/platform",
         "//server/util/prefix",
         "//server/util/rexec",
         "//server/util/status",
@@ -45,7 +45,6 @@ go_test(
     srcs = ["hostedrunner_test.go"],
     embed = [":hostedrunner"],
     deps = [
-        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/workflow/service",
@@ -59,6 +58,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/authutil",
+        "//server/util/platform",
         "@com_github_stretchr_testify//require",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

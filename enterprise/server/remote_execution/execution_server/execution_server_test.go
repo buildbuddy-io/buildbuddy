@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -68,9 +69,9 @@ type schedulerServerMock struct {
 	scheduleReqs  []*scpb.ScheduleTaskRequest
 }
 
-func (s *schedulerServerMock) GetPoolInfo(_ context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
+func (s *schedulerServerMock) GetPoolInfo(_ context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
 	groupID := sharedPoolGroupID
-	if poolType == interfaces.PoolTypeSelfHosted {
+	if poolType == platform.PoolTypeSelfHosted {
 		groupID = selfHostedPoolGroupID
 	}
 
@@ -80,7 +81,7 @@ func (s *schedulerServerMock) GetPoolInfo(_ context.Context, os, arch, requested
 	}
 	return &interfaces.PoolInfo{
 		GroupID:      groupID,
-		IsSelfHosted: poolType == interfaces.PoolTypeSelfHosted,
+		IsSelfHosted: poolType == platform.PoolTypeSelfHosted,
 		Name:         effectivePool,
 	}, nil
 }

@@ -34,7 +34,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/uffd"
@@ -56,6 +55,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -1045,7 +1045,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		return err
 	}
 	writeManifestLocally := snapshotDetails.saveLocalSnapshot && (!snapshotDetails.saveRemoteSnapshot ||
-		readPolicy != snaputil.AlwaysReadNewestSnapshot)
+		readPolicy != platform.AlwaysReadNewestSnapshot)
 
 	opts := &snaploader.CacheSnapshotOptions{
 		VMMetadata:            vmd,
@@ -1112,11 +1112,11 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 	}
 
 	remoteSavePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
-	if remoteSavePolicy == snaputil.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
+	if remoteSavePolicy == platform.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
 		// We want to always save the default snapshot, because it is used as a fallback for
 		// runs on other branches, so we want it to stay up-to-date.
 		return true
-	} else if remoteSavePolicy == snaputil.OnlySaveNonDefaultSnapshotIfNoneAvailable {
+	} else if remoteSavePolicy == platform.OnlySaveNonDefaultSnapshotIfNoneAvailable {
 		return !c.hasRemoteSnapshot(ctx, c.loader)
 	}
 
@@ -1139,7 +1139,7 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 	// We don't have a separate platform property for local snapshot save policy, so we use the remote snapshot save policy,
 	// as it should be a good proxy for the user's intent on snapshot behavior.
 	savePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
-	if savePolicy == snaputil.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
+	if savePolicy == platform.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
 		// We want to always save the default snapshot, because it is used as a fallback for
 		// runs on other branches, so we want it to stay up-to-date.
 		return true
@@ -3388,8 +3388,8 @@ func snapshotReadPolicy(task *repb.ExecutionTask) (string, error) {
 	switch policy {
 	case "":
 		// By default, prefer local snapshots.
-		return snaputil.ReadLocalSnapshotFirst, nil
-	case snaputil.ReadLocalSnapshotOnly, snaputil.ReadLocalSnapshotFirst, snaputil.AlwaysReadNewestSnapshot:
+		return platform.ReadLocalSnapshotFirst, nil
+	case platform.ReadLocalSnapshotOnly, platform.ReadLocalSnapshotFirst, platform.AlwaysReadNewestSnapshot:
 		return policy, nil
 	default:
 		return "", status.InvalidArgumentErrorf("invalid snapshot read policy %s", policy)

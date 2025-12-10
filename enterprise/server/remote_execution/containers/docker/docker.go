@@ -18,7 +18,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -31,12 +31,12 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	dockerclient "github.com/docker/docker/client"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dti "github.com/docker/docker/api/types/image"
-	dockerclient "github.com/docker/docker/client"
-	units "github.com/docker/go-units"
 	gstatus "google.golang.org/grpc/status"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	units "github.com/docker/go-units"
 )
 
 const (
@@ -77,20 +77,20 @@ var (
 
 func NewClient() (*dockerclient.Client, error) {
 	initDockerClientOnce.Do(func() {
-		if platform.DockerSocket() == "" {
+		if executorplatform.DockerSocket() == "" {
 			return
 		}
-		_, err := os.Stat(platform.DockerSocket())
+		_, err := os.Stat(executorplatform.DockerSocket())
 		if os.IsNotExist(err) {
-			initErr = status.FailedPreconditionErrorf("Docker socket %q not found", platform.DockerSocket())
+			initErr = status.FailedPreconditionErrorf("Docker socket %q not found", executorplatform.DockerSocket())
 			return
 		}
 		if err != nil {
-			initErr = status.FailedPreconditionErrorf("Failed to stat docker socket %q: %s", platform.DockerSocket(), err)
+			initErr = status.FailedPreconditionErrorf("Failed to stat docker socket %q: %s", executorplatform.DockerSocket(), err)
 			return
 		}
 
-		dockerSocket := platform.DockerSocket()
+		dockerSocket := executorplatform.DockerSocket()
 		if !strings.Contains(dockerSocket, "://") {
 			dockerSocket = fmt.Sprintf("unix://%s", dockerSocket)
 		}
@@ -122,7 +122,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		DockerInit:              args.Props.DockerInit,
 		DockerUser:              args.Props.DockerUser,
 		DockerNetwork:           args.Props.DockerNetwork,
-		Socket:                  platform.DockerSocket(),
+		Socket:                  executorplatform.DockerSocket(),
 		EnableSiblingContainers: *dockerSiblingContainers,
 		UseHostNetwork:          *dockerNetHost,
 		DockerMountMode:         *dockerMountMode,

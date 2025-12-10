@@ -7,7 +7,6 @@ go_library(
     srcs = ["usage.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage",
     deps = [
-        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/usage/config",
         "//enterprise/server/util/redisutil",
         "//server/environment",
@@ -21,6 +20,7 @@ go_library(
         "//server/util/clickhouse/schema",
         "//server/util/db",
         "//server/util/log",
+        "//server/util/platform",
         "//server/util/status",
         "//server/util/usageutil",
         "@com_github_go_redis_redis_v8//:redis",

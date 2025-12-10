@@ -16,7 +16,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -25,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -459,7 +459,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 		return nil, status.InternalErrorf("invalid state: EnableLocalSnapshotSharing=false and remoteEnabled=false")
 	}
 
-	if opts.ReadPolicy == snaputil.ReadLocalSnapshotOnly {
+	if opts.ReadPolicy == platform.ReadLocalSnapshotOnly {
 		return nil, status.NotFoundErrorf("local manifest not found")
 	}
 
@@ -474,7 +474,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	// save the newly fetched manifest locally. This will increase the odds that
 	// future runs on this executor will use that snapshot, which will already
 	// have snapshot chunks locally.
-	if opts.ReadPolicy != snaputil.AlwaysReadNewestSnapshot {
+	if opts.ReadPolicy != platform.AlwaysReadNewestSnapshot {
 		if err := l.cacheManifestLocally(ctx, key, acResult, "" /* snapshotID */); err != nil {
 			log.Warningf("Failed to cache snapshot manifest locally during get %s: %s", snapshotDebugString(ctx, l.env, key, false, ""), err)
 		}
@@ -1254,7 +1254,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 
 	snap, err := l.GetSnapshot(ctx, key, &GetSnapshotOptions{
 		RemoteReadEnabled: remoteEnabled,
-		ReadPolicy:        snaputil.AlwaysReadNewestSnapshot,
+		ReadPolicy:        platform.AlwaysReadNewestSnapshot,
 	})
 	if err != nil && !(status.IsNotFoundError(err) || status.IsUnavailableError(err)) {
 		return nil, err

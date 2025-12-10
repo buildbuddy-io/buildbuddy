@@ -9,7 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
-        "//enterprise/server/remote_execution/platform",
+        "//enterprise/server/remote_execution/executorplatform",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//server/environment",

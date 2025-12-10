@@ -12,7 +12,6 @@ go_library(
     deps = [
         "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/action_merger",
-        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/tasksize",
         "//enterprise/server/util/ci_runner_util",
         "//proto:capability_go_proto",
@@ -34,6 +33,7 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/perms",
+        "//server/util/platform",
         "//server/util/proto",
         "//server/util/random",
         "//server/util/status",
@@ -56,7 +56,6 @@ go_test(
     deps = [
         "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/execution_server",
-        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/tasksize",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
@@ -70,6 +69,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/log",
+        "//server/util/platform",
         "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",

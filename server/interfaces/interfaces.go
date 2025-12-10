@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-github/v59/github"
@@ -907,16 +908,6 @@ type FileCache interface {
 	TempDir() string
 }
 
-// PoolType represents the user's requested executor pool type for an executed
-// action.
-type PoolType int
-
-const (
-	PoolTypeDefault    PoolType = 1 // Respect org preference.
-	PoolTypeShared     PoolType = 2 // Use shared executors.
-	PoolTypeSelfHosted PoolType = 3 // Use self-hosted executors.
-)
-
 type SchedulerService interface {
 	RegisterAndStreamWork(stream scpb.Scheduler_RegisterAndStreamWorkServer) error
 	LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
@@ -927,7 +918,7 @@ type SchedulerService interface {
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	TaskExists(ctx context.Context, req *scpb.TaskExistsRequest) (*scpb.TaskExistsResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
-	GetPoolInfo(ctx context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType PoolType) (*PoolInfo, error)
+	GetPoolInfo(ctx context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType platform.PoolType) (*PoolInfo, error)
 	GetSharedExecutorPoolGroupID() string
 }
 

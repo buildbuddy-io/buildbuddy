@@ -23,8 +23,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
@@ -56,16 +56,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
-
 	"google.golang.org/grpc"
 
 	_ "github.com/buildbuddy-io/buildbuddy/server/util/grpc_server" // imported for grpc_port flag definition to avoid breaking old configs; DO NOT REMOVE.
-	_ "google.golang.org/grpc/encoding/gzip"                        // imported for side effects; DO NOT REMOVE.
-
+	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -199,7 +197,7 @@ func getExecutorHostName() string {
 func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
 	realEnv := real_environment.NewRealEnv(healthChecker)
 
-	mmapLRUEnabled := *platform.EnableFirecracker && snaputil.IsChunkedSnapshotSharingEnabled()
+	mmapLRUEnabled := *executorplatform.EnableFirecracker && snaputil.IsChunkedSnapshotSharingEnabled()
 	if err := resources.Configure(mmapLRUEnabled); err != nil {
 		log.Fatal(status.Message(err))
 	}

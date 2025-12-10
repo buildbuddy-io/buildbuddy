@@ -15,7 +15,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -31,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -1208,7 +1208,7 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 	return &override
 }
 
-func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
+func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
 	poolInfo, err := s.getPoolInfo(ctx, os, requestedPool, workflowID, poolType)
 	if err != nil {
 		return nil, err
@@ -1223,7 +1223,7 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPo
 	return poolInfo, nil
 }
 
-func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
+func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
 	// Note: The defaultPoolName flag only applies to the shared executor pool.
 	// The pool name for self-hosted pools is always determined directly from
 	// platform props.
@@ -1243,7 +1243,7 @@ func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, wo
 	}
 
 	// Linux workflows use shared executors unless self_hosted is set.
-	if os == platform.LinuxOperatingSystemName && workflowID != "" && poolType != interfaces.PoolTypeSelfHosted {
+	if os == platform.LinuxOperatingSystemName && workflowID != "" && poolType != platform.PoolTypeSelfHosted {
 		return sharedPool, nil
 	}
 
@@ -1256,7 +1256,7 @@ func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, wo
 			if s.forceUserOwnedWindowsExecutors && os == windowsOperatingSystemName {
 				return nil, status.FailedPreconditionErrorf("Windows remote build execution is not enabled for anonymous requests.")
 			}
-			if poolType == interfaces.PoolTypeSelfHosted {
+			if poolType == platform.PoolTypeSelfHosted {
 				return nil, status.FailedPreconditionErrorf("Self-hosted executors not enabled for anonymous requests.")
 			}
 			return sharedPool, nil
@@ -1268,7 +1268,7 @@ func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, wo
 		IsSelfHosted: true,
 		Name:         requestedPool,
 	}
-	if user.GetUseGroupOwnedExecutors() && poolType != interfaces.PoolTypeShared {
+	if user.GetUseGroupOwnedExecutors() && poolType != platform.PoolTypeShared {
 		return selfHostedPool, nil
 	}
 	if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
@@ -1277,7 +1277,7 @@ func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, wo
 	if s.forceUserOwnedWindowsExecutors && os == windowsOperatingSystemName {
 		return selfHostedPool, nil
 	}
-	if poolType == interfaces.PoolTypeSelfHosted {
+	if poolType == platform.PoolTypeSelfHosted {
 		return selfHostedPool, nil
 	}
 	return sharedPool, nil

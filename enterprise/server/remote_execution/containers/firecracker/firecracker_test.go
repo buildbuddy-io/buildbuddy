@@ -30,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontainer"
@@ -55,6 +54,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -587,7 +587,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
 				// Save a snapshot for every run.
-				{Name: platform.SnapshotSavePolicyPropertyName, Value: snaputil.AlwaysSaveSnapshot},
+				{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.AlwaysSaveSnapshot},
 			}},
 			Arguments: []string{"./buildbuddy_ci_runner"},
 		},
@@ -816,32 +816,32 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 		{
 			name:               "Always save - on main",
 			branch:             "main",
-			snapshotSavePolicy: snaputil.AlwaysSaveSnapshot,
+			snapshotSavePolicy: platform.AlwaysSaveSnapshot,
 		},
 		{
 			name:               "Always save - on feature branch",
 			branch:             "pr-branch",
-			snapshotSavePolicy: snaputil.AlwaysSaveSnapshot,
+			snapshotSavePolicy: platform.AlwaysSaveSnapshot,
 		},
 		{
 			name:               "Only save first non-default snapshot - on main",
 			branch:             "main",
-			snapshotSavePolicy: snaputil.OnlySaveFirstNonDefaultSnapshot,
+			snapshotSavePolicy: platform.OnlySaveFirstNonDefaultSnapshot,
 		},
 		{
 			name:               "Only save first non-default snapshot - on feature branch",
 			branch:             "pr-branch",
-			snapshotSavePolicy: snaputil.OnlySaveFirstNonDefaultSnapshot,
+			snapshotSavePolicy: platform.OnlySaveFirstNonDefaultSnapshot,
 		},
 		{
 			name:               "Only save non-default snapshot if no snapshots available - on main",
 			branch:             "main",
-			snapshotSavePolicy: snaputil.OnlySaveNonDefaultSnapshotIfNoneAvailable,
+			snapshotSavePolicy: platform.OnlySaveNonDefaultSnapshotIfNoneAvailable,
 		},
 		{
 			name:               "Only save non-default snapshot if no snapshots available - on feature branch",
 			branch:             "pr-branch",
-			snapshotSavePolicy: snaputil.OnlySaveNonDefaultSnapshotIfNoneAvailable,
+			snapshotSavePolicy: platform.OnlySaveNonDefaultSnapshotIfNoneAvailable,
 		},
 	}
 
@@ -954,13 +954,13 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 			// Start a VM from the remote snapshot.
 			var expectedOutput string
 			var expectedVersionNumber int64
-			if tc.branch == "main" || tc.snapshotSavePolicy == snaputil.AlwaysSaveSnapshot {
+			if tc.branch == "main" || tc.snapshotSavePolicy == platform.AlwaysSaveSnapshot {
 				expectedOutput = "Main\nTest Branch 1\nTest Branch 2\nTest Branch 3\n"
 				expectedVersionNumber = 3
-			} else if tc.snapshotSavePolicy == snaputil.OnlySaveFirstNonDefaultSnapshot {
+			} else if tc.snapshotSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
 				expectedOutput = "Main\nTest Branch 1\nTest Branch 3\n"
 				expectedVersionNumber = 2
-			} else if tc.snapshotSavePolicy == snaputil.OnlySaveNonDefaultSnapshotIfNoneAvailable {
+			} else if tc.snapshotSavePolicy == platform.OnlySaveNonDefaultSnapshotIfNoneAvailable {
 				expectedOutput = "Main\nTest Branch 3\n"
 				expectedVersionNumber = 1
 			}
@@ -968,7 +968,7 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 			res = runAndSnapshotVM(workDirForkRemoteFetch, "Test Branch 3", expectedOutput, nil, task)
 			assert.Equal(t, expectedVersionNumber, res.VMMetadata.GetSavedSnapshotVersionNumber())
 
-			if tc.snapshotSavePolicy != snaputil.OnlySaveNonDefaultSnapshotIfNoneAvailable {
+			if tc.snapshotSavePolicy != platform.OnlySaveNonDefaultSnapshotIfNoneAvailable {
 				// Should still be able to start from the original snapshot if we use
 				// a snapshot key containing the original VM's snapshot ID.
 				// Note that when using a snapshot ID as the key, we only include the
@@ -996,14 +996,14 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 	}{
 		{
 			name:               "By default, apply local first policy",
-			snapshotReadPolicy: snaputil.ReadLocalSnapshotFirst,
+			snapshotReadPolicy: platform.ReadLocalSnapshotFirst,
 			// Even though a newer remote snapshot was written by executor 2, expect to
 			// start from the local snapshot written by executor 1.
 			expectedOutputAfterResume: "Executor1\nResume\n",
 		},
 		{
 			name:               "Always read newest",
-			snapshotReadPolicy: snaputil.AlwaysReadNewestSnapshot,
+			snapshotReadPolicy: platform.AlwaysReadNewestSnapshot,
 			// Even though a local snapshot exists on executor 1, expect to
 			// start from the remote snapshot written from executor 2 because
 			// it is newer.
@@ -1011,14 +1011,14 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 		},
 		{
 			name:               "Local first",
-			snapshotReadPolicy: snaputil.ReadLocalSnapshotFirst,
+			snapshotReadPolicy: platform.ReadLocalSnapshotFirst,
 			// Even though a newer remote snapshot was written by executor 2, expect to
 			// start from the local snapshot written by executor 1.
 			expectedOutputAfterResume: "Executor1\nResume\n",
 		},
 		{
 			name:               "Local only",
-			snapshotReadPolicy: snaputil.ReadLocalSnapshotOnly,
+			snapshotReadPolicy: platform.ReadLocalSnapshotOnly,
 			// Even though a newer remote snapshot was written by executor 2, expect to
 			// start from the local snapshot written by executor 1.
 			expectedOutputAfterResume: "Executor1\nResume\n",
@@ -1065,7 +1065,7 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 					// Note: platform must match in order to share snapshots
 					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 						{Name: "recycle-runner", Value: "true"},
-						{Name: platform.SnapshotSavePolicyPropertyName, Value: snaputil.AlwaysSaveSnapshot},
+						{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.AlwaysSaveSnapshot},
 						{Name: platform.SnapshotReadPolicyPropertyName, Value: tc.snapshotReadPolicy},
 					}},
 					Arguments: []string{"./buildbuddy_ci_runner"},
@@ -1116,7 +1116,7 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 				require.Equal(t, expectedOutput, string(res.Stdout))
 			}
 
-			if tc.snapshotReadPolicy == snaputil.ReadLocalSnapshotOnly {
+			if tc.snapshotReadPolicy == platform.ReadLocalSnapshotOnly {
 				// Save a snapshot from executor 2.
 				workDir2 := testfs.MakeDirAll(t, rootDir2, "executor-2")
 				runAndSnapshotVM(getEnvWithFC(fc2), workDir2, "Executor2")
@@ -1154,7 +1154,7 @@ func TestFirecracker_SnapshotSharing_ReadPolicy_FallbackSnapshot(t *testing.T) {
 	}{
 		{
 			name:               "Always read newest",
-			snapshotReadPolicy: snaputil.AlwaysReadNewestSnapshot,
+			snapshotReadPolicy: platform.AlwaysReadNewestSnapshot,
 			// We always expect to resume from the newest main snapshot.
 			expectedOutputAfterResume: "MainExecutor1\nMainExecutor2\nPR2Executor1\n",
 		},
@@ -1167,7 +1167,7 @@ func TestFirecracker_SnapshotSharing_ReadPolicy_FallbackSnapshot(t *testing.T) {
 		},
 		{
 			name:               "Local first",
-			snapshotReadPolicy: snaputil.ReadLocalSnapshotFirst,
+			snapshotReadPolicy: platform.ReadLocalSnapshotFirst,
 			// Even though a newer main snapshot was written on executor 2, we should
 			// start from the local main snapshot on executor 1.
 			expectedOutputAfterResume: "MainExecutor1\nPR2Executor1\n",
@@ -1214,7 +1214,7 @@ func TestFirecracker_SnapshotSharing_ReadPolicy_FallbackSnapshot(t *testing.T) {
 					// Note: platform must match in order to share snapshots
 					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 						{Name: "recycle-runner", Value: "true"},
-						{Name: platform.SnapshotSavePolicyPropertyName, Value: snaputil.AlwaysSaveSnapshot},
+						{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.AlwaysSaveSnapshot},
 						{Name: platform.SnapshotReadPolicyPropertyName, Value: tc.snapshotReadPolicy},
 					}},
 					Arguments: []string{"./buildbuddy_ci_runner"},

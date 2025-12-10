@@ -10,7 +10,6 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
-        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/workspace",
         "//proto:remote_execution_go_proto",
         "//proto:worker_go_proto",
@@ -19,6 +18,7 @@ go_library(
         "//server/util/background",
         "//server/util/lockingbuffer",
         "//server/util/log",
+        "//server/util/platform",
         "//server/util/proto",
         "//server/util/status",
         "@org_golang_google_protobuf//encoding/protojson",
