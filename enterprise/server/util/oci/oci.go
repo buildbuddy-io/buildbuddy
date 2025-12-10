@@ -51,12 +51,7 @@ var (
 	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 
-	useCachePercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
-	// TODO: remove from configs and delete
-	_ = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "", flag.Internal)
-	_ = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "", flag.Internal)
-	_ = flag.Bool("executor.container_registry.write_layers_to_cache", false, "", flag.Internal)
-	_ = flag.Bool("executor.container_registry.read_layers_from_cache", false, "", flag.Internal)
+	cacheEnabledPercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
 )
 
 type Registry struct {
@@ -332,65 +327,40 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		return nil, status.InternalErrorf("error creating puller: %s", err)
 	}
 
-	useCache := false
-	if *useCachePercent >= 100 {
-		useCache = true
-	} else if *useCachePercent > 0 && *useCachePercent < 100 {
-		useCache = rand.Intn(100) < *useCachePercent
+	cacheEnabled := false
+	if *cacheEnabledPercent >= 100 {
+		cacheEnabled = true
+	} else if *cacheEnabledPercent > 0 && *cacheEnabledPercent < 100 {
+		cacheEnabled = rand.Intn(100) < *cacheEnabledPercent
 	}
+	isAnon := isAnonymousUser(ctx)
+	if cacheEnabled && isAnon {
+		log.CtxInfof(ctx, "Anonymous user request, skipping manifest and layer cache for %q", imageRef)
+	}
+	useCache := cacheEnabled && !isAnon
 
-	if useCache {
-		return fetchImageFromCacheOrRemote(
-			ctx,
-			imageRef,
-			gcr.Platform{
-				Architecture: platform.GetArch(),
-				OS:           platform.GetOs(),
-				Variant:      platform.GetVariant(),
-			},
-			r.env.GetActionCacheClient(),
-			r.env.GetByteStreamClient(),
-			puller,
-			credentials.bypassRegistry,
-		)
-	}
-
-	remoteDesc, err := puller.Get(ctx, imageRef)
-	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
-	}
-
-	// Image() should resolve both images and image indices to an appropriate image
-	img, err := remoteDesc.Image()
-	if err != nil {
-		switch remoteDesc.MediaType {
-		// This is an "image index", a meta-manifest that contains a list of
-		// {platform props, manifest hash} properties to allow client to decide
-		// which manifest they want to use based on platform.
-		case types.OCIImageIndex, types.DockerManifestList:
-			return nil, status.UnknownErrorf("could not get image in image index from descriptor: %s", err)
-		case types.OCIManifestSchema1, types.DockerManifestSchema2:
-			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
-		default:
-			return nil, status.UnknownErrorf("descriptor has unknown media type %q, oci error: %s", remoteDesc.MediaType, err)
-		}
-	}
-	return img, nil
+	return fetchImageFromCacheOrRemote(
+		ctx,
+		imageRef,
+		gcr.Platform{
+			Architecture: platform.GetArch(),
+			OS:           platform.GetOs(),
+			Variant:      platform.GetVariant(),
+		},
+		r.env.GetActionCacheClient(),
+		r.env.GetByteStreamClient(),
+		puller,
+		credentials.bypassRegistry,
+		useCache,
+	)
 }
 
 // fetchImageFromCacheOrRemote first tries to fetch the manifest for the given image reference from the cache,
 // then falls back to fetching from the upstream remote registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool) (gcr.Image, error) {
-	canUseCache := !isAnonymousUser(ctx)
-	if !canUseCache {
-		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", digestOrTagRef)
-	}
-	if canUseCache {
+func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool, useCache bool) (gcr.Image, error) {
+	if useCache {
 		var desc *gcr.Descriptor
 		digest, hasDigest := getDigest(digestOrTagRef)
 		// For now, we cannot bypass the registry for tag references,
@@ -448,6 +418,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				bsClient,
 				puller,
 				bypassRegistry,
+				useCache,
 			)
 		}
 	}
@@ -460,7 +431,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
-	if canUseCache {
+	if useCache {
 		err := ocicache.WriteManifestToAC(
 			ctx,
 			remoteDesc.Manifest,
@@ -474,6 +445,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 			log.CtxWarningf(ctx, "Could not write manifest to cache: %s", err)
 		}
 	}
+
 	return imageFromDescriptorAndManifest(
 		ctx,
 		digestOrTagRef.Context(),
@@ -484,13 +456,14 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		bsClient,
 		puller,
 		bypassRegistry,
+		useCache,
 	)
 }
 
 // imageFromDescriptorAndManifest returns an Image from the given manifest (if the manifest is an image manifest),
 // finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
 // and otherwise returns an error.
-func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool) (gcr.Image, error) {
+func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool, useCache bool) (gcr.Image, error) {
 	if desc.MediaType.IsSchema1() {
 		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
 	}
@@ -514,6 +487,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 			bsClient,
 			puller,
 			bypassRegistry,
+			useCache,
 		)
 	}
 
@@ -525,6 +499,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 		acClient,
 		bsClient,
 		puller,
+		useCache,
 	), nil
 }
 
@@ -579,7 +554,7 @@ func getDigest(ref gcrname.Reference) (gcr.Hash, bool) {
 	return hash, true
 }
 
-func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller) *imageFromRawManifest {
+func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, useCache bool) *imageFromRawManifest {
 	i := &imageFromRawManifest{
 		repo:        repo,
 		desc:        desc,
@@ -588,6 +563,7 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		acClient:    acClient,
 		bsClient:    bsClient,
 		puller:      puller,
+		useCache:    useCache,
 	}
 	i.fetchRawConfigOnce = sync.OnceValues(func() ([]byte, error) {
 		manifest, err := i.Manifest()
@@ -630,6 +606,7 @@ type imageFromRawManifest struct {
 	acClient repb.ActionCacheClient
 	bsClient bspb.ByteStreamClient
 	puller   *remote.Puller
+	useCache bool
 
 	fetchRawConfigOnce func() ([]byte, error)
 }
@@ -767,11 +744,7 @@ func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
 }
 
 func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
-	canUseCache := !isAnonymousUser(l.image.ctx)
-	if !canUseCache {
-		log.CtxInfof(l.image.ctx, "Anonymous user request, skipping layer cache for %s:%s", l.image.repo, l.image.desc.Digest)
-	}
-	if canUseCache {
+	if l.image.useCache {
 		rc, err := l.fetchLayerFromCache()
 		if err != nil && !status.IsNotFoundError(err) {
 			log.CtxWarningf(l.image.ctx, "Error fetching layer from cache: %s", err)
@@ -790,7 +763,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	if canUseCache {
+	if l.image.useCache {
 		mediaType, err := l.MediaType()
 		if err != nil {
 			log.CtxWarningf(l.image.ctx, "Could not get media type for layer: %s", err)
