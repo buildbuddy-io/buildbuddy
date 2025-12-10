@@ -2080,7 +2080,6 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			RangeId:       task.rangeID,
 			ReplicaId:     task.replicaID,
 			InitialMember: initialMembers,
-			Join:          true,
 		})
 		if err != nil && !status.IsAlreadyExistsError(err) {
 			return zombieCleanupStartShard, status.WrapErrorf(err, "failed to start shard c%dn%d", task.rangeID, task.replicaID)
