@@ -151,14 +151,8 @@ func NewSizer(env environment.Env) (*taskSizer, error) {
 	return ts, nil
 }
 
-func (s *taskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+func (s *taskSizer) Get(ctx context.Context, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
 	if !*useMeasuredSizes {
-		return nil
-	}
-	props, err := platform.ParseProperties(task)
-	if err != nil {
-		// TODO(sluongng): reject tasks that fail validation so users could catch errors sooner
-		log.CtxInfof(ctx, "Failed to parse task properties: %s", err)
 		return nil
 	}
 	// If a task size is explicitly requested, measured task size is not used.
@@ -186,7 +180,7 @@ func (s *taskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 			metrics.GroupID:                 groupID,
 		}).Inc()
 	}()
-	recordedSize, err := s.lastRecordedSize(ctx, task)
+	recordedSize, err := s.lastRecordedSize(ctx, cmd)
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to read task size from Redis; falling back to default size estimate: %s", err)
 		statusLabel = "error"
@@ -198,29 +192,25 @@ func (s *taskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 		// executor run this task once to estimate the size.
 		return nil
 	}
-	return ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), task, &scpb.TaskSize{
+	return ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), cmd, props, &scpb.TaskSize{
 		EstimatedMemoryBytes: recordedSize.EstimatedMemoryBytes,
 		EstimatedMilliCpu:    recordedSize.EstimatedMilliCpu,
 	})
 }
 
-func (s *taskSizer) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+func (s *taskSizer) Predict(ctx context.Context, action *repb.Action, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
 	if s.model == nil {
 		return nil
 	}
-	return ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), task, s.model.Predict(ctx, task))
+	return ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), cmd, props, s.model.Predict(ctx, action, cmd, props))
 }
 
-func (s *taskSizer) Update(ctx context.Context, action *repb.Action, cmd *repb.Command, md *repb.ExecutedActionMetadata) error {
+func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, props *platform.Properties, md *repb.ExecutedActionMetadata) error {
 	if !*useMeasuredSizes {
 		return nil
 	}
 	statusLabel := "ok"
 	defer func() {
-		props, err := platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd})
-		if err != nil {
-			log.CtxInfof(ctx, "Failed to parse task properties: %s", err)
-		}
 		groupID, _ := s.groupKey(ctx)
 		metrics.RemoteExecutionTaskSizeWriteRequests.With(prometheus.Labels{
 			metrics.TaskSizeWriteStatusLabel: statusLabel,
@@ -414,8 +404,8 @@ func computeP90MilliCPU(stats *repb.UsageStats) int64 {
 	return int64(p90 * 1000)
 }
 
-func (s *taskSizer) lastRecordedSize(ctx context.Context, task *repb.ExecutionTask) (*scpb.TaskSize, error) {
-	key, err := s.taskSizeKey(ctx, task.GetCommand())
+func (s *taskSizer) lastRecordedSize(ctx context.Context, cmd *repb.Command) (*scpb.TaskSize, error) {
+	key, err := s.taskSizeKey(ctx, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -506,8 +496,8 @@ func estimateFromTestSize(testSize string) (bytes int64, milliCPU int64) {
 	return int64(mb * 1e6), int64(cpu)
 }
 
-func testSize(task *repb.ExecutionTask) (s string, ok bool) {
-	for _, envVar := range task.GetCommand().GetEnvironmentVariables() {
+func testSize(cmd *repb.Command) (s string, ok bool) {
+	for _, envVar := range cmd.GetEnvironmentVariables() {
 		if envVar.GetName() == testSizeEnvVar {
 			return envVar.GetValue(), true
 		}
@@ -563,7 +553,7 @@ func Default(task *repb.ExecutionTask) *scpb.TaskSize {
 		size.EstimatedMemoryBytes = WorkflowMemEstimate
 	}
 
-	if s, ok := testSize(task); ok {
+	if s, ok := testSize(task.GetCommand()); ok {
 		size.EstimatedMemoryBytes, size.EstimatedMilliCpu = estimateFromTestSize(s)
 	}
 
@@ -599,7 +589,7 @@ func Override(base, over *scpb.TaskSize) *scpb.TaskSize {
 }
 
 // ApplyLimits clamps each value in size to within an allowed range.
-func ApplyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize {
+func ApplyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd *repb.Command, props *platform.Properties, size *scpb.TaskSize) *scpb.TaskSize {
 	if size == nil {
 		return nil
 	}
@@ -609,7 +599,7 @@ func ApplyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, tas
 	minMilliCPU := MinimumMilliCPU
 	// Test actions have higher minimums, determined by the test size ("small",
 	// "medium", etc.)
-	if s, ok := testSize(task); ok {
+	if s, ok := testSize(cmd); ok {
 		minMemoryBytes, minMilliCPU = estimateFromTestSize(s)
 	}
 
@@ -627,16 +617,14 @@ func ApplyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, tas
 
 	if limitMaxDisk && clone.EstimatedFreeDiskBytes > MaxEstimatedFreeDisk {
 		request := clone.EstimatedFreeDiskBytes
-		props, err := platform.ParseProperties(task)
-		if err != nil {
-			log.Infof("Failed to parse task properties: %s", err)
+		if props == nil {
 			clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDisk
 		} else if props.RecycleRunner {
 			clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDisk
 		} else {
 			clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDiskRecycleFalse
 		}
-		log.Infof("Task %q requested %d free disk, capped at %d", task.GetExecutionId(), request, clone.EstimatedFreeDiskBytes)
+		log.CtxInfof(ctx, "Task requested %d free disk, capped at %d", request, clone.EstimatedFreeDiskBytes)
 	}
 	return clone
 }

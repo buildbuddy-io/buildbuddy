@@ -138,7 +138,7 @@ func (m *Model) makeTestPrediction(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, initTimeout)
 	defer cancel()
 
-	x := m.featureVector(&repb.ExecutionTask{})
+	x := m.featureVector(nil, nil)
 	if _, err := m.callModel(ctx, memModelName, x); err != nil {
 		return status.InternalErrorf("saved memory model test prediction failed: %s", err)
 	}
@@ -187,14 +187,8 @@ func (m *Model) callModel(ctx context.Context, model string, x []float32) (float
 
 // Predict predicts the resource usage of a task based on the configured
 // model parameters. It returns nil if the model is not configured.
-func (m *Model) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+func (m *Model) Predict(ctx context.Context, action *repb.Action, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
 	if !m.isReady() {
-		return nil
-	}
-
-	props, err := platform.ParseProperties(task)
-	if err != nil {
-		log.CtxInfof(ctx, "Failed to parse task properties: %s", err)
 		return nil
 	}
 	// If a task size is explicitly requested, measured task size is not used.
@@ -213,7 +207,7 @@ func (m *Model) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 	ctx, cancel := context.WithTimeout(ctx, predictionTimeout)
 	defer cancel()
 	start := time.Now()
-	s, err := m.predict(ctx, task)
+	s, err := m.predict(ctx, action, cmd)
 	metrics.RemoteExecutionTaskSizePredictionDurationUsec.With(prometheus.Labels{
 		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
 	}).Observe(float64(time.Since(start).Microseconds()))
@@ -224,8 +218,8 @@ func (m *Model) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 	return s
 }
 
-func (m *Model) predict(ctx context.Context, task *repb.ExecutionTask) (*scpb.TaskSize, error) {
-	x := m.featureVector(task)
+func (m *Model) predict(ctx context.Context, action *repb.Action, cmd *repb.Command) (*scpb.TaskSize, error) {
+	x := m.featureVector(action, cmd)
 
 	eg, ctx := errgroup.WithContext(ctx)
 	var mem, cpu int64
@@ -272,8 +266,7 @@ func (m *Model) predict(ctx context.Context, task *repb.ExecutionTask) (*scpb.Ta
 }
 
 // featureVector converts a command to a fixed-length numeric feature vector.
-func (m *Model) featureVector(task *repb.ExecutionTask) []float32 {
-	cmd := task.GetCommand()
+func (m *Model) featureVector(action *repb.Action, cmd *repb.Command) []float32 {
 	argCount := len(cmd.GetArguments())
 	tool := ""
 	if len(cmd.GetArguments()) > 0 {
@@ -287,12 +280,12 @@ func (m *Model) featureVector(task *repb.ExecutionTask) []float32 {
 
 	features = append(features,
 		float32(argCount),
-		float32(task.GetAction().GetInputRootDigest().GetSizeBytes()),
-		float32(task.GetAction().GetCommandDigest().GetSizeBytes()),
+		float32(action.GetInputRootDigest().GetSizeBytes()),
+		float32(action.GetCommandDigest().GetSizeBytes()),
 		envFloat32(cmd, "TEST_TIMEOUT", 300),
 		envFloat32(cmd, "TEST_TOTAL_SHARDS", 1),
 	)
-	platformProto := platform.GetProto(task.GetAction(), task.GetCommand())
+	platformProto := platform.GetProto(action, cmd)
 	features = appendOneHot(features, m.config.OSValues, platform.FindValue(platformProto, "OSFamily"))
 	features = appendOneHot(features, m.config.ArchValues, platform.FindValue(platformProto, "Arch"))
 	features = appendOneHot(features, m.config.Tools, tool)

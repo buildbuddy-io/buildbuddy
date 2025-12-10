@@ -815,11 +815,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	executionTask.QueuedTimestamp = timestamppb.Now()
 	defaultTaskSize := tasksize.Default(executionTask)
 	requestedTaskSize := tasksize.Requested(executionTask)
-	taskSize := tasksize.ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), executionTask, tasksize.Override(defaultTaskSize, requestedTaskSize))
-	measuredSize := sizer.Get(ctx, executionTask)
+	taskSize := tasksize.ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), command, props, tasksize.Override(defaultTaskSize, requestedTaskSize))
+	measuredSize := sizer.Get(ctx, command, props)
 	var predictedSize *scpb.TaskSize
 	if measuredSize == nil {
-		predictedSize = sizer.Predict(ctx, executionTask)
+		predictedSize = sizer.Predict(ctx, action, command, props)
 	}
 
 	if measuredSize != nil {
@@ -1451,7 +1451,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 	if sizer := s.env.GetTaskSizer(); sizer != nil && execErr == nil && executeResponse.GetResult().GetExitCode() == 0 {
 		// TODO(vanja) should this be done when the executor got a cache hit?
 		md := executeResponse.GetResult().GetExecutionMetadata()
-		if err := sizer.Update(ctx, action, cmd, md); err != nil {
+		if err := sizer.Update(ctx, cmd, properties, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
 		}
 	}

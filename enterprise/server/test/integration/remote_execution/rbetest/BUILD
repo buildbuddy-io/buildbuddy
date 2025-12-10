@@ -62,6 +62,7 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/log",
+        "//server/util/platform",
         "//server/util/prefix",
         "//server/util/retry",
         "//server/util/status",

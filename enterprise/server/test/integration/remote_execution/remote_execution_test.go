@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -2439,7 +2440,7 @@ func testCustomResources(t *testing.T, test customResourcesTest) {
 		EnvModifier: func(env *real_environment.RealEnv) {
 			env.SetTaskRouter(taskRouter)
 			env.SetTaskSizer(&rbetest.FakeTaskSizer{
-				GetImpl: func(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+				GetImpl: func(ctx context.Context, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
 					return test.MeasuredTaskSize
 				},
 			})
