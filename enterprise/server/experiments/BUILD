@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:group_go_proto",
         "//server/interfaces",
         "//server/real_environment",
         "//server/util/bazel_request",
@@ -27,6 +28,7 @@ go_test(
     srcs = ["experiments_test.go"],
     deps = [
         ":experiments",
+        "//proto:group_go_proto",
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
