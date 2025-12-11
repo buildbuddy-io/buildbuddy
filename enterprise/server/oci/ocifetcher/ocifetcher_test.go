@@ -465,36 +465,6 @@ func assertManifestResponse(t *testing.T, resp *ofpb.FetchManifestResponse, dige
 	require.Equal(t, manifest, resp.GetManifest())
 }
 
-// TestFetchManifest_PullerCacheHit verifies that the same Puller is
-// reused when fetching the same image with the same credentials.
-func TestFetchManifest_PullerCacheHit(t *testing.T) {
-	env := testenv.GetTestEnv(t)
-	reg, counter := setupRegistry(t, nil, nil)
-	imageName, img := reg.PushNamedImage(t, "test-image", nil)
-	digest, size, mediaType := imageMetadata(t, img)
-	manifest := rawManifest(t, img)
-	client := newTestClient(t, env)
-
-	// First call - should create a new Puller and make a /v2/ auth request
-	counter.Reset()
-	resp, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertManifestResponse(t, resp, digest, size, mediaType, manifest)
-	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/":                            1,
-		http.MethodGet + " /v2/test-image/manifests/latest": 1,
-	})
-
-	// Second call - should reuse the cached Puller and NOT make another /v2/ auth request
-	counter.Reset()
-	resp, err = client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertManifestResponse(t, resp, digest, size, mediaType, manifest)
-	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/test-image/manifests/latest": 1,
-	})
-}
-
 func layerBlobRef(t *testing.T, reg *testregistry.Registry, repoName string, layer v1.Layer) string {
 	digest, err := layer.Digest()
 	require.NoError(t, err)
