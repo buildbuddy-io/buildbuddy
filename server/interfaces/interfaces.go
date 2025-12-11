@@ -1383,6 +1383,11 @@ type QuotaManager interface {
 	// If the rate limit has not been exceeded, the underlying storage is updated
 	// by the supplied quantity.
 	Allow(ctx context.Context, namespace string, quantity int64) error
+
+	// Reloads the quota buckets, but does not reset their state. This would
+	// remove a bucket that longer applies to a group. It will send a notification
+	// so that other servers also reload.
+	ReloadBucketsAndNotify(ctx context.Context) error
 }
 
 // A Metadater implements the Metadata() method and returns a StorageMetadata
