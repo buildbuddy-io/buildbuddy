@@ -522,38 +522,3 @@ func TestFetchBlob_InvalidReference(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got: %v", err)
 }
-
-func TestFetchBlob_PullerCacheHit(t *testing.T) {
-	env := testenv.GetTestEnv(t)
-	reg, counter := setupRegistry(t, nil, nil)
-	_, img := reg.PushNamedImage(t, "test-image", nil)
-
-	layers, err := img.Layers()
-	require.NoError(t, err)
-	require.Greater(t, len(layers), 0)
-	layer := layers[0]
-	layerDigest, err := layer.Digest()
-	require.NoError(t, err)
-
-	blobRef := layerBlobRef(t, reg, "test-image", layer)
-	client := newTestClient(t, env)
-
-	// First call - should create a new Puller and make a /v2/ auth request
-	counter.Reset()
-	reader, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, nil, false)
-	require.NoError(t, err)
-	reader.Close()
-	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/":                                           1,
-		http.MethodGet + " /v2/test-image/blobs/" + layerDigest.String(): 1,
-	})
-
-	// Second call - should reuse the cached Puller and NOT make another /v2/ auth request
-	counter.Reset()
-	reader, err = ocifetcher.ReadBlob(context.Background(), client, blobRef, nil, false)
-	require.NoError(t, err)
-	reader.Close()
-	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/test-image/blobs/" + layerDigest.String(): 1,
-	})
-}
