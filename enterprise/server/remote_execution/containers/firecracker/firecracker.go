@@ -2866,24 +2866,29 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 
 	// Drop the page cache to free up more memory for the balloon.
 	// The balloon will only allocate free memory.
-	conn, err := c.vmExecConn(ctx)
-	if err != nil {
-		return status.InternalErrorf("failed to dial VM exec port: %s", err)
-	}
+	// conn, err := c.vmExecConn(ctx)
+	// if err != nil {
+	// 	return status.InternalErrorf("failed to dial VM exec port: %s", err)
+	// }
 	// TODO(Maggie): Don't depend on sh existing within the container image
-	client := vmxpb.NewExecClient(conn)
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", "echo 3 > /proc/sys/vm/drop_caches"},
-	}
-	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{})
-	if res.Error != nil {
-		return res.Error
-	}
+	// client := vmxpb.NewExecClient(conn)
+	// cmd := &repb.Command{
+	// 	Arguments: []string{"sh", "-c", "echo 3 > /proc/sys/vm/drop_caches"},
+	// }
+	// res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{})
+	// if res.Error != nil {
+	// 	return res.Error
+	// }
 
 	stats, err := c.machine.GetBalloonStats(ctx)
 	if err != nil {
 		return err
 	}
+	b, err := json.Marshal(stats)
+	if err != nil {
+		return err
+	}
+	log.CtxInfof(ctx, "Balloon stats: %s", string(b))
 	availableMemMB := stats.AvailableMemory / 1e6
 	balloonSizeMB := int64(float64(availableMemMB) * .9)
 	if err := c.updateBalloon(ctx, balloonSizeMB); err != nil {

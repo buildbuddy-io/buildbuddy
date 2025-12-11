@@ -180,6 +180,7 @@ use_repo(
     "com_github_coreos_go_oidc_v3",
     "com_github_creack_pty",
     "com_github_crewjam_saml",
+    "com_github_davecgh_go_spew",
     "com_github_dgryski_go_rendezvous",
     "com_github_distribution_reference",
     "com_github_docker_docker",

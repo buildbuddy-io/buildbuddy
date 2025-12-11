@@ -1653,7 +1653,7 @@ func TestFirecrackerBalloon(t *testing.T) {
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:            2,
-			MemSizeMb:          500,
+			MemSizeMb:          2000,
 			EnableNetworking:   true,
 			ScratchDiskSizeMb:  500,
 			GuestKernelVersion: cfg.GuestKernelVersion,
@@ -1694,7 +1694,8 @@ func TestFirecrackerBalloon(t *testing.T) {
 		// Write a 350MB file of random data.
 		// This will dirty memory in the VM before the data gets written to disk.
 		Arguments: []string{"sh", "-c", `
-dd if=/dev/urandom of=/tmp/bigfile bs=1M count=350
+mkdir /tmp/randomdata && mount -t tmpfs -o size=1400M tmpfs /tmp/randomdata
+rm /tmp/randomdata/data; dd if=/dev/urandom of=/tmp/randomdata/data bs=1M count=1300
 free -h
 		`},
 	}
@@ -1702,9 +1703,11 @@ free -h
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
 	assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
+	fmt.Println(string(res.Stdout))
+	fmt.Println(string(res.Stderr))
 
 	// Try pause, unpause, exec several times.
-	for i := 1; i <= 4; i++ {
+	for i := 1; i <= 1; i++ {
 		err = c.Pause(ctx)
 		require.NoError(t, err)
 

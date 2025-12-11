@@ -73,6 +73,7 @@ go_library(
         "//server/util/tracing",
         "//server/util/uuid",
         "@com_github_armon_circbuf//:circbuf",
+        "@com_github_davecgh_go_spew//spew",
         "@com_github_firecracker_microvm_firecracker_go_sdk//:firecracker-go-sdk",
         "@com_github_firecracker_microvm_firecracker_go_sdk//client/models",
         "@com_github_firecracker_microvm_firecracker_go_sdk//client/operations",
