@@ -30,13 +30,7 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-var (
-	// Benchmarks show 128KB, 256KB, and 512KB all perform about the same. This
-	// should be slightly smaller than 2^N, to allow for proto and gRPC
-	// overhead.
-	ReadBufSizeBytes = flag.Int("cache.read_buf_size_bytes", 256*1000, "The buffer size used for reading from the cache")
-	compressBufSize  = int(4e6) // 4MB
-)
+var compressBufSize = int(4e6) // 4MB
 
 var (
 	bazel5_1_0              = bazel_request.MustParseVersion("5.1.0")
@@ -71,7 +65,7 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	return &ByteStreamServer{
 		env:        env,
 		cache:      cache,
-		bufferPool: bytebufferpool.VariableSize(max(*ReadBufSizeBytes, compressBufSize)),
+		bufferPool: bytebufferpool.VariableSize(max(*remote_cache_config.ReadBufSizeBytes, compressBufSize)),
 		warner:     bazel_deprecation.NewWarner(env),
 	}, nil
 }
@@ -153,7 +147,7 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	}
 	defer reader.Close()
 
-	bufSize := int64(digest.SafeBufferSize(r.ToProto(), *ReadBufSizeBytes))
+	bufSize := int64(digest.SafeBufferSize(r.ToProto(), *remote_cache_config.ReadBufSizeBytes))
 
 	// If the cache doesn't support the requested compression, it will cache decompressed bytes and the server
 	// is in charge of compressing it

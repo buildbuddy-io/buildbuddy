@@ -11,7 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
@@ -61,7 +61,7 @@ func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
 		env:        env,
 		cache:      c,
 		log:        log.NamedSubLogger(fmt.Sprintf("Proxy(%s)", listenAddr)),
-		bufPool:    bytebufferpool.VariableSize(max(*byte_stream_server.ReadBufSizeBytes, writeBufSizeBytes)),
+		bufPool:    bytebufferpool.VariableSize(max(*config.ReadBufSizeBytes, writeBufSizeBytes)),
 		listenAddr: listenAddr,
 		mu:         &sync.Mutex{},
 		// server goes here
@@ -310,7 +310,7 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 	}
 	defer reader.Close()
 
-	bufSize := int64(digest.SafeBufferSize(rn, *byte_stream_server.ReadBufSizeBytes))
+	bufSize := int64(digest.SafeBufferSize(rn, *config.ReadBufSizeBytes))
 	copyBuf := c.bufPool.Get(bufSize)
 	defer c.bufPool.Put(copyBuf)
 

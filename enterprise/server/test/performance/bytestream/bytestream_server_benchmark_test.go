@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -383,7 +384,7 @@ func BenchmarkRead(b *testing.B) {
 							}
 						}
 						for _, bufSize := range bufSizes[firstBufSizeIndex : lastBufSizeIndex+1] {
-							*byte_stream_server.ReadBufSizeBytes = bufSize
+							*config.ReadBufSizeBytes = bufSize
 							b.Run(fmt.Sprintf("object_size=%v/buf_size=%v", objectSize, bufSize), func(b *testing.B) {
 								benchmarkRead(b, ctx, parallel, objectSize, compressor, cache, client)
 							})

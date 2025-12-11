@@ -18,6 +18,7 @@ go_test(
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/byte_stream_server",
+        "//server/remote_cache/config",
         "//server/remote_cache/digest",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
