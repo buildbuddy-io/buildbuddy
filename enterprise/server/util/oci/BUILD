@@ -8,14 +8,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci",
     deps = [
         "//enterprise/server/oci/ocifetcher",
-        "//enterprise/server/util/ocicache",
         "//enterprise/server/util/ocimanifest",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
-        "//proto:remote_execution_go_proto",
         "//server/environment",
-        "//server/util/authutil",
-        "//server/util/claims",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/lru",
@@ -29,7 +25,6 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1/partial",
         "@com_github_google_go_containerregistry//pkg/v1/types",
         "@com_github_jonboulle_clockwork//:clockwork",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
 
