@@ -363,7 +363,8 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		// If the cache supports compression but the request isn't compressed,
 		// wrap the cache writer in a compressor. This is faster than sending
 		// uncompressed data to the cache and letting it compress it.
-		compressor, err := compression.NewZstdCompressingWriter(committedWriteCloser, s.bufferPool, r.GetDigest().GetSizeBytes())
+		bufSize := int64(digest.SafeBufferSize(r.ToProto(), compressBufSize))
+		compressor, err := compression.NewZstdCompressingWriter(committedWriteCloser, s.bufferPool, bufSize)
 		if err != nil {
 			return nil, err
 		}
