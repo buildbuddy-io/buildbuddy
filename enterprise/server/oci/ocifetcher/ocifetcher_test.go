@@ -518,7 +518,7 @@ func TestFetchBlob_InvalidReference(t *testing.T) {
 	client := newTestClient(t, env)
 	// Tag reference instead of digest reference should fail
 	tagRef := reg.Address() + "/test-image:latest"
-	_, err := ocifetcher.ReadBlob(context.Background(), client, tagRef, nil, false)
+	_, err := client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: tagRef})
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got: %v", err)
 }
