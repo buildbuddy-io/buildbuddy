@@ -184,8 +184,29 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	collectionsKey := "usage/collections/" + timeStr(period1Start)
 	countsKey1 := "usage/counts/" + timeStr(period1Start) + "/" + encodedCollection1
 	countsKey2 := "usage/counts/" + timeStr(period1Start) + "/" + encodedCollection2
+	expectedKeys := []string{countsKey1, countsKey2, collectionsKey}
+	if *clickhouseEnabled {
+		chCollectionsKey := "usage/v2/collections/" + timeStr(period1Start)
+		chEncodedCollection1 := "group_id=GR1&label=client=bazel&label=origin=internal"
+		chEncodedCollection2 := "group_id=GR2&label=client=bazel&label=origin=internal"
+		chCountsKey1 := "usage/v2/counts/" + timeStr(period1Start) + "/" + chEncodedCollection1
+		chCountsKey2 := "usage/v2/counts/" + timeStr(period1Start) + "/" + chEncodedCollection2
+		expectedKeys = append(expectedKeys, chCollectionsKey, chCountsKey1, chCountsKey2)
+
+		chCounts1, err := rdb.HGetAll(ctx, chCountsKey1).Result()
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{
+			"remote_cache.content_addressable_storage.hits": "1",
+		}, chCounts1, "counts should match what we observed")
+
+		chCounts2, err := rdb.HGetAll(ctx, chCountsKey2).Result()
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{
+			"remote_cache.content_addressable_storage.hits": "10",
+		}, chCounts2, "counts should match what we observed")
+	}
 	require.ElementsMatch(
-		t, []string{countsKey1, countsKey2, collectionsKey}, keys,
+		t, expectedKeys, keys,
 		"redis keys should match expected format")
 
 	counts1, err := rdb.HGetAll(ctx, countsKey1).Result()
