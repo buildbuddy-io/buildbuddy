@@ -132,7 +132,7 @@ func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity in
 
 type namespace struct {
 	name         string
-	bucketsByKey map[string]Bucket
+	bucketsByKey sync.Map // map[string]Bucket
 }
 
 type bucketConfig struct {
@@ -230,9 +230,9 @@ func (qm *QuotaManager) createNamespaceWithBucket(env environment.Env, name stri
 	}
 
 	ns := &namespace{
-		name:         name,
-		bucketsByKey: map[string]Bucket{key: bucket},
+		name: name,
 	}
+	ns.bucketsByKey.Store(key, bucket)
 	return ns, nil
 }
 
@@ -253,7 +253,7 @@ func (qm *QuotaManager) loadQuotasFromFlagd(ctx context.Context, key, nsString s
 
 	if nsInterface, ok := qm.namespaces.Load(nsString); ok {
 		ns := nsInterface.(*namespace)
-		if _, ok := ns.bucketsByKey[key]; ok {
+		if _, exists := ns.bucketsByKey.Load(key); exists {
 			return nil
 		}
 	}
@@ -302,9 +302,10 @@ func (qm *QuotaManager) mergeIntoNamespace(ns *namespace) {
 	}
 
 	existing := existingInterface.(*namespace)
-	for k, v := range ns.bucketsByKey {
-		existing.bucketsByKey[k] = v
-	}
+	ns.bucketsByKey.Range(func(k, v interface{}) bool {
+		existing.bucketsByKey.Store(k, v)
+		return true
+	})
 }
 
 func (qm *QuotaManager) findBucket(nsName string, key string) Bucket {
@@ -314,8 +315,8 @@ func (qm *QuotaManager) findBucket(nsName string, key string) Bucket {
 	}
 
 	ns := nsInterface.(*namespace)
-	if b, ok := ns.bucketsByKey[key]; ok {
-		return b
+	if b, ok := ns.bucketsByKey.Load(key); ok {
+		return b.(Bucket)
 	}
 
 	return nil
