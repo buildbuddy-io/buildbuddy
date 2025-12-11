@@ -4,7 +4,12 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
     name = "bytestream_test",
+    timeout = "long",
     srcs = ["bytestream_server_benchmark_test.go"],
+    args = [
+        "-test.bench=.",
+    ],
+    tags = ["performance"],
     deps = [
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/pebble_cache",

@@ -13,6 +13,7 @@ go_library(
         "//proto:resource_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/digest",
         "//server/resources",
         "//server/util/bytebufferpool",

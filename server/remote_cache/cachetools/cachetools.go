@@ -42,14 +42,13 @@ const (
 	// uploadBufSizeBytes controls the size of the buffers used for uploading
 	// to bytestream.Write. This means it also controls the payload size for
 	// each WriteRequest. https://github.com/grpc/grpc.github.io/issues/371
-	// that 16KiB-64KiB payloads work best, but our experiments and benchmarks
-	// show that 128KiB works best. Values bigger and slower than that are both
-	// slower. Values bigger than that allocate more bytes, and values smaller
-	// than that allocate the same number of bytes but with more allocations.
-	uploadBufSizeBytes = 128 * 1024
+	// claims that 16KiB-64KiB payloads work best, but our experiments and
+	// benchmarks show that 256KB works best. This should be slightly smaller
+	// than 2^N, to allow for proto and gRPC overhead.
+	uploadBufSizeBytes = 256 * 1000 // 256 KB
 	// Matches https://github.com/bazelbuild/bazel/blob/9c22032c8dc0eb2ec20d8b5a5c73d1f5f075ae37/src/main/java/com/google/devtools/build/lib/remote/options/RemoteOptions.java#L461-L464
 	minSizeBytesToCompress = 100
-	// batchUploadLimitBytes controls how big an object or batch can be in a
+	// BatchUploadLimitBytes controls how big an object or batch can be in a
 	// BatchUploadBlobs RPC. In experiments, 2MiB blobs are 5-10% faster to
 	// upload using the bytestream.Write api.
 	BatchUploadLimitBytes = min(2*1024*1024, rpcutil.GRPCMaxSizeBytes)
