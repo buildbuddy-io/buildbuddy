@@ -18,6 +18,7 @@ import (
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
@@ -77,6 +78,7 @@ type fakeAPIKeyGroup struct {
 	useGroupOwnedExecutors bool
 	cacheEncryptionEnabled bool
 	enforceIPRules         bool
+	groupStatus            grpb.Group_GroupStatus
 }
 
 func (f *fakeAPIKeyGroup) GetCapabilities() int32 {
@@ -109,6 +111,10 @@ func (f *fakeAPIKeyGroup) GetCacheEncryptionEnabled() bool {
 
 func (f *fakeAPIKeyGroup) GetEnforceIPRules() bool {
 	return f.enforceIPRules
+}
+
+func (f *fakeAPIKeyGroup) GetGroupStatus() grpb.Group_GroupStatus {
+	return f.groupStatus
 }
 
 func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {

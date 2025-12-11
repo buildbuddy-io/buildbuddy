@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
@@ -68,6 +69,7 @@ type Claims struct {
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
 	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
 	EnforceIPRules         bool                          `json:"enforce_ip_rules,omitempty"`
+	GroupStatus            grpb.Group_GroupStatus        `json:"group_status,omitempty"`
 	// TODO(vadim): remove this field
 	SAML        bool `json:"saml,omitempty"`
 	CustomerSSO bool `json:"customer_sso,omitempty"`
@@ -129,6 +131,10 @@ func (c *Claims) GetCacheEncryptionEnabled() bool {
 
 func (c *Claims) GetEnforceIPRules() bool {
 	return c.EnforceIPRules
+}
+
+func (c *Claims) GetGroupStatus() grpb.Group_GroupStatus {
+	return grpb.Group_GroupStatus(c.GroupStatus)
 }
 
 func (c *Claims) IsSAML() bool {
@@ -213,6 +219,7 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 		UseGroupOwnedExecutors:     akg.GetUseGroupOwnedExecutors(),
 		CacheEncryptionEnabled:     akg.GetCacheEncryptionEnabled(),
 		EnforceIPRules:             akg.GetEnforceIPRules(),
+		GroupStatus:                akg.GetGroupStatus(),
 	}, nil
 }
 

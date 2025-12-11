@@ -135,6 +135,7 @@ type UserInfo interface {
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
+	GetGroupStatus() grpb.Group_GroupStatus
 	// IsCustomerSSO indicates whether the user logged in via a customer SSO integration (SAML/OIDC).
 	IsCustomerSSO() bool
 }
@@ -456,6 +457,7 @@ type APIKeyGroup interface {
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
+	GetGroupStatus() grpb.Group_GroupStatus
 }
 
 type AuthDB interface {

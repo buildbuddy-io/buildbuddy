@@ -10,10 +10,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
 
 type testBucket struct {
@@ -309,4 +312,149 @@ func TestBucketRowFromMap(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCheckGroupBlocked(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	qm, err := newQuotaManager(env, createTestBucket)
+	require.NoError(t, err)
+
+	t.Run("blocked group with flag enabled", func(t *testing.T) {
+		flags := map[string]memprovider.InMemoryFlag{
+			disallowBlockedGroupsFlagKey: {
+				State:          memprovider.Enabled,
+				DefaultVariant: "on",
+				Variants: map[string]any{
+					"on": true,
+				},
+			},
+		}
+		provider := memprovider.NewInMemoryProvider(flags)
+		require.NoError(t, openfeature.SetProviderAndWait(provider))
+
+		fp, err := experiments.NewFlagProvider("test")
+		require.NoError(t, err)
+		env.SetExperimentFlagProvider(fp)
+
+		blockedClaims := &claims.Claims{
+			APIKeyID:    "AK001",
+			UserID:      "US001",
+			GroupID:     "GR001",
+			GroupStatus: grpb.Group_BLOCKED_GROUP_STATUS,
+		}
+		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, blockedClaims)
+
+		err = qm.checkGroupBlocked(authedCtx)
+		assert.Error(t, err)
+		assert.Equal(t, errBlocked, err)
+	})
+
+	t.Run("enterprise group with flag enabled", func(t *testing.T) {
+		flags := map[string]memprovider.InMemoryFlag{
+			disallowBlockedGroupsFlagKey: {
+				State:          memprovider.Enabled,
+				DefaultVariant: "on",
+				Variants: map[string]any{
+					"on": true,
+				},
+			},
+		}
+		provider := memprovider.NewInMemoryProvider(flags)
+		require.NoError(t, openfeature.SetProviderAndWait(provider))
+
+		fp, err := experiments.NewFlagProvider("test")
+		require.NoError(t, err)
+		env.SetExperimentFlagProvider(fp)
+
+		enterpriseClaims := &claims.Claims{
+			APIKeyID:    "AK001",
+			UserID:      "US001",
+			GroupID:     "GR001",
+			GroupStatus: grpb.Group_ENTERPRISE_GROUP_STATUS,
+		}
+		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, enterpriseClaims)
+		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
+	})
+
+	t.Run("blocked group with flag disabled", func(t *testing.T) {
+		flags := map[string]memprovider.InMemoryFlag{
+			disallowBlockedGroupsFlagKey: {
+				State:          memprovider.Enabled,
+				DefaultVariant: "off",
+				Variants: map[string]any{
+					"off": false,
+				},
+			},
+		}
+		provider := memprovider.NewInMemoryProvider(flags)
+		require.NoError(t, openfeature.SetProviderAndWait(provider))
+
+		fp, err := experiments.NewFlagProvider("test")
+		require.NoError(t, err)
+		env.SetExperimentFlagProvider(fp)
+
+		blockedClaims := &claims.Claims{
+			APIKeyID:    "AK001",
+			UserID:      "US001",
+			GroupID:     "GR001",
+			GroupStatus: grpb.Group_BLOCKED_GROUP_STATUS,
+		}
+		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, blockedClaims)
+		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
+	})
+
+	t.Run("request without API key", func(t *testing.T) {
+		flags := map[string]memprovider.InMemoryFlag{
+			disallowBlockedGroupsFlagKey: {
+				State:          memprovider.Enabled,
+				DefaultVariant: "on",
+				Variants: map[string]any{
+					"on": true,
+				},
+			},
+		}
+		provider := memprovider.NewInMemoryProvider(flags)
+		require.NoError(t, openfeature.SetProviderAndWait(provider))
+
+		fp, err := experiments.NewFlagProvider("test")
+		require.NoError(t, err)
+		env.SetExperimentFlagProvider(fp)
+
+		webClaims := &claims.Claims{
+			UserID:      "US001",
+			GroupID:     "GR001",
+			GroupStatus: grpb.Group_BLOCKED_GROUP_STATUS,
+		}
+		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, webClaims)
+		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
+	})
+
+	t.Run("impersonating request", func(t *testing.T) {
+		flags := map[string]memprovider.InMemoryFlag{
+			disallowBlockedGroupsFlagKey: {
+				State:          memprovider.Enabled,
+				DefaultVariant: "on",
+				Variants: map[string]any{
+					"on": true,
+				},
+			},
+		}
+		provider := memprovider.NewInMemoryProvider(flags)
+		require.NoError(t, openfeature.SetProviderAndWait(provider))
+
+		fp, err := experiments.NewFlagProvider("test")
+		require.NoError(t, err)
+		env.SetExperimentFlagProvider(fp)
+
+		impersonatingClaims := &claims.Claims{
+			APIKeyID:      "AK001",
+			UserID:        "US001",
+			GroupID:       "GR001",
+			GroupStatus:   grpb.Group_BLOCKED_GROUP_STATUS,
+			Impersonating: true,
+		}
+		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, impersonatingClaims)
+		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
+	})
 }
