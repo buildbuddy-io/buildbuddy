@@ -18,18 +18,19 @@ var (
 	invocationTTLSeconds = flag.Int("storage.ttl_seconds", 0, "The time, in seconds, to keep invocations before deletion. 0 disables invocation deletion.")
 
 	invocationCleanupBatchSize = flag.Int("storage.cleanup_batch_size", 10, "How many invocations to delete in each janitor cleanup task")
-	invocationCleanupInterval  = flag.Duration("cleanup_interval", 10*60*time.Second, "How often the janitor cleanup tasks will run")
-	invocationCleanupWorkers   = flag.Int("cleanup_workers", 1, "How many cleanup tasks to run")
+	invocationCleanupInterval  = flag.Duration("cleanup_interval", 10*60*time.Second, "How often the invocation janitor cleanup tasks will run")
+	invocationCleanupWorkers   = flag.Int("cleanup_workers", 1, "How many invocation cleanup tasks to run")
 
 	// Flags for Execution Janitor.
-	executionTTL = flag.Duration("storage.execution.ttl", 0, "The time, in seconds, to keep invocations before deletion. 0 disables invocation deletion.")
+	executionTTL = flag.Duration("storage.execution.ttl", 0, "The time, in seconds, to keep executions before deletion. 0 disables execution deletion.")
 
 	executionCleanupBatchSize = flag.Int("storage.execution.cleanup_batch_size", 200, "How many executions to delete in each janitor cleanup task")
-	executionCleanupInterval  = flag.Duration("storage.execution.cleanup_interval", 5*time.Minute, "How often the janitor cleanup tasks will run")
-	executionCleanupWorkers   = flag.Int("storage.execution.cleanup_workers", 1, "How many cleanup tasks to run")
+	executionCleanupInterval  = flag.Duration("storage.execution.cleanup_interval", 5*time.Minute, "How often the execution janitor cleanup tasks will run")
+	executionCleanupWorkers   = flag.Int("storage.execution.cleanup_workers", 1, "How many execution cleanup tasks to run")
 )
 
-type JanitorConfig struct {
+type WorkerConfig struct {
+	index     int
 	env       environment.Env
 	ttl       time.Duration
 	batchSize int
@@ -43,12 +44,12 @@ type Janitor struct {
 	interval   time.Duration
 	numWorkers int
 
-	config *JanitorConfig
+	config *WorkerConfig
 
-	deleteFn func(c *JanitorConfig)
+	deleteFn func(c *WorkerConfig)
 }
 
-func deleteInvocation(c *JanitorConfig, invocation *tables.Invocation) {
+func deleteInvocation(c *WorkerConfig, invocation *tables.Invocation) {
 	ctx := c.env.GetServerContext()
 	if err := c.env.GetBlobstore().DeleteBlob(ctx, invocation.BlobID); err != nil {
 		log.Warningf("Error deleting blob (%s): %s", invocation.BlobID, err)
@@ -60,10 +61,11 @@ func deleteInvocation(c *JanitorConfig, invocation *tables.Invocation) {
 	}
 }
 
-func deleteExpiredInvocations(c *JanitorConfig) {
+func deleteExpiredInvocations(c *WorkerConfig) {
 	ctx := c.env.GetServerContext()
 	cutoff := time.Now().Add(-1 * c.ttl)
-	expired, err := c.env.GetInvocationDB().LookupExpiredInvocations(ctx, cutoff, c.batchSize)
+	// Use the worker-specific offset to avoid overlapping batches across workers.
+	expired, err := c.env.GetInvocationDB().LookupExpiredInvocations(ctx, cutoff, c.batchSize, c.index*c.batchSize)
 	if err != nil {
 		log.Warningf("Error finding expired deletions: %s", err)
 		return
@@ -75,7 +77,7 @@ func deleteExpiredInvocations(c *JanitorConfig) {
 }
 
 func NewInvocationJanitor(env environment.Env) *Janitor {
-	c := &JanitorConfig{
+	c := &WorkerConfig{
 		env:       env,
 		ttl:       time.Duration(*invocationTTLSeconds) * time.Second,
 		batchSize: *invocationCleanupBatchSize,
@@ -89,12 +91,18 @@ func NewInvocationJanitor(env environment.Env) *Janitor {
 	}
 }
 
-func lookupExpiredExecutionIDs(ctx context.Context, c *JanitorConfig) ([]interface{}, error) {
+func lookupExpiredExecutionIDs(ctx context.Context, c *WorkerConfig) ([]interface{}, error) {
 	dbh := c.env.GetDBHandle()
 	cutoff := time.Now().Add(-1 * c.ttl)
 
-	stmt := `SELECT execution_id FROM "Executions" WHERE created_at_usec < ? LIMIT ?`
-	rq := dbh.NewQuery(ctx, "janitor_lookup_expired_executions").Raw(stmt, cutoff.UnixMicro(), c.batchSize)
+	// Order by created time to provide a stable ordering across workers
+	// and use an offset so workers do not overlap.
+	stmt := `SELECT execution_id
+	FROM "Executions"
+	WHERE created_at_usec < ?
+	ORDER BY created_at_usec
+	LIMIT ? OFFSET ?`
+	rq := dbh.NewQuery(ctx, "janitor_lookup_expired_executions").Raw(stmt, cutoff.UnixMicro(), c.batchSize, c.index*c.batchSize)
 	executionIDs := make([]interface{}, 0, c.batchSize)
 	err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		var executionID *string
@@ -107,7 +115,7 @@ func lookupExpiredExecutionIDs(ctx context.Context, c *JanitorConfig) ([]interfa
 	return executionIDs, err
 }
 
-func deleteExpiredExecutions(c *JanitorConfig) {
+func deleteExpiredExecutions(c *WorkerConfig) {
 	ctx := c.env.GetServerContext()
 	dbh := c.env.GetDBHandle()
 
@@ -132,11 +140,10 @@ func deleteExpiredExecutions(c *JanitorConfig) {
 	if err != nil {
 		log.Warningf("Error deleting expired executions: %s", err)
 	}
-
 }
 
 func NewExecutionJanitor(env environment.Env) *Janitor {
-	c := &JanitorConfig{
+	c := &WorkerConfig{
 		env:       env,
 		ttl:       *executionTTL,
 		batchSize: *executionCleanupBatchSize,
@@ -160,17 +167,20 @@ func (j *Janitor) Start() {
 	}
 
 	for i := 0; i < j.numWorkers; i++ {
-		go func() {
+		cfg := *j.config
+		cfg.index = i
+
+		go func(c WorkerConfig) {
 			for {
 				select {
 				case <-j.ticker.C:
-					j.deleteFn(j.config)
+					j.deleteFn(&c)
 				case <-j.quit:
-					log.Printf("Cleanup task %d exiting.", 0)
+					log.Printf("Cleanup task %d exiting.", c.index)
 					return
 				}
 			}
-		}()
+		}(cfg)
 	}
 }
 
