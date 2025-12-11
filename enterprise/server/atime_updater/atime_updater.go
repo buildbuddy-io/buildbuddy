@@ -34,7 +34,7 @@ func Register(env *real_environment.RealEnv) error {
 		return err
 	}
 	updater.Start(env.GetHealthChecker())
-	env.SetAtimeUpdater(updater)
+	env.AddAtimeUpdater(updater)
 	return nil
 }
 
