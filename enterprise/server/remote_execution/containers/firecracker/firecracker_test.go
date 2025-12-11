@@ -240,7 +240,6 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 		proxyEnv := testenv.GetTestEnv(t)
 		proxyEnv.SetActionCacheClient(acClient)
 		proxyEnv.SetByteStreamClient(bsClient)
-		proxyEnv.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 		runProxyServers(ctx, proxyEnv, t)
 
 		acProxy, err := action_cache_server_proxy.NewActionCacheServerProxy(proxyEnv)
