@@ -677,6 +677,18 @@
   margin-right: 4px;
 }
 
+.action-header .view-history-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: -16px;
+}
+
+.action-header .view-history-button .icon {
+  width: 16px;
+  height: 16px;
+}
+
 .action-section > div {
   flex-grow: 1;
 }
