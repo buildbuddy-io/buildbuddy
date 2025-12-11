@@ -433,7 +433,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 	if err != nil {
 		return nil, status.InternalErrorf("invalid digest from manifest: %s", err)
 	}
-	remoteDesc := gcr.Descriptor{
+	desc := gcr.Descriptor{
 		Digest:    manifestDigest,
 		Size:      manifestResp.GetSize(),
 		MediaType: types.MediaType(manifestResp.GetMediaType()),
@@ -457,7 +457,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 	return imageFromDescriptorAndManifest(
 		ctx,
 		digestOrTagRef.Context(),
-		remoteDesc,
+		desc,
 		manifestResp.GetManifest(),
 		platform,
 		acClient,
