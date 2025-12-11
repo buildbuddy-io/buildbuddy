@@ -555,9 +555,8 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		if manifest.Config.Data != nil {
 			return manifest.Config.Data, nil
 		}
-		layer := newLayerFromDigest(
+		layer := newLayerFromDescriptor(
 			i.repo,
-			manifest.Config.Digest,
 			i,
 			i.client,
 			i.creds,
@@ -653,9 +652,8 @@ func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
 	}
 	layers := make([]gcr.Layer, 0, len(m.Layers))
 	for _, layerDesc := range m.Layers {
-		layer := newLayerFromDigest(
+		layer := newLayerFromDescriptor(
 			i.repo,
-			layerDesc.Digest,
 			i,
 			i.client,
 			i.creds,
@@ -674,9 +672,8 @@ func (i *imageFromRawManifest) LayerByDigest(digest gcr.Hash) (gcr.Layer, error)
 	}
 	for _, layerDesc := range m.Layers {
 		if layerDesc.Digest == digest {
-			return newLayerFromDigest(
+			return newLayerFromDescriptor(
 				i.repo,
-				digest,
 				i,
 				i.client,
 				i.creds,
@@ -695,10 +692,10 @@ func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error)
 	return i.LayerByDigest(digest)
 }
 
-func newLayerFromDigest(repo gcrname.Repository, digest gcr.Hash, image *imageFromRawManifest, client ofpb.OCIFetcherClient, creds Credentials, desc gcr.Descriptor) *layerFromDigest {
-	return &layerFromDigest{
+func newLayerFromDescriptor(repo gcrname.Repository, image *imageFromRawManifest, client ofpb.OCIFetcherClient, creds Credentials, desc gcr.Descriptor) *layerFromDescriptor {
+	return &layerFromDescriptor{
 		repo:   repo,
-		digest: digest,
+		digest: desc.Digest,
 		image:  image,
 		client: client,
 		creds:  creds,
@@ -706,11 +703,11 @@ func newLayerFromDigest(repo gcrname.Repository, digest gcr.Hash, image *imageFr
 	}
 }
 
-var _ gcr.Layer = (*layerFromDigest)(nil)
+var _ gcr.Layer = (*layerFromDescriptor)(nil)
 
-// layerFromDigest implements the go-containerregistry Layer interface.
+// layerFromDescriptor implements the go-containerregistry Layer interface.
 // It allows us to read layers from and write layers to the cache.
-type layerFromDigest struct {
+type layerFromDescriptor struct {
 	repo   gcrname.Repository
 	digest gcr.Hash
 	image  *imageFromRawManifest
@@ -720,15 +717,15 @@ type layerFromDigest struct {
 	desc   gcr.Descriptor
 }
 
-func (l *layerFromDigest) Digest() (gcr.Hash, error) {
+func (l *layerFromDescriptor) Digest() (gcr.Hash, error) {
 	return l.digest, nil
 }
 
-func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
+func (l *layerFromDescriptor) DiffID() (gcr.Hash, error) {
 	return partial.BlobToDiffID(l.image, l.digest)
 }
 
-func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
+func (l *layerFromDescriptor) Compressed() (io.ReadCloser, error) {
 	if l.image.useCache {
 		rc, err := l.fetchLayerFromCache()
 		if err != nil && !status.IsNotFoundError(err) {
@@ -777,7 +774,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 
 // Uncompressed fetches the compressed bytes from the upstream server
 // and returns a ReadCloser that decompresses as it reads.
-func (l *layerFromDigest) Uncompressed() (io.ReadCloser, error) {
+func (l *layerFromDescriptor) Uncompressed() (io.ReadCloser, error) {
 	cl, err := partial.CompressedToLayer(l)
 	if err != nil {
 		return nil, err
@@ -785,15 +782,15 @@ func (l *layerFromDigest) Uncompressed() (io.ReadCloser, error) {
 	return cl.Uncompressed()
 }
 
-func (l *layerFromDigest) Size() (int64, error) {
+func (l *layerFromDescriptor) Size() (int64, error) {
 	return l.desc.Size, nil
 }
 
-func (l *layerFromDigest) MediaType() (types.MediaType, error) {
+func (l *layerFromDescriptor) MediaType() (types.MediaType, error) {
 	return types.DockerLayer, nil
 }
 
-func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
+func (l *layerFromDescriptor) fetchLayerFromCache() (io.ReadCloser, error) {
 	metadata, err := ocicache.FetchBlobMetadataFromCache(
 		l.image.ctx,
 		l.image.bsClient,
