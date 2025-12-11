@@ -22,6 +22,7 @@ import (
 	"github.com/throttled/throttled/v2/store/goredisstore.v8"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	snpb "github.com/buildbuddy-io/buildbuddy/proto/server_notification"
 )
 
 var (
@@ -320,11 +321,20 @@ func (qm *QuotaManager) findBucket(nsName string, key string) Bucket {
 	return nil
 }
 
-func (qm *QuotaManager) reloadNamespaces() error {
+func (qm *QuotaManager) reloadNamespaces() {
 	qm.namespaces.Range(func(key, value interface{}) bool {
 		qm.namespaces.Delete(key)
 		return true
 	})
+}
+
+func (qm *QuotaManager) ReloadBucketsAndNotify(ctx context.Context) error {
+	qm.reloadNamespaces()
+	if sns := qm.env.GetServerNotificationService(); sns != nil {
+		if err := sns.Publish(ctx, &snpb.ReloadQuotaBuckets{}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -335,9 +345,20 @@ func (qm *QuotaManager) listenForUpdates(ctx context.Context) {
 		go func() {
 			defer unsubscribe()
 			for range flagdChanges {
-				if err := qm.reloadNamespaces(); err != nil {
-					alert.UnexpectedEvent("quota-cannot-reload", "quota manager failed to reload configs after flagd change: %s", err)
+				qm.reloadNamespaces()
+			}
+		}()
+	}
+
+	if sns := qm.env.GetServerNotificationService(); sns != nil {
+		go func() {
+			for msg := range sns.Subscribe(&snpb.ReloadQuotaBuckets{}) {
+				_, ok := msg.(*snpb.ReloadQuotaBuckets)
+				if !ok {
+					alert.UnexpectedEvent("reset_group_quota_buckets_invalid_proto_type", "received proto type %T", msg)
+					continue
 				}
+				qm.reloadNamespaces()
 			}
 		}()
 	}

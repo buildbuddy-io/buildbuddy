@@ -7,8 +7,13 @@ message InvalidateIPRulesCache {
   string group_id = 1;
 }
 
+// Reloads the quota buckets, but does not reset their state. This would 
+// remove a bucket that longer applies to a group.
+message ReloadQuotaBuckets {}
+
 message Notification {
   // Only one of the fields should be set.
 
   InvalidateIPRulesCache invalidate_ip_rules_cache = 1;
+  ReloadQuotaBuckets reload_quota_buckets = 2;
 }

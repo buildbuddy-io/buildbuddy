@@ -663,6 +663,12 @@ func (s *BuildBuddyServer) SetGroupStatus(ctx context.Context, req *grpb.SetGrou
 		return nil, err
 	}
 
+	if gsm := s.env.GetQuotaManager(); gsm != nil {
+		if err := gsm.ReloadBucketsAndNotify(ctx); err != nil {
+			log.Warningf("Error reloading quota buckets: %s", err)
+		}
+	}
+
 	return &grpb.SetGroupStatusResponse{}, nil
 }
 

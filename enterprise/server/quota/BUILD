@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/quota",
     deps = [
         "//proto:group_go_proto",
+        "//proto:server_notification_go_proto",
         "//server/environment",
         "//server/metrics",
         "//server/real_environment",
