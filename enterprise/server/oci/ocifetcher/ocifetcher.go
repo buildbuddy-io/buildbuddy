@@ -426,8 +426,54 @@ func (c *ociFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 	}, nil
 }
 
+// FetchBlobMetadata returns blob metadata (size, media type), checking the cache first.
+// If cache misses, makes a HEAD request to the registry.
+// Note: This method never writes to cache - metadata is written by the read-through
+// cacher when the blob is fully fetched, so metadata presence reliably indicates
+// that the blob is in the CAS.
 func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
-	return nil, status.UnimplementedError("FetchBlobMetadata not implemented")
+	blobRef, err := gcrname.NewDigest(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid blob reference %q (must be a digest reference): %s", req.GetRef(), err)
+	}
+
+	digest, _ := gcr.NewHash(blobRef.DigestStr())
+
+	// Check cache first (never write - presence indicates blob is in CAS)
+	if c.shouldUseCache(ctx) {
+		metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, c.bsClient, c.acClient, blobRef.Context(), digest)
+		if err == nil && metadata != nil {
+			return &ofpb.FetchBlobMetadataResponse{
+				Size:      metadata.GetContentLength(),
+				MediaType: metadata.GetContentType(),
+			}, nil
+		}
+		if err != nil && !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Error fetching blob metadata from cache: %s", err)
+		}
+	}
+
+	// Cache miss - HEAD request to registry via layer.Size()
+	layer, err := withPullerRetry(c, ctx, blobRef, req.GetCredentials(), func(puller *remote.Puller) (gcr.Layer, error) {
+		return puller.Layer(ctx, blobRef)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	size, err := layer.Size()
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not get blob size: %s", err)
+	}
+	mediaType, err := layer.MediaType()
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not get blob media type: %s", err)
+	}
+
+	return &ofpb.FetchBlobMetadataResponse{
+		Size:      size,
+		MediaType: string(mediaType),
+	}, nil
 }
 
 // FetchBlob streams blob content, checking the cache first if caching is enabled.
@@ -452,6 +498,18 @@ func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobReq
 		}
 	}
 
+	// Get blob metadata for caching (makes HEAD request on cache miss)
+	var blobMetadata *ofpb.FetchBlobMetadataResponse
+	if useCache {
+		blobMetadata, err = c.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
+			Ref:         req.GetRef(),
+			Credentials: req.GetCredentials(),
+		})
+		if err != nil {
+			log.CtxWarningf(ctx, "Could not get blob metadata for caching: %s", err)
+		}
+	}
+
 	// Fetch from remote
 	layer, err := withPullerRetry(c, ctx, blobRef, req.GetCredentials(), func(puller *remote.Puller) (gcr.Layer, error) {
 		return puller.Layer(ctx, blobRef)
@@ -466,22 +524,12 @@ func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobReq
 	}
 
 	// Wrap with read-through cacher to write to cache as data is read
-	if useCache {
-		size, err := layer.Size()
+	if useCache && blobMetadata != nil {
+		cachedReader, err := ocicache.NewBlobReadThroughCacher(ctx, reader, c.bsClient, c.acClient, blobRef.Context(), digest, blobMetadata.GetMediaType(), blobMetadata.GetSize())
 		if err != nil {
-			log.CtxWarningf(ctx, "Could not get layer size for caching: %s", err)
+			log.CtxWarningf(ctx, "Could not set up blob cache writer: %s", err)
 		} else {
-			mediaType, err := layer.MediaType()
-			if err != nil {
-				log.CtxWarningf(ctx, "Could not get layer media type for caching: %s", err)
-			} else {
-				cachedReader, err := ocicache.NewBlobReadThroughCacher(ctx, reader, c.bsClient, c.acClient, blobRef.Context(), digest, string(mediaType), size)
-				if err != nil {
-					log.CtxWarningf(ctx, "Could not set up blob cache writer: %s", err)
-				} else {
-					reader = cachedReader
-				}
-			}
+			reader = cachedReader
 		}
 	}
 
