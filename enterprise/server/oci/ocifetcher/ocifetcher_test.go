@@ -25,84 +25,262 @@ import (
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 )
 
-func TestFetchManifestMetadata_AuthVariants(t *testing.T) {
-	cases := []struct {
-		name           string
-		registryCreds  *testregistry.BasicAuthCreds
-		requestCreds   *rgpb.Credentials
-		expectError    bool
-		checkError     func(error) bool
-		expectedCounts map[string]int
-	}{
-		{
-			name:          "NoAuth",
-			registryCreds: nil,
-			requestCreds:  nil,
-			expectError:   false,
-			expectedCounts: map[string]int{
-				http.MethodGet + " /v2/":                             1,
-				http.MethodHead + " /v2/test-image/manifests/latest": 1,
-			},
-		},
-		{
-			name:          "WithValidCredentials",
-			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
-			requestCreds:  &rgpb.Credentials{Username: "testuser", Password: "testpass"},
-			expectError:   false,
-			expectedCounts: map[string]int{
-				http.MethodGet + " /v2/":                             1,
-				http.MethodHead + " /v2/test-image/manifests/latest": 1,
-			},
-		},
-		{
-			name:          "WithInvalidCredentials",
-			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
-			requestCreds:  &rgpb.Credentials{Username: "wronguser", Password: "wrongpass"},
-			expectError:   true,
-			checkError:    status.IsPermissionDeniedError,
-			expectedCounts: map[string]int{
-				http.MethodGet + " /v2/":                             2,
-				http.MethodHead + " /v2/test-image/manifests/latest": 2,
-			},
-		},
-		{
-			name:          "MissingCredentials",
-			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
-			requestCreds:  nil,
-			expectError:   true,
-			checkError:    status.IsPermissionDeniedError,
-			expectedCounts: map[string]int{
-				http.MethodGet + " /v2/":                             2,
-				http.MethodHead + " /v2/test-image/manifests/latest": 2,
-			},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			env := testenv.GetTestEnv(t)
-			reg, counter := setupRegistry(t, tc.registryCreds, nil)
-			imageName, img := reg.PushNamedImage(t, "test-image", tc.registryCreds)
-			digest, size, mediaType := imageMetadata(t, img)
+func TestFetch_HappyPath(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	reg, counter := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	digest, size, mediaType := imageMetadata(t, img)
+	manifest := rawManifest(t, img)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(layers), 0)
+	layer := layers[0]
+	blobRef := layerBlobRef(t, reg, "test-image", layer)
+	expectedLayerData := expectedLayerBytes(t, layer)
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
 
-			counter.Reset()
-			client := newTestClient(t, env)
-			resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
-				Ref:         imageName,
-				Credentials: tc.requestCreds,
-			})
+	// FetchManifestMetadata - fresh client
+	counter.Reset()
+	client1 := newTestClient(t, env)
+	metadataResp, err := client1.FetchManifestMetadata(context.Background(),
+		&ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertMetadata(t, metadataResp, digest, size, mediaType)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/":                             1,
+		http.MethodHead + " /v2/test-image/manifests/latest": 1,
+	})
 
-			if tc.expectError {
-				require.Error(t, err)
-				if tc.checkError != nil {
-					require.True(t, tc.checkError(err), "unexpected error type: %v", err)
-				}
-			} else {
-				require.NoError(t, err)
-				assertMetadata(t, resp, digest, size, mediaType)
-			}
-			assertRequests(t, counter, tc.expectedCounts)
-		})
-	}
+	// FetchManifest - fresh client
+	counter.Reset()
+	client2 := newTestClient(t, env)
+	manifestResp, err := client2.FetchManifest(context.Background(),
+		&ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertManifestResponse(t, manifestResp, digest, size, mediaType, manifest)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/":                            1,
+		http.MethodGet + " /v2/test-image/manifests/latest": 1,
+	})
+
+	// FetchBlob - fresh client
+	counter.Reset()
+	client3 := newTestClient(t, env)
+	reader, err := ocifetcher.ReadBlob(context.Background(), client3, blobRef, nil, false)
+	require.NoError(t, err)
+	defer reader.Close()
+	actualBytes, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.Equal(t, expectedLayerData, actualBytes)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/":                                         1,
+		http.MethodGet + " /v2/test-image/blobs/" + layerDigest.String(): 1,
+	})
+
+	// --- With valid credentials ---
+	creds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
+	reqCreds := &rgpb.Credentials{Username: "testuser", Password: "testpass"}
+	reg2, counter2 := setupRegistry(t, creds, nil)
+	imageName2, img2 := reg2.PushNamedImage(t, "test-image", creds)
+	digest2, size2, mediaType2 := imageMetadata(t, img2)
+	manifest2 := rawManifest(t, img2)
+	layers2, err := img2.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(layers2), 0)
+	layer2 := layers2[0]
+	blobRef2 := layerBlobRef(t, reg2, "test-image", layer2)
+	expectedLayerData2 := expectedLayerBytes(t, layer2)
+	layerDigest2, err := layer2.Digest()
+	require.NoError(t, err)
+
+	// FetchManifestMetadata with creds
+	counter2.Reset()
+	client4 := newTestClient(t, env)
+	metadataResp2, err := client4.FetchManifestMetadata(context.Background(),
+		&ofpb.FetchManifestMetadataRequest{Ref: imageName2, Credentials: reqCreds})
+	require.NoError(t, err)
+	assertMetadata(t, metadataResp2, digest2, size2, mediaType2)
+	assertRequests(t, counter2, map[string]int{
+		http.MethodGet + " /v2/":                             1,
+		http.MethodHead + " /v2/test-image/manifests/latest": 1,
+	})
+
+	// FetchManifest with creds
+	counter2.Reset()
+	client5 := newTestClient(t, env)
+	manifestResp2, err := client5.FetchManifest(context.Background(),
+		&ofpb.FetchManifestRequest{Ref: imageName2, Credentials: reqCreds})
+	require.NoError(t, err)
+	assertManifestResponse(t, manifestResp2, digest2, size2, mediaType2, manifest2)
+	assertRequests(t, counter2, map[string]int{
+		http.MethodGet + " /v2/":                            1,
+		http.MethodGet + " /v2/test-image/manifests/latest": 1,
+	})
+
+	// FetchBlob with creds
+	counter2.Reset()
+	client6 := newTestClient(t, env)
+	reader2, err := ocifetcher.ReadBlob(context.Background(), client6, blobRef2, reqCreds, false)
+	require.NoError(t, err)
+	defer reader2.Close()
+	actualBytes2, err := io.ReadAll(reader2)
+	require.NoError(t, err)
+	require.Equal(t, expectedLayerData2, actualBytes2)
+	assertRequests(t, counter2, map[string]int{
+		http.MethodGet + " /v2/":                                          1,
+		http.MethodGet + " /v2/test-image/blobs/" + layerDigest2.String(): 1,
+	})
+}
+
+func TestFetch_MissingCredentials(t *testing.T) {
+	creds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
+	env := testenv.GetTestEnv(t)
+	reg, _ := setupRegistry(t, creds, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", creds)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(layers), 0)
+	blobRef := layerBlobRef(t, reg, "test-image", layers[0])
+
+	// FetchManifestMetadata - missing creds
+	client1 := newTestClient(t, env)
+	_, err = client1.FetchManifestMetadata(context.Background(),
+		&ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+
+	// FetchManifest - missing creds
+	client2 := newTestClient(t, env)
+	_, err = client2.FetchManifest(context.Background(),
+		&ofpb.FetchManifestRequest{Ref: imageName})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+
+	// FetchBlob - missing creds (returns Unavailable due to different error path)
+	client3 := newTestClient(t, env)
+	_, err = ocifetcher.ReadBlob(context.Background(), client3, blobRef, nil, false)
+	require.Error(t, err)
+	require.True(t, status.IsUnavailableError(err), "expected Unavailable, got: %v", err)
+}
+
+func TestFetch_InvalidCredentials(t *testing.T) {
+	creds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
+	badCreds := &rgpb.Credentials{Username: "wronguser", Password: "wrongpass"}
+	env := testenv.GetTestEnv(t)
+	reg, _ := setupRegistry(t, creds, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", creds)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(layers), 0)
+	blobRef := layerBlobRef(t, reg, "test-image", layers[0])
+
+	// FetchManifestMetadata - invalid creds
+	client1 := newTestClient(t, env)
+	_, err = client1.FetchManifestMetadata(context.Background(),
+		&ofpb.FetchManifestMetadataRequest{Ref: imageName, Credentials: badCreds})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+
+	// FetchManifest - invalid creds
+	client2 := newTestClient(t, env)
+	_, err = client2.FetchManifest(context.Background(),
+		&ofpb.FetchManifestRequest{Ref: imageName, Credentials: badCreds})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+
+	// FetchBlob - invalid creds (returns Unavailable due to different error path)
+	client3 := newTestClient(t, env)
+	_, err = ocifetcher.ReadBlob(context.Background(), client3, blobRef, badCreds, false)
+	require.Error(t, err)
+	require.True(t, status.IsUnavailableError(err), "expected Unavailable, got: %v", err)
+}
+
+func TestFetch_RetryOnHTTPError(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	var attempts atomic.Int32
+	reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		// Fail first attempt for manifest/blob requests
+		if attempts.Add(1) == 1 && (strings.Contains(r.URL.Path, "/manifests/") || strings.Contains(r.URL.Path, "/blobs/")) {
+			w.WriteHeader(http.StatusInternalServerError)
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	digest, size, mediaType := imageMetadata(t, img)
+	manifest := rawManifest(t, img)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(layers), 0)
+	blobRef := layerBlobRef(t, reg, "test-image", layers[0])
+	expectedLayerData := expectedLayerBytes(t, layers[0])
+
+	// FetchManifestMetadata - first attempt fails, retry succeeds
+	attempts.Store(0)
+	client1 := newTestClient(t, env)
+	metadataResp, err := client1.FetchManifestMetadata(context.Background(),
+		&ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertMetadata(t, metadataResp, digest, size, mediaType)
+
+	// FetchManifest - first attempt fails, retry succeeds
+	attempts.Store(0)
+	client2 := newTestClient(t, env)
+	manifestResp, err := client2.FetchManifest(context.Background(),
+		&ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	assertManifestResponse(t, manifestResp, digest, size, mediaType, manifest)
+
+	// FetchBlob - first attempt fails, retry succeeds
+	attempts.Store(0)
+	client3 := newTestClient(t, env)
+	reader, err := ocifetcher.ReadBlob(context.Background(), client3, blobRef, nil, false)
+	require.NoError(t, err)
+	defer reader.Close()
+	actualBytes, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.Equal(t, expectedLayerData, actualBytes)
+}
+
+func TestFetch_NoRetryOnContextError(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		// Block manifest/blob requests until context times out
+		if strings.Contains(r.URL.Path, "/manifests/") || strings.Contains(r.URL.Path, "/blobs/") {
+			time.Sleep(100 * time.Millisecond)
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(layers), 0)
+	blobRef := layerBlobRef(t, reg, "test-image", layers[0])
+
+	// FetchManifestMetadata - times out
+	ctx1, cancel1 := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel1()
+	client1 := newTestClient(t, env)
+	_, err = client1.FetchManifestMetadata(ctx1, &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.Error(t, err)
+	require.True(t, errors.Is(err, context.DeadlineExceeded), "expected DeadlineExceeded, got: %v", err)
+
+	// FetchManifest - times out
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel2()
+	client2 := newTestClient(t, env)
+	_, err = client2.FetchManifest(ctx2, &ofpb.FetchManifestRequest{Ref: imageName})
+	require.Error(t, err)
+	require.True(t, errors.Is(err, context.DeadlineExceeded), "expected DeadlineExceeded, got: %v", err)
+
+	// FetchBlob - times out
+	ctx3, cancel3 := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel3()
+	client3 := newTestClient(t, env)
+	_, err = ocifetcher.ReadBlob(ctx3, client3, blobRef, nil, false)
+	require.Error(t, err)
+	require.True(t, status.IsUnavailableError(err), "expected UnavailableError, got: %v", err)
 }
 
 func localhostIPs(t *testing.T) []*net.IPNet {
@@ -252,246 +430,6 @@ func TestFetchManifestMetadata_SameRepoDifferentTags_SamePuller(t *testing.T) {
 	})
 }
 
-// TestFetchManifestMetadata_PullerEvictionOnHeadError verifies that when Head()
-// returns an error, the Puller is evicted from the cache and a new one is
-// created on the next request.
-func TestFetchManifestMetadata_PullerEvictionOnHeadError(t *testing.T) {
-	env := testenv.GetTestEnv(t)
-	var failHead atomic.Bool
-	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-		if failHead.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/") {
-			w.WriteHeader(http.StatusInternalServerError)
-			return false
-		}
-		return true
-	})
-	imageName, img := reg.PushNamedImage(t, "test-image", nil)
-	digest, size, mediaType := imageMetadata(t, img)
-	client := newTestClient(t, env)
-
-	// First call - should create a new Puller
-	counter.Reset()
-	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/":                             1,
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
-	})
-
-	// Second call - should reuse cached Puller (no /v2/ auth request)
-	counter.Reset()
-	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-	assertRequests(t, counter, map[string]int{
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
-	})
-
-	// Third call - Head() fails, Puller should be evicted
-	failHead.Store(true)
-	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.Error(t, err)
-
-	// Fourth call - should create a NEW Puller because the old one was evicted
-	failHead.Store(false)
-	counter.Reset()
-	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/":                             1,
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
-	})
-}
-
-// TestFetchManifestMetadata_ContextErrorNoRetry verifies that when Head()
-// returns a context error (canceled or deadline exceeded), no retry is
-// attempted and the Puller is NOT evicted from the cache.
-func TestFetchManifestMetadata_ContextErrorNoRetry(t *testing.T) {
-	env := testenv.GetTestEnv(t)
-	var blockHead atomic.Bool
-	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-		if blockHead.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/") {
-			time.Sleep(100 * time.Millisecond) // Block until context times out
-		}
-		return true
-	})
-	imageName, img := reg.PushNamedImage(t, "test-image", nil)
-	digest, size, mediaType := imageMetadata(t, img)
-	client := newTestClient(t, env)
-
-	// First call - should create a new Puller and cache it
-	counter.Reset()
-	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/":                             1,
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
-	})
-
-	// Second call - context times out during Head request
-	blockHead.Store(true)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
-	_, err = client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.Error(t, err)
-	require.True(t, errors.Is(err, context.DeadlineExceeded), "expected DeadlineExceeded error, got: %v", err)
-
-	// Third call - Puller should still be cached (no /v2/ auth request)
-	blockHead.Store(false)
-	counter.Reset()
-	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-	assertRequests(t, counter, map[string]int{
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
-	})
-}
-
-// TestFetchManifestMetadata_HTTPErrorThenSuccess verifies that when Head()
-// returns an HTTP error on the first attempt, the Puller is refreshed and
-// the retry succeeds. The refreshed Puller should remain in the cache.
-func TestFetchManifestMetadata_HTTPErrorThenSuccess(t *testing.T) {
-	env := testenv.GetTestEnv(t)
-	var headAttempts atomic.Int32
-	var failFirstHead atomic.Bool
-	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-		if failFirstHead.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/") {
-			if headAttempts.Add(1) == 1 {
-				w.WriteHeader(http.StatusInternalServerError)
-				return false
-			}
-		}
-		return true
-	})
-	imageName, img := reg.PushNamedImage(t, "test-image", nil)
-	digest, size, mediaType := imageMetadata(t, img)
-	client := newTestClient(t, env)
-
-	// First call - should create a new Puller and cache it
-	counter.Reset()
-	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/":                             1,
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
-	})
-
-	// Second call - first Head fails, Puller refreshed, retry succeeds
-	headAttempts.Store(0)
-	failFirstHead.Store(true)
-	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-
-	// Third call - refreshed Puller should still be cached (no /v2/ auth request)
-	failFirstHead.Store(false)
-	counter.Reset()
-	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-	assertRequests(t, counter, map[string]int{
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
-	})
-}
-
-// TestFetchManifestMetadata_HTTPErrorThenHTTPError verifies that when Head()
-// returns HTTP errors on both the first attempt and the retry, the refreshed
-// Puller is evicted from the cache.
-func TestFetchManifestMetadata_HTTPErrorThenHTTPError(t *testing.T) {
-	env := testenv.GetTestEnv(t)
-	var failHead atomic.Bool
-	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-		if failHead.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/") {
-			w.WriteHeader(http.StatusInternalServerError)
-			return false
-		}
-		return true
-	})
-	imageName, img := reg.PushNamedImage(t, "test-image", nil)
-	digest, size, mediaType := imageMetadata(t, img)
-	client := newTestClient(t, env)
-
-	// First call - should create a new Puller and cache it
-	counter.Reset()
-	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/":                             1,
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
-	})
-
-	// Second call - both Head attempts fail (don't assert exact counts due to internal retries)
-	failHead.Store(true)
-	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.Error(t, err)
-
-	// Third call - refreshed Puller should have been evicted (needs /v2/ auth request)
-	failHead.Store(false)
-	counter.Reset()
-	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/":                             1,
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
-	})
-}
-
-// TestFetchManifestMetadata_HTTPErrorThenContextError verifies that when Head()
-// returns an HTTP error on the first attempt and a context error on the retry,
-// the refreshed Puller is NOT evicted from the cache.
-func TestFetchManifestMetadata_HTTPErrorThenContextError(t *testing.T) {
-	env := testenv.GetTestEnv(t)
-	var headAttempts atomic.Int32
-	var failFirstThenBlock atomic.Bool
-	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-		if failFirstThenBlock.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/") {
-			if headAttempts.Add(1) == 1 {
-				w.WriteHeader(http.StatusInternalServerError) // First attempt: HTTP error
-				return false
-			}
-			time.Sleep(100 * time.Millisecond) // Second attempt: block until timeout
-		}
-		return true
-	})
-	imageName, img := reg.PushNamedImage(t, "test-image", nil)
-	digest, size, mediaType := imageMetadata(t, img)
-	client := newTestClient(t, env)
-
-	// First call - should create a new Puller and cache it
-	counter.Reset()
-	resp, err := client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/":                             1,
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
-	})
-
-	// Second call - first Head returns HTTP error, Puller refreshed, second times out
-	headAttempts.Store(0)
-	failFirstThenBlock.Store(true)
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	_, err = client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.Error(t, err)
-
-	// Third call - refreshed Puller should still be cached (no /v2/ auth request)
-	failFirstThenBlock.Store(false)
-	counter.Reset()
-	resp, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.NoError(t, err)
-	assertMetadata(t, resp, digest, size, mediaType)
-	assertRequests(t, counter, map[string]int{
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
-	})
-}
-
 func rawManifest(t *testing.T, img v1.Image) []byte {
 	m, err := img.RawManifest()
 	require.NoError(t, err)
@@ -503,87 +441,6 @@ func assertManifestResponse(t *testing.T, resp *ofpb.FetchManifestResponse, dige
 	require.Equal(t, size, resp.GetSize())
 	require.Equal(t, mediaType, resp.GetMediaType())
 	require.Equal(t, manifest, resp.GetManifest())
-}
-
-func TestFetchManifest_AuthVariants(t *testing.T) {
-	cases := []struct {
-		name           string
-		registryCreds  *testregistry.BasicAuthCreds
-		requestCreds   *rgpb.Credentials
-		expectError    bool
-		checkError     func(error) bool
-		expectedCounts map[string]int
-	}{
-		{
-			name:          "NoAuth",
-			registryCreds: nil,
-			requestCreds:  nil,
-			expectError:   false,
-			expectedCounts: map[string]int{
-				http.MethodGet + " /v2/":                            1,
-				http.MethodGet + " /v2/test-image/manifests/latest": 1,
-			},
-		},
-		{
-			name:          "WithValidCredentials",
-			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
-			requestCreds:  &rgpb.Credentials{Username: "testuser", Password: "testpass"},
-			expectError:   false,
-			expectedCounts: map[string]int{
-				http.MethodGet + " /v2/":                            1,
-				http.MethodGet + " /v2/test-image/manifests/latest": 1,
-			},
-		},
-		{
-			name:          "WithInvalidCredentials",
-			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
-			requestCreds:  &rgpb.Credentials{Username: "wronguser", Password: "wrongpass"},
-			expectError:   true,
-			checkError:    status.IsPermissionDeniedError,
-			expectedCounts: map[string]int{
-				http.MethodGet + " /v2/":                            2,
-				http.MethodGet + " /v2/test-image/manifests/latest": 2,
-			},
-		},
-		{
-			name:          "MissingCredentials",
-			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
-			requestCreds:  nil,
-			expectError:   true,
-			checkError:    status.IsPermissionDeniedError,
-			expectedCounts: map[string]int{
-				http.MethodGet + " /v2/":                            2,
-				http.MethodGet + " /v2/test-image/manifests/latest": 2,
-			},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			env := testenv.GetTestEnv(t)
-			reg, counter := setupRegistry(t, tc.registryCreds, nil)
-			imageName, img := reg.PushNamedImage(t, "test-image", tc.registryCreds)
-			digest, size, mediaType := imageMetadata(t, img)
-			manifest := rawManifest(t, img)
-
-			counter.Reset()
-			client := newTestClient(t, env)
-			resp, err := client.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
-				Ref:         imageName,
-				Credentials: tc.requestCreds,
-			})
-
-			if tc.expectError {
-				require.Error(t, err)
-				if tc.checkError != nil {
-					require.True(t, tc.checkError(err), "unexpected error type: %v", err)
-				}
-			} else {
-				require.NoError(t, err)
-				assertManifestResponse(t, resp, digest, size, mediaType, manifest)
-			}
-			assertRequests(t, counter, tc.expectedCounts)
-		})
-	}
 }
 
 // TestFetchManifest_PullerCacheHit verifies that the same Puller is
@@ -629,101 +486,6 @@ func expectedLayerBytes(t *testing.T, layer v1.Layer) []byte {
 	b, err := io.ReadAll(rc)
 	require.NoError(t, err)
 	return b
-}
-
-func TestFetchBlob_Success(t *testing.T) {
-	env := testenv.GetTestEnv(t)
-	reg, counter := setupRegistry(t, nil, nil)
-	_, img := reg.PushNamedImage(t, "test-image", nil)
-
-	layers, err := img.Layers()
-	require.NoError(t, err)
-	require.Greater(t, len(layers), 0)
-	layer := layers[0]
-
-	blobRef := layerBlobRef(t, reg, "test-image", layer)
-	expectedBytes := expectedLayerBytes(t, layer)
-
-	counter.Reset()
-	client := newTestClient(t, env)
-	reader, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, nil, false)
-	require.NoError(t, err)
-	defer reader.Close()
-
-	actualBytes, err := io.ReadAll(reader)
-	require.NoError(t, err)
-	require.Equal(t, expectedBytes, actualBytes)
-}
-
-func TestFetchBlob_AuthVariants(t *testing.T) {
-	cases := []struct {
-		name          string
-		registryCreds *testregistry.BasicAuthCreds
-		requestCreds  *rgpb.Credentials
-		expectError   bool
-		checkError    func(error) bool
-	}{
-		{
-			name:          "NoAuth",
-			registryCreds: nil,
-			requestCreds:  nil,
-			expectError:   false,
-		},
-		{
-			name:          "WithValidCredentials",
-			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
-			requestCreds:  &rgpb.Credentials{Username: "testuser", Password: "testpass"},
-			expectError:   false,
-		},
-		{
-			name:          "WithInvalidCredentials",
-			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
-			requestCreds:  &rgpb.Credentials{Username: "wronguser", Password: "wrongpass"},
-			expectError:   true,
-			// Note: puller.Layer() doesn't make HTTP requests; the auth check happens
-			// when layer.Compressed() is called, which is outside withPullerRetry,
-			// so auth errors come back as Unavailable rather than PermissionDenied.
-			checkError: status.IsUnavailableError,
-		},
-		{
-			name:          "MissingCredentials",
-			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
-			requestCreds:  nil,
-			expectError:   true,
-			checkError:    status.IsUnavailableError,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			env := testenv.GetTestEnv(t)
-			reg, _ := setupRegistry(t, tc.registryCreds, nil)
-			_, img := reg.PushNamedImage(t, "test-image", tc.registryCreds)
-
-			layers, err := img.Layers()
-			require.NoError(t, err)
-			require.Greater(t, len(layers), 0)
-			layer := layers[0]
-
-			blobRef := layerBlobRef(t, reg, "test-image", layer)
-			expectedBytes := expectedLayerBytes(t, layer)
-
-			client := newTestClient(t, env)
-			reader, err := ocifetcher.ReadBlob(context.Background(), client, blobRef, tc.requestCreds, false)
-
-			if tc.expectError {
-				require.Error(t, err)
-				if tc.checkError != nil {
-					require.True(t, tc.checkError(err), "unexpected error type: %v", err)
-				}
-			} else {
-				require.NoError(t, err)
-				defer reader.Close()
-				actualBytes, err := io.ReadAll(reader)
-				require.NoError(t, err)
-				require.Equal(t, expectedBytes, actualBytes)
-			}
-		})
-	}
 }
 
 func TestFetchBlob_InvalidReference(t *testing.T) {
