@@ -33,10 +33,10 @@ import Menu, { MenuItem } from "../components/menu/menu";
 import Modal from "../components/modal/modal";
 import Popup from "../components/popup/popup";
 import Spinner from "../components/spinner/spinner";
-import router from "../router/router";
 import errorService from "../errors/error_service";
 import format, { durationUsec } from "../format/format";
 import UserPreferences from "../preferences/preferences";
+import router from "../router/router";
 import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
 import TerminalComponent from "../terminal/terminal";
 import { Profile, readProfile } from "../trace/trace_events";
@@ -47,7 +47,6 @@ import { BuildBuddyError, HTTPStatusError } from "../util/errors";
 import { MessageClass, timestampToDate } from "../util/proto";
 import { getErrorReason } from "../util/rpc";
 import { quote } from "../util/shlex";
-import { encodeActionMnemonicUrlParam, encodeTargetLabelUrlParam } from "../../enterprise/app/trends/common";
 import ActionCompareButtonComponent from "./action_compare_button";
 import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
 import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
@@ -1076,11 +1075,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const executionId = this.getExecutionId();
     const platformOverrides = this.getPlatformOverrides();
 
-    this.state.execution = {
-      targetLabel: "@//foo:bar",
-      actionMnemonic: "bar",
-    };
-
     return (
       <div className="invocation-action-card">
         {this.state.loadingAction && (
@@ -1560,4 +1554,12 @@ function parseActionDigestHashFromExecutionId(executionId: string): string | und
 function getDrilldownUrl(targetLabel: string, actionMnemonic: string): string {
   const dimensionParam = `${encodeTargetLabelUrlParam(targetLabel)}|${encodeActionMnemonicUrlParam(actionMnemonic)}`;
   return `/trends/?d=${encodeURIComponent(dimensionParam)}#drilldown`;
+}
+
+export function encodeTargetLabelUrlParam(targetLabel: string): string {
+  return `e2|${targetLabel.length}|${targetLabel}`;
+}
+
+export function encodeActionMnemonicUrlParam(actionMnemonic: string): string {
+  return `e3|${actionMnemonic.length}|${actionMnemonic}`;
 }
