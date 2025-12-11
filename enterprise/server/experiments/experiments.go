@@ -19,6 +19,7 @@ import (
 	"github.com/open-feature/go-sdk/openfeature"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
 
@@ -111,6 +112,8 @@ type Option func(*Options)
 //   - group_id: this as used as the target key (default ID) and also provided
 //     as an attribute. Parsed from claims.
 //   - user_id: Parsed from claims.
+//   - group_status: The group's status as a string (e.g., "FREE_TIER_GROUP_STATUS",
+//     "ENTERPRISE_GROUP_STATUS"). Parsed from claims.
 //   - invocation_id: Parsed from the bazel request metadata, if set.
 //   - action_id: Parsed from the bazel request metadata, if set.
 //
@@ -127,6 +130,9 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 		options.targetingKey = claims.GetExperimentTargetingGroupID()
 		options.attributes["group_id"] = claims.GetExperimentTargetingGroupID()
 		options.attributes["user_id"] = claims.GetUserID()
+		if status := claims.GetGroupStatus(); status != grpb.Group_UNKNOWN_GROUP_STATUS {
+			options.attributes["group_status"] = grpb.Group_GroupStatus_name[int32(status)]
+		}
 	}
 	rmd := bazel_request.GetRequestMetadata(ctx)
 	if iid := rmd.GetToolInvocationId(); len(iid) > 0 {
