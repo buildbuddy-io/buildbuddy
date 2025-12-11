@@ -6,9 +6,12 @@ import (
 	"context"
 	"flag"
 	"net/url"
+	"sort"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -183,4 +186,60 @@ func DecodeCollection(s string) (*Collection, url.Values, error) {
 		Server:  q.Get("server"),
 	}
 	return c, q, nil
+}
+
+// OLAPCollection consists of all of the fields that we currently use to
+// identify different types of usage. These fields are ultimately written out to
+// the `RawUsage` table, where they determine cost bucketing.
+type OLAPCollection struct {
+	GroupID string
+	Labels  map[sku.LabelName]sku.LabelValue
+}
+
+// EncodeOLAPCollection encodes the OLAP collection to a deterministic string.
+// The encoding is human-readable and uses sorted label keys for determinism.
+// Format: "group_id=X&label=key1=val1&label=key2=val2..." (labels are
+// encoded as repeated "label" parameters with key=value format).
+func EncodeOLAPCollection(c *OLAPCollection) string {
+	var b strings.Builder
+	b.WriteString("group_id=" + url.QueryEscape(c.GroupID))
+
+	if len(c.Labels) > 0 {
+		// Sort label keys for deterministic encoding
+		keys := make([]string, 0, len(c.Labels))
+		for k := range c.Labels {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, k := range keys {
+			b.WriteString("&label=" + url.QueryEscape(k) + "=" + url.QueryEscape(c.Labels[k]))
+		}
+	}
+
+	return b.String()
+}
+
+// DecodeOLAPCollection decodes a string encoded using EncodeOLAPCollection.
+// Labels are expected in the format "label=key=value".
+func DecodeOLAPCollection(s string) (*OLAPCollection, error) {
+	q, err := url.ParseQuery(s)
+	if err != nil {
+		return nil, err
+	}
+	c := &OLAPCollection{
+		GroupID: q.Get("group_id"),
+	}
+	// Parse labels from "label" params (format: "key=value")
+	for _, labelParam := range q["label"] {
+		key, value, found := strings.Cut(labelParam, "=")
+		if !found {
+			continue
+		}
+		if c.Labels == nil {
+			c.Labels = make(map[sku.LabelName]sku.LabelValue)
+		}
+		c.Labels[key] = value
+	}
+	return c, nil
 }
