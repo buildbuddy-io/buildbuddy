@@ -14,14 +14,19 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -35,15 +40,18 @@ import (
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const pullerLRUMaxEntries = 1000
 
 var (
-	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
-	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
+	mirrors             = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
+	allowedPrivateIPs   = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
+	cacheEnabledPercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
 )
 
 type pullerLRUEntry struct {
@@ -60,6 +68,11 @@ type ociFetcherClient struct {
 	// we keep a small LRU cache of Pullers.
 	mu        sync.Mutex
 	pullerLRU *lru.LRU[*pullerLRUEntry]
+
+	// Cache clients for caching manifests and blobs.
+	// These may be nil if the cache is not configured.
+	acClient repb.ActionCacheClient
+	bsClient bspb.ByteStreamClient
 }
 
 // NewClient constructs a new OCI Fetcher client.
@@ -68,7 +81,7 @@ type ociFetcherClient struct {
 // to that server.
 // TODO(dan): Stop passing private IPs, mirror config to client once server owns the fetching logic.
 // TODO(dan): Update this comment once server is implemented!
-func NewClient(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) (ofpb.OCIFetcherClient, error) {
+func NewClient(env environment.Env, allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) (ofpb.OCIFetcherClient, error) {
 	pullerLRU, err := lru.NewLRU[*pullerLRUEntry](&lru.Config[*pullerLRUEntry]{
 		SizeFn:  func(_ *pullerLRUEntry) int64 { return 1 },
 		MaxSize: int64(pullerLRUMaxEntries),
@@ -80,6 +93,8 @@ func NewClient(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig
 		allowedPrivateIPs: allowedPrivateIPs,
 		mirrors:           mirrors,
 		pullerLRU:         pullerLRU,
+		acClient:          env.GetActionCacheClient(),
+		bsClient:          env.GetByteStreamClient(),
 	}, nil
 }
 
@@ -88,7 +103,7 @@ func RegisterClient(env *real_environment.RealEnv) error {
 	if err != nil {
 		return err
 	}
-	client, err := NewClient(allowedPrivateIPNets, *mirrors)
+	client, err := NewClient(env, allowedPrivateIPNets, *mirrors)
 	if err != nil {
 		return err
 	}
@@ -331,18 +346,76 @@ func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.
 	}, nil
 }
 
-// FetchManifest fetches the full manifest content from a remote registry.
+// FetchManifest fetches the full manifest content, checking the cache first
+// if caching is enabled. For tag references with caching enabled, a HEAD
+// request is made first to resolve the tag to a digest for cache lookup.
 func (c *ociFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
 	imageRef, err := gcrname.ParseReference(req.GetRef())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
 	}
 
+	useCache := c.shouldUseCache(ctx)
+	digest, hasDigest := getDigest(imageRef)
+
+	// When caching is enabled, we need to know the digest to check the cache.
+	// For tag references, make a HEAD request first to resolve the tag.
+	// This also authenticates with the registry.
+	if useCache && (!hasDigest || !req.GetBypassRegistry()) {
+		resp, err := c.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
+			Ref:            req.GetRef(),
+			Credentials:    req.GetCredentials(),
+			BypassRegistry: req.GetBypassRegistry(),
+		})
+		if err != nil {
+			if status.IsPermissionDeniedError(err) {
+				return nil, err
+			}
+			return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
+		}
+		parsedDigest, err := gcr.NewHash(resp.GetDigest())
+		if err != nil {
+			return nil, status.InternalErrorf("invalid digest from manifest metadata: %s", err)
+		}
+		digest = parsedDigest
+		hasDigest = true
+	}
+
+	// Try cache
+	if useCache && hasDigest {
+		cached, err := ocicache.FetchManifestFromAC(ctx, c.acClient, imageRef.Context(), digest, imageRef)
+		if err == nil && cached != nil {
+			return &ofpb.FetchManifestResponse{
+				Digest:    digest.String(),
+				Size:      int64(len(cached.GetRaw())),
+				MediaType: cached.GetContentType(),
+				Manifest:  cached.GetRaw(),
+			}, nil
+		}
+		if err != nil && !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)
+		}
+	}
+
+	// Fetch from remote
 	desc, err := withPullerRetry(c, ctx, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*remote.Descriptor, error) {
 		return puller.Get(ctx, imageRef)
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Write to cache
+	if useCache {
+		manifestDigest, err := gcr.NewHash(desc.Digest.String())
+		if err != nil {
+			log.CtxWarningf(ctx, "Could not parse manifest digest for caching: %s", err)
+		} else {
+			err := ocicache.WriteManifestToAC(ctx, desc.Manifest, c.acClient, imageRef.Context(), manifestDigest, string(desc.MediaType), imageRef)
+			if err != nil {
+				log.CtxWarningf(ctx, "Could not write manifest to cache: %s", err)
+			}
+		}
 	}
 
 	return &ofpb.FetchManifestResponse{
@@ -357,7 +430,7 @@ func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 	return nil, status.UnimplementedError("FetchBlobMetadata not implemented")
 }
 
-// FetchBlob streams blob content from a remote registry.
+// FetchBlob streams blob content, checking the cache first if caching is enabled.
 func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
 	// Blob references must be digest references (e.g., repo@sha256:...).
 	blobRef, err := gcrname.NewDigest(req.GetRef())
@@ -365,6 +438,21 @@ func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobReq
 		return nil, status.InvalidArgumentErrorf("invalid blob reference %q (must be a digest reference): %s", req.GetRef(), err)
 	}
 
+	useCache := c.shouldUseCache(ctx)
+	digest, _ := gcr.NewHash(blobRef.DigestStr())
+
+	// Try cache first
+	if useCache {
+		reader, err := c.fetchBlobFromCache(ctx, blobRef.Context(), digest)
+		if err == nil && reader != nil {
+			return &blobStreamClient{reader: reader}, nil
+		}
+		if err != nil && !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
+		}
+	}
+
+	// Fetch from remote
 	layer, err := withPullerRetry(c, ctx, blobRef, req.GetCredentials(), func(puller *remote.Puller) (gcr.Layer, error) {
 		return puller.Layer(ctx, blobRef)
 	})
@@ -376,6 +464,27 @@ func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobReq
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not get compressed layer: %s", err)
 	}
+
+	// Wrap with read-through cacher to write to cache as data is read
+	if useCache {
+		size, err := layer.Size()
+		if err != nil {
+			log.CtxWarningf(ctx, "Could not get layer size for caching: %s", err)
+		} else {
+			mediaType, err := layer.MediaType()
+			if err != nil {
+				log.CtxWarningf(ctx, "Could not get layer media type for caching: %s", err)
+			} else {
+				cachedReader, err := ocicache.NewBlobReadThroughCacher(ctx, reader, c.bsClient, c.acClient, blobRef.Context(), digest, string(mediaType), size)
+				if err != nil {
+					log.CtxWarningf(ctx, "Could not set up blob cache writer: %s", err)
+				} else {
+					reader = cachedReader
+				}
+			}
+		}
+	}
+
 	return &blobStreamClient{reader: reader}, nil
 }
 
@@ -412,6 +521,61 @@ func (c *blobStreamClient) SendMsg(m any) error {
 
 func (c *blobStreamClient) RecvMsg(m any) error {
 	return status.UnimplementedError("RecvMsg not implemented on blobStreamClient")
+}
+
+// shouldUseCache determines if caching should be used for this request.
+// Caching is enabled based on the cacheEnabledPercent flag, and is disabled
+// for anonymous users.
+func (c *ociFetcherClient) shouldUseCache(ctx context.Context) bool {
+	if c.acClient == nil || c.bsClient == nil {
+		return false
+	}
+	if isAnonymousUser(ctx) {
+		return false
+	}
+	if *cacheEnabledPercent >= 100 {
+		return true
+	}
+	if *cacheEnabledPercent > 0 {
+		return rand.Intn(100) < *cacheEnabledPercent
+	}
+	return false
+}
+
+func isAnonymousUser(ctx context.Context) bool {
+	_, err := claims.ClaimsFromContext(ctx)
+	return authutil.IsAnonymousUserError(err)
+}
+
+// getDigest returns the digest from the given reference, if it contains one.
+func getDigest(ref gcrname.Reference) (gcr.Hash, bool) {
+	d, ok := ref.(gcrname.Digest)
+	if !ok {
+		return gcr.Hash{}, false
+	}
+	hash, err := gcr.NewHash(d.DigestStr())
+	if err != nil {
+		return gcr.Hash{}, false
+	}
+	return hash, true
+}
+
+// fetchBlobFromCache attempts to fetch a blob from the cache.
+// Returns nil, nil if the blob is not in the cache.
+func (c *ociFetcherClient) fetchBlobFromCache(ctx context.Context, repo gcrname.Repository, hash gcr.Hash) (io.ReadCloser, error) {
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, c.bsClient, c.acClient, repo, hash)
+	if err != nil {
+		return nil, err
+	}
+	pr, pw := io.Pipe()
+	go func() {
+		defer pw.Close()
+		err := ocicache.FetchBlobFromCache(ctx, pw, c.bsClient, hash, metadata.GetContentLength())
+		if err != nil {
+			pw.CloseWithError(err)
+		}
+	}()
+	return pr, nil
 }
 
 func ReadBlob(ctx context.Context, client ofpb.OCIFetcherClient, ref string, creds *rgpb.Credentials, bypassRegistry bool) (io.ReadCloser, error) {

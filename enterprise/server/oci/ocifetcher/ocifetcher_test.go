@@ -349,7 +349,7 @@ func setupRegistry(t *testing.T, creds *testregistry.BasicAuthCreds, interceptor
 }
 
 func newTestClient(t *testing.T, env environment.Env) ofpb.OCIFetcherClient {
-	client, err := ocifetcher.NewClient(localhostIPs(t), nil)
+	client, err := ocifetcher.NewClient(env, localhostIPs(t), nil)
 	require.NoError(t, err)
 	return client
 }
