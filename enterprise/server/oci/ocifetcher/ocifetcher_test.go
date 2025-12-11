@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
@@ -245,10 +244,13 @@ func TestFetch_RetryOnHTTPError(t *testing.T) {
 
 func TestFetch_NoRetryOnContextError(t *testing.T) {
 	env := testenv.GetTestEnv(t)
+	var cancelFunc func()
 	reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-		// Block manifest/blob requests until context times out
+		// Cancel the context when manifest/blob requests arrive
 		if strings.Contains(r.URL.Path, "/manifests/") || strings.Contains(r.URL.Path, "/blobs/") {
-			time.Sleep(100 * time.Millisecond)
+			if cancelFunc != nil {
+				cancelFunc()
+			}
 		}
 		return true
 	})
@@ -258,25 +260,25 @@ func TestFetch_NoRetryOnContextError(t *testing.T) {
 	require.Greater(t, len(layers), 0)
 	blobRef := layerBlobRef(t, reg, "test-image", layers[0])
 
-	// FetchManifestMetadata - times out
-	ctx1, cancel1 := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel1()
+	// FetchManifestMetadata - canceled
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	cancelFunc = cancel1
 	client1 := newTestClient(t, env)
 	_, err = client1.FetchManifestMetadata(ctx1, &ofpb.FetchManifestMetadataRequest{Ref: imageName})
 	require.Error(t, err)
-	require.True(t, errors.Is(err, context.DeadlineExceeded), "expected DeadlineExceeded, got: %v", err)
+	require.True(t, errors.Is(err, context.Canceled), "expected Canceled, got: %v", err)
 
-	// FetchManifest - times out
-	ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel2()
+	// FetchManifest - canceled
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	cancelFunc = cancel2
 	client2 := newTestClient(t, env)
 	_, err = client2.FetchManifest(ctx2, &ofpb.FetchManifestRequest{Ref: imageName})
 	require.Error(t, err)
-	require.True(t, errors.Is(err, context.DeadlineExceeded), "expected DeadlineExceeded, got: %v", err)
+	require.True(t, errors.Is(err, context.Canceled), "expected Canceled, got: %v", err)
 
-	// FetchBlob - times out
-	ctx3, cancel3 := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel3()
+	// FetchBlob - canceled
+	ctx3, cancel3 := context.WithCancel(context.Background())
+	cancelFunc = cancel3
 	client3 := newTestClient(t, env)
 	_, err = ocifetcher.ReadBlob(ctx3, client3, blobRef, nil, false)
 	require.Error(t, err)
