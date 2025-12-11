@@ -743,7 +743,6 @@ func TestResolve_WithCache(t *testing.T) {
 				// but we still expect some requests to resolve the tag to a
 				// digest.
 				expected = map[string]int{
-					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest": 1,
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
@@ -753,7 +752,6 @@ func TestResolve_WithCache(t *testing.T) {
 				// don't need to resolve the tag to a digest.
 				imageAddressWithDigest := imageAddress + "@" + imageDigest.String()
 				expected = map[string]int{
-					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/" + imageDigest.String(): 1,
 				}
 				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter)
@@ -803,7 +801,6 @@ func TestResolve_WithCache(t *testing.T) {
 				// but we still expect some requests to resolve the tag to a
 				// digest.
 				expected = map[string]int{
-					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
 				}
@@ -814,7 +811,6 @@ func TestResolve_WithCache(t *testing.T) {
 				// don't need to resolve the tag to a digest.
 				imageAddressWithDigest := indexAddress + "@" + imageDigest.String()
 				expected = map[string]int{
-					http.MethodGet + " /v2/": 1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
 				}
 				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter)
@@ -868,10 +864,9 @@ func TestResolve_Concurrency(t *testing.T) {
 	imageAddress := registry.ImageAddress(imageName + "_image")
 	expected := map[string]int{
 		http.MethodGet + " /v2/": 1,
-		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
-		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
-		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
-		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
+		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":              1,
+		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":               1,
+		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
 	}
 	for digest, _ := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
