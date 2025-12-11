@@ -28,8 +28,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-github/v59/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -207,6 +209,8 @@ func envVars(cmd *repb.Command) map[string]string {
 type fakeExecutionClient struct {
 	repb.ExecutionClient
 	executeRequests chan *executeRequest
+
+	FakeExecuteError error
 }
 
 type executeRequest struct {
@@ -225,6 +229,9 @@ func (c *fakeExecutionClient) Execute(ctx context.Context, req *repb.ExecuteRequ
 	c.executeRequests <- &executeRequest{
 		Metadata: md,
 		Payload:  req,
+	}
+	if c.FakeExecuteError != nil {
+		return nil, c.FakeExecuteError
 	}
 	return &fakeExecuteStream{}, nil
 }
@@ -692,6 +699,48 @@ func TestWebhook_NoWorkflowConfig_NOP(t *testing.T) {
 
 	// Verify that no execution requests were triggered.
 	require.Zero(t, len(execClient.executeRequests))
+}
+
+func TestWebhook_FailedToStart_PublishesStatus(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	// Disable execution retries so that the test completes more quickly.
+	flags.Set(t, "remote_execution.workflows_max_execute_retries", 0)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	// Have workflow execution always fail.
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	execClient.FakeExecuteError = status.UnavailableErrorf("no executors registered")
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:          "pull_request",
+		TargetRepoURL:      "https://github.com/acme-inc/acme",
+		TargetBranch:       "main",
+		PushedRepoURL:      "https://github.com/untrusteduser/acme",
+		PushedBranch:       "feature",
+		SHA:                "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic: true,
+		PullRequestAuthor:  "acme-inc-user-1",
+	}
+	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	// Expect an execution attempt
+	_ = execClient.NextExecuteRequest()
+
+	// Expect a status update with  the failed attempt
+	status := <-provider.Statuses
+	require.Regexp(t, `http://localhost:\d+/invocation/[0-9a-f\-]+\?runnerStartError=.*?no\+executors\+registered`, status.Payload.(*github.RepoStatus).GetTargetURL())
 }
 
 func TestWebhook_UseDefaultWorkflowConfig(t *testing.T) {
