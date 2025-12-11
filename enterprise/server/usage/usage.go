@@ -260,43 +260,68 @@ func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc
 		return status.WrapError(err, "add collection hash to set in redis")
 	}
 
-	// Also write to v2 OLAP buffer if OLAP writes are enabled.
-	if *writeToOLAP {
-		if err := ut.incrementOLAPBuffer(ctx, groupID, t, labels, uc); err != nil {
-			return status.WrapError(err, "increment OLAP buffer")
-		}
-	}
-
 	ut.emitMetrics(groupID, labels.Origin, uc)
 	return nil
 }
 
-// incrementOLAPBuffer writes usage data to the v2 Redis buffer in OLAP format
-// (SKU + labels).
-func (ut *tracker) incrementOLAPBuffer(ctx context.Context, groupID string, t period, labels *tables.UsageLabels, uc *tables.UsageCounts) error {
-	items := toOLAPLabeledSKUCounts(labels, uc)
-	if len(items) == 0 {
+func (ut *tracker) IncrementOLAP(ctx context.Context, labels sku.Labels, skuCounts map[sku.SKU]int64) error {
+	if !*writeToOLAP {
 		return nil
 	}
 
-	collectionsKey := olapCollectionsRedisKey(t)
-	for _, item := range items {
-		olapCollection := &usageutil.OLAPCollection{
-			GroupID: groupID,
-			Labels:  item.Labels,
+	u, err := ut.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		if authutil.IsAnonymousUserError(err) && ut.env.GetAuthenticator().AnonymousUsageEnabled(ctx) {
+			// Don't track anonymous usage for now.
+			return nil
 		}
-		encodedOLAPCollection := usageutil.EncodeOLAPCollection(olapCollection)
-		countsKey := olapCountsRedisKey(t, encodedOLAPCollection)
+		return err
+	}
+	if u.IsImpersonating() {
+		return nil
+	}
+	groupID := u.GetGroupID()
 
-		// In redis, `countsKey` stores a hash (map) with per-SKU counts.
-		// Increment the count for the current SKU.
-		if err := ut.env.GetMetricsCollector().IncrementCountWithExpiry(ctx, countsKey, item.SKU.String(), item.Count, redisKeyTTL); err != nil {
+	// Validate counts: 0 is fine (and maybe expected in some cases), but
+	// negative values probably indicate a bug or a bad request that we aren't
+	// guarding against, so trigger an alert and skip the bad SKU.
+	hasPositiveCount := false
+	for usageSKU, count := range skuCounts {
+		if count == 0 {
+			continue
+		}
+		if count < 0 {
+			alert.CtxUnexpectedEvent(ctx, "usage_increment_olap_negative_count", "Tried to increment usage count by negative value: labels=%+#v, sku=%s, count=%d", labels, usageSKU, count)
+			continue
+		}
+		hasPositiveCount = true
+	}
+	if !hasPositiveCount {
+		return nil
+	}
+
+	t := ut.currentPeriod()
+
+	collectionsKey := olapCollectionsRedisKey(t)
+	olapCollection := &usageutil.OLAPCollection{
+		GroupID: groupID,
+		Labels:  labels,
+	}
+	encodedOLAPCollection := usageutil.EncodeOLAPCollection(olapCollection)
+	countsKey := olapCountsRedisKey(t, encodedOLAPCollection)
+
+	// In redis, `countsKey` stores a hash (map) with per-SKU counts.
+	for usageSKU, count := range skuCounts {
+		if count <= 0 {
+			continue
+		}
+		if err := ut.env.GetMetricsCollector().IncrementCountWithExpiry(ctx, countsKey, usageSKU.String(), count, redisKeyTTL); err != nil {
 			return status.WrapError(err, "increment OLAP count in redis")
 		}
-		// Add the OLAP collection to the set of collections with usage
-		if err := ut.env.GetMetricsCollector().SetAddWithExpiry(ctx, collectionsKey, redisKeyTTL, encodedOLAPCollection); err != nil {
-			return status.WrapError(err, "add OLAP collection to set in redis")
-		}
+	}
+	// Add the OLAP collection to the set of collections with usage.
+	if err := ut.env.GetMetricsCollector().SetAddWithExpiry(ctx, collectionsKey, redisKeyTTL, encodedOLAPCollection); err != nil {
+		return status.WrapError(err, "add OLAP collection to set in redis")
 	}
 	return nil
 }
@@ -821,228 +846,4 @@ func stringMapToCounts(h map[string]string) (*tables.UsageCounts, error) {
 		LocalSnapshotSavedBytes:                           hInt64["local_snapshot_saved_bytes"],
 		RemoteSnapshotSavedBytes:                          hInt64["remote_snapshot_saved_bytes"],
 	}, nil
-}
-
-// toLabelMap converts primary DB labels to new OLAP labels.
-func toLabelMap(labels *tables.UsageLabels) map[sku.LabelName]sku.LabelValue {
-	mapSize := 0
-	if labels.Origin != "" {
-		mapSize++
-	}
-	if labels.Client != "" {
-		mapSize++
-	}
-	if labels.Server != "" {
-		mapSize++
-	}
-	m := make(map[sku.LabelName]sku.LabelValue, mapSize)
-	if labels.Origin != "" {
-		m[sku.Origin] = sku.LabelValue(labels.Origin)
-	}
-	if labels.Client != "" {
-		m[sku.Client] = sku.LabelValue(labels.Client)
-	}
-	if labels.Server != "" {
-		m[sku.Server] = sku.LabelValue(labels.Server)
-	}
-	return m
-}
-
-// labeledSKUCount contains a subset of RawUsage columns. It is used when
-// converting the MySQL-format rows to OLAP-format when buffering usage to
-// Redis.
-//
-// TODO(bduffany): remove once we're using OLAP-format rows directly.
-type labeledSKUCount struct {
-	Labels map[sku.LabelName]sku.LabelValue
-	SKU    sku.SKU
-	Count  int64
-}
-
-// toOLAPLabeledSKUCounts converts a MySQL-shaped UsageLabels+UsageCounts to
-// multiple RawUsage rows containing only labels, SKU, and count.
-func toOLAPLabeledSKUCounts(labels *tables.UsageLabels, counts *tables.UsageCounts) []labeledSKUCount {
-	baseLabels := toLabelMap(labels)
-	var items []labeledSKUCount
-
-	if counts.ActionCacheHits > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteCacheACHits,
-			Labels: baseLabels,
-			Count:  counts.ActionCacheHits,
-		})
-	}
-	if counts.CASCacheHits > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteCacheCASHits,
-			Labels: baseLabels,
-			Count:  counts.CASCacheHits,
-		})
-	}
-	if counts.Invocations > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.BuildEventsBESCount,
-			Labels: baseLabels,
-			Count:  counts.Invocations,
-		})
-	}
-	if counts.LinuxExecutionDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
-			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedFalse),
-			Count:  counts.LinuxExecutionDurationUsec * 1000,
-		})
-	}
-	if counts.MacExecutionDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
-			Labels: appendExecutionLabels(baseLabels, sku.OSMac, sku.SelfHostedFalse),
-			Count:  counts.MacExecutionDurationUsec * 1000,
-		})
-	}
-	if counts.SelfHostedLinuxExecutionDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
-			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedTrue),
-			Count:  counts.SelfHostedLinuxExecutionDurationUsec * 1000,
-		})
-	}
-	if counts.SelfHostedMacExecutionDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
-			Labels: appendExecutionLabels(baseLabels, sku.OSMac, sku.SelfHostedTrue),
-			Count:  counts.SelfHostedMacExecutionDurationUsec * 1000,
-		})
-	}
-	if counts.TotalDownloadSizeBytes > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteCacheCASDownloadedBytes,
-			Labels: baseLabels,
-			Count:  counts.TotalDownloadSizeBytes,
-		})
-	}
-	if counts.TotalUploadSizeBytes > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteCacheCASUploadedBytes,
-			Labels: baseLabels,
-			Count:  counts.TotalUploadSizeBytes,
-		})
-	}
-	if counts.TotalCachedActionExecUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteCacheACCachedExecDurationNanos,
-			Labels: baseLabels,
-			Count:  counts.TotalCachedActionExecUsec * 1000,
-		})
-	}
-	if counts.CPUNanos > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteWorkerCPUNanos,
-			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedFalse),
-			Count:  counts.CPUNanos,
-		})
-	}
-	if counts.MemoryGBUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteWorkerMemoryGBNanos,
-			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedFalse),
-			Count:  counts.MemoryGBUsec * 1000,
-		})
-	}
-	if counts.LinuxArm64ExecutionComputeDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteComputeNanos,
-			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSLinux, sku.ArchArm64, sku.SelfHostedFalse),
-			Count:  counts.LinuxArm64ExecutionComputeDurationUsec * 1000,
-		})
-	}
-	if counts.LinuxArm64ExecutionBurstableComputeDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteBurstableComputeNanos,
-			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSLinux, sku.ArchArm64, sku.SelfHostedFalse),
-			Count:  counts.LinuxArm64ExecutionBurstableComputeDurationUsec * 1000,
-		})
-	}
-	if counts.LinuxX86_64ExecutionComputeDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteComputeNanos,
-			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSLinux, sku.ArchX86_64, sku.SelfHostedFalse),
-			Count:  counts.LinuxX86_64ExecutionComputeDurationUsec * 1000,
-		})
-	}
-	if counts.LinuxX86_64ExecutionBurstableComputeDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteBurstableComputeNanos,
-			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSLinux, sku.ArchX86_64, sku.SelfHostedFalse),
-			Count:  counts.LinuxX86_64ExecutionBurstableComputeDurationUsec * 1000,
-		})
-	}
-	if counts.DarwinArm64ExecutionComputeDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteComputeNanos,
-			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSMac, sku.ArchArm64, sku.SelfHostedFalse),
-			Count:  counts.DarwinArm64ExecutionComputeDurationUsec * 1000,
-		})
-	}
-	if counts.DarwinArm64ExecutionBurstableComputeDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteBurstableComputeNanos,
-			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSMac, sku.ArchArm64, sku.SelfHostedFalse),
-			Count:  counts.DarwinArm64ExecutionBurstableComputeDurationUsec * 1000,
-		})
-	}
-	if counts.DarwinX86_64ExecutionComputeDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteComputeNanos,
-			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSMac, sku.ArchX86_64, sku.SelfHostedFalse),
-			Count:  counts.DarwinX86_64ExecutionComputeDurationUsec * 1000,
-		})
-	}
-	if counts.DarwinX86_64ExecutionBurstableComputeDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteBurstableComputeNanos,
-			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSMac, sku.ArchX86_64, sku.SelfHostedFalse),
-			Count:  counts.DarwinX86_64ExecutionBurstableComputeDurationUsec * 1000,
-		})
-	}
-	if counts.LocalSnapshotSavedBytes > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.LocalSnapshotSavedBytes,
-			Labels: baseLabels,
-			Count:  counts.LocalSnapshotSavedBytes,
-		})
-	}
-	if counts.RemoteSnapshotSavedBytes > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteSnapshotSavedBytes,
-			Labels: baseLabels,
-			Count:  counts.RemoteSnapshotSavedBytes,
-		})
-	}
-	return items
-}
-
-// appendExecutionLabels returns a new map which is a clone of the given map
-// with the given OS and self-hosted labels applied.
-func appendExecutionLabels(m map[sku.LabelName]sku.LabelValue, os, selfHosted sku.LabelValue) map[sku.LabelName]sku.LabelValue {
-	out := make(map[sku.LabelName]sku.LabelValue, len(m)+2)
-	for k, v := range m {
-		out[k] = v
-	}
-	out[sku.OS] = os
-	out[sku.SelfHosted] = selfHosted
-	return out
-}
-
-// appendExecutionLabelsWithArch returns a new map which is a clone of the given
-// map with the given OS, arch, and self-hosted labels applied.
-func appendExecutionLabelsWithArch(m map[sku.LabelName]sku.LabelValue, os, arch, selfHosted sku.LabelValue) map[sku.LabelName]sku.LabelValue {
-	out := make(map[sku.LabelName]sku.LabelValue, len(m)+3)
-	for k, v := range m {
-		out[k] = v
-	}
-	out[sku.OS] = os
-	out[sku.Arch] = arch
-	out[sku.SelfHosted] = selfHosted
-	return out
 }

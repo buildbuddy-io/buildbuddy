@@ -47,12 +47,25 @@ func DisableUsageTracking(ctx context.Context) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, SkipUsageTrackingHeaderName, SkipUsageTrackingEnabledValue)
 }
 
-func LabelsForUsageRecording(ctx context.Context, server string) (*tables.UsageLabels, error) {
-	return &tables.UsageLabels{
-		Origin: originLabel(ctx),
-		Client: clientLabel(ctx),
+func LabelsForUsageRecording(ctx context.Context, server string) (*tables.UsageLabels, sku.Labels, error) {
+	origin := originLabel(ctx)
+	client := clientLabel(ctx)
+	primaryDBLabels := &tables.UsageLabels{
+		Origin: origin,
+		Client: client,
 		Server: server,
-	}, nil
+	}
+	olapLabels := make(sku.Labels, 3)
+	if origin != "" {
+		olapLabels[sku.Origin] = sku.LabelValue(origin)
+	}
+	if client != "" {
+		olapLabels[sku.Client] = sku.LabelValue(client)
+	}
+	if server != "" {
+		olapLabels[sku.Server] = sku.LabelValue(server)
+	}
+	return primaryDBLabels, olapLabels, nil
 }
 
 // WithLocalServerLabels causes outgoing gRPC requests to be labeled with the
