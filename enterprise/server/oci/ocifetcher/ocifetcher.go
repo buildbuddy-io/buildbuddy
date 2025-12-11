@@ -489,6 +489,11 @@ func ReadBlob(ctx context.Context, client ofpb.OCIFetcherClient, ref string, cre
 	if err != nil {
 		return nil, err
 	}
+	// Short-circuit: if this is a local blobStreamClient, return its reader directly
+	// to avoid the unnecessary chunking/reassembly round-trip.
+	if bsc, ok := stream.(*blobStreamClient); ok {
+		return bsc.reader, nil
+	}
 	return &blobStreamReader{stream: stream}, nil
 }
 
