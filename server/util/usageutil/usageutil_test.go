@@ -5,6 +5,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -22,36 +23,52 @@ func TestLabels(t *testing.T) {
 		ClientHeader string
 		OriginHeader string
 		Expected     *tables.UsageLabels
+		ExpectedOLAP sku.Labels
 	}{
 		{
-			Name:     "NoLabels",
-			Expected: &tables.UsageLabels{},
+			Name:         "NoLabels",
+			Expected:     &tables.UsageLabels{},
+			ExpectedOLAP: sku.Labels{},
 		},
 		{
 			Name:     "BazelToolName",
 			MDHeader: &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "bazel"}},
 			Expected: &tables.UsageLabels{Client: "bazel"},
+			ExpectedOLAP: sku.Labels{
+				sku.Client: sku.ClientBazel,
+			},
 		},
 		{
-			Name:     "NonBazelToolName",
-			MDHeader: &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "unknown"}},
-			Expected: &tables.UsageLabels{},
+			Name:         "NonBazelToolName",
+			MDHeader:     &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "unknown"}},
+			Expected:     &tables.UsageLabels{},
+			ExpectedOLAP: sku.Labels{},
 		},
 		{
 			Name:         "ClientHeader",
 			ClientHeader: "executor",
 			Expected:     &tables.UsageLabels{Client: "executor"},
+			ExpectedOLAP: sku.Labels{
+				sku.Client: sku.ClientExecutor,
+			},
 		},
 		{
 			Name:         "OriginHeader",
 			OriginHeader: "test-origin",
 			Expected:     &tables.UsageLabels{Origin: "test-origin"},
+			ExpectedOLAP: sku.Labels{
+				sku.Origin: sku.LabelValue("test-origin"),
+			},
 		},
 		{
 			Name:         "BazelToolNameAndOrigin",
 			MDHeader:     &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "bazel"}},
 			OriginHeader: "test-origin",
 			Expected:     &tables.UsageLabels{Origin: "test-origin", Client: "bazel"},
+			ExpectedOLAP: sku.Labels{
+				sku.Origin: sku.LabelValue("test-origin"),
+				sku.Client: sku.ClientBazel,
+			},
 		},
 		{
 			Name:         "ClientOverridesRequestMetadata",
@@ -59,6 +76,10 @@ func TestLabels(t *testing.T) {
 			OriginHeader: "internal",
 			ClientHeader: "executor",
 			Expected:     &tables.UsageLabels{Origin: "internal", Client: "executor"},
+			ExpectedOLAP: sku.Labels{
+				sku.Origin: sku.OriginInternal,
+				sku.Client: sku.ClientExecutor,
+			},
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
@@ -76,10 +97,11 @@ func TestLabels(t *testing.T) {
 			}
 			ctx := metadata.NewIncomingContext(t.Context(), md)
 
-			labels, err := usageutil.LabelsForUsageRecording(ctx, "")
+			labels, olapLabels, err := usageutil.LabelsForUsageRecording(ctx, "")
 
 			require.NoError(t, err)
 			require.Equal(t, test.Expected, labels)
+			require.Equal(t, test.ExpectedOLAP, olapLabels)
 		})
 	}
 }
@@ -135,7 +157,7 @@ func TestLabelPropagation(t *testing.T) {
 			// Simulate that we've arrived at the receiving server by
 			// changing the server name on the fly.
 			usageutil.SetServerName(test.Server)
-			labels, err := usageutil.LabelsForUsageRecording(ctx, test.Server)
+			labels, _, err := usageutil.LabelsForUsageRecording(ctx, test.Server)
 
 			require.NoError(t, err)
 			require.Equal(t, test.Expected, labels)

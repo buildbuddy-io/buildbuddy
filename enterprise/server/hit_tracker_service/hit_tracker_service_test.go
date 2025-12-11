@@ -11,10 +11,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -62,6 +66,12 @@ func TestHitTrackerService_DetailedStats(t *testing.T) {
 			hit_tracker.Register(env)
 			require.NoError(t, hit_tracker_service.Register(env))
 			ctx := context.Background()
+
+			// Need auth, since usage is only tracked for authenticated users.
+			ctx = testauth.WithAuthenticatedUserInfo(ctx, &testauth.TestUser{
+				UserID:  "US1",
+				GroupID: "GR1",
+			})
 
 			iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
 
@@ -154,9 +164,10 @@ func TestHitTrackerService_DetailedStats(t *testing.T) {
 }
 
 type fakeUsageTracker struct {
-	interfaces.UsageTracker
 	Increments []*tables.UsageCounts
 	Labels     []*tables.UsageLabels
+
+	OLAPUsage map[string]map[sku.SKU]int64
 }
 
 func (ut *fakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
@@ -165,14 +176,36 @@ func (ut *fakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageL
 	return nil
 }
 
+// TODO: move this implementation to a testusage package
+func (ut *fakeUsageTracker) IncrementOLAP(ctx context.Context, labels sku.Labels, s sku.SKU, count int64) error {
+	c, err := claims.ClaimsFromContext(ctx)
+	if err != nil {
+		return nil
+	}
+	groupID := c.GetGroupID()
+	collectionKey := usageutil.EncodeOLAPCollection(&usageutil.OLAPCollection{
+		GroupID: groupID,
+		Labels:  labels,
+	})
+	if ut.OLAPUsage == nil {
+		ut.OLAPUsage = make(map[string]map[sku.SKU]int64)
+	}
+	if ut.OLAPUsage[collectionKey] == nil {
+		ut.OLAPUsage[collectionKey] = make(map[sku.SKU]int64)
+	}
+	ut.OLAPUsage[collectionKey][s] += count
+	return nil
+}
+
 func TestHitTrackerService_Usage(t *testing.T) {
 	flags.Set(t, "cache.detailed_stats_enabled", true)
 
 	for _, tc := range []struct {
-		name          string
-		cacheType     rspb.CacheType
-		requestType   capb.RequestType
-		expectedUsage []*tables.UsageCounts
+		name              string
+		cacheType         rspb.CacheType
+		requestType       capb.RequestType
+		expectedUsage     []*tables.UsageCounts
+		expectedOLAPUsage map[string]map[sku.SKU]int64
 	}{
 		{
 			name:        "CAS upload",
@@ -181,6 +214,14 @@ func TestHitTrackerService_Usage(t *testing.T) {
 			expectedUsage: []*tables.UsageCounts{
 				{},
 				{TotalUploadSizeBytes: 456},
+			},
+			expectedOLAPUsage: map[string]map[sku.SKU]int64{
+				usageutil.EncodeOLAPCollection(&usageutil.OLAPCollection{
+					GroupID: "GR1",
+					Labels:  sku.Labels{sku.Server: "servicio"},
+				}): {
+					sku.RemoteCacheCASUploadedBytes: 456,
+				},
 			},
 		},
 		{
@@ -194,6 +235,16 @@ func TestHitTrackerService_Usage(t *testing.T) {
 					TotalDownloadSizeBytes: 456,
 				},
 			},
+			expectedOLAPUsage: map[string]map[sku.SKU]int64{
+				usageutil.EncodeOLAPCollection(&usageutil.OLAPCollection{
+					GroupID: "GR1",
+					Labels:  sku.Labels{sku.Server: "servicio"},
+				}): {
+					// For CAS read: should have 1 empty hit + 1 456-byte hit
+					sku.RemoteCacheCASHits:            1 + 1,
+					sku.RemoteCacheCASDownloadedBytes: 0 + 456,
+				},
+			},
 		},
 		{
 			name:        "AC upload",
@@ -203,6 +254,14 @@ func TestHitTrackerService_Usage(t *testing.T) {
 				{},
 				{TotalUploadSizeBytes: 456},
 			},
+			expectedOLAPUsage: map[string]map[sku.SKU]int64{
+				usageutil.EncodeOLAPCollection(&usageutil.OLAPCollection{
+					GroupID: "GR1",
+					Labels:  sku.Labels{sku.Server: "servicio"},
+				}): {
+					sku.RemoteCacheCASUploadedBytes: 456,
+				},
+			},
 		},
 		{
 			name:        "AC download",
@@ -211,6 +270,15 @@ func TestHitTrackerService_Usage(t *testing.T) {
 			expectedUsage: []*tables.UsageCounts{
 				{ActionCacheHits: 1},
 				{ActionCacheHits: 1, TotalDownloadSizeBytes: 456},
+			},
+			expectedOLAPUsage: map[string]map[sku.SKU]int64{
+				usageutil.EncodeOLAPCollection(&usageutil.OLAPCollection{
+					GroupID: "GR1",
+					Labels:  sku.Labels{sku.Server: "servicio"},
+				}): {
+					sku.RemoteCacheACHits:             1 + 1,
+					sku.RemoteCacheCASDownloadedBytes: 0 + 456,
+				},
 			},
 		},
 	} {
@@ -226,6 +294,12 @@ func TestHitTrackerService_Usage(t *testing.T) {
 			require.NotNil(t, env.GetHitTrackerServiceServer())
 
 			ctx := context.Background()
+			// Need auth since we don't track usage for anon requests.
+			ctx = testauth.WithAuthenticatedUserInfo(ctx, &testauth.TestUser{
+				UserID:  "US1",
+				GroupID: "GR1",
+			})
+
 			iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
 			emptyRmd := &repb.RequestMetadata{
 				ToolInvocationId: iid,
@@ -263,7 +337,6 @@ func TestHitTrackerService_Usage(t *testing.T) {
 			_, err = env.GetHitTrackerServiceServer().Track(ctx, &req)
 			require.NoError(t, err)
 
-			require.Len(t, ut.Increments, 2)
 			require.Equal(t, tc.expectedUsage, ut.Increments)
 			require.Equal(t, len(ut.Increments), len(ut.Labels))
 			for _, l := range ut.Labels {
@@ -271,7 +344,8 @@ func TestHitTrackerService_Usage(t *testing.T) {
 					Server: "servicio",
 				}, l)
 			}
-			ut.Increments = nil
+
+			require.Equal(t, tc.expectedOLAPUsage, ut.OLAPUsage)
 		})
 	}
 }

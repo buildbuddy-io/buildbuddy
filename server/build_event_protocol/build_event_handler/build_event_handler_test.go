@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -282,11 +283,16 @@ func assertAPIKeyRedacted(t *testing.T, invocation *inpb.Invocation, apiKey stri
 }
 
 type FakeUsageTracker struct {
-	invocations int64
+	invocations     int64
+	olapInvocations int64
 }
 
 func (t *FakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, usage *tables.UsageCounts) error {
 	t.invocations += usage.Invocations
+	return nil
+}
+func (t *FakeUsageTracker) IncrementOLAP(ctx context.Context, labels map[sku.LabelName]sku.LabelValue, sku sku.SKU, count int64) error {
+	t.olapInvocations += count
 	return nil
 }
 
@@ -799,6 +805,7 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, int64(1), ut.invocations)
+	assert.Equal(t, int64(1), ut.olapInvocations)
 
 	// Send another started event for good measure; we should still only count 1
 	// invocation since it's the same stream.
@@ -807,6 +814,7 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, int64(1), ut.invocations)
+	assert.Equal(t, int64(1), ut.olapInvocations)
 }
 
 func TestFinishedFinalizeWithCanceledContext(t *testing.T) {

@@ -30,6 +30,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/remote_execution/config",
         "//server/tables",
+        "//server/usage/sku",
         "//server/util/alert",
         "//server/util/authutil",
         "//server/util/background",
