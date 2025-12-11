@@ -738,7 +738,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	}
 
 	ref := l.repo.Digest(l.digest.String())
-	upsream, err := ocifetcher.ReadBlob(l.image.ctx, l.client, ref.String(), l.creds.ToProto(), l.creds.bypassRegistry)
+	upstream, err := ocifetcher.ReadBlob(l.image.ctx, l.client, ref.String(), l.creds.ToProto(), l.creds.bypassRegistry)
 	if err != nil {
 		return nil, err
 	}
