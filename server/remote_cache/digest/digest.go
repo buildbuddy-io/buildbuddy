@@ -733,6 +733,12 @@ func (g *Generator) fill(p []byte) {
 		if g.val == 0 || g.src.Int63()%100 >= compressionPercent {
 			g.val = g.src.Int63()
 		}
+		if g.val == 0 && todo >= 8 {
+			// Fast path: write zeroes.
+			todo -= 8
+			offset += 8
+			continue
+		}
 		val := g.val
 		for range 8 {
 			if todo == 0 {
