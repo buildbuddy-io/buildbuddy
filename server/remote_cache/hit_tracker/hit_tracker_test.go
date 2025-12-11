@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -197,8 +198,19 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 						},
 					},
 				}, ut.Totals())
+				assert.ElementsMatch(t, []testusage.OLAPTotal{
+					{
+						GroupID: "GR1",
+						Labels:  sku.Labels{},
+						Counts: map[sku.SKU]int64{
+							sku.RemoteCacheCASHits:            1,
+							sku.RemoteCacheCASDownloadedBytes: 1000,
+						},
+					},
+				}, ut.OLAPTotals())
 			} else {
 				assert.Empty(t, ut.Totals())
+				assert.Empty(t, ut.OLAPTotals())
 			}
 		}
 		{
@@ -242,8 +254,19 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 						},
 					},
 				}, ut.Totals())
+				assert.ElementsMatch(t, []testusage.OLAPTotal{
+					{
+						GroupID: "GR1",
+						Labels:  sku.Labels{},
+						Counts: map[sku.SKU]int64{
+							sku.RemoteCacheCASHits:            1,
+							sku.RemoteCacheCASDownloadedBytes: 2000,
+						},
+					},
+				}, ut.OLAPTotals())
 			} else {
 				assert.Empty(t, ut.Totals())
+				assert.Empty(t, ut.OLAPTotals())
 			}
 		}
 		{
@@ -284,8 +307,18 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 						},
 					},
 				}, ut.Totals())
+				assert.ElementsMatch(t, []testusage.OLAPTotal{
+					{
+						GroupID: "GR1",
+						Labels:  sku.Labels{},
+						Counts: map[sku.SKU]int64{
+							sku.RemoteCacheCASHits: 1,
+						},
+					},
+				}, ut.OLAPTotals())
 			} else {
 				assert.Empty(t, ut.Totals())
+				assert.Empty(t, ut.OLAPTotals())
 			}
 		}
 		{
@@ -327,8 +360,19 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 						},
 					},
 				}, ut.Totals())
+				assert.ElementsMatch(t, []testusage.OLAPTotal{
+					{
+						GroupID: "GR1",
+						Labels:  sku.Labels{},
+						Counts: map[sku.SKU]int64{
+							sku.RemoteCacheACHits:             1,
+							sku.RemoteCacheCASDownloadedBytes: 111,
+						},
+					},
+				}, ut.OLAPTotals())
 			} else {
 				assert.Empty(t, ut.Totals())
+				assert.Empty(t, ut.OLAPTotals())
 			}
 		}
 	}
