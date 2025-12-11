@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
@@ -30,19 +31,15 @@ import (
 )
 
 const (
-	// readBufSizeBytes controls the buffer size used for reading from the
-	// remote cache. This should match the readBufSizeBytes in
-	// byte_stream_server.go, or it can be up to 2 times larger and still have
-	// similar performance.
-	readBufSizeBytes = 256 * 1024 // 256 KiB
-
 	// writeBufSizeBytes controls the maximum size of buffers used for writing
 	// to a remote cache. This is also the maximum payload size for each
 	// WriteRequest, though with ioutil.DoubleBufferWriter, payloads will be
 	// smaller unless the remote cache is falling behind. Experiments and
-	// benchmarks show that values between 256KiB and 1MB are all about as fast.
-	// Values over 1MB cause more allocation in gRPC code.
-	writeBufSizeBytes = 512 * 1024 // 512 KiB
+	// benchmarks show that 128KB, 256KB, and 512KB are all about as fast.
+	// Values outside that range cause more allocation in gRPC code. This
+	// should be slightly smaller than 2^N, to allow for proto and gRPC
+	// overhead.
+	writeBufSizeBytes = 512 * 1000 // 512 KB
 )
 
 type Proxy struct {
@@ -64,7 +61,7 @@ func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
 		env:        env,
 		cache:      c,
 		log:        log.NamedSubLogger(fmt.Sprintf("Proxy(%s)", listenAddr)),
-		bufPool:    bytebufferpool.VariableSize(max(readBufSizeBytes, writeBufSizeBytes)),
+		bufPool:    bytebufferpool.VariableSize(max(*config.ReadBufSizeBytes, writeBufSizeBytes)),
 		listenAddr: listenAddr,
 		mu:         &sync.Mutex{},
 		// server goes here
@@ -313,7 +310,7 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 	}
 	defer reader.Close()
 
-	bufSize := int64(digest.SafeBufferSize(rn, readBufSizeBytes))
+	bufSize := int64(digest.SafeBufferSize(rn, *config.ReadBufSizeBytes))
 	copyBuf := c.bufPool.Get(bufSize)
 	defer c.bufPool.Put(copyBuf)
 
