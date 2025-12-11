@@ -38,12 +38,7 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 )
 
-const (
-	pullerLRUMaxEntries = 1000
-	// blobChunkSizeBytes is the chunk size for streaming blob data.
-	// Matches uploadBufSizeBytes in server/remote_cache/cachetools/cachetools.go.
-	blobChunkSizeBytes = 128 * 1024
-)
+const pullerLRUMaxEntries = 1000
 
 var (
 	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
@@ -366,6 +361,12 @@ func (c *ociFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 	}, nil
 }
 
+func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	return nil, status.UnimplementedError("FetchBlobMetadata not implemented")
+}
+
+// ReadBlob returns an io.ReadCloser for reading the compressed bytes of the specified blob.
+
 // FetchBlob streams blob content from a remote registry.
 func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
 	// Blob references must be digest references (e.g., repo@sha256:...).
@@ -385,9 +386,7 @@ func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobReq
 			return nil, status.UnavailableErrorf("could not get compressed layer: %s", err)
 		}
 		return &blobStreamClient{
-			ctx:    ctx,
 			reader: reader,
-			buf:    make([]byte, blobChunkSizeBytes),
 		}, nil
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -416,36 +415,22 @@ func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobReq
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not get compressed layer: %s", err)
 	}
-	return &blobStreamClient{
-		ctx:    ctx,
-		reader: reader,
-		buf:    make([]byte, blobChunkSizeBytes),
-	}, nil
+	return &blobStreamClient{reader: reader}, nil
 }
 
 // blobStreamClient implements grpc.ServerStreamingClient for FetchBlob responses.
+// Since fetching currently only happens on the client (executor) node,
+// this struct exists to pass a ReadCloser through to ReadBlob.
 type blobStreamClient struct {
-	ctx    context.Context
 	reader io.ReadCloser
-	buf    []byte
 }
 
 func (c *blobStreamClient) Recv() (*ofpb.FetchBlobResponse, error) {
-	n, err := c.reader.Read(c.buf)
-	if n > 0 {
-		return &ofpb.FetchBlobResponse{
-			Data: c.buf[:n],
-		}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	// n == 0 and no error, keep reading
-	return c.Recv()
+	return nil, status.UnimplementedError("Recv not implemented on blobStreamClient")
 }
 
 func (c *blobStreamClient) Header() (metadata.MD, error) {
-	return nil, nil
+	return nil, status.UnimplementedError("Header not implemented on blobStreamClient")
 }
 
 func (c *blobStreamClient) Trailer() metadata.MD {
@@ -453,33 +438,21 @@ func (c *blobStreamClient) Trailer() metadata.MD {
 }
 
 func (c *blobStreamClient) CloseSend() error {
-	return c.reader.Close()
+	return status.UnimplementedError("CloseSend not implemented on blobStreamClient")
 }
 
 func (c *blobStreamClient) Context() context.Context {
-	return c.ctx
+	return context.TODO()
 }
 
 func (c *blobStreamClient) SendMsg(m any) error {
-	return nil
+	return status.UnimplementedError("SendMsg not implemented on blobStreamClient")
 }
 
 func (c *blobStreamClient) RecvMsg(m any) error {
-	resp, err := c.Recv()
-	if err != nil {
-		return err
-	}
-	if p, ok := m.(*ofpb.FetchBlobResponse); ok {
-		p.Data = resp.Data
-	}
-	return nil
+	return status.UnimplementedError("RecvMsg not implemented on blobStreamClient")
 }
 
-func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
-	return nil, status.UnimplementedError("FetchBlobMetadata not implemented")
-}
-
-// ReadBlob returns an io.ReadCloser for reading the compressed bytes of the specified blob.
 func ReadBlob(ctx context.Context, client ofpb.OCIFetcherClient, ref string, creds *rgpb.Credentials, bypassRegistry bool) (io.ReadCloser, error) {
 	stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{
 		Ref:            ref,
@@ -489,40 +462,8 @@ func ReadBlob(ctx context.Context, client ofpb.OCIFetcherClient, ref string, cre
 	if err != nil {
 		return nil, err
 	}
-	// Short-circuit: if this is a local blobStreamClient, return its reader directly
-	// to avoid the unnecessary chunking/reassembly round-trip.
 	if bsc, ok := stream.(*blobStreamClient); ok {
 		return bsc.reader, nil
 	}
-	return &blobStreamReader{stream: stream}, nil
-}
-
-// blobStreamReader wraps a gRPC streaming client for FetchBlob and implements io.ReadCloser.
-type blobStreamReader struct {
-	stream grpc.ServerStreamingClient[ofpb.FetchBlobResponse]
-	buf    []byte
-}
-
-func (r *blobStreamReader) Read(p []byte) (int, error) {
-	if len(r.buf) > 0 {
-		n := copy(p, r.buf)
-		r.buf = r.buf[n:]
-		return n, nil
-	}
-
-	resp, err := r.stream.Recv()
-	if err != nil {
-		return 0, err
-	}
-
-	data := resp.GetData()
-	n := copy(p, data)
-	if n < len(data) {
-		r.buf = data[n:]
-	}
-	return n, nil
-}
-
-func (r *blobStreamReader) Close() error {
-	return r.stream.CloseSend()
+	return nil, status.FailedPreconditionError("ReadBlob only works with blobStreamClient implementations")
 }
