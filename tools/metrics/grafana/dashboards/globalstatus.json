@@ -107,9 +107,9 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(cloudprober_success{region=~\"${region}\"}[10m])) by (probe) / sum(increase(cloudprober_total{region=~\"${region}\"}[10m])) by (probe)",
+          "expr": "sum(increase(cloudprober_success{region=~\"${region}\"}[10m])) by (region, probe) / sum(increase(cloudprober_total{region=~\"${region}\"}[10m])) by (region, probe)",
           "instant": false,
-          "legendFormat": "{{region{{=={{",
+          "legendFormat": "{{region}} {{probe}}",
           "range": true,
           "refId": "A"
         }
