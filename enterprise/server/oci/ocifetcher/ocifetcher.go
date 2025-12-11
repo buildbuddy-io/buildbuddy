@@ -12,15 +12,19 @@ package ocifetcher
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -32,14 +36,27 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 )
 
+const pullerLRUMaxEntries = 1000
+
 var (
 	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
 	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 )
 
+type pullerLRUEntry struct {
+	puller *remote.Puller
+}
+
 type ociFetcherClient struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
+
+	// On the first call to Head, Get, or Layer, Pullers make a GET /v2/ request,
+	// optionally followed by a POST request to an auth endpoint.
+	// To avoid making these requests for already-authed {image, credentials} pairs,
+	// we keep a small LRU cache of Pullers.
+	mu        sync.Mutex
+	pullerLRU *lru.LRU[*pullerLRUEntry]
 }
 
 // NewClient constructs a new OCI Fetcher client.
@@ -48,11 +65,19 @@ type ociFetcherClient struct {
 // to that server.
 // TODO(dan): Stop passing private IPs, mirror config to client once server owns the fetching logic.
 // TODO(dan): Update this comment once server is implemented!
-func NewClient(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) ofpb.OCIFetcherClient {
+func NewClient(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) (ofpb.OCIFetcherClient, error) {
+	pullerLRU, err := lru.NewLRU[*pullerLRUEntry](&lru.Config[*pullerLRUEntry]{
+		SizeFn:  func(_ *pullerLRUEntry) int64 { return 1 },
+		MaxSize: int64(pullerLRUMaxEntries),
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &ociFetcherClient{
 		allowedPrivateIPs: allowedPrivateIPs,
 		mirrors:           mirrors,
-	}
+		pullerLRU:         pullerLRU,
+	}, nil
 }
 
 func RegisterClient(env *real_environment.RealEnv) error {
@@ -60,7 +85,10 @@ func RegisterClient(env *real_environment.RealEnv) error {
 	if err != nil {
 		return err
 	}
-	client := NewClient(allowedPrivateIPNets, *mirrors)
+	client, err := NewClient(allowedPrivateIPNets, *mirrors)
+	if err != nil {
+		return err
+	}
 	env.SetOCIFetcherClient(client)
 	return nil
 }
@@ -183,6 +211,55 @@ func (c *ociFetcherClient) getRemoteOpts(ctx context.Context, creds *rgpb.Creden
 	return opts
 }
 
+func pullerKey(ref gcrname.Reference, creds *rgpb.Credentials) string {
+	if creds == nil {
+		return hash.Strings(
+			ref.Context().RegistryStr(),
+			ref.Context().RepositoryStr(),
+			"",
+			"",
+		)
+	}
+	return hash.Strings(
+		ref.Context().RegistryStr(),
+		ref.Context().RepositoryStr(),
+		creds.GetUsername(),
+		creds.GetPassword(),
+	)
+}
+
+// getOrCreatePuller returns a cached Puller for the given image reference and credentials,
+// or creates a new one if not found.
+func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*remote.Puller, error) {
+	key := pullerKey(imageRef, creds)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.pullerLRU.Get(key)
+
+	if ok {
+		return entry.puller, nil
+	}
+
+	remoteOpts := c.getRemoteOpts(ctx, creds)
+	// As of go-containerregistry v0.20.3, NewPuller does not perform IO
+	// and is safe to call with the mutex locked.
+	puller, err := remote.NewPuller(remoteOpts...)
+	if err != nil {
+		return nil, err
+	}
+	c.pullerLRU.Add(key, &pullerLRUEntry{puller: puller})
+
+	return puller, nil
+}
+
+func (c *ociFetcherClient) evictPuller(imageRef gcrname.Reference, creds *rgpb.Credentials) {
+	key := pullerKey(imageRef, creds)
+	c.mu.Lock()
+	c.pullerLRU.Remove(key)
+	c.mu.Unlock()
+}
+
 // FetchManifestMetadata performs a HEAD request to get manifest metadata (digest, size, media type)
 // without downloading the full manifest content.
 func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
@@ -191,9 +268,34 @@ func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
 	}
 
-	remoteOpts := c.getRemoteOpts(ctx, req.GetCredentials())
-	desc, err := remote.Head(imageRef, remoteOpts...)
+	puller, err := c.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
 	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+	desc, err := puller.Head(ctx, imageRef)
+	if err == nil {
+		return &ofpb.FetchManifestMetadataResponse{
+			Digest:    desc.Digest.String(),
+			Size:      desc.Size,
+			MediaType: string(desc.MediaType),
+		}, nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+
+	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
+	c.evictPuller(imageRef, req.GetCredentials())
+	puller, err = c.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+	desc, err = puller.Head(ctx, imageRef)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+	if err != nil {
+		c.evictPuller(imageRef, req.GetCredentials())
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
 		}
