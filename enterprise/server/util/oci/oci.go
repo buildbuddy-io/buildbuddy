@@ -555,9 +555,16 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		if manifest.Config.Data != nil {
 			return manifest.Config.Data, nil
 		}
-		// Read config blob directly - config blobs are not compressed
-		ref := i.repo.Digest(manifest.Config.Digest.String())
-		rc, err := ocifetcher.ReadBlob(i.ctx, i.client, ref.String(), i.creds.ToProto(), i.creds.bypassRegistry)
+		layer := newLayerFromDigest(
+			i.repo,
+			manifest.Config.Digest,
+			i,
+			i.client,
+			i.creds,
+			manifest.Config,
+		)
+
+		rc, err := layer.Uncompressed()
 		if err != nil {
 			return nil, err
 		}
