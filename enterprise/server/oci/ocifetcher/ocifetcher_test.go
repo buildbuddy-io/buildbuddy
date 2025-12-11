@@ -77,6 +77,16 @@ func TestFetch_HappyPath(t *testing.T) {
 		http.MethodGet + " /v2/test-image/blobs/" + layerDigest.String(): 1,
 	})
 
+	// FetchBlob (streaming client) - fresh client
+	counter.Reset()
+	client3b := newTestClient(t, env)
+	_, err = client3b.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: blobRef})
+	require.NoError(t, err)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/":                                         1,
+		http.MethodGet + " /v2/test-image/blobs/" + layerDigest.String(): 1,
+	})
+
 	// --- With valid credentials ---
 	creds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
 	reqCreds := &rgpb.Credentials{Username: "testuser", Password: "testpass"}
@@ -126,6 +136,16 @@ func TestFetch_HappyPath(t *testing.T) {
 	actualBytes2, err := io.ReadAll(reader2)
 	require.NoError(t, err)
 	require.Equal(t, expectedLayerData2, actualBytes2)
+	assertRequests(t, counter2, map[string]int{
+		http.MethodGet + " /v2/":                                          1,
+		http.MethodGet + " /v2/test-image/blobs/" + layerDigest2.String(): 1,
+	})
+
+	// FetchBlob (streaming client) with creds
+	counter2.Reset()
+	client6b := newTestClient(t, env)
+	_, err = client6b.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: blobRef2, Credentials: reqCreds})
+	require.NoError(t, err)
 	assertRequests(t, counter2, map[string]int{
 		http.MethodGet + " /v2/":                                          1,
 		http.MethodGet + " /v2/test-image/blobs/" + layerDigest2.String(): 1,
