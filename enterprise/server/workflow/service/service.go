@@ -76,6 +76,7 @@ var (
 	workflowsCIRunnerBazelCommand = flag.String("remote_execution.workflows_ci_runner_bazel_command", "", "Bazel command to be used by the CI runner.")
 	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
 	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
+	workflowsMaxRetries           = flag.Int("remote_execution.workflows_max_execute_retries", 4, "Number of times to retry a workflow action if it fails to start.")
 	enableKytheIndexing           = flag.Bool("remote_execution.enable_kythe_indexing", false, "If set, and codesearch is enabled, automatically run a kythe indexing action.")
 	workflowURLMatcher            = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
@@ -103,10 +104,6 @@ const (
 
 	// How long to wait before giving up on processing a webhook payload.
 	webhookWorkerTimeout = 30 * time.Second
-
-	// How many times to retry workflow execution if it fails due to a transient
-	// error.
-	executeWorkflowMaxRetries = 4
 
 	// Additional timeout allowed in addition to user timeout specified in
 	// buildbuddy.yaml (or the default timeout). This is long enough to allow
@@ -1451,7 +1448,7 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 // Starts a CI runner execution to execute a single workflow action, and returns the execution ID.
 func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, shouldRetry bool) (string, error) {
 	opts := retry.DefaultOptions()
-	opts.MaxRetries = executeWorkflowMaxRetries
+	opts.MaxRetries = *workflowsMaxRetries
 	r := retry.New(ctx, opts)
 	var lastErr error
 	for r.Next() {
@@ -1464,15 +1461,29 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 			return "", nil
 		}
 		if err != nil {
-			// TODO: Create a UI for these errors instead of just logging on the
-			// server.
 			log.CtxWarningf(ctx, "Failed to execute workflow action %q: %s", action.Name, err)
 			lastErr = err
+
+			// TODO: find a way for the retry package to properly handle
+			// MaxRetries=0, and remove this logic.
+			if *workflowsMaxRetries == 0 {
+				break
+			}
+
 			continue // retry
 		}
 
 		return executionID, nil
 	}
+
+	// Publish a status so the user can see why the workflow didn't execute. For
+	// now, encode a small error message in the URL, and link the user to an
+	// page displaying the error directly.
+	errorMessage := fmt.Sprintf("Failed to start workflow action %q: %s", action.Name, lastErr)
+	if err := ws.createRunnerStartErrorStatus(ctx, wf, wd, action.Name, invocationID, errorMessage); err != nil {
+		log.CtxWarningf(ctx, "Failed to publish runner start error status: %s", err)
+	}
+
 	return "", lastErr
 }
 
@@ -1553,6 +1564,21 @@ func (ws *workflowService) createQueuedStatus(ctx context.Context, wf *tables.Wo
 	}
 	invocationURL += "?queued=true"
 	status := github.NewGithubStatusPayload(actionName, invocationURL, "Queued...", github.PendingState)
+	statusReportingURL := getStatusReportingURL(wd)
+	provider, err := ws.providerForRepo(statusReportingURL)
+	if err != nil {
+		return err
+	}
+	return provider.CreateStatus(ctx, wf.AccessToken, statusReportingURL, wd.SHA, status)
+}
+
+func (ws *workflowService) createRunnerStartErrorStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName, invocationID, errorMessage string) error {
+	invocationURL, err := ws.createBBURL(ctx, "/invocation/"+invocationID)
+	if err != nil {
+		return err
+	}
+	invocationURL += "?runnerStartError=" + url.QueryEscape(errorMessage)
+	status := github.NewGithubStatusPayload(actionName, invocationURL, "Failed to start", github.ErrorState)
 	statusReportingURL := getStatusReportingURL(wd)
 	provider, err := ws.providerForRepo(statusReportingURL)
 	if err != nil {

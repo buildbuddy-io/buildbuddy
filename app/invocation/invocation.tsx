@@ -83,7 +83,7 @@ const smallPageSize = 10;
 
 export default class InvocationComponent extends React.Component<Props, State> {
   state: State = {
-    loading: true,
+    loading: false,
     error: null,
     keyboardShortcutHandle: "",
     childInvocations: [],
@@ -104,15 +104,17 @@ export default class InvocationComponent extends React.Component<Props, State> {
     // TODO(siggisim): Move moment configuration elsewhere
     moment.relativeTimeThreshold("ss", 0);
 
-    this.fetchInvocation();
+    if (!this.failedToStart()) {
+      this.fetchInvocation();
 
-    this.logsModel = new InvocationLogsModel(this.props.invocationId);
-    // Re-render whenever we fetch new log chunks.
-    this.logsSubscription = this.logsModel.onChange.subscribe({
-      next: () => this.forceUpdate(),
-    });
-    if (!this.isQueued() && !this.props.search.get("runnerFailed")) {
-      this.logsModel.startFetching();
+      this.logsModel = new InvocationLogsModel(this.props.invocationId);
+      // Re-render whenever we fetch new log chunks.
+      this.logsSubscription = this.logsModel.onChange.subscribe({
+        next: () => this.forceUpdate(),
+      });
+      if (!this.isQueued() && !this.props.search.get("runnerFailed")) {
+        this.logsModel.startFetching();
+      }
     }
   }
 
@@ -202,6 +204,21 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   /**
+   * Returns whether the invocation was never started. This can be true for
+   * buildbuddy-controlled invocations (workflows or remote bazel).
+   */
+  failedToStart(): boolean {
+    return this.props.search.has("runnerStartError");
+  }
+
+  /**
+   * Returns the error message for an invocation that failed to start.
+   */
+  getStartError(): string | null {
+    return this.props.search.get("runnerStartError");
+  }
+
+  /**
    * Temporarily overrides the requestContext used by the RPC service to set the
    * preferred group ID to the invocation owner group ID, even if that group is
    * not currently selected in the group picker. Does nothing if the user does
@@ -221,6 +238,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   async fetchInvocation() {
+    this.setState({ loading: true });
+
     // If applicable, fetch the CI runner execution in parallel. The CI runner
     // execution is what creates the invocation, so it can give us some
     // diagnostic info in the case where the invocation is never created, and
@@ -456,6 +475,17 @@ export default class InvocationComponent extends React.Component<Props, State> {
   render() {
     if (this.state.loading) {
       return <div className="loading" debug-id="invocation-loading"></div>;
+    }
+
+    // If the invocation never started due to a scheduling error, show the error.
+    if (this.failedToStart()) {
+      return (
+        <InvocationInProgressComponent
+          invocationId={this.props.invocationId}
+          title={"Invocation failed to start"}
+          subtitle={<span className="error-text">{this.getStartError()}</span>}
+        />
+      );
     }
 
     // If we don't have an invocation but we have an execution error, show just
