@@ -13,6 +13,7 @@ package ocifetcher
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -30,13 +31,19 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 )
 
-const pullerLRUMaxEntries = 1000
+const (
+	pullerLRUMaxEntries = 1000
+	// blobChunkSizeBytes is the chunk size for streaming blob data.
+	// Matches uploadBufSizeBytes in server/remote_cache/cachetools/cachetools.go.
+	blobChunkSizeBytes = 128 * 1024
+)
 
 var (
 	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
@@ -309,12 +316,163 @@ func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.
 	}, nil
 }
 
+// FetchManifest fetches the full manifest content from a remote registry.
 func (c *ociFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
-	return nil, status.UnimplementedError("FetchManifest not implemented")
+	imageRef, err := gcrname.ParseReference(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
+	}
+
+	puller, err := c.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+	desc, err := puller.Get(ctx, imageRef)
+	if err == nil {
+		return &ofpb.FetchManifestResponse{
+			Digest:    desc.Digest.String(),
+			Size:      desc.Size,
+			MediaType: string(desc.MediaType),
+			Manifest:  desc.Manifest,
+		}, nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+
+	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
+	c.evictPuller(imageRef, req.GetCredentials())
+	puller, err = c.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+	desc, err = puller.Get(ctx, imageRef)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+	if err != nil {
+		c.evictPuller(imageRef, req.GetCredentials())
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch manifest from remote registry: %s", err)
+	}
+
+	return &ofpb.FetchManifestResponse{
+		Digest:    desc.Digest.String(),
+		Size:      desc.Size,
+		MediaType: string(desc.MediaType),
+		Manifest:  desc.Manifest,
+	}, nil
 }
 
+// FetchBlob streams blob content from a remote registry.
 func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
-	return nil, status.UnimplementedError("FetchBlob not implemented")
+	// Blob references must be digest references (e.g., repo@sha256:...).
+	blobRef, err := gcrname.NewDigest(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid blob reference %q (must be a digest reference): %s", req.GetRef(), err)
+	}
+
+	puller, err := c.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+	layer, err := puller.Layer(ctx, blobRef)
+	if err == nil {
+		reader, err := layer.Compressed()
+		if err != nil {
+			return nil, status.UnavailableErrorf("could not get compressed layer: %s", err)
+		}
+		return &blobStreamClient{
+			ctx:    ctx,
+			reader: reader,
+			buf:    make([]byte, blobChunkSizeBytes),
+		}, nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+
+	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
+	c.evictPuller(blobRef, req.GetCredentials())
+	puller, err = c.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+	layer, err = puller.Layer(ctx, blobRef)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+	if err != nil {
+		c.evictPuller(blobRef, req.GetCredentials())
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access blob: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch blob from remote registry: %s", err)
+	}
+
+	reader, err := layer.Compressed()
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not get compressed layer: %s", err)
+	}
+	return &blobStreamClient{
+		ctx:    ctx,
+		reader: reader,
+		buf:    make([]byte, blobChunkSizeBytes),
+	}, nil
+}
+
+// blobStreamClient implements grpc.ServerStreamingClient for FetchBlob responses.
+type blobStreamClient struct {
+	ctx    context.Context
+	reader io.ReadCloser
+	buf    []byte
+}
+
+func (c *blobStreamClient) Recv() (*ofpb.FetchBlobResponse, error) {
+	n, err := c.reader.Read(c.buf)
+	if n > 0 {
+		return &ofpb.FetchBlobResponse{
+			Data: c.buf[:n],
+		}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	// n == 0 and no error, keep reading
+	return c.Recv()
+}
+
+func (c *blobStreamClient) Header() (metadata.MD, error) {
+	return nil, nil
+}
+
+func (c *blobStreamClient) Trailer() metadata.MD {
+	return nil
+}
+
+func (c *blobStreamClient) CloseSend() error {
+	return c.reader.Close()
+}
+
+func (c *blobStreamClient) Context() context.Context {
+	return c.ctx
+}
+
+func (c *blobStreamClient) SendMsg(m any) error {
+	return nil
+}
+
+func (c *blobStreamClient) RecvMsg(m any) error {
+	resp, err := c.Recv()
+	if err != nil {
+		return err
+	}
+	if p, ok := m.(*ofpb.FetchBlobResponse); ok {
+		p.Data = resp.Data
+	}
+	return nil
 }
 
 func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
