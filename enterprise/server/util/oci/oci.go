@@ -555,16 +555,9 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		if manifest.Config.Data != nil {
 			return manifest.Config.Data, nil
 		}
-		layer := newLayerFromDigest(
-			i.repo,
-			manifest.Config.Digest,
-			i,
-			i.client,
-			i.creds,
-			nil,
-		)
-
-		rc, err := layer.Uncompressed()
+		// Read config blob directly - config blobs are not compressed
+		ref := i.repo.Digest(manifest.Config.Digest.String())
+		rc, err := ocifetcher.ReadBlob(i.ctx, i.client, ref.String(), i.creds.ToProto(), i.creds.bypassRegistry)
 		if err != nil {
 			return nil, err
 		}
@@ -659,7 +652,7 @@ func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
 			i,
 			i.client,
 			i.creds,
-			&layerDesc,
+			layerDesc,
 		)
 
 		layers = append(layers, layer)
@@ -668,14 +661,23 @@ func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
 }
 
 func (i *imageFromRawManifest) LayerByDigest(digest gcr.Hash) (gcr.Layer, error) {
-	return newLayerFromDigest(
-		i.repo,
-		digest,
-		i,
-		i.client,
-		i.creds,
-		nil,
-	), nil
+	m, err := i.Manifest()
+	if err != nil {
+		return nil, err
+	}
+	for _, layerDesc := range m.Layers {
+		if layerDesc.Digest == digest {
+			return newLayerFromDigest(
+				i.repo,
+				digest,
+				i,
+				i.client,
+				i.creds,
+				layerDesc,
+			), nil
+		}
+	}
+	return nil, status.NotFoundErrorf("layer with digest %s not found in manifest", digest)
 }
 
 func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error) {
@@ -683,17 +685,10 @@ func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error)
 	if err != nil {
 		return nil, err
 	}
-	return newLayerFromDigest(
-		i.repo,
-		digest,
-		i,
-		i.client,
-		i.creds,
-		nil,
-	), nil
+	return i.LayerByDigest(digest)
 }
 
-func newLayerFromDigest(repo gcrname.Repository, digest gcr.Hash, image *imageFromRawManifest, client ofpb.OCIFetcherClient, creds Credentials, desc *gcr.Descriptor) *layerFromDigest {
+func newLayerFromDigest(repo gcrname.Repository, digest gcr.Hash, image *imageFromRawManifest, client ofpb.OCIFetcherClient, creds Credentials, desc gcr.Descriptor) *layerFromDigest {
 	return &layerFromDigest{
 		repo:   repo,
 		digest: digest,
@@ -715,7 +710,7 @@ type layerFromDigest struct {
 
 	client ofpb.OCIFetcherClient
 	creds  Credentials
-	desc   *gcr.Descriptor
+	desc   gcr.Descriptor
 }
 
 func (l *layerFromDigest) Digest() (gcr.Hash, error) {
@@ -784,19 +779,7 @@ func (l *layerFromDigest) Uncompressed() (io.ReadCloser, error) {
 }
 
 func (l *layerFromDigest) Size() (int64, error) {
-	if l.desc != nil {
-		return l.desc.Size, nil
-	}
-	ref := l.repo.Digest(l.digest.String())
-	resp, err := l.client.FetchBlobMetadata(l.image.ctx, &ofpb.FetchBlobMetadataRequest{
-		Ref:            ref.String(),
-		Credentials:    l.creds.ToProto(),
-		BypassRegistry: l.creds.bypassRegistry,
-	})
-	if err != nil {
-		return 0, err
-	}
-	return resp.GetSize(), nil
+	return l.desc.Size, nil
 }
 
 func (l *layerFromDigest) MediaType() (types.MediaType, error) {
