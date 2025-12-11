@@ -41,6 +41,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -699,6 +700,7 @@ func TestResolve_WithCache(t *testing.T) {
 			te := setupTestEnvWithCache(t)
 			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 			flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+			flags.Set(t, "auth.admin_group_id", "GR_ADMIN")
 			counter := testhttp.NewRequestCounter()
 			registry := testregistry.Run(t, testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -737,7 +739,7 @@ func TestResolve_WithCache(t *testing.T) {
 					http.MethodHead + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(): 1,
 					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String():  1,
 				}
-				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
+				resolveAndCheck(t, tc, te, imageAddress, expected, counter, false)
 
 				// Try resolving again - the image should now be cached and we
 				// should be able to avoid GET requests for manifests and blobs,
@@ -746,7 +748,7 @@ func TestResolve_WithCache(t *testing.T) {
 				expected = map[string]int{
 					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest": 1,
 				}
-				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
+				resolveAndCheck(t, tc, te, imageAddress, expected, counter, false)
 
 				// Try resolving again but fetch using a digest ref - we should
 				// still do a HEAD request for auth purposes, even though we
@@ -755,7 +757,7 @@ func TestResolve_WithCache(t *testing.T) {
 				expected = map[string]int{
 					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/" + imageDigest.String(): 1,
 				}
-				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter)
+				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter, false)
 
 				// Try resolving again but enable registry bypass (server admins
 				// can use this to bypass the registry for images that are
@@ -768,7 +770,7 @@ func TestResolve_WithCache(t *testing.T) {
 				})
 				require.NoError(t, err)
 				expected = map[string]int{}
-				resolveAndCheck(t, tcWithCreds, te, imageAddressWithDigest, expected, counter)
+				resolveAndCheck(t, tcWithCreds, te, imageAddressWithDigest, expected, counter, true /* asAdmin */)
 			}
 
 			// Test with index manifest
@@ -797,7 +799,7 @@ func TestResolve_WithCache(t *testing.T) {
 					http.MethodHead + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():     1,
 					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():      1,
 				}
-				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
+				resolveAndCheck(t, tc, te, indexAddress, expected, counter, false)
 
 				// Try resolving again - the image should now be cached and we
 				// should be able to avoid GET requests for manifests and blobs,
@@ -807,7 +809,7 @@ func TestResolve_WithCache(t *testing.T) {
 					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
 					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
 				}
-				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
+				resolveAndCheck(t, tc, te, indexAddress, expected, counter, false)
 
 				// Try resolving again but fetch using a digest ref - should be
 				// able to avoid contacting the registry entirely, since we
@@ -816,7 +818,7 @@ func TestResolve_WithCache(t *testing.T) {
 				expected = map[string]int{
 					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
 				}
-				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter)
+				resolveAndCheck(t, tc, te, imageAddressWithDigest, expected, counter, false)
 			}
 		})
 	}
@@ -965,9 +967,14 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	return te
 }
 
-func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, expected map[string]int, counter *testhttp.RequestCounter) {
+func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, expected map[string]int, counter *testhttp.RequestCounter, asAdmin bool) {
 	counter.Reset()
 	c := &claims.Claims{UserID: "US123"}
+	if asAdmin {
+		c.GroupMemberships = []*interfaces.GroupMembership{
+			{GroupID: "GR_ADMIN", Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN}},
+		}
+	}
 	testContext := contextWithUnverifiedJWT(c)
 	pulledImage, err := newResolver(t, te).Resolve(
 		testContext,

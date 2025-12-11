@@ -62,17 +62,15 @@ type ociFetcherClient struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
 
+	acClient repb.ActionCacheClient
+	bsClient bspb.ByteStreamClient
+
 	// On the first call to Head, Get, or Layer, Pullers make a GET /v2/ request,
 	// optionally followed by a POST request to an auth endpoint.
 	// To avoid making these requests for already-authed {image, credentials} pairs,
 	// we keep a small LRU cache of Pullers.
 	mu        sync.Mutex
 	pullerLRU *lru.LRU[*pullerLRUEntry]
-
-	// Cache clients for caching manifests and blobs.
-	// These may be nil if the cache is not configured.
-	acClient repb.ActionCacheClient
-	bsClient bspb.ByteStreamClient
 }
 
 // NewClient constructs a new OCI Fetcher client.
@@ -324,9 +322,22 @@ func withPullerRetry[T any](
 	return result, nil
 }
 
+func authorizeBypassRegistry(ctx context.Context, bypassRegistry bool) error {
+	if !bypassRegistry {
+		return nil
+	}
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return status.WrapError(err, "authorize container-registry-bypass")
+	}
+	return nil
+}
+
 // FetchManifestMetadata performs a HEAD request to get manifest metadata (digest, size, media type)
 // without downloading the full manifest content.
 func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
+	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+		return nil, err
+	}
 	imageRef, err := gcrname.ParseReference(req.GetRef())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
@@ -350,6 +361,9 @@ func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.
 // if caching is enabled. For tag references with caching enabled, a HEAD
 // request is made first to resolve the tag to a digest for cache lookup.
 func (c *ociFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
+	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+		return nil, err
+	}
 	imageRef, err := gcrname.ParseReference(req.GetRef())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
@@ -432,6 +446,9 @@ func (c *ociFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 // cacher when the blob is fully fetched, so metadata presence reliably indicates
 // that the blob is in the CAS.
 func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+		return nil, err
+	}
 	blobRef, err := gcrname.NewDigest(req.GetRef())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid blob reference %q (must be a digest reference): %s", req.GetRef(), err)
@@ -478,6 +495,9 @@ func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 
 // FetchBlob streams blob content, checking the cache first if caching is enabled.
 func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
+	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+		return nil, err
+	}
 	// Blob references must be digest references (e.g., repo@sha256:...).
 	blobRef, err := gcrname.NewDigest(req.GetRef())
 	if err != nil {
