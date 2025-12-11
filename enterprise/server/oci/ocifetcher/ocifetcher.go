@@ -13,6 +13,7 @@ package ocifetcher
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -30,10 +31,12 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 
 const pullerLRUMaxEntries = 1000
@@ -260,6 +263,52 @@ func (c *ociFetcherClient) evictPuller(imageRef gcrname.Reference, creds *rgpb.C
 	c.mu.Unlock()
 }
 
+// withPullerRetry handles the common pattern of executing an operation with a puller,
+// evicting and retrying on failure due to expired tokens.
+func withPullerRetry[T any](
+	c *ociFetcherClient,
+	ctx context.Context,
+	ref gcrname.Reference,
+	creds *rgpb.Credentials,
+	op func(puller *remote.Puller) (T, error),
+) (T, error) {
+	var zero T
+
+	puller, err := c.getOrCreatePuller(ctx, ref, creds)
+	if err != nil {
+		return zero, status.InternalErrorf("error creating puller: %s", err)
+	}
+
+	result, err := op(puller)
+	if err == nil {
+		return result, nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return zero, err
+	}
+
+	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
+	c.evictPuller(ref, creds)
+	puller, err = c.getOrCreatePuller(ctx, ref, creds)
+	if err != nil {
+		return zero, status.InternalErrorf("error creating puller: %s", err)
+	}
+
+	result, err = op(puller)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return zero, err
+	}
+	if err != nil {
+		c.evictPuller(ref, creds)
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return zero, status.PermissionDeniedErrorf("not authorized to access resource: %s", err)
+		}
+		return zero, status.UnavailableErrorf("could not fetch from remote registry: %s", err)
+	}
+
+	return result, nil
+}
+
 // FetchManifestMetadata performs a HEAD request to get manifest metadata (digest, size, media type)
 // without downloading the full manifest content.
 func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
@@ -268,38 +317,11 @@ func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
 	}
 
-	puller, err := c.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
+	desc, err := withPullerRetry(c, ctx, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*gcr.Descriptor, error) {
+		return puller.Head(ctx, imageRef)
+	})
 	if err != nil {
-		return nil, status.InternalErrorf("error creating puller: %s", err)
-	}
-	desc, err := puller.Head(ctx, imageRef)
-	if err == nil {
-		return &ofpb.FetchManifestMetadataResponse{
-			Digest:    desc.Digest.String(),
-			Size:      desc.Size,
-			MediaType: string(desc.MediaType),
-		}, nil
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil, err
-	}
-
-	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
-	c.evictPuller(imageRef, req.GetCredentials())
-	puller, err = c.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
-	if err != nil {
-		return nil, status.InternalErrorf("error creating puller: %s", err)
-	}
-	desc, err = puller.Head(ctx, imageRef)
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return nil, err
-	}
-	if err != nil {
-		c.evictPuller(imageRef, req.GetCredentials())
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not fetch manifest metadata from remote registry: %s", err)
 	}
 
 	return &ofpb.FetchManifestMetadataResponse{
@@ -309,14 +331,100 @@ func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.
 	}, nil
 }
 
+// FetchManifest fetches the full manifest content from a remote registry.
 func (c *ociFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
-	return nil, status.UnimplementedError("FetchManifest not implemented")
-}
+	imageRef, err := gcrname.ParseReference(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
+	}
 
-func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
-	return nil, status.UnimplementedError("FetchBlob not implemented")
+	desc, err := withPullerRetry(c, ctx, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*remote.Descriptor, error) {
+		return puller.Get(ctx, imageRef)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &ofpb.FetchManifestResponse{
+		Digest:    desc.Digest.String(),
+		Size:      desc.Size,
+		MediaType: string(desc.MediaType),
+		Manifest:  desc.Manifest,
+	}, nil
 }
 
 func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
 	return nil, status.UnimplementedError("FetchBlobMetadata not implemented")
+}
+
+// FetchBlob streams blob content from a remote registry.
+func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
+	// Blob references must be digest references (e.g., repo@sha256:...).
+	blobRef, err := gcrname.NewDigest(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid blob reference %q (must be a digest reference): %s", req.GetRef(), err)
+	}
+
+	layer, err := withPullerRetry(c, ctx, blobRef, req.GetCredentials(), func(puller *remote.Puller) (gcr.Layer, error) {
+		return puller.Layer(ctx, blobRef)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	reader, err := layer.Compressed()
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not get compressed layer: %s", err)
+	}
+	return &blobStreamClient{reader: reader}, nil
+}
+
+// blobStreamClient implements grpc.ServerStreamingClient for FetchBlob responses.
+// Since fetching currently only happens on the client (executor) node,
+// this struct exists to pass a ReadCloser through to ReadBlob.
+type blobStreamClient struct {
+	reader io.ReadCloser
+}
+
+func (c *blobStreamClient) Recv() (*ofpb.FetchBlobResponse, error) {
+	return nil, status.UnimplementedError("Recv not implemented on blobStreamClient")
+}
+
+func (c *blobStreamClient) Header() (metadata.MD, error) {
+	return nil, status.UnimplementedError("Header not implemented on blobStreamClient")
+}
+
+func (c *blobStreamClient) Trailer() metadata.MD {
+	return nil
+}
+
+func (c *blobStreamClient) CloseSend() error {
+	return status.UnimplementedError("CloseSend not implemented on blobStreamClient")
+}
+
+func (c *blobStreamClient) Context() context.Context {
+	return context.TODO()
+}
+
+func (c *blobStreamClient) SendMsg(m any) error {
+	return status.UnimplementedError("SendMsg not implemented on blobStreamClient")
+}
+
+func (c *blobStreamClient) RecvMsg(m any) error {
+	return status.UnimplementedError("RecvMsg not implemented on blobStreamClient")
+}
+
+func ReadBlob(ctx context.Context, client ofpb.OCIFetcherClient, ref string, creds *rgpb.Credentials, bypassRegistry bool) (io.ReadCloser, error) {
+	stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:            ref,
+		Credentials:    creds,
+		BypassRegistry: bypassRegistry,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if bsc, ok := stream.(*blobStreamClient); ok {
+		return bsc.reader, nil
+	}
+	return nil, status.FailedPreconditionError("ReadBlob only works with blobStreamClient implementations")
 }
