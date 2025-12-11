@@ -156,9 +156,9 @@ func TestFetch_MissingCredentials(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
 
-	// FetchBlob - missing creds (returns Unavailable due to different error path)
+	// FetchBlob - missing creds
 	client3 := newTestClient(t, env)
-	_, err = ocifetcher.ReadBlob(context.Background(), client3, blobRef, nil, false)
+	_, err = client3.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: blobRef})
 	require.Error(t, err)
 	require.True(t, status.IsUnavailableError(err), "expected Unavailable, got: %v", err)
 }
@@ -188,9 +188,9 @@ func TestFetch_InvalidCredentials(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
 
-	// FetchBlob - invalid creds (returns Unavailable due to different error path)
+	// FetchBlob - invalid creds
 	client3 := newTestClient(t, env)
-	_, err = ocifetcher.ReadBlob(context.Background(), client3, blobRef, badCreds, false)
+	_, err = client3.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: blobRef, Credentials: badCreds})
 	require.Error(t, err)
 	require.True(t, status.IsUnavailableError(err), "expected Unavailable, got: %v", err)
 }
@@ -280,9 +280,9 @@ func TestFetch_NoRetryOnContextError(t *testing.T) {
 	ctx3, cancel3 := context.WithCancel(context.Background())
 	cancelFunc = cancel3
 	client3 := newTestClient(t, env)
-	_, err = ocifetcher.ReadBlob(ctx3, client3, blobRef, nil, false)
+	_, err = client3.FetchBlob(ctx3, &ofpb.FetchBlobRequest{Ref: blobRef})
 	require.Error(t, err)
-	require.True(t, status.IsUnavailableError(err), "expected UnavailableError, got: %v", err)
+	require.True(t, status.IsUnavailableError(err), "expected Unavailable, got: %v", err)
 }
 
 func localhostIPs(t *testing.T) []*net.IPNet {
