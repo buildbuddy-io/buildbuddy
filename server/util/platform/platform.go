@@ -170,10 +170,10 @@ const (
 const (
 	// Every run will save a snapshot.
 	AlwaysSaveSnapshot = "always"
-	// Default. Only the first run on a non-default ref will save a snapshot.
+	// Only the first run on a non-default ref will save a snapshot.
 	// All runs on default refs will save a snapshot.
 	OnlySaveFirstNonDefaultSnapshot = "first-non-default-ref"
-	// Will only save a snapshot on a non-default ref if there are no
+	// Default. Will only save a snapshot on a non-default ref if there are no
 	// snapshots available. If there is a fallback default snapshot, still will not save
 	// a snapshot.
 	// All runs on default refs will save a snapshot.

@@ -1116,15 +1116,12 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 		// We want to always save the default snapshot, because it is used as a fallback for
 		// runs on other branches, so we want it to stay up-to-date.
 		return true
-	} else if remoteSavePolicy == platform.OnlySaveNonDefaultSnapshotIfNoneAvailable {
-		return !c.hasRemoteSnapshot(ctx, c.loader)
+	} else if remoteSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
+		return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
 	}
 
-	// By default (applies if save policy is unset or invalid) or if
-	// savePolicy=OnlySaveFirstNonDefaultRemoteSnapshot,
-	// only save a remote snapshot if a remote snapshot for the primary git branch key
-	// doesn't already exist.
-	return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
+	// By default, savePolicy=OnlySaveNonDefaultSnapshotIfNoneAvailable,
+	return !c.hasRemoteSnapshot(ctx, c.loader)
 }
 
 func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool {
