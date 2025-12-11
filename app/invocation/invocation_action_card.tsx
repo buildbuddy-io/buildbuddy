@@ -1095,7 +1095,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         className="view-history-button"
                         onClick={() =>
                           router.navigateTo(
-                            getDrilldownUrl(this.state.execution.targetLabel, this.state.execution.actionMnemonic)
+                            getDrilldownUrl(this.state.execution?.targetLabel, this.state.execution?.actionMnemonic)
                           )
                         }>
                         <History className="icon" />
@@ -1551,7 +1551,10 @@ function parseActionDigestHashFromExecutionId(executionId: string): string | und
   return parts[parts.length - 2];
 }
 
-function getDrilldownUrl(targetLabel: string, actionMnemonic: string): string {
+function getDrilldownUrl(targetLabel?: string, actionMnemonic?: string): string {
+  if (!targetLabel || !actionMnemonic) {
+    return "";
+  }
   const dimensionParam = `${encodeTargetLabelUrlParam(targetLabel)}|${encodeActionMnemonicUrlParam(actionMnemonic)}`;
   return `/trends/?d=${encodeURIComponent(dimensionParam)}#drilldown`;
 }
