@@ -738,7 +738,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	}
 
 	ref := l.repo.Digest(l.digest.String())
-	upstream, err := l.fetchBlobFromRemote(ref.String())
+	upsream, err := ocifetcher.ReadBlob(l.image.ctx, l.client, ref.String(), l.creds.ToProto(), l.creds.bypassRegistry)
 	if err != nil {
 		return nil, err
 	}
@@ -771,10 +771,6 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	}
 
 	return upstream, nil
-}
-
-func (l *layerFromDigest) fetchBlobFromRemote(ref string) (io.ReadCloser, error) {
-	return ocifetcher.ReadBlob(l.image.ctx, l.client, ref, l.creds.ToProto(), l.creds.bypassRegistry)
 }
 
 // Uncompressed fetches the compressed bytes from the upstream server
