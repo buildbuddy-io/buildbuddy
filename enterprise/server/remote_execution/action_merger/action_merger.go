@@ -345,18 +345,17 @@ func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, sche
 	// that the task is created in the scheduler before merging to avoid a
 	// scenario where we reuse an execution ID that fails to schedule.
 	err = retry.DoVoid(ctx, &retry.Options{
-		InitialBackoff: 5 * time.Millisecond,
-		MaxBackoff:     3 * time.Second,
-		Multiplier:     2,
-		Name:           "Checking scheduler for pending execution",
+		InitialBackoff:        5 * time.Millisecond,
+		MaxBackoff:            3 * time.Second,
+		Multiplier:            2,
+		DontLogFailedAttempts: true,
 	}, func(ctx context.Context) error {
 		existsInScheduler, err := schedulerService.ExistsTask(ctx, executionID)
 		if err != nil {
-			log.CtxWarningf(ctx, "Error checking if pending execution %q exists in the scheduler: %s", newExecutionID, err)
 			return retry.NonRetryableError(err)
 		}
 		if !existsInScheduler {
-			return fmt.Errorf("pending execution %q does not exist in the scheduler yet", newExecutionID)
+			return fmt.Errorf("pending execution does not exist in the scheduler yet")
 		}
 		return nil
 	})
