@@ -478,3 +478,46 @@ func (c *blobStreamClient) RecvMsg(m any) error {
 func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
 	return nil, status.UnimplementedError("FetchBlobMetadata not implemented")
 }
+
+// ReadBlob returns an io.ReadCloser for reading the compressed bytes of the specified blob.
+func ReadBlob(ctx context.Context, client ofpb.OCIFetcherClient, ref string, creds *rgpb.Credentials, bypassRegistry bool) (io.ReadCloser, error) {
+	stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:            ref,
+		Credentials:    creds,
+		BypassRegistry: bypassRegistry,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &blobStreamReader{stream: stream}, nil
+}
+
+// blobStreamReader wraps a gRPC streaming client for FetchBlob and implements io.ReadCloser.
+type blobStreamReader struct {
+	stream grpc.ServerStreamingClient[ofpb.FetchBlobResponse]
+	buf    []byte
+}
+
+func (r *blobStreamReader) Read(p []byte) (int, error) {
+	if len(r.buf) > 0 {
+		n := copy(p, r.buf)
+		r.buf = r.buf[n:]
+		return n, nil
+	}
+
+	resp, err := r.stream.Recv()
+	if err != nil {
+		return 0, err
+	}
+
+	data := resp.GetData()
+	n := copy(p, data)
+	if n < len(data) {
+		r.buf = data[n:]
+	}
+	return n, nil
+}
+
+func (r *blobStreamReader) Close() error {
+	return r.stream.CloseSend()
+}

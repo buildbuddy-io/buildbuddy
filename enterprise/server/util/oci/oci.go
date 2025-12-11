@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -26,7 +27,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/jonboulle/clockwork"
-	"google.golang.org/grpc"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
@@ -774,45 +774,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 }
 
 func (l *layerFromDigest) fetchBlobFromRemote(ref string) (io.ReadCloser, error) {
-	stream, err := l.client.FetchBlob(l.image.ctx, &ofpb.FetchBlobRequest{
-		Ref:            ref,
-		Credentials:    l.creds.ToProto(),
-		BypassRegistry: l.creds.bypassRegistry,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &blobStreamReader{stream: stream}, nil
-}
-
-// blobStreamReader wraps a gRPC streaming client for FetchBlob and implements io.ReadCloser.
-type blobStreamReader struct {
-	stream grpc.ServerStreamingClient[ofpb.FetchBlobResponse]
-	buf    []byte
-}
-
-func (r *blobStreamReader) Read(p []byte) (int, error) {
-	if len(r.buf) > 0 {
-		n := copy(p, r.buf)
-		r.buf = r.buf[n:]
-		return n, nil
-	}
-
-	resp, err := r.stream.Recv()
-	if err != nil {
-		return 0, err
-	}
-
-	data := resp.GetData()
-	n := copy(p, data)
-	if n < len(data) {
-		r.buf = data[n:]
-	}
-	return n, nil
-}
-
-func (r *blobStreamReader) Close() error {
-	return r.stream.CloseSend()
+	return ocifetcher.ReadBlob(l.image.ctx, l.client, ref, l.creds.ToProto(), l.creds.bypassRegistry)
 }
 
 // Uncompressed fetches the compressed bytes from the upstream server
