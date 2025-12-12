@@ -5,7 +5,7 @@ load(":defs.bzl", "ts_proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
-# gazelle:typescript disable
+# gazelle:ts disable
 
 go_proto_compiler(
     name = "vtprotobuf_compiler",
