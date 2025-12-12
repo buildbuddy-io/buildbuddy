@@ -232,45 +232,6 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	}, nil
 }
 
-// fetchManifestMetadata performs a HEAD request to get manifest metadata (digest, size, media type)
-// without downloading the full manifest content.
-func (r *Resolver) fetchManifestMetadata(ctx context.Context, imageName string, credentials Credentials) (*gcr.Descriptor, error) {
-	imageRef, err := gcrname.ParseReference(imageName)
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", imageName, err)
-	}
-
-	remoteOpts := []remote.Option{remote.WithContext(ctx)}
-	if !credentials.IsEmpty() {
-		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Basic{
-			Username: credentials.Username,
-			Password: credentials.Password,
-		}))
-	}
-	tr := httpclient.New(r.allowedPrivateIPs, "oci").Transport
-	mirrors := ocifetcher.Mirrors()
-	if len(mirrors) > 0 {
-		remoteOpts = append(remoteOpts, remote.WithTransport(ocifetcher.NewMirrorTransport(tr, mirrors)))
-	} else {
-		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
-	}
-
-	puller, err := remote.NewPuller(remoteOpts...)
-	if err != nil {
-		return nil, status.InternalErrorf("error creating puller: %s", err)
-	}
-
-	desc, err := puller.Head(ctx, imageRef)
-	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not fetch manifest metadata from remote registry: %s", err)
-	}
-
-	return desc, nil
-}
-
 // AuthenticateWithRegistry makes a HEAD request to a remote registry with the input credentials.
 // Any errors encountered are returned.
 // Otherwise, the function returns nil and it is safe to assume the input credentials grant access
@@ -281,8 +242,22 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	}
 
 	log.CtxInfof(ctx, "Authenticating with registry for %q", imageName)
-	_, err := r.fetchManifestMetadata(ctx, imageName, credentials)
-	return err
+
+	imageRef, err := gcrname.ParseReference(imageName)
+	if err != nil {
+		return status.InvalidArgumentErrorf("invalid image reference %q: %s", imageName, err)
+	}
+
+	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+	_, err = remote.Head(imageRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return status.UnavailableErrorf("could not fetch manifest metadata from remote registry: %s", err)
+	}
+
+	return nil
 }
 
 // ResolveImageDigest takes an image name and returns an image name with a digest.
@@ -313,9 +288,13 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		r.mu.Unlock()
 	}
 
-	desc, err := r.fetchManifestMetadata(ctx, imageName, credentials)
+	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+	desc, err := remote.Head(tagRef, remoteOpts...)
 	if err != nil {
-		return "", err
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return "", status.UnavailableErrorf("could not fetch manifest metadata from remote registry: %s", err)
 	}
 	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
 	entryToAdd := tagToDigestEntry{
