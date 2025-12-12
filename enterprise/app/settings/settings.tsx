@@ -15,7 +15,6 @@ import EditOrgComponent from "../org/edit_org";
 import OrgJoinRequests from "../org/org_join_requests";
 import OrgMembersComponent from "../org/org_members";
 import OrgUserListsComponent from "../org/org_user_lists";
-import QuotaComponent from "../quota/quota";
 import SecretsComponent from "../secrets/secrets";
 import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
 import GitHubLink from "./github_link";
@@ -42,8 +41,6 @@ enum TabId {
   PersonalPreferences = "personal/preferences",
   PersonalApiKeys = "personal/api-keys",
   PersonalGitHubLink = "personal/github",
-
-  ServerQuota = "server/quota",
 }
 
 const TAB_IDS = new Set<string>(Object.values(TabId));
@@ -192,18 +189,6 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   </SettingsTab>
                 )}
               </div>
-              {this.props.user.canCall("getNamespace") && capabilities.config.quotaManagementEnabled && (
-                <>
-                  <div className="settings-tab-group-header">
-                    <div className="settings-tab-group-title">Server settings</div>
-                  </div>
-                  <div className="settings-tab-group">
-                    <SettingsTab id={TabId.ServerQuota} activeTabId={activeTabId}>
-                      Quota
-                    </SettingsTab>
-                  </div>
-                </>
-              )}
             </div>
             <div className="settings-content">
               {activeTabId === "personal/preferences" && (
@@ -334,9 +319,6 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     )}
                   {activeTabId === TabId.OrgSecrets && capabilities.config.secretsEnabled && (
                     <SecretsComponent path={this.props.path} search={this.props.search} />
-                  )}
-                  {activeTabId === TabId.ServerQuota && capabilities.config.quotaManagementEnabled && (
-                    <QuotaComponent path={this.props.path} search={this.props.search} />
                   )}
                   {activeTabId == TabId.OrgCacheEncryption && (
                     <>
