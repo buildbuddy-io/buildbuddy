@@ -95,7 +95,11 @@ func RegisterClient(env *real_environment.RealEnv) error {
 	return nil
 }
 
-// NewServer constructs a new OCI Fetcher server.
+// NewServer constructs an OCIFetcherServer that
+// fetches OCI blobs and manifests from remote registries.
+//
+// It is preferred to construct only one server, so that there is only
+// one Puller cache per process.
 func NewServer() (ofpb.OCIFetcherServer, error) {
 	allowedPrivateIPs, err := ParseAllowedPrivateIPs()
 	if err != nil {
