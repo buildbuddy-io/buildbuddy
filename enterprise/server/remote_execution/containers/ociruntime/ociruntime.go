@@ -1553,7 +1553,8 @@ func (s *ImageStore) CachedImage(imageName string) (image *Image, ok bool) {
 }
 
 func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Credentials) (*Image, error) {
-	img, err := s.resolver.Resolve(ctx, imageName, oci.RuntimePlatform(), creds)
+	// TODO: pass useThinClient from task experiments when available
+	img, err := s.resolver.Resolve(ctx, imageName, oci.RuntimePlatform(), creds, false /*useThinClient*/)
 	if err != nil {
 		return nil, status.WrapError(err, "resolve image")
 	}

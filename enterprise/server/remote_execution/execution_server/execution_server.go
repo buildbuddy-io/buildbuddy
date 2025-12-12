@@ -852,7 +852,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 			}
 		}
 
-		// OCI fetcher thin client experiment
 		const ociFetcherThinClientExperiment = "ocifetcher.thin_client_enabled"
 		if _, details := exp.BooleanDetails(ctx, ociFetcherThinClientExperiment, false); details.Variant() != "" {
 			executionTask.Experiments = append(executionTask.Experiments, ociFetcherThinClientExperiment+":"+details.Variant())

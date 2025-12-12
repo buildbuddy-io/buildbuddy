@@ -876,18 +876,20 @@ func (p *pool) hostBuildRoot() string {
 	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 }
 
+const ociFetcherThinClientExperiment = "ocifetcher.thin_client_enabled"
+
 // resolveImageDigest replaces the ContainerImage property with an image name that includes a digest.
 // This makes the ContainerImage property safe to use as a cache key.
 func (p *pool) resolveImageDigest(ctx context.Context, props *platform.Properties, experiments []string) error {
 	if props.ContainerImage == "" {
 		return nil
 	}
-	ctx = oci.WithExperiments(ctx, experiments)
+	useThinClient := slices.Contains(experiments, ociFetcherThinClientExperiment+":true")
 	creds, err := oci.CredentialsFromProperties(props)
 	if err != nil {
 		return err
 	}
-	imageNameWithDigest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
+	imageNameWithDigest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds, useThinClient)
 	if err != nil {
 		return err
 	}

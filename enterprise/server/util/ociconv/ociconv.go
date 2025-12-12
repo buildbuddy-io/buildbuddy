@@ -149,7 +149,7 @@ func authenticateWithRegistry(ctx context.Context, resolver *oci.Resolver, conta
 	defer span.End()
 
 	// Authenticate with the remote registry using these credentials to ensure they are valid.
-	if err := resolver.AuthenticateWithRegistry(ctx, containerImage, oci.RuntimePlatform(), creds); err != nil {
+	if err := resolver.AuthenticateWithRegistry(ctx, containerImage, oci.RuntimePlatform(), creds, false /*useThinClient*/); err != nil {
 		return status.WrapError(err, "authentice with registry")
 	}
 	return nil
@@ -183,7 +183,7 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, cacheRoot, con
 // convertContainerToExt4FS generates an ext4 filesystem image from an OCI
 // container image reference.
 func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
-	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds)
+	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds, false /*useThinClient*/)
 	if err != nil {
 		return "", err
 	}
