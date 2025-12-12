@@ -689,12 +689,18 @@ func TestServerMissingAndInvalidCredentials(t *testing.T) {
 	for _, cc := range credsCases {
 		t.Run(cc.name, func(t *testing.T) {
 			reg, counter := setupRegistry(t, registryCreds, nil)
-			imageName, _ := reg.PushNamedImage(t, "test-image", registryCreds)
+			imageName, img := reg.PushNamedImage(t, "test-image", registryCreds)
+			layers, err := img.Layers()
+			require.NoError(t, err)
+			require.NotEmpty(t, layers)
+			layer := layers[0]
+			layerDigest, err := layer.Digest()
+			require.NoError(t, err)
 			server := newTestServer(t)
 
 			// FetchManifestMetadata
 			counter.Reset()
-			_, err := server.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
+			_, err = server.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
 				Ref:         imageName,
 				Credentials: cc.requestCreds,
 			})
@@ -718,9 +724,24 @@ func TestServerMissingAndInvalidCredentials(t *testing.T) {
 				http.MethodGet + " /v2/test-image/manifests/latest": 2,
 			})
 
-			// Note: FetchBlobMetadata and FetchBlob make HTTP calls after withPullerRetry
-			// (during layer.Size()/layer.Compressed()), so 401 errors may be wrapped differently.
-			// These are tested in TestServerHappyPath for correct auth behavior.
+			// FetchBlobMetadata - 401 errors are wrapped differently for blob methods
+			counter.Reset()
+			_, err = server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
+				Ref:         blobRef(imageName, layerDigest),
+				Credentials: cc.requestCreds,
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "401 Unauthorized", "FetchBlobMetadata: expected 401 error, got: %v", err)
+
+			// FetchBlob - 401 errors are wrapped differently for blob methods
+			counter.Reset()
+			stream := &mockFetchBlobServer{ctx: context.Background()}
+			err = server.FetchBlob(&ofpb.FetchBlobRequest{
+				Ref:         blobRef(imageName, layerDigest),
+				Credentials: cc.requestCreds,
+			}, stream)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "401 Unauthorized", "FetchBlob: expected 401 error, got: %v", err)
 		})
 	}
 }
