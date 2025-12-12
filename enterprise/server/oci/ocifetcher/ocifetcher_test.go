@@ -540,10 +540,6 @@ func TestFetchManifestMetadata_HTTPErrorThenContextError(t *testing.T) {
 	})
 }
 
-// =============================================================================
-// Server Tests
-// =============================================================================
-
 func TestServerHappyPath(t *testing.T) {
 	authCases := []struct {
 		name          string
