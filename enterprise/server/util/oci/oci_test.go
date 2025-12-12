@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -222,10 +221,6 @@ func TestCredentialsToProto(t *testing.T) {
 }
 
 func newResolver(t *testing.T, te *testenv.TestEnv) *oci.Resolver {
-	if te.GetOCIFetcherClient() == nil {
-		err := ocifetcher.RegisterClient(te)
-		require.NoError(t, err)
-	}
 	r, err := oci.NewResolver(te)
 	require.NoError(t, err)
 	return r
@@ -1224,6 +1219,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 
 	expectedRefresh := map[string]int{
+		http.MethodGet + " /v2/":                                    1,
 		http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
 	}
 	require.Empty(t, cmp.Diff(expectedRefresh, counter.Snapshot()))
