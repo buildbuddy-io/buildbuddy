@@ -34,6 +34,7 @@ const (
 	packageFileName     = "package.json"
 	tsFileExtension     = ".ts"
 	tsxFileExtension    = ".tsx"
+	disableMode         = "disable"
 )
 
 var dynamicImportPattern = regexp.MustCompile("(?ms)import\\s*\\(\\s*(['\"`]([^'\"`]+)['\"`])\\s*\\)")
@@ -194,7 +195,7 @@ func (t *TS) Embeds(r *rule.Rule, from label.Label) []label.Label {
 // language-specific rules and heuristics.
 func (t *TS) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.RemoteCache, r *rule.Rule, imports any, from label.Label) {
 	config := c.Exts[languageName].(tsConfig)
-	if config.Mode == "disable" {
+	if config.Mode == disableMode {
 		return
 	}
 
@@ -289,8 +290,8 @@ func (t *TS) Configure(c *config.Config, rel string, f *rule.File) {
 		for _, d := range f.Directives {
 			switch d.Key {
 			case languageName:
-				if d.Value == "disable" {
-					tsConfig.Mode = "disable"
+				if d.Value == disableMode {
+					tsConfig.Mode = disableMode
 				}
 			}
 		}
