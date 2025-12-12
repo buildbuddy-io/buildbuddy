@@ -33,7 +33,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/jonboulle/clockwork"
 
-	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
@@ -214,9 +213,6 @@ type Resolver struct {
 }
 
 func NewResolver(env environment.Env) (*Resolver, error) {
-	if env.GetOCIFetcherClient() == nil {
-		return nil, status.FailedPreconditionError("OCIFetcherClient is required")
-	}
 	allowedPrivateIPNets, err := ocifetcher.ParseAllowedPrivateIPs()
 	if err != nil {
 		return nil, err
@@ -246,16 +242,21 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	}
 
 	log.CtxInfof(ctx, "Authenticating with registry for %q", imageName)
-	_, err := r.env.GetOCIFetcherClient().FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
-		Ref: imageName,
-		Credentials: &rgpb.Credentials{
-			Username: credentials.Username,
-			Password: credentials.Password,
-		},
-	})
+
+	imageRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
-		return err
+		return status.InvalidArgumentErrorf("invalid image reference %q: %s", imageName, err)
 	}
+
+	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+	_, err = remote.Head(imageRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return status.UnavailableErrorf("could not fetch manifest metadata from remote registry: %s", err)
+	}
+
 	return nil
 }
 
@@ -287,20 +288,15 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		r.mu.Unlock()
 	}
 
-	resp, err := r.env.GetOCIFetcherClient().FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
-		Ref: imageName,
-		Credentials: &rgpb.Credentials{
-			Username: credentials.Username,
-			Password: credentials.Password,
-		},
-	})
+	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+	desc, err := remote.Head(tagRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
 		}
-		return "", status.UnavailableErrorf("could not authorize to remote registry: %s", err)
+		return "", status.UnavailableErrorf("could not fetch manifest metadata from remote registry: %s", err)
 	}
-	imageNameWithDigest := tagRef.Context().Digest(resp.GetDigest()).String()
+	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
 	entryToAdd := tagToDigestEntry{
 		nameWithDigest: imageNameWithDigest,
 		expiration:     r.clock.Now().Add(resolveImageDigestLRUDuration),

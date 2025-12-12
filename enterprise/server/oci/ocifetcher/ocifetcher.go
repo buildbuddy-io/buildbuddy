@@ -1,8 +1,5 @@
 // Package ocifetcher provides an OCIFetcherServer
 // that fetches OCI blobs and manifests from remote registries.
-//
-// The client in this package will soon be deleted in favor of
-// a generated client.
 package ocifetcher
 
 import (
@@ -26,7 +23,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
-	"google.golang.org/grpc"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
@@ -48,54 +44,12 @@ type pullerLRUEntry struct {
 	puller *remote.Puller
 }
 
-type ociFetcherClient struct {
-	allowedPrivateIPs []*net.IPNet
-	mirrors           []interfaces.MirrorConfig
-
-	// On the first call to Head, Get, or Layer, Pullers make a GET /v2/ request,
-	// optionally followed by a POST request to an auth endpoint.
-	// To avoid making these requests for already-authed {image, credentials} pairs,
-	// we keep a small LRU cache of Pullers.
-	mu        sync.Mutex
-	pullerLRU *lru.LRU[*pullerLRUEntry]
-}
-
 type ociFetcherServer struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
 
 	mu        sync.Mutex
 	pullerLRU *lru.LRU[*pullerLRUEntry]
-}
-
-// NewClient constructs a new OCI Fetcher client.
-// TODO(dan): remove this client once outside packages no longer rely on it.
-func NewClient(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) (ofpb.OCIFetcherClient, error) {
-	pullerLRU, err := lru.NewLRU[*pullerLRUEntry](&lru.Config[*pullerLRUEntry]{
-		SizeFn:  func(_ *pullerLRUEntry) int64 { return 1 },
-		MaxSize: int64(pullerLRUMaxEntries),
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &ociFetcherClient{
-		allowedPrivateIPs: allowedPrivateIPs,
-		mirrors:           mirrors,
-		pullerLRU:         pullerLRU,
-	}, nil
-}
-
-func RegisterClient(env *real_environment.RealEnv) error {
-	allowedPrivateIPNets, err := ParseAllowedPrivateIPs()
-	if err != nil {
-		return err
-	}
-	client, err := NewClient(allowedPrivateIPNets, *mirrors)
-	if err != nil {
-		return err
-	}
-	env.SetOCIFetcherClient(client)
-	return nil
 }
 
 // NewServer constructs an OCIFetcherServer that
@@ -228,27 +182,6 @@ func rewriteFallback(mc interfaces.MirrorConfig, originalRequest *http.Request) 
 	return req, nil
 }
 
-func (c *ociFetcherClient) getRemoteOpts(ctx context.Context, creds *rgpb.Credentials) []remote.Option {
-	opts := []remote.Option{remote.WithContext(ctx)}
-
-	if creds != nil && creds.GetUsername() != "" && creds.GetPassword() != "" {
-		opts = append(opts, remote.WithAuth(&authn.Basic{
-			Username: creds.GetUsername(),
-			Password: creds.GetPassword(),
-		}))
-	}
-
-	tr := httpclient.New(c.allowedPrivateIPs, "oci_fetcher").Transport
-
-	if len(c.mirrors) > 0 {
-		opts = append(opts, remote.WithTransport(NewMirrorTransport(tr, c.mirrors)))
-	} else {
-		opts = append(opts, remote.WithTransport(tr))
-	}
-
-	return opts
-}
-
 func pullerKey(ref gcrname.Reference, creds *rgpb.Credentials) string {
 	if creds == nil {
 		return hash.Strings(
@@ -264,99 +197,6 @@ func pullerKey(ref gcrname.Reference, creds *rgpb.Credentials) string {
 		creds.GetUsername(),
 		creds.GetPassword(),
 	)
-}
-
-// getOrCreatePuller returns a cached Puller for the given image reference and credentials,
-// or creates a new one if not found.
-func (c *ociFetcherClient) getOrCreatePuller(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*remote.Puller, error) {
-	key := pullerKey(imageRef, creds)
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	entry, ok := c.pullerLRU.Get(key)
-
-	if ok {
-		return entry.puller, nil
-	}
-
-	remoteOpts := c.getRemoteOpts(ctx, creds)
-	// As of go-containerregistry v0.20.3, NewPuller does not perform IO
-	// and is safe to call with the mutex locked.
-	puller, err := remote.NewPuller(remoteOpts...)
-	if err != nil {
-		return nil, err
-	}
-	c.pullerLRU.Add(key, &pullerLRUEntry{puller: puller})
-
-	return puller, nil
-}
-
-func (c *ociFetcherClient) evictPuller(imageRef gcrname.Reference, creds *rgpb.Credentials) {
-	key := pullerKey(imageRef, creds)
-	c.mu.Lock()
-	c.pullerLRU.Remove(key)
-	c.mu.Unlock()
-}
-
-// FetchManifestMetadata performs a HEAD request to get manifest metadata (digest, size, media type)
-// without downloading the full manifest content.
-func (c *ociFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
-	imageRef, err := gcrname.ParseReference(req.GetRef())
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
-	}
-
-	puller, err := c.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
-	if err != nil {
-		return nil, status.InternalErrorf("error creating puller: %s", err)
-	}
-	desc, err := puller.Head(ctx, imageRef)
-	if err == nil {
-		return &ofpb.FetchManifestMetadataResponse{
-			Digest:    desc.Digest.String(),
-			Size:      desc.Size,
-			MediaType: string(desc.MediaType),
-		}, nil
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return nil, err
-	}
-
-	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
-	c.evictPuller(imageRef, req.GetCredentials())
-	puller, err = c.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
-	if err != nil {
-		return nil, status.InternalErrorf("error creating puller: %s", err)
-	}
-	desc, err = puller.Head(ctx, imageRef)
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return nil, err
-	}
-	if err != nil {
-		c.evictPuller(imageRef, req.GetCredentials())
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not fetch manifest metadata from remote registry: %s", err)
-	}
-
-	return &ofpb.FetchManifestMetadataResponse{
-		Digest:    desc.Digest.String(),
-		Size:      desc.Size,
-		MediaType: string(desc.MediaType),
-	}, nil
-}
-
-func (c *ociFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
-	return nil, status.UnimplementedError("FetchManifest not implemented")
-}
-
-func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
-	return nil, status.UnimplementedError("FetchBlob not implemented")
-}
-
-func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
-	return nil, status.UnimplementedError("FetchBlobMetadata not implemented")
 }
 
 // Server helper methods
