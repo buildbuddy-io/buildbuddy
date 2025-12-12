@@ -1,13 +1,8 @@
-// Package ocifetcher provides an OCIFetcherClient
+// Package ocifetcher provides an OCIFetcherServer
 // that fetches OCI blobs and manifests from remote registries.
 //
-// The client currently only implements FetchManifestMetadata.
-// Once the client implements the entire OCIFetcherClient interface,
-// all fetches of OCI blobs and manifests should go through this client
-// in order to allow the corresponding OCIFetcherServer to deduplicate requests
-// for the same blob or manifest.
-//
-// It is safe to construct multiple clients.
+// The client in this package will soon be deleted in favor of
+// a generated client.
 package ocifetcher
 
 import (
@@ -71,11 +66,7 @@ type ociFetcherServer struct {
 }
 
 // NewClient constructs a new OCI Fetcher client.
-// For now, this client is "thick", meaning that it actually fetches blobs and manifests from remote OCI registries.
-// Eventually, this functionality will live in an OCIFetcherServer and the client will simply make gRPC calls
-// to that server.
-// TODO(dan): Stop passing private IPs, mirror config to client once server owns the fetching logic.
-// TODO(dan): Update this comment once server is implemented!
+// TODO(dan): remove this client once outside packages no longer rely on it.
 func NewClient(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) (ofpb.OCIFetcherClient, error) {
 	pullerLRU, err := lru.NewLRU[*pullerLRUEntry](&lru.Config[*pullerLRUEntry]{
 		SizeFn:  func(_ *pullerLRUEntry) int64 { return 1 },
