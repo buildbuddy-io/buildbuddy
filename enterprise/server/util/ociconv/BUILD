@@ -26,7 +26,6 @@ go_test(
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":ociconv",
-        "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/testutil/testregistry",
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",
