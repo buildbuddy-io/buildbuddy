@@ -13,6 +13,7 @@ package ocifetcher
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -59,6 +60,14 @@ type ociFetcherClient struct {
 	pullerLRU *lru.LRU[*pullerLRUEntry]
 }
 
+type ociFetcherServer struct {
+	allowedPrivateIPs []*net.IPNet
+	mirrors           []interfaces.MirrorConfig
+
+	mu        sync.Mutex
+	pullerLRU *lru.LRU[*pullerLRUEntry]
+}
+
 // NewClient constructs a new OCI Fetcher client.
 // For now, this client is "thick", meaning that it actually fetches blobs and manifests from remote OCI registries.
 // Eventually, this functionality will live in an OCIFetcherServer and the client will simply make gRPC calls
@@ -90,6 +99,35 @@ func RegisterClient(env *real_environment.RealEnv) error {
 		return err
 	}
 	env.SetOCIFetcherClient(client)
+	return nil
+}
+
+// NewServer constructs a new OCI Fetcher server.
+func NewServer(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) (ofpb.OCIFetcherServer, error) {
+	pullerLRU, err := lru.NewLRU[*pullerLRUEntry](&lru.Config[*pullerLRUEntry]{
+		SizeFn:  func(_ *pullerLRUEntry) int64 { return 1 },
+		MaxSize: int64(pullerLRUMaxEntries),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ociFetcherServer{
+		allowedPrivateIPs: allowedPrivateIPs,
+		mirrors:           mirrors,
+		pullerLRU:         pullerLRU,
+	}, nil
+}
+
+func RegisterServer(env *real_environment.RealEnv) error {
+	allowedPrivateIPNets, err := ParseAllowedPrivateIPs()
+	if err != nil {
+		return err
+	}
+	server, err := NewServer(allowedPrivateIPNets, *mirrors)
+	if err != nil {
+		return err
+	}
+	env.SetOCIFetcherServer(server)
 	return nil
 }
 
@@ -319,4 +357,284 @@ func (c *ociFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobReq
 
 func (c *ociFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
 	return nil, status.UnimplementedError("FetchBlobMetadata not implemented")
+}
+
+// Server helper methods
+
+func (s *ociFetcherServer) getRemoteOpts(ctx context.Context, creds *rgpb.Credentials) []remote.Option {
+	opts := []remote.Option{remote.WithContext(ctx)}
+
+	if creds != nil && creds.GetUsername() != "" && creds.GetPassword() != "" {
+		opts = append(opts, remote.WithAuth(&authn.Basic{
+			Username: creds.GetUsername(),
+			Password: creds.GetPassword(),
+		}))
+	}
+
+	tr := httpclient.New(s.allowedPrivateIPs, "oci_fetcher").Transport
+
+	if len(s.mirrors) > 0 {
+		opts = append(opts, remote.WithTransport(NewMirrorTransport(tr, s.mirrors)))
+	} else {
+		opts = append(opts, remote.WithTransport(tr))
+	}
+
+	return opts
+}
+
+func (s *ociFetcherServer) getOrCreatePuller(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*remote.Puller, error) {
+	key := pullerKey(imageRef, creds)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.pullerLRU.Get(key)
+
+	if ok {
+		return entry.puller, nil
+	}
+
+	remoteOpts := s.getRemoteOpts(ctx, creds)
+	puller, err := remote.NewPuller(remoteOpts...)
+	if err != nil {
+		return nil, err
+	}
+	s.pullerLRU.Add(key, &pullerLRUEntry{puller: puller})
+
+	return puller, nil
+}
+
+func (s *ociFetcherServer) evictPuller(imageRef gcrname.Reference, creds *rgpb.Credentials) {
+	key := pullerKey(imageRef, creds)
+	s.mu.Lock()
+	s.pullerLRU.Remove(key)
+	s.mu.Unlock()
+}
+
+// Server RPC implementations
+
+func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
+	imageRef, err := gcrname.ParseReference(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
+	}
+
+	puller, err := s.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+	desc, err := puller.Head(ctx, imageRef)
+	if err == nil {
+		return &ofpb.FetchManifestMetadataResponse{
+			Digest:    desc.Digest.String(),
+			Size:      desc.Size,
+			MediaType: string(desc.MediaType),
+		}, nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+
+	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
+	s.evictPuller(imageRef, req.GetCredentials())
+	puller, err = s.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+	desc, err = puller.Head(ctx, imageRef)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+	if err != nil {
+		s.evictPuller(imageRef, req.GetCredentials())
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch manifest metadata from remote registry: %s", err)
+	}
+
+	return &ofpb.FetchManifestMetadataResponse{
+		Digest:    desc.Digest.String(),
+		Size:      desc.Size,
+		MediaType: string(desc.MediaType),
+	}, nil
+}
+
+func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
+	imageRef, err := gcrname.ParseReference(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
+	}
+
+	puller, err := s.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+
+	remoteDesc, err := puller.Get(ctx, imageRef)
+	if err == nil {
+		return &ofpb.FetchManifestResponse{
+			Digest:    remoteDesc.Digest.String(),
+			Size:      remoteDesc.Size,
+			MediaType: string(remoteDesc.MediaType),
+			Manifest:  remoteDesc.Manifest,
+		}, nil
+	}
+
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+
+	// Retry with fresh puller
+	s.evictPuller(imageRef, req.GetCredentials())
+	puller, err = s.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+
+	remoteDesc, err = puller.Get(ctx, imageRef)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+	if err != nil {
+		s.evictPuller(imageRef, req.GetCredentials())
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch manifest from remote registry: %s", err)
+	}
+
+	return &ofpb.FetchManifestResponse{
+		Digest:    remoteDesc.Digest.String(),
+		Size:      remoteDesc.Size,
+		MediaType: string(remoteDesc.MediaType),
+		Manifest:  remoteDesc.Manifest,
+	}, nil
+}
+
+func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
+	blobRef, err := gcrname.ParseReference(req.GetRef())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid blob reference %q: %s", req.GetRef(), err)
+	}
+
+	digestRef, ok := blobRef.(gcrname.Digest)
+	if !ok {
+		return nil, status.InvalidArgumentErrorf("blob reference must be a digest reference (e.g., repo@sha256:...), got %q", req.GetRef())
+	}
+
+	puller, err := s.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+
+	layer, err := puller.Layer(ctx, digestRef)
+	if err == nil {
+		size, sizeErr := layer.Size()
+		mediaType, mtErr := layer.MediaType()
+		if sizeErr != nil || mtErr != nil {
+			return nil, status.InternalErrorf("error getting layer metadata: size=%v, mediaType=%v", sizeErr, mtErr)
+		}
+		return &ofpb.FetchBlobMetadataResponse{
+			Size:      size,
+			MediaType: string(mediaType),
+		}, nil
+	}
+
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+
+	// Retry with fresh puller
+	s.evictPuller(blobRef, req.GetCredentials())
+	puller, err = s.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+
+	layer, err = puller.Layer(ctx, digestRef)
+	if err != nil {
+		s.evictPuller(blobRef, req.GetCredentials())
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to access blob: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not fetch blob metadata from remote registry: %s", err)
+	}
+
+	size, sizeErr := layer.Size()
+	mediaType, mtErr := layer.MediaType()
+	if sizeErr != nil || mtErr != nil {
+		return nil, status.InternalErrorf("error getting layer metadata: size=%v, mediaType=%v", sizeErr, mtErr)
+	}
+	return &ofpb.FetchBlobMetadataResponse{
+		Size:      size,
+		MediaType: string(mediaType),
+	}, nil
+}
+
+const blobChunkSize = 64 * 1024 // 64KB chunks for streaming
+
+func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	ctx := stream.Context()
+
+	blobRef, err := gcrname.ParseReference(req.GetRef())
+	if err != nil {
+		return status.InvalidArgumentErrorf("invalid blob reference %q: %s", req.GetRef(), err)
+	}
+
+	digestRef, ok := blobRef.(gcrname.Digest)
+	if !ok {
+		return status.InvalidArgumentErrorf("blob reference must be a digest reference, got %q", req.GetRef())
+	}
+
+	puller, err := s.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
+	if err != nil {
+		return status.InternalErrorf("error creating puller: %s", err)
+	}
+
+	layer, err := puller.Layer(ctx, digestRef)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		// Retry with fresh puller
+		s.evictPuller(blobRef, req.GetCredentials())
+		puller, err = s.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
+		if err != nil {
+			return status.InternalErrorf("error creating puller: %s", err)
+		}
+		layer, err = puller.Layer(ctx, digestRef)
+		if err != nil {
+			s.evictPuller(blobRef, req.GetCredentials())
+			if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+				return status.PermissionDeniedErrorf("not authorized to access blob: %s", err)
+			}
+			return status.UnavailableErrorf("could not fetch blob from remote registry: %s", err)
+		}
+	}
+
+	// Get compressed blob data
+	rc, err := layer.Compressed()
+	if err != nil {
+		return status.InternalErrorf("error getting compressed layer: %s", err)
+	}
+	defer rc.Close()
+
+	// Stream in chunks
+	buf := make([]byte, blobChunkSize)
+	for {
+		n, err := rc.Read(buf)
+		if n > 0 {
+			if sendErr := stream.Send(&ofpb.FetchBlobResponse{
+				Data: buf[:n],
+			}); sendErr != nil {
+				return status.WrapError(sendErr, "send")
+			}
+		}
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return status.InternalErrorf("error reading blob: %s", err)
+		}
+	}
 }
