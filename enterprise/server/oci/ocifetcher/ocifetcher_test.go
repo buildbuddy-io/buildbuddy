@@ -185,25 +185,6 @@ func (m *mockFetchBlobServer) collectData() []byte {
 	return data
 }
 
-// blobRef constructs a blob reference from an image name and layer digest.
-// e.g., "localhost:12345/test-image:latest" + "sha256:abc..." -> "localhost:12345/test-image@sha256:abc..."
-func blobRef(imageName string, digest v1.Hash) string {
-	// Remove tag if present
-	parts := strings.Split(imageName, ":")
-	if len(parts) >= 2 {
-		// Check if last part looks like a tag (not a port)
-		lastPart := parts[len(parts)-1]
-		if !strings.Contains(lastPart, "/") && len(parts) > 2 {
-			// Has a tag, remove it: "host:port/repo:tag" -> "host:port/repo"
-			imageName = strings.Join(parts[:len(parts)-1], ":")
-		} else if !strings.Contains(lastPart, "/") && len(parts) == 2 && strings.Contains(parts[0], "/") {
-			// "host/repo:tag" -> "host/repo"
-			imageName = parts[0]
-		}
-	}
-	return imageName + "@" + digest.String()
-}
-
 func layerMetadata(t *testing.T, layer v1.Layer) (size int64, mediaType string) {
 	s, err := layer.Size()
 	require.NoError(t, err)
@@ -634,7 +615,7 @@ func TestServerHappyPath(t *testing.T) {
 
 			server := newTestServer(t)
 			resp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
-				Ref:         blobRef(imageName, digest),
+				Ref:         imageName + "@" + digest.String(),
 				Credentials: ac.requestCreds,
 			})
 
@@ -659,7 +640,7 @@ func TestServerHappyPath(t *testing.T) {
 			server := newTestServer(t)
 			stream := &mockFetchBlobServer{ctx: context.Background()}
 			err = server.FetchBlob(&ofpb.FetchBlobRequest{
-				Ref:         blobRef(imageName, digest),
+				Ref:         imageName + "@" + digest.String(),
 				Credentials: ac.requestCreds,
 			}, stream)
 
@@ -727,7 +708,7 @@ func TestServerMissingAndInvalidCredentials(t *testing.T) {
 			// FetchBlobMetadata - 401 errors are wrapped differently for blob methods
 			counter.Reset()
 			_, err = server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
-				Ref:         blobRef(imageName, layerDigest),
+				Ref:         imageName + "@" + layerDigest.String(),
 				Credentials: cc.requestCreds,
 			})
 			require.Error(t, err)
@@ -737,7 +718,7 @@ func TestServerMissingAndInvalidCredentials(t *testing.T) {
 			counter.Reset()
 			stream := &mockFetchBlobServer{ctx: context.Background()}
 			err = server.FetchBlob(&ofpb.FetchBlobRequest{
-				Ref:         blobRef(imageName, layerDigest),
+				Ref:         imageName + "@" + layerDigest.String(),
 				Credentials: cc.requestCreds,
 			}, stream)
 			require.Error(t, err)
@@ -811,7 +792,7 @@ func TestServerRetryOnHTTPErrors(t *testing.T) {
 
 	// FetchBlobMetadata - first blob request fails, retry succeeds
 	failBlobOnce.Store(true)
-	blobMetaResp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRef(imageName, layerDigest)})
+	blobMetaResp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: imageName + "@" + layerDigest.String()})
 	require.NoError(t, err)
 	require.Equal(t, expectedLayerSize, blobMetaResp.GetSize())
 	require.Equal(t, expectedLayerMediaType, blobMetaResp.GetMediaType())
@@ -820,7 +801,7 @@ func TestServerRetryOnHTTPErrors(t *testing.T) {
 	// FetchBlob - reset counter, first blob request fails, retry succeeds
 	blobAttempts.Store(0)
 	stream := &mockFetchBlobServer{ctx: context.Background()}
-	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef(imageName, layerDigest)}, stream)
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: imageName + "@" + layerDigest.String()}, stream)
 	require.NoError(t, err)
 	require.Equal(t, expectedLayerData, stream.collectData())
 	require.Equal(t, int32(2), blobAttempts.Load(), "expected 2 blob attempts")
@@ -913,7 +894,7 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 	})
 
 	// FetchBlobMetadata: establish cached layer access
-	blobMetaResp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRef(imageName, layerDigest)})
+	blobMetaResp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: imageName + "@" + layerDigest.String()})
 	require.NoError(t, err)
 	require.Equal(t, expectedLayerSize, blobMetaResp.GetSize())
 
@@ -921,7 +902,7 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 	blockBlob.Store(true)
 	blobAttempts.Store(0)
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Millisecond)
-	_, err = server.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: blobRef(imageName, layerDigest)})
+	_, err = server.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: imageName + "@" + layerDigest.String()})
 	cancel()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "deadline exceeded", "expected deadline exceeded error, got: %v", err)
@@ -930,14 +911,14 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 	// FetchBlobMetadata: Puller should still be cached
 	blockBlob.Store(false)
 	counter.Reset()
-	blobMetaResp, err = server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRef(imageName, layerDigest)})
+	blobMetaResp, err = server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: imageName + "@" + layerDigest.String()})
 	require.NoError(t, err)
 	require.Equal(t, expectedLayerSize, blobMetaResp.GetSize())
 	require.Equal(t, expectedLayerMediaType, blobMetaResp.GetMediaType())
 
 	// FetchBlob: establish cached layer access
 	stream := &mockFetchBlobServer{ctx: context.Background()}
-	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef(imageName, layerDigest)}, stream)
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: imageName + "@" + layerDigest.String()}, stream)
 	require.NoError(t, err)
 	require.Equal(t, expectedLayerData, stream.collectData())
 
@@ -946,7 +927,7 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 	blobAttempts.Store(0)
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Millisecond)
 	stream = &mockFetchBlobServer{ctx: ctx}
-	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef(imageName, layerDigest)}, stream)
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: imageName + "@" + layerDigest.String()}, stream)
 	cancel()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "deadline exceeded", "expected deadline exceeded error, got: %v", err)
@@ -956,7 +937,7 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 	blockBlob.Store(false)
 	counter.Reset()
 	stream = &mockFetchBlobServer{ctx: context.Background()}
-	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef(imageName, layerDigest)}, stream)
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: imageName + "@" + layerDigest.String()}, stream)
 	require.NoError(t, err)
 	require.Equal(t, expectedLayerData, stream.collectData())
 }
