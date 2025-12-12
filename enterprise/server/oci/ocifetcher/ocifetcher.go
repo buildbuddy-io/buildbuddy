@@ -96,7 +96,11 @@ func RegisterClient(env *real_environment.RealEnv) error {
 }
 
 // NewServer constructs a new OCI Fetcher server.
-func NewServer(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig) (ofpb.OCIFetcherServer, error) {
+func NewServer() (ofpb.OCIFetcherServer, error) {
+	allowedPrivateIPs, err := ParseAllowedPrivateIPs()
+	if err != nil {
+		return nil, err
+	}
 	pullerLRU, err := lru.NewLRU[*pullerLRUEntry](&lru.Config[*pullerLRUEntry]{
 		SizeFn:  func(_ *pullerLRUEntry) int64 { return 1 },
 		MaxSize: int64(pullerLRUMaxEntries),
@@ -106,17 +110,13 @@ func NewServer(allowedPrivateIPs []*net.IPNet, mirrors []interfaces.MirrorConfig
 	}
 	return &ociFetcherServer{
 		allowedPrivateIPs: allowedPrivateIPs,
-		mirrors:           mirrors,
+		mirrors:           Mirrors(),
 		pullerLRU:         pullerLRU,
 	}, nil
 }
 
 func RegisterServer(env *real_environment.RealEnv) error {
-	allowedPrivateIPNets, err := ParseAllowedPrivateIPs()
-	if err != nil {
-		return err
-	}
-	server, err := NewServer(allowedPrivateIPNets, *mirrors)
+	server, err := NewServer()
 	if err != nil {
 		return err
 	}

@@ -161,7 +161,8 @@ func newTestClient(t *testing.T, env environment.Env) ofpb.OCIFetcherClient {
 }
 
 func newTestServer(t *testing.T) ofpb.OCIFetcherServer {
-	server, err := ocifetcher.NewServer(localhostIPs(t), nil)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
+	server, err := ocifetcher.NewServer()
 	require.NoError(t, err)
 	return server
 }
