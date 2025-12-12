@@ -687,360 +687,255 @@ func TestServerMissingAndInvalidCredentials(t *testing.T) {
 	registryCreds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
 
 	for _, cc := range credsCases {
-		t.Run("FetchManifestMetadata/"+cc.name, func(t *testing.T) {
+		t.Run(cc.name, func(t *testing.T) {
 			reg, counter := setupRegistry(t, registryCreds, nil)
 			imageName, _ := reg.PushNamedImage(t, "test-image", registryCreds)
-
 			server := newTestServer(t)
+
+			// FetchManifestMetadata
 			counter.Reset()
 			_, err := server.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
 				Ref:         imageName,
 				Credentials: cc.requestCreds,
 			})
-
 			require.Error(t, err)
-			require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
-			// Verify retry happened (2 HEAD requests)
+			require.True(t, status.IsPermissionDeniedError(err), "FetchManifestMetadata: expected PermissionDenied, got: %v", err)
 			assertRequests(t, counter, map[string]int{
 				http.MethodGet + " /v2/":                             2,
 				http.MethodHead + " /v2/test-image/manifests/latest": 2,
 			})
-		})
 
-		t.Run("FetchManifest/"+cc.name, func(t *testing.T) {
-			reg, counter := setupRegistry(t, registryCreds, nil)
-			imageName, _ := reg.PushNamedImage(t, "test-image", registryCreds)
-
-			server := newTestServer(t)
+			// FetchManifest
 			counter.Reset()
-			_, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
+			_, err = server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
 				Ref:         imageName,
 				Credentials: cc.requestCreds,
 			})
-
 			require.Error(t, err)
-			require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
-			// Verify retry happened (2 GET requests)
+			require.True(t, status.IsPermissionDeniedError(err), "FetchManifest: expected PermissionDenied, got: %v", err)
 			assertRequests(t, counter, map[string]int{
 				http.MethodGet + " /v2/":                            2,
 				http.MethodGet + " /v2/test-image/manifests/latest": 2,
 			})
-		})
 
-		// Note: FetchBlobMetadata and FetchBlob make HTTP calls after withPullerRetry
-		// (during layer.Size()/layer.Compressed()), so 401 errors may be wrapped differently.
-		// These are tested in TestServerHappyPath for correct auth behavior.
+			// Note: FetchBlobMetadata and FetchBlob make HTTP calls after withPullerRetry
+			// (during layer.Size()/layer.Compressed()), so 401 errors may be wrapped differently.
+			// These are tested in TestServerHappyPath for correct auth behavior.
+		})
 	}
 }
 
 func TestServerRetryOnHTTPErrors(t *testing.T) {
-	t.Run("FetchManifestMetadata", func(t *testing.T) {
-		var headAttempts atomic.Int32
-		var enableInterceptor atomic.Bool
-		reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-			if enableInterceptor.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/") {
+	var headAttempts, getAttempts, blobAttempts atomic.Int32
+	var failHeadOnce, failGetOnce, failBlobOnce atomic.Bool
+
+	reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if strings.Contains(r.URL.Path, "/manifests/") {
+			if failHeadOnce.Load() && r.Method == http.MethodHead {
 				if headAttempts.Add(1) == 1 {
 					w.WriteHeader(http.StatusInternalServerError)
 					return false
 				}
 			}
-			return true
-		})
-		imageName, img := reg.PushNamedImage(t, "test-image", nil)
-		expectedDigest, expectedSize, expectedMediaType := imageMetadata(t, img)
-
-		enableInterceptor.Store(true)
-		server := newTestServer(t)
-		resp, err := server.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
-			Ref: imageName,
-		})
-
-		require.NoError(t, err)
-		require.Equal(t, expectedDigest, resp.GetDigest())
-		require.Equal(t, expectedSize, resp.GetSize())
-		require.Equal(t, expectedMediaType, resp.GetMediaType())
-		require.Equal(t, int32(2), headAttempts.Load(), "expected 2 HEAD attempts")
-	})
-
-	t.Run("FetchManifest", func(t *testing.T) {
-		var getAttempts atomic.Int32
-		var enableInterceptor atomic.Bool
-		reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-			if enableInterceptor.Load() && r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/manifests/") {
+			if failGetOnce.Load() && r.Method == http.MethodGet {
 				if getAttempts.Add(1) == 1 {
 					w.WriteHeader(http.StatusInternalServerError)
 					return false
 				}
 			}
-			return true
-		})
-		imageName, img := reg.PushNamedImage(t, "test-image", nil)
-		expectedDigest, expectedSize, expectedMediaType := imageMetadata(t, img)
-		expectedManifest, err := img.RawManifest()
-		require.NoError(t, err)
-
-		enableInterceptor.Store(true)
-		server := newTestServer(t)
-		resp, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
-			Ref: imageName,
-		})
-
-		require.NoError(t, err)
-		require.Equal(t, expectedDigest, resp.GetDigest())
-		require.Equal(t, expectedSize, resp.GetSize())
-		require.Equal(t, expectedMediaType, resp.GetMediaType())
-		require.Equal(t, expectedManifest, resp.GetManifest())
-		require.Equal(t, int32(2), getAttempts.Load(), "expected 2 GET attempts")
-	})
-
-	t.Run("FetchBlobMetadata", func(t *testing.T) {
-		var blobAttempts atomic.Int32
-		var enableInterceptor atomic.Bool
-		reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-			if enableInterceptor.Load() && strings.Contains(r.URL.Path, "/blobs/") {
-				if blobAttempts.Add(1) == 1 {
-					w.WriteHeader(http.StatusInternalServerError)
-					return false
-				}
+		}
+		if failBlobOnce.Load() && strings.Contains(r.URL.Path, "/blobs/") {
+			if blobAttempts.Add(1) == 1 {
+				w.WriteHeader(http.StatusInternalServerError)
+				return false
 			}
-			return true
-		})
-		imageName, img := reg.PushNamedImage(t, "test-image", nil)
-
-		layers, err := img.Layers()
-		require.NoError(t, err)
-		require.NotEmpty(t, layers)
-		layer := layers[0]
-		digest, err := layer.Digest()
-		require.NoError(t, err)
-		expectedSize, expectedMediaType := layerMetadata(t, layer)
-
-		enableInterceptor.Store(true)
-		server := newTestServer(t)
-		resp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
-			Ref: blobRef(imageName, digest),
-		})
-
-		require.NoError(t, err)
-		require.Equal(t, expectedSize, resp.GetSize())
-		require.Equal(t, expectedMediaType, resp.GetMediaType())
-		require.Equal(t, int32(2), blobAttempts.Load(), "expected 2 blob attempts")
+		}
+		return true
 	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	expectedDigest, expectedSize, expectedMediaType := imageMetadata(t, img)
+	expectedManifest, err := img.RawManifest()
+	require.NoError(t, err)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedLayerSize, expectedLayerMediaType := layerMetadata(t, layer)
+	expectedLayerData := layerData(t, layer)
 
-	t.Run("FetchBlob", func(t *testing.T) {
-		var blobAttempts atomic.Int32
-		var enableInterceptor atomic.Bool
-		reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-			if enableInterceptor.Load() && strings.Contains(r.URL.Path, "/blobs/") {
-				if blobAttempts.Add(1) == 1 {
-					w.WriteHeader(http.StatusInternalServerError)
-					return false
-				}
-			}
-			return true
-		})
-		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	server := newTestServer(t)
 
-		layers, err := img.Layers()
-		require.NoError(t, err)
-		require.NotEmpty(t, layers)
-		layer := layers[0]
-		digest, err := layer.Digest()
-		require.NoError(t, err)
-		expectedData := layerData(t, layer)
+	// FetchManifestMetadata - first HEAD fails, retry succeeds
+	failHeadOnce.Store(true)
+	resp, err := server.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.NoError(t, err)
+	require.Equal(t, expectedDigest, resp.GetDigest())
+	require.Equal(t, expectedSize, resp.GetSize())
+	require.Equal(t, expectedMediaType, resp.GetMediaType())
+	require.Equal(t, int32(2), headAttempts.Load(), "expected 2 HEAD attempts")
+	failHeadOnce.Store(false)
 
-		enableInterceptor.Store(true)
-		server := newTestServer(t)
-		stream := &mockFetchBlobServer{ctx: context.Background()}
-		err = server.FetchBlob(&ofpb.FetchBlobRequest{
-			Ref: blobRef(imageName, digest),
-		}, stream)
+	// FetchManifest - first GET fails, retry succeeds
+	failGetOnce.Store(true)
+	manifestResp, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	require.Equal(t, expectedDigest, manifestResp.GetDigest())
+	require.Equal(t, expectedSize, manifestResp.GetSize())
+	require.Equal(t, expectedMediaType, manifestResp.GetMediaType())
+	require.Equal(t, expectedManifest, manifestResp.GetManifest())
+	require.Equal(t, int32(2), getAttempts.Load(), "expected 2 GET attempts")
+	failGetOnce.Store(false)
 
-		require.NoError(t, err)
-		require.Equal(t, expectedData, stream.collectData())
-		require.Equal(t, int32(2), blobAttempts.Load(), "expected 2 blob attempts")
-	})
+	// FetchBlobMetadata - first blob request fails, retry succeeds
+	failBlobOnce.Store(true)
+	blobMetaResp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRef(imageName, layerDigest)})
+	require.NoError(t, err)
+	require.Equal(t, expectedLayerSize, blobMetaResp.GetSize())
+	require.Equal(t, expectedLayerMediaType, blobMetaResp.GetMediaType())
+	require.Equal(t, int32(2), blobAttempts.Load(), "expected 2 blob attempts")
+
+	// FetchBlob - reset counter, first blob request fails, retry succeeds
+	blobAttempts.Store(0)
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef(imageName, layerDigest)}, stream)
+	require.NoError(t, err)
+	require.Equal(t, expectedLayerData, stream.collectData())
+	require.Equal(t, int32(2), blobAttempts.Load(), "expected 2 blob attempts")
 }
 
 func TestServerNoRetryOnContextErrors(t *testing.T) {
-	t.Run("FetchManifestMetadata", func(t *testing.T) {
-		var headAttempts atomic.Int32
-		reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-			if r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/") {
+	var headAttempts, getAttempts, blobAttempts atomic.Int32
+	var blockHead, blockGet, blockBlob atomic.Bool
+
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if strings.Contains(r.URL.Path, "/manifests/") {
+			if blockHead.Load() && r.Method == http.MethodHead {
 				headAttempts.Add(1)
-				time.Sleep(100 * time.Millisecond) // Block until context times out
+				time.Sleep(100 * time.Millisecond)
 			}
-			return true
-		})
-		imageName, img := reg.PushNamedImage(t, "test-image", nil)
-		expectedDigest, expectedSize, expectedMediaType := imageMetadata(t, img)
-
-		server := newTestServer(t)
-
-		// First call - establish cached Puller
-		resp, err := server.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-		require.NoError(t, err)
-		require.Equal(t, expectedDigest, resp.GetDigest())
-
-		// Second call - times out, should NOT retry
-		headAttempts.Store(0)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-		defer cancel()
-		_, err = server.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-		require.Error(t, err)
-		require.True(t, errors.Is(err, context.DeadlineExceeded), "expected DeadlineExceeded, got: %v", err)
-		require.Equal(t, int32(1), headAttempts.Load(), "should not retry on context error")
-
-		// Third call - Puller should still be cached (no /v2/ auth request)
-		counter.Reset()
-		resp, err = server.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-		require.NoError(t, err)
-		require.Equal(t, expectedDigest, resp.GetDigest())
-		require.Equal(t, expectedSize, resp.GetSize())
-		require.Equal(t, expectedMediaType, resp.GetMediaType())
-		assertRequests(t, counter, map[string]int{
-			http.MethodHead + " /v2/test-image/manifests/latest": 1,
-		})
-	})
-
-	t.Run("FetchManifest", func(t *testing.T) {
-		var getAttempts atomic.Int32
-		reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-			if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/manifests/") {
+			if blockGet.Load() && r.Method == http.MethodGet {
 				getAttempts.Add(1)
 				time.Sleep(100 * time.Millisecond)
 			}
-			return true
-		})
-		imageName, img := reg.PushNamedImage(t, "test-image", nil)
-		expectedDigest, expectedSize, expectedMediaType := imageMetadata(t, img)
-		expectedManifest, err := img.RawManifest()
-		require.NoError(t, err)
+		}
+		if blockBlob.Load() && strings.Contains(r.URL.Path, "/blobs/") {
+			blobAttempts.Add(1)
+			time.Sleep(100 * time.Millisecond)
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	expectedDigest, expectedSize, expectedMediaType := imageMetadata(t, img)
+	expectedManifest, err := img.RawManifest()
+	require.NoError(t, err)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedLayerSize, expectedLayerMediaType := layerMetadata(t, layer)
+	expectedLayerData := layerData(t, layer)
 
-		server := newTestServer(t)
+	server := newTestServer(t)
 
-		// First call - establish cached Puller
-		resp, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
-		require.NoError(t, err)
-		require.Equal(t, expectedDigest, resp.GetDigest())
+	// FetchManifestMetadata: establish cached Puller
+	resp, err := server.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.NoError(t, err)
+	require.Equal(t, expectedDigest, resp.GetDigest())
 
-		// Second call - times out, should NOT retry
-		getAttempts.Store(0)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-		defer cancel()
-		_, err = server.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: imageName})
-		require.Error(t, err)
-		require.True(t, errors.Is(err, context.DeadlineExceeded), "expected DeadlineExceeded, got: %v", err)
-		require.Equal(t, int32(1), getAttempts.Load(), "should not retry on context error")
+	// FetchManifestMetadata: times out, should NOT retry
+	blockHead.Store(true)
+	headAttempts.Store(0)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	_, err = server.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	cancel()
+	require.Error(t, err)
+	require.True(t, errors.Is(err, context.DeadlineExceeded), "expected DeadlineExceeded, got: %v", err)
+	require.Equal(t, int32(1), headAttempts.Load(), "should not retry on context error")
 
-		// Third call - Puller should still be cached
-		counter.Reset()
-		resp, err = server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
-		require.NoError(t, err)
-		require.Equal(t, expectedDigest, resp.GetDigest())
-		require.Equal(t, expectedSize, resp.GetSize())
-		require.Equal(t, expectedMediaType, resp.GetMediaType())
-		require.Equal(t, expectedManifest, resp.GetManifest())
-		assertRequests(t, counter, map[string]int{
-			http.MethodGet + " /v2/test-image/manifests/latest": 1,
-		})
+	// FetchManifestMetadata: Puller should still be cached
+	blockHead.Store(false)
+	counter.Reset()
+	resp, err = server.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.NoError(t, err)
+	require.Equal(t, expectedDigest, resp.GetDigest())
+	require.Equal(t, expectedSize, resp.GetSize())
+	require.Equal(t, expectedMediaType, resp.GetMediaType())
+	assertRequests(t, counter, map[string]int{
+		http.MethodHead + " /v2/test-image/manifests/latest": 1,
 	})
 
-	t.Run("FetchBlobMetadata", func(t *testing.T) {
-		var blobAttempts atomic.Int32
-		var enableBlock atomic.Bool
-		reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-			if enableBlock.Load() && strings.Contains(r.URL.Path, "/blobs/") {
-				blobAttempts.Add(1)
-				time.Sleep(100 * time.Millisecond)
-			}
-			return true
-		})
-		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	// FetchManifest: times out, should NOT retry
+	blockGet.Store(true)
+	getAttempts.Store(0)
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Millisecond)
+	_, err = server.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: imageName})
+	cancel()
+	require.Error(t, err)
+	require.True(t, errors.Is(err, context.DeadlineExceeded), "expected DeadlineExceeded, got: %v", err)
+	require.Equal(t, int32(1), getAttempts.Load(), "should not retry on context error")
 
-		layers, err := img.Layers()
-		require.NoError(t, err)
-		require.NotEmpty(t, layers)
-		layer := layers[0]
-		digest, err := layer.Digest()
-		require.NoError(t, err)
-		expectedSize, expectedMediaType := layerMetadata(t, layer)
-
-		server := newTestServer(t)
-
-		// First call - establish cached Puller
-		resp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRef(imageName, digest)})
-		require.NoError(t, err)
-		require.Equal(t, expectedSize, resp.GetSize())
-
-		// Second call - times out, should NOT retry
-		// Note: The timeout may occur during layer.Size()/MediaType() after puller.Layer(),
-		// so the error may be wrapped. Check that the error contains "deadline exceeded".
-		enableBlock.Store(true)
-		blobAttempts.Store(0)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-		defer cancel()
-		_, err = server.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: blobRef(imageName, digest)})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "deadline exceeded", "expected deadline exceeded error, got: %v", err)
-		require.Equal(t, int32(1), blobAttempts.Load(), "should not retry on context error")
-
-		// Third call - Puller should still be cached
-		enableBlock.Store(false)
-		counter.Reset()
-		resp, err = server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRef(imageName, digest)})
-		require.NoError(t, err)
-		require.Equal(t, expectedSize, resp.GetSize())
-		require.Equal(t, expectedMediaType, resp.GetMediaType())
+	// FetchManifest: Puller should still be cached
+	blockGet.Store(false)
+	counter.Reset()
+	manifestResp, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	require.Equal(t, expectedDigest, manifestResp.GetDigest())
+	require.Equal(t, expectedSize, manifestResp.GetSize())
+	require.Equal(t, expectedMediaType, manifestResp.GetMediaType())
+	require.Equal(t, expectedManifest, manifestResp.GetManifest())
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/test-image/manifests/latest": 1,
 	})
 
-	t.Run("FetchBlob", func(t *testing.T) {
-		var blobAttempts atomic.Int32
-		var enableBlock atomic.Bool
-		reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-			if enableBlock.Load() && strings.Contains(r.URL.Path, "/blobs/") {
-				blobAttempts.Add(1)
-				time.Sleep(100 * time.Millisecond)
-			}
-			return true
-		})
-		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	// FetchBlobMetadata: establish cached layer access
+	blobMetaResp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRef(imageName, layerDigest)})
+	require.NoError(t, err)
+	require.Equal(t, expectedLayerSize, blobMetaResp.GetSize())
 
-		layers, err := img.Layers()
-		require.NoError(t, err)
-		require.NotEmpty(t, layers)
-		layer := layers[0]
-		digest, err := layer.Digest()
-		require.NoError(t, err)
-		expectedData := layerData(t, layer)
+	// FetchBlobMetadata: times out, should NOT retry
+	blockBlob.Store(true)
+	blobAttempts.Store(0)
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Millisecond)
+	_, err = server.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: blobRef(imageName, layerDigest)})
+	cancel()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "deadline exceeded", "expected deadline exceeded error, got: %v", err)
+	require.Equal(t, int32(1), blobAttempts.Load(), "should not retry on context error")
 
-		server := newTestServer(t)
+	// FetchBlobMetadata: Puller should still be cached
+	blockBlob.Store(false)
+	counter.Reset()
+	blobMetaResp, err = server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRef(imageName, layerDigest)})
+	require.NoError(t, err)
+	require.Equal(t, expectedLayerSize, blobMetaResp.GetSize())
+	require.Equal(t, expectedLayerMediaType, blobMetaResp.GetMediaType())
 
-		// First call - establish cached Puller
-		stream := &mockFetchBlobServer{ctx: context.Background()}
-		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef(imageName, digest)}, stream)
-		require.NoError(t, err)
-		require.Equal(t, expectedData, stream.collectData())
+	// FetchBlob: establish cached layer access
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef(imageName, layerDigest)}, stream)
+	require.NoError(t, err)
+	require.Equal(t, expectedLayerData, stream.collectData())
 
-		// Second call - times out, should NOT retry
-		// Note: The timeout may occur during layer.Compressed() after puller.Layer(),
-		// so the error may be wrapped. Check that the error contains "deadline exceeded".
-		enableBlock.Store(true)
-		blobAttempts.Store(0)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-		defer cancel()
-		stream = &mockFetchBlobServer{ctx: ctx}
-		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef(imageName, digest)}, stream)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "deadline exceeded", "expected deadline exceeded error, got: %v", err)
-		require.Equal(t, int32(1), blobAttempts.Load(), "should not retry on context error")
+	// FetchBlob: times out, should NOT retry
+	blockBlob.Store(true)
+	blobAttempts.Store(0)
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Millisecond)
+	stream = &mockFetchBlobServer{ctx: ctx}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef(imageName, layerDigest)}, stream)
+	cancel()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "deadline exceeded", "expected deadline exceeded error, got: %v", err)
+	require.Equal(t, int32(1), blobAttempts.Load(), "should not retry on context error")
 
-		// Third call - Puller should still be cached
-		enableBlock.Store(false)
-		counter.Reset()
-		stream = &mockFetchBlobServer{ctx: context.Background()}
-		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef(imageName, digest)}, stream)
-		require.NoError(t, err)
-		require.Equal(t, expectedData, stream.collectData())
-	})
+	// FetchBlob: Puller should still be cached
+	blockBlob.Store(false)
+	counter.Reset()
+	stream = &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef(imageName, layerDigest)}, stream)
+	require.NoError(t, err)
+	require.Equal(t, expectedLayerData, stream.collectData())
 }
