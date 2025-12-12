@@ -791,6 +791,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 			if err != nil {
 				return nil, err
 			}
+			log.CtxInfof(ctx, "Fetching snapshot for NewContainer to check if a snapshot exists")
 			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
 				RemoteReadEnabled: c.supportsRemoteSnapshots,
 				ReadPolicy:        readPolicy,
@@ -1239,6 +1240,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		}
 		maxFallbackAge = d
 	}
+	log.CtxInfof(ctx, "Fetching snapshot in LoadSnapshot")
 	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
 		RemoteReadEnabled:           c.supportsRemoteSnapshots,
 		ReadPolicy:                  readPolicy,
@@ -2792,6 +2794,17 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	shouldSaveSnapshot := snapDetails.saveRemoteSnapshot || snapDetails.saveLocalSnapshot
 
 	if shouldSaveSnapshot && c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
+		encoded, err := json.Marshal(c.getVMMetadata())
+		if err != nil {
+			return status.WrapErrorf(err, "marshal vm metadata")
+		}
+		log.CtxInfof(ctx, "VM metadata: %s", string(encoded))
+		lastTask, err := json.Marshal(c.getVMMetadata().GetLastExecutedTask())
+		if err != nil {
+			return status.WrapErrorf(err, "marshal last task")
+		}
+		log.CtxInfof(ctx, "Last task: %s", string(lastTask))
+
 		if err := c.reclaimMemoryWithBalloon(ctx); err != nil {
 			return status.WrapErrorf(err, "reclaiming memory with the balloon failed, not saving snapshot for key %v", c.SnapshotKeySet().GetWriteKey())
 		}
@@ -3221,6 +3234,8 @@ func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, load
 	if err != nil {
 		return false
 	}
+
+	log.CtxInfof(ctx, "Fetching snapshot for hasRemoteSnapshotForKey")
 	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
 		RemoteReadEnabled: c.supportsRemoteSnapshots,
 		ReadPolicy:        readPolicy,
@@ -3232,6 +3247,7 @@ func (c *FirecrackerContainer) hasLocalSnapshotForKey(ctx context.Context, loade
 	if err != nil {
 		return false
 	}
+	log.CtxInfof(ctx, "Fetching snapshot for hasLocalSnapshotForKey")
 	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
 		RemoteReadEnabled: false,
 		ReadPolicy:        readPolicy,

@@ -446,12 +446,17 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 		manifest, err := l.getLocalManifest(ctx, key, supportsRemoteFallback)
 		foundLocalSnapshot := err == nil
 		if !foundLocalSnapshot && (!opts.RemoteReadEnabled || !*snaputil.EnableRemoteSnapshotSharing) {
+			log.CtxInfof(ctx, "No local snapshot found")
 			return nil, err
 		} else if foundLocalSnapshot {
+			log.CtxInfof(ctx, "Validating local manifest")
 			if validateLocalSnapshot(ctx, manifest, opts, isFallback) {
 				log.CtxInfof(ctx, "Using local manifest")
 				return manifest, nil
 			}
+		}
+		if !foundLocalSnapshot {
+			log.CtxInfof(ctx, "No local snapshot found")
 		}
 		// If local snapshot is not valid or couldn't be found, fallback to
 		// fetching a remote snapshot.
@@ -464,7 +469,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	}
 
 	// Fall back to fetching remote manifest.
-	log.CtxInfof(ctx, "Fetching remote manifest")
+	log.CtxInfof(ctx, "Fetching remote manifest for key %+v, opts %+v", key, opts)
 	manifest, acResult, err := l.fetchRemoteManifest(ctx, key)
 	if err != nil {
 		return nil, status.WrapError(err, "fetch remote manifest")
@@ -590,6 +595,18 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 		if err := snapMetadata[1].UnmarshalTo(vmMetadata); err != nil {
 			return nil, status.WrapErrorf(err, "unmarshall vm metadata")
 		}
+		encoded, err := proto.Marshal(vmMetadata)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "marshal vm metadata")
+		}
+		log.CtxInfof(ctx, "VM metadata: %s", string(encoded))
+		lastTask, err := proto.Marshal(vmMetadata.GetLastExecutedTask())
+		if err != nil {
+			return nil, status.WrapErrorf(err, "marshal last task")
+		}
+		log.CtxInfof(ctx, "Last task: %s", string(lastTask))
+	} else {
+		log.CtxErrorf(ctx, "Only 1 auxiliary metadata in snapshot")
 	}
 
 	manifest := &fcpb.SnapshotManifest{
@@ -855,7 +872,7 @@ func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.Sn
 	if _, err := l.env.GetFileCache().Write(ctx, manifestNode, b); err != nil {
 		return err
 	}
-	log.CtxInfof(ctx, "Cached local snapshot manifest %s", snapshotDebugString(ctx, l.env, key, false /*remote*/, "" /*=snapshotID*/))
+	log.CtxInfof(ctx, "Cached local snapshot manifest %s: %s", snapshotDebugString(ctx, l.env, key, false /*remote*/, "" /*=snapshotID*/), string(b))
 
 	// If set, cache local manifest for a specific snapshot ID.
 	if snapshotID != "" {
@@ -1252,6 +1269,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 		ConfigurationHash: hashStrings("__UnpackContainerImage", imageRef),
 	}}
 
+	log.CtxInfof(ctx, "Fetching snapshot for container image")
 	snap, err := l.GetSnapshot(ctx, key, &GetSnapshotOptions{
 		RemoteReadEnabled: remoteEnabled,
 		ReadPolicy:        platform.AlwaysReadNewestSnapshot,
@@ -1285,6 +1303,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 		CacheSnapshotLocally:  true,
 		WriteManifestLocally:  !remoteEnabled,
 	}
+	log.CtxInfof(ctx, "Caching container image snapshot - shouldn't have any metadata")
 	if err := l.CacheSnapshot(ctx, key.GetBranchKey(), opts); err != nil {
 		return nil, status.WrapError(err, "cache containerfs snapshot")
 	}
