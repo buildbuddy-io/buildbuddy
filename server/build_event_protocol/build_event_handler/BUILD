@@ -81,6 +81,7 @@ go_test(
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/testutil/testusage",
         "//server/usage/sku",
         "//server/util/authutil",
         "//server/util/protofile",

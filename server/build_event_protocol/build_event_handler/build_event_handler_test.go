@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
@@ -280,20 +281,6 @@ func assertAPIKeyRedacted(t *testing.T, invocation *inpb.Invocation, apiKey stri
 	require.NoError(t, err)
 	assert.NotContains(t, string(txt), apiKey, "API key %q should not appear in invocation", apiKey)
 	assert.NotContains(t, string(txt), "x-buildbuddy-api-key", "All remote headers should be redacted")
-}
-
-type FakeUsageTracker struct {
-	invocations     int64
-	olapInvocations int64
-}
-
-func (t *FakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, usage *tables.UsageCounts) error {
-	t.invocations += usage.Invocations
-	return nil
-}
-func (t *FakeUsageTracker) IncrementOLAP(ctx context.Context, labels map[sku.LabelName]sku.LabelValue, sku sku.SKU, count int64) error {
-	t.olapInvocations += count
-	return nil
 }
 
 func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
@@ -785,7 +772,7 @@ PRIVATEKEYDATA
 
 func TestHandleEventWithUsageTracking(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	ut := &FakeUsageTracker{}
+	ut := testusage.NewTracker()
 	te.SetUsageTracker(ut)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
@@ -804,8 +791,24 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
-	assert.Equal(t, int64(1), ut.invocations)
-	assert.Equal(t, int64(1), ut.olapInvocations)
+	assert.ElementsMatch(t, []testusage.Total{
+		{
+			GroupID: "GROUP1",
+			Labels:  tables.UsageLabels{},
+			Counts: tables.UsageCounts{
+				Invocations: 1,
+			},
+		},
+	}, ut.Totals())
+	assert.ElementsMatch(t, []testusage.OLAPTotal{
+		{
+			GroupID: "GROUP1",
+			Labels:  sku.Labels{},
+			Counts: map[sku.SKU]int64{
+				sku.BuildEventsBESCount: 1,
+			},
+		},
+	}, ut.OLAPTotals())
 
 	// Send another started event for good measure; we should still only count 1
 	// invocation since it's the same stream.
@@ -813,8 +816,25 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
-	assert.Equal(t, int64(1), ut.invocations)
-	assert.Equal(t, int64(1), ut.olapInvocations)
+	// Totals should remain the same (1 invocation total)
+	assert.ElementsMatch(t, []testusage.Total{
+		{
+			GroupID: "GROUP1",
+			Labels:  tables.UsageLabels{},
+			Counts: tables.UsageCounts{
+				Invocations: 1,
+			},
+		},
+	}, ut.Totals())
+	assert.ElementsMatch(t, []testusage.OLAPTotal{
+		{
+			GroupID: "GROUP1",
+			Labels:  sku.Labels{},
+			Counts: map[sku.SKU]int64{
+				sku.BuildEventsBESCount: 1,
+			},
+		},
+	}, ut.OLAPTotals())
 }
 
 func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
