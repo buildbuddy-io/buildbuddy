@@ -851,6 +851,12 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 				executionTask.Experiments = append(executionTask.Experiments, routingConfigExperimentName+":"+v)
 			}
 		}
+
+		// OCI fetcher thin client experiment
+		const ociFetcherThinClientExperiment = "ocifetcher.thin_client_enabled"
+		if _, details := exp.BooleanDetails(ctx, ociFetcherThinClientExperiment, false); details.Variant() != "" {
+			executionTask.Experiments = append(executionTask.Experiments, ociFetcherThinClientExperiment+":"+details.Variant())
+		}
 	}
 
 	metrics.RemoteExecutionRequests.With(prometheus.Labels{metrics.GroupID: taskGroupID, metrics.OS: props.OS, metrics.Arch: props.Arch}).Inc()

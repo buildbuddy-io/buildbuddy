@@ -878,10 +878,11 @@ func (p *pool) hostBuildRoot() string {
 
 // resolveImageDigest replaces the ContainerImage property with an image name that includes a digest.
 // This makes the ContainerImage property safe to use as a cache key.
-func (p *pool) resolveImageDigest(ctx context.Context, props *platform.Properties) error {
+func (p *pool) resolveImageDigest(ctx context.Context, props *platform.Properties, experiments []string) error {
 	if props.ContainerImage == "" {
 		return nil
 	}
+	ctx = oci.WithExperiments(ctx, experiments)
 	creds, err := oci.CredentialsFromProperties(props)
 	if err != nil {
 		return err
@@ -914,7 +915,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	}
 	executorplatform.ApplyOverrides(p.env, executorplatform.GetExecutorProperties(), platProps, task.GetCommand())
 	if *resolveImageDigests {
-		if err := p.resolveImageDigest(ctx, platProps); err != nil {
+		if err := p.resolveImageDigest(ctx, platProps, nil /*experiments*/); err != nil {
 			return err
 		}
 	}
@@ -1040,7 +1041,7 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 		return nil, err
 	}
 	if *resolveImageDigests {
-		if err := p.resolveImageDigest(ctx, props); err != nil {
+		if err := p.resolveImageDigest(ctx, props, task.GetExperiments()); err != nil {
 			return nil, err
 		}
 	}

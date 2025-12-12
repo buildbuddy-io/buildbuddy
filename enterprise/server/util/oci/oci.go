@@ -54,6 +54,22 @@ var (
 	cacheEnabledPercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
 )
 
+// Context key for passing experiments to OCI resolver methods.
+type experimentsContextKey struct{}
+
+// WithExperiments returns a context with experiments attached.
+func WithExperiments(ctx context.Context, experiments []string) context.Context {
+	return context.WithValue(ctx, experimentsContextKey{}, experiments)
+}
+
+// ExperimentsFromContext retrieves experiments from context.
+func ExperimentsFromContext(ctx context.Context) []string {
+	if exps, ok := ctx.Value(experimentsContextKey{}).([]string); ok {
+		return exps
+	}
+	return nil
+}
+
 type Registry struct {
 	Hostnames []string `yaml:"hostnames" json:"hostnames"`
 	Username  string   `yaml:"username" json:"username"`
@@ -236,6 +252,20 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	}, nil
 }
 
+const ociFetcherThinClientExperiment = "ocifetcher.thin_client_enabled"
+
+// shouldUseThinClient checks if the thin OCI fetcher client should be used
+// based on experiments in the context. For now, this always returns false
+// as the thin client is not yet implemented.
+func (r *Resolver) shouldUseThinClient(ctx context.Context) bool {
+	for _, exp := range ExperimentsFromContext(ctx) {
+		if exp == ociFetcherThinClientExperiment+":true" {
+			return true
+		}
+	}
+	return false
+}
+
 // AuthenticateWithRegistry makes a HEAD request to a remote registry with the input credentials.
 // Any errors encountered are returned.
 // Otherwise, the function returns nil and it is safe to assume the input credentials grant access
@@ -244,6 +274,10 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	if credentials.bypassRegistry {
 		return nil
 	}
+
+	// Check experiment for thin client usage (scaffolding - not yet implemented)
+	useThinClient := r.shouldUseThinClient(ctx)
+	_ = useThinClient // TODO: use thin client when implemented
 
 	log.CtxInfof(ctx, "Authenticating with registry for %q", imageName)
 	_, err := r.env.GetOCIFetcherClient().FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
@@ -287,6 +321,10 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		r.mu.Unlock()
 	}
 
+	// Check experiment for thin client usage (scaffolding - not yet implemented)
+	useThinClient := r.shouldUseThinClient(ctx)
+	_ = useThinClient // TODO: use thin client when implemented
+
 	resp, err := r.env.GetOCIFetcherClient().FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
 		Ref: imageName,
 		Credentials: &rgpb.Credentials{
@@ -314,6 +352,10 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
+	// Check experiment for thin client usage (scaffolding - not yet implemented)
+	useThinClient := r.shouldUseThinClient(ctx)
+	_ = useThinClient // TODO: use thin client when implemented
 
 	imageRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
