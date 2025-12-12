@@ -1038,6 +1038,15 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	vmd.SavedSnapshotVersionNumber++
 	vmd.LastExecutedTask = c.getVMTask()
 
+	if *log.LogLevel == "debug" {
+		encoded, err := json.Marshal(vmd)
+		if err == nil {
+			log.CtxDebugf(ctx, "Caching snapshot with VM metadata: %s", string(encoded))
+		} else {
+			log.CtxDebugf(ctx, "Error marshalling VM metadata: %s", err)
+		}
+	}
+
 	// We always use a local manifest if it exists, so only write one if
 	// we don't want to prioritize reading a remote manifest.
 	readPolicy, err := snapshotReadPolicy(c.task)
@@ -1251,11 +1260,14 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	// Set unique per-run identifier on the vm metadata so this exact snapshot
 	// run can be identified
 	if snap.GetVMMetadata() == nil {
+		log.CtxWarningf(ctx, "No VM metadata found in snapshot")
 		md := &fcpb.VMMetadata{
 			VmId:        c.id,
 			SnapshotKey: c.SnapshotKeySet().BranchKey,
 		}
 		snap.SetVMMetadata(md)
+	} else if snap.GetVMMetadata().GetLastExecutedTask() == nil {
+		log.CtxWarningf(ctx, "No last executed task found in snapshot metadata")
 	}
 	snap.GetVMMetadata().SnapshotId = c.snapshotID
 	c.snapshot = snap
