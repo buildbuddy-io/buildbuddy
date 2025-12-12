@@ -310,9 +310,11 @@ func withPullerRetry[T any](
 	return result, nil
 }
 
-// handleBypassRegistry checks if bypass_registry is requested and returns
-// an appropriate error. Returns NotFoundError if user is a server admin,
-// PermissionDeniedError if not. Returns nil if bypass_registry is false.
+// Only server admins can bypass the registry.
+// Once the OCIFetcherClient supports caching, blobs and manifests
+// can be served from the cache without making any requests to the registry.
+// For now, if someone requests to bypass the registry, the client returns an error:
+// PermissionDenied if the use is not an admin, NotFound otherwise.
 func handleBypassRegistry(ctx context.Context, bypassRegistry bool) error {
 	if !bypassRegistry {
 		return nil
