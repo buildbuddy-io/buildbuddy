@@ -2852,7 +2852,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 }
 
 // reclaimMemoryWithBalloon attempts to decrease memory snapshot size by expanding
-// the memory balloon to 90% of available memory.
+// the memory balloon to 80% of available memory.
 func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -2885,7 +2885,7 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 		return err
 	}
 	availableMemMB := stats.AvailableMemory / 1e6
-	balloonSizeMB := int64(float64(availableMemMB) * .9)
+	balloonSizeMB := int64(float64(availableMemMB) * .8)
 	if err := c.updateBalloon(ctx, balloonSizeMB); err != nil {
 		return status.WrapError(err, "inflate balloon")
 	}
@@ -2950,7 +2950,7 @@ expand_loop:
 
 	// If the balloon didn't reach the target size by a large margin, something is likely broken in the VM.
 	if math.Abs(float64(currentBalloonSize-targetSizeMib)) > 1000 {
-		return fmt.Errorf("failed to update balloon to %d MB, stalled at %d MB", targetSizeMib, currentBalloonSize)
+		return fmt.Errorf("failed to update balloon to %d MB, stalled at %d MB. vmlog: %s", targetSizeMib, currentBalloonSize, c.vmLog.Tail())
 	}
 	return nil
 }
