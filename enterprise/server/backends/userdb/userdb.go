@@ -35,6 +35,10 @@ const (
 	// Changing this will change the default label text shown on new API
 	// keys if the user leaves the label field blank.
 	defaultAPIKeyLabel = "Default"
+
+	// New users who get a newly created group will default
+	// the group to free tier.
+	defaultSingleGroupStatus = grpb.Group_FREE_TIER_GROUP_STATUS
 )
 
 var (
@@ -81,6 +85,7 @@ func singleUserGroup(u *tables.User) (*tables.Group, error) {
 		GroupID: strings.Replace(u.UserID, "US", "GR", 1),
 		UserID:  u.UserID,
 		Name:    name,
+		Status:  defaultSingleGroupStatus,
 	}, nil
 }
 
