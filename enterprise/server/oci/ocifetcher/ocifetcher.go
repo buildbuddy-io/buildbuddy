@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/authn"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"google.golang.org/grpc"
@@ -410,6 +411,52 @@ func (s *ociFetcherServer) evictPuller(imageRef gcrname.Reference, creds *rgpb.C
 	s.mu.Unlock()
 }
 
+// withPullerRetry handles the common pattern of executing an operation with a puller,
+// evicting and retrying on failure due to expired tokens.
+func withPullerRetry[T any](
+	s *ociFetcherServer,
+	ctx context.Context,
+	ref gcrname.Reference,
+	creds *rgpb.Credentials,
+	op func(puller *remote.Puller) (T, error),
+) (T, error) {
+	var zero T
+
+	puller, err := s.getOrCreatePuller(ctx, ref, creds)
+	if err != nil {
+		return zero, status.InternalErrorf("error creating puller: %s", err)
+	}
+
+	result, err := op(puller)
+	if err == nil {
+		return result, nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return zero, err
+	}
+
+	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
+	s.evictPuller(ref, creds)
+	puller, err = s.getOrCreatePuller(ctx, ref, creds)
+	if err != nil {
+		return zero, status.InternalErrorf("error creating puller: %s", err)
+	}
+
+	result, err = op(puller)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return zero, err
+	}
+	if err != nil {
+		s.evictPuller(ref, creds)
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return zero, status.PermissionDeniedErrorf("not authorized to access resource: %s", err)
+		}
+		return zero, status.UnavailableErrorf("could not fetch from remote registry: %s", err)
+	}
+
+	return result, nil
+}
+
 // Server RPC implementations
 
 func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
@@ -418,38 +465,11 @@ func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
 	}
 
-	puller, err := s.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
+	desc, err := withPullerRetry(s, ctx, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*v1.Descriptor, error) {
+		return puller.Head(ctx, imageRef)
+	})
 	if err != nil {
-		return nil, status.InternalErrorf("error creating puller: %s", err)
-	}
-	desc, err := puller.Head(ctx, imageRef)
-	if err == nil {
-		return &ofpb.FetchManifestMetadataResponse{
-			Digest:    desc.Digest.String(),
-			Size:      desc.Size,
-			MediaType: string(desc.MediaType),
-		}, nil
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil, err
-	}
-
-	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
-	s.evictPuller(imageRef, req.GetCredentials())
-	puller, err = s.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
-	if err != nil {
-		return nil, status.InternalErrorf("error creating puller: %s", err)
-	}
-	desc, err = puller.Head(ctx, imageRef)
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return nil, err
-	}
-	if err != nil {
-		s.evictPuller(imageRef, req.GetCredentials())
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not fetch manifest metadata from remote registry: %s", err)
 	}
 
 	return &ofpb.FetchManifestMetadataResponse{
@@ -465,42 +485,11 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
 	}
 
-	puller, err := s.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
+	remoteDesc, err := withPullerRetry(s, ctx, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*remote.Descriptor, error) {
+		return puller.Get(ctx, imageRef)
+	})
 	if err != nil {
-		return nil, status.InternalErrorf("error creating puller: %s", err)
-	}
-
-	remoteDesc, err := puller.Get(ctx, imageRef)
-	if err == nil {
-		return &ofpb.FetchManifestResponse{
-			Digest:    remoteDesc.Digest.String(),
-			Size:      remoteDesc.Size,
-			MediaType: string(remoteDesc.MediaType),
-			Manifest:  remoteDesc.Manifest,
-		}, nil
-	}
-
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil, err
-	}
-
-	// Retry with fresh puller
-	s.evictPuller(imageRef, req.GetCredentials())
-	puller, err = s.getOrCreatePuller(ctx, imageRef, req.GetCredentials())
-	if err != nil {
-		return nil, status.InternalErrorf("error creating puller: %s", err)
-	}
-
-	remoteDesc, err = puller.Get(ctx, imageRef)
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return nil, err
-	}
-	if err != nil {
-		s.evictPuller(imageRef, req.GetCredentials())
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not fetch manifest from remote registry: %s", err)
 	}
 
 	return &ofpb.FetchManifestResponse{
@@ -522,42 +511,11 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		return nil, status.InvalidArgumentErrorf("blob reference must be a digest reference (e.g., repo@sha256:...), got %q", req.GetRef())
 	}
 
-	puller, err := s.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
+	layer, err := withPullerRetry(s, ctx, blobRef, req.GetCredentials(), func(puller *remote.Puller) (v1.Layer, error) {
+		return puller.Layer(ctx, digestRef)
+	})
 	if err != nil {
-		return nil, status.InternalErrorf("error creating puller: %s", err)
-	}
-
-	layer, err := puller.Layer(ctx, digestRef)
-	if err == nil {
-		size, sizeErr := layer.Size()
-		mediaType, mtErr := layer.MediaType()
-		if sizeErr != nil || mtErr != nil {
-			return nil, status.InternalErrorf("error getting layer metadata: size=%v, mediaType=%v", sizeErr, mtErr)
-		}
-		return &ofpb.FetchBlobMetadataResponse{
-			Size:      size,
-			MediaType: string(mediaType),
-		}, nil
-	}
-
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil, err
-	}
-
-	// Retry with fresh puller
-	s.evictPuller(blobRef, req.GetCredentials())
-	puller, err = s.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
-	if err != nil {
-		return nil, status.InternalErrorf("error creating puller: %s", err)
-	}
-
-	layer, err = puller.Layer(ctx, digestRef)
-	if err != nil {
-		s.evictPuller(blobRef, req.GetCredentials())
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("not authorized to access blob: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not fetch blob metadata from remote registry: %s", err)
 	}
 
 	size, sizeErr := layer.Size()
@@ -586,30 +544,11 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return status.InvalidArgumentErrorf("blob reference must be a digest reference, got %q", req.GetRef())
 	}
 
-	puller, err := s.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
+	layer, err := withPullerRetry(s, ctx, blobRef, req.GetCredentials(), func(puller *remote.Puller) (v1.Layer, error) {
+		return puller.Layer(ctx, digestRef)
+	})
 	if err != nil {
-		return status.InternalErrorf("error creating puller: %s", err)
-	}
-
-	layer, err := puller.Layer(ctx, digestRef)
-	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return err
-		}
-		// Retry with fresh puller
-		s.evictPuller(blobRef, req.GetCredentials())
-		puller, err = s.getOrCreatePuller(ctx, blobRef, req.GetCredentials())
-		if err != nil {
-			return status.InternalErrorf("error creating puller: %s", err)
-		}
-		layer, err = puller.Layer(ctx, digestRef)
-		if err != nil {
-			s.evictPuller(blobRef, req.GetCredentials())
-			if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-				return status.PermissionDeniedErrorf("not authorized to access blob: %s", err)
-			}
-			return status.UnavailableErrorf("could not fetch blob from remote registry: %s", err)
-		}
+		return err
 	}
 
 	// Get compressed blob data
