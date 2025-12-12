@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -457,9 +458,22 @@ func withPullerRetry[T any](
 	return result, nil
 }
 
+func checkBypassRegistry(ctx context.Context, bypassRegistry bool) error {
+	if !bypassRegistry {
+		return nil
+	}
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return status.PermissionDeniedErrorf("authorize bypass_registry: %s", err)
+	}
+	return status.NotFoundError("bypass_registry is not yet supported")
+}
+
 // Server RPC implementations
 
 func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
+	if err := checkBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+		return nil, err
+	}
 	imageRef, err := gcrname.ParseReference(req.GetRef())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
@@ -480,6 +494,9 @@ func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.
 }
 
 func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
+	if err := checkBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+		return nil, err
+	}
 	imageRef, err := gcrname.ParseReference(req.GetRef())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
@@ -501,6 +518,9 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 }
 
 func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
+	if err := checkBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+		return nil, err
+	}
 	blobRef, err := gcrname.ParseReference(req.GetRef())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid blob reference %q: %s", req.GetRef(), err)
@@ -533,6 +553,9 @@ const blobChunkSize = 64 * 1024 // 64KB chunks for streaming
 
 func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
+	if err := checkBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+		return err
+	}
 
 	blobRef, err := gcrname.ParseReference(req.GetRef())
 	if err != nil {

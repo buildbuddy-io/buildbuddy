@@ -14,14 +14,19 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 )
@@ -936,4 +941,98 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: imageName + "@" + layerDigest.String()}, stream)
 	require.NoError(t, err)
 	require.Equal(t, expectedLayerData, stream.collectData())
+}
+
+func TestServerBypassRegistry(t *testing.T) {
+	const adminGroupID = "GR123"
+
+	adminUser := &claims.Claims{
+		UserID:        "US1",
+		GroupID:       adminGroupID,
+		AllowedGroups: []string{adminGroupID},
+		GroupMemberships: []*interfaces.GroupMembership{
+			{
+				GroupID:      adminGroupID,
+				Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
+			},
+		},
+	}
+
+	for _, tc := range []struct {
+		name       string
+		user       *claims.Claims
+		checkError func(error) bool
+	}{
+		{
+			name:       "NonAdmin_PermissionDenied",
+			user:       nil,
+			checkError: status.IsPermissionDeniedError,
+		},
+		{
+			name:       "Admin_NotFound",
+			user:       adminUser,
+			checkError: status.IsNotFoundError,
+		},
+	} {
+		t.Run("FetchManifestMetadata/"+tc.name, func(t *testing.T) {
+			flags.Set(t, "auth.admin_group_id", adminGroupID)
+			server := newTestServer(t)
+			ctx := context.Background()
+			if tc.user != nil {
+				ctx = testauth.WithAuthenticatedUserInfo(ctx, tc.user)
+			}
+			_, err := server.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
+				Ref:            "gcr.io/test/image:latest",
+				BypassRegistry: true,
+			})
+			require.Error(t, err)
+			require.True(t, tc.checkError(err), "unexpected error type: %v", err)
+		})
+
+		t.Run("FetchManifest/"+tc.name, func(t *testing.T) {
+			flags.Set(t, "auth.admin_group_id", adminGroupID)
+			server := newTestServer(t)
+			ctx := context.Background()
+			if tc.user != nil {
+				ctx = testauth.WithAuthenticatedUserInfo(ctx, tc.user)
+			}
+			_, err := server.FetchManifest(ctx, &ofpb.FetchManifestRequest{
+				Ref:            "gcr.io/test/image:latest",
+				BypassRegistry: true,
+			})
+			require.Error(t, err)
+			require.True(t, tc.checkError(err), "unexpected error type: %v", err)
+		})
+
+		t.Run("FetchBlobMetadata/"+tc.name, func(t *testing.T) {
+			flags.Set(t, "auth.admin_group_id", adminGroupID)
+			server := newTestServer(t)
+			ctx := context.Background()
+			if tc.user != nil {
+				ctx = testauth.WithAuthenticatedUserInfo(ctx, tc.user)
+			}
+			_, err := server.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
+				Ref:            "gcr.io/test/image@sha256:abc123",
+				BypassRegistry: true,
+			})
+			require.Error(t, err)
+			require.True(t, tc.checkError(err), "unexpected error type: %v", err)
+		})
+
+		t.Run("FetchBlob/"+tc.name, func(t *testing.T) {
+			flags.Set(t, "auth.admin_group_id", adminGroupID)
+			server := newTestServer(t)
+			ctx := context.Background()
+			if tc.user != nil {
+				ctx = testauth.WithAuthenticatedUserInfo(ctx, tc.user)
+			}
+			stream := &mockFetchBlobServer{ctx: ctx}
+			err := server.FetchBlob(&ofpb.FetchBlobRequest{
+				Ref:            "gcr.io/test/image@sha256:abc123",
+				BypassRegistry: true,
+			}, stream)
+			require.Error(t, err)
+			require.True(t, tc.checkError(err), "unexpected error type: %v", err)
+		})
+	}
 }
