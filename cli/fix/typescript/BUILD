@@ -1,6 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
-package(default_visibility = ["//cli:__subpackages__"])
+package(default_visibility = [
+    "//:__pkg__",  # keep
+    "//cli:__subpackages__",
+])
 
 go_library(
     name = "typescript",

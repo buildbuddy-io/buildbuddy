@@ -5,6 +5,8 @@ load(":defs.bzl", "ts_proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
+# gazelle:typescript disable
+
 go_proto_compiler(
     name = "vtprotobuf_compiler",
     # marshal depends on size. Pool only generates code for messages with the

@@ -118,6 +118,7 @@ gazelle_binary(
     name = "bb_gazelle_binary",
     languages = DEFAULT_LANGUAGES + [
         "@rules_python_gazelle_plugin//python",
+        "//cli/fix/typescript",
     ],
 )
 
