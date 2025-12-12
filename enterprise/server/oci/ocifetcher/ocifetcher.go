@@ -34,7 +34,10 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 )
 
-const pullerLRUMaxEntries = 1000
+const (
+	blobChunkSize = 256 * 1000 // 256 KB to match cachetools buffer size
+	pullerLRUMaxEntries = 1000
+
 
 var (
 	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
@@ -543,8 +546,6 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		MediaType: string(mediaType),
 	}, nil
 }
-
-const blobChunkSize = 64 * 1024 // 64KB chunks for streaming
 
 func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
