@@ -10,16 +10,24 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 )
@@ -491,4 +499,176 @@ func TestFetchBlob_InvalidReference(t *testing.T) {
 	_, err := client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: tagRef})
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got: %v", err)
+}
+
+// contextWithUnverifiedJWT creates a context with unverified JWT claims.
+func contextWithUnverifiedJWT(c *claims.Claims) context.Context {
+	authCtx := claims.AuthContextWithJWT(context.Background(), c, nil)
+	jwt := authCtx.Value(authutil.ContextTokenStringKey).(string)
+	return context.WithValue(context.Background(), authutil.ContextTokenStringKey, jwt)
+}
+
+// adminContext returns a context for a server admin user.
+func adminContext() context.Context {
+	c := &claims.Claims{
+		UserID: "US_ADMIN",
+		GroupMemberships: []*interfaces.GroupMembership{
+			{GroupID: "GR_ADMIN", Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN}},
+		},
+	}
+	return contextWithUnverifiedJWT(c)
+}
+
+// nonAdminContext returns a context for a non-admin user.
+func nonAdminContext() context.Context {
+	c := &claims.Claims{
+		UserID: "US_NONADMIN",
+	}
+	return contextWithUnverifiedJWT(c)
+}
+
+func TestBypassRegistry_RequiresServerAdmin(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	flags.Set(t, "auth.admin_group_id", "GR_ADMIN")
+	reg, _ := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(layers), 0)
+	blobRef := layerBlobRef(t, reg, "test-image", layers[0])
+
+	client := newTestClient(t, env)
+
+	// Non-admin user should get PermissionDenied when using bypass_registry=true
+	nonAdminCtx := nonAdminContext()
+
+	_, err = client.FetchManifestMetadata(nonAdminCtx,
+		&ofpb.FetchManifestMetadataRequest{Ref: imageName, BypassRegistry: true})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "FetchManifestMetadata: expected PermissionDenied, got: %v", err)
+
+	_, err = client.FetchManifest(nonAdminCtx,
+		&ofpb.FetchManifestRequest{Ref: imageName, BypassRegistry: true})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "FetchManifest: expected PermissionDenied, got: %v", err)
+
+	_, err = client.FetchBlobMetadata(nonAdminCtx,
+		&ofpb.FetchBlobMetadataRequest{Ref: blobRef, BypassRegistry: true})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "FetchBlobMetadata: expected PermissionDenied, got: %v", err)
+
+	_, err = client.FetchBlob(nonAdminCtx,
+		&ofpb.FetchBlobRequest{Ref: blobRef, BypassRegistry: true})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "FetchBlob: expected PermissionDenied, got: %v", err)
+
+	// Admin user should not get PermissionDenied (may get other errors if cache miss, but not auth error)
+	adminCtx := adminContext()
+
+	// For admin, bypass_registry=true may fail with cache miss but should NOT fail with PermissionDenied
+	_, err = client.FetchManifestMetadata(adminCtx,
+		&ofpb.FetchManifestMetadataRequest{Ref: imageName, BypassRegistry: true})
+	if err != nil {
+		require.False(t, status.IsPermissionDeniedError(err), "FetchManifestMetadata admin: unexpected PermissionDenied, got: %v", err)
+	}
+
+	_, err = client.FetchManifest(adminCtx,
+		&ofpb.FetchManifestRequest{Ref: imageName, BypassRegistry: true})
+	if err != nil {
+		require.False(t, status.IsPermissionDeniedError(err), "FetchManifest admin: unexpected PermissionDenied, got: %v", err)
+	}
+
+	_, err = client.FetchBlobMetadata(adminCtx,
+		&ofpb.FetchBlobMetadataRequest{Ref: blobRef, BypassRegistry: true})
+	if err != nil {
+		require.False(t, status.IsPermissionDeniedError(err), "FetchBlobMetadata admin: unexpected PermissionDenied, got: %v", err)
+	}
+
+	_, err = client.FetchBlob(adminCtx,
+		&ofpb.FetchBlobRequest{Ref: blobRef, BypassRegistry: true})
+	if err != nil {
+		require.False(t, status.IsPermissionDeniedError(err), "FetchBlob admin: unexpected PermissionDenied, got: %v", err)
+	}
+}
+
+func TestBypassRegistry_NoRemoteRequests(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+	flags.Set(t, "auth.admin_group_id", "GR_ADMIN")
+
+	// Set up client identity service (required for cache to work)
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	err = clientidentity.Register(te)
+	require.NoError(t, err)
+
+	// Set up cache
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	counter := testhttp.NewRequestCounter()
+	reg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	})
+	imageName, img := reg.PushNamedImage(t, "bypass-test", nil)
+	digest, err := img.Digest()
+	require.NoError(t, err)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(layers), 0)
+	layerDigest, err := layers[0].Digest()
+	require.NoError(t, err)
+
+	// Create a client with caching enabled (cache client comes from env)
+	client, err := ocifetcher.NewClient(te, localhostIPs(t), nil)
+	require.NoError(t, err)
+
+	// First, fetch without bypass to populate the cache
+	adminCtx := adminContext()
+	counter.Reset()
+	_, err = client.FetchManifest(adminCtx, &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	// Verify we made requests to populate the cache
+	require.Greater(t, len(counter.Snapshot()), 0, "Expected HTTP requests to populate cache")
+
+	// Construct digest reference for manifest
+	digestRef := reg.Address() + "/bypass-test@" + digest.String()
+
+	// Now fetch with bypass_registry=true using digest reference
+	// Should make NO HTTP requests since the manifest is cached
+	counter.Reset()
+	_, err = client.FetchManifest(adminCtx, &ofpb.FetchManifestRequest{
+		Ref:            digestRef,
+		BypassRegistry: true,
+	})
+	require.NoError(t, err)
+	assertRequests(t, counter, map[string]int{})
+
+	// Also verify that fetching blob with bypass doesn't result in auth error
+	// (the blob needs to be in CAS for full bypass to work, but auth bypass should work)
+	blobRef := reg.Address() + "/bypass-test@" + layerDigest.String()
+
+	// First populate the CAS by fetching the blob
+	counter.Reset()
+	reader, err := ocifetcher.ReadBlob(adminCtx, client, blobRef, nil, false)
+	require.NoError(t, err)
+	_, err = io.ReadAll(reader)
+	require.NoError(t, err)
+	reader.Close()
+
+	// Now verify FetchBlob with bypass works (gets from cache)
+	counter.Reset()
+	blobReader, err := ocifetcher.ReadBlob(adminCtx, client, blobRef, nil, true /* bypassRegistry */)
+	require.NoError(t, err)
+	_, err = io.ReadAll(blobReader)
+	require.NoError(t, err)
+	blobReader.Close()
+	assertRequests(t, counter, map[string]int{})
 }
