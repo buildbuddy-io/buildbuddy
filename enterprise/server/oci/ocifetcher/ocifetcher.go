@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/authn"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"google.golang.org/grpc"
@@ -32,12 +31,13 @@ import (
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 
 const (
-	blobChunkSize = 256 * 1000 // 256 KB to match cachetools buffer size
+	blobChunkSize       = 256 * 1000 // 256 KB to match cachetools buffer size
 	pullerLRUMaxEntries = 1000
-
+)
 
 var (
 	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
@@ -477,7 +477,7 @@ func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
 	}
 
-	desc, err := withPullerRetry(s, ctx, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*v1.Descriptor, error) {
+	desc, err := withPullerRetry(s, ctx, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*gcr.Descriptor, error) {
 		return puller.Head(ctx, imageRef)
 	})
 	if err != nil {
@@ -529,7 +529,7 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		return nil, status.InvalidArgumentErrorf("blob reference must be a digest reference (e.g., repo@sha256:...), got %q", req.GetRef())
 	}
 
-	layer, err := withPullerRetry(s, ctx, blobRef, req.GetCredentials(), func(puller *remote.Puller) (v1.Layer, error) {
+	layer, err := withPullerRetry(s, ctx, blobRef, req.GetCredentials(), func(puller *remote.Puller) (gcr.Layer, error) {
 		return puller.Layer(ctx, digestRef)
 	})
 	if err != nil {
@@ -563,7 +563,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return status.InvalidArgumentErrorf("blob reference must be a digest reference, got %q", req.GetRef())
 	}
 
-	layer, err := withPullerRetry(s, ctx, blobRef, req.GetCredentials(), func(puller *remote.Puller) (v1.Layer, error) {
+	layer, err := withPullerRetry(s, ctx, blobRef, req.GetCredentials(), func(puller *remote.Puller) (gcr.Layer, error) {
 		return puller.Layer(ctx, digestRef)
 	})
 	if err != nil {
