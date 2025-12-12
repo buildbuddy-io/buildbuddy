@@ -371,6 +371,7 @@ func TestResolve(t *testing.T) {
 						registry.ImageAddress(nameToResolve),
 						tc.args.platform,
 						tc.args.credentials,
+						false,
 					)
 					if tc.checkError != nil {
 						require.True(t, tc.checkError(err))
@@ -470,6 +471,7 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 						registry.ImageAddress(nameToResolve),
 						tc.args.platform,
 						tc.args.credentials,
+						false,
 					)
 					require.NoError(t, err)
 
@@ -578,6 +580,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 			Os:   runtime.GOOS,
 		},
 		oci.Credentials{},
+		false,
 	)
 	require.NoError(t, err)
 
@@ -600,7 +603,9 @@ func pushAndFetchRandomImage(t *testing.T, te *testenv.TestEnv, registry *testre
 			Arch: runtime.GOARCH,
 			Os:   runtime.GOOS,
 		},
-		oci.Credentials{})
+		oci.Credentials{},
+		false,
+	)
 	return err
 }
 
@@ -887,6 +892,7 @@ func TestResolve_Concurrency(t *testing.T) {
 			Os:   runtime.GOOS,
 		},
 		oci.Credentials{},
+		false,
 	)
 	require.NoError(t, err)
 
@@ -973,6 +979,7 @@ func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imag
 		imageAddress,
 		tc.args.platform,
 		tc.args.credentials,
+		false,
 	)
 	require.NoError(t, err)
 
@@ -1002,6 +1009,7 @@ func TestResolveImageDigest_TagExists(t *testing.T) {
 		nameToResolve,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false,
 	)
 	require.NoError(t, err)
 
@@ -1022,6 +1030,7 @@ func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
 		nonexistent,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false,
 	)
 	require.Error(t, err)
 	require.True(t, status.IsUnavailableError(err), "expected UnavailableError, got: %v", err)
@@ -1053,6 +1062,7 @@ func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 		nameToResolve,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false,
 	)
 	require.NoError(t, err)
 	resolvedDigest, err := name.NewDigest(nameWithDigest)
@@ -1089,6 +1099,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 			nameToResolve,
 			oci.RuntimePlatform(),
 			oci.Credentials{},
+			false,
 		)
 		require.NoError(t, err)
 		resolvedDigest, err := name.NewDigest(nameWithDigest)
@@ -1109,6 +1120,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 			nameToResolve,
 			oci.RuntimePlatform(),
 			oci.Credentials{},
+			false,
 		)
 		require.NoError(t, err)
 
@@ -1129,6 +1141,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 			registryAndRepoNoTag,
 			oci.RuntimePlatform(),
 			oci.Credentials{},
+			false,
 		)
 		require.NoError(t, err)
 
@@ -1168,6 +1181,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 		nameToResolve,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false,
 	)
 	require.NoError(t, err)
 	resolvedDigest, err := name.NewDigest(nameWithDigest)
@@ -1187,6 +1201,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 		nameToResolve,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false,
 	)
 	require.NoError(t, err)
 	resolvedDigest, err = name.NewDigest(nameWithDigest)
@@ -1202,6 +1217,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 		nameToResolve,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false,
 	)
 	require.NoError(t, err)
 	resolvedDigest, err = name.NewDigest(nameWithDigest)
@@ -1217,6 +1233,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 		nameToResolve,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false,
 	)
 	require.NoError(t, err)
 	resolvedDigest, err = name.NewDigest(nameWithDigest)
