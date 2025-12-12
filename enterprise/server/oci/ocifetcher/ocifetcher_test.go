@@ -13,13 +13,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 )
@@ -491,4 +494,104 @@ func TestFetchBlob_InvalidReference(t *testing.T) {
 	_, err := client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: tagRef})
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got: %v", err)
+}
+
+func TestFetch_BypassRegistry_NotServerAdmin(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	reg, _ := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(layers), 0)
+	blobRef := layerBlobRef(t, reg, "test-image", layers[0])
+
+	// Create a non-admin user (no admin group configured, so no user can be a server admin)
+	user := testauth.User("US1", "GR1")
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
+
+	client := newTestClient(t, env)
+
+	// FetchManifestMetadata - bypassRegistry without admin should fail
+	_, err = client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
+		Ref:            imageName,
+		BypassRegistry: true,
+	})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+
+	// FetchManifest - bypassRegistry without admin should fail
+	_, err = client.FetchManifest(ctx, &ofpb.FetchManifestRequest{
+		Ref:            imageName,
+		BypassRegistry: true,
+	})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+
+	// FetchBlobMetadata - bypassRegistry without admin should fail
+	_, err = client.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
+		Ref:            blobRef,
+		BypassRegistry: true,
+	})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+
+	// FetchBlob - bypassRegistry without admin should fail
+	_, err = client.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:            blobRef,
+		BypassRegistry: true,
+	})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+}
+
+func TestFetch_BypassRegistry_ServerAdmin(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	reg, _ := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(layers), 0)
+	blobRef := layerBlobRef(t, reg, "test-image", layers[0])
+
+	// Configure the server admin group
+	flags.Set(t, "auth.admin_group_id", "GR1")
+
+	// Create a server admin user (member of the admin group with ORG_ADMIN capability)
+	user := testauth.User("US1", "GR1")
+	user.GroupMemberships[0].Capabilities = []cappb.Capability{cappb.Capability_ORG_ADMIN}
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
+
+	client := newTestClient(t, env)
+
+	// FetchManifestMetadata - bypassRegistry with admin should return NotFound
+	_, err = client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
+		Ref:            imageName,
+		BypassRegistry: true,
+	})
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
+
+	// FetchManifest - bypassRegistry with admin should return NotFound
+	_, err = client.FetchManifest(ctx, &ofpb.FetchManifestRequest{
+		Ref:            imageName,
+		BypassRegistry: true,
+	})
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
+
+	// FetchBlobMetadata - bypassRegistry with admin should return NotFound
+	_, err = client.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
+		Ref:            blobRef,
+		BypassRegistry: true,
+	})
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
+
+	// FetchBlob - bypassRegistry with admin should return NotFound
+	_, err = client.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:            blobRef,
+		BypassRegistry: true,
+	})
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
 }
