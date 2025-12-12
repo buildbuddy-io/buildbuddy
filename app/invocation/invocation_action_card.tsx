@@ -1556,7 +1556,7 @@ function getDrilldownUrl(targetLabel?: string, actionMnemonic?: string): string 
     return "";
   }
   const dimensionParam = `${encodeTargetLabelUrlParam(targetLabel)}|${encodeActionMnemonicUrlParam(actionMnemonic)}`;
-  return `/trends/?d=${encodeURIComponent(dimensionParam)}#drilldown`;
+  return `/trends/?d=${encodeURIComponent(dimensionParam)}&ddMetric=e4#drilldown`;
 }
 
 export function encodeTargetLabelUrlParam(targetLabel: string): string {
