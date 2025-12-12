@@ -100,7 +100,7 @@ func Load() error {
 		return expandFlagValues()
 	}
 
-	log.Infof("Reading buildbuddy config from '%s'", configFile)
+	log.Infof("Change: Reading buildbuddy config from '%s'", configFile)
 
 	_, err := os.Stat(configFile)
 
