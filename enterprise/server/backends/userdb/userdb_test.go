@@ -279,6 +279,7 @@ func TestCreateUser_Cloud_CreatesSelfOwnedGroup(t *testing.T) {
 
 	selfOwnedGroup := u.Groups[0].Group
 	require.Equal(t, "US1", selfOwnedGroup.UserID, "user ID of self-owned group should be the owner's user ID")
+	require.Equal(t, grpb.Group_FREE_TIER_GROUP_STATUS, selfOwnedGroup.Status, "self-owned group should have FREE_TIER_GROUP_STATUS")
 
 	groupUsers, err := udb.GetGroupUsers(ctx1, selfOwnedGroup.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
 	require.NoError(t, err)
