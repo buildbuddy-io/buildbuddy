@@ -60,6 +60,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cache_service_pb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -310,6 +311,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
 
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
+	if cacheService := env.GetCacheService(); cacheService != nil {
+		cache_service_pb.RegisterCacheServiceServer(grpcServer, cacheService)
+	}
 
 	// Register API Server as a gRPC service.
 	if api := env.GetAPIService(); api != nil {

@@ -38,6 +38,7 @@ go_library(
         "//enterprise/server/backends/redis_execution_collector",
         "//enterprise/server/backends/redis_kvstore",
         "//enterprise/server/backends/redis_metrics_collector",
+        "//enterprise/server/cache_service",
         "//enterprise/server/backends/s3_cache",
         "//enterprise/server/backends/userdb",
         "//enterprise/server/clientidentity",
