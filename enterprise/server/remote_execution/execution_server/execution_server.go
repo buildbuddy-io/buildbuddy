@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
@@ -41,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -936,6 +938,16 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	executionID, op := action_merger.GetOrCreateExecutionID(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest, action.DoNotCache)
 	if op == action_merger.New {
 		log.CtxInfof(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
+
+		// Check CPU time quota before dispatching execution.
+		// Use a 1ns check to verify quota is available before starting.
+		if qm := s.env.GetQuotaManager(); qm != nil {
+			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
+			if err := qm.Allow(ctx, namespace, 1); err != nil {
+				return err
+			}
+		}
+
 		if err := s.Dispatch(ctx, req, action, executionID); err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
 			if err := s.MarkExecutionFailed(ctx, executionID, err); err != nil {
@@ -1493,6 +1505,14 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 	usg := executeResponse.GetResult().GetExecutionMetadata().GetUsageStats()
 	if !pool.IsSelfHosted && usg.GetCpuNanos() > 0 {
 		counts.CPUNanos = usg.GetCpuNanos()
+
+		// If quota is exceeded, the next execution will be blocked.
+		if qm := s.env.GetQuotaManager(); qm != nil {
+			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
+			if err := qm.Allow(ctx, namespace, counts.CPUNanos); err != nil {
+				log.CtxWarningf(ctx, "CPU time quota exhausted after execution: %s", err)
+			}
+		}
 	}
 	labels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
 	if err != nil {
