@@ -28,9 +28,9 @@ var (
 
 type RoutingACClient struct {
 	router       interfaces.CacheRoutingService
-	copyOp       batch_operator.DigestOperator
-	readOp       batch_operator.DigestOperator
-	readVerifyOp batch_operator.DigestOperator
+	copyOp       interfaces.DigestOperator
+	readOp       interfaces.DigestOperator
+	readVerifyOp interfaces.DigestOperator
 }
 
 func New(env environment.Env) (repb.ActionCacheClient, error) {

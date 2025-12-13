@@ -113,9 +113,6 @@ func runRemoteServices(ctx context.Context, env *testenv.TestEnv, t testing.TB) 
 }
 
 func runBSProxy(ctx context.Context, client bspb.ByteStreamClient, env *testenv.TestEnv, t testing.TB) bspb.ByteStreamClient {
-	if env.GetAtimeUpdater() == nil {
-		env.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
-	}
 	env.SetByteStreamClient(client)
 	bss, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
