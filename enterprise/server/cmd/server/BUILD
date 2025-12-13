@@ -22,6 +22,7 @@ go_library(
         "//enterprise/server/auth",
         "//enterprise/server/auth_service",
         "//enterprise/server/backends/authdb",
+        "//enterprise/server/cache_service",
         "//enterprise/server/backends/codesearch",
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/backends/distributed",
