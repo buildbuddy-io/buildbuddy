@@ -497,3 +497,23 @@ message PushDirectoryRequest {
 // A response message for
 // [Push.PushDirectory][build.bazel.remote.asset.v1.Push.PushDirectory].
 message PushDirectoryResponse { /* empty */ }
+
+/******************************************************************************/
+/*                                                                            */
+/*                BEGIN BUILDBUDDY-SPECIFIC PROTO DECLARATIONS                */
+/*                                                                            */
+/******************************************************************************/
+
+// Key used for ActionCache entries representing remote-asset downloads
+// keyed by Bazel's canonical_id qualifier.
+message RemoteAssetActionKey {
+  // The canonical identifier supplied by Bazel via qualifier "bazel.canonical_id".
+  string canonical_id = 1;
+
+  // Optional checksum information provided via the "checksum.sri" qualifier.
+  build.bazel.remote.execution.v2.DigestFunction.Value checksum_digest_function = 2;
+  string checksum = 3;
+
+  // Reserved for future cache invalidation / partitioning.
+  string salt = 4;
+}
