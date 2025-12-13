@@ -77,6 +77,7 @@ func (s *workspaceService) getWorkspace(ctx context.Context, groupID, name strin
 		}
 		workspaceBytes = b
 	} else {
+		// XXX: yikes
 		b, err := s.env.GetCache().Get(ctx, resourceNameForWorkspace(name))
 		if err != nil {
 			return nil, err
@@ -121,6 +122,7 @@ func (s *workspaceService) SaveWorkspace(ctx context.Context, req *wspb.SaveWork
 					return nil, err
 				}
 			} else {
+				// XXX: yikes
 				if err := s.env.GetCache().Set(ctx, resourceNameForNode(req.GetWorkspace().GetName(), change), change.Content); err != nil {
 					return nil, err
 				}
@@ -140,6 +142,7 @@ func (s *workspaceService) SaveWorkspace(ctx context.Context, req *wspb.SaveWork
 			return nil, err
 		}
 	} else {
+		// XXX: yikes
 		if s.env.GetCache().Set(ctx, resourceNameForWorkspace(ws.GetName()), protoBytes) != nil {
 			return nil, err
 		}
@@ -204,6 +207,7 @@ func (s *workspaceService) getFile(ctx context.Context, groupID string, workspac
 		}, nil
 	}
 
+	// XXX: yikes
 	content, err := s.env.GetCache().Get(ctx, resourceNameForNode(workspace.GetName(), file))
 	if err != nil {
 		return &wspb.GetWorkspaceFileResponse{

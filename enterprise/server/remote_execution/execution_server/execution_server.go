@@ -183,6 +183,7 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
+	// XXX: yikes
 	cache := env.GetCache()
 	if cache == nil {
 		return nil, fmt.Errorf("A cache is required to enable the RemoteExecutionServer")

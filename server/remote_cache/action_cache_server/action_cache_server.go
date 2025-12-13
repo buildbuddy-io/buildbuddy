@@ -44,6 +44,7 @@ type ActionCacheServer struct {
 func Register(env *real_environment.RealEnv) error {
 	// OPTIONAL CACHE API -- only enable if configured.
 	if env.GetCache() == nil {
+		// XXX: yikes
 		return nil
 	}
 	actionCacheServer, err := NewActionCacheServer(env)
@@ -55,6 +56,7 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
+	// XXX: yikes
 	cache := env.GetCache()
 	if cache == nil {
 		return nil, fmt.Errorf("A cache is required to enable the ActionCacheServer")
