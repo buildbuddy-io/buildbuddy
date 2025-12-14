@@ -299,6 +299,7 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
 	cacheEncryptionEnabled := false
 	enforceIPRules := false
+	groupStatus := grpb.Group_UNKNOWN_GROUP_STATUS
 	var capabilities []cappb.Capability
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
@@ -310,6 +311,7 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 			// TODO: move these fields into u.GroupMemberships
 			cacheEncryptionEnabled = g.Group.CacheEncryptionEnabled
 			enforceIPRules = g.Group.EnforceIPRules
+			groupStatus = g.Group.Status
 			capabilities = g.Capabilities
 		}
 	}
@@ -321,6 +323,7 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 		Capabilities:           capabilities,
 		CacheEncryptionEnabled: cacheEncryptionEnabled,
 		EnforceIPRules:         enforceIPRules,
+		GroupStatus:            groupStatus,
 	}, nil
 }
 

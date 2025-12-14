@@ -121,7 +121,11 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	ctx := context.Background()
 	baseGroupID := "GR9000"
 	caps := capabilities.AnonymousUserCapabilities
-	akg := &fakeAPIKeyGroup{groupID: baseGroupID, capabilities: capabilities.ToInt(caps)}
+	akg := &fakeAPIKeyGroup{
+		groupID:      baseGroupID,
+		capabilities: capabilities.ToInt(caps),
+		groupStatus:  grpb.Group_ENTERPRISE_GROUP_STATUS,
+	}
 	c, err := claims.APIKeyGroupClaims(ctx, akg)
 	require.NoError(t, err)
 	expectedBaseMembership := &interfaces.GroupMembership{
@@ -131,6 +135,7 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	require.Equal(t, baseGroupID, c.GetGroupID())
 	require.Equal(t, []string{baseGroupID}, c.GetAllowedGroups())
 	require.Equal(t, []*interfaces.GroupMembership{expectedBaseMembership}, c.GetGroupMemberships())
+	require.Equal(t, grpb.Group_ENTERPRISE_GROUP_STATUS, c.GetGroupStatus())
 
 	// Should be able to set group ID to the base group ID via request context which should yield same results
 	// as before.
@@ -154,6 +159,7 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 		groupID:       baseGroupID,
 		childGroupIDs: []string{childGroupID},
 		capabilities:  capabilities.ToInt(caps),
+		groupStatus:   grpb.Group_FREE_TIER_GROUP_STATUS,
 	}
 
 	// Regular call should return the parent group as the effective group.
@@ -167,6 +173,7 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	require.Equal(t, baseGroupID, c.GetAPIKeyInfo().OwnerGroupID)
 	require.Equal(t, []string{baseGroupID, childGroupID}, c.GetAllowedGroups())
 	require.Equal(t, []*interfaces.GroupMembership{expectedBaseMembership, expectedChildMembership}, c.GetGroupMemberships())
+	require.Equal(t, grpb.Group_FREE_TIER_GROUP_STATUS, c.GetGroupStatus())
 
 	// Should be able to change the effective group ID to the child group using the request context.
 	rctx = requestcontext.ContextWithProtoRequestContext(ctx, &ctxpb.RequestContext{GroupId: childGroupID})
@@ -253,6 +260,31 @@ func TestExperimentTargetingGroupID(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tc.wantExperimentTargetingGroupID, c.GetExperimentTargetingGroupID())
 			}
+		})
+	}
+}
+
+func TestGroupStatusPropagation(t *testing.T) {
+	statuses := []grpb.Group_GroupStatus{
+		grpb.Group_UNKNOWN_GROUP_STATUS,
+		grpb.Group_FREE_TIER_GROUP_STATUS,
+		grpb.Group_ENTERPRISE_GROUP_STATUS,
+		grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
+		grpb.Group_BLOCKED_GROUP_STATUS,
+	}
+
+	for _, status := range statuses {
+		t.Run(grpb.Group_GroupStatus_name[int32(status)], func(t *testing.T) {
+			ctx := context.Background()
+			akg := &fakeAPIKeyGroup{
+				groupID:      "GR1234",
+				capabilities: capabilities.ToInt(capabilities.AnonymousUserCapabilities),
+				groupStatus:  status,
+			}
+
+			c, err := claims.APIKeyGroupClaims(ctx, akg)
+			require.NoError(t, err)
+			require.Equal(t, status, c.GetGroupStatus())
 		})
 	}
 }
