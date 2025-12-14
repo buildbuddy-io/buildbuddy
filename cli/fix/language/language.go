@@ -5,7 +5,7 @@ type Language interface {
 	Deps() []string
 	// Returns true if the file is a source file written in this language.
 	IsSourceFile(path string) bool
-	// Returns true if the file is a dependency file used by this langugae.
+	// Returns true if the file is a dependency file used by this language.
 	IsDepFile(path string) bool
 	// Gives the language an opportunity to consolidate multiple dep files before update-repos is called.
 	ConsolidateDepFiles(deps map[string][]string) map[string][]string

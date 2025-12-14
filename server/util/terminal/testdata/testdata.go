@@ -203,7 +203,7 @@ var (
 			ScreenCols: 2,
 		},
 		{
-			Name: "Test MaxWindowSize (should only accomodate 32 lines of max column size)",
+			Name: "Test MaxWindowSize (should only accommodate 32 lines of max column size)",
 			Write: []string{
 				"1\n2\n3\n4\n",
 				"5\n6\n7\n8\n",

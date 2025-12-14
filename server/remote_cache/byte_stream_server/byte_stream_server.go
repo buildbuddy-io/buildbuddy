@@ -402,7 +402,7 @@ func (w *writeHandler) commit() error {
 		}()
 		// Close the decompressor or compressor, flushing any currently buffered
 		// bytes. If this fails, don't bother computing the checksum or
-		// commiting the file to cache, since the incoming data is likely
+		// committing the file to cache, since the incoming data is likely
 		// corrupt anyway.
 		if err := w.bufioCloser.Close(); err != nil {
 			log.Warning(err.Error())
