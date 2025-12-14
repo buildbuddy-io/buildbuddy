@@ -120,7 +120,7 @@ func (h *HealthChecker) handleSignals(signalChan <-chan os.Signal) {
 	}
 	log.Infof("Caught %s signal; starting graceful shutdown (hard-stopping in %s)", sig, *maxShutdownDuration)
 	hardStopTime := time.Now().Add(*maxShutdownDuration)
-	h.Shutdown()
+	h.stop()
 	numSignalsReceived := 1
 	for sig := range signalChan {
 		numSignalsReceived++
@@ -203,10 +203,17 @@ func (h *HealthChecker) WaitForGracefulShutdown() {
 	<-h.done
 }
 
-func (h *HealthChecker) Shutdown() {
+// stop initiates shutdown functions and marks the server as not ready.
+// It does NOT wait for shutdown functions to complete.
+func (h *HealthChecker) stop() {
 	h.shutdownOnce.Do(func() {
 		close(h.quit)
 	})
+}
+
+func (h *HealthChecker) Shutdown() {
+	h.stop()
+	<-h.done
 }
 
 func (h *HealthChecker) runHealthChecks(ctx context.Context) {
@@ -267,9 +274,7 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 	} else {
 		if !h.watchdogTimer.Live() {
 			log.Warningf("Watchdog timer expired; triggering shutdown!")
-			go func() {
-				h.Shutdown()
-			}()
+			h.stop()
 		}
 	}
 	h.mu.Unlock()

@@ -1300,9 +1300,10 @@ type HealthChecker interface {
 	// stop returning OK and will instead return Service Unavailable error.
 	ReadinessHandler() http.Handler
 
-	// Shutdown initiates a shutdown of the server.
-	// This is intended to be used by tests as normally shutdown is automatically initiated upon receipt of a SIGTERM
-	// signal.
+	// Shutdown initiates a shutdown of the server and waits for all registered
+	// shutdown functions to complete. This does not normally need to be called;
+	// the real health checker will initiate a shutdown when it receives
+	// SIGTERM. This is mostly intended to be used in tests.
 	Shutdown()
 
 	// Implements the proto healthcheck interface.
