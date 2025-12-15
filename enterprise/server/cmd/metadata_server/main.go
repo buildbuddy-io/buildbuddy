@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 
 	mdspb "github.com/buildbuddy-io/buildbuddy/proto/metadata_service"
@@ -34,6 +35,11 @@ var (
 	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 	serverType     = flag.String("server_type", "metadata-server", "The server type to match on health checks")
 )
+
+func init() {
+	// Register the codec for all RPC servers and clients.
+	vtprotocodec.Register()
+}
 
 func main() {
 	version.Print("BuildBuddy Metadata Server")
