@@ -921,62 +921,69 @@ func (s *Store) findTargetReplicaIDForLeadershipTransfer(ctx context.Context, rd
 	return targetReplicaID
 }
 
-func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
+// tryDroppingLeadership tries to drop leadership, returns the number of
+// remaining leaderes and error.
+func (s *Store) tryDroppingLeadership(ctx context.Context) (int, error) {
 	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
 		SkipLogInfo: true,
 	})
 	if nodeHostInfo == nil {
-		return
+		return 0, errors.New("missing nodehost info")
 	}
 	eg := errgroup.Group{}
-	leaderCount := 0
+	remainingLeader := 0
 	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
 		clusterInfo := clusterInfo
 		if clusterInfo.LeaderID != clusterInfo.ReplicaID || clusterInfo.Term == 0 {
 			// skip if not the leader
 			continue
 		}
-		leaderCount++
 
+		remainingLeader++
 		rd := s.GetRange(clusterInfo.ShardID)
 		targetReplicaID := s.findTargetReplicaIDForLeadershipTransfer(ctx, rd, clusterInfo.ReplicaID)
-
-		if targetReplicaID != 0 {
-			eg.Go(func() error {
-				log.Debugf("request to transfer leadership of shard %d to replica %d from replica %d", clusterInfo.ShardID, targetReplicaID, clusterInfo.ReplicaID)
+		eg.Go(func() error {
+			log.Debugf("Dropping leadership of shard %d from replica %d", clusterInfo.ShardID, clusterInfo.ReplicaID)
+			for _, repl := range rd.GetReplicas() {
+				if repl.GetReplicaId() == clusterInfo.ReplicaID {
+					continue
+				}
+				if connReady, err := s.apiClient.HaveReadyConnections(ctx, repl); err != nil || !connReady {
+					log.Debugf("Drop leadership of shard %d, skipping replica id %d on NHID: %s", clusterInfo.ShardID, repl.GetReplicaId(), repl.GetNhid())
+					continue
+				}
 				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, targetReplicaID); err != nil {
 					s.log.Warningf("Error transferring leadership: %s", err)
 				}
-				return nil
-			})
-		}
+			}
+			return nil
+		})
 	}
-	eg.Wait()
+	return remainingLeader, eg.Wait()
+}
 
-	waitCtx, waitCancel := context.WithTimeout(ctx, 5*time.Second)
-	defer waitCancel()
+func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	remainingLeaders := 0
+	var err error
 
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
-		case <-waitCtx.Done():
-			log.Warningf("Timed out waiting for leadership transfer: %d leaders remaining", leaderCount)
+		case <-ctx.Done():
+			log.Warningf("Timed out waiting for leadership transfer: %d leaders remaining", remainingLeaders)
 			return
 		case <-ticker.C:
-			remainingLeaderCount := 0
-			// Refresh info to check leadership status
-			currentInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{SkipLogInfo: true})
-			for _, clusterInfo := range currentInfo.ShardInfoList {
-				if clusterInfo.LeaderID == clusterInfo.ReplicaID && clusterInfo.Term != 0 {
-					remainingLeaderCount++
-				}
+			remainingLeaders, err = s.tryDroppingLeadership(ctx)
+			if err != nil {
+				log.Warningf("failed to drop leadership: %s", err)
+				return
 			}
-			if remainingLeaderCount == 0 {
+			if remainingLeaders == 0 {
 				log.Info("Successfully transferred all leaderships")
 				return
-			} else {
-				leaderCount = remainingLeaderCount
 			}
 		}
 	}
