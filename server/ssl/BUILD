@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "ssl",
@@ -13,9 +13,20 @@ go_library(
         "//server/interfaces",
         "//server/real_environment",
         "//server/util/flag",
+        "//server/util/log",
         "//server/util/status",
         "@org_golang_google_grpc//credentials",
         "@org_golang_x_crypto//acme",
         "@org_golang_x_crypto//acme/autocert",
+    ],
+)
+
+go_test(
+    name = "ssl_test",
+    size = "small",
+    srcs = ["ssl_test.go"],
+    deps = [
+        ":ssl",
+        "@com_github_stretchr_testify//require",
     ],
 )
