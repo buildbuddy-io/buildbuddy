@@ -44,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/grpc"
 
@@ -72,6 +73,11 @@ var (
 		authutil.ClientIdentityHeaderName,
 		bazel_request.RequestMetadataKey}
 )
+
+func init() {
+	// Register the codec for all RPC servers and clients.
+	vtprotocodec.Register()
+}
 
 func main() {
 	version.Print("BuildBuddy cache proxy")
