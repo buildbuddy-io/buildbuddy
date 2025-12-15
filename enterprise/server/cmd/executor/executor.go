@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
@@ -58,12 +57,12 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 
-	_ "github.com/buildbuddy-io/buildbuddy/server/util/grpc_server" // imported for grpc_port flag definition to avoid breaking old configs; DO NOT REMOVE.
-	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	_ "github.com/buildbuddy-io/buildbuddy/server/util/grpc_server" // imported for grpc_port flag definition to avoid breaking old configs; DO NOT REMOVE.
+	bspb "google.golang.org/genproto/googleapis/bytestream"
+	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
 var (
@@ -236,9 +235,6 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 		log.Fatal(err.Error())
 	}
 	if err := clientidentity.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
-	}
-	if err := ocifetcher.RegisterClient(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
 

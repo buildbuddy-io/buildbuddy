@@ -23,7 +23,6 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
-        "@org_golang_google_grpc//:grpc",
     ],
 )
 
@@ -36,10 +35,8 @@ go_test(
         "//proto:capability_go_proto",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
-        "//server/environment",
         "//server/interfaces",
         "//server/testutil/testauth",
-        "//server/testutil/testenv",
         "//server/testutil/testhttp",
         "//server/util/claims",
         "//server/util/status",
