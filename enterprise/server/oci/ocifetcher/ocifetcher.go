@@ -413,8 +413,8 @@ func (s *ociFetcherServer) evictPuller(imageRef gcrname.Reference, creds *rgpb.C
 // withPullerRetry handles the common pattern of executing an operation with a puller,
 // evicting and retrying on failure due to expired tokens.
 func withPullerRetry[T any](
-	s *ociFetcherServer,
 	ctx context.Context,
+	s *ociFetcherServer,
 	ref gcrname.Reference,
 	creds *rgpb.Credentials,
 	op func(puller *remote.Puller) (T, error),
@@ -485,7 +485,7 @@ func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
 	}
 
-	desc, err := withPullerRetry(s, ctx, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*gcr.Descriptor, error) {
+	desc, err := withPullerRetry(ctx, s, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*gcr.Descriptor, error) {
 		return puller.Head(ctx, imageRef)
 	})
 	if err != nil {
@@ -508,7 +508,7 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
 	}
 
-	remoteDesc, err := withPullerRetry(s, ctx, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*remote.Descriptor, error) {
+	remoteDesc, err := withPullerRetry(ctx, s, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*remote.Descriptor, error) {
 		return puller.Get(ctx, imageRef)
 	})
 	if err != nil {
@@ -537,7 +537,7 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		return nil, status.InvalidArgumentErrorf("blob reference must be a digest reference (e.g., repo@sha256:...), got %q", req.GetRef())
 	}
 
-	layer, err := withPullerRetry(s, ctx, blobRef, req.GetCredentials(), func(puller *remote.Puller) (gcr.Layer, error) {
+	layer, err := withPullerRetry(ctx, s, blobRef, req.GetCredentials(), func(puller *remote.Puller) (gcr.Layer, error) {
 		return puller.Layer(ctx, digestRef)
 	})
 	if err != nil {
@@ -574,7 +574,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return status.InvalidArgumentErrorf("blob reference must be a digest reference, got %q", req.GetRef())
 	}
 
-	layer, err := withPullerRetry(s, ctx, blobRef, req.GetCredentials(), func(puller *remote.Puller) (gcr.Layer, error) {
+	layer, err := withPullerRetry(ctx, s, blobRef, req.GetCredentials(), func(puller *remote.Puller) (gcr.Layer, error) {
 		return puller.Layer(ctx, digestRef)
 	})
 	if err != nil {
