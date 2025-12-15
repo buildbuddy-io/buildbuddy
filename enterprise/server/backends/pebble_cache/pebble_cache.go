@@ -232,6 +232,7 @@ type accessTimeUpdate struct {
 type PebbleCache struct {
 	name              string
 	rootDirectory     string
+	blobDirectory     string
 	partitions        []disk.Partition
 	partitionMappings []disk.PartitionMapping
 
@@ -645,6 +646,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	pc := &PebbleCache{
 		name:                        opts.Name,
 		rootDirectory:               opts.RootDirectory,
+		blobDirectory:               filepath.Join(opts.RootDirectory, "blobs"),
 		partitions:                  opts.Partitions,
 		partitionMappings:           opts.PartitionMappings,
 		maxSizeBytes:                opts.MaxSizeBytes,
@@ -758,11 +760,10 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		i := i
 		part := part
 		eg.Go(func() error {
-			blobDir := pc.blobDir()
-			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
+			if err := disk.EnsureDirectoryExists(pc.blobDirectory); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(env.GetServerContext(), part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.SampleBufferSize, *opts.SamplesPerBatch, *opts.SamplerIterRefreshPeriod, *opts.DeleteBufferSize, *opts.NumDeleteWorkers)
+			pe, err := newPartitionEvictor(env.GetServerContext(), part, pc.fileStorer, pc.blobDirectory, pc.leaser, pc.locker, pc, clock, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.SampleBufferSize, *opts.SamplesPerBatch, *opts.SamplerIterRefreshPeriod, *opts.DeleteBufferSize, *opts.NumDeleteWorkers)
 			if err != nil {
 				return err
 			}
@@ -1180,9 +1181,7 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 		default:
 		}
 
-		blobDir := p.blobDir()
-
-		relPath, err := filepath.Rel(blobDir, path)
+		relPath, err := filepath.Rel(p.blobDirectory, path)
 		if err != nil {
 			return err
 		}
@@ -1226,8 +1225,7 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 		}
 		return nil
 	}
-	blobDir := p.blobDir()
-	if err := filepath.WalkDir(blobDir, walkFn); err != nil {
+	if err := filepath.WalkDir(p.blobDirectory, walkFn); err != nil {
 		alert.UnexpectedEvent("pebble_cache_error_deleting_orphans", "err [%s]: %s", p.name, err)
 	}
 	log.Infof("Pebble Cache [%s]: deleteOrphanedFiles removed %d files", p.name, orphanCount)
@@ -1297,7 +1295,6 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 	pr := message.NewPrinter(language.English)
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
-	blobDir := ""
 
 	modLim := rate.NewLimiter(rate.Limit(*backgroundRepairQPSLimit), 1)
 	lastUpdate := time.Now()
@@ -1361,8 +1358,7 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 
 		removedEntry := false
 		if opts.deleteEntriesWithMissingFiles {
-			blobDir = p.blobDir()
-			_, err := p.fileStorer.NewReader(p.env.GetServerContext(), blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
+			_, err := p.fileStorer.NewReader(p.env.GetServerContext(), p.blobDirectory, fileMetadata.GetStorageMetadata(), 0, 0)
 			if err != nil {
 				_ = modLim.Wait(p.env.GetServerContext())
 
@@ -1550,12 +1546,6 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 		Compressor:     rn.GetCompressor(),
 		Encryption:     encryption,
 	}, nil
-}
-
-// blobDir returns a directory path under the root directory where blobs can be stored.
-func (p *PebbleCache) blobDir() string {
-	filePath := filepath.Join(p.rootDirectory, "blobs")
-	return filePath
 }
 
 func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) (filestore.PebbleKeyVersion, error) {
@@ -1872,7 +1862,7 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 	partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
 	switch {
 	case storageMetadata.GetFileMetadata() != nil:
-		fp := p.fileStorer.FilePath(p.blobDir(), storageMetadata.GetFileMetadata())
+		fp := p.fileStorer.FilePath(p.blobDirectory, storageMetadata.GetFileMetadata())
 		if err := disk.DeleteFile(ctx, fp); err != nil {
 			return err
 		}
@@ -2281,8 +2271,7 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 		}
 		wcm = bw
 	} else {
-		blobDir := p.blobDir()
-		fw, err := p.fileStorer.FileWriter(ctx, blobDir, fileRecord)
+		fw, err := p.fileStorer.FileWriter(ctx, p.blobDirectory, fileRecord)
 		if err != nil {
 			return nil, err
 		}
@@ -3240,7 +3229,6 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 		}
 	}
 
-	blobDir := p.blobDir()
 	requestedCompression := r.GetCompressor()
 	cachedCompression := fileMetadata.GetFileRecord().GetCompressor()
 	if requestedCompression == cachedCompression &&
@@ -3276,7 +3264,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	if chunkedMD := md.GetChunkedMetadata(); chunkedMD != nil {
 		reader, err = p.newChunkedReader(ctx, chunkedMD, shouldDecompress)
 	} else {
-		reader, err = p.fileStorer.NewReader(ctx, blobDir, md, offset, limit)
+		reader, err = p.fileStorer.NewReader(ctx, p.blobDirectory, md, offset, limit)
 	}
 	if err != nil {
 		if status.IsNotFoundError(err) || os.IsNotExist(err) {
