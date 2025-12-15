@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -35,8 +34,6 @@ func TestOciconv(t *testing.T) {
 
 	ref, img := reg.PushNamedImage(t, "ociconv-test-image:latest", nil)
 
-	err := ocifetcher.RegisterClient(te)
-	require.NoError(t, err)
 	resolver, err := oci.NewResolver(te)
 	require.NoError(t, err)
 	require.NotNil(t, resolver)
@@ -137,8 +134,6 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 	ref, _ := reg.PushNamedImage(t, "test-empty-image:latest", nil)
 	authEnabled = true
 
-	err := ocifetcher.RegisterClient(te)
-	require.NoError(t, err)
 	resolver, err := oci.NewResolver(te)
 	require.NoError(t, err)
 	require.NotNil(t, resolver)
