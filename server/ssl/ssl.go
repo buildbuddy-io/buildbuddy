@@ -3,6 +3,7 @@ package ssl
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -76,7 +77,7 @@ type SSLService struct {
 	grpcTLSConfig   *tls.Config
 	autocertManager *autocert.Manager
 	AuthorityCert   *x509.Certificate
-	AuthorityKey    *rsa.PrivateKey
+	AuthorityKey    crypto.PrivateKey
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -387,7 +388,7 @@ func LoadCertificate(certFile, cert string) (*x509.Certificate, error) {
 	return loadedCert, nil
 }
 
-func LoadCertificateKey(keyFile, key string) (*rsa.PrivateKey, error) {
+func LoadCertificateKey(keyFile, key string) (crypto.PrivateKey, error) {
 	if keyFile == "" && key == "" {
 		return nil, status.FailedPreconditionError("certificate key must be specified either as a file or directly")
 	}
@@ -410,13 +411,13 @@ func LoadCertificateKey(keyFile, key string) (*rsa.PrivateKey, error) {
 	if kpb == nil {
 		return nil, status.InvalidArgumentErrorf("certificate key did not contain valid PEM data")
 	}
-	loadedKey, err := x509.ParsePKCS8PrivateKey(kpb.Bytes)
-	if err != nil {
-		return nil, status.UnknownErrorf("could not parse certificate key: %s", err)
+	// Try parsing as PKCS8 first (handles RSA, ECDSA, Ed25519).
+	if loadedKey, err := x509.ParsePKCS8PrivateKey(kpb.Bytes); err == nil {
+		return loadedKey, nil
 	}
-	rsaKey, ok := loadedKey.(*rsa.PrivateKey)
-	if !ok {
-		return nil, status.FailedPreconditionErrorf("only RSA keys are supported, got %T", loadedKey)
+	// Try parsing as SEC 1 EC key.
+	if ecKey, err := x509.ParseECPrivateKey(kpb.Bytes); err == nil {
+		return ecKey, nil
 	}
-	return rsaKey, nil
+	return nil, status.UnknownErrorf("could not parse certificate key: malformed key data or unsupported key format")
 }
