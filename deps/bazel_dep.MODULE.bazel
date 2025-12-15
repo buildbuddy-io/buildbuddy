@@ -98,7 +98,7 @@ bazel_dep(name = "rules_bazel_integration_test", version = "0.34.0")
 # Keep up-to-date with
 # - docs/rbe-setup.md
 # - docs/rbe-github-actions.md
-# - tools/dev_qa.py
+# - tools/dev_qa_test/BUILD
 bazel_dep(name = "toolchains_buildbuddy", version = "0.0.4")
 bazel_dep(name = "toolchains_musl", version = "0.1.27")
 bazel_dep(name = "zlib", version = "1.3.1.bcr.5")
