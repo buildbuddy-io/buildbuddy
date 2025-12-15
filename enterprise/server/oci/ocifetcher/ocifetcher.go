@@ -466,6 +466,14 @@ func checkBypassRegistry(ctx context.Context, bypassRegistry bool) error {
 	return status.NotFoundError("bypass_registry is not yet supported")
 }
 
+// wrapError wraps an error, converting 401 Unauthorized to PermissionDenied.
+func wrapError(err error, message string) error {
+	if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+		return status.PermissionDeniedErrorf("not authorized to access resource: %s", err)
+	}
+	return status.InternalErrorf("%s: %s", message, err)
+}
+
 // Server RPC implementations
 
 func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
@@ -537,9 +545,12 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 	}
 
 	size, sizeErr := layer.Size()
+	if sizeErr != nil {
+		return nil, wrapError(sizeErr, "error getting layer size")
+	}
 	mediaType, mtErr := layer.MediaType()
-	if sizeErr != nil || mtErr != nil {
-		return nil, status.InternalErrorf("error getting layer metadata: size=%v, mediaType=%v", sizeErr, mtErr)
+	if mtErr != nil {
+		return nil, wrapError(mtErr, "error getting layer media type")
 	}
 	return &ofpb.FetchBlobMetadataResponse{
 		Size:      size,
@@ -573,7 +584,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	// Get compressed blob data
 	rc, err := layer.Compressed()
 	if err != nil {
-		return status.InternalErrorf("error getting compressed layer: %s", err)
+		return wrapError(err, "error getting compressed layer")
 	}
 	defer rc.Close()
 

@@ -707,16 +707,16 @@ func TestServerMissingAndInvalidCredentials(t *testing.T) {
 				http.MethodGet + " /v2/test-image/manifests/latest": 2,
 			})
 
-			// FetchBlobMetadata - 401 errors are wrapped differently for blob methods
+			// FetchBlobMetadata
 			counter.Reset()
 			_, err = server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
 				Ref:         imageName + "@" + layerDigest.String(),
 				Credentials: cc.requestCreds,
 			})
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "401 Unauthorized", "FetchBlobMetadata: expected 401 error, got: %v", err)
+			require.True(t, status.IsPermissionDeniedError(err), "FetchBlobMetadata: expected PermissionDenied, got: %v", err)
 
-			// FetchBlob - 401 errors are wrapped differently for blob methods
+			// FetchBlob
 			counter.Reset()
 			stream := &mockFetchBlobServer{ctx: context.Background()}
 			err = server.FetchBlob(&ofpb.FetchBlobRequest{
@@ -724,7 +724,7 @@ func TestServerMissingAndInvalidCredentials(t *testing.T) {
 				Credentials: cc.requestCreds,
 			}, stream)
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "401 Unauthorized", "FetchBlob: expected 401 error, got: %v", err)
+			require.True(t, status.IsPermissionDeniedError(err), "FetchBlob: expected PermissionDenied, got: %v", err)
 		})
 	}
 }
