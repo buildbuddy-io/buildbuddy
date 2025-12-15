@@ -1050,6 +1050,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// Only print this to the local logs -- it's mostly useful for development purposes.
 	backendLog.Infof("Invocation URL:  %s", invocationURL(ar.reporter.InvocationID()))
 
+	// Remove any existing artifacts from previous workflow invocations
+	if err := disk.ForceRemove(ctx, artifactsRootPath(ws)); err != nil {
+		return err
+	}
 	if !*skipAutomaticCheckout {
 		if err := ws.setup(ctx); err != nil {
 			return status.WrapError(err, "failed to set up git repo")
@@ -1742,10 +1746,6 @@ func findAction(actions []*config.Action, name string) (*config.Action, error) {
 }
 
 func (ws *workspace) setup(ctx context.Context) error {
-	// Remove any existing artifacts from previous workflow invocations
-	if err := disk.ForceRemove(ctx, artifactsRootPath(ws)); err != nil {
-		return err
-	}
 	repoDirInfo, err := os.Stat(repoDirName)
 	if err != nil && !os.IsNotExist(err) {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
