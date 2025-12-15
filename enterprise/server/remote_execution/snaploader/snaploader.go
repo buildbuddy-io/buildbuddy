@@ -417,9 +417,11 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKe
 	var lastErr error
 	allKeys := append([]*fcpb.SnapshotKey{keys.GetBranchKey()}, keys.FallbackKeys...)
 	for i, key := range allKeys {
+		log.CtxInfof(ctx, "In GetSnapshot. Getting snapshot for key %v", key)
 		isFallbackSnapshot := i > 0
 		manifest, err := l.getSnapshot(ctx, key, opts, isFallbackSnapshot)
 		if err != nil {
+			log.CtxErrorf(ctx, "Not using snapshot for key %v: %s", key, err)
 			lastErr = err
 			continue
 		}
@@ -453,6 +455,9 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 				return manifest, nil
 			}
 		}
+		if !foundLocalSnapshot {
+			log.CtxInfof(ctx, "No local snapshot found for key %v", key)
+		}
 		// If local snapshot is not valid or couldn't be found, fallback to
 		// fetching a remote snapshot.
 	} else if !opts.RemoteReadEnabled {
@@ -464,9 +469,10 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	}
 
 	// Fall back to fetching remote manifest.
-	log.CtxInfof(ctx, "Fetching remote manifest")
+	log.CtxInfof(ctx, "Fetching remote manifest for key %v", key)
 	manifest, acResult, err := l.fetchRemoteManifest(ctx, key)
 	if err != nil {
+		log.CtxErrorf(ctx, "Failed to fetch remote manifest for key %v: %s", key, err)
 		return nil, status.WrapError(err, "fetch remote manifest")
 	}
 
@@ -557,10 +563,14 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 	}
 
 	tmpDir := l.env.GetFileCache().TempDir()
+	log.CtxInfof(ctx, "Turning local AC result to manifest for key %v", key)
+	log.CtxInfof(ctx, "(In getLocalManifest) Auxiliary metadata: %s", acResult.GetExecutionMetadata().GetAuxiliaryMetadata())
+	// TODO: This process is losing the VM Metadata
 	manifest, err := l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir, false /*remoteEnabled*/)
 	if err != nil {
 		return nil, status.WrapError(err, "parse local snapshot manifest")
 	}
+	log.CtxInfof(ctx, "Manifest metadata: %s", manifest.VmMetadata)
 
 	// Check whether all artifacts in the manifest are available. This helps
 	// make sure that the snapshot we return can actually be loaded. This also
@@ -576,13 +586,16 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	snapMetadata := snapshotActionResult.GetExecutionMetadata().GetAuxiliaryMetadata()
+	log.CtxInfof(ctx, "(In actionResultToManifest) Auxiliary metadata: %s, len %d", snapMetadata, len(snapMetadata))
 	if len(snapMetadata) < 1 {
 		return nil, status.InternalErrorf("expected vm config in snapshot auxiliary metadata")
 	}
+	log.CtxInfof(ctx, "(In actionResultToManifest) snapMetadata[0]: %s", snapMetadata[0])
 	vmConfig := &fcpb.VMConfiguration{}
 	if err := snapMetadata[0].UnmarshalTo(vmConfig); err != nil {
 		return nil, status.WrapErrorf(err, "unmarshall vm config")
 	}
+	log.CtxInfof(ctx, "(In actionResultToManifest) VM configuration: %s", vmConfig)
 
 	var vmMetadata *fcpb.VMMetadata
 	if len(snapMetadata) == 2 {
@@ -851,6 +864,7 @@ func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.Sn
 	if err != nil {
 		return err
 	}
+	log.CtxInfof(ctx, "Caching local snapshot manifest %s, Auxiliary metadata: %s", string(b), manifestACResult.GetExecutionMetadata().GetAuxiliaryMetadata())
 	manifestNode := &repb.FileNode{Digest: d}
 	if _, err := l.env.GetFileCache().Write(ctx, manifestNode, b); err != nil {
 		return err
