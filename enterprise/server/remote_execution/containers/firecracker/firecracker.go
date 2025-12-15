@@ -2805,7 +2805,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	if shouldSaveSnapshot && c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
 		if err := c.reclaimMemoryWithBalloon(ctx); err != nil {
-			return status.WrapErrorf(err, "reclaiming memory with the balloon failed, not saving snapshot for key %v", c.SnapshotKeySet().GetWriteKey())
+			log.CtxWarningf(ctx, "Reclaiming memory with the balloon failed, not saving snapshot for key %v: %s", c.SnapshotKeySet().GetWriteKey(), err)
 		}
 	}
 
