@@ -585,7 +585,7 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 	}
 
 	var vmMetadata *fcpb.VMMetadata
-	if len(snapMetadata) == 2 {
+	if len(snapMetadata) >= 2 {
 		vmMetadata = &fcpb.VMMetadata{}
 		if err := snapMetadata[1].UnmarshalTo(vmMetadata); err != nil {
 			return nil, status.WrapErrorf(err, "unmarshall vm metadata")
