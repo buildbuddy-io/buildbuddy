@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -120,7 +121,7 @@ func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Hand
 	s, err := execution_server.NewExecutionServer(env)
 	require.NoError(t, err)
 	env.SetRemoteExecutionService(s)
-	env.SetUsageTracker(&fakeUsageTracker{})
+	env.SetUsageTracker(testusage.NewTracker())
 
 	_, run, lis := testenv.RegisterLocalGRPCServer(t, env)
 	testcache.Setup(t, env, lis)
@@ -441,22 +442,6 @@ func TestCancel_InvocationAlreadyCompleted(t *testing.T) {
 	require.Equal(t, int64(invocation_status.InvocationStatus_COMPLETE_INVOCATION_STATUS), inv.InvocationStatus)
 }
 
-type usage struct {
-	labels tables.UsageLabels
-	counts tables.UsageCounts
-}
-
-type fakeUsageTracker struct {
-	interfaces.UsageTracker
-
-	usages []usage
-}
-
-func (ut *fakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
-	ut.usages = append(ut.usages, usage{*labels, *counts})
-	return nil
-}
-
 func TestExecuteAndPublishOperation(t *testing.T) {
 	durationUsec := (5 * time.Second).Microseconds()
 	for _, test := range []publishTest{
@@ -757,19 +742,18 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
 
 	// Should also have recorded usage.
-	ut := env.GetUsageTracker().(*fakeUsageTracker)
-	var executionUsages []usage
-	for _, u := range ut.usages {
-		if u.labels.Client == "executor" && (u.counts.LinuxExecutionDurationUsec > 0 || u.counts.SelfHostedLinuxExecutionDurationUsec > 0) {
-			executionUsages = append(executionUsages, u)
+	ut := env.GetUsageTracker().(*testusage.Tracker)
+	var foundExecutorUsage *testusage.Total
+	for _, u := range ut.Totals() {
+		if u.Labels.Client == "executor" {
+			foundExecutorUsage = &u
+			break
 		}
 	}
-	assert.Equal(t, []usage{
-		{
-			labels: tables.UsageLabels{Client: "executor"},
-			counts: test.expectedExecutionUsage,
-		},
-	}, executionUsages)
+	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
+	assert.Equal(t, "group1", foundExecutorUsage.GroupID)
+	assert.Equal(t, test.expectedExecutionUsage.LinuxExecutionDurationUsec, foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
+	assert.Equal(t, test.expectedExecutionUsage.SelfHostedLinuxExecutionDurationUsec, foundExecutorUsage.Counts.SelfHostedLinuxExecutionDurationUsec)
 
 	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
 	require.NoError(t, err)
