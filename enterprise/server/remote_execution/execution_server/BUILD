@@ -88,6 +88,7 @@ go_test(
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/testutil/testusage",
         "//server/util/bazel_request",
         "//server/util/db",
         "//server/util/perms",
