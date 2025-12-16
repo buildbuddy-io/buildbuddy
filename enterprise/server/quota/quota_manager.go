@@ -75,7 +75,6 @@ func (qm *QuotaManager) checkGroupBlocked(ctx context.Context) error {
 
 	c, err := claims.ClaimsFromContext(ctx)
 	if err != nil {
-		log.CtxWarningf(ctx, "Failed to get claims from context: %s", err)
 		return nil
 	}
 
