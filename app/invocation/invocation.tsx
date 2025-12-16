@@ -473,7 +473,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   render() {
-    if (this.state.loading) {
+    // When fetching the invocation and we have nothing to show, display a
+    // loading spinner.
+    if (this.state.loading && !this.state.model) {
       return <div className="loading" debug-id="invocation-loading"></div>;
     }
 
