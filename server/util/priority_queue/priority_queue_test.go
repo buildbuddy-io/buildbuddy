@@ -117,3 +117,38 @@ func TestRemoveItemWithMinPriority(t *testing.T) {
 	item = pq.RemoveItemWithMinPriority()
 	require.Equal(t, "B", item.Value())
 }
+
+func TestGetAllIndexDoesNotMatchRemoveAt(t *testing.T) {
+	q := priority_queue.New[string]()
+	// Insert in this specific order to create heap where array order != priority order
+	q.Push("A", 1)
+	q.Push("E", 5)
+	q.Push("D", 4)
+	q.Push("B", 2)
+
+	// Heap array order after insertions: [E, B, D, A]
+	// (B bubbles up past A because 2 > 1)
+	//
+	// Priority order: [E(5), D(4), B(2), A(1)]
+	//
+	// These differ at indices 1 and 2!
+
+	all := q.GetAll()
+	// Find where "D" is in the array
+	var dIndex int
+	for i, v := range all {
+		if v == "D" {
+			dIndex = i
+			break
+		}
+	}
+	// D is at array index 2
+
+	// Now try to remove D using that index
+	removed, ok := q.RemoveAt(dIndex)
+	require.True(t, ok)
+
+	// BUG: We wanted to remove "D" but RemoveAt(2) removes the 3rd
+	// highest priority item, which is "B"!
+	assert.Equal(t, "D", removed) // FAILS - removed is "B"
+}
