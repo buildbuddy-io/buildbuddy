@@ -8,7 +8,6 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -377,11 +376,9 @@ func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // StartSpan starts a new span named after the calling function.
 func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	name := "unknown_go_function"
-	rpc := make([]uintptr, 1)
-	n := runtime.Callers(2, rpc[:])
-	if n > 0 {
-		frame, _ := runtime.CallersFrames(rpc).Next()
-		name = filepath.Base(frame.Function)
+	pc, _, _, ok := runtime.Caller(1)
+	if ok {
+		name = runtime.FuncForPC(pc).Name()
 	}
 	ctx, span := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, name, opts...)
 	return ctx, span
