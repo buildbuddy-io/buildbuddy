@@ -2883,7 +2883,13 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 	// TODO(Maggie): Don't depend on sh existing within the container image
 	client := vmxpb.NewExecClient(conn)
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", "awk '/MemAvailable/ {print $2 / 1024}' /proc/meminfo"},
+		Arguments: []string{"sh", "-c", `awk '
+/MemAvailable/ {avail=$2}
+/Buffers/      {buf=$2}
+/^Cached:/     {cache=$2}
+END {print (avail + buf + cache) / 1024}
+' /proc/meminfo
+`},
 	}
 	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{})
 	if res.Error != nil {
