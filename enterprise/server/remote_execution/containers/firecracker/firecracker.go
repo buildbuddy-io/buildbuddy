@@ -2446,7 +2446,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	// after boot.
 	if c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
 		stage = "update_balloon"
-		if err := c.updateBalloon(ctx, 0); err != nil {
+		if _, err := c.updateBalloon(ctx, 0); err != nil {
 			result.Error = status.WrapError(err, "deflate balloon")
 			return result
 		}
@@ -2805,7 +2805,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	if shouldSaveSnapshot && c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
 		if err := c.reclaimMemoryWithBalloon(ctx); err != nil {
-			log.CtxErrorf(ctx, "Reclaiming memory with the balloon failed with: %s", err)
+			return status.WrapErrorf(err, "reclaiming memory with the balloon failed, not saving snapshot for key %v", c.SnapshotKeySet().GetWriteKey())
 		}
 	}
 
@@ -2897,25 +2897,29 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 		return err
 	}
 	availableMemMB := stats.AvailableMemory / 1e6
-	balloonSizeMB := int64(float64(availableMemMB) * .8)
-	if err := c.updateBalloon(ctx, balloonSizeMB); err != nil {
+	balloonTargetMB := int64(float64(availableMemMB) * .8)
+	if _, err := c.updateBalloon(ctx, balloonTargetMB); err != nil {
 		return status.WrapError(err, "inflate balloon")
 	}
-	if err := c.updateBalloon(ctx, 0); err != nil {
+	balloonSizeMB, err := c.updateBalloon(ctx, 0)
+	if err != nil {
 		return status.WrapError(err, "deflate balloon")
+	} else if balloonSizeMB > int64(float64(availableMemMB)*0.7) {
+		// If the balloon was unable to deflate to less than 70% of available memory, something is likely broken in the VM.
+		return fmt.Errorf("failed to deflate balloon, stalled at %d MB. vmlog: %s", balloonSizeMB, c.vmLog.Tail())
 	}
 	return nil
 }
 
 // Best effort update the balloon to the target size.
-func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib int64) error {
+func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib int64) (int64, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	start := time.Now()
 	err := c.machine.UpdateBalloon(ctx, targetSizeMib)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	var currentBalloonSize int64
@@ -2929,14 +2933,14 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 	for {
 		stats, err := c.machine.GetBalloonStats(ctx)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		lastBalloonSize := currentBalloonSize
 		currentBalloonSize = *stats.ActualMib
 		if currentBalloonSize == targetSizeMib {
-			return nil
+			return currentBalloonSize, nil
 		} else if time.Since(start) >= maxUpdateBalloonDuration {
-			return nil
+			return currentBalloonSize, nil
 		}
 
 		if math.Abs(float64(currentBalloonSize-lastBalloonSize)) < 100 {
@@ -2945,7 +2949,7 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 				// If the rate of inflation is consistently slow or stops, just stop early.
 				// Give the balloon a second chance in case there is resource contention
 				// that temporarily slows the balloon inflation.
-				return nil
+				return currentBalloonSize, nil
 			}
 		} else {
 			slowCount = 0
@@ -2953,7 +2957,7 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 
 		select {
 		case <-ctx.Done():
-			return nil
+			return currentBalloonSize, nil
 		case <-time.After(pollInterval):
 		}
 	}
