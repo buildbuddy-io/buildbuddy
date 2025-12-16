@@ -543,7 +543,10 @@ func TestFileCacheWriter(t *testing.T) {
 	require.True(t, fc.FastLinkFile(ctx, node, cf))
 	fi, err := os.Stat(cf)
 	require.NoError(t, err)
-	require.EqualValues(t, 0644, fi.Mode())
+	// Windows doesn't support Unix-style permission bits. Go reports a synthetic mode
+	// (typically 0666 for writable files), so assert only the invariants we care about.
+	requireOwnerReadableWritable(t, fi)
+	requireNotOwnerExecutable(t, fi)
 
 	// Write and read an executable file.
 	execNode := &repb.FileNode{Digest: d, IsExecutable: true}
@@ -559,7 +562,8 @@ func TestFileCacheWriter(t *testing.T) {
 	require.True(t, fc.FastLinkFile(ctx, execNode, cfe))
 	fi, err = os.Stat(cfe)
 	require.NoError(t, err)
-	require.EqualValues(t, 0755, fi.Mode())
+	requireOwnerReadableWritable(t, fi)
+	requireOwnerExecutable(t, fi)
 
 	// Write with seeking.
 	execNode = &repb.FileNode{Digest: d, IsExecutable: true}
@@ -579,7 +583,35 @@ func TestFileCacheWriter(t *testing.T) {
 	require.True(t, fc.FastLinkFile(ctx, execNode, cfe))
 	fi, err = os.Stat(cfe)
 	require.NoError(t, err)
-	require.EqualValues(t, 0755, fi.Mode())
+	requireOwnerReadableWritable(t, fi)
+	requireOwnerExecutable(t, fi)
+}
+
+func requireOwnerReadableWritable(t *testing.T, fi os.FileInfo) {
+	t.Helper()
+	perm := fi.Mode().Perm()
+	require.NotZero(t, perm&0o400, "expected owner-readable file, got mode=%v", fi.Mode())
+	require.NotZero(t, perm&0o200, "expected owner-writable file, got mode=%v", fi.Mode())
+}
+
+func requireOwnerExecutable(t *testing.T, fi os.FileInfo) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		// Executability is not represented via permission bits on Windows.
+		return
+	}
+	perm := fi.Mode().Perm()
+	require.NotZero(t, perm&0o100, "expected owner-executable file, got mode=%v", fi.Mode())
+}
+
+func requireNotOwnerExecutable(t *testing.T, fi os.FileInfo) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		// Executability is not represented via permission bits on Windows.
+		return
+	}
+	perm := fi.Mode().Perm()
+	require.Zero(t, perm&0o100, "expected non-executable file, got mode=%v", fi.Mode())
 }
 
 func BenchmarkFilecacheLink(b *testing.B) {
