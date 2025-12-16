@@ -9,18 +9,9 @@ py_binary(
     deps = ["@pypi//requests"],
 )
 
-py_binary(
-    name = "dev_qa",
-    srcs = ["dev_qa.py"],
-    visibility = ["//:__subpackages__"],
-)
-
 py_library(
     name = "tools_py_library",
-    srcs = [
-        "check_release_assets_uploaded.py",
-        "dev_qa.py",
-    ],
+    srcs = ["check_release_assets_uploaded.py"],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//requests"],
 )
