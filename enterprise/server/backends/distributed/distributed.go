@@ -841,6 +841,7 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		// return it to the caller.
 		rc, err := c.distributedProxy.RemoteReader(ctx, peer, r, offset, limit)
 		if err != nil {
+			localWriter.Close()
 			return nil, err
 		}
 		readCloser = rc
