@@ -15,6 +15,7 @@ go_library(
         "//server/interfaces",
         "//server/resources",
         "//server/util/authutil",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",

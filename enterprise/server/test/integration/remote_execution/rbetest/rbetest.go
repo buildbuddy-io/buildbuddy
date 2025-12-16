@@ -693,6 +693,11 @@ func (e *Executor) ShutdownTaskScheduler() {
 	e.taskScheduler.Shutdown(ctx)
 }
 
+// QueueLength returns the current number of tasks in the executor's queue.
+func (e *Executor) QueueLength() int {
+	return e.taskScheduler.QueueLength()
+}
+
 func (r *Env) AddBuildBuddyServer() *BuildBuddyServer {
 	return r.AddBuildBuddyServerWithOptions(&BuildBuddyServerOptions{})
 }
