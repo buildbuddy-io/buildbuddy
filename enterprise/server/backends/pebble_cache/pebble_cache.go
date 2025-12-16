@@ -282,6 +282,15 @@ type PebbleCache struct {
 
 	minGCSFileSizeBytes int64
 	gcsTTLDays          int64
+
+	metrics struct {
+		compressedBlobSizeWrite   prometheus.Counter
+		decompressedBlobSizeWrite prometheus.Counter
+		findMissingDigestCount    prometheus.Counter
+		atimeDeltaWhenRead        prometheus.Observer
+		addedFileSizeBytes        prometheus.Observer
+		numChunksPerFile          prometheus.Observer
+	}
 }
 
 type keyMigrator interface {
@@ -679,6 +688,14 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		gcsTTLDays:                  *opts.GCSTTLDays,
 		fileStorer:                  fileStorer,
 	}
+	zstdLabels := prometheus.Labels{metrics.CacheNameLabel: pc.name, metrics.CompressionType: "zstd"}
+	pc.metrics.compressedBlobSizeWrite = metrics.CompressedBlobSizeWrite.With(zstdLabels)
+	pc.metrics.decompressedBlobSizeWrite = metrics.DecompressedBlobSizeWrite.With(zstdLabels)
+	cacheLabels := prometheus.Labels{metrics.CacheNameLabel: pc.name}
+	pc.metrics.findMissingDigestCount = metrics.PebbleCacheFindMissingDigestCount.With(cacheLabels)
+	pc.metrics.atimeDeltaWhenRead = metrics.PebbleCacheAtimeDeltaWhenRead.With(cacheLabels)
+	pc.metrics.addedFileSizeBytes = metrics.DiskCacheAddedFileSizeBytes.With(cacheLabels)
+	pc.metrics.numChunksPerFile = metrics.PebbleCacheNumChunksPerFile.With(cacheLabels)
 
 	versionMetadata, err := pc.DatabaseVersionMetadata()
 	if err != nil {
@@ -1642,7 +1659,7 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 	}
 	defer db.Close()
 
-	metrics.PebbleCacheFindMissingDigestCount.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Add(float64(len(resources)))
+	p.metrics.findMissingDigestCount.Add(float64(len(resources)))
 
 	var missing []*repb.Digest
 	for _, r := range resources {
@@ -1787,9 +1804,7 @@ func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op
 func (p *PebbleCache) sendAtimeUpdate(key filestore.PebbleKey, lastAccessUsec int64) {
 	atime := time.UnixMicro(lastAccessUsec)
 
-	metrics.PebbleCacheAtimeDeltaWhenRead.With(prometheus.Labels{
-		metrics.CacheNameLabel: p.name,
-	}).Observe(float64(time.Since(atime).Milliseconds()))
+	p.metrics.atimeDeltaWhenRead.Observe(float64(time.Since(atime).Milliseconds()))
 
 	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
 		return
@@ -2343,9 +2358,8 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	}
 
 	if md.GetFileRecord().GetCompressor() == repb.Compressor_ZSTD {
-		labels := prometheus.Labels{metrics.CacheNameLabel: p.name, metrics.CompressionType: "zstd"}
-		metrics.CompressedBlobSizeWrite.With(labels).Add(float64(md.GetStoredSizeBytes()))
-		metrics.DecompressedBlobSizeWrite.With(labels).Add(float64(md.GetFileRecord().GetDigest().GetSizeBytes()))
+		p.metrics.compressedBlobSizeWrite.Add(float64(md.GetStoredSizeBytes()))
+		p.metrics.decompressedBlobSizeWrite.Add(float64(md.GetFileRecord().GetDigest().GetSizeBytes()))
 	}
 
 	unlockFn := p.locker.Lock(key.LockID())
@@ -2388,13 +2402,13 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 			sizeBytes += cm.GetDigest().GetSizeBytes()
 		}
 		if md.GetFileType() == sgpb.FileMetadata_COMPLETE_FILE_TYPE {
-			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(sizeBytes))
+			p.metrics.addedFileSizeBytes.Observe(float64(sizeBytes))
 			if p.averageChunkSizeBytes != 0 {
 				numChunks := 1
 				if chunkedMD != nil {
 					numChunks = len(chunkedMD.GetResource())
 				}
-				metrics.PebbleCacheNumChunksPerFile.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(numChunks))
+				p.metrics.numChunksPerFile.Observe(float64(numChunks))
 			}
 		}
 	}
@@ -2498,6 +2512,13 @@ type partitionEvictor struct {
 	numDeleteWorkers int
 
 	includeMetadataSize bool
+
+	metrics struct {
+		numEvictions        prometheus.Counter
+		bytesEvicted        prometheus.Counter
+		evictionAgeMsec     prometheus.Observer
+		lastEvictionAgeUsec prometheus.Gauge
+	}
 }
 
 type versionGetter interface {
@@ -2546,6 +2567,10 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 		return nil, err
 	}
 	pe.lru = l
+	pe.metrics.numEvictions = metrics.DiskCacheNumEvictions.With(metricLbls)
+	pe.metrics.bytesEvicted = metrics.DiskCacheBytesEvicted.With(metricLbls)
+	pe.metrics.evictionAgeMsec = metrics.DiskCacheEvictionAgeMsec.With(metricLbls)
+	pe.metrics.lastEvictionAgeUsec = metrics.DiskCacheLastEvictionAgeUsec.With(metricLbls)
 
 	start := time.Now()
 	log.Infof("Pebble Cache [%s]: Initializing cache partition %q...", pe.cacheName, part.ID)
@@ -2999,11 +3024,10 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 		log.Errorf("[%s] Error evicting file for key %q: %s (ignoring)", e.cacheName, sample.Key, err)
 		return
 	}
-	lbls := prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}
-	metrics.DiskCacheNumEvictions.With(lbls).Inc()
-	metrics.DiskCacheBytesEvicted.With(lbls).Add(float64(sample.SizeBytes))
-	metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
-	metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
+	e.metrics.numEvictions.Inc()
+	e.metrics.bytesEvicted.Add(float64(sample.SizeBytes))
+	e.metrics.evictionAgeMsec.Observe(float64(age.Milliseconds()))
+	e.metrics.lastEvictionAgeUsec.Set(float64(age.Microseconds()))
 }
 
 func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
