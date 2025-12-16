@@ -53,7 +53,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 
 	"google.golang.org/grpc"
 
@@ -112,8 +111,6 @@ var (
 
 func init() {
 	grpc.EnableTracing = false
-	// Register the codec for all RPC servers and clients.
-	vtprotocodec.Register()
 }
 
 func configureFilesystemsOrDie(realEnv *real_environment.RealEnv, appBundleFS fs.FS) {

@@ -27,7 +27,6 @@ go_library(
         "//server/util/monitoring",
         "//server/util/statusz",
         "//server/util/tracing",
-        "//server/util/vtprotocodec",
         "//server/version",
     ],
 )

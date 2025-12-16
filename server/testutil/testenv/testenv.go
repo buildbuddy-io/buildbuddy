@@ -29,7 +29,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
@@ -81,10 +80,6 @@ http:
    client:
       allow_localhost: true
 `
-
-func init() {
-	vtprotocodec.Register()
-}
 
 // RegisterLocalGRPCServer registers a local gRPC server to the environment and
 // returns the server.

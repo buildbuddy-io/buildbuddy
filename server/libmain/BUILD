@@ -60,7 +60,6 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/usageutil",
-        "//server/util/vtprotocodec",
         "//static:bundle",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
