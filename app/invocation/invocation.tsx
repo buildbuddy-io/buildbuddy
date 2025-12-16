@@ -238,7 +238,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   async fetchInvocation() {
-    this.setState({ loading: true });
+    // Only show the full-page loading state for the initial fetch. While the
+    // invocation is in progress we poll periodically; toggling `loading` causes
+    // the page contents to unmount and appear to "hard reload".
+    const showLoading = !this.state.model && !this.state.loading;
+    if (showLoading) {
+      this.setState({ loading: true });
+    }
 
     // If applicable, fetch the CI runner execution in parallel. The CI runner
     // execution is what creates the invocation, so it can give us some
@@ -282,7 +288,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
         console.error("Failed to fetch invocation:", error);
         this.setState({ error: BuildBuddyError.parse(error) });
       })
-      .finally(() => this.setState({ loading: false }));
+      .finally(() => {
+        if (showLoading) {
+          this.setState({ loading: false });
+        }
+      });
   }
 
   shouldFetchChildren(model: InvocationModel | undefined): boolean {
