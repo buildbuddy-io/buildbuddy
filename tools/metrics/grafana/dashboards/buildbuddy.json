@@ -551,7 +551,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(\n  0.99,\n  sum by (le, stage)\n    (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{region=\"${region}\", job=\"executor\", stage!=\"worker\", group_id=~\"GR16310856858823099217|GR13567963851860390298|GR11301939955034629488\"}[1m]))\n)\n\n",
+              "expr": "histogram_quantile(\n  0.99,\n  sum by (le, stage)\n    (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{region=\"${region}\", job=~\"executor.*\", stage!=\"worker\", group_id=~\"GR16310856858823099217|GR13567963851860390298|GR11301939955034629488\"}[1m]))\n)\n\n",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
