@@ -38,7 +38,7 @@ const (
 )
 
 var (
-	errBlocked = status.UnavailableError("There was an issue with your request. Please contact support.")
+	errBlocked = status.UnavailableError("there was an issue with your request - please contact support at https://buildbuddy.io/contact")
 )
 
 func Register(env *real_environment.RealEnv) error {
