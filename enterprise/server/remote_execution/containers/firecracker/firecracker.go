@@ -2924,7 +2924,7 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 	}()
 
 	// Wait for the balloon to reach its target size.
-	pollInterval := 300 * time.Millisecond
+	pollInterval := 1 * time.Second
 	slowCount := 0
 	for {
 		stats, err := c.machine.GetBalloonStats(ctx)
