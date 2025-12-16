@@ -330,6 +330,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 
 	hasher, err := digest.HashForDigestType(r.GetDigestFunction())
 	if err != nil {
+		ws.Close()
 		return nil, err
 	}
 	ws.checksum = NewChecksum(hasher, r.GetDigestFunction())
@@ -346,6 +347,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 			// checksum in a decompressor to validate the decompressed data.
 			decompressingChecksum, err := compression.NewZstdDecompressor(ws.checksum)
 			if err != nil {
+				ws.Close()
 				return nil, err
 			}
 			ws.writer = io.MultiWriter(committedWriteCloser, decompressingChecksum)
@@ -354,6 +356,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 			// If the cache doesn't support compression, wrap both the checksum and cache writer in a decompressor
 			decompressor, err := compression.NewZstdDecompressor(ws.writer)
 			if err != nil {
+				ws.Close()
 				return nil, err
 			}
 			ws.writer = decompressor
@@ -366,6 +369,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		bufSize := int64(digest.SafeBufferSize(r.ToProto(), compressBufSize))
 		compressor, err := compression.NewZstdCompressingWriter(committedWriteCloser, s.bufferPool, bufSize)
 		if err != nil {
+			ws.Close()
 			return nil, err
 		}
 		ws.writer = io.MultiWriter(compressor, ws.checksum)
