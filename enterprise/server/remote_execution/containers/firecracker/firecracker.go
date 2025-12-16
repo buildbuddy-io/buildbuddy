@@ -2805,7 +2805,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	if shouldSaveSnapshot && c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
 		if err := c.reclaimMemoryWithBalloon(ctx); err != nil {
-			log.CtxWarningf(ctx, "Reclaiming memory with the balloon failed, not saving snapshot for key %v: %s", c.SnapshotKeySet().GetWriteKey(), err)
+			log.CtxErrorf(ctx, "Reclaiming memory with the balloon failed with: %s", err)
 		}
 	}
 
@@ -2926,8 +2926,6 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 	// Wait for the balloon to reach its target size.
 	pollInterval := 300 * time.Millisecond
 	slowCount := 0
-
-expand_loop:
 	for {
 		stats, err := c.machine.GetBalloonStats(ctx)
 		if err != nil {
@@ -2938,7 +2936,7 @@ expand_loop:
 		if currentBalloonSize == targetSizeMib {
 			return nil
 		} else if time.Since(start) >= maxUpdateBalloonDuration {
-			break expand_loop
+			return nil
 		}
 
 		if math.Abs(float64(currentBalloonSize-lastBalloonSize)) < 100 {
@@ -2947,7 +2945,7 @@ expand_loop:
 				// If the rate of inflation is consistently slow or stops, just stop early.
 				// Give the balloon a second chance in case there is resource contention
 				// that temporarily slows the balloon inflation.
-				break expand_loop
+				return nil
 			}
 		} else {
 			slowCount = 0
@@ -2955,16 +2953,10 @@ expand_loop:
 
 		select {
 		case <-ctx.Done():
-			break expand_loop
+			return nil
 		case <-time.After(pollInterval):
 		}
 	}
-
-	// If the balloon didn't reach the target size by a large margin, something is likely broken in the VM.
-	if math.Abs(float64(currentBalloonSize-targetSizeMib)) > 1000 {
-		return fmt.Errorf("failed to update balloon to %d MB, stalled at %d MB. vmlog: %s", targetSizeMib, currentBalloonSize, c.vmLog.Tail())
-	}
-	return nil
 }
 
 func pointer[T any](val T) *T {
