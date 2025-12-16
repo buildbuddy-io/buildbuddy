@@ -7,11 +7,14 @@ go_library(
     srcs = ["ocifetcher.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher",
     deps = [
+        "//enterprise/server/util/ocicache",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/http/httpclient",
         "//server/interfaces",
         "//server/real_environment",
+        "//server/util/bytebufferpool",
         "//server/util/claims",
         "//server/util/flag",
         "//server/util/hash",
@@ -23,6 +26,7 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
 
@@ -31,12 +35,16 @@ go_test(
     srcs = ["ocifetcher_test.go"],
     deps = [
         ":ocifetcher",
+        "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/testutil/testregistry",
         "//proto:capability_go_proto",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/testutil/testauth",
+        "//server/testutil/testcache",
+        "//server/testutil/testenv",
         "//server/testutil/testhttp",
         "//server/util/claims",
         "//server/util/status",
@@ -44,6 +52,7 @@ go_test(
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
     ],
 )
