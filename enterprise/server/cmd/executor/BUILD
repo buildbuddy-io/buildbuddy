@@ -59,7 +59,6 @@ go_library(
         "//server/util/statusz",
         "//server/util/tracing",
         "//server/util/usageutil",
-        "//server/util/vtprotocodec",
         "//server/version",
         "//server/xcode",
         "@com_github_google_uuid//:uuid",

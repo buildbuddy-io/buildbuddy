@@ -51,7 +51,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
@@ -87,11 +86,6 @@ var (
 	serverType        = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
 	maxThreads        = flag.Int("executor.max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
 )
-
-func init() {
-	// Register the codec for all RPC servers and clients.
-	vtprotocodec.Register()
-}
 
 func isOldEndpoint(endpoint string) bool {
 	u, err := url.Parse(endpoint)

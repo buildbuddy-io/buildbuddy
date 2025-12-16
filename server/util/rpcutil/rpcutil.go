@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
@@ -15,6 +16,10 @@ import (
 )
 
 const GRPCMaxSizeBytes = int64(4 * 1000 * 1000)
+
+func init() {
+	vtprotocodec.Register()
+}
 
 type StreamMsg[T proto.Message] struct {
 	Data  T
