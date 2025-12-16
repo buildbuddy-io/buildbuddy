@@ -1559,7 +1559,7 @@ func (p *PebbleCache) blobDir() string {
 }
 
 func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) (filestore.PebbleKeyVersion, error) {
-	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	ctx, spn := tracing.StartSpanWithFunc(ctx, p.lookupFileMetadataAndVersion) // nolint:SA4006
 	defer spn.End()
 
 	var lastErr error
@@ -1644,7 +1644,7 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 }
 
 func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
-	ctx, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpanWithFunc(ctx, p.FindMissing) // nolint:SA4006
 	defer spn.End()
 	db, err := p.leaser.DB()
 	if err != nil {
@@ -1956,7 +1956,7 @@ func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 }
 
 func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
-	ctx, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpanWithFunc(ctx, p.Reader)
 	defer spn.End()
 	if spn.IsRecording() {
 		spn.SetAttributes(
@@ -2219,7 +2219,7 @@ func (cdcw *cdcWriter) Metadata() *sgpb.StorageMetadata {
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	ctx, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpanWithFunc(ctx, p.Writer)
 	defer spn.End()
 	if spn.IsRecording() {
 		spn.SetAttributes(
@@ -2345,7 +2345,7 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 }
 
 func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, md *sgpb.FileMetadata) error {
-	ctx, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpanWithFunc(ctx, p.writeMetadata)
 	defer spn.End()
 
 	protoBytes, err := proto.Marshal(md)

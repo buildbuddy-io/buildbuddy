@@ -8,6 +8,8 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -204,7 +206,6 @@ func ConfigureWithNoopExporter(env environment.Env) error {
 
 // setupTracingWithExporter sets up the tracing infrastructure with the provided exporter.
 func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanExporter) error {
-
 	fractionOverrides := make(map[string]float64)
 	for _, override := range *traceFractionOverrides {
 		parts := strings.Split(override, "=")
@@ -371,6 +372,21 @@ func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := metadata.NewIncomingContext(r.Context(), headersToContext(r.Header))
 	r = r.WithContext(ctx)
 	m.tracingHandler.ServeHTTP(w, r)
+}
+
+func StartSpanWithFunc(ctx context.Context, fn interface{}, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+	// 1. Get the function pointer directly from the interface
+	// This creates a small allocation but is much faster than stack walking
+	ptr := reflect.ValueOf(fn).Pointer()
+
+	// 2. Look up the name (fast lookup)
+	fnObj := runtime.FuncForPC(ptr)
+	spanName := "unknown_go_function"
+	if fnObj != nil {
+		spanName = filepath.Base(fnObj.Name())
+	}
+
+	return otel.GetTracerProvider().Tracer(spanName).Start(ctx, spanName, opts...)
 }
 
 // StartSpan starts a new span named after the calling function.
