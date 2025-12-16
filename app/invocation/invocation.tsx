@@ -263,6 +263,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   async fetchInvocation() {
+    // Keep the full-page spinner only for the initial fetch. `loading` is true
+    // on first render and should be cleared once the first fetch completes.
+    const shouldClearInitialLoading = !this.state.model && this.state.loading;
     // If applicable, fetch the CI runner execution in parallel. The CI runner
     // execution is what creates the invocation, so it can give us some
     // diagnostic info in the case where the invocation is never created, and
@@ -305,7 +308,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
         console.error("Failed to fetch invocation:", error);
         this.setState({ error: BuildBuddyError.parse(error) });
       })
-      .finally(() => this.setState({ loading: false }));
+      .finally(() => {
+        if (shouldClearInitialLoading) {
+          this.setState({ loading: false });
+        }
+      });
   }
 
   shouldFetchChildren(model: InvocationModel | undefined): boolean {
