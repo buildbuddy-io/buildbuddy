@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
@@ -367,6 +368,9 @@ func BenchmarkFindMissing(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000}
 	te := getTestEnv(b)
 	ctx := getUserContext(b, te)
+	flags.Set(b, "app.trace_fraction", "0.01")
+	err := tracing.Configure(te)
+	require.NoError(b, err)
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
