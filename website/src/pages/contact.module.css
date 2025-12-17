@@ -27,6 +27,27 @@
   min-height: 100px;
 }
 
+.form input.inputError,
+.form textarea.inputError {
+  border-color: #dc3545;
+}
+
+.errorSummary {
+  background-color: #f8d7da;
+  border: 1px solid #dc3545;
+  border-radius: 8px;
+  color: #721c24;
+  padding: 16px;
+}
+
+.errorSummary > div {
+  margin-bottom: 4px;
+}
+
+.errorSummary > div:last-child {
+  margin-bottom: 0;
+}
+
 .contactMethods {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr 1fr;
