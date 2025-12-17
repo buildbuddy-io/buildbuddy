@@ -98,6 +98,7 @@ type RealEnv struct {
 	buildbuddyServer                     interfaces.BuildBuddyServer
 	buildBuddyServiceClient              bbspb.BuildBuddyServiceClient
 	cacheServer                          cspb.CacheServer
+	cacheClient                          cspb.CacheClient
 	sslService                           interfaces.SSLService
 	quotaManager                         interfaces.QuotaManager
 	buildEventServer                     pepb.PublishBuildEventServer
@@ -549,6 +550,13 @@ func (r *RealEnv) GetCacheServer() cspb.CacheServer {
 }
 func (r *RealEnv) SetCacheServer(cs cspb.CacheServer) {
 	r.cacheServer = cs
+}
+
+func (r *RealEnv) GetCacheClient() cspb.CacheClient {
+	return r.cacheClient
+}
+func (r *RealEnv) SetCacheClient(cc cspb.CacheClient) {
+	r.cacheClient = cc
 }
 
 func (r *RealEnv) GetSSLService() interfaces.SSLService {

@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_capabilities_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_content_addressable_storage_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_service"
+	"github.com/buildbuddy-io/buildbuddy/server/cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
@@ -47,6 +48,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/grpc"
 
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -326,7 +328,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	log.Infof("Cache proxy proxying requests to %s", *remoteCache)
 }
 
-func registerInternalServices(env *real_environment.RealEnv) error {
+func registerInternalServices(env *real_environment.RealEnv, grpcServer *grpc.Server) error {
 	localBSS, err := byte_stream_server.NewByteStreamServer(env)
 	if err != nil {
 		return status.InternalErrorf("CacheProxy: error starting local bytestream server: %s", err.Error())
@@ -344,5 +346,17 @@ func registerInternalServices(env *real_environment.RealEnv) error {
 		return status.InternalErrorf("CacheProxy: error starting local actioncache server: %s", err.Error())
 	}
 	env.SetLocalActionCacheServer(localAC)
+
+	if err := cache_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	cspb.RegisterCacheServer(grpcServer, env.GetCacheServer())
+
+	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.InternalGRPCPort()))
+	if err != nil {
+		return status.InternalErrorf("CacheProxy: error dialing internal grpc server: %s", err.Error())
+	}
+	env.SetCacheClient(cspb.NewCacheClient(conn))
+
 	return nil
 }
