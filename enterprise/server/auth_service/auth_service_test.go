@@ -51,7 +51,7 @@ func TestAuthenticate_HS256SigningMethod(t *testing.T) {
 	assert.Equal(t, expectedJwt, resp.Jwt)
 }
 
-func TestAuthenticate_RSASigningMethod(t *testing.T) {
+func TestAuthenticate_RS256SigningMethod(t *testing.T) {
 	service := AuthService{authenticator: testauth.NewTestAuthenticator(testauth.TestUsers("foo", "bar"))}
 	_, err := service.Authenticate(contextWithApiKey(t, "foo"),
 		&authpb.AuthenticateRequest{
