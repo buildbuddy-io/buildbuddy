@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -96,6 +97,7 @@ type RealEnv struct {
 	listenAddr                           string
 	buildbuddyServer                     interfaces.BuildBuddyServer
 	buildBuddyServiceClient              bbspb.BuildBuddyServiceClient
+	cacheServer                          cspb.CacheServer
 	sslService                           interfaces.SSLService
 	quotaManager                         interfaces.QuotaManager
 	buildEventServer                     pepb.PublishBuildEventServer
@@ -540,6 +542,13 @@ func (r *RealEnv) GetBuildBuddyServiceClient() bbspb.BuildBuddyServiceClient {
 }
 func (r *RealEnv) SetBuildBuddyServiceClient(bb bbspb.BuildBuddyServiceClient) {
 	r.buildBuddyServiceClient = bb
+}
+
+func (r *RealEnv) GetCacheServer() cspb.CacheServer {
+	return r.cacheServer
+}
+func (r *RealEnv) SetCacheServer(cs cspb.CacheServer) {
+	r.cacheServer = cs
 }
 
 func (r *RealEnv) GetSSLService() interfaces.SSLService {
