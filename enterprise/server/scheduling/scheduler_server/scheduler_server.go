@@ -574,6 +574,12 @@ func (h *executorHandle) setMoreWorkDelay(d time.Duration) {
 // sendProactiveCancellation sends a cancellation request for the given task ID
 // to the executor. This is a best-effort operation - errors are not returned.
 func (h *executorHandle) sendProactiveCancellation(ctx context.Context, taskID string) {
+	if !h.getRegistration().GetSupportsProactiveCancellation() {
+		// This should never happen since we only add executors to the list of
+		// sent probes if they claimed to support proactive cancellation when
+		// they registered, but it doesn't hurt to double-check.
+		return
+	}
 	msg := &scpb.RegisterAndStreamWorkResponse{
 		CancelTaskReservationRequest: &scpb.CancelTaskReservationRequest{
 			TaskId: taskID,

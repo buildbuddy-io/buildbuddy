@@ -407,11 +407,14 @@ func TestLocalEnqueueTimestamp(t *testing.T) {
 }
 
 func TestRemoveTaskFromQueue(t *testing.T) {
-	// Try a few runs where we enqueue several tasks, cancel one task, then
+	// Try a few runs where we enqueue several tasks, cancel a few tasks, then
 	// after dequeueing the remaining tasks, we should only dequeue the tasks
 	// that were not cancelled.
 	for range 10 {
 		q := newTaskQueue(clockwork.NewRealClock())
+
+		// Enqueue a bunch of tasks, with various group IDs to make sure we're
+		// also exercising the per-group queueing logic.
 		const numTasks = 32
 		var taskIDs []string
 		for taskIDInt := range numTasks {
@@ -425,8 +428,9 @@ func TestRemoveTaskFromQueue(t *testing.T) {
 				},
 			})
 		}
+
 		// Pick a few random tasks to cancel, and remove them from the list of
-		// expected task IDs
+		// expected task IDs.
 		for range 3 {
 			i := rand.Intn(len(taskIDs))
 			canceledTaskID := taskIDs[i]
@@ -443,7 +447,6 @@ func TestRemoveTaskFromQueue(t *testing.T) {
 		}
 		require.Nil(t, q.Dequeue())
 		require.ElementsMatch(t, taskIDs, dequeuedTaskIDs)
-		// require.FailNowf(t, "!", "dequeued=\n%v\n, canceled=%q", strings.Join(dequeuedTaskIDs, "\n"), canceledTaskIDs)
 	}
 }
 
