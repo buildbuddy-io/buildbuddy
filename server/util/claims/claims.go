@@ -28,7 +28,7 @@ import (
 
 const (
 	// Maximum number of entries in JWT -> Claims cache.
-	claimsCacheSize = 10_00
+	claimsCacheSize = 1_000
 
 	// The key the Claims are stored under in the context.
 	// If unset, the JWT can be used to reconstitute the claims.
@@ -41,6 +41,11 @@ var (
 	signUsingNewJwtKey = flag.Bool("auth.sign_using_new_jwt_key", false, "If true, new JWTs will be signed using the new JWT key.")
 	claimsCacheTTL     = flag.Duration("auth.jwt_claims_cache_ttl", 15*time.Second, "TTL for JWT string to parsed claims caching. Set to '0' to disable cache.")
 	jwtDuration        = flag.Duration("auth.jwt_duration", 6*time.Hour, "Maximum lifetime of the generated JWT.")
+
+	jwtRSAPublicKey     = flag.String("auth.jwt_rsa_public_key", "", "PEM-encoded RSA public key used to verify JWTs.", flag.Secret)
+	jwtRSAPrivateKey    = flag.String("auth.jwt_rsa_private_key", "", "PEM-encoded RSA private key used to sign JWTs.", flag.Secret)
+	newJWTRSAPublicKey  = flag.String("auth.new_jwt_rsa_public_key", "", "PEM-encoded RSA public key used to verify new JWTs during key rotation.", flag.Secret)
+	newJWTRSAPrivateKey = flag.String("auth.new_jwt_rsa_private_key", "", "PEM-encoded RSA private key used to sign new JWTs during key rotation.", flag.Secret)
 
 	serverAdminGroupID = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
 )
@@ -500,4 +505,15 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 	c.mu.Unlock()
 
 	return claims, nil
+}
+
+func GetRSAPublicKeys() []string {
+	var keys []string
+	if *newJWTRSAPublicKey != "" {
+		keys = append(keys, *newJWTRSAPublicKey)
+	}
+	if *jwtRSAPublicKey != "" {
+		keys = append(keys, *jwtRSAPublicKey)
+	}
+	return keys
 }

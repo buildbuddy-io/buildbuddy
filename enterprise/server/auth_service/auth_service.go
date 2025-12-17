@@ -6,6 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 
@@ -36,5 +37,10 @@ func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateR
 }
 
 func (a AuthService) GetPublicKeys(ctx context.Context, req *authpb.GetPublicKeysRequest) (*authpb.GetPublicKeysResponse, error) {
-	return &authpb.GetPublicKeysResponse{}, status.UnimplementedError("GetPublicKeys unimplemented")
+	keys := claims.GetRSAPublicKeys()
+	publicKeys := make([]*authpb.PublicKey, len(keys))
+	for i, key := range claims.GetRSAPublicKeys() {
+		publicKeys[i] = &authpb.PublicKey{Key: &key}
+	}
+	return &authpb.GetPublicKeysResponse{PublicKeys: publicKeys}, nil
 }

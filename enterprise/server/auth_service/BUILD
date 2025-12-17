@@ -11,6 +11,7 @@ go_library(
         "//server/interfaces",
         "//server/real_environment",
         "//server/util/authutil",
+        "//server/util/claims",
         "//server/util/status",
         "//server/util/subdomain",
     ],
@@ -27,7 +28,9 @@ go_test(
         "//server/testutil/testgrpc",
         "//server/util/authutil",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
     ],
 )
