@@ -400,11 +400,11 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 	bundle := vmsupport_bundle.Get()
 	initrdRunfileLocation, err := runfiles.Rlocation(initrdRunfilePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get initrd runfile path: %w", err)
 	}
 	initrdPath, err := putFileIntoDir(ctx, bundle, initrdRunfileLocation, buildRootDir, 0755)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("put initrd into build root dir: %w", err)
 	}
 
 	var guestKernelPath6_1 string
@@ -413,49 +413,49 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 	if vmlinux6_1RunfilePath != "" {
 		vmlinuxRunfileLocation6_1, err := runfiles.Rlocation(vmlinux6_1RunfilePath)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("get vmlinux 6.1 runfile path: %w", err)
 		}
 		p, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation6_1, buildRootDir, 0755)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("put vmlinux 6.1 into build root dir: %w", err)
 		}
 		guestKernelPath6_1 = p
 		d, err := digest.ComputeForFile(guestKernelPath6_1, repb.DigestFunction_SHA256)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("compute digest for vmlinux 6.1: %w", err)
 		}
 		guestKernelDigest6_1 = d
 	}
 	vmlinuxRunfileLocation5_15, err := runfiles.Rlocation(vmlinuxRunfilePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get vmlinux 5.15 runfile path: %w", err)
 	}
 	guestKernelPath5_15, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation5_15, buildRootDir, 0755)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("put vmlinux 5.15 into build root dir: %w", err)
 	}
 	// TODO: when running as root, these should come from the bundle instead of
 	// $PATH, since we don't need to rely on the user having configured special
 	// perms on these binaries.
 	firecrackerPath, err := exec.LookPath("firecracker")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("look up firecracker in PATH: %w", err)
 	}
 	jailerPath, err := exec.LookPath("jailer")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("look up jailer in PATH: %w", err)
 	}
 	guestKernelDigest5_15, err := digest.ComputeForFile(guestKernelPath5_15, repb.DigestFunction_SHA256)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("compute digest for vmlinux 5.15: %w", err)
 	}
 	firecrackerDigest, err := digest.ComputeForFile(firecrackerPath, repb.DigestFunction_SHA256)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("compute digest for firecracker: %w", err)
 	}
 	hostKernelVersion, err := getHostKernelVersion()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get host kernel version: %w", err)
 	}
 	guestKernelImagePath := guestKernelPath5_15
 	guestKernelVersion := guestKernelDigest5_15.GetHash()
