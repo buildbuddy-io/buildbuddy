@@ -360,11 +360,7 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 
 	// Lookup metadata to get the correct digest size to be returned to
 	// the client.
-	//
-	// TODO: https://github.com/buildbuddy-io/buildbuddy-internal/issues/6146
-	// Fix this metadata GRPC to use a GRPC that hits the correct cache when the routing_service is enabled.
-	// For now, we will always fetch metadata from the remote cache.
-	md, err := p.env.GetBuildBuddyServiceClient().GetCacheMetadata(ctx, &cachepb.GetCacheMetadataRequest{
+	md, err := p.env.GetCacheClient().GetMetadata(ctx, &cachepb.GetCacheMetadataRequest{
 		ResourceName: cacheRN.ToProto(),
 	})
 	if err != nil {
