@@ -358,9 +358,9 @@ func (t *teeReadCloser) Close() error {
 		if err := t.cwc.Commit(); err != nil {
 			log.Infof("Error committing write to local cache: %s", err)
 		}
-		if err := t.cwc.Close(); err != nil {
-			log.Infof("Error closing local cache writer: %s", err)
-		}
+	}
+	if err := t.cwc.Close(); err != nil {
+		log.Infof("Error closing local cache writer: %s", err)
 	}
 	return err
 }
