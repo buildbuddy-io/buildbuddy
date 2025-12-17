@@ -40,6 +40,7 @@ const (
 )
 
 var (
+	enabled           = flag.Bool("ocifetcher.enabled", false, "Whether to enable the OCI fetcher server.")
 	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
 	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 
@@ -92,6 +93,9 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 }
 
 func RegisterServer(env *real_environment.RealEnv) error {
+	if !*enabled {
+		return nil
+	}
 	server, err := NewServer(env.GetByteStreamClient(), env.GetActionCacheClient())
 	if err != nil {
 		return err
