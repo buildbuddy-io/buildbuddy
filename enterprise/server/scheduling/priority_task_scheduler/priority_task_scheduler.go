@@ -323,17 +323,16 @@ func (t *taskQueue) HasTask(taskID string) bool {
 }
 
 // findTask returns the position of the task with the given ID, or nil if not found.
-func (t *taskQueue) findTask(taskID string) *queuePosition {
+func (t *taskQueue) FindTask(taskID string) *queuePosition {
+	// Do a quick map lookup to avoid more expensive iteration if we know the
+	// task doesn't exist.
 	if !t.HasTask(taskID) {
 		return nil
 	}
-	for e := t.pqs.Front(); e != nil; e = e.Next() {
-		pq := e.Value.(*groupPriorityQueue)
-		allTasks := pq.GetAll()
-		for i, task := range allTasks {
-			if task.GetTaskId() == taskID {
-				return &queuePosition{GroupQueue: e, Index: i}
-			}
+	it := t.Iterator()
+	for task := it.Next(); task != nil; task = it.Next() {
+		if task.GetTaskId() == taskID {
+			return it.Current()
 		}
 	}
 	return nil
@@ -553,10 +552,7 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 func (q *PriorityTaskScheduler) remove(taskID string) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if !q.q.HasTask(taskID) {
-		return false
-	}
-	if p := q.q.findTask(taskID); p != nil {
+	if p := q.q.FindTask(taskID); p != nil {
 		q.q.DequeueAt(p)
 		return true
 	}
