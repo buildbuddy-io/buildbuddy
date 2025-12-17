@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ocifetcher_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_action_cache_client"
@@ -47,6 +48,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/grpc"
 
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -299,6 +301,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 		env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	}
+	env.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(conn))
 
 	// The atime updater must be registered after the remote CAS client (which
 	// it depends on), but before the local CAS server (which depends on it).
@@ -319,10 +322,14 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	if err := content_addressable_storage_server_proxy.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
+	if err := ocifetcher_server_proxy.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 	repb.RegisterActionCacheServer(grpcServer, env.GetActionCacheServer())
 	bspb.RegisterByteStreamServer(grpcServer, env.GetByteStreamServer())
 	repb.RegisterContentAddressableStorageServer(grpcServer, env.GetCASServer())
 	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
+	ofpb.RegisterOCIFetcherServer(grpcServer, env.GetOCIFetcherServer())
 	log.Infof("Cache proxy proxying requests to %s", *remoteCache)
 }
 

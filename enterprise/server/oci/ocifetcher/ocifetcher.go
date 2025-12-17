@@ -40,7 +40,7 @@ const (
 )
 
 var (
-	enabled           = flag.Bool("ocifetcher.enabled", false, "Whether to enable the OCI fetcher server.")
+	enabled           = flag.Bool("ocifetcher.enabled", false, "Whether to enable the OCI fetcher service.")
 	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
 	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 
@@ -410,7 +410,6 @@ func (s *ociFetcherServer) evictPuller(imageRef gcrname.Reference, creds *rgpb.C
 	s.pullerLRU.Remove(key)
 	s.mu.Unlock()
 }
-
 
 // fetchBlobFromCache attempts to fetch a blob from the cache and streams it directly to the gRPC response.
 // Returns nil if successful, NotFoundError if not in cache, or another error on failure.
