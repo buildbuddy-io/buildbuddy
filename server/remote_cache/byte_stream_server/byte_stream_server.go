@@ -271,12 +271,6 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		}
 	}
 
-	hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
-	ws := &writeHandler{
-		transferTimer:      hitTracker.TrackUpload(r.GetDigest()),
-		resourceName:       r,
-		resourceNameString: req.ResourceName,
-	}
 	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
 	if err != nil {
 		return nil, err
@@ -315,6 +309,10 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		}
 	}
 
+	hasher, err := digest.HashForDigestType(r.GetDigestFunction())
+	if err != nil {
+		return nil, err
+	}
 	var committedWriteCloser interfaces.CommittedWriteCloser
 	if r.IsEmpty() {
 		committedWriteCloser = ioutil.DiscardWriteCloser()
@@ -325,15 +323,16 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		}
 		committedWriteCloser = cacheWriter
 	}
-	ws.cacheCommitter = committedWriteCloser
-	ws.cacheCloser = committedWriteCloser
-
-	hasher, err := digest.HashForDigestType(r.GetDigestFunction())
-	if err != nil {
-		ws.Close()
-		return nil, err
+	hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+	ws := &writeHandler{
+		transferTimer:      hitTracker.TrackUpload(r.GetDigest()),
+		resourceName:       r,
+		resourceNameString: req.ResourceName,
+		cacheCommitter:     committedWriteCloser,
+		cacheCloser:        committedWriteCloser,
+		checksum:           NewChecksum(hasher, r.GetDigestFunction()),
 	}
-	ws.checksum = NewChecksum(hasher, r.GetDigestFunction())
+
 	// Write to the cache first. This gives more time between the final cache
 	// write and the commit, reducing the amount of time that the commit has to
 	// wait to flush writes.
