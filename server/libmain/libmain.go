@@ -59,6 +59,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -345,6 +346,9 @@ func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 	}
 	if env.GetCASServer() != nil {
 		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	}
+	if env.GetCacheServer() != nil {
+		env.SetCacheClient(cspb.NewCacheClient(conn))
 	}
 	return nil
 }
