@@ -34,7 +34,7 @@ func TestAuthenticate(t *testing.T) {
 	assert.NotEqual(t, 0, len(*resp.Jwt))
 }
 
-func TestAuthenticate_HSASigningMethod(t *testing.T) {
+func TestAuthenticate_HS256SigningMethod(t *testing.T) {
 	service := AuthService{authenticator: testauth.NewTestAuthenticator(testauth.TestUsers("foo", "bar"))}
 	resp, err := service.Authenticate(contextWithApiKey(t, "foo"),
 		&authpb.AuthenticateRequest{})
