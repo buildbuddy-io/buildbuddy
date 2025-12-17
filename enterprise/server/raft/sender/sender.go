@@ -189,7 +189,7 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 			attribute.Int64Slice("replicas", replica_ids),
 			attribute.Int("gen", int(returnedRD.GetGeneration())),
 			attribute.String("key", string(key)),
-			attribute.Int("range", int(returnedRD.GetRangeId())),
+			attribute.Int("range_id", int(returnedRD.GetRangeId())),
 		)
 		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
