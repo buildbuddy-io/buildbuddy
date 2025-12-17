@@ -3,10 +3,20 @@ syntax = "proto3";
 
 package auth;
 
+enum JWTSigningMethod {
+  UNKNOWN = 0;  // Defaults to HS256
+  HS256 = 1;
+  RS256 = 2;
+}
+
 // Most Authentication information (API key, source IP) is passed via headers.
 message AuthenticateRequest {
   // The subdomain to which the request was sent.
   optional string subdomain = 1;
+
+  // For migrating callers to RSA256-signed JWTs.
+  // TODO(iain): figure out if we always want to use those for remoteauth.
+  optional JWTSigningMethod jwt_signing_method = 2;
 }
 
 message AuthenticateResponse {
