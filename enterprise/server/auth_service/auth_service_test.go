@@ -34,6 +34,33 @@ func TestAuthenticate(t *testing.T) {
 	assert.NotEqual(t, 0, len(*resp.Jwt))
 }
 
+func TestAuthenticate_HS256SigningMethod(t *testing.T) {
+	service := AuthService{authenticator: testauth.NewTestAuthenticator(testauth.TestUsers("foo", "bar"))}
+	resp, err := service.Authenticate(contextWithApiKey(t, "foo"),
+		&authpb.AuthenticateRequest{})
+	assert.NoError(t, err)
+	assert.NotEqual(t, 0, len(*resp.Jwt))
+	expectedJwt := resp.Jwt
+
+	resp, err = service.Authenticate(contextWithApiKey(t, "foo"),
+		&authpb.AuthenticateRequest{
+			JwtSigningMethod: authpb.JWTSigningMethod_HS256.Enum(),
+		})
+	assert.NoError(t, err)
+	assert.NotEqual(t, 0, len(*resp.Jwt))
+	assert.Equal(t, expectedJwt, resp.Jwt)
+}
+
+func TestAuthenticate_RS256SigningMethod(t *testing.T) {
+	service := AuthService{authenticator: testauth.NewTestAuthenticator(testauth.TestUsers("foo", "bar"))}
+	_, err := service.Authenticate(contextWithApiKey(t, "foo"),
+		&authpb.AuthenticateRequest{
+			JwtSigningMethod: authpb.JWTSigningMethod_RS256.Enum(),
+		})
+	assert.Error(t, err)
+	assert.True(t, status.IsInvalidArgumentError(err))
+}
+
 func TestAuthenticateWrongCreds(t *testing.T) {
 	service := AuthService{authenticator: testauth.NewTestAuthenticator(testauth.TestUsers("foo", "bar"))}
 	_, err := service.Authenticate(contextWithApiKey(t, "baz"), &authpb.AuthenticateRequest{})
