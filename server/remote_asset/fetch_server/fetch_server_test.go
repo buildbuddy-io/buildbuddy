@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
+	"github.com/buildbuddy-io/buildbuddy/server/cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
@@ -27,6 +28,7 @@ import (
 	"google.golang.org/grpc"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -42,6 +44,8 @@ func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *gr
 	require.NoError(t, err)
 	err = content_addressable_storage_server.Register(env)
 	require.NoError(t, err)
+	err = cache_server.Register(env)
+	require.NoError(t, err)
 
 	// Allow 127.0.0.1 so we can dial the server in the test.
 	flags.Set(t, "remote_asset.allowed_private_ips", []string{"127.0.0.0/8"})
@@ -53,6 +57,7 @@ func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *gr
 	env.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(clientConn))
 	env.SetBuildBuddyServiceClient(bbspb.NewBuildBuddyServiceClient(clientConn))
+	env.SetCacheClient(cspb.NewCacheClient(clientConn))
 
 	fetchServer, err := fetch_server.NewFetchServer(env)
 	require.NoError(t, err)
@@ -61,7 +66,7 @@ func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *gr
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
 	repb.RegisterContentAddressableStorageServer(grpcServer, env.GetCASServer())
-
+	cspb.RegisterCacheServer(grpcServer, env.GetCacheServer())
 	go runFunc()
 
 	return clientConn
