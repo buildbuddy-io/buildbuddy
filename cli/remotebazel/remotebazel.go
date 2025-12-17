@@ -953,6 +953,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 		if latestErr == nil ||
 			!rexec.Retryable(latestErr) ||
+			status.IsPermissionDeniedError(latestErr) ||
 			status.IsDeadlineExceededError(latestErr) ||
 			ctx.Err() != nil {
 			retry = false
@@ -962,7 +963,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			break
 		}
 
-		log.Warnf("Remote run failed due to transient error. Retrying: %s", latestErr)
+		log.Warnf("Remote run failed due to a transient error. Retrying: %s", latestErr)
 		retryCount++
 	}
 	if *invocationIDFile != "" && len(inRsp.GetInvocation()) > 0 && inRsp.GetInvocation()[0].GetInvocationId() != "" {
