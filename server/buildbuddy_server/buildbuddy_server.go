@@ -593,6 +593,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 
 	group.URLIdentifier = strings.TrimSpace(req.GetUrlIdentifier())
 	group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
+	group.Status = grpb.Group_UNKNOWN_GROUP_STATUS
 
 	groupID, err := userDB.CreateGroup(ctx, group)
 	if err != nil {

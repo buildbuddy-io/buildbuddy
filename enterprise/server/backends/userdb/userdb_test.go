@@ -455,6 +455,92 @@ func TestCreateGroup(t *testing.T) {
 	require.Equal(t, grpb.Group_ADMIN_ROLE, gu.Role, "users should have admin role when added to a new group")
 }
 
+func TestCreateGroup_StatusInheritance(t *testing.T) {
+	testCases := []struct {
+		name           string
+		urlID          string
+		parentStatus   grpb.Group_GroupStatus
+		expectedStatus grpb.Group_GroupStatus
+	}{
+		{
+			name:           "UNKNOWN -> UNKNOWN",
+			urlID:          "test-unknown",
+			parentStatus:   grpb.Group_UNKNOWN_GROUP_STATUS,
+			expectedStatus: grpb.Group_UNKNOWN_GROUP_STATUS,
+		},
+		{
+			name:           "FREE_TIER -> FREE_TIER (inherit)",
+			urlID:          "test-free",
+			parentStatus:   grpb.Group_FREE_TIER_GROUP_STATUS,
+			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
+		},
+		{
+			name:           "ENTERPRISE -> UNKNOWN",
+			urlID:          "test-ent",
+			parentStatus:   grpb.Group_ENTERPRISE_GROUP_STATUS,
+			expectedStatus: grpb.Group_UNKNOWN_GROUP_STATUS,
+		},
+		{
+			name:           "ENTERPRISE_TRIAL -> UNKNOWN",
+			urlID:          "test-trial",
+			parentStatus:   grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
+			expectedStatus: grpb.Group_UNKNOWN_GROUP_STATUS,
+		},
+		{
+			name:           "BLOCKED -> BLOCKED (inherit)",
+			urlID:          "test-blocked",
+			parentStatus:   grpb.Group_BLOCKED_GROUP_STATUS,
+			expectedStatus: grpb.Group_BLOCKED_GROUP_STATUS,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			flags.Set(t, "app.create_group_per_user", true)
+			flags.Set(t, "app.no_default_user_group", true)
+			udb := env.GetUserDB()
+			ctx := context.Background()
+
+			// Create a test user.
+			createUser(t, ctx, env, "US1", "org1.io")
+			ctx1 := authUserCtx(ctx, env, t, "US1")
+
+			// Get their group, update to correct status.
+			group := getGroup(t, ctx1, env).Group
+			if group.URLIdentifier == "" {
+				group.URLIdentifier = strings.ToLower(group.GroupID + "-slug")
+			}
+			group.Status = tc.parentStatus
+			_, err := udb.UpdateGroup(ctx1, &group)
+			require.NoError(t, err)
+
+			// Attach authenticated user.
+			testUser := testauth.User("US1", group.GroupID)
+			testUser.GroupStatus = tc.parentStatus
+			auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+			auth.UserProvider = func(context.Context, string) (interfaces.UserInfo, error) {
+				return testUser, nil
+			}
+			ctx1, err = auth.WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+
+			newGroupID, err := udb.CreateGroup(ctx1, &tables.Group{
+				Name:          "Child Group",
+				URLIdentifier: tc.urlID,
+				Status:        grpb.Group_UNKNOWN_GROUP_STATUS,
+			})
+			require.NoError(t, err)
+
+			newGroup, err := udb.GetGroupByID(ctx, newGroupID)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedStatus, newGroup.Status,
+				"Group status should be %s when created from parent with status %s",
+				tc.expectedStatus.String(), tc.parentStatus.String())
+		})
+	}
+}
+
 func TestUpdateGroupUsers_RoleAuth(t *testing.T) {
 	// User IDs
 	const (
