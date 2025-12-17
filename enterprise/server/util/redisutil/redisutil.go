@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"net"
 	"net/url"
 	"path/filepath"
 	"runtime"
@@ -16,11 +15,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cespare/xxhash/v2"
 	"github.com/dgryski/go-rendezvous"
@@ -35,11 +32,6 @@ var (
 			"Setting this to 0 will disable buffering at the cost of higher redis QPS.")
 
 	shardConfigReloadInterval = flag.Duration("redis_sharding_config_reload_interval", 1*time.Minute, "How often to re-check the experiment config for redis shard configuration changes.", flag.Internal)
-)
-
-const (
-	// Timeout for each attempt to dial redis.
-	dialTimeout = 5 * time.Second
 )
 
 // ConfigureLogging configures the Redis library to use our logger.
@@ -96,7 +88,6 @@ func TargetToOpts(redisTarget string) *Opts {
 		Password:  libOpts.Password,
 		DB:        libOpts.DB,
 		TLSConfig: libOpts.TLSConfig,
-		Dialer:    getDialer(libOpts.TLSConfig),
 	}
 }
 
@@ -125,40 +116,6 @@ func ShardsToOpts(shards []string, username, password string) *Opts {
 	opt.Username = username
 	opt.Password = password
 	return opt
-}
-
-func getDialer(tlsConfig *tls.Config) func(ctx context.Context, network, addr string) (net.Conn, error) {
-	// Create a dialer which should exactly match go-redis' implementation:
-	// https://github.com/redis/go-redis/blob/cae67723092cac2cb441bc87044ab9edacb2484d/options.go#L128-L142
-	//
-	// TODO: when we upgrade redis, we can switch to redis.NewDialer here.
-	dialer := func(ctx context.Context, network, addr string) (net.Conn, error) {
-		netDialer := &net.Dialer{
-			Timeout:   dialTimeout,
-			KeepAlive: 5 * time.Minute,
-		}
-		if tlsConfig == nil {
-			return netDialer.DialContext(ctx, network, addr)
-		}
-		return tls.DialWithDialer(netDialer, network, addr, tlsConfig)
-	}
-	// Wrap the dialer with retries.
-	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		var lastErr error
-		for r := retry.DefaultWithContext(ctx); r.Next(); {
-			if lastErr != nil {
-				log.CtxInfof(ctx, "Retrying redis dial error: dial %s %s: %s", network, addr, lastErr)
-			}
-			conn, err := dialer(ctx, network, addr)
-			if err != nil {
-				metrics.RedisClientDialErrors.Inc()
-				lastErr = err
-				continue
-			}
-			return conn, nil
-		}
-		return nil, lastErr
-	}
 }
 
 type HealthChecker struct {
@@ -195,7 +152,6 @@ type Opts struct {
 	IdleCheckFrequency time.Duration
 
 	TLSConfig *tls.Config
-	Dialer    func(ctx context.Context, network, addr string) (net.Conn, error)
 
 	// MigrationConfig allows configuring migrations for sharded redis setups.
 	// Use [NewMigrationConfig] to get an instance.
@@ -219,7 +175,6 @@ func (o *Opts) toSimpleOpts() (*redis.Options, error) {
 		IdleTimeout:        o.IdleTimeout,
 		IdleCheckFrequency: o.IdleCheckFrequency,
 		TLSConfig:          o.TLSConfig,
-		Dialer:             o.Dialer,
 	}
 	if len(o.Addrs) > 0 {
 		opts.Addr = o.Addrs[0]
@@ -241,7 +196,6 @@ func (o *Opts) toRingOpts() (*redis.RingOptions, error) {
 		IdleTimeout:        o.IdleTimeout,
 		IdleCheckFrequency: o.IdleCheckFrequency,
 		TLSConfig:          o.TLSConfig,
-		Dialer:             o.Dialer,
 	}
 	for i, addr := range o.Addrs {
 		if !isRedisURI(addr) {
