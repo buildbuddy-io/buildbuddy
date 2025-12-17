@@ -2231,12 +2231,6 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 			attribute.String("digest_hash", r.GetDigest().GetHash()),
 			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
 	}
-	db, err := p.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
 	// If data is not already compressed, return a writer that will compress it before writing
 	// Only compress data over a given size for more optimal compression ratios
 	shouldCompress := r.GetCompressor() == repb.Compressor_IDENTITY && r.GetDigest().GetSizeBytes() >= p.minBytesAutoZstdCompression
