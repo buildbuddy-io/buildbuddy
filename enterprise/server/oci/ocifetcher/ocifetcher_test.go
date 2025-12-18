@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1007,4 +1008,62 @@ func TestServerBypassRegistry(t *testing.T) {
 		// Verify NO registry requests were made (can't resolve tag without registry)
 		assertRequests(t, counter, map[string]int{})
 	})
+}
+
+// TestConcurrentFetchBlob verifies that concurrent blob fetch requests
+// each independently hit the registry (no request coalescing/singleflight).
+// TODO(dan): this test exists to fail once I introduce singleflighting.
+func TestConcurrentFetchBlob(t *testing.T) {
+	reg, counter := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	// Create server with caching enabled
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	const numConcurrent = 10
+	var wg sync.WaitGroup
+	results := make([][]byte, numConcurrent)
+	errors := make([]error, numConcurrent)
+
+	counter.Reset()
+
+	// Launch concurrent requests with a start barrier to ensure simultaneous execution
+	startCh := make(chan struct{})
+	for i := 0; i < numConcurrent; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			<-startCh // Wait for start signal
+			stream := &mockFetchBlobServer{ctx: context.Background()}
+			errors[idx] = server.FetchBlob(&ofpb.FetchBlobRequest{
+				Ref: imageName + "@" + digest.String(),
+			}, stream)
+			results[idx] = stream.collectData()
+		}(i)
+	}
+	close(startCh) // Release all goroutines simultaneously
+
+	wg.Wait()
+
+	// Verify all requests succeeded with correct data
+	for i := 0; i < numConcurrent; i++ {
+		require.NoError(t, errors[i], "request %d failed", i)
+		require.Equal(t, expectedData, results[i], "request %d data mismatch", i)
+	}
+
+	// Verify each concurrent request independently hits the registry.
+	// There is no singleflight deduplication - this is intentional.
+	blobRequests := counter.Snapshot()[http.MethodGet+" /v2/test-image/blobs/"+digest.String()]
+	require.Equal(t, numConcurrent, blobRequests,
+		"expected %d GET requests to registry, got %d", numConcurrent, blobRequests)
 }
