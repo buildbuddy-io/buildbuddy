@@ -2876,27 +2876,26 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 		metrics.Stage: "balloon_memory_reclaim",
 	}).Dec()
 
-	// Drop the page cache to free up more memory for the balloon.
-	// The balloon will only allocate free memory.
 	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return status.InternalErrorf("failed to dial VM exec port: %s", err)
 	}
 	// TODO(Maggie): Don't depend on sh existing within the container image
 	client := vmxpb.NewExecClient(conn)
+	// Read available memory in the guest to determine the target balloon size.
+	// /proc/meminfo reports amounts in KiB, and we're converting to MiB.
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", "echo 3 > /proc/sys/vm/drop_caches"},
+		Arguments: []string{"sh", "-c", "awk '/MemAvailable/ {print $2 / 1024}' /proc/meminfo"},
 	}
 	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{})
 	if res.Error != nil {
 		return res.Error
 	}
 
-	stats, err := c.machine.GetBalloonStats(ctx)
+	availableMemMB, err := strconv.ParseFloat(strings.TrimSpace(string(res.Stdout)), 32)
 	if err != nil {
-		return err
+		return status.WrapErrorf(err, "failed to parse available memory %s", string(res.Stdout))
 	}
-	availableMemMB := stats.AvailableMemory / 1e6
 	balloonTargetMB := int64(float64(availableMemMB) * .8)
 	if _, err := c.updateBalloon(ctx, balloonTargetMB); err != nil {
 		return status.WrapError(err, "inflate balloon")
