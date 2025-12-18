@@ -187,7 +187,12 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		password:  password,
 	}
 
-	result, shared, err := s.blobFetchGroup.Do(ctx, key, func(sfCtx context.Context) (*blobFetchResult, error) {
+	// Track whether we executed the callback (i.e., we were the first caller).
+	// We can't rely on the `shared` return value because it's true for BOTH
+	// the first caller and waiters when waiters join.
+	var executedCallback bool
+	result, _, err := s.blobFetchGroup.Do(ctx, key, func(sfCtx context.Context) (*blobFetchResult, error) {
+		executedCallback = true
 		// We are the first caller - fetch from remote and stream to our client
 		// while simultaneously caching the blob.
 		return s.fetchAndCacheBlobWithStream(sfCtx, stream, blobRef, repo, hash, req.GetCredentials())
@@ -197,7 +202,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return err
 	}
 
-	if shared {
+	if !executedCallback {
 		// We were a waiter - the blob is now cached, stream from cache.
 		return s.fetchBlobFromCache(ctx, stream, result.repo, result.hash)
 	}

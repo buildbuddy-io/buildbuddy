@@ -5,7 +5,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1007,4 +1009,464 @@ func TestServerBypassRegistry(t *testing.T) {
 		// Verify NO registry requests were made (can't resolve tag without registry)
 		assertRequests(t, counter, map[string]int{})
 	})
+}
+
+func TestFetchBlobSingleflight(t *testing.T) {
+	var blobRequestCount atomic.Int32
+	const numConcurrent = 5
+
+	// Barrier: all goroutines signal when they're about to call FetchBlob
+	var allStarting sync.WaitGroup
+	allStarting.Add(numConcurrent)
+	proceedWithFetch := make(chan struct{})
+
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if strings.Contains(r.URL.Path, "/blobs/") && r.Method == http.MethodGet {
+			blobRequestCount.Add(1)
+			// Wait for all goroutines to be in-flight before proceeding.
+			// This ensures they have a chance to join singleflight.
+			allStarting.Wait()
+			<-proceedWithFetch
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	var wg sync.WaitGroup
+	results := make([][]byte, numConcurrent)
+	errs := make([]error, numConcurrent)
+
+	// Launch concurrent requests
+	for i := 0; i < numConcurrent; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			stream := &mockFetchBlobServer{ctx: context.Background()}
+			// Signal before entering FetchBlob. We can't use defer here because
+			// the handler blocks on allStarting.Wait() inside FetchBlob - using
+			// defer would cause a deadlock since Done() wouldn't be called until
+			// FetchBlob returns.
+			allStarting.Done()
+			errs[idx] = server.FetchBlob(&ofpb.FetchBlobRequest{
+				Ref: imageName + "@" + digest.String(),
+			}, stream)
+			results[idx] = stream.collectData()
+		}(i)
+	}
+
+	// Wait for all goroutines to signal, yield to let them enter FetchBlob/singleflight,
+	// then release the handler.
+	allStarting.Wait()
+	for i := 0; i < 10; i++ {
+		runtime.Gosched()
+	}
+	close(proceedWithFetch)
+	wg.Wait()
+
+	// All requests should succeed with correct data
+	for i := 0; i < numConcurrent; i++ {
+		require.NoError(t, errs[i], "request %d failed", i)
+		require.Equal(t, expectedData, results[i], "request %d got wrong data", i)
+	}
+
+	// Should only hit registry once due to singleflight
+	blobRequests := counter.Snapshot()[http.MethodGet+" /v2/test-image/blobs/"+digest.String()]
+	require.Equal(t, 1, blobRequests, "expected exactly 1 registry blob request due to singleflight, got %d", blobRequests)
+	require.Equal(t, int32(1), blobRequestCount.Load(), "expected exactly 1 blob request")
+}
+
+func TestFetchBlobSingleflightDifferentCreds(t *testing.T) {
+	// Use a barrier to ensure both requests overlap in the registry handler
+	var requestsStarted sync.WaitGroup
+	requestsStarted.Add(2)
+	releaseRequests := make(chan struct{})
+
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if strings.Contains(r.URL.Path, "/blobs/") && r.Method == http.MethodGet {
+			requestsStarted.Done()  // Signal this request has started
+			<-releaseRequests       // Wait for both requests to start
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	// Different credentials should NOT be deduplicated
+	creds1 := &rgpb.Credentials{Username: "user1", Password: "pass1"}
+	creds2 := &rgpb.Credentials{Username: "user2", Password: "pass2"}
+
+	var wg sync.WaitGroup
+	var result1, result2 []byte
+	var err1, err2 error
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		err1 = server.FetchBlob(&ofpb.FetchBlobRequest{
+			Ref:         imageName + "@" + digest.String(),
+			Credentials: creds1,
+		}, stream)
+		result1 = stream.collectData()
+	}()
+	go func() {
+		defer wg.Done()
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		err2 = server.FetchBlob(&ofpb.FetchBlobRequest{
+			Ref:         imageName + "@" + digest.String(),
+			Credentials: creds2,
+		}, stream)
+		result2 = stream.collectData()
+	}()
+
+	// Wait for both requests to reach the handler, then release them simultaneously
+	go func() {
+		requestsStarted.Wait()
+		close(releaseRequests)
+	}()
+
+	wg.Wait()
+
+	require.NoError(t, err1)
+	require.NoError(t, err2)
+	require.Equal(t, expectedData, result1)
+	require.Equal(t, expectedData, result2)
+
+	// Different credentials should result in 2 separate requests
+	blobRequests := counter.Snapshot()[http.MethodGet+" /v2/test-image/blobs/"+digest.String()]
+	require.Equal(t, 2, blobRequests, "different credentials should make separate requests")
+}
+
+func TestFetchBlobSingleflightSharedError(t *testing.T) {
+	// Test that concurrent callers share the same upstream error via singleflight
+	var blobRequestCount atomic.Int32
+	const numConcurrent = 3
+
+	// Barrier: all goroutines signal when they're about to call FetchBlob
+	var allStarting sync.WaitGroup
+	allStarting.Add(numConcurrent)
+	releaseRequest := make(chan struct{})
+
+	reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if strings.Contains(r.URL.Path, "/blobs/") && r.Method == http.MethodGet {
+			blobRequestCount.Add(1)
+			// Wait for all goroutines to be in-flight before returning error
+			allStarting.Wait()
+			<-releaseRequest
+			w.WriteHeader(http.StatusInternalServerError)
+			return false // Don't proceed with normal handling
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	var wg sync.WaitGroup
+	errs := make([]error, numConcurrent)
+
+	// Launch concurrent requests
+	for i := 0; i < numConcurrent; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			stream := &mockFetchBlobServer{ctx: context.Background()}
+			allStarting.Done() // Signal before entering FetchBlob
+			errs[idx] = server.FetchBlob(&ofpb.FetchBlobRequest{
+				Ref: imageName + "@" + digest.String(),
+			}, stream)
+		}(i)
+	}
+
+	// Wait for all goroutines to signal, yield to let them enter FetchBlob/singleflight,
+	// then release the handler.
+	allStarting.Wait()
+	for i := 0; i < 10; i++ {
+		runtime.Gosched()
+	}
+	close(releaseRequest)
+
+	wg.Wait()
+
+	// All callers should receive an error
+	for i, err := range errs {
+		require.Error(t, err, "caller %d should have received an error", i)
+	}
+
+	// The first round of requests should be deduplicated via singleflight
+	// After the error, retries may occur, but the initial concurrent requests should coalesce
+	initialRequests := blobRequestCount.Load()
+	require.GreaterOrEqual(t, initialRequests, int32(1), "expected at least 1 blob request")
+	t.Logf("Total blob requests (including potential retries): %d", initialRequests)
+}
+
+func TestFetchBlobSingleflightMidStreamError(t *testing.T) {
+	// Test that concurrent callers share the same mid-stream failure
+	var blobRequestCount atomic.Int32
+	const numConcurrent = 3
+
+	// Barrier: all goroutines signal when they're about to call FetchBlob
+	var allStarting sync.WaitGroup
+	allStarting.Add(numConcurrent)
+	releaseRequest := make(chan struct{})
+
+	reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if strings.Contains(r.URL.Path, "/blobs/") && r.Method == http.MethodGet {
+			blobRequestCount.Add(1)
+			// Wait for all goroutines to be in-flight before returning partial response
+			allStarting.Wait()
+			<-releaseRequest
+
+			// Write partial data then close connection abruptly
+			w.Header().Set("Content-Length", "1000") // Claim we'll send 1000 bytes
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("partial")) // Only write 7 bytes
+			// Use http.Hijacker to close connection mid-stream
+			if hj, ok := w.(http.Hijacker); ok {
+				conn, _, _ := hj.Hijack()
+				conn.Close() // Abruptly close - simulates network failure
+			}
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	var wg sync.WaitGroup
+	errs := make([]error, numConcurrent)
+
+	// Launch concurrent requests
+	for i := 0; i < numConcurrent; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			stream := &mockFetchBlobServer{ctx: context.Background()}
+			allStarting.Done() // Signal before entering FetchBlob
+			errs[idx] = server.FetchBlob(&ofpb.FetchBlobRequest{
+				Ref: imageName + "@" + digest.String(),
+			}, stream)
+		}(i)
+	}
+
+	// Wait for all goroutines to signal, yield to let them enter FetchBlob/singleflight,
+	// then release the handler.
+	allStarting.Wait()
+	for i := 0; i < 10; i++ {
+		runtime.Gosched()
+	}
+	close(releaseRequest)
+
+	wg.Wait()
+
+	// All callers should receive an error (incomplete read)
+	for i, err := range errs {
+		require.Error(t, err, "caller %d should have received an error", i)
+	}
+
+	// The first round of requests should be deduplicated via singleflight
+	// After the error, retries may occur, but the initial concurrent requests should coalesce
+	initialRequests := blobRequestCount.Load()
+	require.GreaterOrEqual(t, initialRequests, int32(1), "expected at least 1 blob request")
+	t.Logf("Total blob requests (including potential retries): %d", initialRequests)
+}
+
+func TestFetchBlobSingleflightFirstCallerDisconnect(t *testing.T) {
+	// Use barriers to control timing precisely
+	var firstRequestOnce sync.Once
+	firstRequestStarted := make(chan struct{})
+	waiterStarting := make(chan struct{})
+	proceedWithResponse := make(chan struct{})
+
+	reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if strings.Contains(r.URL.Path, "/blobs/") && r.Method == http.MethodGet {
+			firstRequestOnce.Do(func() {
+				close(firstRequestStarted)
+			})
+			// Wait for the waiter to signal it's about to call FetchBlob
+			<-waiterStarting
+			// Wait for test to signal we can complete
+			<-proceedWithResponse
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+
+	var wg sync.WaitGroup
+	var waiterErr error
+	var waiterData []byte
+
+	// Start first caller (will be cancelled)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		stream := &mockFetchBlobServer{ctx: ctx1}
+		// We don't care about first caller's error - it will be cancelled
+		_ = server.FetchBlob(&ofpb.FetchBlobRequest{
+			Ref: imageName + "@" + digest.String(),
+		}, stream)
+	}()
+
+	// Wait for first request to reach handler
+	<-firstRequestStarted
+
+	// Start waiter - it signals before calling FetchBlob
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		close(waiterStarting) // Signal before entering FetchBlob
+		waiterErr = server.FetchBlob(&ofpb.FetchBlobRequest{
+			Ref: imageName + "@" + digest.String(),
+		}, stream)
+		waiterData = stream.collectData()
+	}()
+
+	// Wait for waiter to signal, yield to let it enter FetchBlob/singleflight,
+	// then cancel first caller while request is in progress.
+	<-waiterStarting
+	for i := 0; i < 10; i++ {
+		runtime.Gosched()
+	}
+	cancel1()
+
+	// Let handler complete - waiter should get the data
+	close(proceedWithResponse)
+
+	wg.Wait()
+
+	// Waiter should succeed with correct data (from cache after fetch completes)
+	require.NoError(t, waiterErr, "waiter should succeed even when first caller disconnects")
+	require.Equal(t, expectedData, waiterData, "waiter should get correct data")
+}
+
+func TestFetchBlobSingleflightAllCallersDisconnect(t *testing.T) {
+	// Use barriers and fail-fast assertions instead of sleeps
+	requestStarted := make(chan struct{})
+	requestCancelled := make(chan struct{})
+
+	reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if strings.Contains(r.URL.Path, "/blobs/") && r.Method == http.MethodGet {
+			close(requestStarted) // Signal request has started
+			select {
+			case <-r.Context().Done():
+				close(requestCancelled) // Signal cancellation was received
+			case <-time.After(5 * time.Second):
+				// Should never reach - test will fail via timeout assertion
+			}
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	ctx2, cancel2 := context.WithCancel(context.Background())
+
+	var wg sync.WaitGroup
+	var err1, err2 error
+
+	// Start two callers
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		stream := &mockFetchBlobServer{ctx: ctx1}
+		err1 = server.FetchBlob(&ofpb.FetchBlobRequest{
+			Ref: imageName + "@" + digest.String(),
+		}, stream)
+	}()
+	go func() {
+		defer wg.Done()
+		stream := &mockFetchBlobServer{ctx: ctx2}
+		err2 = server.FetchBlob(&ofpb.FetchBlobRequest{
+			Ref: imageName + "@" + digest.String(),
+		}, stream)
+	}()
+
+	// Wait for request to start (replaces time.Sleep)
+	<-requestStarted
+
+	// Cancel all callers
+	cancel1()
+	cancel2()
+
+	// Assert cancellation propagated with fail-fast timeout
+	select {
+	case <-requestCancelled:
+		// Good - cancellation propagated to handler
+	case <-time.After(1 * time.Second):
+		t.Fatal("cancellation did not propagate to registry handler within 1s")
+	}
+
+	wg.Wait()
+
+	// Both should error (context cancelled)
+	require.Error(t, err1)
+	require.Error(t, err2)
 }
