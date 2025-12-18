@@ -27,6 +27,7 @@ go_test(
         "//proto:auth_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testgrpc",
+        "//server/testutil/testkeys",
         "//server/util/authutil",
         "//server/util/status",
         "//server/util/testing/flags",

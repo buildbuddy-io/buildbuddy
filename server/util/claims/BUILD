@@ -36,6 +36,7 @@ go_test(
         "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/testutil/testkeys",
         "//server/util/authutil",
         "//server/util/capabilities",
         "//server/util/request_context",

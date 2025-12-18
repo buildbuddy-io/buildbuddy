@@ -2,14 +2,11 @@ package auth_service
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -20,33 +17,6 @@ import (
 
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 )
-
-type rsaKeyPair struct {
-	privateKeyPEM string
-	publicKeyPEM  string
-}
-
-func generateRSAKeyPair(t *testing.T) *rsaKeyPair {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
-
-	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
-	})
-
-	publicKeyBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
-	require.NoError(t, err)
-	publicKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: publicKeyBytes,
-	})
-
-	return &rsaKeyPair{
-		privateKeyPEM: string(privateKeyPEM),
-		publicKeyPEM:  string(publicKeyPEM),
-	}
-}
 
 func contextWithApiKey(t *testing.T, key string) context.Context {
 	ctx := metadata.AppendToOutgoingContext(t.Context(), authutil.APIKeyHeader, key)
@@ -84,9 +54,9 @@ func TestAuthenticate_HS256SigningMethod(t *testing.T) {
 }
 
 func TestAuthenticate_RS256SigningMethod(t *testing.T) {
-	keyPair := generateRSAKeyPair(t)
-	flags.Set(t, "auth.jwt_rsa_private_key", keyPair.privateKeyPEM)
-	flags.Set(t, "auth.jwt_rsa_public_key", keyPair.publicKeyPEM)
+	keyPair := testkeys.GenerateRSAKeyPair(t)
+	flags.Set(t, "auth.jwt_rsa_private_key", keyPair.PrivateKeyPEM)
+	flags.Set(t, "auth.jwt_rsa_public_key", keyPair.PublicKeyPEM)
 
 	service := AuthService{authenticator: testauth.NewTestAuthenticator(testauth.TestUsers("foo", "bar"))}
 
