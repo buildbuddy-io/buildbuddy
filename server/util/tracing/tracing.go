@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -47,11 +46,11 @@ var (
 	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
 	traceFractionOverrides    = flag.Slice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
 	ignoreForcedTracingHeader = flag.Bool("app.ignore_forced_tracing_header", false, "If set, we will not honor the forced tracing header.")
-
-	// bound overrides are parsed from the traceFractionOverrides flag.
-	initOverrideFractions sync.Once
-	overrideFractions     map[string]float64
 )
+
+// Re-initialized in Configure. Set here so tests that don't call Configure
+// still work.
+var tracer = otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
 
 const (
 	resourceDetectionTimeout      = 5 * time.Second
@@ -128,9 +127,36 @@ func (s *fractionSampler) Description() string {
 	return s.description
 }
 
+// noopExporter is a span exporter that does nothing, used for testing/benchmarking.
+type noopExporter struct{}
+
+func (e *noopExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+	return nil
+}
+
+func (e *noopExporter) Shutdown(ctx context.Context) error {
+	return nil
+}
+
 func Configure(env environment.Env) error {
 	if *traceFraction <= 0 {
 		return nil
+	}
+
+	// Check early that exactly one collector is configured
+	numCollectorsSet := 0
+	if *traceJaegerCollector != "" {
+		numCollectorsSet++
+	}
+	if *traceOTLPCollector != "" {
+		numCollectorsSet++
+	}
+	if *traceOTLPHTTPCollector != "" {
+		numCollectorsSet++
+	}
+
+	if numCollectorsSet > 1 {
+		return status.InvalidArgumentErrorf("only one trace collector ('app.trace_*_collector') can be configured at a time.")
 	}
 
 	var traceExporter sdktrace.SpanExporter
@@ -142,21 +168,13 @@ func Configure(env environment.Env) error {
 			log.Warningf("Could not initialize Jaeger exporter: %s", err)
 			return nil
 		}
-	}
-	if *traceOTLPCollector != "" {
-		if traceExporter != nil {
-			return status.InvalidArgumentErrorf("only one trace collector ('app.trace_*_collector') can be configured at a time.")
-		}
+	} else if *traceOTLPCollector != "" {
 		traceExporter, err = otlptracegrpc.New(env.GetServerContext(), otlptracegrpc.WithEndpoint(*traceOTLPCollector), otlptracegrpc.WithInsecure())
 		if err != nil {
 			log.Warningf("Could not initialize OTEL exporter: %s", err)
 			return nil
 		}
-	}
-	if *traceOTLPHTTPCollector != "" {
-		if traceExporter != nil {
-			return status.InvalidArgumentErrorf("only one trace collector ('app.trace_*_collector') can be configured at a time.")
-		}
+	} else if *traceOTLPHTTPCollector != "" {
 		opts, err := parseHTTPOptions(*traceOTLPHTTPCollector)
 		if err != nil {
 			return status.InvalidArgumentErrorf("parse OTEL HTTP collector endpoint: %s", err)
@@ -171,6 +189,21 @@ func Configure(env environment.Env) error {
 	if traceExporter == nil {
 		return status.InvalidArgumentErrorf("no trace collector ('app.trace_{jaeger,otlp_grpc,otlp_http}_collector') configured")
 	}
+
+	return setupTracingWithExporter(env, traceExporter)
+}
+
+// ConfigureWithNoopExporter configures tracing with a no-op exporter for testing/benchmarking.
+func ConfigureWithNoopExporter(env environment.Env) error {
+	if *traceFraction <= 0 {
+		return nil
+	}
+
+	return setupTracingWithExporter(env, &noopExporter{})
+}
+
+// setupTracingWithExporter sets up the tracing infrastructure with the provided exporter.
+func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanExporter) error {
 
 	fractionOverrides := make(map[string]float64)
 	for _, override := range *traceFractionOverrides {
@@ -221,6 +254,7 @@ func Configure(env environment.Env) error {
 	propagator := propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{})
 	otel.SetTextMapPropagator(propagator)
 	log.Infof("Tracing enabled with sampler: %s", sampler.Description())
+	tracer = otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
 	return nil
 }
 
@@ -342,7 +376,7 @@ func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // StartSpan starts a new span named after the calling function.
 func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	ctx, span := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, "unknown_go_function", opts...)
+	ctx, span := tracer.Start(ctx, "unknown_go_function", opts...)
 	if !span.IsRecording() {
 		return ctx, span
 	}
@@ -359,7 +393,7 @@ func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Cont
 // StartNamedSpan is like StartSpan, expect the caller specifies the name
 // instead of using the call stack.
 func StartNamedSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	return otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, name, opts...)
+	return tracer.Start(ctx, name, opts...)
 }
 
 func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {

@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "tracing",
@@ -25,5 +25,17 @@ go_library(
         "@io_opentelemetry_go_otel_sdk//trace",
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//metadata",
+    ],
+)
+
+go_test(
+    name = "tracing_test",
+    srcs = ["tracing_test.go"],
+    deps = [
+        ":tracing",
+        "//server/testutil/testenv",
+        "//server/util/log",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
     ],
 )
