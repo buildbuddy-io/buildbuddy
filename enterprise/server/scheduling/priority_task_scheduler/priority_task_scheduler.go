@@ -322,6 +322,22 @@ func (t *taskQueue) HasTask(taskID string) bool {
 	return ok
 }
 
+// findTask returns the position of the task with the given ID, or nil if not found.
+func (t *taskQueue) FindTask(taskID string) *queuePosition {
+	// Do a quick map lookup to avoid more expensive iteration if we know the
+	// task doesn't exist.
+	if !t.HasTask(taskID) {
+		return nil
+	}
+	it := t.Iterator()
+	for task := it.Next(); task != nil; task = it.Next() {
+		if task.GetTaskId() == taskID {
+			return it.Current()
+		}
+	}
+	return nil
+}
+
 type Options struct {
 	RAMBytesCapacityOverride  int64
 	CPUMillisCapacityOverride int64
@@ -531,6 +547,31 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 		enqueueFn()
 	}
 	return &scpb.EnqueueTaskReservationResponse{}, nil
+}
+
+func (q *PriorityTaskScheduler) remove(taskID string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if p := q.q.FindTask(taskID); p != nil {
+		q.q.DequeueAt(p)
+		return true
+	}
+	return false
+
+}
+
+func (q *PriorityTaskScheduler) CancelTaskReservation(ctx context.Context, taskID string) {
+	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
+	if removed := q.remove(taskID); removed {
+		log.CtxInfof(ctx, "Removed completed task from queue")
+		// If the task we removed was at the head of the queue, the task behind
+		// it in the queue might now be schedulable. Wake up the scheduler to
+		// check for that.
+		select {
+		case q.checkQueueSignal <- struct{}{}:
+		default:
+		}
+	}
 }
 
 func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.ExecutionTask) context.Context {

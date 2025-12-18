@@ -2,6 +2,8 @@ package priority_task_scheduler
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -402,6 +404,50 @@ func TestLocalEnqueueTimestamp(t *testing.T) {
 
 	// Make sure the local enqueue timestamp looks correct.
 	require.Equal(t, startTime, task.ScheduledTask.GetWorkerQueuedTimestamp().AsTime())
+}
+
+func TestRemoveTaskFromQueue(t *testing.T) {
+	// Try a few runs where we enqueue several tasks, cancel a few tasks, then
+	// after dequeueing the remaining tasks, we should only dequeue the tasks
+	// that were not cancelled.
+	for range 10 {
+		q := newTaskQueue(clockwork.NewRealClock())
+
+		// Enqueue a bunch of tasks, with various group IDs to make sure we're
+		// also exercising the per-group queueing logic.
+		const numTasks = 32
+		var taskIDs []string
+		for taskIDInt := range numTasks {
+			taskID := fakeTaskID(fmt.Sprintf("%d", taskIDInt))
+			taskIDs = append(taskIDs, taskID)
+			groupIDInt := rand.Intn(3)
+			q.Enqueue(&scpb.EnqueueTaskReservationRequest{
+				TaskId: taskID,
+				SchedulingMetadata: &scpb.SchedulingMetadata{
+					TaskGroupId: fmt.Sprintf("GR%d", groupIDInt),
+				},
+			})
+		}
+
+		// Pick a few random tasks to cancel, and remove them from the list of
+		// expected task IDs.
+		for range 3 {
+			i := rand.Intn(len(taskIDs))
+			canceledTaskID := taskIDs[i]
+			taskIDs = append(taskIDs[:i], taskIDs[i+1:]...)
+			q.DequeueAt(q.FindTask(canceledTaskID))
+		}
+
+		// Dequeue the remaining tasks and make sure they are the ones that were
+		// not cancelled.
+		var dequeuedTaskIDs []string
+		for range taskIDs {
+			task := q.Dequeue()
+			dequeuedTaskIDs = append(dequeuedTaskIDs, task.GetTaskId())
+		}
+		require.Nil(t, q.Dequeue())
+		require.ElementsMatch(t, taskIDs, dequeuedTaskIDs)
+	}
 }
 
 func fakeTaskID(label string) string {

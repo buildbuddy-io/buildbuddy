@@ -2403,6 +2403,65 @@ func TestContainerRegistryBypass(t *testing.T) {
 	require.True(t, status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err), "expected auth error, got %+#v (%q)", err, err)
 }
 
+func TestProactiveCancellation(t *testing.T) {
+	// Enable proactive cancellation on both the scheduler and executors.
+	flags.Set(t, "remote_execution.proactive_cancellation_enabled", true)
+	flags.Set(t, "executor.proactive_cancellation_enabled", true)
+	// Disable work stealing and queue pruning to make scheduling more
+	// predictable and make sure we're testing the right thing.
+	flags.Set(t, "executor.excess_capacity_threshold", -1)
+	flags.Set(t, "executor.queue_trim_interval", 0)
+
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+
+	// Add 2 single-task executors so each can only run one task at a time.
+	executor1 := rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: "executor1"})
+	executor2 := rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: "executor2"})
+
+	totalQueueLen := func() int {
+		return executor1.QueueLength() + executor2.QueueLength()
+	}
+
+	// Schedule command1 to occupy one executor.
+	cmd1 := rbe.ExecuteControlledCommand("command1", &rbetest.ExecuteControlledOpts{})
+	cmd1.WaitStarted()
+
+	// The other executor should try the lease and fail, then eventually there
+	// should be no tasks in either queue.
+	require.Eventually(t, func() bool {
+		return totalQueueLen() == 0
+	}, time.Minute, 10*time.Millisecond)
+
+	// Now schedule command2. Since one executor is busy, command2 should:
+	// - Get queued on the busy executor (waiting for resources)
+	// - Start running on the other executor
+	cmd2 := rbe.ExecuteControlledCommand("command2", &rbetest.ExecuteControlledOpts{})
+	cmd2.WaitStarted()
+
+	// Wait for the task reservation to be queued on the busy executor.
+	require.Eventually(t, func() bool {
+		return totalQueueLen() == 1
+	}, time.Minute, 10*time.Millisecond)
+
+	// Now complete command2. This should trigger proactive cancellation of
+	// the task reservation on the other executor.
+	cmd2.Exit(0)
+	res2 := cmd2.Wait()
+	assert.Equal(t, 0, res2.ExitCode)
+
+	// Wait for the cancellation to propagate - total queue length should become
+	// 0.
+	require.Eventually(t, func() bool {
+		return totalQueueLen() == 0
+	}, time.Minute, 10*time.Millisecond)
+
+	// Clean up: exit command1.
+	cmd1.Exit(0)
+	res1 := cmd1.Wait()
+	assert.Equal(t, 0, res1.ExitCode)
+}
+
 type customResourcesTest struct {
 	Name             string
 	MeasuredTaskSize *scpb.TaskSize
