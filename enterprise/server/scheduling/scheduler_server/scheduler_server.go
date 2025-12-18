@@ -60,6 +60,7 @@ var (
 	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown).")
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
+	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", false, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
 )
 
 const (
@@ -487,6 +488,17 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 		<-timeout.C
 	}
 
+	// Track this executor in Redis if proactive cancellation is enabled and
+	// the executor supports it.
+	if *proactiveCancellationEnabled {
+		registration := h.getRegistration()
+		if registration.GetSupportsProactiveCancellation() {
+			if err := h.scheduler.recordProbeForProactiveCancellation(ctx, req.GetTaskId(), registration.GetExecutorId()); err != nil {
+				log.CtxWarningf(ctx, "Failed to record task probe for proactive cancellation: %s", err)
+			}
+		}
+	}
+
 	if !waitForResponse {
 		return nil
 	}
@@ -557,6 +569,28 @@ func (h *executorHandle) setMoreWorkDelay(d time.Duration) {
 		},
 	}
 	h.requests <- enqueueTaskReservationRequest{proto: msg}
+}
+
+// sendProactiveCancellation sends a cancellation request for the given task ID
+// to the executor. This is a best-effort operation - errors are not returned.
+func (h *executorHandle) sendProactiveCancellation(ctx context.Context, taskID string) {
+	if !h.getRegistration().GetSupportsProactiveCancellation() {
+		// This should never happen since we only add executors to the list of
+		// sent probes if they claimed to support proactive cancellation when
+		// they registered, but it doesn't hurt to double-check.
+		return
+	}
+	msg := &scpb.RegisterAndStreamWorkResponse{
+		CancelTaskReservationRequest: &scpb.CancelTaskReservationRequest{
+			TaskId: taskID,
+		},
+	}
+	select {
+	case h.requests <- enqueueTaskReservationRequest{proto: msg}:
+	default:
+		// Channel full, skip sending cancellation.
+		log.CtxWarningf(ctx, "Failed to send proactive cancellation to executor %s: channel full", h.getRegistration().GetExecutorId())
+	}
 }
 
 func (h *executorHandle) startTaskReservationStreamer() {
@@ -1429,6 +1463,68 @@ func (s *SchedulerServer) redisKeyForTask(taskID string) string {
 	}
 }
 
+func (s *SchedulerServer) redisKeyForTaskReservations(taskID string) string {
+	if s.enableRedisAvailabilityMonitoring {
+		return fmt.Sprintf("taskReservations/{%s}", taskID)
+	} else {
+		return fmt.Sprintf("taskReservations/%s", taskID)
+	}
+}
+
+// recordProbeForProactiveCancellation adds an executor ID to the set of
+// executors that have received a task reservation request for the given task.
+// This allows us to later request proactive cancellation when the task
+// completes, which results in more accurate queue length metrics (for better
+// autoscaling) and also improves throughput by removing large, blocking tasks
+// at the head of the queue sooner, preventing them from blocking other tasks.
+func (s *SchedulerServer) recordProbeForProactiveCancellation(ctx context.Context, taskID, executorID string) error {
+	key := s.redisKeyForTaskReservations(taskID)
+	pipe := s.rdb.TxPipeline()
+	pipe.SAdd(ctx, key, executorID)
+	pipe.Expire(ctx, key, taskTTL)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// sendCancellationRequests sends CancelTaskReservationRequest to all
+// executors that have received a task reservation for the given task, then
+// deletes the Redis tracking set.
+func (s *SchedulerServer) sendCancellationRequests(ctx context.Context, taskID string) error {
+	key := s.redisKeyForTaskReservations(taskID)
+	executorIDs, err := s.rdb.SMembers(ctx, key).Result()
+	if err != nil && err != redis.Nil {
+		return err
+	}
+	if len(executorIDs) == 0 {
+		return nil
+	}
+
+	// Find all connected executors across all pools.
+	s.mu.RLock()
+	pools := make([]*nodePool, 0, len(s.pools))
+	for _, pool := range s.pools {
+		pools = append(pools, pool)
+	}
+	s.mu.RUnlock()
+
+	// Send cancellation requests to matching executors.
+	for _, executorID := range executorIDs {
+		for _, pool := range pools {
+			if node := pool.FindConnectedExecutorByID(executorID); node != nil && node.handle != nil {
+				node.handle.sendProactiveCancellation(ctx, taskID)
+				break // Found the executor, no need to check other pools.
+			}
+		}
+	}
+
+	// Clean up the Redis set.
+	if err := s.rdb.Del(ctx, key).Err(); err != nil {
+		log.CtxWarningf(ctx, "Failed to clean up task reservations set: %s", err)
+	}
+
+	return nil
+}
+
 func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadata *scpb.SchedulingMetadata, serializedTask []byte) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -1478,6 +1574,13 @@ func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) 
 	}
 
 	action_merger.DeletePendingExecution(ctx, s.rdb, taskID)
+
+	// Send cancellation requests to executors that have the task queued.
+	if *proactiveCancellationEnabled {
+		if err := s.sendCancellationRequests(ctx, taskID); err != nil {
+			log.CtxWarningf(ctx, "Failed to cancel task reservations for task %q: %s", taskID, err)
+		}
+	}
 
 	return nil
 }

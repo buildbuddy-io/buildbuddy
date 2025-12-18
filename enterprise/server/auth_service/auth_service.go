@@ -22,6 +22,11 @@ func Register(env *real_environment.RealEnv) {
 }
 
 func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error) {
+	if req.GetJwtSigningMethod() != authpb.JWTSigningMethod_UNKNOWN &&
+		req.GetJwtSigningMethod() != authpb.JWTSigningMethod_HS256 {
+		return nil, status.InvalidArgumentError("Signing method not supported")
+	}
+
 	// Override the subdomain with the one for which auth is requested
 	ctx = subdomain.Context(ctx, req.GetSubdomain())
 	ctx = a.authenticator.AuthenticatedGRPCContext(ctx)

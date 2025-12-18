@@ -15,6 +15,33 @@ let form = {
 };
 
 function Contact() {
+  const [errors, setErrors] = React.useState<{ email?: string; message?: string }>({});
+
+  const handleSendMessage = () => {
+    const newErrors: { email?: string; message?: string } = {};
+
+    const emailValue = form.email.current?.value?.trim() || "";
+    const messageValue = form.message.current?.value?.trim() || "";
+
+    if (!emailValue) {
+      newErrors.email = "Email is required";
+    } else if (!emailValue.includes("@")) {
+      newErrors.email = "Please enter a valid email address";
+    }
+
+    if (!messageValue) {
+      newErrors.message = "Message is required";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+
+    setErrors({});
+    sendMessage();
+  };
+
   return (
     <Layout title="Contact Us">
       <div className={common.page}>
@@ -50,14 +77,28 @@ function Contact() {
           </div>
           <div className={common.container}>
             <div className={styles.form}>
+              {(errors.email || errors.message) && (
+                <div className={`${styles.errorSummary} ${styles.span2}`}>
+                  {errors.email && <div>{errors.email}</div>}
+                  {errors.message && <div>{errors.message}</div>}
+                </div>
+              )}
               <input ref={form.company} placeholder="Company" />
-              <input ref={form.email} placeholder="Work email address" />
+              <input
+                ref={form.email}
+                placeholder="Work email address"
+                className={errors.email ? styles.inputError : ""}
+              />
               <input ref={form.firstName} placeholder="First name" />
               <input ref={form.lastName} placeholder="Last name" />
-              <textarea ref={form.message} placeholder="Your message" className={styles.span2} />
+              <textarea
+                ref={form.message}
+                placeholder="Your message"
+                className={`${styles.span2} ${errors.message ? styles.inputError : ""}`}
+              />
               <button
                 ref={form.button}
-                onClick={() => sendMessage()}
+                onClick={handleSendMessage}
                 className={`${common.button} ${common.buttonPrimary} ${styles.span2}`}>
                 Send message
               </button>
