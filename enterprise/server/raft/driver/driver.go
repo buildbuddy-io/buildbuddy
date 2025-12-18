@@ -981,7 +981,7 @@ func canConvergeByRebalanceLease(choice *rebalanceChoice, allStores *storemap.St
 
 	// The existing store is above the mean, but not too far; but there is at least one other store that is too far below the mean.
 	if float64(choice.existing.usage.LeaseCount) > allStores.LeaseCount.Mean {
-		underfullThreshold := int64(math.Floor(belowMeanReplicaCountThreshold(allStores.LeaseCount.Mean)))
+		underfullThreshold := int64(math.Floor(belowMeanLeaseCountThreshold(allStores.LeaseCount.Mean)))
 		for _, c := range choice.candidates {
 			if c.usage.LeaseCount < underfullThreshold {
 				return true
@@ -1643,8 +1643,8 @@ func replicaCountMeanLevel(storesWithStats *storemap.StoresWithStats, su *rfpb.S
 }
 
 func leaseCountMeanLevel(storesWithStats *storemap.StoresWithStats, su *rfpb.StoreUsage) meanLevel {
-	maxLeaseCount := aboveMeanReplicaCountThreshold(storesWithStats.LeaseCount.Mean)
-	minLeaseCount := belowMeanReplicaCountThreshold(storesWithStats.LeaseCount.Mean)
+	maxLeaseCount := aboveMeanLeaseCountThreshold(storesWithStats.LeaseCount.Mean)
+	minLeaseCount := belowMeanLeaseCountThreshold(storesWithStats.LeaseCount.Mean)
 	curLeaseCount := float64(su.GetLeaseCount())
 	if curLeaseCount < minLeaseCount {
 		return belowMean
