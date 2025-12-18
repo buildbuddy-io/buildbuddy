@@ -3,6 +3,8 @@ package claims
 import (
 	"context"
 	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"slices"
 	"sync"
@@ -37,16 +39,14 @@ const (
 )
 
 var (
-	jwtKey             = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flag.Secret)
-	newJwtKey          = flag.String("auth.new_jwt_key", "", "If set, JWT verifications will try both this and the old JWT key.", flag.Secret)
+	jwtKey             = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing HMAC-SHA256-signed JWT tokens.", flag.Secret)
+	newJwtKey          = flag.String("auth.new_jwt_key", "", "If set, HMAC-SHA256-signed JWT verifications will try both this and the old JWT key.", flag.Secret)
 	signUsingNewJwtKey = flag.Bool("auth.sign_using_new_jwt_key", false, "If true, new JWTs will be signed using the new JWT key.")
 	claimsCacheTTL     = flag.Duration("auth.jwt_claims_cache_ttl", 15*time.Second, "TTL for JWT string to parsed claims caching. Set to '0' to disable cache.")
 	jwtDuration        = flag.Duration("auth.jwt_duration", 6*time.Hour, "Maximum lifetime of the generated JWT.")
 
-	jwtRSAPublicKey     = flag.String("auth.jwt_rsa_public_key", "", "PEM-encoded RSA public key used to verify JWTs.", flag.Secret)
-	jwtRSAPrivateKey    = flag.String("auth.jwt_rsa_private_key", "", "PEM-encoded RSA private key used to sign JWTs.", flag.Secret)
-	newJWTRSAPublicKey  = flag.String("auth.new_jwt_rsa_public_key", "", "PEM-encoded RSA public key used to verify new JWTs during key rotation.", flag.Secret)
-	newJWTRSAPrivateKey = flag.String("auth.new_jwt_rsa_private_key", "", "PEM-encoded RSA private key used to sign new JWTs during key rotation.", flag.Secret)
+	jwtRSAPrivateKey    = flag.String("auth.jwt_rsa_private_key", "", "PEM-encoded private key used to sign RSA-signed JWTs.", flag.Secret)
+	newJWTRSAPrivateKey = flag.String("auth.new_jwt_rsa_private_key", "", "PEM-encoded private key used to sign new RSA-signed JWTs during key rotation.", flag.Secret)
 
 	serverAdminGroupID = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
 )
@@ -55,14 +55,69 @@ var (
 	// Generic permission denied error.
 	errPermissionDenied = status.PermissionDeniedError("permission denied")
 
-	rsaPrivateKeyOnce sync.Once
-	rsaPrivateKey     *rsa.PrivateKey
-	rsaPrivateKeyErr  error
-
-	newRSAPrivateKeyOnce sync.Once
-	newRSAPrivateKey     *rsa.PrivateKey
-	newRSAPrivateKeyErr  error
+	rsaPrivateKey *rsa.PrivateKey
+	rsaPublicKeys []string = []string{}
 )
+
+func Init() error {
+	if *newJWTRSAPrivateKey == "" && *jwtRSAPrivateKey == "" {
+		return nil
+	}
+
+	var newPrivateKey *rsa.PrivateKey
+	var oldPrivateKey *rsa.PrivateKey
+	var newPublicKey string
+	var oldPublicKey string
+	var err error
+
+	// Make both public keys available so that clients can verify JWTs during
+	// app rollouts.
+	if *newJWTRSAPrivateKey != "" {
+		newPrivateKey, newPublicKey, err = getKeyPair(*newJWTRSAPrivateKey)
+		if err != nil {
+			return err
+		}
+	}
+
+	oldPrivateKey, oldPublicKey, err = getKeyPair(*newJWTRSAPrivateKey)
+	if err != nil {
+		return err
+	}
+
+	rsaPrivateKey = oldPrivateKey
+	if *signUsingNewJwtKey {
+		if newPrivateKey == nil {
+			return status.InvalidArgumentError("Requested signing with new RSA private key, but new new private key was specified.")
+		}
+		rsaPrivateKey = newPrivateKey
+	}
+
+	if newPublicKey != "" {
+		rsaPublicKeys = append(rsaPublicKeys, newPublicKey)
+	}
+	if oldPublicKey != "" {
+		rsaPublicKeys = append(rsaPublicKeys, oldPublicKey)
+	}
+
+	return nil
+}
+
+func getKeyPair(key string) (*rsa.PrivateKey, string, error) {
+	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM(
+		[]byte(*newJWTRSAPrivateKey))
+	if err != nil {
+		return nil, "", err
+	}
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(privateKey)
+	if err != nil {
+		return nil, "", err
+	}
+	encodedPublicKey := pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	})
+	return privateKey, string(encodedPublicKey), nil
+}
 
 type Claims struct {
 	jwt.StandardClaims
@@ -365,30 +420,11 @@ func assembleHS256JWT(token *jwt.Token) (string, error) {
 	return token.SignedString([]byte(key))
 }
 
-func getRSAPrivateKey() (*rsa.PrivateKey, error) {
-	if *newJWTRSAPrivateKey != "" {
-		newRSAPrivateKeyOnce.Do(func() {
-			newRSAPrivateKey, newRSAPrivateKeyErr = jwt.ParseRSAPrivateKeyFromPEM([]byte(*newJWTRSAPrivateKey))
-		})
-		return newRSAPrivateKey, newRSAPrivateKeyErr
-	}
-
-	if *jwtRSAPrivateKey == "" {
-		return nil, status.InvalidArgumentError("")
-	}
-
-	rsaPrivateKeyOnce.Do(func() {
-		rsaPrivateKey, rsaPrivateKeyErr = jwt.ParseRSAPrivateKeyFromPEM([]byte(*jwtRSAPrivateKey))
-	})
-	return rsaPrivateKey, rsaPrivateKeyErr
-}
-
 func assembleRS256JWT(token *jwt.Token) (string, error) {
-	privateKey, err := getRSAPrivateKey()
-	if err != nil {
-		return "", err
+	if rsaPrivateKey == nil {
+		return "", status.UnimplementedError("RSA-signed JWTs are unsupported")
 	}
-	return token.SignedString(privateKey)
+	return token.SignedString(rsaPrivateKey)
 }
 
 // Returns a context containing auth state for the provided Claims and auth
@@ -551,12 +587,5 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 }
 
 func GetRSAPublicKeys() []string {
-	var keys []string
-	if *newJWTRSAPublicKey != "" {
-		keys = append(keys, *newJWTRSAPublicKey)
-	}
-	if *jwtRSAPublicKey != "" {
-		keys = append(keys, *jwtRSAPublicKey)
-	}
-	return keys
+	return rsaPublicKeys
 }
