@@ -83,7 +83,7 @@ const smallPageSize = 10;
 
 export default class InvocationComponent extends React.Component<Props, State> {
   state: State = {
-    loading: false,
+    loading: true,
     error: null,
     keyboardShortcutHandle: "",
     childInvocations: [],
@@ -104,7 +104,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
     // TODO(siggisim): Move moment configuration elsewhere
     moment.relativeTimeThreshold("ss", 0);
 
-    if (!this.failedToStart()) {
+    if (this.failedToStart()) {
+      // If the invocation failed to start then there will be nothing to load -
+      // just disable the loading state so we can show the error.
+      this.setState({ loading: false });
+    } else {
       this.fetchInvocation();
 
       this.logsModel = new InvocationLogsModel(this.props.invocationId);
@@ -238,8 +242,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   async fetchInvocation() {
-    this.setState({ loading: true });
-
     // If applicable, fetch the CI runner execution in parallel. The CI runner
     // execution is what creates the invocation, so it can give us some
     // diagnostic info in the case where the invocation is never created, and
@@ -473,9 +475,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   render() {
-    // When fetching the invocation and we have nothing to show, display a
-    // loading spinner.
-    if (this.state.loading && !this.state.model) {
+    if (this.state.loading) {
       return <div className="loading" debug-id="invocation-loading"></div>;
     }
 
