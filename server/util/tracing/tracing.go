@@ -128,9 +128,36 @@ func (s *fractionSampler) Description() string {
 	return s.description
 }
 
+// noopExporter is a span exporter that does nothing, used for testing/benchmarking.
+type noopExporter struct{}
+
+func (e *noopExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+	return nil
+}
+
+func (e *noopExporter) Shutdown(ctx context.Context) error {
+	return nil
+}
+
 func Configure(env environment.Env) error {
 	if *traceFraction <= 0 {
 		return nil
+	}
+
+	// Check early that exactly one collector is configured
+	numCollectorsSet := 0
+	if *traceJaegerCollector != "" {
+		numCollectorsSet++
+	}
+	if *traceOTLPCollector != "" {
+		numCollectorsSet++
+	}
+	if *traceOTLPHTTPCollector != "" {
+		numCollectorsSet++
+	}
+
+	if numCollectorsSet > 1 {
+		return status.InvalidArgumentErrorf("only one trace collector ('app.trace_*_collector') can be configured at a time.")
 	}
 
 	var traceExporter sdktrace.SpanExporter
@@ -142,21 +169,13 @@ func Configure(env environment.Env) error {
 			log.Warningf("Could not initialize Jaeger exporter: %s", err)
 			return nil
 		}
-	}
-	if *traceOTLPCollector != "" {
-		if traceExporter != nil {
-			return status.InvalidArgumentErrorf("only one trace collector ('app.trace_*_collector') can be configured at a time.")
-		}
+	} else if *traceOTLPCollector != "" {
 		traceExporter, err = otlptracegrpc.New(env.GetServerContext(), otlptracegrpc.WithEndpoint(*traceOTLPCollector), otlptracegrpc.WithInsecure())
 		if err != nil {
 			log.Warningf("Could not initialize OTEL exporter: %s", err)
 			return nil
 		}
-	}
-	if *traceOTLPHTTPCollector != "" {
-		if traceExporter != nil {
-			return status.InvalidArgumentErrorf("only one trace collector ('app.trace_*_collector') can be configured at a time.")
-		}
+	} else if *traceOTLPHTTPCollector != "" {
 		opts, err := parseHTTPOptions(*traceOTLPHTTPCollector)
 		if err != nil {
 			return status.InvalidArgumentErrorf("parse OTEL HTTP collector endpoint: %s", err)
@@ -171,6 +190,21 @@ func Configure(env environment.Env) error {
 	if traceExporter == nil {
 		return status.InvalidArgumentErrorf("no trace collector ('app.trace_{jaeger,otlp_grpc,otlp_http}_collector') configured")
 	}
+
+	return setupTracingWithExporter(env, traceExporter)
+}
+
+// ConfigureWithNoopExporter configures tracing with a no-op exporter for testing/benchmarking.
+func ConfigureWithNoopExporter(env environment.Env) error {
+	if *traceFraction <= 0 {
+		return nil
+	}
+
+	return setupTracingWithExporter(env, &noopExporter{})
+}
+
+// setupTracingWithExporter sets up the tracing infrastructure with the provided exporter.
+func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanExporter) error {
 
 	fractionOverrides := make(map[string]float64)
 	for _, override := range *traceFractionOverrides {
