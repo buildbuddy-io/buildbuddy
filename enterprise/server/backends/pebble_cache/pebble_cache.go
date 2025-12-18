@@ -1566,9 +1566,6 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 }
 
 func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) (filestore.PebbleKeyVersion, error) {
-	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
-	defer spn.End()
-
 	var lastErr error
 	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
 		keyBytes, err := key.Bytes(version)
@@ -1653,6 +1650,9 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Int("num_resources", len(resources)))
+	}
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
