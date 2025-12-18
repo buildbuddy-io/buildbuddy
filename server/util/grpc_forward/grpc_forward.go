@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -63,7 +64,7 @@ func getConnectionPool(target string) (*grpc_client.ClientConnPool, error) {
 
 type directorFunc func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error)
 
-func getProxyDirector() directorFunc {
+func getProxyDirector(a interfaces.GRPCAuthenticator) directorFunc {
 	if len(*proxyTargets) == 0 {
 		return nil
 	}
@@ -79,6 +80,9 @@ func getProxyDirector() directorFunc {
 		}
 
 		cc := pool.WaitForConn()
+		if _, err := a.AuthenticateGRPCRequest(ctx); err != nil {
+			return nil, nil, err
+		}
 		if md, ok := metadata.FromIncomingContext(ctx); ok {
 			ctx = metadata.NewOutgoingContext(ctx, md.Copy())
 		}
@@ -86,8 +90,8 @@ func getProxyDirector() directorFunc {
 	}
 }
 
-func GetForwardingServerOption() grpc.ServerOption {
-	if director := getProxyDirector(); director != nil {
+func GetForwardingServerOption(a interfaces.GRPCAuthenticator) grpc.ServerOption {
+	if director := getProxyDirector(a); director != nil {
 		return grpc.UnknownServiceHandler(proxy.TransparentHandler(proxy.StreamDirector(director)))
 	}
 	return nil
