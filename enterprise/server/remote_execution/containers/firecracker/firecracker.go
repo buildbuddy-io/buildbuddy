@@ -2904,8 +2904,9 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 	balloonSizeMB, err := c.updateBalloon(ctx, 0)
 	if err != nil {
 		return status.WrapError(err, "deflate balloon")
-	} else if balloonSizeMB > int64(float64(availableMemMB)*0.7) {
-		// If the balloon was unable to deflate to less than 70% of available memory, something is likely broken in the VM.
+	} else if balloonSizeMB > int64(float64(availableMemMB)*0.2) {
+		// If the balloon was unable to deflate, something is likely broken in the VM and the runner shouldn't
+		// be reused, or workloads will have less memory than expected.
 		return fmt.Errorf("failed to deflate balloon, stalled at %d MB. vmlog: %s", balloonSizeMB, c.vmLog.Tail())
 	}
 	return nil
