@@ -18,7 +18,7 @@ type Chunker struct {
 
 	done chan struct{}
 
-	mu  sync.Mutex // protexts err
+	mu  sync.Mutex // protects err
 	err error
 
 	writeChunkFn WriteFunc
@@ -40,7 +40,7 @@ func (c *Chunker) Close() error {
 	return c.err
 }
 
-// New returns an io.WriteCloser that split file into chunks of average size.
+// New returns an io.WriteCloser that splits a file into chunks of averageSize.
 // averageSize is typically a power of 2. It must be in the range 256B to 256MB.
 // The minimum allowed chunk size is averageSize / 4, and the maximum allowed
 // chunk size is averageSize * 4.

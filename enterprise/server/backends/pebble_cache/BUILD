@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//enterprise/server/filestore",
         "//enterprise/server/raft/keys",
-        "//enterprise/server/util/chunker",
         "//enterprise/server/util/gcsutil",
         "//enterprise/server/util/pebble",
         "//proto:remote_execution_go_proto",
@@ -26,6 +25,7 @@ go_library(
         "//server/util/approxlru",
         "//server/util/authutil",
         "//server/util/bytebufferpool",
+        "//server/util/chunker",
         "//server/util/compression",
         "//server/util/disk",
         "//server/util/flag",
