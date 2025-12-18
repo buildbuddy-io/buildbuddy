@@ -2589,7 +2589,7 @@ func getProgressStates(t *testing.T, c *rbetest.Command) []repb.ExecutionProgres
 		rsp, err := rexec.UnpackOperation(op)
 		require.NoError(t, err)
 		var progress repb.ExecutionProgress
-		ok, err := rexec.AuxiliaryMetadata(rsp.ExecuteOperationMetadata.GetPartialExecutionMetadata(), &progress)
+		ok, err := rexec.FindFirstAuxiliaryMetadata(rsp.ExecuteOperationMetadata.GetPartialExecutionMetadata(), &progress)
 		require.NoError(t, err)
 		if ok {
 			states = append(states, progress.ExecutionState)
@@ -2610,7 +2610,7 @@ func waitForCachedExecuteResponse(ctx context.Context, t testing.TB, rbe *rbetes
 
 func getExecutionAuxiliaryMetadata(t testing.TB, execRes *repb.ExecuteResponse) *espb.ExecutionAuxiliaryMetadata {
 	auxMeta := &espb.ExecutionAuxiliaryMetadata{}
-	ok, err := rexec.AuxiliaryMetadata(execRes.GetResult().GetExecutionMetadata(), auxMeta)
+	ok, err := rexec.FindFirstAuxiliaryMetadata(execRes.GetResult().GetExecutionMetadata(), auxMeta)
 	require.NoError(t, err)
 	require.True(t, ok)
 	return auxMeta

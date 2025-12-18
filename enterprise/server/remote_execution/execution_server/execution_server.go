@@ -1332,7 +1332,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		var cmd *repb.Command
 		if stage == repb.ExecutionStage_COMPLETED && response != nil {
 			auxMeta = new(espb.ExecutionAuxiliaryMetadata)
-			ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
+			ok, err := rexec.FindFirstAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to parse ExecutionAuxiliaryMetadata: %s", err)
 			} else if !ok {
