@@ -95,7 +95,7 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream) (string, string, error) {
 	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
 	if err != nil {
-		return metrics.HitStatusLabel, "unknown", nil
+		return metrics.HitStatusLabel, "unknown", err
 	}
 
 	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
