@@ -54,6 +54,14 @@ var (
 var (
 	// Generic permission denied error.
 	errPermissionDenied = status.PermissionDeniedError("permission denied")
+
+	rsaPrivateKeyOnce sync.Once
+	rsaPrivateKey     *rsa.PrivateKey
+	rsaPrivateKeyErr  error
+
+	newRSAPrivateKeyOnce sync.Once
+	newRSAPrivateKey     *rsa.PrivateKey
+	newRSAPrivateKeyErr  error
 )
 
 type Claims struct {
@@ -357,22 +365,16 @@ func assembleHS256JWT(token *jwt.Token) (string, error) {
 	return token.SignedString([]byte(key))
 }
 
-var (
-	rsaPrivateKeyOnce sync.Once
-	rsaPrivateKey     *rsa.PrivateKey
-	rsaPrivateKeyErr  error
-
-	newRSAPrivateKeyOnce sync.Once
-	newRSAPrivateKey     *rsa.PrivateKey
-	newRSAPrivateKeyErr  error
-)
-
 func getRSAPrivateKey() (*rsa.PrivateKey, error) {
 	if *newJWTRSAPrivateKey != "" {
 		newRSAPrivateKeyOnce.Do(func() {
 			newRSAPrivateKey, newRSAPrivateKeyErr = jwt.ParseRSAPrivateKeyFromPEM([]byte(*newJWTRSAPrivateKey))
 		})
 		return newRSAPrivateKey, newRSAPrivateKeyErr
+	}
+
+	if *jwtRSAPrivateKey == "" {
+		return nil, status.InvalidArgumentError("")
 	}
 
 	rsaPrivateKeyOnce.Do(func() {
