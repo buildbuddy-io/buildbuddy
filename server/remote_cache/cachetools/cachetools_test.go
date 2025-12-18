@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
@@ -1088,4 +1089,237 @@ func TestUploadWriter_CancelContext(t *testing.T) {
 	_, err = uw.Write(buf[half:])
 	require.Error(t, err)
 	require.ErrorContains(t, err, "context canceled")
+}
+
+// setupByteStreamServer sets up a test environment with a ByteStreamServer for testing
+// the server-side cachetools functions (GetBlobFromServer, UploadToServerFromReader).
+func setupByteStreamServer(t *testing.T) (*testenv.TestEnv, interfaces.ByteStreamServer) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	bss, err := byte_stream_server.NewByteStreamServer(te)
+	require.NoError(t, err)
+	return te, bss
+}
+
+func TestUploadToServerAndGetBlobFromServer(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+
+		inputSize  int64
+		uploadSize int64
+		getSize    int64
+
+		expectUploadError bool
+		expectGetError    bool
+		expectedGetSize   int64
+	}{
+		{
+			name: "simple upload and get",
+
+			inputSize:  128,
+			uploadSize: 128,
+			getSize:    128,
+
+			expectUploadError: false,
+			expectGetError:    false,
+			expectedGetSize:   128,
+		},
+		{
+			name: "upload with incorrect size fails",
+
+			inputSize:  128,
+			uploadSize: 120,
+			getSize:    128,
+
+			expectUploadError: true,
+			expectGetError:    true,
+			expectedGetSize:   128,
+		},
+		{
+			name: "get with incorrect size still succeeds",
+
+			inputSize:  128,
+			uploadSize: 128,
+			getSize:    120,
+
+			expectUploadError: false,
+			expectGetError:    false,
+			expectedGetSize:   128,
+		},
+		{
+			name: "writing large payload succeeds",
+
+			inputSize:  2 * 1024 * 1024,
+			uploadSize: 2 * 1024 * 1024,
+			getSize:    2 * 1024 * 1024,
+
+			expectUploadError: false,
+			expectGetError:    false,
+			expectedGetSize:   2 * 1024 * 1024,
+		},
+	} {
+		for _, useZstd := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/use_zstd_%t", tc.name, useZstd), func(t *testing.T) {
+				_, bsServer := setupByteStreamServer(t)
+
+				rn, buf := testdigest.RandomCASResourceBuf(t, tc.inputSize)
+
+				ctx := context.Background()
+				{
+					uploadDigest := &repb.Digest{
+						Hash:      rn.Digest.Hash,
+						SizeBytes: tc.uploadSize,
+					}
+					upRN := digest.NewCASResourceName(uploadDigest, rn.InstanceName, rn.DigestFunction)
+					if useZstd {
+						upRN.SetCompressor(repb.Compressor_ZSTD)
+					}
+					d, uploadedBytes, err := cachetools.UploadToServerFromReader(ctx, bsServer, upRN, bytes.NewReader(buf))
+					if tc.expectUploadError {
+						require.Error(t, err)
+						// Note: Unlike the client version, the server processes all bytes
+						// before validating the hash/size, so uploadedBytes may be > 0
+					} else {
+						require.NoError(t, err)
+						require.NotNil(t, d)
+						require.Empty(t, cmp.Diff(upRN.GetDigest(), d, protocmp.Transform()))
+						require.Greater(t, uploadedBytes, int64(0))
+						require.LessOrEqual(t, uploadedBytes, tc.uploadSize)
+					}
+				}
+
+				{
+					getDigest := &repb.Digest{
+						Hash:      rn.Digest.Hash,
+						SizeBytes: tc.uploadSize,
+					}
+					getRN := digest.NewCASResourceName(getDigest, rn.InstanceName, rn.DigestFunction)
+					if useZstd {
+						getRN.SetCompressor(repb.Compressor_ZSTD)
+					}
+					out := &bytes.Buffer{}
+					err := cachetools.GetBlobFromServer(ctx, bsServer, getRN, out)
+					if tc.expectGetError {
+						require.Error(t, err)
+					} else {
+						require.NoError(t, err)
+						require.Equal(t, tc.expectedGetSize, int64(out.Len()))
+						require.Empty(t, cmp.Diff(buf[:9], out.Bytes()[:9]))
+						require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[out.Len()-9:]))
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestUploadToServer_BlobExists(t *testing.T) {
+	for _, useZstd := range []bool{false, true} {
+		t.Run(fmt.Sprintf("use_zstd_%t", useZstd), func(t *testing.T) {
+			_, bsServer := setupByteStreamServer(t)
+
+			uploadSize := int64(2 * 1024 * 1024)
+			rn, buf := testdigest.RandomCASResourceBuf(t, uploadSize)
+			casRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+			if useZstd {
+				casRN.SetCompressor(repb.Compressor_ZSTD)
+			}
+
+			ctx := context.Background()
+			{
+				d, uploadedBytes, err := cachetools.UploadToServerFromReader(ctx, bsServer, casRN, bytes.NewReader(buf))
+				require.NoError(t, err)
+				require.NotNil(t, d)
+				require.Empty(t, cmp.Diff(casRN.GetDigest(), d, protocmp.Transform()))
+				require.Greater(t, uploadedBytes, int64(0))
+				require.LessOrEqual(t, uploadedBytes, uploadSize)
+			}
+
+			{
+				out := &bytes.Buffer{}
+				err := cachetools.GetBlobFromServer(ctx, bsServer, casRN, out)
+
+				require.NoError(t, err)
+				require.Equal(t, uploadSize, int64(out.Len()))
+				require.Empty(t, cmp.Diff(buf[:9], out.Bytes()[:9]))
+				require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[out.Len()-9:]))
+			}
+
+			// Second upload succeeds
+			{
+				d, _, err := cachetools.UploadToServerFromReader(ctx, bsServer, casRN, bytes.NewReader(buf))
+				require.NoError(t, err)
+				require.NotNil(t, d)
+				require.Empty(t, cmp.Diff(casRN.GetDigest(), d, protocmp.Transform()))
+			}
+
+			// The blob is still available
+			{
+				out := &bytes.Buffer{}
+				err := cachetools.GetBlobFromServer(ctx, bsServer, casRN, out)
+
+				require.NoError(t, err)
+				require.Equal(t, uploadSize, int64(out.Len()))
+				require.Empty(t, cmp.Diff(buf[:9], out.Bytes()[:9]))
+				require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[out.Len()-9:]))
+			}
+		})
+	}
+}
+
+func TestGetBlobFromServer_NotFound(t *testing.T) {
+	_, bsServer := setupByteStreamServer(t)
+
+	// Create a digest for a blob that doesn't exist
+	rn, _ := testdigest.RandomCASResourceBuf(t, 128)
+	casRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+
+	ctx := context.Background()
+	out := &bytes.Buffer{}
+	err := cachetools.GetBlobFromServer(ctx, bsServer, casRN, out)
+
+	require.Error(t, err)
+	// The server returns FailedPrecondition when the blob is not found in the cache
+	require.True(t, status.IsNotFoundError(err) || status.IsFailedPreconditionError(err),
+		"expected NotFoundError or FailedPreconditionError, got %v", err)
+}
+
+func TestGetBlobFromServer_EmptyBlob(t *testing.T) {
+	_, bsServer := setupByteStreamServer(t)
+
+	// Create an empty digest
+	emptyDigest := &repb.Digest{
+		Hash:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		SizeBytes: 0,
+	}
+	casRN := digest.NewCASResourceName(emptyDigest, "", repb.DigestFunction_SHA256)
+
+	ctx := context.Background()
+	out := &bytes.Buffer{}
+	err := cachetools.GetBlobFromServer(ctx, bsServer, casRN, out)
+
+	require.NoError(t, err)
+	require.Equal(t, 0, out.Len())
+}
+
+func TestUploadToServerFromReader_EmptyBlob(t *testing.T) {
+	_, bsServer := setupByteStreamServer(t)
+
+	// Create an empty digest
+	emptyDigest := &repb.Digest{
+		Hash:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		SizeBytes: 0,
+	}
+	casRN := digest.NewCASResourceName(emptyDigest, "", repb.DigestFunction_SHA256)
+
+	ctx := context.Background()
+	d, uploadedBytes, err := cachetools.UploadToServerFromReader(ctx, bsServer, casRN, bytes.NewReader([]byte{}))
+
+	require.NoError(t, err)
+	require.NotNil(t, d)
+	require.Empty(t, cmp.Diff(emptyDigest, d, protocmp.Transform()))
+	require.Equal(t, int64(0), uploadedBytes)
 }
