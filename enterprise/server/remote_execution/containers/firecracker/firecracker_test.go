@@ -1689,7 +1689,8 @@ func TestFirecrackerBalloon(t *testing.T) {
 
 	cmd := &repb.Command{
 		// Mount a RAM-based filesystem to /tmp/randomdata to simulate memory usage.
-		Arguments: []string{"sh", "-c", `
+		Arguments: []string{"bash", "-c", `
+set -eo pipefail
 mkdir /tmp/randomdata && mount -t tmpfs -o size=1700M tmpfs /tmp/randomdata
 dd if=/dev/urandom of=/tmp/randomdata/data bs=1M count=1600
 free -h
@@ -1698,7 +1699,8 @@ free -h
 
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
-	assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
+	require.Equal(t, 0, res.ExitCode)
+	require.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 
 	// Try pause, unpause, exec several times.
 	for i := 1; i <= 4; i++ {
