@@ -14,11 +14,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/chunker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -29,6 +31,9 @@ type ByteStreamServerProxy struct {
 	authenticator      interfaces.Authenticator
 	local              interfaces.ByteStreamServer
 	remote             bspb.ByteStreamClient
+	cache              interfaces.Cache
+	casClient          repb.ContentAddressableStorageClient
+	efp                interfaces.ExperimentFlagProvider
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -63,6 +68,9 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		authenticator:      authenticator,
 		local:              local,
 		remote:             remote,
+		cache:              env.GetCache(),
+		casClient:          env.GetContentAddressableStorageClient(),
+		efp:                env.GetExperimentFlagProvider(),
 	}, nil
 }
 
@@ -93,6 +101,8 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 		compressor:  readMetrics.compressor,
 		err:         err,
 		bytesSent:   meteredStream.bytes,
+		chunked:     readMetrics.chunked,
+		chunkCount:  readMetrics.chunkCount,
 	}
 	recordReadMetrics(bsm, readMetrics.cacheStatus)
 	return err
@@ -101,6 +111,8 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 type readMetrics struct {
 	cacheStatus string // should be metrics.HitStatusLabel/MissStatusLabel
 	compressor  string
+	chunked     bool
+	chunkCount  int
 }
 
 func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream) (readMetrics, error) {
@@ -144,6 +156,21 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 	// cache, but keep it simple for now.
 	if localErr != nil && stream.frames == 0 {
 		// Recover from local error if no frames have been sent
+
+		// If the blob does not exist locally, it might exist in chunks.
+		// If chunking is enabled and the blob is large enough, try to read the chunks.
+		if s.shouldReadChunked(ctx, req, rn) {
+			chunkCount, chunkedErr := s.readChunked(ctx, req, stream, rn)
+			if chunkedErr == nil {
+				return readMetrics{
+					cacheStatus: metrics.MissStatusLabel,
+					compressor:  rn.GetCompressor().String(),
+					chunked:     true,
+					chunkCount:  chunkCount,
+				}, nil
+			}
+		}
+
 		return readMetrics{
 			cacheStatus: metrics.MissStatusLabel,
 			compressor:  rn.GetCompressor().String(),
@@ -155,6 +182,62 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 			compressor:  rn.GetCompressor().String(),
 		}, localErr
 	}
+}
+
+func (s *ByteStreamServerProxy) shouldReadChunked(ctx context.Context, req *bspb.ReadRequest, rn *digest.CASResourceName) bool {
+	if s.efp == nil || !s.efp.Boolean(ctx, "cache.chunking_enabled", true) {
+		return false
+	}
+	if rn.GetDigest().GetSizeBytes() <= chunker.MinSizeToChunkBytes() {
+		return false
+	}
+	if req.GetReadOffset() != 0 || req.GetReadLimit() != 0 {
+		return false
+	}
+	return true
+}
+
+func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream, rn *digest.CASResourceName) (int, error) {
+	if s.cache == nil || s.casClient == nil {
+		return 0, status.UnimplementedError("chunked reads not available")
+	}
+
+	instanceName := rn.GetInstanceName()
+	digestFunction := rn.GetDigestFunction()
+
+	// TODO: Try loading manifest from local cache first before calling Split
+	// For now, always call Split on remote
+	splitResponse, err := s.casClient.SplitBlob(ctx, &repb.SplitBlobRequest{
+		BlobDigest:     rn.GetDigest(),
+		InstanceName:   instanceName,
+		DigestFunction: digestFunction,
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	chunkDigests := splitResponse.GetChunkDigests()
+
+	// TODO: If the readOffset is >0, we can look through the digest sizes
+	// and determine where to start reading from.
+	for _, chunkDigest := range chunkDigests {
+		chunkRN := digest.NewCASResourceName(chunkDigest, instanceName, digestFunction)
+		chunkRN.SetCompressor(rn.GetCompressor())
+		if err := s.local.ReadCASResource(ctx, chunkRN, 0, 0, stream); status.IsNotFoundError(err) {
+			chunkReq := &bspb.ReadRequest{
+				ResourceName: chunkRN.DownloadString(),
+				ReadOffset:   0,
+				ReadLimit:    0,
+			}
+			if err := s.readRemoteWriteLocal(chunkReq, stream); err != nil {
+				return 0, err
+			}
+		} else if err != nil {
+			return 0, err
+		}
+	}
+
+	return len(chunkDigests), nil
 }
 
 func (s *ByteStreamServerProxy) readRemoteOnly(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
@@ -293,6 +376,8 @@ type byteStreamMetrics struct {
 	compressor  string
 	err         error
 	bytesSent   int64
+	chunked     bool
+	chunkCount  int
 }
 
 func recordReadMetrics(bsm byteStreamMetrics, cacheStatus string) {
@@ -309,9 +394,10 @@ func recordReadMetrics(bsm byteStreamMetrics, cacheStatus string) {
 // Wrapper around a ByteStream_WriteServer that counts the number of bytes
 // written through it.
 type meteredServerSideClientStream struct {
+	bspb.ByteStream_WriteServer
+
 	compressor string
 	bytes      int64
-	bspb.ByteStream_WriteServer
 }
 
 func (s *meteredServerSideClientStream) Recv() (*bspb.WriteRequest, error) {
@@ -479,6 +565,7 @@ func recordWriteMetrics(bsm byteStreamMetrics) {
 		metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
 		metrics.CacheProxyRequestType: bsm.requestType,
 		metrics.CompressionType:       bsm.compressor,
+		metrics.ChunkedLabel:          "false",
 	}
 	metrics.ByteStreamProxiedWriteRequests.With(labels).Inc()
 	if bsm.bytesSent > 0 {
