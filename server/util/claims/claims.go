@@ -357,19 +357,34 @@ func assembleHS256JWT(token *jwt.Token) (string, error) {
 	return token.SignedString([]byte(key))
 }
 
-func assembleRS256JWT(token *jwt.Token) (string, error) {
-	var privateKey *rsa.PrivateKey
-	var err error
+var (
+	rsaPrivateKeyOnce sync.Once
+	rsaPrivateKey     *rsa.PrivateKey
+	rsaPrivateKeyErr  error
+
+	newRSAPrivateKeyOnce sync.Once
+	newRSAPrivateKey     *rsa.PrivateKey
+	newRSAPrivateKeyErr  error
+)
+
+func getRSAPrivateKey() (*rsa.PrivateKey, error) {
 	if *newJWTRSAPrivateKey != "" {
-		privateKey, err = jwt.ParseRSAPrivateKeyFromPEM([]byte(*newJWTRSAPrivateKey))
-		if err != nil {
-			return "", err
-		}
-	} else {
-		privateKey, err = jwt.ParseRSAPrivateKeyFromPEM([]byte(*jwtRSAPrivateKey))
-		if err != nil {
-			return "", err
-		}
+		newRSAPrivateKeyOnce.Do(func() {
+			newRSAPrivateKey, newRSAPrivateKeyErr = jwt.ParseRSAPrivateKeyFromPEM([]byte(*newJWTRSAPrivateKey))
+		})
+		return newRSAPrivateKey, newRSAPrivateKeyErr
+	}
+
+	rsaPrivateKeyOnce.Do(func() {
+		rsaPrivateKey, rsaPrivateKeyErr = jwt.ParseRSAPrivateKeyFromPEM([]byte(*jwtRSAPrivateKey))
+	})
+	return rsaPrivateKey, rsaPrivateKeyErr
+}
+
+func assembleRS256JWT(token *jwt.Token) (string, error) {
+	privateKey, err := getRSAPrivateKey()
+	if err != nil {
+		return "", err
 	}
 	return token.SignedString(privateKey)
 }
