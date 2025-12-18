@@ -17,6 +17,7 @@ go_library(
         "//server/util/alert",
         "//server/util/log",
         "//server/util/proto",
+        "//server/util/rexec",
         "//server/util/status",
         "//server/util/usageutil",
         "@com_github_prometheus_client_golang//prometheus",

@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/prometheus/client_golang/prometheus"
@@ -370,19 +371,15 @@ func extractOriginInvocationID(md *repb.ExecutedActionMetadata) string {
 		return ""
 	}
 	origin := &repb.OriginMetadata{}
-	for _, am := range md.GetAuxiliaryMetadata() {
-		if am == nil {
-			continue
-		}
-		if am.MessageIs(origin) {
-			if err := am.UnmarshalTo(origin); err != nil {
-				log.Debugf("Unable to unmarshal origin metadata: %v", err)
-				continue
-			}
-			return origin.GetInvocationId()
-		}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(md, origin)
+	if err != nil {
+		log.Debugf("Unable to unmarshal origin metadata: %v", err)
+		return ""
 	}
-	return ""
+	if !ok {
+		return ""
+	}
+	return origin.GetInvocationId()
 }
 
 func (h *hitTracker) TrackMiss(d *repb.Digest) error {
