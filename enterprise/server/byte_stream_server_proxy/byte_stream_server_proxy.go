@@ -280,9 +280,9 @@ type meteredServerSideClientStream struct {
 
 func (s *meteredServerSideClientStream) Recv() (*bspb.WriteRequest, error) {
 	message, err := s.ByteStream_WriteServer.Recv()
-	if s.compressor == "unknown" && err != nil {
-		rn, err := digest.ParseUploadResourceName(message.GetResourceName())
-		if err != nil {
+	if s.compressor == "unknown" && err == nil {
+		rn, parseErr := digest.ParseUploadResourceName(message.GetResourceName())
+		if parseErr == nil {
 			s.compressor = rn.GetCompressor().String()
 		}
 	}
