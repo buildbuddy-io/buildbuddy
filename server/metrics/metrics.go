@@ -3420,6 +3420,7 @@ var (
 		StatusLabel,
 		CacheHitMissStatus,
 		CacheProxyRequestType,
+		CompressionType,
 	})
 	ByteStreamProxiedWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3430,6 +3431,7 @@ var (
 		StatusLabel,
 		CacheHitMissStatus,
 		CacheProxyRequestType,
+		CompressionType,
 	})
 	ByteStreamProxiedReadBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3440,6 +3442,7 @@ var (
 		StatusLabel,
 		CacheHitMissStatus,
 		CacheProxyRequestType,
+		CompressionType,
 	})
 	ByteStreamProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3450,6 +3453,7 @@ var (
 		StatusLabel,
 		CacheHitMissStatus,
 		CacheProxyRequestType,
+		CompressionType,
 	})
 
 	CapabilitiesProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -3471,7 +3475,6 @@ var (
 		CacheHitMissStatus,
 	})
 
-	// TODO(iain): consider adding gRPC status
 	ContentAddressableStorageProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
@@ -3490,6 +3493,7 @@ var (
 	}, []string{
 		CASOperation,
 		CacheHitMissStatus,
+		CompressionType,
 	})
 
 	ContentAddressableStorageProxiedBytes = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -3500,6 +3504,7 @@ var (
 	}, []string{
 		CASOperation,
 		CacheHitMissStatus,
+		CompressionType,
 	})
 
 	RemoteAtimeUpdates = promauto.NewCounterVec(prometheus.CounterOpts{
