@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -47,6 +48,21 @@ var (
 	blobBufPool = bytebufferpool.VariableSize(blobChunkSize)
 )
 
+// blobFetchKey uniquely identifies a blob fetch operation for singleflight deduplication.
+// Credentials are included because different credentials may have different access rights.
+type blobFetchKey struct {
+	digestRef string
+	username  string
+	password  string
+}
+
+// blobFetchResult is returned by the singleflight function after the blob
+// is fully cached. Waiters use this to know what to fetch from cache.
+type blobFetchResult struct {
+	repo gcrname.Repository
+	hash gcr.Hash
+}
+
 type ociFetcherServer struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
@@ -56,6 +72,8 @@ type ociFetcherServer struct {
 
 	mu        sync.Mutex
 	pullerLRU *lru.LRU[*pullerLRUEntry]
+
+	blobFetchGroup singleflight.Group[blobFetchKey, *blobFetchResult]
 }
 
 // NewServer constructs an OCIFetcherServer that
@@ -108,6 +126,11 @@ func RegisterServer(env *real_environment.RealEnv) error {
 // Otherwise it streams the blob from the upstream remote registry, writing
 // to the byte stream server at the same time.
 //
+// Concurrent requests for the same {blob, credentials} pair are deduplicated
+// using singleflight: the first request fetches from the remote registry and
+// caches the blob, while subsequent requests wait for the cache to be populated
+// and then stream from the cache.
+//
 // Requests may have a bypass_registry flag set.
 // Server admins can bypass the registry: the blob will be streamed from the byte stream
 // server if present, and FetchBlob will not fall back to the remote registry.
@@ -134,6 +157,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
 	}
 
+	// Try to serve from cache first - this is an optimization before entering singleflight.
 	err = s.fetchBlobFromCache(ctx, stream, repo, hash)
 	if err == nil {
 		return nil
@@ -150,43 +174,36 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", blobRef)
 	}
 
-	layer, err := withPullerRetry(ctx, s, blobRef, req.GetCredentials(), func(puller *remote.Puller) (gcr.Layer, error) {
-		return puller.Layer(ctx, digestRef)
+	// Use singleflight to deduplicate concurrent fetches for the same blob+credentials.
+	creds := req.GetCredentials()
+	var username, password string
+	if creds != nil {
+		username = creds.GetUsername()
+		password = creds.GetPassword()
+	}
+	key := blobFetchKey{
+		digestRef: req.GetRef(),
+		username:  username,
+		password:  password,
+	}
+
+	result, shared, err := s.blobFetchGroup.Do(ctx, key, func(sfCtx context.Context) (*blobFetchResult, error) {
+		// We are the first caller - fetch from remote and stream to our client
+		// while simultaneously caching the blob.
+		return s.fetchAndCacheBlobWithStream(sfCtx, stream, blobRef, repo, hash, req.GetCredentials())
 	})
+
 	if err != nil {
 		return err
 	}
 
-	rc, err := layer.Compressed()
-	if err != nil {
-		return wrapError(err, "error getting compressed layer")
-	}
-	// Note: rc is closed by cachedRC.Close() in the happy path,
-	// or by defer rc.Close() in the early-return paths below.
-
-	mediaType, err := layer.MediaType()
-	if err != nil {
-		defer rc.Close()
-		log.CtxWarningf(ctx, "Could not get media type for layer, skipping cache: %s", err)
-		return s.streamBlob(rc, stream)
+	if shared {
+		// We were a waiter - the blob is now cached, stream from cache.
+		return s.fetchBlobFromCache(ctx, stream, result.repo, result.hash)
 	}
 
-	size, err := layer.Size()
-	if err != nil {
-		defer rc.Close()
-		log.CtxWarningf(ctx, "Could not get size for layer, skipping cache: %s", err)
-		return s.streamBlob(rc, stream)
-	}
-
-	cachedRC, err := ocicache.NewBlobReadThroughCacher(ctx, rc, s.bsClient, s.acClient, repo, hash, string(mediaType), size)
-	if err != nil {
-		defer rc.Close()
-		log.CtxWarningf(ctx, "Error creating read-through cacher, skipping cache: %s", err)
-		return s.streamBlob(rc, stream)
-	}
-	defer cachedRC.Close()
-
-	return s.streamBlob(cachedRC, stream)
+	// We were the first caller - streaming already completed inside Do().
+	return nil
 }
 
 // FetchBlobMetadata returns OCI blob metadata (size, media type).
@@ -440,6 +457,107 @@ func (s *ociFetcherServer) streamBlob(rc io.Reader, stream ofpb.OCIFetcher_Fetch
 			return status.InternalErrorf("error reading blob: %s", err)
 		}
 	}
+}
+
+// streamBlobDual reads from rc and writes to both the gRPC stream and the cache uploader.
+// It uses sfCtx for the cache/fetch operations and streams to the first caller.
+// If the first caller disconnects, it continues caching for waiting callers.
+func (s *ociFetcherServer) streamBlobDual(sfCtx context.Context, rc io.Reader, stream ofpb.OCIFetcher_FetchBlobServer, uploader interfaces.CommittedWriteCloser) error {
+	buf := blobBufPool.Get(blobChunkSize)
+	defer blobBufPool.Put(buf)
+
+	// Track whether we should still send to the first caller's stream.
+	// If they disconnect, we stop sending but continue caching.
+	sendToClient := true
+
+	for {
+		// Check if all callers have left (singleflight context cancelled).
+		if err := sfCtx.Err(); err != nil {
+			return status.CanceledErrorf("all callers disconnected: %s", err)
+		}
+
+		n, err := rc.Read(buf)
+		if n > 0 {
+			// Write to client stream if still connected.
+			if sendToClient {
+				if sendErr := stream.Send(&ofpb.FetchBlobResponse{Data: buf[:n]}); sendErr != nil {
+					// First caller disconnected - stop sending but continue caching.
+					sendToClient = false
+				}
+			}
+			// Always write to cache (for waiting callers).
+			written, writeErr := uploader.Write(buf[:n])
+			if writeErr != nil {
+				return status.WrapError(writeErr, "write to cache")
+			}
+			if written != n {
+				return status.InternalErrorf("short write to cache: wrote %d of %d bytes", written, n)
+			}
+		}
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return status.InternalErrorf("error reading blob: %s", err)
+		}
+	}
+}
+
+// fetchAndCacheBlobWithStream fetches a blob from the remote registry, streams it
+// to the first caller's gRPC stream, and writes it to the cache. This function is
+// called inside singleflight.Do() by the first caller only.
+//
+// sfCtx is the singleflight context - it stays alive as long as any caller is waiting.
+// The first caller's stream is used for sending data, but if they disconnect,
+// the fetch/cache continues for waiting callers.
+func (s *ociFetcherServer) fetchAndCacheBlobWithStream(
+	sfCtx context.Context,
+	stream ofpb.OCIFetcher_FetchBlobServer,
+	blobRef gcrname.Reference,
+	repo gcrname.Repository,
+	hash gcr.Hash,
+	creds *rgpb.Credentials,
+) (*blobFetchResult, error) {
+	// Use the singleflight context for fetch/cache operations.
+	// This context stays alive as long as any caller is waiting.
+	layer, err := withPullerRetry(sfCtx, s, blobRef, creds, func(puller *remote.Puller) (gcr.Layer, error) {
+		return puller.Layer(sfCtx, blobRef.(gcrname.Digest))
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	rc, err := layer.Compressed()
+	if err != nil {
+		return nil, wrapError(err, "error getting compressed layer")
+	}
+	defer rc.Close()
+
+	mediaType, err := layer.MediaType()
+	if err != nil {
+		return nil, wrapError(err, "error getting media type")
+	}
+
+	size, err := layer.Size()
+	if err != nil {
+		return nil, wrapError(err, "error getting layer size")
+	}
+
+	uploader, err := ocicache.NewBlobUploader(sfCtx, s.bsClient, s.acClient, repo, hash, string(mediaType), size)
+	if err != nil {
+		return nil, status.WrapError(err, "error creating blob uploader")
+	}
+	defer uploader.Close()
+
+	if err := s.streamBlobDual(sfCtx, rc, stream, uploader); err != nil {
+		return nil, err
+	}
+
+	if err := uploader.Commit(); err != nil {
+		return nil, status.WrapError(err, "error committing blob to cache")
+	}
+
+	return &blobFetchResult{repo: repo, hash: hash}, nil
 }
 
 func pullerKey(ref gcrname.Reference, creds *rgpb.Credentials) string {

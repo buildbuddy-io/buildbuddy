@@ -21,6 +21,7 @@ go_library(
         "//server/util/log",
         "//server/util/lru",
         "//server/util/status",
+        "//third_party/singleflight",
         "@com_github_google_go_containerregistry//pkg/authn",
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
