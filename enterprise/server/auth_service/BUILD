@@ -14,6 +14,7 @@ go_library(
         "//server/util/claims",
         "//server/util/status",
         "//server/util/subdomain",
+        "@com_github_golang_jwt_jwt_v4//:jwt",
     ],
 )
 
@@ -29,6 +30,7 @@ go_test(
         "//server/util/authutil",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",

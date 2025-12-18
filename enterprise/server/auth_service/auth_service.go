@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/golang-jwt/jwt/v4"
 
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 )
@@ -22,11 +23,6 @@ func Register(env *real_environment.RealEnv) {
 }
 
 func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error) {
-	if req.GetJwtSigningMethod() != authpb.JWTSigningMethod_UNKNOWN &&
-		req.GetJwtSigningMethod() != authpb.JWTSigningMethod_HS256 {
-		return nil, status.InvalidArgumentError("Signing method not supported")
-	}
-
 	// Override the subdomain with the one for which auth is requested
 	ctx = subdomain.Context(ctx, req.GetSubdomain())
 	ctx = a.authenticator.AuthenticatedGRPCContext(ctx)
@@ -34,11 +30,28 @@ func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateR
 	if found {
 		return nil, err
 	}
-	jwt, ok := ctx.Value(authutil.ContextTokenStringKey).(string)
-	if ok {
+
+	// TODO(iain): this if inefficient because it's minting JWTs twice (an
+	// HMAC-SHA256-signed one in AuthenticatedGRPCContext() above, and an
+	// RSA-256-signed one here). Fix this by cleaning up the authentication
+	// logic a bit and exposing the right way to get just the JWT we need.
+	if req.GetJwtSigningMethod() == authpb.JWTSigningMethod_RS256 {
+		userInfo, err := claims.ClaimsFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		jwt, err := claims.AssembleJWT(userInfo, jwt.SigningMethodRS256)
+		if err != nil {
+			return nil, err
+		}
 		return &authpb.AuthenticateResponse{Jwt: &jwt}, nil
+	} else {
+		jwt, ok := ctx.Value(authutil.ContextTokenStringKey).(string)
+		if ok {
+			return &authpb.AuthenticateResponse{Jwt: &jwt}, nil
+		}
+		return nil, status.UnauthenticatedError("Authentication failed")
 	}
-	return nil, status.UnauthenticatedError("Authentication failed")
 }
 
 func (a AuthService) GetPublicKeys(ctx context.Context, req *authpb.GetPublicKeysRequest) (*authpb.GetPublicKeysResponse, error) {

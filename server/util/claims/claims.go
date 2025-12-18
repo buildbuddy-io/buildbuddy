@@ -2,6 +2,7 @@ package claims
 
 import (
 	"context"
+	"crypto/rsa"
 	"errors"
 	"slices"
 	"sync"
@@ -332,20 +333,45 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	}, nil
 }
 
-func AssembleJWT(c *Claims) (string, error) {
+func AssembleJWT(c *Claims, method jwt.SigningMethod) (string, error) {
 	expirationTime := time.Now().Add(*jwtDuration)
 	expiresAt := expirationTime.Unix()
 	// Round expiration times down to the nearest minute to improve stability
 	// of JWTs for caching purposes.
 	expiresAt -= (expiresAt % 60)
 	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
+	token := jwt.NewWithClaims(method, c)
+	if method == jwt.SigningMethodHS256 {
+		return assembleHS256JWT(token)
+	} else if method == jwt.SigningMethodRS256 {
+		return assembleRS256JWT(token)
+	}
+	return "", status.InternalError("Unsupported JWT signing method")
+}
+
+func assembleHS256JWT(token *jwt.Token) (string, error) {
 	key := *jwtKey
 	if *newJwtKey != "" && *signUsingNewJwtKey {
 		key = *newJwtKey
 	}
-	tokenString, err := token.SignedString([]byte(key))
-	return tokenString, err
+	return token.SignedString([]byte(key))
+}
+
+func assembleRS256JWT(token *jwt.Token) (string, error) {
+	var privateKey *rsa.PrivateKey
+	var err error
+	if *newJWTRSAPrivateKey != "" {
+		privateKey, err = jwt.ParseRSAPrivateKeyFromPEM([]byte(*newJWTRSAPrivateKey))
+		if err != nil {
+			return "", err
+		}
+	} else {
+		privateKey, err = jwt.ParseRSAPrivateKeyFromPEM([]byte(*jwtRSAPrivateKey))
+		if err != nil {
+			return "", err
+		}
+	}
+	return token.SignedString(privateKey)
 }
 
 // Returns a context containing auth state for the provided Claims and auth
@@ -356,7 +382,7 @@ func AuthContextWithJWT(ctx context.Context, c *Claims, err error) context.Conte
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
-	tokenString, err := AssembleJWT(c)
+	tokenString, err := AssembleJWT(c, jwt.SigningMethodHS256)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
