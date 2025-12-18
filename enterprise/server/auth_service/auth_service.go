@@ -31,7 +31,7 @@ func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateR
 		return nil, err
 	}
 
-	// TODO(iain): this if inefficient because it's minting JWTs twice (an
+	// TODO(iain): this is inefficient because it's minting JWTs twice (an
 	// HMAC-SHA256-signed one in AuthenticatedGRPCContext() above, and an
 	// RSA-256-signed one here). Fix this by cleaning up the authentication
 	// logic a bit and exposing the right way to get just the JWT we need.
