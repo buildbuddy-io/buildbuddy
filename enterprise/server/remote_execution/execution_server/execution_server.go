@@ -1424,7 +1424,7 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 	}
 	arn := digest.NewACResourceName(d, taskRN.GetInstanceName(), taskRN.GetDigestFunction())
 
-	redactCachedExecuteResponse(ctx, response)
+	RedactCachedExecuteResponse(ctx, response)
 	b, err := proto.Marshal(response)
 	if err != nil {
 		return err
@@ -1559,7 +1559,7 @@ func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResou
 	return action, cmd, nil
 }
 
-func redactCachedExecuteResponse(ctx context.Context, rsp *repb.ExecuteResponse) {
+func RedactCachedExecuteResponse(ctx context.Context, rsp *repb.ExecuteResponse) {
 	md := rsp.GetResult().GetExecutionMetadata()
 	for _, auxAny := range md.GetAuxiliaryMetadata() {
 		if auxAny.MessageIs(&espb.ExecutionAuxiliaryMetadata{}) {
