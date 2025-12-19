@@ -23,6 +23,7 @@ func Register(env *real_environment.RealEnv) error {
 		return err
 	}
 	env.SetAuthService(AuthService{authenticator: env.GetAuthenticator()})
+	return nil
 }
 
 func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error) {
