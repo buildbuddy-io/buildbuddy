@@ -1971,7 +1971,7 @@ func (ws *workspace) checkoutRef(ctx context.Context) error {
 			return err
 		}
 	} else {
-		if _, err := git(ctx, ws.log, "checkout", checkoutRef); err != nil {
+		if _, err := git(ctx, ws.log, "checkout", "--force", checkoutRef); err != nil {
 			return err
 		}
 	}
