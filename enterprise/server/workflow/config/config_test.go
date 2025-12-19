@@ -215,3 +215,27 @@ func TestCodeSearchAction(t *testing.T) {
 	assert.Contains(t, action.Steps[0].Run, apiURL.String())
 	assert.Contains(t, action.Steps[0].Run, ghURL)
 }
+
+func TestKytheIndexingAction(t *testing.T) {
+	action := config.KytheIndexingAction("main")
+
+	require.NotNil(t, action)
+	assert.Equal(t, config.KytheActionName, action.Name)
+	require.NotNil(t, action.Triggers)
+	require.NotNil(t, action.Triggers.Push)
+	assert.Equal(t, []string{"main"}, action.Triggers.Push.Branches)
+	require.NotNil(t, action.Steps)
+	assert.Len(t, action.Steps, 3)
+
+	// Step 1: Download Kythe tools
+	assert.Contains(t, action.Steps[0].Run, "kythe-v0.0.76-buildbuddy")
+
+	// Step 2: Build with Kythe extractors
+	assert.Contains(t, action.Steps[1].Run, "extractors.bazelrc")
+
+	// Step 3: Run indexing - verify it uses bazel info output_path for Bazel 8+ compatibility
+	indexingScript := action.Steps[2].Run
+	assert.Contains(t, indexingScript, `BAZEL_OUT=$(bazel info output_path)`, "indexing script should use bazel info output_path for Bazel 8+ compatibility")
+	assert.Contains(t, indexingScript, `find -L "$BAZEL_OUT"`, "find commands should use $BAZEL_OUT variable")
+	assert.NotContains(t, indexingScript, "find -L bazel-out", "find commands should not use hardcoded bazel-out path")
+}

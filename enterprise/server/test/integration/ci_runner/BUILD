@@ -42,3 +42,27 @@ go_test(
         "@org_golang_google_protobuf//encoding/protodelim",
     ],
 )
+
+go_test(
+    name = "kythe_test",
+    size = "large",
+    srcs = ["kythe_test.go"],
+    data = [
+        "//enterprise/server/cmd/ci_runner",
+    ],
+    exec_properties = {
+        "test.EstimatedComputeUnits": "3",
+    },
+    x_defs = {
+        "kytheRunfilePath": "$(rlocationpath //enterprise/server/cmd/ci_runner)",
+    },
+    deps = [
+        "//server/testutil/buildbuddy",
+        "//server/testutil/testbazel",
+        "//server/testutil/testfs",
+        "//server/testutil/testgit",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)
