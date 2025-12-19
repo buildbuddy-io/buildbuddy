@@ -729,6 +729,8 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	cachedActionResult, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), arnAC)
 	if !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult {
 		require.NoError(t, err)
+		// Trim the aux metadata before comparing
+		cachedActionResult.GetExecutionMetadata().AuxiliaryMetadata = nil
 		assert.Empty(t, cmp.Diff(trimmedExecuteResponse.GetResult(), cachedActionResult, protocmp.Transform()))
 	} else {
 		require.Equal(t, codes.NotFound, gstatus.Code(err), "Error should be NotFound, but is %v", err)
