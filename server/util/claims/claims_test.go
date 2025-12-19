@@ -316,6 +316,7 @@ func TestAssembleJWT_RS256_UsesNewKeyWhenSet(t *testing.T) {
 
 	flags.Set(t, "auth.jwt_rsa_private_key", keyPair1.PrivateKeyPEM)
 	flags.Set(t, "auth.new_jwt_rsa_private_key", keyPair2.PrivateKeyPEM)
+	flags.Set(t, "auth.sign_using_new_jwt_key", true)
 	require.NoError(t, claims.Init())
 
 	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}

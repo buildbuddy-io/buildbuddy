@@ -60,6 +60,9 @@ var (
 )
 
 func Init() error {
+	rsaPrivateKey = nil
+	rsaPublicKeys = []string{}
+
 	if *newJWTRSAPrivateKey == "" && *jwtRSAPrivateKey == "" {
 		return nil
 	}
@@ -79,15 +82,17 @@ func Init() error {
 		}
 	}
 
-	oldPrivateKey, oldPublicKey, err = getKeyPair(*newJWTRSAPrivateKey)
-	if err != nil {
-		return err
+	if *jwtRSAPrivateKey != "" {
+		oldPrivateKey, oldPublicKey, err = getKeyPair(*jwtRSAPrivateKey)
+		if err != nil {
+			return err
+		}
 	}
 
 	rsaPrivateKey = oldPrivateKey
 	if *signUsingNewJwtKey {
 		if newPrivateKey == nil {
-			return status.InvalidArgumentError("Requested signing with new RSA private key, but new new private key was specified.")
+			return status.InvalidArgumentError("Requested signing with new RSA private key, but no new private key was specified.")
 		}
 		rsaPrivateKey = newPrivateKey
 	}
@@ -103,12 +108,11 @@ func Init() error {
 }
 
 func getKeyPair(key string) (*rsa.PrivateKey, string, error) {
-	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM(
-		[]byte(*newJWTRSAPrivateKey))
+	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(key))
 	if err != nil {
 		return nil, "", err
 	}
-	publicKeyBytes, err := x509.MarshalPKIXPublicKey(privateKey)
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
 	if err != nil {
 		return nil, "", err
 	}
