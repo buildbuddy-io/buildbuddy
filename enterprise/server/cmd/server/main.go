@@ -140,7 +140,9 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	}
 	env.SetRunnerService(runnerService)
 
-	auth_service.Register(env)
+	if err = auth_service.Register(env); err != nil {
+		log.Fatalf("Error setting up auth service: %s", err)
+	}
 	hit_tracker_service.Register(env)
 
 	env.SetSplashPrinter(&splash.Printer{})

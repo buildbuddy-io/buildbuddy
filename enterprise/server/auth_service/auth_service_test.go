@@ -57,7 +57,7 @@ func TestAuthenticate_HS256SigningMethod(t *testing.T) {
 func TestAuthenticate_RS256SigningMethod(t *testing.T) {
 	keyPair := testkeys.GenerateRSAKeyPair(t)
 	flags.Set(t, "auth.jwt_rsa_private_key", keyPair.PrivateKeyPEM)
-	claims.Init()
+	require.NoError(t, claims.Init())
 
 	service := AuthService{authenticator: testauth.NewTestAuthenticator(testauth.TestUsers("foo", "bar"))}
 
@@ -91,7 +91,7 @@ func TestAuthenticateWrongCreds(t *testing.T) {
 }
 
 func TestGetPublicKeys_NoKeys(t *testing.T) {
-	claims.Init()
+	require.NoError(t, claims.Init())
 	service := AuthService{}
 	resp, err := service.GetPublicKeys(t.Context(), &authpb.GetPublicKeysRequest{})
 	require.NoError(t, err)
@@ -101,7 +101,7 @@ func TestGetPublicKeys_NoKeys(t *testing.T) {
 func TestGetPublicKeys_OnlyOldKey(t *testing.T) {
 	keys := testkeys.GenerateRSAKeyPair(t)
 	flags.Set(t, "auth.jwt_rsa_private_key", keys.PrivateKeyPEM)
-	claims.Init()
+	require.NoError(t, claims.Init())
 	service := AuthService{}
 	resp, err := service.GetPublicKeys(t.Context(), &authpb.GetPublicKeysRequest{})
 	require.NoError(t, err)
@@ -112,7 +112,7 @@ func TestGetPublicKeys_OnlyOldKey(t *testing.T) {
 func TestGetPublicKeys_OnlyNewKey(t *testing.T) {
 	keys := testkeys.GenerateRSAKeyPair(t)
 	flags.Set(t, "auth.new_jwt_rsa_private_key", keys.PrivateKeyPEM)
-	claims.Init()
+	require.NoError(t, claims.Init())
 	service := AuthService{}
 	resp, err := service.GetPublicKeys(t.Context(), &authpb.GetPublicKeysRequest{})
 	require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestGetPublicKeys_BothKeys(t *testing.T) {
 	oldKeys := testkeys.GenerateRSAKeyPair(t)
 	flags.Set(t, "auth.jwt_rsa_private_key", oldKeys.PrivateKeyPEM)
 	flags.Set(t, "auth.new_jwt_rsa_private_key", newKeys.PrivateKeyPEM)
-	claims.Init()
+	require.NoError(t, claims.Init())
 	service := AuthService{}
 	resp, err := service.GetPublicKeys(t.Context(), &authpb.GetPublicKeysRequest{})
 	require.NoError(t, err)

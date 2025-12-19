@@ -18,8 +18,10 @@ type AuthService struct {
 	authenticator interfaces.GRPCAuthenticator
 }
 
-func Register(env *real_environment.RealEnv) {
-	claims.Init() // verify JWT keys if necessary
+func Register(env *real_environment.RealEnv) error {
+	if err := claims.Init(); err != nil {
+		return err
+	}
 	env.SetAuthService(AuthService{authenticator: env.GetAuthenticator()})
 }
 
