@@ -19,6 +19,7 @@ type AuthService struct {
 }
 
 func Register(env *real_environment.RealEnv) {
+	claims.Init() // verify JWT keys if necessary
 	env.SetAuthService(AuthService{authenticator: env.GetAuthenticator()})
 }
 
