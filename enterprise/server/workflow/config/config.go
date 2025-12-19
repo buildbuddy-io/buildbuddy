@@ -244,9 +244,12 @@ func prepareKytheOutputs(dirName string) string {
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
 ulimit -n 10240
 
-find -L bazel-out/ -name "*.go.kzip" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/go_indexer -continue | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-find -L bazel-out/ -name "*.proto.kzip" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-find -L bazel-out -name '*.java.kzip' | xargs -P $(nproc) -n 1 java -jar $KYTHE_DIR/indexers/java_indexer.jar | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+# Use bazel info output_path instead of bazel-out symlink for Bazel 8+ compatibility
+BAZEL_OUT=$(bazel info output_path)
+
+find -L "$BAZEL_OUT" -name "*.go.kzip" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/go_indexer -continue | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+find -L "$BAZEL_OUT" -name "*.proto.kzip" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+find -L "$BAZEL_OUT" -name '*.java.kzip' | xargs -P $(nproc) -n 1 java -jar $KYTHE_DIR/indexers/java_indexer.jar | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
 
 # cxx indexing needs a cache to complete in a "reasonable" amount of time. It still takes a long time
 # and produces very large indices.
@@ -254,7 +257,7 @@ find -L bazel-out -name '*.java.kzip' | xargs -P $(nproc) -n 1 java -jar $KYTHE_
 # TODO(jdelfino): apt update / install are slow - consider either creating a statically linked
 # memcached binary, or installing it in the container image.
 
-cxx_kzips=$(find -L bazel-out/*/extra_actions -name "*.cxx.kzip")
+cxx_kzips=$(find -L "$BAZEL_OUT"/*/extra_actions -name "*.cxx.kzip")
 if [ ! -z "$cxx_kzips" ]; then
   sudo apt update && sudo apt install -y memcached
   memcached -p 11211 --listen localhost -m 512 & memcached_pid=$!
