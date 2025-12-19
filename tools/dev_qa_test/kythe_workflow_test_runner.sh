@@ -30,6 +30,10 @@ echo "Kythe SHA256 (optional): ${kythe_sha256}"
 echo "=================================================="
 
 cd "${workspace_dir}"
+
+# Rename BUILD.bazel_ to BUILD.bazel (stored with _ suffix to avoid creating a Bazel package boundary)
+mv "${workspace_dir}/BUILD.bazel_" "${workspace_dir}/BUILD.bazel"
+
 export BUILDBUDDY_CI_RUNNER_ROOT_DIR="${workspace_dir}/.ci_runner_root"
 mkdir -p "${BUILDBUDDY_CI_RUNNER_ROOT_DIR}"
 
@@ -56,6 +60,7 @@ mkdir -p "${BUILDBUDDY_ARTIFACTS_DIRECTORY}"
 KYTHE_ARGS="--inject_repository=kythe_release=${KYTHE_DIR}"
 KYTHE_ARGS+=" --experimental_extra_action_top_level_only=false"
 KYTHE_ARGS+=" --experimental_extra_action_filter='^//'"
+KYTHE_ARGS+=" --java_runtime_version=remotejdk_21"
 
 echo "Running Kythe build..."
 set -x
