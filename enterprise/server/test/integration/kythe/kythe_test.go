@@ -1,4 +1,4 @@
-package ci_runner_test
+package kythe_test
 
 import (
 	"os/exec"
@@ -17,16 +17,16 @@ import (
 
 var (
 	// set by x_defs in BUILD file
-	kytheRunfilePath string
+	ciRunnerRunfilePath string
 )
 
-type kytheResult struct {
+type result struct {
 	Output   string
 	ExitCode int
 }
 
-func invokeKytheRunner(t *testing.T, args []string, env []string, workDir string) *kytheResult {
-	binPath, err := runfiles.Rlocation(kytheRunfilePath)
+func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
+	binPath, err := runfiles.Rlocation(ciRunnerRunfilePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,13 +52,13 @@ func invokeKytheRunner(t *testing.T, args []string, env []string, workDir string
 	} else {
 		exitCode = 0
 	}
-	return &kytheResult{
+	return &result{
 		Output:   string(outputBytes),
 		ExitCode: exitCode,
 	}
 }
 
-func makeKytheGitRepo(t *testing.T, contents map[string]string) (path, commitSHA string) {
+func makeGitRepo(t *testing.T, contents map[string]string) (path, commitSHA string) {
 	path = testbazel.MakeTempModule(t, contents)
 	commitSHA = testgit.Init(t, path)
 	return path, commitSHA
@@ -145,7 +145,7 @@ actions:
 `,
 	}
 
-	repoPath, commitSHA := makeKytheGitRepo(t, workspaceContents)
+	repoPath, commitSHA := makeGitRepo(t, workspaceContents)
 
 	runnerFlags := []string{
 		"--workflow_id=test-workflow",
@@ -162,7 +162,7 @@ actions:
 	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
 
 	wsPath := testfs.MakeTempDir(t)
-	result := invokeKytheRunner(t, runnerFlags, []string{}, wsPath)
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 
 	// Log output for debugging
 	t.Logf("Runner output:\n%s", result.Output)
