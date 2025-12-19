@@ -34,12 +34,12 @@ const (
 var (
 	authHeaders = []string{authutil.APIKeyHeader}
 
-	remoteAuthTarget              = flag.String("auth.remote_auth_target", "", "The gRPC target of the remote authentication API.")
-	remoteAuthJwtExpirationBuffer = flag.Duration("auth.remote_auth_jwt_expiration_buffer", time.Minute, "Discard remote-auth minted JWTs if they're within this time buffer of their expiration time.")
+	target              = flag.String("auth.remote.target", "", "The gRPC target of the remote authentication API.")
+	jwtExpirationBuffer = flag.Duration("auth.remote.jwt_expiration_buffer", time.Minute, "Discard remote-auth minted JWTs if they're within this time buffer of their expiration time.")
 )
 
 func NewRemoteAuthenticator() (*RemoteAuthenticator, error) {
-	conn, err := grpc_client.DialSimple(*remoteAuthTarget)
+	conn, err := grpc_client.DialSimple(*target)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator
 	return &RemoteAuthenticator{
 		authClient:          authpb.NewAuthServiceClient(conn),
 		cache:               cache,
-		jwtExpirationBuffer: *remoteAuthJwtExpirationBuffer,
+		jwtExpirationBuffer: *jwtExpirationBuffer,
 		claimsCache:         claimsCache,
 	}, nil
 }
@@ -87,12 +87,12 @@ type RemoteAuthenticator struct {
 	claimsCache         *claims.ClaimsCache
 }
 
-// Admin stuff unsupported in remote authenticator.
+// Unsupported in the remote authenticator.
 func (a *RemoteAuthenticator) AdminGroupID() string {
 	return ""
 }
 
-// TODO(iain): control via flag if needed.
+// Unsupported in the remote authenticator.
 func (a *RemoteAuthenticator) AnonymousUsageEnabled(ctx context.Context) bool {
 	return false
 }
