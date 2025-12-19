@@ -275,6 +275,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   private stderrRPC?: Cancelable;
   private serverLogsRPCs?: Cancelable[];
   private profileRPC?: Cancelable;
+  private executionIdFromLookup?: string;
 
   fetchExecuteResponseOrActionResult({ streamFallback = true } = {}) {
     this.executeResponseRPC?.cancel();
@@ -284,6 +285,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     this.stderrRPC?.cancel();
     this.serverLogsRPCs?.forEach((rpc) => rpc.cancel());
     this.profileRPC?.cancel();
+    this.executionIdFromLookup = undefined;
 
     this.setState({
       executeResponse: undefined,
@@ -302,6 +304,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
 
     const executeResponseDigestParam = this.props.search.get("executeResponseDigest");
+    let actionDigestForFallback: IDigest | undefined;
     if (executeResponseDigestParam) {
       const executeResponseDigest = parseActionDigest(executeResponseDigestParam);
       if (!executeResponseDigest) {
@@ -323,18 +326,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
         alert_service.error("Missing action digest in URL");
         return;
       }
-      // If we have an execution ID, it means that this was certainly an RBE action
-      // and we can fetch the ExecuteResponse directly by action digest.
-      //
-      // If we don't have an execution ID, we can fall back to fetching the
-      // ActionResult from the action cache.
+      // Try fetching the ExecuteResponse from the DB via action digest. If that
+      // doesn't exist for this invocation, fall back to the Action Cache.
       //
       // TODO: we should display a warning if we fetched the ActionResult from AC,
       // since the AC entry could potentially be from a newer invocation, not the
       // current one we're looking at, which is probably confusing.
-      this.getExecutionId()
-        ? this.fetchExecuteResponseByActionDigest(actionDigest)
-        : this.fetchActionResult(actionDigest);
+      actionDigestForFallback = actionDigest;
+      this.fetchExecuteResponseByActionDigest(actionDigest);
     }
 
     if (!this.executeResponseRPC) {
@@ -345,6 +344,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
     this.executeResponseRPC
       .then((executeResponse) => {
         if (!executeResponse) {
+          if (actionDigestForFallback && !this.actionResultRPC) {
+            this.fetchActionResult(actionDigestForFallback);
+          }
           return;
         }
         // If we found an execution, we can cancel the direct AC fetch.
@@ -357,7 +359,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           this.fetchStdout(actionResult);
           this.fetchStderr(actionResult);
           this.fetchServerLogs(executeResponse);
-          const executionId = this.getExecutionId();
+          const executionId = this.getExecutionId() ?? this.executionIdFromLookup;
           if (executionId) {
             this.fetchProfile(executionId);
           }
@@ -366,6 +368,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .catch((e) => {
         const error = BuildBuddyError.parse(e);
         if (error.code === "NotFound") {
+          if (actionDigestForFallback && !this.actionResultRPC) {
+            this.fetchActionResult(actionDigestForFallback);
+          }
           return;
         }
         errorService.handleError(e);
@@ -432,7 +437,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .then((response) => {
         const execution = response.execution?.[0];
         if (execution) {
+          this.executionIdFromLookup = execution.executionId;
           this.setState({ execution });
+        } else {
+          this.executionIdFromLookup = undefined;
         }
         return execution?.executeResponse ?? null;
       });
