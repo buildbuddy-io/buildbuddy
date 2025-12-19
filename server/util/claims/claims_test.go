@@ -7,11 +7,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
@@ -118,6 +120,7 @@ func (f *fakeAPIKeyGroup) GetGroupStatus() grpb.Group_GroupStatus {
 }
 
 func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
+	require.NoError(t, claims.Init())
 	ctx := context.Background()
 	baseGroupID := "GR9000"
 	caps := capabilities.AnonymousUserCapabilities
@@ -238,6 +241,7 @@ func TestExperimentTargetingGroupID(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			flags.Set(t, "auth.admin_group_id", adminGroupID)
+			require.NoError(t, claims.Init())
 
 			ctx := t.Context()
 			ctx = metadata.NewIncomingContext(ctx, tc.grpcMetadata)
@@ -265,6 +269,7 @@ func TestExperimentTargetingGroupID(t *testing.T) {
 }
 
 func TestGroupStatusPropagation(t *testing.T) {
+	require.NoError(t, claims.Init())
 	statuses := []grpb.Group_GroupStatus{
 		grpb.Group_UNKNOWN_GROUP_STATUS,
 		grpb.Group_FREE_TIER_GROUP_STATUS,
@@ -287,4 +292,103 @@ func TestGroupStatusPropagation(t *testing.T) {
 			require.Equal(t, status, c.GetGroupStatus())
 		})
 	}
+}
+
+func TestAssembleJWT_RS256(t *testing.T) {
+	keyPair := testkeys.GenerateRSAKeyPair(t)
+	flags.Set(t, "auth.jwt_rsa_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodRS256)
+	require.NoError(t, err)
+	require.NotEmpty(t, tokenString)
+
+	// Verify it's actually an RS256 token by parsing the header
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, &claims.Claims{})
+	require.NoError(t, err)
+	require.Equal(t, "RS256", token.Method.Alg())
+}
+
+func TestAssembleJWT_RS256_UsesNewKeyWhenSet(t *testing.T) {
+	keyPair1 := testkeys.GenerateRSAKeyPair(t)
+	keyPair2 := testkeys.GenerateRSAKeyPair(t)
+
+	flags.Set(t, "auth.jwt_rsa_private_key", keyPair1.PrivateKeyPEM)
+	flags.Set(t, "auth.new_jwt_rsa_private_key", keyPair2.PrivateKeyPEM)
+	flags.Set(t, "auth.sign_using_new_jwt_key", true)
+	require.NoError(t, claims.Init())
+
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodRS256)
+	require.NoError(t, err)
+	require.NotEmpty(t, tokenString)
+
+	// Verify the JWT was indeed signed with keyPair2
+	pubKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(keyPair2.PublicKeyPEM))
+	require.NoError(t, err)
+
+	parsedClaims := &claims.Claims{}
+	_, err = jwt.ParseWithClaims(tokenString, parsedClaims, func(token *jwt.Token) (interface{}, error) {
+		return pubKey, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, "US123", parsedClaims.UserID)
+}
+
+func TestAssembleJWT_RS256_NoPrivateKey(t *testing.T) {
+	flags.Set(t, "auth.jwt_rsa_private_key", "")
+	flags.Set(t, "auth.new_jwt_rsa_private_key", "")
+	require.NoError(t, claims.Init())
+
+	c := &claims.Claims{UserID: "US123"}
+	_, err := claims.AssembleJWT(c, jwt.SigningMethodRS256)
+	require.Error(t, err)
+}
+
+func TestAssembleJWT_UnsupportedSigningMethod(t *testing.T) {
+	c := &claims.Claims{UserID: "US123"}
+	_, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Unsupported JWT signing method")
+}
+
+func TestGetRSAPublicKeys_NoKeys(t *testing.T) {
+	flags.Set(t, "auth.jwt_rsa_private_key", "")
+	flags.Set(t, "auth.new_jwt_rsa_private_key", "")
+	require.NoError(t, claims.Init())
+
+	keys := claims.GetRSAPublicKeys()
+	require.Empty(t, keys)
+}
+
+func TestGetRSAPublicKeys_OnlyOldKey(t *testing.T) {
+	keyPair := testkeys.GenerateRSAKeyPair(t)
+	flags.Set(t, "auth.jwt_rsa_private_key", keyPair.PrivateKeyPEM)
+	flags.Set(t, "auth.new_jwt_rsa_private_key", "")
+	require.NoError(t, claims.Init())
+
+	keys := claims.GetRSAPublicKeys()
+	require.Len(t, keys, 1)
+}
+
+func TestGetRSAPublicKeys_OnlyNewKey(t *testing.T) {
+	keyPair := testkeys.GenerateRSAKeyPair(t)
+	flags.Set(t, "auth.jwt_rsa_private_key", "")
+	flags.Set(t, "auth.new_jwt_rsa_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	keys := claims.GetRSAPublicKeys()
+	require.Len(t, keys, 1)
+}
+
+func TestGetRSAPublicKeys_BothKeys(t *testing.T) {
+	keyPair1 := testkeys.GenerateRSAKeyPair(t)
+	keyPair2 := testkeys.GenerateRSAKeyPair(t)
+	flags.Set(t, "auth.jwt_rsa_private_key", keyPair1.PrivateKeyPEM)
+	flags.Set(t, "auth.new_jwt_rsa_private_key", keyPair2.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	keys := claims.GetRSAPublicKeys()
+	require.Len(t, keys, 2)
 }

@@ -6,9 +6,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
@@ -52,13 +55,33 @@ func TestAuthenticate_HS256SigningMethod(t *testing.T) {
 }
 
 func TestAuthenticate_RS256SigningMethod(t *testing.T) {
+	keyPair := testkeys.GenerateRSAKeyPair(t)
+	flags.Set(t, "auth.jwt_rsa_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
 	service := AuthService{authenticator: testauth.NewTestAuthenticator(testauth.TestUsers("foo", "bar"))}
-	_, err := service.Authenticate(contextWithApiKey(t, "foo"),
+
+	authResp, err := service.Authenticate(contextWithApiKey(t, "foo"),
 		&authpb.AuthenticateRequest{
 			JwtSigningMethod: authpb.JWTSigningMethod_RS256.Enum(),
 		})
-	assert.Error(t, err)
-	assert.True(t, status.IsInvalidArgumentError(err))
+	require.NoError(t, err)
+	require.NotEmpty(t, authResp.GetJwt())
+
+	// Get the public key and confirm the JWT can be verified with it
+	keysResp, err := service.GetPublicKeys(t.Context(), &authpb.GetPublicKeysRequest{})
+	require.NoError(t, err)
+	require.Len(t, keysResp.PublicKeys, 1)
+	rsaPublicKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(keysResp.PublicKeys[0].GetKey()))
+	require.NoError(t, err)
+	token, err := jwt.Parse(authResp.GetJwt(), func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			t.Fatalf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return rsaPublicKey, nil
+	})
+	require.NoError(t, err)
+	assert.True(t, token.Valid)
 }
 
 func TestAuthenticateWrongCreds(t *testing.T) {
@@ -68,6 +91,7 @@ func TestAuthenticateWrongCreds(t *testing.T) {
 }
 
 func TestGetPublicKeys_NoKeys(t *testing.T) {
+	require.NoError(t, claims.Init())
 	service := AuthService{}
 	resp, err := service.GetPublicKeys(t.Context(), &authpb.GetPublicKeysRequest{})
 	require.NoError(t, err)
@@ -75,31 +99,39 @@ func TestGetPublicKeys_NoKeys(t *testing.T) {
 }
 
 func TestGetPublicKeys_OnlyOldKey(t *testing.T) {
-	flags.Set(t, "auth.jwt_rsa_public_key", "old-public-key")
+	keys := testkeys.GenerateRSAKeyPair(t)
+	flags.Set(t, "auth.jwt_rsa_private_key", keys.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
 	service := AuthService{}
 	resp, err := service.GetPublicKeys(t.Context(), &authpb.GetPublicKeysRequest{})
 	require.NoError(t, err)
 	require.Len(t, resp.PublicKeys, 1)
-	assert.Equal(t, "old-public-key", resp.PublicKeys[0].GetKey())
+	assert.Equal(t, keys.PublicKeyPEM, resp.PublicKeys[0].GetKey())
 }
 
 func TestGetPublicKeys_OnlyNewKey(t *testing.T) {
-	flags.Set(t, "auth.new_jwt_rsa_public_key", "new-public-key")
+	keys := testkeys.GenerateRSAKeyPair(t)
+	flags.Set(t, "auth.new_jwt_rsa_private_key", keys.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
 	service := AuthService{}
 	resp, err := service.GetPublicKeys(t.Context(), &authpb.GetPublicKeysRequest{})
 	require.NoError(t, err)
 	require.Len(t, resp.PublicKeys, 1)
-	assert.Equal(t, "new-public-key", resp.PublicKeys[0].GetKey())
+	assert.Equal(t, keys.PublicKeyPEM, resp.PublicKeys[0].GetKey())
 }
 
 func TestGetPublicKeys_BothKeys(t *testing.T) {
-	flags.Set(t, "auth.jwt_rsa_public_key", "old-public-key")
-	flags.Set(t, "auth.new_jwt_rsa_public_key", "new-public-key")
+	newKeys := testkeys.GenerateRSAKeyPair(t)
+	oldKeys := testkeys.GenerateRSAKeyPair(t)
+	flags.Set(t, "auth.jwt_rsa_private_key", oldKeys.PrivateKeyPEM)
+	flags.Set(t, "auth.new_jwt_rsa_private_key", newKeys.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
 	service := AuthService{}
 	resp, err := service.GetPublicKeys(t.Context(), &authpb.GetPublicKeysRequest{})
 	require.NoError(t, err)
 	require.Len(t, resp.PublicKeys, 2)
+
 	// New key should come first
-	assert.Equal(t, "new-public-key", resp.PublicKeys[0].GetKey())
-	assert.Equal(t, "old-public-key", resp.PublicKeys[1].GetKey())
+	assert.Equal(t, newKeys.PublicKeyPEM, resp.PublicKeys[0].GetKey())
+	assert.Equal(t, oldKeys.PublicKeyPEM, resp.PublicKeys[1].GetKey())
 }
