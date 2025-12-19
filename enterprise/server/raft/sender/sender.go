@@ -443,15 +443,13 @@ func (s *Sender) run(ctx context.Context, key []byte, fn runFunc, mods ...Option
 // KeyMeta contains a key with arbitrary data attached.
 type KeyMeta struct {
 	Key  []byte
-	Meta interface{}
+	Meta any
 }
 
 type rangeKeys struct {
 	keys []*KeyMeta
 	rd   *rfpb.RangeDescriptor
 }
-
-type runMultiKeyFunc func(c rfspb.ApiClient, h *rfpb.Header, keys []*KeyMeta) (interface{}, error)
 
 func (s *Sender) partitionKeysByRange(ctx context.Context, keys []*KeyMeta, skipRangeCache bool) (map[uint64]*rangeKeys, error) {
 	keysByRange := make(map[uint64]*rangeKeys)
@@ -474,6 +472,8 @@ func (s *Sender) partitionKeysByRange(ctx context.Context, keys []*KeyMeta, skip
 	return keysByRange, nil
 }
 
+type runMultiKeyFunc func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*KeyMeta) (any, error)
+
 // RunMultiKey is similar to Run but works on multiple keys to support batch
 // operations.
 //
@@ -483,8 +483,8 @@ func (s *Sender) partitionKeysByRange(ctx context.Context, keys []*KeyMeta, skip
 //
 // RunMultiKey returns a combined slice of the values returned from successful
 // fn calls.
-func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKeyFunc, mods ...Option) ([]interface{}, error) {
-	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKeyFunc, mods ...Option) ([]any, error) {
+	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	opts := defaultOptions()
 	for _, mod := range mods {
@@ -493,7 +493,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 
 	retrier := retry.DefaultWithContext(ctx)
 	skipRangeCache := false
-	var rsps []interface{}
+	var rsps []any
 	remainingKeys := keys
 	var lastError error
 	for retrier.Next() {
@@ -506,9 +506,9 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 		remainingKeys = nil
 
 		for _, rk := range keysByRange {
-			var rangeRsp interface{}
+			var rangeRsp any
 			i, err := s.tryReplicas(ctx, rk.rd, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
-				rsp, err := fn(c, h, rk.keys)
+				rsp, err := fn(ctx, c, h, rk.keys)
 				if err != nil {
 					return err
 				}
