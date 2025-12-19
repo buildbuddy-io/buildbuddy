@@ -99,10 +99,10 @@ type RemoteAuthenticator struct {
 	mu                  sync.RWMutex // protects cache
 	claimsCache         *claims.ClaimsCache
 
-	pkMu                sync.Mutex // protects fetching and publicKeyCache
-	lastPublicKeyFetch  time.Time
-	publicKeyCache      interfaces.LRU[*rsa.PublicKey]
-	publicKeys          []string
+	pkMu               sync.Mutex // protects fetching and publicKeyCache
+	lastPublicKeyFetch time.Time
+	publicKeyCache     interfaces.LRU[*rsa.PublicKey]
+	publicKeys         []string
 }
 
 // Admin stuff unsupported in remote authenticator.

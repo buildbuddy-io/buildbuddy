@@ -24,9 +24,9 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"google.golang.org/grpc/metadata"
 
+	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
-	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 

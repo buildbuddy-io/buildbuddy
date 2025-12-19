@@ -23,9 +23,9 @@ import (
 )
 
 type fakeAuthService struct {
-	nextJwt     map[string]string
-	nextErr     map[string]error
-	publicKeys  []string
+	nextJwt      map[string]string
+	nextErr      map[string]error
+	publicKeys   []string
 	pkFetchCount int
 
 	mu sync.Mutex
@@ -252,7 +252,7 @@ func TestRS256(t *testing.T) {
 	// Update the key pair.
 	kp2 := testkeys.GenerateRSAKeyPair(t)
 	fakeAuth.setPublicKeys(t, []string{kp2.PublicKeyPEM})
-	
+
 	// Create a JWT signed with the NEW key.
 	c2 := &claims.Claims{UserID: "bar"}
 	c2.ExpiresAt = time.Now().Add(time.Hour).Unix()

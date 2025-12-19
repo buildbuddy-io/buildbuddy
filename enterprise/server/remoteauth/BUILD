@@ -40,6 +40,7 @@ go_test(
         "//server/util/status",
         "//server/util/subdomain",
         "//server/util/testing/flags",
+        "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
     ],
