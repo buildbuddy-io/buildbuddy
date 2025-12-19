@@ -75,3 +75,24 @@ bazel_integration_test(
     visibility = ["//visibility:public"],
     workspace_path = "workspaces/buildbuddy",
 )
+
+sh_binary(
+    name = "kythe_workflow_test_runner",
+    srcs = ["kythe_workflow_test_runner.sh"],
+    deps = [
+        "@bazel_tools//tools/bash/runfiles",
+    ],
+)
+
+bazel_integration_test(
+    name = "kythe_workflow_dev_qa_test",
+    bazel_binaries = bazel_binaries,
+    bazel_version = "8.4.2",
+    env = {
+        "KYTHE_TARBALL_URL": "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.76-buildbuddy.tar.gz",
+    },
+    tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
+    test_runner = ":kythe_workflow_test_runner",
+    visibility = ["//visibility:public"],
+    workspace_path = "workspaces/kythe_workflow",
+)
