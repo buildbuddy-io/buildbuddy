@@ -127,7 +127,7 @@ func (a *TestAuthenticator) authenticateGRPCRequest(ctx context.Context) (interf
 		return u, nil
 	}
 	for _, jwt := range grpcMD[authutil.ContextTokenStringKey] {
-		u, err := claims.ParseClaims(jwt)
+		u, err := claims.ParseClaims(jwt, claims.GetJWTKeys(authpb.JWTSigningMethod_HS256)...)
 		if err != nil {
 			log.Errorf("Failed to authenticate incoming JWT: %s", err)
 			continue

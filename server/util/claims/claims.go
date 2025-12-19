@@ -26,6 +26,7 @@ import (
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
@@ -218,18 +219,24 @@ func (c *Claims) IsCustomerSSO() bool {
 	return c.SAML || c.CustomerSSO
 }
 
-func ParseClaims(token string) (*Claims, error) {
-	keys := []string{*jwtKey}
-	if *newJwtKey != "" {
-		// Try the new key first.
-		keys = []string{*newJwtKey, *jwtKey}
-	}
-
+func ParseClaims(token string, keys ...interface{}) (*Claims, error) {
 	var lastErr error
 	claims := &Claims{}
 	for _, key := range keys {
+		parsedKey := key
+		if s, ok := key.(string); ok && len(s) > 0 && s[0] == '-' {
+			pk, err := jwt.ParseRSAPublicKeyFromPEM([]byte(s))
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			parsedKey = pk
+		} else if s, ok := key.(string); ok {
+			parsedKey = []byte(s)
+		}
+
 		_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
-			return []byte(key), nil
+			return parsedKey, nil
 		})
 		if err == nil {
 			return claims, nil
@@ -241,6 +248,9 @@ func ParseClaims(token string) (*Claims, error) {
 			continue
 		}
 		return nil, err
+	}
+	if lastErr == nil {
+		return nil, status.UnauthenticatedError("no keys provided for JWT validation")
 	}
 	return nil, lastErr
 }
@@ -466,7 +476,7 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 
 	// If context already contains a JWT, just verify it and return the claims.
 	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		claims, err := ParseClaims(tokenString)
+		claims, err := ParseClaims(tokenString, GetJWTKeys(authpb.JWTSigningMethod_HS256)...)
 		if err != nil {
 			return nil, err
 		}
@@ -568,6 +578,10 @@ func NewClaimsCache() (*ClaimsCache, error) {
 }
 
 func (c *ClaimsCache) Get(token string) (*Claims, error) {
+	return c.GetWithKeys(token, GetJWTKeys(authpb.JWTSigningMethod_HS256)...)
+}
+
+func (c *ClaimsCache) GetWithKeys(token string, keys ...interface{}) (*Claims, error) {
 	c.mu.Lock()
 	v, ok := c.lru.Get(token)
 	c.mu.Unlock()
@@ -578,7 +592,7 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 		}
 	}
 
-	claims, err := ParseClaims(token)
+	claims, err := ParseClaims(token, keys...)
 	if err != nil {
 		return nil, err
 	}
@@ -592,4 +606,20 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 
 func GetRSAPublicKeys() []string {
 	return rsaPublicKeys
+}
+
+func GetJWTKeys(method authpb.JWTSigningMethod) []interface{} {
+	var keys []interface{}
+	if method == authpb.JWTSigningMethod_RS256 {
+		for _, k := range GetRSAPublicKeys() {
+			keys = append(keys, k)
+		}
+		return keys
+	}
+
+	if *newJwtKey != "" {
+		keys = append(keys, *newJwtKey)
+	}
+	keys = append(keys, *jwtKey)
+	return keys
 }

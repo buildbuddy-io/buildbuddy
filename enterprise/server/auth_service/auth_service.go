@@ -59,10 +59,14 @@ func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateR
 }
 
 func (a AuthService) GetPublicKeys(ctx context.Context, req *authpb.GetPublicKeysRequest) (*authpb.GetPublicKeysResponse, error) {
-	keys := claims.GetRSAPublicKeys()
-	publicKeys := make([]*authpb.PublicKey, len(keys))
-	for i, key := range keys {
-		publicKeys[i] = &authpb.PublicKey{Key: &key}
+	keys := claims.GetJWTKeys(authpb.JWTSigningMethod_RS256)
+	publicKeys := make([]*authpb.PublicKey, 0, len(keys))
+	for _, key := range keys {
+		s, ok := key.(string)
+		if !ok {
+			continue
+		}
+		publicKeys = append(publicKeys, &authpb.PublicKey{Key: &s})
 	}
 	return &authpb.GetPublicKeysResponse{PublicKeys: publicKeys}, nil
 }
