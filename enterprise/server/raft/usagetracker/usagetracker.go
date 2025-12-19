@@ -225,7 +225,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 	start := pu.clock.Now()
 	defer metrics.RaftBatchDeleteDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
 
-	rsps, err := pu.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+	rsps, err := pu.sender.RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			sample, ok := k.Meta.(*approxlru.Sample[*evictionKey])

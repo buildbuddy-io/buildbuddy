@@ -448,7 +448,7 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 		start := rc.clock.Now()
 		defer metrics.RaftBatchAtimeUpdateDurationUsec.Observe(float64(rc.clock.Since(start).Microseconds()))
 
-		_, err := rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+		_, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 			batch := rbuilder.NewBatchBuilder()
 			for _, k := range keys {
 				batch.Add(&rfpb.UpdateAtimeRequest{
@@ -533,7 +533,7 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 	}
 
 	// Shard the query by key and query shards in parallel.
-	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			batch.Add(&rfpb.GetRequest{
@@ -620,7 +620,7 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 	}
 
 	// Shard the query by key and query shards in parallel.
-	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			batch.Add(&rfpb.FindRequest{
@@ -721,7 +721,7 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 	}
 
 	// Shard the query by key and query shards in parallel.
-	_, err = rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		// sender runMultiKeyFuncs require that we return an interface{}
 		// and error, but in this case there's no value to return, so
 		// always return nil for the interface, even on success.
@@ -781,7 +781,7 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 	}
 
 	// Shard the query by key and query shards in parallel.
-	_, err = rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		// sender runMultiKeyFuncs require that we return an interface{}
 		// and error, but in this case there's no value to return, so
 		// always return nil for the interface, even on success.
