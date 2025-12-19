@@ -76,14 +76,14 @@ func Init() error {
 	// Make both public keys available so that clients can verify JWTs during
 	// app rollouts.
 	if *newJWTRSAPrivateKey != "" {
-		newPrivateKey, newPublicKey, err = getKeyPair(*newJWTRSAPrivateKey)
+		newPrivateKey, newPublicKey, err = getRSAKeyPair(*newJWTRSAPrivateKey)
 		if err != nil {
 			return err
 		}
 	}
 
 	if *jwtRSAPrivateKey != "" {
-		oldPrivateKey, oldPublicKey, err = getKeyPair(*jwtRSAPrivateKey)
+		oldPrivateKey, oldPublicKey, err = getRSAKeyPair(*jwtRSAPrivateKey)
 		if err != nil {
 			return err
 		}
@@ -107,7 +107,7 @@ func Init() error {
 	return nil
 }
 
-func getKeyPair(key string) (*rsa.PrivateKey, string, error) {
+func getRSAKeyPair(key string) (*rsa.PrivateKey, string, error) {
 	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(key))
 	if err != nil {
 		return nil, "", err
