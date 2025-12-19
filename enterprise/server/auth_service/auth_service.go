@@ -2,8 +2,6 @@ package auth_service
 
 import (
 	"context"
-	"crypto/x509"
-	"encoding/pem"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -58,14 +56,9 @@ func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateR
 
 func (a AuthService) GetPublicKeys(ctx context.Context, req *authpb.GetPublicKeysRequest) (*authpb.GetPublicKeysResponse, error) {
 	keys := claims.GetRSAPublicKeys()
-	publicKeys := make([]*authpb.PublicKey, 0, len(keys))
-	for _, key := range keys {
-		der, err := x509.MarshalPKIXPublicKey(key)
-		if err != nil {
-			return nil, status.InternalErrorf("failed to marshal public key: %s", err)
-		}
-		pemStr := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
-		publicKeys = append(publicKeys, &authpb.PublicKey{Key: &pemStr})
+	publicKeys := make([]*authpb.PublicKey, len(keys))
+	for i, key := range keys {
+		publicKeys[i] = &authpb.PublicKey{Key: &key}
 	}
 	return &authpb.GetPublicKeysResponse{PublicKeys: publicKeys}, nil
 }

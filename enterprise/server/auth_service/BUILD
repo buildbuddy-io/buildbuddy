@@ -29,6 +29,7 @@ go_test(
         "//server/testutil/testgrpc",
         "//server/testutil/testkeys",
         "//server/util/authutil",
+        "//server/util/claims",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_golang_jwt_jwt_v4//:jwt",
