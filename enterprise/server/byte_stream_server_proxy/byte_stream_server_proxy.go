@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
@@ -20,7 +19,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-	gstatus "google.golang.org/grpc/status"
 )
 
 type ByteStreamServerProxy struct {
@@ -92,7 +90,7 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 		requestType: requestTypeLabel,
 		compressor:  readMetrics.compressor,
 		err:         err,
-		bytesSent:   meteredStream.bytes,
+		bytes:       meteredStream.bytes,
 	}
 	recordReadMetrics(bsm, readMetrics.cacheStatus)
 	return err
@@ -292,18 +290,20 @@ type byteStreamMetrics struct {
 	requestType string
 	compressor  string
 	err         error
-	bytesSent   int64
+	bytes       int64
 }
 
 func recordReadMetrics(bsm byteStreamMetrics, cacheStatus string) {
 	labels := prometheus.Labels{
-		metrics.StatusLabel:           strconv.Itoa(int(gstatus.Code(bsm.err))),
+		metrics.StatusLabel:           status.MetricsLabel(bsm.err),
 		metrics.CacheHitMissStatus:    cacheStatus,
 		metrics.CacheProxyRequestType: bsm.requestType,
 		metrics.CompressionType:       bsm.compressor,
 	}
 	metrics.ByteStreamProxiedReadRequests.With(labels).Inc()
-	metrics.ByteStreamProxiedReadBytes.With(labels).Add(float64(bsm.bytesSent))
+	if bsm.bytes > 0 {
+		metrics.ByteStreamProxiedReadBytes.With(labels).Add(float64(bsm.bytes))
+	}
 }
 
 // Wrapper around a ByteStream_WriteServer that counts the number of bytes
@@ -351,7 +351,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 		requestType: requestTypeLabel,
 		compressor:  meteredStream.compressor,
 		err:         err,
-		bytesSent:   meteredStream.bytes,
+		bytes:       meteredStream.bytes,
 	}
 	recordWriteMetrics(bsm)
 	return err
@@ -475,14 +475,14 @@ func flushToRemote(stream bspb.ByteStream_WriteServer, remoteStream bspb.ByteStr
 
 func recordWriteMetrics(bsm byteStreamMetrics) {
 	labels := prometheus.Labels{
-		metrics.StatusLabel:           strconv.Itoa(int(gstatus.Code(bsm.err))),
+		metrics.StatusLabel:           status.MetricsLabel(bsm.err),
 		metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
 		metrics.CacheProxyRequestType: bsm.requestType,
 		metrics.CompressionType:       bsm.compressor,
 	}
 	metrics.ByteStreamProxiedWriteRequests.With(labels).Inc()
-	if bsm.bytesSent > 0 {
-		metrics.ByteStreamProxiedWriteBytes.With(labels).Add(float64(bsm.bytesSent))
+	if bsm.bytes > 0 {
+		metrics.ByteStreamProxiedWriteBytes.With(labels).Add(float64(bsm.bytes))
 	}
 }
 
