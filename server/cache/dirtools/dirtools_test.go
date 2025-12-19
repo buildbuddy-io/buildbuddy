@@ -789,7 +789,7 @@ func TestDownloadTreeDedupeInflight(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 
-	rnA, bufA := testdigest.RandomCASResourceBuf(t, 5000000)
+	rnA, bufA := testdigest.RandomCASResourceBuf(t, dirtools.BatchReadLimitBytes+1)
 	env.GetCache().Set(ctx, rnA, bufA)
 	fileADigest := rnA.GetDigest()
 
@@ -855,6 +855,140 @@ func TestDownloadTreeDedupeInflight(t *testing.T) {
 	targetContents, err := os.ReadFile(filepath.Join(tmpDir, "my-directory/fileA.symlink"))
 	assert.NoError(t, err)
 	assert.Equal(t, bufA, targetContents, "symlinked file contents should match target file")
+}
+
+func TestDownloadTreeBatchDownloadNotDeduped(t *testing.T) {
+	env, ctx := testEnv(t)
+	tmpDirA := testfs.MakeTempDir(t)
+	tmpDirB := testfs.MakeTempDir(t)
+
+	instanceName := "foo"
+	fileDigest := setFile(t, env, ctx, instanceName, "small-file")
+
+	directory := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				{
+					Name:   "file.txt",
+					Digest: fileDigest,
+				},
+			},
+		},
+	}
+
+	cc := env.GetCache().(*controlledCache)
+	cc.mu.Lock()
+	cc.getMultiCalls = make(chan struct{}, 4)
+	cc.mu.Unlock()
+	unblockGetMulti := cc.InjectGetMultiPause(digest.NewKey(fileDigest))
+
+	var mu sync.Mutex
+	totalTransferCount := int64(0)
+
+	eg := errgroup.Group{}
+	for _, rootDir := range []string{tmpDirA, tmpDirB} {
+		rootDir := rootDir
+		eg.Go(func() error {
+			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: rootDir})
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			totalTransferCount += info.FileCount
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-cc.getMultiCalls:
+		case <-time.After(2 * time.Second):
+			unblockGetMulti()
+			t.Fatal("timed out waiting for batch read requests")
+		}
+	}
+	unblockGetMulti()
+
+	require.NoError(t, eg.Wait())
+	// TODO(sluongng): ideally we should flip this in the future
+	require.Equal(t, int64(2), totalTransferCount, "batch downloads should not be deduplicated")
+	assert.FileExists(t, filepath.Join(tmpDirA, "file.txt"))
+	assert.FileExists(t, filepath.Join(tmpDirB, "file.txt"))
+}
+
+func TestDownloadTreeBytestreamDownloadDeduped(t *testing.T) {
+	env, ctx := testEnv(t)
+	tmpDirA := testfs.MakeTempDir(t)
+	tmpDirB := testfs.MakeTempDir(t)
+
+	largeRN, largeFileContent := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
+	err := env.GetCache().Set(ctx, largeRN, largeFileContent)
+	require.NoError(t, err)
+
+	directory := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				{
+					Name:   "large-file.txt",
+					Digest: largeRN.GetDigest(),
+				},
+			},
+		},
+	}
+
+	cc := env.GetCache().(*controlledCache)
+	cc.mu.Lock()
+	cc.readerCalls = make(chan struct{}, 4)
+	cc.mu.Unlock()
+	unblockReader := cc.InjectReaderPause(digest.NewKey(largeRN.GetDigest()))
+
+	var mu sync.Mutex
+	totalTransferCount := int64(0)
+
+	start := make(chan struct{})
+	eg := errgroup.Group{}
+	for _, rootDir := range []string{tmpDirA, tmpDirB} {
+		rootDir := rootDir
+		eg.Go(func() error {
+			<-start
+			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: rootDir})
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			totalTransferCount += info.FileCount
+			mu.Unlock()
+			return nil
+		})
+	}
+	close(start)
+
+	select {
+	case <-cc.readerCalls:
+	case <-time.After(2 * time.Second):
+		unblockReader()
+		t.Fatal("timed out waiting for bytestream read")
+	}
+
+	select {
+	case <-cc.readerCalls:
+		unblockReader()
+		t.Fatal("expected bytestream downloads to be deduplicated")
+	case <-time.After(250 * time.Millisecond):
+	}
+
+	unblockReader()
+	require.NoError(t, eg.Wait())
+
+	require.Equal(t, int64(1), totalTransferCount, "bytestream downloads should be deduplicated")
+	select {
+	case <-cc.readerCalls:
+		t.Fatal("expected only one bytestream read")
+	default:
+	}
+	assert.FileExists(t, filepath.Join(tmpDirA, "large-file.txt"))
+	assert.FileExists(t, filepath.Join(tmpDirB, "large-file.txt"))
 }
 
 func TestDownloadTreeWithFileCache(t *testing.T) {
@@ -1113,22 +1247,51 @@ func TestDownloadTreeExistingIncorrectSymlink(t *testing.T) {
 type controlledCache struct {
 	interfaces.Cache
 
-	mu          sync.Mutex
-	readerDelay map[digest.Key]chan struct{}
+	mu            sync.Mutex
+	readerDelay   map[digest.Key]chan struct{}
+	readerCalls   chan struct{}
+	getMultiDelay map[digest.Key]chan struct{}
+	getMultiCalls chan struct{}
 }
 
 func (cc *controlledCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	dk := digest.NewKey(r.GetDigest())
 	cc.mu.Lock()
 	delay, ok := cc.readerDelay[dk]
+	calls := cc.readerCalls
 	cc.mu.Unlock()
 
+	if calls != nil {
+		calls <- struct{}{}
+	}
 	if ok {
 		log.CtxInfof(ctx, "Injecting artificial reader delay for %s", digest.String(r.GetDigest()))
 		<-delay
 	}
 
 	return cc.Cache.Reader(ctx, r, uncompressedOffset, limit)
+}
+
+func (cc *controlledCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	var calls chan struct{}
+	delays := make([]chan struct{}, 0)
+	cc.mu.Lock()
+	calls = cc.getMultiCalls
+	for _, r := range resources {
+		if delay, ok := cc.getMultiDelay[digest.NewKey(r.GetDigest())]; ok {
+			delays = append(delays, delay)
+		}
+	}
+	cc.mu.Unlock()
+
+	if calls != nil {
+		calls <- struct{}{}
+	}
+	for _, delay := range delays {
+		<-delay
+	}
+
+	return cc.Cache.GetMulti(ctx, resources)
 }
 
 func (cc *controlledCache) InjectReaderPause(dk digest.Key) func() {
@@ -1140,6 +1303,22 @@ func (cc *controlledCache) InjectReaderPause(dk digest.Key) func() {
 		close(done)
 		cc.mu.Lock()
 		delete(cc.readerDelay, dk)
+		cc.mu.Unlock()
+	}
+}
+
+func (cc *controlledCache) InjectGetMultiPause(dk digest.Key) func() {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	if cc.getMultiDelay == nil {
+		cc.getMultiDelay = make(map[digest.Key]chan struct{})
+	}
+	done := make(chan struct{})
+	cc.getMultiDelay[dk] = done
+	return func() {
+		close(done)
+		cc.mu.Lock()
+		delete(cc.getMultiDelay, dk)
 		cc.mu.Unlock()
 	}
 }
@@ -1246,7 +1425,10 @@ func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 
 	// wrap the cache so we can add artificial delays to operations
-	cc := &controlledCache{Cache: env.GetCache(), readerDelay: make(map[digest.Key]chan struct{})}
+	cc := &controlledCache{
+		Cache:       env.GetCache(),
+		readerDelay: make(map[digest.Key]chan struct{}),
+	}
 	env.SetCache(cc)
 
 	ctx := context.Background()

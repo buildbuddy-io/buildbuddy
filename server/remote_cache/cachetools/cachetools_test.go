@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -782,6 +783,34 @@ func TestConcurrentMutationDuringUpload(t *testing.T) {
 			assert.True(t, status.IsDataLossError(err), "want DataLossError, got %+#v", err)
 		})
 	}
+}
+
+func TestBatchCASUploader_DedupesUploads(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 128)
+	df := rn.GetDigestFunction()
+
+	ctx := context.Background()
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), df)
+
+	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
+	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
+	require.NoError(t, ul.Wait())
+
+	stats := ul.Stats()
+	require.Equal(t, int64(1), stats.UploadedObjects)
+	require.Equal(t, rn.GetDigest().GetSizeBytes(), stats.UploadedBytes)
+	require.Equal(t, rn.GetDigest().GetSizeBytes(), stats.DuplicateBytes)
+
+	data, err := te.GetCache().Get(ctx, rn)
+	require.NoError(t, err)
+	assert.Equal(t, buf, data)
 }
 
 func TestUploadWriterAndGetBlob(t *testing.T) {
