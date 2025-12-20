@@ -131,15 +131,16 @@ func TestGetLogs(t *testing.T) {
 	env.GetAuditLogger().LogForGroup(group2AdminCtx, group2ID, alpb.Action_UPDATE, groupUpdate)
 
 	// These are the expected entries when querying group 1.
+	// Note: ClientIp is "0.0.0.0" because the viewer is not impersonating.
 	expected := []*alpb.Entry{
 		{
-			AuthenticationInfo: &alpb.AuthenticationInfo{User: &alpb.AuthenticatedUser{UserId: group1AdminID}},
+			AuthenticationInfo: &alpb.AuthenticationInfo{User: &alpb.AuthenticatedUser{UserId: group1AdminID}, ClientIp: "0.0.0.0"},
 			Resource:           &alpb.ResourceID{Type: alpb.ResourceType_GROUP},
 			Action:             alpb.Action_UPDATE,
 			Request:            &alpb.Entry_Request{ApiRequest: &alpb.Entry_APIRequest{UpdateGroup: groupUpdate}},
 		},
 		{
-			AuthenticationInfo: &alpb.AuthenticationInfo{User: &alpb.AuthenticatedUser{UserId: group1AdminID}},
+			AuthenticationInfo: &alpb.AuthenticationInfo{User: &alpb.AuthenticatedUser{UserId: group1AdminID}, ClientIp: "0.0.0.0"},
 			Resource:           &alpb.ResourceID{Type: alpb.ResourceType_GROUP},
 			Action:             alpb.Action_UPDATE,
 			Request: &alpb.Entry_Request{
