@@ -315,3 +315,89 @@ func TestChildGroupAuth(t *testing.T) {
 	require.Error(t, err, "should not be able to query audit logs of group1")
 	require.True(t, status.IsPermissionDeniedError(err))
 }
+
+func TestFilterEntry_RedactsBuildBuddyUsers(t *testing.T) {
+	flags.Set(t, "app.audit_logs_enabled", true)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "testenv.use_clickhouse", true)
+	env := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, env)
+	err := auditlog.Register(env)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Create a buildbuddy.io user.
+	bbUser := createUser(t, ctx, env, "BB1", "buildbuddy.io")
+	bbCtx := authUserCtx(ctx, env, t, bbUser.UserID)
+	bbGroup := getGroup(t, bbCtx, env).Group
+
+	// Create an external user.
+	extUser := createUser(t, ctx, env, "EXT1", "example.com")
+	extCtx := authUserCtx(ctx, env, t, extUser.UserID)
+	extGroup := getGroup(t, extCtx, env).Group
+
+	// Log an event for each user.
+	groupUpdate := &grpb.UpdateGroupRequest{Name: "test-group"}
+	env.GetAuditLogger().LogForGroup(bbCtx, bbGroup.GroupID, alpb.Action_UPDATE, groupUpdate)
+	env.GetAuditLogger().LogForGroup(extCtx, extGroup.GroupID, alpb.Action_UPDATE, groupUpdate)
+
+	// Retrieve logs for buildbuddy user - should be redacted.
+	bbResp, err := env.GetAuditLogger().GetLogs(bbCtx, &alpb.GetAuditLogsRequest{
+		RequestContext:  &ctxpb.RequestContext{GroupId: bbGroup.GroupID},
+		TimestampAfter:  timestamppb.New(time.Time{}),
+		TimestampBefore: timestamppb.New(time.Now()),
+	})
+	require.NoError(t, err)
+	require.Len(t, bbResp.Entries, 1)
+	require.Equal(t, "Buildbuddy Admin", bbResp.Entries[0].AuthenticationInfo.User.UserEmail)
+	require.Equal(t, "0.0.0.0", bbResp.Entries[0].AuthenticationInfo.ClientIp)
+
+	// Retrieve logs for external user - should NOT be redacted.
+	extResp, err := env.GetAuditLogger().GetLogs(extCtx, &alpb.GetAuditLogsRequest{
+		RequestContext:  &ctxpb.RequestContext{GroupId: extGroup.GroupID},
+		TimestampAfter:  timestamppb.New(time.Time{}),
+		TimestampBefore: timestamppb.New(time.Now()),
+	})
+	require.NoError(t, err)
+	require.Len(t, extResp.Entries, 1)
+	require.Equal(t, extUser.Email, extResp.Entries[0].AuthenticationInfo.User.UserEmail)
+	require.NotEqual(t, "0.0.0.0", extResp.Entries[0].AuthenticationInfo.ClientIp)
+}
+
+func TestFilterEntry_ServerAdminSeesUnfilteredLogs(t *testing.T) {
+	flags.Set(t, "app.audit_logs_enabled", true)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "testenv.use_clickhouse", true)
+	env := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, env)
+	err := auditlog.Register(env)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Create a buildbuddy.io user who will be a server admin.
+	adminUser := createUser(t, ctx, env, "ADMIN1", "buildbuddy.io")
+	adminCtx := authUserCtx(ctx, env, t, adminUser.UserID)
+	adminGroup := getGroup(t, adminCtx, env).Group
+	flags.Set(t, "auth.admin_group_id", adminGroup.GroupID)
+
+	// Log an event.
+	groupUpdate := &grpb.UpdateGroupRequest{Name: "test-group"}
+	env.GetAuditLogger().LogForGroup(adminCtx, adminGroup.GroupID, alpb.Action_UPDATE, groupUpdate)
+
+	// Server admin should see unfiltered logs.
+	resp, err := env.GetAuditLogger().GetLogs(adminCtx, &alpb.GetAuditLogsRequest{
+		RequestContext:  &ctxpb.RequestContext{GroupId: adminGroup.GroupID},
+		TimestampAfter:  timestamppb.New(time.Time{}),
+		TimestampBefore: timestamppb.New(time.Now()),
+	})
+	require.NoError(t, err)
+	require.Len(t, resp.Entries, 1)
+	require.Equal(t, adminUser.Email, resp.Entries[0].AuthenticationInfo.User.UserEmail)
+	require.NotEqual(t, "0.0.0.0", resp.Entries[0].AuthenticationInfo.ClientIp)
+}
