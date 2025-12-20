@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -186,6 +187,15 @@ func (l *Logger) LogForSecret(ctx context.Context, secretName string, action alp
 	l.Log(ctx, r, action, request)
 }
 
+func filterEntry(entry *alpb.Entry, userEmail string) {
+	if strings.HasSuffix(userEmail, "@buildbuddy.io") {
+		entry.AuthenticationInfo.User = &alpb.AuthenticatedUser{
+			UserEmail: "Buildbuddy Admin",
+		}
+		entry.AuthenticationInfo.ClientIp = "0.0.0.0"
+	}
+}
+
 // cleanRequest clears out redundant noise from the requests.
 // There are two types of IDs we scrub:
 //  1. group ID -- audit logs are already scoped to groups so including this
@@ -315,6 +325,7 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 			}
 		}
 
+		filterEntry(entry, e.AuthUserEmail)
 		resp.Entries = append(resp.Entries, entry)
 		return nil
 	})

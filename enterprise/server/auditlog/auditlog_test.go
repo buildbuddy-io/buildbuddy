@@ -315,3 +315,55 @@ func TestChildGroupAuth(t *testing.T) {
 	require.Error(t, err, "should not be able to query audit logs of group1")
 	require.True(t, status.IsPermissionDeniedError(err))
 }
+
+func TestFilterEntry_RedactsBuildBuddyUsers(t *testing.T) {
+	flags.Set(t, "app.audit_logs_enabled", true)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "testenv.use_clickhouse", true)
+	env := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, env)
+	err := auditlog.Register(env)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Create a buildbuddy.io user.
+	bbUser := createUser(t, ctx, env, "BB1", "buildbuddy.io")
+	bbCtx := authUserCtx(ctx, env, t, bbUser.UserID)
+	bbGroup := getGroup(t, bbCtx, env).Group
+
+	// Create an external user.
+	extUser := createUser(t, ctx, env, "EXT1", "example.com")
+	extCtx := authUserCtx(ctx, env, t, extUser.UserID)
+	extGroup := getGroup(t, extCtx, env).Group
+
+	// Log an event for each user.
+	groupUpdate := &grpb.UpdateGroupRequest{Name: "test-group"}
+	env.GetAuditLogger().LogForGroup(bbCtx, bbGroup.GroupID, alpb.Action_UPDATE, groupUpdate)
+	env.GetAuditLogger().LogForGroup(extCtx, extGroup.GroupID, alpb.Action_UPDATE, groupUpdate)
+
+	// Retrieve logs for buildbuddy user - should be redacted.
+	bbResp, err := env.GetAuditLogger().GetLogs(bbCtx, &alpb.GetAuditLogsRequest{
+		RequestContext:  &ctxpb.RequestContext{GroupId: bbGroup.GroupID},
+		TimestampAfter:  timestamppb.New(time.Time{}),
+		TimestampBefore: timestamppb.New(time.Now()),
+	})
+	require.NoError(t, err)
+	require.Len(t, bbResp.Entries, 1)
+	require.Equal(t, "Buildbuddy Admin", bbResp.Entries[0].AuthenticationInfo.User.UserEmail)
+	require.Equal(t, "0.0.0.0", bbResp.Entries[0].AuthenticationInfo.ClientIp)
+
+	// Retrieve logs for external user - should NOT be redacted.
+	extResp, err := env.GetAuditLogger().GetLogs(extCtx, &alpb.GetAuditLogsRequest{
+		RequestContext:  &ctxpb.RequestContext{GroupId: extGroup.GroupID},
+		TimestampAfter:  timestamppb.New(time.Time{}),
+		TimestampBefore: timestamppb.New(time.Now()),
+	})
+	require.NoError(t, err)
+	require.Len(t, extResp.Entries, 1)
+	require.Equal(t, extUser.Email, extResp.Entries[0].AuthenticationInfo.User.UserEmail)
+	// Client IP should not be "0.0.0.0" for external users (it may be empty in test environment).
+	require.NotEqual(t, "0.0.0.0", extResp.Entries[0].AuthenticationInfo.ClientIp)
+}
