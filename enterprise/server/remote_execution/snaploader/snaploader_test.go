@@ -513,7 +513,7 @@ func TestGetSnapshot_CacheIsolation(t *testing.T) {
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
 		env := setupEnv(t)
-		auth := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+		auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 		env.SetAuthenticator(auth)
 		ctx, err := auth.WithAuthenticatedUser(context.Background(), "US1")
 		require.NoError(t, err)

@@ -80,7 +80,7 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	rmc := redis_metrics_collector.New(rdb, rbuf)
 	te.SetMetricsCollector(rmc)
 
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(
 		"US1", "GR1",
 		"US2", "GR2",
 	))

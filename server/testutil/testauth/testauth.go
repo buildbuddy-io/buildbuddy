@@ -3,6 +3,7 @@ package testauth
 import (
 	"context"
 	"net/http"
+	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -25,7 +27,7 @@ import (
 // and then test that they are used.
 //
 // Example:
-//   authenticator := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+//   authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 //   testEnv.SetAuthenticator(authenticator)
 //   ... test code that uses auth ...
 //
@@ -75,13 +77,17 @@ type TestAuthenticator struct {
 	*nullauth.NullAuthenticator
 	UserProvider   userProvider
 	APIKeyProvider apiKeyUserProvider
+	claimsCache    *claims.ClaimsCache
 }
 
-func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthenticator {
+func NewTestAuthenticator(t testing.TB, testUsers map[string]interfaces.UserInfo) *TestAuthenticator {
+	claimsCache, err := claims.NewClaimsCache()
+	require.NoError(t, err)
 	return &TestAuthenticator{
 		NullAuthenticator: &nullauth.NullAuthenticator{},
 		UserProvider:      func(ctx context.Context, userID string) (interfaces.UserInfo, error) { return testUsers[userID], nil },
 		APIKeyProvider:    func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) { return testUsers[apiKey], nil },
+		claimsCache:       claimsCache,
 	}
 }
 
@@ -127,7 +133,7 @@ func (a *TestAuthenticator) authenticateGRPCRequest(ctx context.Context) (interf
 		return u, nil
 	}
 	for _, jwt := range grpcMD[authutil.ContextTokenStringKey] {
-		u, err := claims.ParseClaims(jwt)
+		u, err := a.claimsCache.Get(jwt)
 		if err != nil {
 			log.Errorf("Failed to authenticate incoming JWT: %s", err)
 			continue

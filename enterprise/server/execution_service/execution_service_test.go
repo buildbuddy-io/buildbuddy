@@ -148,7 +148,7 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 			redis := testredis.Start(t)
 			env.SetDefaultRedisClient(redis.Client())
 			redis_execution_collector.Register(env)
-			ta := testauth.NewTestAuthenticator(testauth.TestUsers(
+			ta := testauth.NewTestAuthenticator(t, testauth.TestUsers(
 				"US1", "GR1",
 				"US2", "GR2",
 			))
