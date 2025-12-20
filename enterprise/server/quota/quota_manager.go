@@ -201,10 +201,10 @@ func createGCRABucket(env environment.Env, config *bucketConfig) (Bucket, error)
 	}
 
 	rateLimiter, err := throttled.NewGCRARateLimiterCtx(store, quota)
-	rateLimiter.SetMaxCASAttemptsLimit(maxRedisRetry)
 	if err != nil {
 		return nil, status.InternalErrorf("unable to create GCRARateLimiter: %s", err)
 	}
+	rateLimiter.SetMaxCASAttemptsLimit(maxRedisRetry)
 
 	return &rateLimitedBucket{
 		config:      config,
