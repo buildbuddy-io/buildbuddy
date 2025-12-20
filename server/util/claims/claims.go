@@ -409,7 +409,7 @@ func AssembleJWT(c *Claims, method jwt.SigningMethod) (string, error) {
 	// Copy claims to avoid mutating so this function is thread-safe.
 	claimsCopy := *c
 	claimsCopy.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
-	token := jwt.NewWithClaims(method, c)
+	token := jwt.NewWithClaims(method, claimsCopy)
 	if method == jwt.SigningMethodHS256 {
 		return assembleHS256JWT(token)
 	} else if method == jwt.SigningMethodRS256 {
