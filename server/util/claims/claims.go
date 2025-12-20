@@ -218,11 +218,10 @@ func (c *Claims) IsCustomerSSO() bool {
 	return c.SAML || c.CustomerSSO
 }
 
-func parseClaims(token string) (*Claims, error) {
-	keys := []string{*jwtKey}
-	if *newJwtKey != "" {
-		// Try the new key first.
-		keys = []string{*newJwtKey, *jwtKey}
+func parseClaims(ctx context.Context, token string, keyProvider KeyProvider) (*Claims, error) {
+	keys, err := keyProvider(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	var lastErr error
@@ -410,7 +409,7 @@ func AssembleJWT(c *Claims, method jwt.SigningMethod) (string, error) {
 	// Copy claims to avoid mutating so this function is thread-safe.
 	claimsCopy := *c
 	claimsCopy.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
-	token := jwt.NewWithClaims(method, claimsCopy)
+	token := jwt.NewWithClaims(method, c)
 	if method == jwt.SigningMethodHS256 {
 		return assembleHS256JWT(token)
 	} else if method == jwt.SigningMethodRS256 {
@@ -469,7 +468,7 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 
 	// If context already contains a JWT, just verify it and return the claims.
 	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		claims, err := parseClaims(tokenString)
+		claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
 		if err != nil {
 			return nil, err
 		}
@@ -537,6 +536,18 @@ func ServerAdminGroupID() string {
 	return *serverAdminGroupID
 }
 
+// A lazily-evaluated provider of JWT signing keys that may be used to retrieve
+// keys for verifying JWTs.
+type KeyProvider func(ctx context.Context) ([]string, error)
+
+func DefaultKeyProvider(ctx context.Context) ([]string, error) {
+	if *newJwtKey != "" {
+		// Try the new key first.
+		return []string{*newJwtKey, *jwtKey}, nil
+	}
+	return []string{*jwtKey}, nil
+}
+
 // ClaimsCache helps reduce CPU overhead due to JWT parsing by caching parsed
 // and verified JWT claims.
 //
@@ -548,9 +559,11 @@ type ClaimsCache struct {
 
 	mu  sync.Mutex
 	lru interfaces.LRU[*Claims]
+
+	keyProvider KeyProvider
 }
 
-func NewClaimsCache() (*ClaimsCache, error) {
+func NewClaimsCache(keyProvider KeyProvider) (*ClaimsCache, error) {
 	if *claimsCacheTTL <= 0 {
 		return &ClaimsCache{ttl: *claimsCacheTTL, lru: nil}, nil
 	}
@@ -566,9 +579,9 @@ func NewClaimsCache() (*ClaimsCache, error) {
 	return &ClaimsCache{ttl: *claimsCacheTTL, lru: lru}, nil
 }
 
-func (c *ClaimsCache) Get(token string) (*Claims, error) {
+func (c *ClaimsCache) Get(ctx context.Context, token string) (*Claims, error) {
 	if c.ttl <= 0 {
-		return parseClaims(token)
+		return parseClaims(ctx, token, c.keyProvider)
 	}
 
 	c.mu.Lock()
@@ -581,7 +594,7 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 		}
 	}
 
-	claims, err := parseClaims(token)
+	claims, err := parseClaims(ctx, token, c.keyProvider)
 	if err != nil {
 		return nil, err
 	}
