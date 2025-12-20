@@ -30,13 +30,19 @@ func contextWithUnverifiedJWT(c *claims.Claims) context.Context {
 	return context.WithValue(context.Background(), authutil.ContextTokenStringKey, jwt)
 }
 
+func requireClaimsEqual(t *testing.T, expected *claims.Claims, actual *claims.Claims) {
+	expected.StandardClaims.ExpiresAt = 0
+	actual.StandardClaims.ExpiresAt = 0
+	require.Equal(t, expected, actual)
+}
+
 func TestJWT(t *testing.T) {
 	c := &claims.Claims{UserID: "US123"}
 	testContext := contextWithUnverifiedJWT(c)
 
 	parsedClaims, err := claims.ClaimsFromContext(testContext)
 	require.NoError(t, err)
-	require.Equal(t, c, parsedClaims)
+	requireClaimsEqual(t, c, parsedClaims)
 }
 
 func TestInvalidJWTKey(t *testing.T) {
@@ -60,7 +66,7 @@ func TestJWTKeyRotation(t *testing.T) {
 	flags.Set(t, "auth.new_jwt_key", "new_jwt_key")
 	parsedClaims, err := claims.ClaimsFromContext(testContext)
 	require.NoError(t, err)
-	require.Equal(t, c, parsedClaims)
+	requireClaimsEqual(t, c, parsedClaims)
 
 	// Get JWT signed using new key.
 	testContext = contextWithUnverifiedJWT(c)
@@ -68,7 +74,7 @@ func TestJWTKeyRotation(t *testing.T) {
 	flags.Set(t, "auth.new_jwt_key", "new_jwt_key")
 	parsedClaims, err = claims.ClaimsFromContext(testContext)
 	require.NoError(t, err)
-	require.Equal(t, c, parsedClaims)
+	requireClaimsEqual(t, c, parsedClaims)
 }
 
 type fakeAPIKeyGroup struct {
@@ -246,7 +252,7 @@ func TestExperimentTargetingGroupID(t *testing.T) {
 			ctx := t.Context()
 			ctx = metadata.NewIncomingContext(ctx, tc.grpcMetadata)
 			env := testenv.GetTestEnv(t)
-			auth := testauth.NewTestAuthenticator(testauth.TestUsers(
+			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(
 				"US1", adminGroupID,
 				"US2", nonAdminGroupID,
 			))

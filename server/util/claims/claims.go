@@ -218,7 +218,7 @@ func (c *Claims) IsCustomerSSO() bool {
 	return c.SAML || c.CustomerSSO
 }
 
-func ParseClaims(token string) (*Claims, error) {
+func parseClaims(token string) (*Claims, error) {
 	keys := []string{*jwtKey}
 	if *newJwtKey != "" {
 		// Try the new key first.
@@ -406,8 +406,11 @@ func AssembleJWT(c *Claims, method jwt.SigningMethod) (string, error) {
 	// Round expiration times down to the nearest minute to improve stability
 	// of JWTs for caching purposes.
 	expiresAt -= (expiresAt % 60)
-	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
-	token := jwt.NewWithClaims(method, c)
+
+	// Copy claims to avoid mutating so this function is thread-safe.
+	claimsCopy := *c
+	claimsCopy.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
+	token := jwt.NewWithClaims(method, claimsCopy)
 	if method == jwt.SigningMethodHS256 {
 		return assembleHS256JWT(token)
 	} else if method == jwt.SigningMethodRS256 {
@@ -466,7 +469,7 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 
 	// If context already contains a JWT, just verify it and return the claims.
 	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		claims, err := ParseClaims(tokenString)
+		claims, err := parseClaims(tokenString)
 		if err != nil {
 			return nil, err
 		}
@@ -547,13 +550,9 @@ type ClaimsCache struct {
 	lru interfaces.LRU[*Claims]
 }
 
-// Returns a ClaimsCache if the claims cache is enabled, or nil otherwise, or
-// an error if there's an error constructing the cache.
-//
-// Note: this function can return (nil, nil)!
 func NewClaimsCache() (*ClaimsCache, error) {
 	if *claimsCacheTTL <= 0 {
-		return nil, nil
+		return &ClaimsCache{ttl: *claimsCacheTTL, lru: nil}, nil
 	}
 
 	config := &lru.Config[*Claims]{
@@ -568,6 +567,10 @@ func NewClaimsCache() (*ClaimsCache, error) {
 }
 
 func (c *ClaimsCache) Get(token string) (*Claims, error) {
+	if c.ttl <= 0 {
+		return parseClaims(token)
+	}
+
 	c.mu.Lock()
 	v, ok := c.lru.Get(token)
 	c.mu.Unlock()
@@ -578,7 +581,7 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 		}
 	}
 
-	claims, err := ParseClaims(token)
+	claims, err := parseClaims(token)
 	if err != nil {
 		return nil, err
 	}

@@ -91,7 +91,7 @@ func getCached(ctx context.Context, client repb.ActionCacheClient, digest *repb.
 func TestActionCacheProxy(t *testing.T) {
 	flags.Set(t, "cache_proxy.cache_action_results", false)
 	ctx := context.Background()
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers())
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers())
 	ac := runACServer(ctx, t, ta)
 	proxy := runACProxy(ctx, t, ta, ac)
 
@@ -155,7 +155,7 @@ func TestActionCacheProxy_CachingAndEncryptionEnabled(t *testing.T) {
 	users := map[string]interfaces.UserInfo{
 		"user": userWithEncryption,
 	}
-	ta := testauth.NewTestAuthenticator(users)
+	ta := testauth.NewTestAuthenticator(t, users)
 	env.SetAuthenticator(ta)
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user")
 	require.NoError(t, err)
@@ -198,7 +198,7 @@ func TestActionCacheProxy_CachingEnabled(t *testing.T) {
 	flags.Set(t, "cache.check_client_action_result_digests", true)
 
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("user", "GR123"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user", "GR123"))
 	env.SetAuthenticator(ta)
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user")
 	require.NoError(t, err)
@@ -279,7 +279,7 @@ func TestActionCacheProxy_CachingEnabled(t *testing.T) {
 
 func TestSkipRemote(t *testing.T) {
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("user", "GR123"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user", "GR123"))
 	env.SetAuthenticator(ta)
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user")
 	require.NoError(t, err)

@@ -71,7 +71,7 @@ func userCtx(t *testing.T, ta *testauth.TestAuthenticator, userID string) contex
 
 func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(ta)
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
@@ -108,7 +108,7 @@ func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
 
 func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) {
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(ta)
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
@@ -138,7 +138,7 @@ func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) 
 
 func TestPullImageIfNecessary_ParallelCallsSerialized(t *testing.T) {
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(ta)
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
@@ -156,7 +156,7 @@ func TestPullImageIfNecessary_ParallelCallsSerialized(t *testing.T) {
 
 func TestImageCacheAuthenticator(t *testing.T) {
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(ta)
 
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})

@@ -82,7 +82,7 @@ func runMetacache(t testing.TB, te *real_environment.RealEnv, clock clockwork.Cl
 
 func TestReadWrite(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 	clock := clockwork.NewFakeClock()
 
@@ -124,7 +124,7 @@ func TestReadWrite(t *testing.T) {
 
 func TestGetSet(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 	clock := clockwork.NewFakeClock()
 
@@ -158,7 +158,7 @@ func TestGetSet(t *testing.T) {
 
 func TestFindMissing(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 	clock := clockwork.NewFakeClock()
 
@@ -286,7 +286,7 @@ func TestEncryption(t *testing.T) {
 				user := testauth.User(userID, groupID)
 				user.CacheEncryptionEnabled = true
 				users := map[string]interfaces.UserInfo{userID: user}
-				auther := testauth.NewTestAuthenticator(users)
+				auther := testauth.NewTestAuthenticator(t, users)
 				te.SetAuthenticator(auther)
 
 				ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
@@ -335,7 +335,7 @@ func randomDigests(t *testing.T, sizes ...int64) map[*rspb.ResourceName][]byte {
 
 func TestMultiGetSet(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 	clock := clockwork.NewFakeClock()
 
