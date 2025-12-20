@@ -565,7 +565,7 @@ type ClaimsCache struct {
 
 func NewClaimsCache(keyProvider KeyProvider) (*ClaimsCache, error) {
 	if *claimsCacheTTL <= 0 {
-		return &ClaimsCache{ttl: *claimsCacheTTL, lru: nil}, nil
+		return &ClaimsCache{ttl: *claimsCacheTTL, lru: nil, keyProvider: keyProvider}, nil
 	}
 
 	config := &lru.Config[*Claims]{
@@ -576,7 +576,7 @@ func NewClaimsCache(keyProvider KeyProvider) (*ClaimsCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ClaimsCache{ttl: *claimsCacheTTL, lru: lru}, nil
+	return &ClaimsCache{ttl: *claimsCacheTTL, lru: lru, keyProvider: keyProvider}, nil
 }
 
 func (c *ClaimsCache) Get(ctx context.Context, token string) (*Claims, error) {
