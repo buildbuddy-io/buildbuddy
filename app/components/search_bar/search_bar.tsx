@@ -8,9 +8,18 @@ interface Props<T> {
   emptyState?: any;
   footer?: any;
 
+  // Optional initial value to display in the input.
+  // When this prop changes, the input value updates accordingly.
+  initialValue?: string;
+
   fetchResults: (search: string) => Promise<T[]>;
   renderResult?: (result: T) => JSX.Element;
+  renderResultWithQuery?: (result: T, query: string) => JSX.Element;
   onResultPicked: (result: T, query: string) => void;
+  // When provided with override, ArrowUp/Down will call these instead of moving selection
+  overrideArrowNavigation?: boolean;
+  onArrowUp?: () => void;
+  onArrowDown?: () => void;
 }
 
 interface State<T> {
@@ -36,6 +45,26 @@ export default class SearchBar<T> extends React.Component<Props<T>, State<T>> {
 
   ref = React.createRef<HTMLInputElement>();
   resultsRef = React.createRef<HTMLInputElement>();
+  private debounceHandle?: any;
+
+  componentDidMount() {
+    if (this.props.initialValue !== undefined) {
+      this.setState({ search: this.props.initialValue || "" });
+    }
+  }
+
+  componentDidUpdate(prevProps: Props<T>) {
+    if (prevProps.initialValue !== this.props.initialValue && this.props.initialValue !== undefined) {
+      this.setState({ search: this.props.initialValue || "" });
+    }
+  }
+
+  componentWillUnmount(): void {
+    if (this.debounceHandle) {
+      clearTimeout(this.debounceHandle);
+      this.debounceHandle = undefined;
+    }
+  }
 
   handleResultPicked(result: T) {
     this.props.onResultPicked && this.props.onResultPicked(result, this.state.search);
@@ -46,7 +75,20 @@ export default class SearchBar<T> extends React.Component<Props<T>, State<T>> {
   }
 
   handleSearchChanged(value: string) {
-    this.fetchResults(value);
+    // Debounce fetching to prevent eager searches on every keystroke
+    this.setState({ search: value });
+    if (this.debounceHandle) {
+      clearTimeout(this.debounceHandle);
+      this.debounceHandle = undefined;
+    }
+    if (value === "") {
+      this.setState({ results: [], searching: false });
+      return;
+    }
+    this.setState({ searching: true });
+    this.debounceHandle = setTimeout(() => {
+      this.fetchResults(value);
+    }, 200);
   }
 
   handleKeyUp(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -58,11 +100,21 @@ export default class SearchBar<T> extends React.Component<Props<T>, State<T>> {
         }
         break;
       case "ArrowDown":
+        if (this.props.overrideArrowNavigation && this.props.onArrowDown) {
+          this.props.onArrowDown();
+          e.preventDefault();
+          return;
+        }
         this.setState({ selectedIndex: Math.min(this.state.selectedIndex + 1, this.state.results.length - 1) });
         this.resultsRef.current?.children[this.state.selectedIndex - 1]?.scrollIntoView(true);
         e.preventDefault();
         break;
       case "ArrowUp":
+        if (this.props.overrideArrowNavigation && this.props.onArrowUp) {
+          this.props.onArrowUp();
+          e.preventDefault();
+          return;
+        }
         this.setState({ selectedIndex: Math.max(0, this.state.selectedIndex - 1) });
         this.resultsRef.current?.children[this.state.selectedIndex - 1]?.scrollIntoView(true);
         e.preventDefault();
@@ -131,7 +183,11 @@ export default class SearchBar<T> extends React.Component<Props<T>, State<T>> {
                   className={`search-bar-result ${index == this.selectedIndex() ? "selected" : ""}`}
                   onMouseOver={() => this.setState({ selectedIndex: index })}
                   onMouseDown={() => this.handleResultPicked(result)}>
-                  {this.props.renderResult ? this.props.renderResult(result) : result}
+                  {this.props.renderResultWithQuery
+                    ? this.props.renderResultWithQuery(result, this.state.search)
+                    : this.props.renderResult
+                      ? this.props.renderResult(result)
+                      : (result as any)}
                 </div>
               ))}
               {!this.state.searching && !Boolean(this.state.results.length) && Boolean(this.state.search) && (
