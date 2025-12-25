@@ -1514,11 +1514,38 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 			}
 		}
 	}
-	labels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
+	labels, olapLabels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
 	if err != nil {
 		return status.WrapError(err, "compute usage labels")
 	}
-	return ut.Increment(ctx, labels, counts)
+	var lastErr error
+	if err := ut.Increment(ctx, labels, counts); err != nil {
+		log.CtxWarningf(ctx, "Failed to increment usage: %s", err)
+		lastErr = err
+	}
+
+	// Set additional labels for OLAP usage.
+	olapLabels[sku.SelfHosted] = sku.GetSelfHostedLabel(pool.IsSelfHosted)
+	olapLabels[sku.OS] = sku.GetOSLabel(plat.OS)
+
+	// Increment CPU nanos and execution wall time.
+	if err := ut.IncrementOLAP(ctx, olapLabels, sku.RemoteExecutionExecuteWorkerCPUNanos, usg.GetCpuNanos()); err != nil {
+		log.CtxWarningf(ctx, "Failed to increment OLAP worker CPU nanos usage: %s", err)
+		lastErr = err
+	}
+	if err := ut.IncrementOLAP(ctx, olapLabels, sku.RemoteExecutionExecuteWorkerDurationNanos, dur.Nanoseconds()); err != nil {
+		log.CtxWarningf(ctx, "Failed to increment OLAP worker execution wall time usage: %s", err)
+		lastErr = err
+	}
+	// Track memory GB-nanos as well. (Note that we don't actually track this
+	// for MySQL, even though there's a column for it)
+	memoryGBNanos := (usg.GetPeakMemoryBytes() * dur.Nanoseconds()) / 1e9
+	if err := ut.IncrementOLAP(ctx, olapLabels, sku.RemoteExecutionExecuteWorkerMemoryGBNanos, memoryGBNanos); err != nil {
+		log.CtxWarningf(ctx, "Failed to increment OLAP worker memory GB-nanos usage: %s", err)
+		lastErr = err
+	}
+
+	return lastErr
 }
 
 func (s *ExecutionServer) fetchAction(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Action, error) {

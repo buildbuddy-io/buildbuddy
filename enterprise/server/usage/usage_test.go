@@ -166,10 +166,17 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	require.NoError(t, err)
 
 	labels := &tables.UsageLabels{Origin: "internal", Client: "bazel"}
+	olapLabels := sku.Labels{
+		sku.Origin: sku.OriginInternal,
+		sku.Client: sku.ClientBazel,
+	}
 
 	// Increment for group 1, then group 2
 	ut.Increment(ctx1, labels, &tables.UsageCounts{CASCacheHits: 1})
+	ut.IncrementOLAP(ctx1, olapLabels, sku.RemoteCacheCASHits, 1)
+
 	ut.Increment(ctx2, labels, &tables.UsageCounts{CASCacheHits: 10})
+	ut.IncrementOLAP(ctx2, olapLabels, sku.RemoteCacheCASHits, 10)
 
 	encodedCollection1 := "group_id=GR1&origin=internal&client=bazel"
 	encodedCollection2 := "group_id=GR2&origin=internal&client=bazel"
