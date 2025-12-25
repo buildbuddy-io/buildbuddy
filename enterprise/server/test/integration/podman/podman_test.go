@@ -3,6 +3,7 @@ package podman_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -713,6 +714,8 @@ func TestSignal(t *testing.T) {
 	workDir := testfs.MakeDirAll(t, buildRoot, "work")
 	testfs.WriteAllFileContents(t, workDir, map[string]string{"world.txt": "world"})
 	env := getTestEnv(t)
+	notifyingRunner := newNotifyingCommandRunner(env.GetCommandRunner())
+	env.SetCommandRunner(notifyingRunner)
 	provider, err := podman.NewProvider(env, buildRoot)
 	require.NoError(t, err)
 	props := &platform.Properties{
@@ -732,7 +735,13 @@ func TestSignal(t *testing.T) {
 	`}}
 
 	go func() {
-		// Wait for command to start
+		// Wait for command to start. The go race detector doesn't know about
+		// the synchronization through the ".STARTED" file, so wait for the
+		// moment before `podman ... run ...` starts. At this point, all the
+		// podmand CommandContainer fields will be initialized, so c.Run() won't
+		// race against the setup.
+		notifyingRunner.waitFor("run")
+		// Wait for the command to actually be running.
 		err := disk.WaitUntilExists(ctx, filepath.Join(workDir, ".STARTED"), disk.WaitOpts{Timeout: -1})
 		require.NoError(t, err)
 		// Send SIGTERM
@@ -744,4 +753,41 @@ func TestSignal(t *testing.T) {
 	assert.NoError(t, result.Error)
 	assert.Empty(t, string(result.Stderr))
 	assert.Equal(t, "Got SIGTERM\n", string(result.Stdout))
+}
+
+type notifyingCommandRunner struct {
+	delegate    interfaces.CommandRunner
+	subCommands chan string
+}
+
+func newNotifyingCommandRunner(delegate interfaces.CommandRunner) *notifyingCommandRunner {
+	return &notifyingCommandRunner{
+		delegate: delegate,
+		// Use a large buffered channel to not have to worry about blocking.
+		subCommands: make(chan string, 1000),
+	}
+}
+
+func (n *notifyingCommandRunner) waitFor(subCommand string) {
+	for sub := range n.subCommands {
+		if sub == subCommand {
+			break
+		}
+	}
+}
+
+func (n *notifyingCommandRunner) Run(ctx context.Context, cmd *repb.Command, workDir string, statsListener func(*repb.UsageStats), stdio *interfaces.Stdio) *interfaces.CommandResult {
+	// Skip the first argument, which is the "podman" command itself.
+	for _, arg := range cmd.GetArguments()[1:] {
+		if !strings.HasPrefix(arg, "--") {
+			// First non-flag argument is the sub-command.
+			select {
+			case n.subCommands <- arg:
+			default:
+				return &interfaces.CommandResult{Error: errors.New("notifyingCommandRunner: subCommands channel full")}
+			}
+			break
+		}
+	}
+	return n.delegate.Run(ctx, cmd, workDir, statsListener, stdio)
 }
