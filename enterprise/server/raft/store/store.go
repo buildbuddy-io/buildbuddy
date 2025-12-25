@@ -89,6 +89,7 @@ const (
 	checkReplicaCaughtUpInterval = 1 * time.Second
 	maxWaitTimeForReplicaRange   = 30 * time.Second
 	metricsRefreshPeriod         = 30 * time.Second
+	minVoteBufferPeriod          = 2 * time.Second
 
 	// listenerID for replicaStatusWaiter
 	listenerID = "replicaStatusWaiter"
@@ -819,15 +820,17 @@ func (s *Store) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	s.stopped = true
 	s.mu.Unlock()
-	if s.driverQueue != nil {
-		s.driverQueue.Stop()
-	}
-	s.dropLeadershipForShutdown(ctx)
-	s.log.Info("Store: dropped leadership for shutdown")
+
 	now := time.Now()
 	defer func() {
 		s.log.Infof("Store: shutdown finished in %s", time.Since(now))
 	}()
+	if s.driverQueue != nil {
+		s.driverQueue.Stop()
+	}
+	s.dropLeadershipForShutdown(ctx)
+	voteBufferStart := time.Now()
+	s.log.Info("Store: dropped leadership for shutdown")
 
 	s.usages.Stop()
 	if s.egCancel != nil {
@@ -843,6 +846,26 @@ func (s *Store) Stop(ctx context.Context) error {
 	}
 	s.updateTagsWorker.Stop()
 
+	err := grpc_server.GRPCShutdown(ctx, s.grpcServer)
+	if err != nil {
+		return err
+	}
+	s.log.Info("Store: grpc server shutdown")
+
+	elapsed := time.Since(voteBufferStart)
+
+	if elapsed < minVoteBufferPeriod {
+		// If there is not enough time pass until the leader is transferred, we
+		// wait. So that this node can cast a vote to make the new leader
+		// election smoother.
+		remaining := minVoteBufferPeriod - elapsed
+		select {
+		case <-time.After(remaining):
+		case <-ctx.Done():
+			log.Info("Context cancelled, skipping vote buffer wait")
+		}
+	}
+
 	s.nodeHost.Close()
 	s.log.Info("Store: nodehost closed")
 
@@ -855,10 +878,7 @@ func (s *Store) Stop(ctx context.Context) error {
 	s.leaser.Close()
 	s.log.Info("Store: leaser closed")
 
-	if err := s.db.Close(); err != nil {
-		return err
-	}
-	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
+	return s.db.Close()
 }
 
 func (s *Store) lookupRange(rangeID uint64) *rfpb.RangeDescriptor {
@@ -901,14 +921,17 @@ func (s *Store) findTargetReplicaIDForLeadershipTransfer(ctx context.Context, rd
 	return targetReplicaID
 }
 
-func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
+// tryDroppingLeadership tries to drop leadership, returns the number of
+// remaining leaderes and error.
+func (s *Store) tryDroppingLeadership(ctx context.Context) (int, error) {
 	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
 		SkipLogInfo: true,
 	})
 	if nodeHostInfo == nil {
-		return
+		return 0, errors.New("missing nodehost info")
 	}
 	eg := errgroup.Group{}
+	remainingLeader := 0
 	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
 		clusterInfo := clusterInfo
 		if clusterInfo.LeaderID != clusterInfo.ReplicaID || clusterInfo.Term == 0 {
@@ -916,20 +939,54 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 			continue
 		}
 
+		remainingLeader++
 		rd := s.GetRange(clusterInfo.ShardID)
 		targetReplicaID := s.findTargetReplicaIDForLeadershipTransfer(ctx, rd, clusterInfo.ReplicaID)
-
-		if targetReplicaID != 0 {
-			eg.Go(func() error {
-				log.Debugf("request to transfer leadership of shard %d to replica %d from replica %d", clusterInfo.ShardID, targetReplicaID, clusterInfo.ReplicaID)
+		eg.Go(func() error {
+			log.Debugf("Dropping leadership of shard %d from replica %d", clusterInfo.ShardID, clusterInfo.ReplicaID)
+			for _, repl := range rd.GetReplicas() {
+				if repl.GetReplicaId() == clusterInfo.ReplicaID {
+					continue
+				}
+				if connReady, err := s.apiClient.HaveReadyConnections(ctx, repl); err != nil || !connReady {
+					log.Debugf("Drop leadership of shard %d, skipping replica id %d on NHID: %s", clusterInfo.ShardID, repl.GetReplicaId(), repl.GetNhid())
+					continue
+				}
 				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, targetReplicaID); err != nil {
 					s.log.Warningf("Error transferring leadership: %s", err)
 				}
-				return nil
-			})
+			}
+			return nil
+		})
+	}
+	return remainingLeader, eg.Wait()
+}
+
+func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	remainingLeaders := 0
+	var err error
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			log.Warningf("Timed out waiting for leadership transfer: %d leaders remaining", remainingLeaders)
+			return
+		case <-ticker.C:
+			remainingLeaders, err = s.tryDroppingLeadership(ctx)
+			if err != nil {
+				log.Warningf("failed to drop leadership: %s", err)
+				return
+			}
+			if remainingLeaders == 0 {
+				log.Info("Successfully transferred all leaderships")
+				return
+			}
 		}
 	}
-	eg.Wait()
 }
 
 func (s *Store) GetRange(rangeID uint64) *rfpb.RangeDescriptor {
