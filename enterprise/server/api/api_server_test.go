@@ -434,7 +434,7 @@ func TestDeleteFile_InvalidAuth(t *testing.T) {
 	}
 
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(map[string]interfaces.UserInfo{userID: &userWithoutWriteAuth})
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{userID: &userWithoutWriteAuth})
 	env.SetAuthenticator(ta)
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), userID)
 	require.NoError(t, err)
@@ -704,7 +704,7 @@ func TestMetrics(t *testing.T) {
 }
 `
 	env := enterprise_testenv.New(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(ta)
 	tmp := testfs.MakeTempDir(t)
 	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", testFlags)
@@ -749,7 +749,7 @@ func TestMetrics(t *testing.T) {
 
 func getEnvAndCtx(t testing.TB, user string) (*testenv.TestEnv, context.Context) {
 	te := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(userMap)
+	ta := testauth.NewTestAuthenticator(t, userMap)
 	te.SetAuthenticator(ta)
 	if user == "" {
 		return te, context.Background()

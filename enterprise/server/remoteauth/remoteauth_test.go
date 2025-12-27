@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
@@ -18,6 +18,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"google.golang.org/grpc/metadata"
+
+	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 )
 
 type fakeAuthService struct {
@@ -77,7 +79,9 @@ func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
 	go runServer()
 	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
 	require.NoError(t, err)
-	authenticator, err := newRemoteAuthenticator(conn)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	authenticator, err := newRemoteAuthenticator(fp, conn)
 	require.NoError(t, err)
 	return authenticator, &fakeAuthService
 }
