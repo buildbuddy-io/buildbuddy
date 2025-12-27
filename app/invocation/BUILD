@@ -90,6 +90,7 @@ ts_library(
         "//app/util:proto",
         "//app/util:remote_runner",
         "//proto:build_event_stream_ts_proto",
+        "//proto:cache_service_ts_proto",
         "//proto:cache_ts_proto",
         "//proto:field_mask_ts_proto",
         "//proto:invocation_status_ts_proto",
