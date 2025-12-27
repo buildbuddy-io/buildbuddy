@@ -161,7 +161,7 @@ func TestRead(t *testing.T) {
 	userWithEncryption := testauth.User("user", "group")
 	userWithEncryption.CacheEncryptionEnabled = true
 	users := map[string]interfaces.UserInfo{"user": userWithEncryption}
-	ta := testauth.NewTestAuthenticator(users)
+	ta := testauth.NewTestAuthenticator(t, users)
 	proxyEnv.SetAuthenticator(ta)
 	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
 	proxy := runBSProxy(ctx, bs, proxyEnv, t)
@@ -384,7 +384,7 @@ func TestWrite(t *testing.T) {
 			userWithEncryption := testauth.User("user", "group")
 			userWithEncryption.CacheEncryptionEnabled = true
 			users := map[string]interfaces.UserInfo{"user": userWithEncryption}
-			ta := testauth.NewTestAuthenticator(users)
+			ta := testauth.NewTestAuthenticator(t, users)
 			proxyEnv.SetAuthenticator(ta)
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, ta)
 			require.NoError(t, err)

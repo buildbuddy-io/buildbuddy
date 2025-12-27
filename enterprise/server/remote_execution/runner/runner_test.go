@@ -217,7 +217,7 @@ func newTestEnv(t *testing.T) *real_environment.RealEnv {
 	for i := 0; i < 10; i++ {
 		userGroups = append(userGroups, fmt.Sprintf("US%d", i), fmt.Sprintf("GR%d", i))
 	}
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers(userGroups...)))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers(userGroups...)))
 	return env
 }
 

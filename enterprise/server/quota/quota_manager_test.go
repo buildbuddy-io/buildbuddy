@@ -64,7 +64,7 @@ func createTestLimitingBucket(env environment.Env, config *bucketConfig, limit i
 func TestQuotaFlagdBuckets(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	testUsers := testauth.TestUsers("US001", "GR001")
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testUsers))
 	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testUsers["US001"])
 
 	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
@@ -141,7 +141,7 @@ func TestQuotaFlagdBuckets(t *testing.T) {
 func TestLoadQuotasFromFlagd(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	testUsers := testauth.TestUsers("US001", "GR001")
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testUsers))
 	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testUsers["US001"])
 
 	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
@@ -320,7 +320,7 @@ func TestBucketRowFromMap(t *testing.T) {
 func TestConcurrentBucketAccess(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	testUsers := testauth.TestUsers("US001", "GR001")
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testUsers))
 	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testUsers["US001"])
 
 	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
