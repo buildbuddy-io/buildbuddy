@@ -820,3 +820,22 @@ func fileDiskUsageRecursive(t *testing.T, path string) int64 {
 	require.NoError(t, err)
 	return sum
 }
+
+func TestFileCacheWriteCleansUpTempFile(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1024)
+	node := &repb.FileNode{Digest: rn.GetDigest()}
+
+	_, err = fc.Write(ctx, node, buf)
+	require.NoError(t, err)
+
+	pattern := filepath.Join(fc.TempDir(), rn.GetDigest().GetHash()+".*.tmp")
+	matches, err := filepath.Glob(pattern)
+	require.NoError(t, err)
+	require.Empty(t, matches, "expected temp file(s) to be deleted: %v", matches)
+}
