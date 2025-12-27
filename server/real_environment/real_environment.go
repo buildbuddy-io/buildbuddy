@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -142,6 +143,7 @@ type RealEnv struct {
 	ociFetcherServer                     ofpb.OCIFetcherServer
 	hitTrackerFactory                    interfaces.HitTrackerFactory
 	hitTrackerServiceServer              hitpb.HitTrackerServiceServer
+	cacheServiceServer                   cspb.CacheServiceServer
 	experimentFlagProvider               interfaces.ExperimentFlagProvider
 }
 
@@ -879,6 +881,13 @@ func (r *RealEnv) GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer {
 }
 func (r *RealEnv) SetHitTrackerServiceServer(hitTrackerServiceServer hitpb.HitTrackerServiceServer) {
 	r.hitTrackerServiceServer = hitTrackerServiceServer
+}
+
+func (r *RealEnv) GetCacheServiceServer() cspb.CacheServiceServer {
+	return r.cacheServiceServer
+}
+func (r *RealEnv) SetCacheServiceServer(cacheServiceServer cspb.CacheServiceServer) {
+	r.cacheServiceServer = cacheServiceServer
 }
 
 func (r *RealEnv) GetExperimentFlagProvider() interfaces.ExperimentFlagProvider {
