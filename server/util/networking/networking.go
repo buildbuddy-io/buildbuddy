@@ -35,13 +35,14 @@ import (
 )
 
 var (
-	routePrefix                   = flag.String("executor.route_prefix", defaultRoute, "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
+	routePrefix                   = flag.String("executor.route_prefix", defaultRoute, "The route used to locate the device used for external network access: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
 	preserveExistingNetNamespaces = flag.Bool("executor.preserve_existing_netns", false, "Preserve existing bb-executor net namespaces. By default all \"bb-executor\" net namespaces are removed on executor startup, but if multiple executors are running on the same machine this behavior should be disabled to prevent them interfering with each other.")
 	natSourcePortRange            = flag.String("executor.nat_source_port_range", "", "If set, restrict the source ports for NATed traffic to this range. ")
 	networkLockDir                = flag.String("executor.network_lock_directory", "", "If set, use this directory to store lockfiles for allocated IP ranges. This is required if running multiple executors within the same networking environment.")
 	taskIPRange                   = flag.String("executor.task_ip_range", "192.168.0.0/16", "Subnet to allocate IP addresses from for actions that require network access. Must be a /16 range.")
 	taskAllowedPrivateIPs         = flag.Slice("executor.task_allowed_private_ips", []string{}, "Allowed private IPs that should be reachable from actions: either 'default', an IP address, or IP range. Private IP ranges as defined in RFC1918 are otherwise blocked.")
 	networkStatsEnabled           = flag.Bool("executor.network_stats_enabled", false, "Enable basic tx/rx statistics.")
+	vethHostPrefix                = flag.String("executor.veth_prefix", "vethBBH", "Prefix for veth devices created in the executor's network namespace.")
 
 	// Private IP ranges, as defined in RFC1918.
 	PrivateIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
@@ -66,6 +67,9 @@ const (
 	// CIDR suffix for veth-based networks. We only need 2 IP addresses, one for
 	// the host end and one for the namespaced end.
 	cidrSuffix = "/30"
+
+	// Veth device name prefix used for veth pairs in task namespaces.
+	vethNamespacePrefix = "veth"
 )
 
 var (
@@ -257,11 +261,11 @@ func createRandomVethPair(ctx context.Context, netns *Namespace) (string, string
 	var err error
 	for i := 0; i < 100; i++ {
 		// Compute unique veth names
-		namespacedVeth, err = randomVethName("veth0")
+		namespacedVeth, err = randomVethName(vethNamespacePrefix)
 		if err != nil {
 			break
 		}
-		hostVeth, err = randomVethName("veth1")
+		hostVeth, err = randomVethName(*vethHostPrefix)
 		if err != nil {
 			break
 		}
@@ -670,12 +674,6 @@ func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err erro
 		}
 	}()
 
-	r, err := findRoute(*routePrefix)
-	if err != nil {
-		return nil, err
-	}
-	device := r.device
-
 	vp := &vethPair{netns: netns}
 
 	// Reserve an IP range for the veth pair.
@@ -738,44 +736,6 @@ func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err erro
 		}
 		cleanupStack = append(cleanupStack, func(ctx context.Context) error {
 			return runCommand(ctx, "ip", "rule", "del", "from", vp.network.NamespacedIP())
-		})
-	}
-
-	var iptablesRules [][]string
-	for _, allow := range *taskAllowedPrivateIPs {
-		if allow == "default" {
-			defaultIP, err := DefaultIP(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("find default IP: %w", err)
-			}
-			allow = defaultIP.String()
-		}
-		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", allow, "-j", "ACCEPT"})
-		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", allow, "-j", "ACCEPT"})
-	}
-	for _, r := range PrivateIPRanges {
-		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
-		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
-	}
-	iptablesRules = append(iptablesRules, [][]string{
-		// Allow forwarding traffic between the host side of the veth pair and
-		// the device associated with the configured route prefix (usually the
-		// default route). This is necessary on hosts with default-deny policies
-		// in place.
-		{"FORWARD", "-i", vp.hostDevice, "-o", device, "-j", "ACCEPT"},
-		{"FORWARD", "-i", device, "-o", vp.hostDevice, "-j", "ACCEPT"},
-	}...)
-
-	// IP rules are evaluated in order, so insert restrictions at the top of the
-	// table so they are evaluated before any more permissive default rules.
-	// Insert elements in reverse order to preserve the current ordering of the
-	// rules in the slice.
-	for _, rule := range slices.Backward(iptablesRules) {
-		if err := runCommand(ctx, append([]string{"iptables", "--wait", "-I"}, rule...)...); err != nil {
-			return nil, err
-		}
-		cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-			return runCommand(ctx, append([]string{"iptables", "--wait", "--delete"}, rule...)...)
 		})
 	}
 
@@ -1363,6 +1323,17 @@ func routingTableContainsTable(tableEntry string) (bool, error) {
 	return false, nil
 }
 
+// Global rules to clean up.
+var globalRules [][]string
+
+func prependIptablesRuleIfNotExists(ctx context.Context, rule ...string) error {
+	globalRules = append(globalRules, rule)
+	if err := runCommand(ctx, append([]string{"iptables", "--wait", "--check"}, rule...)...); err == nil {
+		return nil
+	}
+	return runCommand(ctx, append([]string{"iptables", "--wait", "-I"}, rule...)...)
+}
+
 // Configure setups networking related infrastructure, such as traffic isolation
 // and IP allocation.
 func Configure(ctx context.Context) error {
@@ -1372,6 +1343,54 @@ func Configure(ctx context.Context) error {
 	}
 	hostNetAllocator = a
 
+	var iptablesRules [][]string
+	// Set up rules to allow traffic to the allowed private IPs.
+	for _, allow := range *taskAllowedPrivateIPs {
+		if allow == "default" {
+			defaultIP, err := DefaultIP(ctx)
+			if err != nil {
+				return fmt.Errorf("find default IP: %w", err)
+			}
+			allow = defaultIP.String()
+		}
+		iptablesRules = append(iptablesRules, [][]string{
+			{"FORWARD", "-i", (*vethHostPrefix) + "+", "-d", allow, "-j", "ACCEPT"},
+			{"INPUT", "-i", (*vethHostPrefix) + "+", "-d", allow, "-j", "ACCEPT"},
+		}...)
+	}
+	// Set up rules to block private IPs.
+	// We use a wildcard pattern to match all host-side veth devices.
+	for _, cidr := range PrivateIPRanges {
+		iptablesRules = append(iptablesRules, [][]string{
+			{"FORWARD", "-i", (*vethHostPrefix) + "+", "-d", cidr, "-j", "REJECT"},
+			{"INPUT", "-i", (*vethHostPrefix) + "+", "-d", cidr, "-j", "REJECT"},
+		}...)
+	}
+	// Set up rules to allow forwarding traffic between the external network
+	// interface and the host-side veth devices. This is necessary on hosts with
+	// default-deny policies in place.
+	r, err := findRoute(*routePrefix)
+	if err != nil {
+		return fmt.Errorf("find route for route prefix %q: %w", *routePrefix, err)
+	}
+	externalDevice := r.device
+	iptablesRules = append(iptablesRules, [][]string{
+		{"FORWARD", "-i", externalDevice, "-o", (*vethHostPrefix) + "+", "-j", "ACCEPT"},
+		{"FORWARD", "-i", (*vethHostPrefix) + "+", "-o", externalDevice, "-j", "ACCEPT"},
+	}...)
+
+	// iptables rules are evaluated in the order in which they appear in the
+	// list, e.g. the first rule has the highest priority. So, we want to insert
+	// rules to the top of the list so that our rules take priority over any
+	// existing rules. Because we're prepending each rule one by one, we need to
+	// insert in reverse order, so that we preserve the current ordering of the
+	// rules in the slice.
+	for _, rule := range slices.Backward(iptablesRules) {
+		if err := prependIptablesRuleIfNotExists(ctx, rule...); err != nil {
+			return err
+		}
+	}
+
 	if IsSecondaryNetworkEnabled() {
 		// Adds a new routing table
 		if err := addRoutingTableEntryIfNotPresent(ctx); err != nil {
@@ -1380,6 +1399,19 @@ func Configure(ctx context.Context) error {
 		return configurePolicyBasedRoutingForSecondaryNetwork(ctx)
 	}
 	return nil
+}
+
+func Cleanup(ctx context.Context) error {
+	var lastErr error
+	for len(globalRules) > 0 {
+		rule := globalRules[len(globalRules)-1]
+		globalRules = globalRules[:len(globalRules)-1]
+		if err := runCommand(ctx, append([]string{"iptables", "--wait", "--delete"}, rule...)...); err != nil {
+			log.CtxErrorf(ctx, "Failed to delete iptables rule %v: %s", rule, err)
+			lastErr = status.WrapError(err, "failed to delete iptables rule")
+		}
+	}
+	return lastErr
 }
 
 // configurePolicyBasedRoutingForNetworkWIthRoutePrefix configures policy routing for secondary
