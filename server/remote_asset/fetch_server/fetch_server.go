@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	cachepb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -45,9 +47,22 @@ const (
 	BazelCanonicalIDQualifier         = "bazel.canonical_id"
 	BazelHttpHeaderPrefixQualifier    = "http_header:"
 	BazelHttpHeaderUrlPrefixQualifier = "http_header_url:"
+	remoteAssetBlobName               = "remote-asset-blob"
 
 	maxHTTPTimeout = 60 * time.Minute
 )
+
+type fetchDedupeKey struct {
+	instanceName     string
+	uri              string
+	storageFunc      repb.DigestFunction_Value
+	checksumFunc     repb.DigestFunction_Value
+	expectedChecksum string
+	headerKey        string
+	canonicalID      string
+}
+
+var fetchDeduper singleflight.Group[fetchDedupeKey, *repb.Digest]
 
 // makeUnsupportedQualifiersErrStatus creates a gRPC status error that includes a list of unsupported qualifiers.
 func makeUnsupportedQualifiersErrStatus(qualifierNames []string) error {
@@ -139,13 +154,42 @@ func (s *FetchServer) computeRequestTimeout(ctx context.Context, protoTimeout *d
 	return timeout
 }
 
+// headerDedupeKey returns a deterministic string representation of headers so
+// that requests with equivalent headers dedupe correctly even if map order
+// differs.
+func headerDedupeKey(header http.Header) string {
+	if len(header) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(header))
+	for k := range header {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteString(":")
+		vals := append([]string(nil), header[k]...)
+		sort.Strings(vals)
+		for i, v := range vals {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			b.WriteString(v)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 // parseChecksumQualifier returns a digest function and digest hash
 // given a "checksum.sri" qualifier.
 func parseChecksumQualifier(qualifier *rapb.Qualifier) (repb.DigestFunction_Value, string, error) {
 	for _, digestFunc := range digest.SupportedDigestFunctions() {
 		pr := fmt.Sprintf("%s-", strings.ToLower(repb.DigestFunction_Value_name[int32(digestFunc)]))
-		if strings.HasPrefix(qualifier.GetValue(), pr) {
-			b64hash := strings.TrimPrefix(qualifier.GetValue(), pr)
+		if b64hash, found := strings.CutPrefix(qualifier.GetValue(), pr); found {
 			decodedHash, err := base64.StdEncoding.DecodeString(b64hash)
 			if err != nil {
 				return repb.DigestFunction_UNKNOWN, "", status.FailedPreconditionErrorf("Error decoding qualifier %q: %s", qualifier.GetName(), err.Error())
@@ -168,6 +212,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		storageFunc = repb.DigestFunction_SHA256
 	}
 	var unsupportedQualifierNames []string
+	canonicalID := ""
 	sharedHeader := make(http.Header)
 	uriHeaders := make(map[int]http.Header)
 	var checksumFunc repb.DigestFunction_Value
@@ -180,22 +225,21 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			}
 			continue
 		}
-		if strings.HasPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier) {
+		if httpHeader, found := strings.CutPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier); found {
 			sharedHeader.Add(
-				strings.TrimPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier),
+				httpHeader,
 				qualifier.GetValue(),
 			)
 			continue
 		}
-		if strings.HasPrefix(qualifier.GetName(), BazelHttpHeaderUrlPrefixQualifier) {
-			idxAndKey := strings.TrimPrefix(qualifier.GetName(), BazelHttpHeaderUrlPrefixQualifier)
-			halves := strings.Split(idxAndKey, ":")
+		if httpHeaderUrl, found := strings.CutPrefix(qualifier.GetName(), BazelHttpHeaderUrlPrefixQualifier); found {
+			halves := strings.Split(httpHeaderUrl, ":")
 			if len(halves) != 2 {
 				// The http_header_url qualifier should be in the form
 				//   http_header_url:<url_index>:<header_name>
 				// Note: Avoid raising log level above DEBUG.
 				// The header name + value may contains sensitive information.
-				log.CtxDebugf(ctx, "Invalid http_header_url qualifier: %s", idxAndKey)
+				log.CtxDebugf(ctx, "Invalid http_header_url qualifier: %s", httpHeaderUrl)
 				continue
 			}
 			uriIndex, err := strconv.Atoi(halves[0])
@@ -213,7 +257,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			continue
 		}
 		if qualifier.GetName() == BazelCanonicalIDQualifier {
-			// TODO: Implement canonical ID handling.
+			canonicalID = qualifier.GetValue()
 			continue
 		}
 		unsupportedQualifierNames = append(unsupportedQualifierNames, qualifier.GetName())
@@ -221,7 +265,17 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	if len(unsupportedQualifierNames) > 0 {
 		return nil, makeUnsupportedQualifiersErrStatus(unsupportedQualifierNames)
 	}
-	if len(expectedChecksum) != 0 {
+
+	if canonicalID != "" && expectedChecksum != "" {
+		if blobDigest := p.findBlobByCanonicalID(ctx, canonicalID, req.GetInstanceName(), storageFunc, checksumFunc, expectedChecksum); blobDigest != nil {
+			return &rapb.FetchBlobResponse{
+				Status:         &statuspb.Status{Code: int32(gcodes.OK)},
+				BlobDigest:     blobDigest,
+				DigestFunction: storageFunc,
+			}, nil
+		}
+	}
+	if expectedChecksum != "" {
 		blobDigest := p.findBlobInCache(ctx, req.GetInstanceName(), checksumFunc, expectedChecksum)
 		// If the digestFunc is supplied and differ from the checksum sri,
 		// after looking up the cached blob using checksum sri, re-upload
@@ -231,6 +285,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		}
 
 		if blobDigest != nil {
+			p.writeCanonicalActionResult(ctx, canonicalID, blobDigest, req.GetInstanceName(), storageFunc, checksumFunc, expectedChecksum)
 			return &rapb.FetchBlobResponse{
 				Status:         &statuspb.Status{Code: int32(gcodes.OK)},
 				BlobDigest:     blobDigest,
@@ -264,23 +319,42 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				}
 			}
 		}
-		blobDigest, err := mirrorToCache(
+		key := fetchDedupeKey{
+			instanceName:     req.GetInstanceName(),
+			uri:              uri,
+			storageFunc:      storageFunc,
+			checksumFunc:     checksumFunc,
+			expectedChecksum: expectedChecksum,
+			headerKey:        headerDedupeKey(header),
+			canonicalID:      canonicalID,
+		}
+
+		blobDigest, shared, err := fetchDeduper.Do(
 			ctx,
-			bsClient,
-			req.GetInstanceName(),
-			httpClient,
-			uri,
-			header,
-			storageFunc,
-			checksumFunc,
-			expectedChecksum,
-		)
+			key,
+			func(sfCtx context.Context) (*repb.Digest, error) {
+				return mirrorToCache(
+					sfCtx,
+					bsClient,
+					req.GetInstanceName(),
+					httpClient,
+					uri,
+					header,
+					storageFunc,
+					checksumFunc,
+					expectedChecksum,
+				)
+			})
 		if err != nil {
 			lastFetchErr = fmt.Errorf("%s: %w", uri, err)
 			lastFetchUri = uri
 			log.CtxWarningf(ctx, "Failed to mirror %q to cache: %s", uri, err)
 			continue
 		}
+		if shared {
+			log.CtxDebugf(ctx, "Fetch deduped for %q", uri)
+		}
+		p.writeCanonicalActionResult(ctx, canonicalID, blobDigest, req.GetInstanceName(), storageFunc, checksumFunc, expectedChecksum)
 		return &rapb.FetchBlobResponse{
 			Uri:            uri,
 			Status:         &statuspb.Status{Code: int32(gcodes.OK)},
@@ -394,6 +468,37 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 	return blobDigest
 }
 
+// findBlobByCanonicalID looks up an ActionResult keyed by the canonical ID and
+// returns the referenced blob digest if present in CAS.
+func (p *FetchServer) findBlobByCanonicalID(ctx context.Context, canonicalID, instanceName string, storageFunc, checksumFunc repb.DigestFunction_Value, expectedChecksum string) *repb.Digest {
+	if canonicalID == "" {
+		return nil
+	}
+	acClient := p.env.GetActionCacheClient()
+	if acClient == nil {
+		return nil
+	}
+	acRN, err := canonicalActionResourceName(canonicalID, expectedChecksum, instanceName, storageFunc, checksumFunc)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to build canonical action key: %s", err)
+		return nil
+	}
+	ar, err := cachetools.GetActionResult(ctx, acClient, acRN)
+	if err != nil {
+		if !status.IsNotFoundError(err) {
+			log.CtxDebugf(ctx, "Failed to get canonical action result for %q: %s", canonicalID, err)
+		}
+		return nil
+	}
+	for _, file := range ar.GetOutputFiles() {
+		if file.GetPath() == remoteAssetBlobName {
+			log.CtxDebugf(ctx, "FetchServer found canonical_id %q in action cache: %s", canonicalID, digest.String(file.GetDigest()))
+			return file.GetDigest()
+		}
+	}
+	return nil
+}
+
 // mirrorToCache uploads the contents at the given URI to the given cache,
 // returning the digest. The fetched contents are checked against the given
 // expectedChecksum (if non-empty), and if there is a mismatch then an error is
@@ -502,6 +607,48 @@ func tempCopy(r io.Reader) (path string, err error) {
 		return "", status.UnavailableErrorf("failed to copy HTTP response to temp file: %s", err)
 	}
 	return f.Name(), nil
+}
+
+const canonicalActionKeyPrefix = "remote-asset:canonical-id:v1"
+
+func canonicalActionResourceName(canonicalID, expectedChecksum, instanceName string, storageFunc, checksumFunc repb.DigestFunction_Value) (*digest.ACResourceName, error) {
+	key := &rapb.RemoteAssetActionKey{
+		CanonicalId:            canonicalID,
+		ChecksumDigestFunction: checksumFunc,
+		Checksum:               expectedChecksum,
+		Salt:                   canonicalActionKeyPrefix,
+	}
+	d, err := digest.ComputeForMessage(key, storageFunc)
+	if err != nil {
+		return nil, err
+	}
+	return digest.NewACResourceName(d, instanceName, storageFunc), nil
+}
+
+func (p *FetchServer) writeCanonicalActionResult(ctx context.Context, canonicalID string, blobDigest *repb.Digest, instanceName string, storageFunc, checksumFunc repb.DigestFunction_Value, expectedChecksum string) {
+	if canonicalID == "" || expectedChecksum == "" || blobDigest == nil {
+		return
+	}
+	acClient := p.env.GetActionCacheClient()
+	if acClient == nil {
+		return
+	}
+	acRN, err := canonicalActionResourceName(canonicalID, expectedChecksum, instanceName, storageFunc, checksumFunc)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to build canonical action key: %s", err)
+		return
+	}
+	ar := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{
+				Path:   remoteAssetBlobName,
+				Digest: blobDigest,
+			},
+		},
+	}
+	if err := cachetools.UploadActionResult(ctx, acClient, acRN, ar); err != nil {
+		log.CtxWarningf(ctx, "Failed to write canonical action cache entry for %q: %s", canonicalID, err)
+	}
 }
 
 // TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/6187): Reduce gRPC overhead from self-RPCs.
