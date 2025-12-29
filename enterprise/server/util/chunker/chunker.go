@@ -28,6 +28,7 @@ func (c *Chunker) Write(buf []byte) (int, error) {
 	return c.pw.Write(buf)
 }
 
+// Close blocks until all chunks have been processed.
 func (c *Chunker) Close() error {
 	if err := c.pw.Close(); err != nil {
 		return status.InternalErrorf("failed to close chunker: %s", err)
