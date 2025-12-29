@@ -43,6 +43,32 @@ func (cm *ChunkedManifest) ToSplitBlobResponse() *repb.SplitBlobResponse {
 	}
 }
 
+func FromSplitResponse(req *repb.SplitBlobRequest, resp *repb.SplitBlobResponse) *ChunkedManifest {
+	return &ChunkedManifest{
+		BlobDigest:     req.GetBlobDigest(),
+		ChunkDigests:   resp.GetChunkDigests(),
+		InstanceName:   req.GetInstanceName(),
+		DigestFunction: req.GetDigestFunction(),
+	}
+}
+
+func (cm *ChunkedManifest) ToFindMissingBlobsRequest() *repb.FindMissingBlobsRequest {
+	return &repb.FindMissingBlobsRequest{
+		InstanceName:   cm.InstanceName,
+		BlobDigests:    cm.ChunkDigests,
+		DigestFunction: cm.DigestFunction,
+	}
+}
+
+func (cm *ChunkedManifest) ToSpliceBlobRequest() *repb.SpliceBlobRequest {
+	return &repb.SpliceBlobRequest{
+		BlobDigest:     cm.BlobDigest,
+		ChunkDigests:   cm.ChunkDigests,
+		InstanceName:   cm.InstanceName,
+		DigestFunction: cm.DigestFunction,
+	}
+}
+
 // Store saves the chunked manifest to the cache as an AC entry, keyed by the
 // blob digest.
 func (cm *ChunkedManifest) Store(ctx context.Context, cache interfaces.Cache) error {
