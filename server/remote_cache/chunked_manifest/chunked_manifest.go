@@ -52,14 +52,14 @@ func (cm *ChunkedManifest) Store(ctx context.Context, cache interfaces.Cache) er
 
 	// Run validations concurrently so we can fail fast if chunks are missing,
 	// avoiding the cost of reading all chunk data for verification.
-	g, ctx := errgroup.WithContext(ctx)
+	g, goCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		rns := make([]*rspb.ResourceName, 0, len(cm.ChunkDigests))
 		for _, chunkDigest := range cm.ChunkDigests {
 			rns = append(rns, digest.NewCASResourceName(chunkDigest, cm.InstanceName, cm.DigestFunction).ToProto())
 		}
 
-		missing, err := cache.FindMissing(ctx, rns)
+		missing, err := cache.FindMissing(goCtx, rns)
 		if err != nil {
 			return err
 		}
@@ -71,7 +71,7 @@ func (cm *ChunkedManifest) Store(ctx context.Context, cache interfaces.Cache) er
 	g.Go(func() error {
 		// TODO(buildbuddy-internal#6426): This could be skipped if this manifest was previously verified, since AC is not shared between
 		// groups, but the result validity could be shared.
-		return cm.verifyChunks(ctx, cache)
+		return cm.verifyChunks(goCtx, cache)
 	})
 
 	ar := &repb.ActionResult{

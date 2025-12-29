@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 func TestStoreAndLoad(t *testing.T) {
@@ -140,4 +142,54 @@ func TestLoadWithoutManifest_BlobMissing(t *testing.T) {
 	_, err = chunked_manifest.Load(ctx, cache, blobRN.GetDigest(), "", repb.DigestFunction_SHA256)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
+}
+
+func TestStore_ErrGroupContextCancellation(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	wrapper := &contextCheckingCache{
+		Cache: te.GetCache(),
+		t:     t,
+	}
+
+	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 100)
+	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 150)
+
+	require.NoError(t, wrapper.Set(ctx, chunk1RN, chunk1Data))
+	require.NoError(t, wrapper.Set(ctx, chunk2RN, chunk2Data))
+
+	allData := append(chunk1Data, chunk2Data...)
+	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	cm := &chunked_manifest.ChunkedManifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest()},
+		InstanceName:   "test-instance",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	wrapper.checkContextOnSet = true
+	err = cm.Store(ctx, wrapper)
+	require.NoError(t, err, "Store should not fail due to errgroup context cancellation")
+	require.True(t, wrapper.setWasCalled, "cache.Set should have been called")
+}
+
+type contextCheckingCache struct {
+	interfaces.Cache
+	
+	t                   *testing.T
+	checkContextOnSet   bool
+	setWasCalled        bool
+}
+
+func (c *contextCheckingCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
+	if c.checkContextOnSet {
+		c.setWasCalled = true
+		require.NoError(c.t, ctx.Err())
+	}
+	return c.Cache.Set(ctx, r, data)
 }
