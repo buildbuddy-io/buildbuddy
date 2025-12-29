@@ -176,6 +176,9 @@ const (
 	// Describes the type of compression
 	CompressionType = "compression"
 
+	// Whether the read/write used cdc chunking: "true" or "false"
+	ChunkedLabel = "chunked"
+
 	// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
@@ -3421,6 +3424,7 @@ var (
 		CacheHitMissStatus,
 		CacheProxyRequestType,
 		CompressionType,
+		ChunkedLabel,
 	})
 	ByteStreamProxiedWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3432,6 +3436,7 @@ var (
 		CacheHitMissStatus,
 		CacheProxyRequestType,
 		CompressionType,
+		ChunkedLabel,
 	})
 	ByteStreamProxiedReadBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3443,6 +3448,7 @@ var (
 		CacheHitMissStatus,
 		CacheProxyRequestType,
 		CompressionType,
+		ChunkedLabel,
 	})
 	ByteStreamProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3452,6 +3458,27 @@ var (
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
+		CacheProxyRequestType,
+		CompressionType,
+		ChunkedLabel,
+	})
+	ByteStreamProxiedWriteChunks = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_write_chunks",
+		Help:      "The number of chunks processed during chunked ByteStream.Write RPCs served by a ByteStreamServerProxy.",
+	}, []string{
+		StatusLabel,
+		CacheProxyRequestType,
+		CompressionType,
+	})
+	ByteStreamProxiedWriteSkippedChunks = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_write_skipped_chunks",
+		Help:      "The number of chunks skipped (already present in local cache) during chunked ByteStream.Write RPCs served by a ByteStreamServerProxy.",
+	}, []string{
+		StatusLabel,
 		CacheProxyRequestType,
 		CompressionType,
 	})

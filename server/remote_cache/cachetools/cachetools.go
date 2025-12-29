@@ -254,7 +254,11 @@ func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.Di
 	return computeDigest(f, instanceName, digestFunction)
 }
 
-func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
+// uploadFromReader uploads data to the CAS. The readerCompression parameter
+// specifies the compression format of the data in the reader. If it differs
+// from the target compression in the resource name, the data will be
+// compressed or decompressed as needed.
+func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader, readerCompression repb.Compressor_Value) (*repb.Digest, int64, error) {
 	if bsClient == nil {
 		return nil, 0, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
@@ -268,13 +272,22 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 
 	bufSize := int64(digest.SafeBufferSize(r.ToProto(), uploadBufSizeBytes))
 	var rc io.ReadCloser = io.NopCloser(in)
-	if r.GetCompressor() == repb.Compressor_ZSTD {
+	if targetCompression := r.GetCompressor(); readerCompression == repb.Compressor_IDENTITY && targetCompression == repb.Compressor_ZSTD {
+		// Need to compress the data
 		reader, err := compression.NewZstdCompressingReader(rc, uploadBufPool, bufSize)
 		if err != nil {
 			return nil, 0, status.InternalErrorf("Failed to compress blob: %s", err)
 		}
 		rc = reader
+	} else if readerCompression == repb.Compressor_ZSTD && targetCompression == repb.Compressor_IDENTITY {
+		// Need to decompress the data
+		reader, err := compression.NewZstdDecompressingReader(rc)
+		if err != nil {
+			return nil, 0, status.InternalErrorf("Failed to decompress blob: %s", err)
+		}
+		rc = reader
 	}
+	// If readerCompression == targetCompression, no transformation is needed.
 	defer rc.Close()
 
 	buf := uploadBufPool.Get(bufSize)
@@ -365,7 +378,7 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			if _, err := seeker.Seek(0, io.SeekStart); err != nil {
 				return uploadRetryResult{digest: nil, uploadedBytes: 0}, retry.NonRetryableError(err)
 			}
-			d, u, err := uploadFromReader(ctx, bsClient, r, in)
+			d, u, err := uploadFromReader(ctx, bsClient, r, in, repb.Compressor_IDENTITY)
 			return uploadRetryResult{
 				digest:        d,
 				uploadedBytes: u,
@@ -373,8 +386,17 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		})
 		return result.digest, result.uploadedBytes, err
 	} else {
-		return uploadFromReader(ctx, bsClient, r, in)
+		return uploadFromReader(ctx, bsClient, r, in, repb.Compressor_IDENTITY)
 	}
+}
+
+// UploadFromReaderWithCompression uploads data to the CAS, specifying the
+// compression format of the data in the reader. If the reader format differs
+// from the target compression in the resource name, the data will be compressed
+// or decompressed as needed. If both formats are the same, no transformation
+// is applied. Only IDENTITY and ZSTD formats are supported.
+func UploadFromReaderWithCompression(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader, readerCompression repb.Compressor_Value) (*repb.Digest, int64, error) {
+	return uploadFromReader(ctx, bsClient, r, in, readerCompression)
 }
 
 func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *digest.ACResourceName) (*repb.ActionResult, error) {
