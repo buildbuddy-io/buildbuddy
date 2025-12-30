@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -527,4 +528,22 @@ func TestCheckGroupBlocked(t *testing.T) {
 		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, impersonatingClaims)
 		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
 	})
+}
+
+func TestCreateGCRABucket_VeryLargePeriod(t *testing.T) {
+	redisHandle := testredis.Start(t)
+	env := testenv.GetTestEnv(t)
+	env.SetDefaultRedisClient(redisHandle.Client())
+
+	overflowConfig := &bucketConfig{
+		namespace:          "test-namespace",
+		name:               "test-bucket-overflow",
+		numRequests:        1,
+		periodDurationUsec: 1e16, // will overflow when converted to nanoseconds
+		maxBurst:           0,
+	}
+
+	// make sure this doesn't panic
+	_, err := createGCRABucket(env, overflowConfig)
+	require.ErrorContains(t, err, "unable to create GCRARateLimiter: invalid RateQuota throttled.RateQuota")
 }
