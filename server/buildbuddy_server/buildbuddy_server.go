@@ -546,6 +546,9 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	if err != nil {
 		return nil, err
 	}
+	if u.GetGroupStatus() == grpb.Group_FREE_TIER_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS {
+		return nil, status.PermissionDeniedError("An enterprise account is required to create multiple organizations")
+	}
 
 	groupName := strings.TrimSpace(req.GetName())
 	if len(groupName) == 0 {
