@@ -3,7 +3,6 @@ package buildbuddy_server
 import (
 	"context"
 	"encoding/base64"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -86,8 +86,9 @@ import (
 )
 
 var (
-	disableCertConfig   = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
-	paginateInvocations = flag.Bool("app.paginate_invocations", true, "If true, paginate invocations returned to the UI.")
+	disableCertConfig              = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
+	paginateInvocations            = flag.Bool("app.paginate_invocations", true, "If true, paginate invocations returned to the UI.")
+	restrictMultiGroupToEnterprise = flag.Bool("app.restrict_multi_group_to_enterprise", false, "If true, only enterprise accounts can create multiple organizations.", flag.Internal)
 )
 
 const (
@@ -544,6 +545,9 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if *restrictMultiGroupToEnterprise && (u.GetGroupStatus() == grpb.Group_FREE_TIER_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS) {
+		return nil, status.PermissionDeniedError("An enterprise account is required to create multiple organizations. Please contact support@buildbuddy.io if you need multiple organizations.")
 	}
 
 	groupName := strings.TrimSpace(req.GetName())
