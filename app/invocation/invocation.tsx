@@ -621,7 +621,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <InvocationBotCard suggestions={this.state.model.botSuggestions} />
           )}
 
-          {(activeTab === "all" || activeTab === "log") && <ErrorCardComponent model={this.state.model} />}
+          {(activeTab === "all" || activeTab === "log") && (
+            <ErrorCardComponent model={this.state.model} dark={this.props.preferences.darkModeEnabled} />
+          )}
 
           {!isRemoteRunnerInvocation && (activeTab === "all" || activeTab === "targets") && (
             <TargetsComponent

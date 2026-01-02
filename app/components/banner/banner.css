@@ -1,25 +1,28 @@
 .banner {
   border-radius: 8px;
   padding: 16px;
-
   display: flex;
   align-items: start;
 }
 
 .banner.banner-info {
-  background: #e1f5fe;
+  background: var(--color-banner-info-bg);
+  color: var(--color-banner-info-text);
 }
 
 .banner.banner-success {
-  background: #c8e6c9;
+  background: var(--color-banner-success-bg);
+  color: var(--color-banner-success-text);
 }
 
 .banner.banner-warning {
-  background: #fff3e0;
+  background: var(--color-banner-warning-bg);
+  color: var(--color-banner-warning-text);
 }
 
 .banner.banner-error {
-  background: #ffcdd2;
+  background: var(--color-banner-error-bg);
+  color: var(--color-banner-error-text);
 }
 
 .banner > :not(:last-child) {

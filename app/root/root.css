@@ -2,6 +2,14 @@
   --spinner-image: url("/image/loader.svg");
 }
 
+.dark {
+  --spinner-image: url("/image/loader-white.svg");
+
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  color-scheme: dark;
+}
+
 h1,
 h2,
 h3,
@@ -999,7 +1007,7 @@ code .comment {
 .empty-state .button {
   width: 100%;
   padding: 16px 32px;
-  border: 2px solid var(--color-black);
+  border: 2px solid var(--color-guide-button-border);
   font-size: 16px;
   font-weight: 600;
   border-radius: 64px;
