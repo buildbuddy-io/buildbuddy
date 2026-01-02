@@ -203,8 +203,8 @@ func TestRPCMalformedWrite(t *testing.T) {
 		t.Fatalf("failed to create resource name: %v", err)
 	}
 	_, _, err = cachetools.UploadFromReader(ctx, bsClient, rn, readSeeker)
-	if !status.IsDataLossError(err) {
-		t.Fatalf("Expected data loss error but got %s", err)
+	if !status.IsInvalidArgumentError(err) {
+		t.Fatalf("Expected invalid argument error but got %s", err)
 	}
 }
 
@@ -224,8 +224,8 @@ func TestRPCTooLongWrite(t *testing.T) {
 
 	readSeeker := bytes.NewReader(buf)
 	_, _, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
-	if !status.IsDataLossError(err) {
-		t.Fatalf("Expected data loss error but got %s", err)
+	if !status.IsInvalidArgumentError(err) {
+		t.Fatalf("Expected invalid argument error but got %s", err)
 	}
 }
 

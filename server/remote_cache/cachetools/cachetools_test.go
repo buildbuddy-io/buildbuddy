@@ -779,7 +779,7 @@ func TestConcurrentMutationDuringUpload(t *testing.T) {
 			err = ul.Wait()
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "concurrent mutation detected")
-			assert.True(t, status.IsDataLossError(err), "want DataLossError, got %+#v", err)
+			assert.True(t, status.IsInvalidArgumentError(err), "want InvalidArgumentError, got %+#v", err)
 		})
 	}
 }
