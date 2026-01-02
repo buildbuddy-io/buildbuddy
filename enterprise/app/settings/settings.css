@@ -317,3 +317,67 @@
   border-radius: 8px;
   background-color: #ffc107;
 }
+
+.settings-button-group {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-button-group .settings-button {
+  flex: 1;
+}
+
+.settings-button-group .settings-button.selected {
+  background-color: #009688;
+  color: #fff;
+}
+
+/* Dark mode styles for settings */
+.dark .settings-section {
+  border-top-color: var(--color-border-primary);
+}
+
+.dark .settings-tab-group {
+  border-color: var(--color-border-secondary);
+}
+
+.dark .settings-tab-group > :not(:last-child) {
+  border-bottom-color: var(--color-border-secondary);
+}
+
+.dark .settings .settings-tab-group-subtitle {
+  color: var(--color-text-tertiary);
+}
+
+.dark .settings .settings-tab:not(.active-tab):hover {
+  background: var(--color-bg-hover);
+}
+
+.dark .settings .settings-tab.active-tab {
+  background: #004d40;
+  color: #80cbc4;
+}
+
+.dark .github-account-link .linked-github-account-row {
+  border-color: var(--color-border-primary);
+}
+
+.dark .settings .github-app-installations {
+  border-color: var(--color-border-primary);
+}
+
+.dark .settings .github-app-installation:not(:last-child) {
+  border-bottom-color: var(--color-border-primary);
+}
+
+.dark .settings .github-app-installation .installation-settings .input-description {
+  color: var(--color-text-secondary);
+}
+
+.dark .settings-tabs {
+  border-bottom-color: var(--color-border-primary);
+}
+
+.dark .github-hovercard {
+  background: var(--color-bg-card);
+}

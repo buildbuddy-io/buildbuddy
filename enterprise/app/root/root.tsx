@@ -268,7 +268,7 @@ export default class EnterpriseRootComponent extends React.Component {
       <>
         {this.state.user?.isImpersonating && <ImpersonationComponent user={this.state.user} />}
         <div
-          className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${sidebar || code ? "left" : ""}`}>
+          className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${this.state.preferences.darkModeEnabled ? "dark" : ""} ${sidebar || code ? "left" : ""}`}>
           <div className={`page ${menu ? "has-menu" : ""}`}>
             {menu && (
               <MenuComponent

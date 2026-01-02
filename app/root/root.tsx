@@ -66,8 +66,11 @@ export default class RootComponent extends React.Component {
     let invocationId = router.getInvocationId(this.state.path);
     let compareInvocationIds = router.getInvocationIdsForCompare(this.state.path);
     let showSetup = !invocationId && !compareInvocationIds;
+    const classNames = ["root"];
+    if (this.state.preferences.denseModeEnabled) classNames.push("dense");
+    if (this.state.preferences.darkModeEnabled) classNames.push("dark");
     return (
-      <div className={this.state.preferences.denseModeEnabled ? "dense root" : "root"}>
+      <div className={classNames.join(" ")}>
         <MenuComponent user={this.state.user} showHamburger={true} preferences={this.state.preferences} />
         <div className="root-main">
           <div className="content">
