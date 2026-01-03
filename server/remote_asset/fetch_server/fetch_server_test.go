@@ -9,11 +9,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -42,6 +46,8 @@ func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *gr
 	require.NoError(t, err)
 	err = content_addressable_storage_server.Register(env)
 	require.NoError(t, err)
+	err = action_cache_server.Register(env)
+	require.NoError(t, err)
 
 	// Allow 127.0.0.1 so we can dial the server in the test.
 	flags.Set(t, "remote_asset.allowed_private_ips", []string{"127.0.0.0/8"})
@@ -52,6 +58,7 @@ func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *gr
 
 	env.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(clientConn))
+	env.SetActionCacheClient(repb.NewActionCacheClient(clientConn))
 	env.SetBuildBuddyServiceClient(bbspb.NewBuildBuddyServiceClient(clientConn))
 
 	fetchServer, err := fetch_server.NewFetchServer(env)
@@ -61,6 +68,7 @@ func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *gr
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
 	repb.RegisterContentAddressableStorageServer(grpcServer, env.GetCASServer())
+	repb.RegisterActionCacheServer(grpcServer, env.GetActionCacheServer())
 
 	go runFunc()
 
@@ -422,6 +430,106 @@ func TestSubsequentRequestCacheHit(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConcurrentRequestsAreDeduped(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	require.NoError(t, scratchspace.Init())
+	clientConn := runFetchServer(ctx, t, te)
+	fetchClient := rapb.NewFetchClient(clientConn)
+
+	checksumDigest, err := digest.Compute(bytes.NewReader([]byte(content)), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	qualifiers := []*rapb.Qualifier{
+		{
+			Name:  fetch_server.ChecksumQualifier,
+			Value: checksumQualifierFromContent(t, checksumDigest.GetHash(), repb.DigestFunction_SHA256),
+		},
+	}
+
+	var upstreamHits atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits.Add(1)
+		time.Sleep(100 * time.Millisecond)
+		fmt.Fprint(w, content)
+	}))
+	defer ts.Close()
+
+	request := &rapb.FetchBlobRequest{
+		Uris:           []string{ts.URL},
+		DigestFunction: repb.DigestFunction_SHA256,
+		Qualifiers:     qualifiers,
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			resp, err := fetchClient.FetchBlob(ctx, proto.Clone(request).(*rapb.FetchBlobRequest))
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			assert.Equal(t, int32(0), resp.GetStatus().Code)
+			assert.Equal(t, checksumDigest.GetHash(), resp.GetBlobDigest().GetHash())
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+
+	assert.Equal(t, int32(1), upstreamHits.Load(), "singleflight should dedupe concurrent fetches to the same URI")
+}
+
+func TestCanonicalIDUsesActionCache(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	require.NoError(t, scratchspace.Init())
+	clientConn := runFetchServer(ctx, t, te)
+	fetchClient := rapb.NewFetchClient(clientConn)
+
+	var upstreamHits atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits.Add(1)
+		fmt.Fprint(w, content)
+	}))
+	defer ts.Close()
+
+	checksumDigest, err := digest.Compute(bytes.NewReader([]byte(content)), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	qualifiers := []*rapb.Qualifier{
+		{
+			Name:  fetch_server.ChecksumQualifier,
+			Value: checksumQualifierFromContent(t, checksumDigest.GetHash(), repb.DigestFunction_SHA256),
+		},
+		{
+			Name:  fetch_server.BazelCanonicalIDQualifier,
+			Value: ts.URL, // Bazel concat all the urls and use it as the canonical id
+		},
+	}
+
+	req := &rapb.FetchBlobRequest{
+		Uris:           []string{ts.URL},
+		DigestFunction: repb.DigestFunction_SHA256,
+		Qualifiers:     qualifiers,
+	}
+
+	resp, err := fetchClient.FetchBlob(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, int32(0), resp.GetStatus().Code)
+	assert.Equal(t, int32(1), upstreamHits.Load())
+
+	req.Uris = []string{ts.URL + "/should-not-be-hit"}
+
+	resp, err = fetchClient.FetchBlob(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, int32(0), resp.GetStatus().Code)
+	assert.Equal(t, int32(1), upstreamHits.Load(), "canonical ID should allow serving from AC without refetching")
+	assert.Equal(t, checksumDigest.GetHash(), resp.GetBlobDigest().GetHash())
 }
 
 func TestFetchBlobWithBazelQualifiers(t *testing.T) {
