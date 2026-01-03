@@ -117,7 +117,7 @@ func setUpDB(ctx context.Context, env *real_environment.RealEnv, t *testing.T) *
 	flags.Set(t, "olap_database.invocation_batch_insert_interval", 0)
 	flags.Set(t, "olap_database.async_insert", true)
 
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(ta)
 	setUpFakeData(ctx, env, t)
 	return ta

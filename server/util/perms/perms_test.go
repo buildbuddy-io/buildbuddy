@@ -227,7 +227,7 @@ func TestAuthorizeRead(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			env := real_environment.NewRealEnv(nil)
-			ta := testauth.NewTestAuthenticator(testauth.TestUsers(
+			ta := testauth.NewTestAuthenticator(t, testauth.TestUsers(
 				// US1 and US2 are both in GR1.
 				"US1", "GR1",
 				"US2", "GR1",
@@ -337,7 +337,7 @@ func TestAuthorizeWrite(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			ta := testauth.NewTestAuthenticator(testauth.TestUsers(
+			ta := testauth.NewTestAuthenticator(t, testauth.TestUsers(
 				"US1", "GR1",
 				"US2", "GR1",
 				"US3", "GR3",

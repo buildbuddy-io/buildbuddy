@@ -28,7 +28,7 @@ func TestGetUsage(t *testing.T) {
 	}
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(ta)
 	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
