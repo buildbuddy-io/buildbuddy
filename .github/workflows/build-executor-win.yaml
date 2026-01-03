@@ -130,6 +130,7 @@ jobs:
                    --test_tag_filters=-performance `
                    @authArgs `
                    -- `
+                   //enterprise/server/remote_execution/filecache:filecache_test `
                    //enterprise/server/remote_execution/workspace:workspace_test `
                    //enterprise/server/util/procstats:procstats_test `
                    //server/util/fastcopy:fastcopy_test
