@@ -174,18 +174,34 @@ export default class InvocationActionCardComponent extends React.Component<Props
         }
 
         this.setState({ lastOperation: operation });
-        if (operation.response && !this.state.executeResponse) {
-          this.setState({ executeResponse: operation.response });
-          console.log(operation.response);
-        }
-        if (operation.response?.result) {
-          this.setState({ actionResult: operation.response.result });
+        if (operation.response) {
+          if (!this.state.executeResponse) {
+            this.setState({ executeResponse: operation.response });
+            console.log(operation.response);
+          }
+          if (operation.response.result) {
+            const actionResult = operation.response.result;
+            this.setState({ actionResult });
+            this.fetchStdout(actionResult);
+            this.fetchStderr(actionResult);
+            if (operation.done) {
+              this.fetchServerLogs(operation.response);
+            }
+          }
         }
         // Fetch the full response from cache, since it contains some additional
         // metadata not sent on the stream. Disallow stream fallback since at
         // this point we're already in the stream.
         if (operation.done && !this.state.actionResult) {
           this.fetchExecuteResponseOrActionResult({ streamFallback: false });
+        }
+
+        if (operation.done) {
+          const executionId = this.getExecutionId();
+          if (executionId && !this.state.profile && !this.state.profileLoading) {
+            this.setState({ profileLoading: true });
+            this.fetchProfile(executionId);
+          }
         }
       },
       error: (error) => {
@@ -293,6 +309,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       stderr: undefined,
       serverLogs: undefined,
       profile: undefined,
+      profileLoading: false,
     });
 
     const actionDigestParam = this.props.search.get("actionDigest");
@@ -491,6 +508,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchProfile(executionId: string) {
+    this.setState({ profileLoading: true });
     this.profileRPC = rpcService
       .fetchFile(
         rpcService.getDownloadUrl({
