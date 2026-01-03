@@ -208,7 +208,7 @@ on everything, but use Kythe annotations if/when they are available.
     --codesearch.index_dir=/tmp/csindex/ \
     --codesearch.scratch_dir=/tmp/csscratch \
     --codesearch.remote_cache=grpcs://remote.buildbuddy.dev \
-    --auth.remote_auth_target=grpcs://remote.buildbuddy.dev \
+    --auth.remote.target=grpcs://remote.buildbuddy.dev \
     --auth.jwt_key=SET_THIS_TO_THE_DEV_JWT_KEY \
     --monitoring.listen=0.0.0.0:9999
 ```
