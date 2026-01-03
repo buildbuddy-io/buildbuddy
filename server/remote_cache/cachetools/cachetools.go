@@ -316,7 +316,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if err != nil {
 		// If there is a hash mismatch and the reader supports seeking, re-hash
 		// to check whether a concurrent mutation has occurred.
-		if rs, ok := in.(io.ReadSeeker); ok && status.IsDataLossError(err) {
+		if rs, ok := in.(io.ReadSeeker); ok && status.IsInvalidArgumentError(err) {
 			if err := checkConcurrentMutation(r.GetDigest(), r.GetDigestFunction(), rs); err != nil {
 				return nil, 0, retry.NonRetryableError(status.WrapError(err, "check for concurrent mutation during upload"))
 			}
@@ -768,7 +768,7 @@ func checkConcurrentMutation(originalDigest *repb.Digest, digestFunction repb.Di
 		return status.DataLossErrorf("recompute digest: %s", err)
 	}
 	if !digest.Equal(computedDigest, originalDigest) {
-		return status.DataLossErrorf("possible concurrent mutation detected: digest changed from %s to %s", digest.String(originalDigest), digest.String(computedDigest))
+		return status.InvalidArgumentErrorf("possible concurrent mutation detected: digest changed from %s to %s", digest.String(originalDigest), digest.String(computedDigest))
 	}
 	return nil
 }
