@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:auth_go_proto",
+        "//server/environment",
         "//server/interfaces",
         "//server/tables",
         "//server/util/authutil",
@@ -29,6 +30,7 @@ go_test(
     srcs = ["remoteauth_test.go"],
     embed = [":remoteauth"],
     deps = [
+        "//enterprise/server/experiments",
         "//proto:auth_go_proto",
         "//server/interfaces",
         "//server/testutil/testenv",

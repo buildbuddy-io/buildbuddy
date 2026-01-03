@@ -103,7 +103,7 @@ func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bo
 func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
 	env := testenv.GetTestEnv(t)
 
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 	r := testredis.Start(t)
 	rdb := redis.NewClient(redisutil.TargetToOptions(r.Target))
@@ -538,7 +538,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	}
 	env, conn, r := setupEnv(t)
 	client := repb.NewExecutionClient(conn)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("user1", "group1"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	env.SetAuthenticator(ta)
 	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
 	require.NoError(t, err)
@@ -887,7 +887,7 @@ func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
 	env, conn, _ := setupEnv(t)
 	ctx := context.Background()
 
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(ta)
 	ctx, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
