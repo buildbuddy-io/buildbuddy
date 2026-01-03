@@ -42,6 +42,7 @@ go_test(
         "//server/testutil/testcache",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
+        "//server/util/prefix",
         "//server/util/rpcutil",
         "//server/util/status",
         "//server/util/testing/flags",
