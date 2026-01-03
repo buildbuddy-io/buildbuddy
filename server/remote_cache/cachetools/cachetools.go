@@ -35,6 +35,7 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gcodes "google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -76,6 +77,126 @@ type nopCloser struct {
 }
 
 func (nopCloser) Close() error { return nil }
+
+// streamReadServerAdapter implements bspb.ByteStream_ReadServer to collect
+// ReadResponses and write their data to an io.Writer. This allows calling
+// ByteStreamServer.Read() directly without going through the network.
+type streamReadServerAdapter struct {
+	ctx context.Context
+	out io.Writer
+}
+
+func (s *streamReadServerAdapter) Send(resp *bspb.ReadResponse) error {
+	_, err := s.out.Write(resp.GetData())
+	return err
+}
+
+func (s *streamReadServerAdapter) Context() context.Context {
+	return s.ctx
+}
+
+func (s *streamReadServerAdapter) SetHeader(md metadata.MD) error {
+	return nil
+}
+
+func (s *streamReadServerAdapter) SendHeader(md metadata.MD) error {
+	return nil
+}
+
+func (s *streamReadServerAdapter) SetTrailer(md metadata.MD) {}
+
+func (s *streamReadServerAdapter) SendMsg(m any) error {
+	resp, ok := m.(*bspb.ReadResponse)
+	if !ok {
+		return status.InternalErrorf("unexpected message type: %T", m)
+	}
+	return s.Send(resp)
+}
+
+func (s *streamReadServerAdapter) RecvMsg(m any) error {
+	return status.UnimplementedError("RecvMsg not supported on read stream")
+}
+
+// streamWriteServerAdapter implements bspb.ByteStream_WriteServer to provide
+// WriteRequests from an io.Reader and receive the final WriteResponse.
+// This allows calling ByteStreamServer.Write() directly without the network.
+type streamWriteServerAdapter struct {
+	ctx          context.Context
+	resourceName string
+	reader       io.Reader
+	bufSize      int64
+
+	offset       int64
+	readDone     bool
+	response     *bspb.WriteResponse
+	sentFirstReq bool
+}
+
+func (s *streamWriteServerAdapter) Recv() (*bspb.WriteRequest, error) {
+	if s.readDone {
+		return nil, io.EOF
+	}
+
+	buf := make([]byte, s.bufSize)
+	n, err := ioutil.ReadTryFillBuffer(s.reader, buf)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+
+	finishWrite := err == io.EOF
+	s.readDone = finishWrite
+
+	req := &bspb.WriteRequest{
+		Data:        buf[:n],
+		WriteOffset: s.offset,
+		FinishWrite: finishWrite,
+	}
+
+	// Only set resource name on first request
+	if !s.sentFirstReq {
+		req.ResourceName = s.resourceName
+		s.sentFirstReq = true
+	}
+
+	s.offset += int64(n)
+	return req, nil
+}
+
+func (s *streamWriteServerAdapter) SendAndClose(resp *bspb.WriteResponse) error {
+	s.response = resp
+	return nil
+}
+
+func (s *streamWriteServerAdapter) Context() context.Context {
+	return s.ctx
+}
+
+func (s *streamWriteServerAdapter) SetHeader(md metadata.MD) error {
+	return nil
+}
+
+func (s *streamWriteServerAdapter) SendHeader(md metadata.MD) error {
+	return nil
+}
+
+func (s *streamWriteServerAdapter) SetTrailer(md metadata.MD) {}
+
+func (s *streamWriteServerAdapter) SendMsg(m any) error {
+	return status.UnimplementedError("use SendAndClose for write streams")
+}
+
+func (s *streamWriteServerAdapter) RecvMsg(m any) error {
+	req, ok := m.(*bspb.WriteRequest)
+	if !ok {
+		return status.InternalErrorf("unexpected message type: %T", m)
+	}
+	recvReq, err := s.Recv()
+	if err != nil {
+		return err
+	}
+	proto.Merge(req, recvReq)
+	return nil
+}
 
 func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, out io.Writer) error {
 	if bsClient == nil {
@@ -158,6 +279,53 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 	} else {
 		return getBlob(ctx, bsClient, r, out)
 	}
+}
+
+// GetBlobFromServer reads a blob from a ByteStreamServer directly (without network).
+// It is equivalent to GetBlob but works with a server interface instead of a client.
+func GetBlobFromServer(ctx context.Context, bsServer interfaces.ByteStreamServer, r *digest.CASResourceName, out io.Writer) error {
+	if bsServer == nil {
+		return status.FailedPreconditionError("ByteStreamServer not configured")
+	}
+	if r.IsEmpty() {
+		return nil
+	}
+
+	checksum, err := digest.HashForDigestType(r.GetDigestFunction())
+	if err != nil {
+		return err
+	}
+	w := io.MultiWriter(checksum, out)
+
+	close := func() error { return nil }
+	if r.GetCompressor() == repb.Compressor_ZSTD {
+		decompressor, err := compression.NewZstdDecompressor(w)
+		if err != nil {
+			return err
+		}
+		w = decompressor
+		close = sync.OnceValue(decompressor.Close)
+	}
+	defer close()
+
+	adapter := &streamReadServerAdapter{ctx: ctx, out: w}
+	err = bsServer.ReadCASResource(ctx, r, 0, 0, adapter)
+	if err != nil {
+		if gstatus.Code(err) == gcodes.NotFound {
+			return digest.MissingDigestError(r.GetDigest())
+		}
+		return err
+	}
+
+	if err := close(); err != nil {
+		return err
+	}
+
+	computedDigest := hex.EncodeToString(checksum.Sum(nil))
+	if computedDigest != r.GetDigest().GetHash() {
+		return status.DataLossErrorf("Downloaded content (hash %q) did not match expected (hash %q)", computedDigest, r.GetDigest().GetHash())
+	}
+	return nil
 }
 
 // BlobResponse is a response to an individual blob in a BatchReadBlobs request.
@@ -375,6 +543,66 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	} else {
 		return uploadFromReader(ctx, bsClient, r, in)
 	}
+}
+
+// UploadToServerFromReader uploads a blob to a ByteStreamServer directly (without network).
+// It is equivalent to UploadFromReader but works with a server interface instead of a client.
+//
+// On success, it returns the digest of the uploaded blob and the number of bytes transferred.
+// If the blob already exists, this call will succeed and return the number of bytes uploaded
+// before the server short-circuited the upload.
+func UploadToServerFromReader(ctx context.Context, bsServer bspb.ByteStreamServer, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
+	if bsServer == nil {
+		return nil, 0, status.FailedPreconditionError("ByteStreamServer not configured")
+	}
+	if r.IsEmpty() {
+		return r.GetDigest(), 0, nil
+	}
+
+	bufSize := int64(digest.SafeBufferSize(r.ToProto(), uploadBufSizeBytes))
+
+	var rc io.ReadCloser = io.NopCloser(in)
+	if r.GetCompressor() == repb.Compressor_ZSTD {
+		reader, err := compression.NewZstdCompressingReader(rc, uploadBufPool, bufSize)
+		if err != nil {
+			return nil, 0, status.InternalErrorf("Failed to compress blob: %s", err)
+		}
+		rc = reader
+	}
+	defer rc.Close()
+
+	resourceName := r.NewUploadString()
+	adapter := &streamWriteServerAdapter{
+		ctx:          ctx,
+		resourceName: resourceName,
+		reader:       rc,
+		bufSize:      bufSize,
+	}
+
+	err := bsServer.Write(adapter)
+	if err != nil {
+		return nil, adapter.offset, err
+	}
+
+	rsp := adapter.response
+	if rsp == nil {
+		return nil, adapter.offset, status.InternalError("no response received from server")
+	}
+
+	remoteSize := rsp.GetCommittedSize()
+	if r.GetCompressor() == repb.Compressor_IDENTITY {
+		if remoteSize != r.GetDigest().GetSizeBytes() {
+			return nil, adapter.offset, status.DataLossErrorf("Remote size (%d) != expected size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+		}
+	} else {
+		// -1 is returned if the blob already exists, otherwise the
+		// remoteSize should agree with what we uploaded.
+		if remoteSize != adapter.offset && remoteSize != -1 {
+			return nil, adapter.offset, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, adapter.offset)
+		}
+	}
+
+	return r.GetDigest(), adapter.offset, nil
 }
 
 func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *digest.ACResourceName) (*repb.ActionResult, error) {
