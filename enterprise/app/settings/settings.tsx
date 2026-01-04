@@ -200,6 +200,27 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   <FilledButton className="settings-button" onClick={() => this.props.preferences.toggleDenseMode()}>
                     {this.props.preferences.denseModeEnabled ? "Disable" : "Enable"} dense mode
                   </FilledButton>
+                  <div className="settings-option-title">Theme</div>
+                  <div className="settings-option-description">
+                    Choose between light and dark mode for the BuildBuddy UI.
+                  </div>
+                  <div className="settings-button-group">
+                    <FilledButton
+                      className={`settings-button ${this.props.preferences.themePreference === "light" ? "selected" : ""}`}
+                      onClick={() => this.props.preferences.setTheme("light")}>
+                      Light
+                    </FilledButton>
+                    <FilledButton
+                      className={`settings-button ${this.props.preferences.themePreference === "system" ? "selected" : ""}`}
+                      onClick={() => this.props.preferences.setTheme("system")}>
+                      System
+                    </FilledButton>
+                    <FilledButton
+                      className={`settings-button ${this.props.preferences.themePreference === "dark" ? "selected" : ""}`}
+                      onClick={() => this.props.preferences.setTheme("dark")}>
+                      Dark
+                    </FilledButton>
+                  </div>
                   <div className="settings-option-title">Log viewer theme</div>
                   <div className="settings-option-description">
                     The log viewer theme allows you to switch between a light and dark log viewer.
