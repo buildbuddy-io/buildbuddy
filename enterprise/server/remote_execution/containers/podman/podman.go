@@ -189,9 +189,14 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	if err != nil {
 		return nil, err
 	}
+	containerName, err := generateContainerName()
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to generate podman container name: %s", err)
+	}
 
 	return &podmanCommandContainer{
 		env:               p.env,
+		name:              containerName,
 		podmanVersion:     p.podmanVersion,
 		cgroupPaths:       p.cgroupPaths,
 		image:             args.Props.ContainerImage,
@@ -359,12 +364,6 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		CommandDebugString: fmt.Sprintf("(podman) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
 	}
-	containerName, err := generateContainerName()
-	c.name = containerName
-	if err != nil {
-		result.Error = status.UnavailableErrorf("failed to generate podman container name: %s", err)
-		return result
-	}
 
 	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.image); err != nil {
 		result.Error = status.UnavailableErrorf("failed to pull docker image: %s", err)
@@ -399,7 +398,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		log.Warningf("Failed to remove corrupted image: %s", err)
 	}
 	if exitedCleanly := result.ExitCode >= 0; !exitedCleanly {
-		if err = c.killContainerIfRunning(ctx); err != nil {
+		if err := c.killContainerIfRunning(ctx); err != nil {
 			log.Warningf("Failed to shut down podman container: %s", err)
 		}
 	}
@@ -440,11 +439,6 @@ func (c *podmanCommandContainer) doWithStatsTracking(ctx context.Context, runPod
 }
 
 func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) error {
-	containerName, err := generateContainerName()
-	if err != nil {
-		return status.UnavailableErrorf("failed to generate podman container name: %s", err)
-	}
-	c.name = containerName
 	c.workDir = workDir
 
 	podmanRunArgs := c.getPodmanRunArgs(workDir)
@@ -455,7 +449,7 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 		log.Warningf("Failed to remove corrupted image: %s", err)
 	}
 
-	if err = createResult.Error; err != nil {
+	if err := createResult.Error; err != nil {
 		return status.UnavailableErrorf("failed to create container: %s", err)
 	}
 

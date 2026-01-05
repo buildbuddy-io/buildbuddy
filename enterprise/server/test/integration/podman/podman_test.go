@@ -580,6 +580,11 @@ func TestUser(t *testing.T) {
 				assert.Equal(t, 1, result.ExitCode, "should exit with error")
 			}
 
+			c, err = provider.New(ctx, &container.Init{Props: props})
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, c.Remove(ctx))
+			})
 			result = c.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-g", "-n"},
 			}, workDir, oci.Credentials{})
