@@ -9,9 +9,19 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:oci_fetcher_go_proto",
+        "//proto:ociregistry_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/real_environment",
+        "//server/remote_cache/digest",
+        "//server/util/log",
+        "//server/util/proto",
         "//server/util/status",
+        "@com_github_google_go_containerregistry//pkg/name",
+        "@com_github_google_go_containerregistry//pkg/v1:pkg",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:grpc",
     ],
 )
 
@@ -29,6 +39,8 @@ go_test(
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/remote_cache/action_cache_server",
+        "//server/remote_cache/byte_stream_server",
         "//server/testutil/testauth",
         "//server/testutil/testcache",
         "//server/testutil/testenv",

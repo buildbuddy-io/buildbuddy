@@ -11,19 +11,38 @@
 package ocifetcher_server_proxy
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
+	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	gcrname "github.com/google/go-containerregistry/pkg/name"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/grpc"
+)
+
+const (
+	blobOutputFilePath         = "_bb_ociregistry_blob_"
+	actionResultInstanceName   = interfaces.OCIImageInstanceNamePrefix
+	cacheDigestFunction        = repb.DigestFunction_SHA256
 )
 
 type OCIFetcherServerProxy struct {
-	remote ofpb.OCIFetcherClient
+	local         interfaces.ByteStreamServer
+	localACServer repb.ActionCacheServer
+	remote        ofpb.OCIFetcherClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -39,8 +58,18 @@ func New(env environment.Env) (*OCIFetcherServerProxy, error) {
 	if env.GetOCIFetcherClient() == nil {
 		return nil, fmt.Errorf("An OCIFetcherClient is required to enable the OCIFetcherServerProxy")
 	}
+	local := env.GetLocalByteStreamServer()
+	if local == nil {
+		return nil, fmt.Errorf("A local ByteStreamServer is required to enable the OCIFetcherServerProxy")
+	}
+	localACServer := env.GetLocalActionCacheServer()
+	if localACServer == nil {
+		return nil, fmt.Errorf("A local ActionCacheServer is required to enable the OCIFetcherServerProxy")
+	}
 	return &OCIFetcherServerProxy{
-		remote: env.GetOCIFetcherClient(),
+		local:         local,
+		localACServer: localACServer,
+		remote:        env.GetOCIFetcherClient(),
 	}, nil
 }
 
@@ -58,7 +87,140 @@ func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb
 
 func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
+	meteredStream := &meteredFetchBlobServerStream{OCIFetcher_FetchBlobServer: stream}
 
+	// Parse the digest and repo from the ref
+	hash, repo, err := parseOCIBlobRef(req.GetRef())
+	if err != nil {
+		log.CtxDebugf(ctx, "Could not parse OCI blob ref %q: %v", req.GetRef(), err)
+		return s.fetchBlobFromRemote(ctx, req, meteredStream)
+	}
+
+	// Try to get blob size from local action cache
+	size, err := s.getBlobSizeFromLocalAC(ctx, repo, hash)
+	if err == nil && size > 0 {
+		// Try local read
+		localErr := s.fetchBlobFromLocal(ctx, hash, size, meteredStream)
+		if localErr == nil {
+			return nil // Success from local
+		}
+		// Only fall back to remote if no frames have been sent yet
+		if meteredStream.frames > 0 {
+			return localErr
+		}
+		if !status.IsNotFoundError(localErr) {
+			log.CtxDebugf(ctx, "Error reading blob from local ByteStream server: %v", localErr)
+		}
+	}
+
+	// Fall back to remote
+	return s.fetchBlobFromRemote(ctx, req, meteredStream)
+}
+
+// meteredFetchBlobServerStream wraps an OCIFetcher_FetchBlobServer and counts
+// the number of frames and bytes sent through it.
+type meteredFetchBlobServerStream struct {
+	bytes  int64
+	frames int64
+	ofpb.OCIFetcher_FetchBlobServer
+}
+
+func (s *meteredFetchBlobServerStream) Send(resp *ofpb.FetchBlobResponse) error {
+	s.bytes += int64(len(resp.GetData()))
+	s.frames++
+	return s.OCIFetcher_FetchBlobServer.Send(resp)
+}
+
+// fetchBlobToByteStreamAdapter adapts an OCIFetcher_FetchBlobServer to a
+// bspb.ByteStream_ReadServer for use with local.ReadCASResource.
+type fetchBlobToByteStreamAdapter struct {
+	grpc.ServerStream
+	fetchBlobStream *meteredFetchBlobServerStream
+}
+
+func (a *fetchBlobToByteStreamAdapter) Send(resp *bspb.ReadResponse) error {
+	return a.fetchBlobStream.Send(&ofpb.FetchBlobResponse{Data: resp.GetData()})
+}
+
+func (a *fetchBlobToByteStreamAdapter) Context() context.Context {
+	return a.fetchBlobStream.Context()
+}
+
+// parseOCIBlobRef parses an OCI blob reference and returns the digest hash and repository.
+// The ref format is like "gcr.io/org/repo@sha256:abc123..."
+func parseOCIBlobRef(ref string) (gcr.Hash, gcrname.Repository, error) {
+	blobRef, err := gcrname.ParseReference(ref)
+	if err != nil {
+		return gcr.Hash{}, gcrname.Repository{}, status.InvalidArgumentErrorf("invalid blob reference %q: %s", ref, err)
+	}
+
+	digestRef, ok := blobRef.(gcrname.Digest)
+	if !ok {
+		return gcr.Hash{}, gcrname.Repository{}, status.InvalidArgumentErrorf("blob reference must be a digest reference, got %q", ref)
+	}
+
+	gcrHash, err := gcr.NewHash(digestRef.DigestStr())
+	if err != nil {
+		return gcr.Hash{}, gcrname.Repository{}, status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
+	}
+
+	return gcrHash, digestRef.Context(), nil
+}
+
+// getBlobSizeFromLocalAC looks up the blob size from the local action cache.
+// This mirrors the key computation in ocicache.FetchBlobMetadataFromCache.
+func (s *OCIFetcherServerProxy) getBlobSizeFromLocalAC(ctx context.Context, repo gcrname.Repository, hash gcr.Hash) (int64, error) {
+	arKey := &ocipb.OCIActionResultKey{
+		Registry:      repo.RegistryStr(),
+		Repository:    repo.RepositoryStr(),
+		ResourceType:  ocipb.OCIResourceType_BLOB,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return 0, err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
+	if err != nil {
+		return 0, err
+	}
+
+	req := &repb.GetActionResultRequest{
+		InstanceName:   actionResultInstanceName,
+		ActionDigest:   arDigest,
+		DigestFunction: cacheDigestFunction,
+	}
+	ar, err := s.localACServer.GetActionResult(ctx, req)
+	if err != nil {
+		return 0, err
+	}
+
+	// Extract blob size from output files
+	for _, outputFile := range ar.GetOutputFiles() {
+		if outputFile.GetPath() == blobOutputFilePath {
+			return outputFile.GetDigest().GetSizeBytes(), nil
+		}
+	}
+	return 0, status.NotFoundErrorf("blob size not found in action result for %s", repo)
+}
+
+// fetchBlobFromLocal reads the blob from the local ByteStream server.
+func (s *OCIFetcherServerProxy) fetchBlobFromLocal(ctx context.Context, hash gcr.Hash, sizeBytes int64, stream *meteredFetchBlobServerStream) error {
+	d := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: sizeBytes,
+	}
+	rn := digest.NewCASResourceName(d, "", cacheDigestFunction)
+
+	adapter := &fetchBlobToByteStreamAdapter{
+		fetchBlobStream: stream,
+	}
+	return s.local.ReadCASResource(ctx, rn, 0, 0, adapter)
+}
+
+// fetchBlobFromRemote fetches the blob from the remote OCIFetcher service.
+func (s *OCIFetcherServerProxy) fetchBlobFromRemote(ctx context.Context, req *ofpb.FetchBlobRequest, stream *meteredFetchBlobServerStream) error {
 	remoteStream, err := s.remote.FetchBlob(ctx, req)
 	if err != nil {
 		return err
