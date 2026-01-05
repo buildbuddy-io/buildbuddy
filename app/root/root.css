@@ -1,3 +1,7 @@
+:root {
+  --spinner-image: url("/image/loader.svg");
+}
+
 h1,
 h2,
 h3,
@@ -19,7 +23,7 @@ body {
   display: flex;
   flex-direction: column;
   word-break: break-word;
-  background-color: #fff;
+  background-color: var(--color-bg-primary);
 
   --code-font: "Source Code Pro", monospace;
 }
@@ -84,13 +88,13 @@ button {
   font-size: 24px;
   z-index: 2;
   position: relative;
-  background-color: #212121;
-  color: #fff;
+  background-color: var(--color-bg-inverted);
+  color: var(--color-text-inverted);
 }
 
 .menu.light {
-  background-color: #fff;
-  color: #000;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-on-light-bg);
 }
 
 .menu .container {
@@ -112,7 +116,7 @@ button {
 .menu-child-title {
   margin-left: 8px;
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--color-overlay-light);
 }
 
 .menu .icon {
@@ -125,7 +129,7 @@ button {
   width: 40px;
   border-radius: 20px;
   cursor: pointer;
-  background-color: rgba(255, 255, 255, 0.95);
+  background-color: var(--color-overlay-light-solid);
 }
 
 .menu .default-photo {
@@ -139,7 +143,7 @@ button {
 }
 
 .menu .title {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--color-overlay-light-card);
 }
 
 .menu-child {
@@ -161,7 +165,7 @@ button {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.1);
+  background-color: var(--color-overlay-dark);
   z-index: 1;
 }
 
@@ -169,8 +173,8 @@ button {
   position: absolute;
   top: 46px;
   right: 8px;
-  background-color: #212121;
-  color: #fff;
+  background-color: var(--color-bg-inverted);
+  color: var(--color-text-inverted);
   padding: 8px 32px 32px 32px;
   border-bottom-left-radius: 8px;
   border-bottom-right-radius: 8px;
@@ -187,8 +191,8 @@ button {
 /** Shelf **/
 
 .shelf {
-  background-color: #f8f8f8;
-  border-bottom: 1px solid #eaeaea;
+  background-color: var(--color-shelf-bg);
+  border-bottom: 1px solid var(--color-shelf-border);
   padding: 32px 0;
   font-size: 14px;
 }
@@ -213,47 +217,47 @@ button {
 .shelf .subtitle {
   font-size: 18px;
   font-weight: 500;
-  color: rgba(0, 0, 0, 0.8);
+  color: var(--color-shelf-subtitle);
   margin-bottom: 8px;
 }
 
 .shelf.success {
-  border-bottom: 6px solid #8bc34a;
+  border-bottom: 6px solid var(--color-status-success);
 }
 
 .shelf.failure {
-  border-bottom: 6px solid #f44336;
+  border-bottom: 6px solid var(--color-status-error);
 }
 
 .shelf.in-progress {
-  border-bottom: 6px solid #03a9f4;
+  border-bottom: 6px solid var(--color-status-in-progress);
 }
 
 .shelf.disconnected {
-  border-bottom: 6px solid #aaa;
+  border-bottom: 6px solid var(--color-border-muted);
 }
 
 .shelf.neutral {
-  border-bottom: 6px solid #888;
+  border-bottom: 6px solid var(--color-border-neutral);
 }
 
 .breadcrumbs {
   font-size: 16px;
-  color: #aaa;
+  color: var(--color-text-tertiary);
   margin-bottom: 8px;
 }
 
 .breadcrumbs > :not(:last-child)::after {
   content: "›";
   padding: 0 8px;
-  color: #ccc;
+  color: var(--color-gray-400-alt);
   font-weight: 600;
 }
 
 .shelf .details {
   font-size: 16px;
   line-height: 1.6em;
-  color: rgba(0, 0, 0, 0.7);
+  color: var(--color-shelf-details);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -276,50 +280,50 @@ button {
 
 svg.icon {
   /* Default icon color is gray */
-  stroke: #616161;
+  stroke: var(--color-icon-default);
   /* By default, icons should not get squished */
   flex-shrink: 0;
 }
 
 svg.icon.white {
-  stroke: #fff;
+  stroke: var(--color-white);
 }
 
 svg.icon.gray,
 svg.icon.grey {
-  stroke: #616161;
+  stroke: var(--color-icon-default);
 }
 
 svg.icon.black {
-  stroke: #000;
+  stroke: var(--color-black);
 }
 
 svg.icon.green {
-  stroke: #8bc34a;
+  stroke: var(--color-light-green-500);
 }
 
 svg.icon.red {
-  stroke: #f44336;
+  stroke: var(--color-red-500);
 }
 
 svg.icon.blue {
-  stroke: #03a9f4;
+  stroke: var(--color-light-blue-500);
 }
 
 svg.icon.brown {
-  stroke: #774a21;
+  stroke: var(--color-brown-700-alt);
 }
 
 svg.icon.purple {
-  stroke: #673ab7;
+  stroke: var(--color-deep-purple-500);
 }
 
 svg.icon.orange {
-  stroke: #ff6f00;
+  stroke: var(--color-amber-900);
 }
 
 svg.icon.yellow {
-  stroke: #ffc107;
+  stroke: var(--color-icon-yellow);
 }
 
 .rotate-90 {
@@ -328,11 +332,11 @@ svg.icon.yellow {
 
 .org-button {
   float: right;
-  background-color: #212121;
+  background-color: var(--color-bg-inverted);
   padding: 8px 16px;
   border-radius: 32px;
   margin-top: -6px;
-  color: #fff;
+  color: var(--color-text-inverted);
   font-weight: 600;
 }
 
@@ -347,32 +351,32 @@ svg.icon.yellow {
 
 .tab {
   border-radius: 50px;
-  border: 1px solid #eee;
+  border: 1px solid var(--color-border-primary);
   margin-right: 8px;
   padding: 12px 24px;
   cursor: pointer;
   margin-top: 8px;
-  color: #9e9e9e;
+  color: var(--color-text-tab-inactive);
   text-align: center;
   flex-shrink: 0;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   user-select: none;
-  background: #fff;
+  background: var(--color-bg-primary);
 }
 
 .tab:hover {
-  background: #fafafa;
+  background: var(--color-bg-secondary);
 }
 
 .tab:active {
-  background: #f5f5f5;
+  background: var(--color-bg-tertiary);
 }
 
 .tab.selected {
-  background: #212121;
-  color: #fff;
+  background: var(--color-bg-inverted);
+  color: var(--color-text-inverted);
 }
 
 /** Runs **/
@@ -385,7 +389,7 @@ svg.icon.yellow {
 }
 
 .run {
-  box-shadow: 0px 0px 2px rgba(0, 0, 0, 0.15);
+  box-shadow: 0px 0px 2px var(--color-overlay-dark-border);
   border-radius: 4px;
   margin-right: 8px;
   padding: 12px 32px 8px 32px;
@@ -396,7 +400,7 @@ svg.icon.yellow {
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  color: #fff;
+  color: var(--color-text-inverted);
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -416,23 +420,23 @@ svg.icon.yellow {
 }
 
 .run.test-passed {
-  background-color: #8bc34a;
+  background-color: var(--color-status-success);
 }
 
 .run.test-failed {
-  background-color: #f44336;
+  background-color: var(--color-status-error);
 }
 
 .run.test-error {
-  background-color: #000;
+  background-color: var(--color-black);
 }
 
 .run.test-flaky {
-  background-color: #888;
+  background-color: var(--color-bg-neutral);
 }
 
 .run.selected {
-  border-bottom: 4px solid rgba(0, 0, 0, 0.2);
+  border-bottom: 4px solid var(--color-overlay-dark-divider);
 }
 
 /** Card **/
@@ -455,7 +459,7 @@ body {
   font-size: 14px;
   display: flex;
   align-items: flex-start;
-  background-color: #fff;
+  background-color: var(--color-bg-card);
 }
 
 a.card:hover {
@@ -463,43 +467,43 @@ a.card:hover {
 }
 
 .card.selected-keyboard-shortcuts {
-  outline: 2px solid #2196f3;
+  outline: 2px solid var(--color-blue-500);
 }
 
 .card.card-success {
-  border-left: 6px solid #8bc34a;
+  border-left: 6px solid var(--color-status-success);
 }
 
 .card.card-skipped {
-  border-left: 6px solid #673ab7;
+  border-left: 6px solid var(--color-deep-purple-500);
 }
 
 .card.card-failure {
-  border-left: 6px solid #f44336;
+  border-left: 6px solid var(--color-status-error);
 }
 
 .card.card-flaky {
-  border-left: 6px solid #ff6f00;
+  border-left: 6px solid var(--color-amber-900);
 }
 
 .card.card-timeout {
-  border-left: 6px solid #616161;
+  border-left: 6px solid var(--color-gray-700);
 }
 
 .card.card-broken {
-  border-left: 6px solid #000;
+  border-left: 6px solid var(--color-black);
 }
 
 .card.card-neutral {
-  border-left: 6px solid #888;
+  border-left: 6px solid var(--color-border-neutral);
 }
 
 .card.card-disconnected {
-  border-left: 6px solid #aaa;
+  border-left: 6px solid var(--color-border-muted);
 }
 
 .card.card-in-progress {
-  border-left: 6px solid #03a9f4;
+  border-left: 6px solid var(--color-status-in-progress);
 }
 
 .card.card-suggestion {
@@ -507,21 +511,21 @@ a.card:hover {
 }
 
 .card-suggestion.card-suggestion-bot {
-  background: #2196f3;
-  color: #fff;
+  background: var(--color-status-info);
+  color: var(--color-text-inverted);
 }
 
 .card-suggestion.card-suggestion-bot svg {
-  stroke: white;
+  stroke: var(--color-icon-inverted);
 }
 
 .card.dark {
-  background-color: #212121;
-  color: #fff;
+  background-color: var(--color-bg-inverted);
+  color: var(--color-text-inverted);
 }
 
 .card.light-terminal {
-  background-color: #fff;
+  background-color: var(--color-white);
 }
 
 .dense .card.light-terminal:hover {
@@ -565,11 +569,11 @@ a.card:hover {
 }
 
 .card.card-success:hover {
-  border-left: 6px solid #7cb342;
+  border-left: 6px solid var(--color-light-green-600);
 }
 
 .card.card-failure:hover {
-  border-left: 6px solid #e53935;
+  border-left: 6px solid var(--color-red-600);
 }
 
 .card-hover {
@@ -617,14 +621,14 @@ a.card:hover {
 .card .more {
   margin-top: 16px;
   font-weight: 600;
-  color: #212121;
+  color: var(--color-text-primary);
   cursor: pointer;
   user-select: none;
 }
 
 .card .more-loading {
   margin-top: 16px;
-  color: #757575;
+  color: var(--color-text-label);
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -699,9 +703,9 @@ a.card:hover {
 }
 
 code {
-  border: 1px solid #eee;
+  border: 1px solid var(--color-border-primary);
   border-radius: 4px;
-  background-color: #fafafa;
+  background-color: var(--color-bg-secondary);
   font-family: "Source Code Pro", monospace;
   box-sizing: border-box;
 }
@@ -733,7 +737,7 @@ code button {
   right: 4px;
   padding: 2px 16px;
   border: 0;
-  background-color: #eee;
+  background-color: var(--color-bg-hover);
   border-radius: 8px;
   font-size: 0.6em;
   font-weight: bold;
@@ -754,8 +758,8 @@ code[data-header]:before {
   top: 0;
   left: 0;
   padding: 2px 32px;
-  border-right: 1px solid #eee;
-  border-bottom: 1px solid #eee;
+  border-right: 1px solid var(--color-border-primary);
+  border-bottom: 1px solid var(--color-border-primary);
   border-bottom-right-radius: 8px;
   font-size: 0.8em;
   font-weight: bold;
@@ -767,7 +771,7 @@ code[data-header]:before {
 }
 
 code .comment {
-  color: #888;
+  color: var(--color-text-secondary);
 }
 
 .home p {
@@ -775,7 +779,7 @@ code .comment {
 }
 
 .home p.callout {
-  background-color: #ffe082;
+  background-color: var(--color-amber-200);
   padding: 16px 32px;
   border-radius: 8px;
 }
@@ -805,8 +809,8 @@ code .comment {
 }
 
 .setup-controls .group-container {
-  background-color: #fafafa;
-  border: 1px solid #eee;
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
   padding: 4px 16px 4px 0;
   min-height: 40px;
   box-sizing: border-box;
@@ -845,7 +849,7 @@ code .comment {
 }
 
 .setup .no-api-keys {
-  background: #e1f5fe;
+  background: var(--color-light-blue-50);
   padding: 16px;
   border-radius: 8px;
 }
@@ -870,8 +874,8 @@ code .comment {
 }
 
 .setup .downloads a {
-  background-color: #212121;
-  color: #fff;
+  background-color: var(--color-bg-inverted);
+  color: var(--color-text-inverted);
   padding: 7px 16px;
   margin-right: 8px;
   border-radius: 8px;
@@ -881,7 +885,7 @@ code .comment {
 .setup-notice {
   padding: 16px 24px;
   border-radius: 8px;
-  background-color: #e1f5fe;
+  background-color: var(--color-light-blue-50);
   margin-top: -16px;
   margin-bottom: 16px;
 }
@@ -894,7 +898,7 @@ code .comment {
 /** Footer **/
 
 .footer {
-  color: #aaa;
+  color: var(--color-text-tertiary);
   font-size: 0.8em;
   padding: 32px 32px 32px 32px;
 
@@ -939,13 +943,13 @@ code .comment {
 }
 
 .card .subtitle {
-  color: #aaa;
+  color: var(--color-text-tertiary);
 }
 
 .history .details {
   font-size: 14px;
   line-height: 1.6em;
-  color: rgba(0, 0, 0, 0.7);
+  color: var(--color-history-details);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -979,23 +983,23 @@ code .comment {
 }
 
 .role-badge.CI_RUNNER {
-  background: #212121;
-  color: white;
+  background: var(--color-bg-inverted);
+  color: var(--color-text-inverted);
 }
 
 .role-badge.CI {
-  background: #cfd8dc;
+  background: var(--color-blue-gray-100);
 }
 
 .role-badge.HOSTED_BAZEL {
-  background: #0d47a1;
-  color: white;
+  background: var(--color-blue-900);
+  color: var(--color-text-inverted);
 }
 
 .empty-state .button {
   width: 100%;
   padding: 16px 32px;
-  border: 2px solid #000;
+  border: 2px solid var(--color-black);
   font-size: 16px;
   font-weight: 600;
   border-radius: 64px;
@@ -1017,8 +1021,8 @@ code .comment {
 .load-more {
   width: 100%;
   padding: 24px 0;
-  background-color: #212121;
-  color: #fff;
+  background-color: var(--color-bg-inverted);
+  color: var(--color-text-inverted);
   font-size: 16px;
   font-weight: 600;
   border: 0;
@@ -1028,8 +1032,8 @@ code .comment {
 }
 
 .load-more:disabled {
-  background-color: #aaa;
-  color: #fff;
+  background-color: var(--color-text-tertiary);
+  color: var(--color-text-inverted);
 }
 
 /** Misc **/
@@ -1041,26 +1045,26 @@ code .comment {
 
 .inline-code {
   font-family: "Source Code Pro", monospace;
-  background: #eee;
+  background: var(--color-bg-hover);
   border-radius: 4px;
   padding: 2px;
 }
 
 .disclaimer {
-  color: #aaa;
+  color: var(--color-text-tertiary);
   margin-top: 4px;
 }
 
 .list-grid {
   display: flex;
-  color: #888;
+  color: var(--color-text-secondary);
   line-height: 1.8em;
 }
 
 .list-grid div:first-of-type {
   width: 1px;
   flex-grow: 2;
-  color: #444;
+  color: var(--color-text-emphasis);
   font-weight: 600;
 }
 
@@ -1071,7 +1075,7 @@ code .comment {
 
 .list-grid div:last-of-type {
   text-align: right;
-  color: #aaa;
+  color: var(--color-text-tertiary);
 }
 
 .list-title {
@@ -1087,7 +1091,7 @@ code .comment {
 }
 
 .list-percent {
-  background-color: #8bc34a;
+  background-color: var(--color-light-green-500);
   height: 6px;
   min-width: 1px;
   max-width: 100%;
@@ -1101,7 +1105,7 @@ code .comment {
 .list-percent:after {
   content: attr(data-percent);
   font-size: 8px;
-  color: #888;
+  color: var(--color-text-secondary);
   font-weight: 300;
   display: block;
   position: absolute;
@@ -1116,7 +1120,7 @@ code .comment {
 }
 
 .sort-control {
-  color: #888;
+  color: var(--color-text-secondary);
   margin-top: 4px;
   margin-right: 12px;
 }
@@ -1131,7 +1135,7 @@ code .comment {
 }
 
 .sort-control .selected {
-  color: #000;
+  color: var(--color-text-on-light-bg);
   font-weight: 600;
 }
 
@@ -1181,7 +1185,7 @@ code .comment {
 }
 
 .artifact-section-title {
-  color: #757575;
+  color: var(--color-text-label);
   margin-top: 8px;
 }
 
@@ -1194,13 +1198,13 @@ code .comment {
 }
 
 .artifacts .artifact-hidden-count {
-  color: #bdbdbd;
+  color: var(--color-gray-400);
   margin-bottom: 8px;
 }
 
 .scorecard-target-name {
   margin-top: 8px;
-  color: #757575;
+  color: var(--color-text-label);
   display: block;
 }
 
@@ -1217,7 +1221,7 @@ code .comment {
 }
 
 .scorecard-hidden-count {
-  color: #bdbdbd;
+  color: var(--color-gray-400);
   margin-top: 4px;
   margin-bottom: 8px;
 }
@@ -1263,7 +1267,7 @@ code .comment {
 
 .test-subtitle {
   margin-bottom: 8px;
-  color: #aaa;
+  color: var(--color-text-tertiary);
 }
 
 .test-suite-metrics {
@@ -1272,14 +1276,14 @@ code .comment {
 
 .test-case {
   display: flex;
-  color: #888;
+  color: var(--color-text-secondary);
   line-height: 1.8em;
 }
 
 .test-case div:first-of-type {
   width: 1px;
   flex-grow: 2;
-  color: #444;
+  color: var(--color-text-emphasis);
   font-weight: 600;
 }
 
@@ -1290,12 +1294,12 @@ code .comment {
 
 .test-case div:last-of-type {
   text-align: right;
-  color: #aaa;
+  color: var(--color-text-tertiary);
 }
 
 .test-case-info {
   padding-left: 16px;
-  border-left: 4px solid #eee;
+  border-left: 4px solid var(--color-border-primary);
 }
 
 .test-case-message {
@@ -1332,7 +1336,7 @@ code .comment {
 }
 
 .invocation-command-line {
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--color-border-primary);
   margin-top: 32px;
   padding-top: 32px;
 }
@@ -1345,7 +1349,7 @@ code .comment {
 .invocation-command-line-title {
   font-weight: 700;
   font-size: 18px;
-  color: #212121;
+  color: var(--color-text-primary);
   margin-bottom: 16px;
 }
 
@@ -1360,22 +1364,22 @@ code .comment {
 
 .invocation-option-name {
   font-weight: 600;
-  color: #444;
+  color: var(--color-text-emphasis);
   margin-right: 4px;
 }
 
 .invocation-option-value {
-  color: #212121;
+  color: var(--color-text-primary);
 }
 
 .invocation-option-dash,
 .invocation-option-equal {
-  color: #aaa;
+  color: var(--color-text-tertiary);
   margin-right: 4px;
 }
 
 .invocation-chunk {
-  color: #444;
+  color: var(--color-text-emphasis);
   font-weight: 600;
 }
 
@@ -1441,9 +1445,9 @@ code .comment {
   margin-bottom: 12px;
   font-size: 18px;
   cursor: pointer;
-  border: 3px solid rgba(255, 255, 255, 0.9);
-  background-color: #000;
-  color: #fff;
+  border: 3px solid var(--color-overlay-light-card);
+  background-color: var(--color-button-dark-bg);
+  color: var(--color-text-inverted);
   min-width: 360px;
   transition: 300ms ease-in-out;
 }
@@ -1452,28 +1456,28 @@ code .comment {
 .login-buttons .sso-button,
 .login-buttons .google-button,
 .login-buttons .github-button {
-  background-color: #fff;
-  color: #212121;
-  border: 3px solid #212121;
+  background-color: var(--color-login-button-bg);
+  color: var(--color-login-button-text);
+  border: 3px solid var(--color-login-button-border);
 }
 
 .login-buttons .login-button:hover,
 .login-buttons .sso-button:hover,
 .login-buttons .google-button:hover,
 .login-buttons .github-button:hover {
-  background-color: #f5f5f5;
-  color: #000;
-  border-color: #000;
+  background-color: var(--color-login-button-hover-bg);
+  color: var(--color-login-button-hover-text);
+  border-color: var(--color-login-button-hover-border);
 }
 
 .login-buttons .anon-button {
   border: 0;
   background: transparent;
-  color: #9e9e9e;
+  color: var(--color-text-muted);
 }
 
 .login-buttons .anon-button:hover {
-  color: #757575;
+  color: var(--color-text-label);
 }
 
 .login-buttons button :is(svg, img) {
@@ -1481,7 +1485,7 @@ code .comment {
 }
 
 .login-interstitial {
-  background-color: #212121;
+  background-color: var(--color-bg-inverted);
   min-height: calc(100vh - 200px);
 }
 
@@ -1504,7 +1508,7 @@ code .comment {
   font-size: 18px;
   margin-bottom: 16px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--color-overlay-light);
 }
 
 .sso {
@@ -1537,18 +1541,18 @@ code .comment {
   border-radius: 100px;
   margin-bottom: 12px;
   font-size: 18px;
-  border: 3px solid #9e9e9e;
+  border: 3px solid var(--color-gray-500);
   height: initial;
 }
 
 .sso input:focus {
   outline: none;
-  border: 3px solid #2196f3;
+  border: 3px solid var(--color-border-focus);
 }
 
 @media (min-width: 801px) {
   .login-hero {
-    border-right: 1px solid rgba(255, 255, 255, 0.5);
+    border-right: 1px solid var(--color-overlay-light);
     padding-right: 32px;
     margin-right: 32px;
     max-width: 40%;
@@ -1598,43 +1602,43 @@ code .comment {
 }
 
 .grid-block-success {
-  background-color: #8bc34a;
+  background-color: var(--color-status-success);
 }
 
 .grid-block-failure {
-  background-color: #f44336;
+  background-color: var(--color-status-error);
 }
 
 .grid-block-neutral {
-  background-color: #888;
+  background-color: var(--color-bg-neutral);
 }
 
 .grid-block-disconnected {
-  background-color: #aaa;
+  background-color: var(--color-border-muted);
 }
 
 .grid-block-in-progress {
-  background-color: #03a9f4;
+  background-color: var(--color-status-in-progress);
 }
 
 .grid-block-success:hover {
-  background-color: #7cb342;
+  background-color: var(--color-light-green-600);
 }
 
 .grid-block-failure:hover {
-  background-color: #e53935;
+  background-color: var(--color-red-600);
 }
 
 .grid-block-neutral:hover {
-  background-color: #666;
+  background-color: var(--color-gray-700-alt);
 }
 
 .grid-block-disconnected:hover {
-  background-color: #bbb;
+  background-color: var(--color-gray-400-alt2);
 }
 
 .grid-block-in-progress:hover {
-  background-color: #039be5;
+  background-color: var(--color-light-blue-600);
 }
 
 /** Dense mode **/
@@ -1686,19 +1690,19 @@ code .comment {
   border: 0;
   box-shadow: none;
   border-radius: 0;
-  color: #444;
+  color: var(--color-text-emphasis);
 }
 
 .dense .tab.selected {
   background-color: transparent;
-  color: #616161;
+  color: var(--color-gray-700);
   position: relative;
 }
 
 .dense .tab.selected:after {
   display: block;
   content: " ";
-  background-color: #616161;
+  background-color: var(--color-gray-700);
   height: 4px;
   position: absolute;
   bottom: 0;
@@ -1713,7 +1717,7 @@ code .comment {
   border-radius: 0;
   padding: 16px;
   box-shadow: none;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--color-border-primary);
 }
 
 .dense .card.card-hover {
@@ -1721,8 +1725,8 @@ code .comment {
   border-radius: 8px;
   border-top: 0;
   box-shadow:
-    0px 1px 4px rgba(0, 0, 0, 0.1),
-    0px 1px 6px rgba(0, 0, 0, 0.05);
+    0px 1px 4px var(--color-overlay-dark),
+    0px 1px 6px var(--color-overlay-dark-subtle);
 }
 
 .dense .card .details {
@@ -1739,7 +1743,7 @@ code .comment {
 }
 
 .dense .list-grid div:last-of-type {
-  color: #888;
+  color: var(--color-text-secondary);
 }
 
 .dense .card .target-status-icon.target-status-icon {
@@ -1764,48 +1768,48 @@ code .comment {
 }
 
 .dense-invocation-status-bar {
-  border-top: 4px solid #888;
-  background-color: #eee;
+  border-top: 4px solid var(--color-border-neutral);
+  background-color: var(--color-bg-hover);
   padding: 4px 16px;
   display: flex;
   justify-content: space-between;
 }
 
 .dense-invocation-status-bar.success {
-  border-top: 4px solid #8bc34a;
-  background-color: #e8f5e9;
+  border-top: 4px solid var(--color-status-success);
+  background-color: var(--color-status-success-bg);
 }
 
 .dense-invocation-status-bar.failure {
-  border-top: 4px solid #f44336;
-  background-color: #ffebee;
+  border-top: 4px solid var(--color-status-error);
+  background-color: var(--color-status-error-bg);
 }
 
 .dense-invocation-status-bar.in-progress {
-  border-top: 4px solid #03a9f4;
-  background-color: #e3f2fd;
+  border-top: 4px solid var(--color-status-in-progress);
+  background-color: var(--color-status-info-bg);
 }
 
 .dense-invocation-status-bar.disconnected {
-  border-top: 4px solid #aaa;
-  background-color: #eee;
+  border-top: 4px solid var(--color-border-muted);
+  background-color: var(--color-bg-hover);
 }
 
 .dense-invocation-status-bar.neutral {
-  border-top: 4px solid #888;
-  background-color: #eee;
+  border-top: 4px solid var(--color-border-neutral);
+  background-color: var(--color-bg-hover);
 }
 
 .dense-invocation-overview-grid {
   display: flex;
-  background-color: #fff;
+  background-color: var(--color-bg-primary);
   overflow: auto;
 }
 
 .dense-invocation-overview-grid-chunk {
   flex-grow: 1;
   padding: 8px 16px;
-  border-right: 1px solid #eee;
+  border-right: 1px solid var(--color-border-primary);
 }
 
 .dense-invocation-overview-grid-value {
@@ -1839,7 +1843,7 @@ code .comment {
   flex-direction: column;
   flex-grow: 1;
   overflow: auto;
-  background-color: #fff;
+  background-color: var(--color-bg-primary);
 }
 
 .root-code,
@@ -1878,7 +1882,7 @@ code .comment {
 .sticky-loading-overlay .loading {
   height: 100vh;
   position: absolute;
-  background: #fffc;
+  background: var(--color-white-translucent);
 }
 
 .loading:before {
@@ -1893,11 +1897,11 @@ code .comment {
 }
 
 .loading.loading-dark {
-  background: #212121;
+  background: var(--color-bg-inverted);
 }
 
 .loading.loading-dark-terminal {
-  background: #212121;
+  background: var(--color-bg-inverted);
 }
 
 .loading.loading-dark:before,
@@ -1906,7 +1910,7 @@ code .comment {
 }
 
 .copy-icon {
-  color: #888;
+  color: var(--color-text-secondary);
   cursor: pointer;
   height: 0.8em;
   width: 0.8em;
@@ -1914,7 +1918,7 @@ code .comment {
 }
 
 .copy-icon.green {
-  color: #4caf50;
+  color: var(--color-green-500);
 }
 
 .coverage-percent {
@@ -1922,11 +1926,11 @@ code .comment {
 }
 
 .coverage-details {
-  color: #aaa;
+  color: var(--color-text-tertiary);
 }
 
 .coverage-record-total {
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--color-border-primary);
   padding-top: 8px;
   margin-top: 8px;
 }
@@ -1938,4 +1942,9 @@ code .comment {
 .target-history-button {
   margin-left: 16px;
   gap: 8px;
+}
+
+/* Chart styling */
+.recharts-pie-sector path {
+  stroke: var(--color-chart-stroke);
 }

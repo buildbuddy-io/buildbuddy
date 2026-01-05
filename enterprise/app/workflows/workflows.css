@@ -58,7 +58,7 @@
 .workflows-page .workflow-item {
   padding-top: 16px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--color-border-primary);
 }
 
 .workflows-page .workflow-item > :not(:last-child) {
@@ -72,7 +72,7 @@
 
 .workflows-page .workflow-description {
   font-size: 14px;
-  color: #aaa;
+  color: var(--color-text-tertiary);
 }
 
 .workflows-page .workflow-dropdown-menu {
@@ -80,7 +80,7 @@
 }
 
 .workflows-page .repo-url {
-  background: #f8f8f8;
+  background: var(--color-workflows-bg);
   border-radius: 4px;
   padding: 4px 8px;
 }
@@ -139,7 +139,7 @@
 .workflows-page .error-details {
   margin-top: 4px;
   font-size: 14px;
-  color: #d32f2f;
+  color: var(--color-red-700);
 }
 
 .workflows-page .card .detail {
@@ -149,7 +149,7 @@
 .workflows-page .upgrade-notice {
   margin-top: 12px;
   font-size: 12px;
-  color: #757575;
+  color: var(--color-workflows-upgrade-notice);
   display: flex;
   gap: 4px;
 }
@@ -173,7 +173,7 @@
 .workflows-page .run-workflow-input .title {
   font-weight: 600;
   font-size: 15px;
-  background: white;
+  background: var(--color-bg-primary);
   padding: 4px;
 }
 
@@ -194,10 +194,11 @@
 .action-error-hovercard {
   width: 30%;
   margin: 12px;
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--color-hovercard-bg);
+  color: var(--color-hovercard-text);
   border-radius: 8px;
   padding: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px var(--color-shadow-light);
   font-size: 14px;
   backdrop-filter: blur(3px);
 }
@@ -219,12 +220,12 @@
 }
 
 .create-workflow-page .explanation {
-  color: #555;
+  color: var(--color-workflows-explanation);
   font-size: 13px;
 }
 
 .create-workflow-page .error {
-  color: #f44336;
+  color: var(--color-red-500);
 }
 
 .workflow-created-dialog .dialog-body > :not(:last-child) {
@@ -285,7 +286,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--color-border-primary);
   min-height: 40px;
 }
 
@@ -294,7 +295,7 @@
 }
 
 .workflows-github-import .repo-owner-separator {
-  color: #777;
+  color: var(--color-workflows-separator);
   padding: 0 2px;
 }
 
@@ -505,7 +506,7 @@
 .workflows-page .action-history-explainer-text {
   position: absolute;
   top: -18px;
-  color: #aaa;
+  color: var(--color-text-tertiary);
   font-size: 12px;
   line-height: 18px;
 }
@@ -575,23 +576,24 @@
 }
 
 .workflows-page .action-history-bar.neutral {
-  background-color: #aaa;
+  background-color: var(--color-workflows-neutral-bar);
 }
 
 .workflows-page .action-history-bar.no-data {
   border-width: 0.25px;
-  border-color: #aaa;
+  border-color: var(--color-workflows-neutral-bar);
   border-style: dashed;
   box-sizing: border-box;
 }
 
 .workflows-page-action-history-tooltip {
-  background-color: rgba(255, 255, 255, 0.95);
+  background-color: var(--color-workflows-tooltip-bg);
+  color: var(--color-hovercard-text);
   border-radius: 8px;
   padding: 16px;
   box-shadow:
-    0 3px 6px rgba(0, 0, 0, 0.16),
-    0 3px 6px rgba(0, 0, 0, 0.23);
+    0 3px 6px var(--color-shadow-tooltip),
+    0 3px 6px var(--color-shadow-tooltip-alt);
   pointer-events: none;
   z-index: 1;
 }
