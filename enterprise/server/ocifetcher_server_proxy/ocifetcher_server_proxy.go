@@ -73,6 +73,8 @@ func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb
 	return s.remote.FetchBlobMetadata(ctx, req)
 }
 
+// FetchBlob streams the blob from the local byte stream server if present,
+// falling back to the remote if not.
 func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 
