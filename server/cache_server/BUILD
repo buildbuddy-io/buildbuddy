@@ -11,6 +11,7 @@ go_library(
         "//server/environment",
         "//server/real_environment",
         "//server/util/prefix",
+        "//server/util/status",
     ],
 )
 

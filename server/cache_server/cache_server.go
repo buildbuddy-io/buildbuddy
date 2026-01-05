@@ -6,6 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
@@ -17,7 +18,7 @@ type CacheServer struct {
 
 func Register(env *real_environment.RealEnv) error {
 	if env.GetCache() == nil {
-		return nil
+		return status.FailedPreconditionErrorf("no cache configured")
 	}
 	env.SetCacheServer(New(env))
 	return nil
