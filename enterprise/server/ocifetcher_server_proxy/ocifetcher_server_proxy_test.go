@@ -38,6 +38,21 @@ func TestNew_MissingClient(t *testing.T) {
 	require.Contains(t, err.Error(), "OCIFetcherClient is required")
 }
 
+func TestNew_MissingLocalByteStreamServer(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	// Set OCIFetcherClient but not LocalByteStreamServer
+	env.SetOCIFetcherClient(&fakeOCIFetcherClient{})
+
+	_, err := New(env)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "local byte stream server is required")
+}
+
+// fakeOCIFetcherClient is a minimal fake for testing New().
+type fakeOCIFetcherClient struct {
+	ofpb.OCIFetcherClient
+}
+
 // TestHappyPath tests successful FetchBlob, FetchBlobMetadata, FetchManifest,
 // FetchManifestMetadata calls with no credentials and with credentials.
 func TestHappyPath(t *testing.T) {
@@ -568,6 +583,7 @@ func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteSt
 func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient) ofpb.OCIFetcherClient {
 	env := testenv.GetTestEnv(t)
 	env.SetOCIFetcherClient(remoteClient)
+	env.SetLocalByteStreamServer(createLocalByteStreamServer(t))
 
 	proxy, err := New(env)
 	require.NoError(t, err)

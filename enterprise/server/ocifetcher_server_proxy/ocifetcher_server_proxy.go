@@ -12,7 +12,6 @@ package ocifetcher_server_proxy
 
 import (
 	"context"
-	"fmt"
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
