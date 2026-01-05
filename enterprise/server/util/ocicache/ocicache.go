@@ -41,6 +41,18 @@ const (
 	cacheDigestFunction = repb.DigestFunction_SHA256
 )
 
+// NewBlobCASResourceName creates a CAS resource name for an OCI blob with
+// zstd compression enabled.
+func NewBlobCASResourceName(hash gcr.Hash, sizeBytes int64) *digest.CASResourceName {
+	d := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: sizeBytes,
+	}
+	rn := digest.NewCASResourceName(d, "", cacheDigestFunction)
+	rn.SetCompressor(repb.Compressor_ZSTD)
+	return rn
+}
+
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
@@ -229,16 +241,7 @@ func blobHit(ctx context.Context) {
 }
 
 func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, hash gcr.Hash, contentLength int64) error {
-	blobCASDigest := &repb.Digest{
-		Hash:      hash.Hex,
-		SizeBytes: contentLength,
-	}
-	blobRN := digest.NewCASResourceName(
-		blobCASDigest,
-		"",
-		cacheDigestFunction,
-	)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	blobRN := NewBlobCASResourceName(hash, contentLength)
 	counter := &ioutil.Counter{}
 	mw := io.MultiWriter(w, counter)
 	defer func() {
@@ -304,16 +307,7 @@ func writeBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClien
 }
 
 func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) error {
-	blobCASDigest := &repb.Digest{
-		Hash:      hash.Hex,
-		SizeBytes: contentLength,
-	}
-	blobRN := digest.NewCASResourceName(
-		blobCASDigest,
-		"",
-		cacheDigestFunction,
-	)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	blobRN := NewBlobCASResourceName(hash, contentLength)
 	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, r)
 	if err != nil {
 		return err
@@ -326,16 +320,7 @@ func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStream
 // Once contentLength bytes have been written, the blobUploader will commit the blob.
 // It is an error to attempt to Write after commit, and to write more than contentLength bytes.
 func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) (interfaces.CommittedWriteCloser, error) {
-	blobCASDigest := &repb.Digest{
-		Hash:      hash.Hex,
-		SizeBytes: contentLength,
-	}
-	blobRN := digest.NewCASResourceName(
-		blobCASDigest,
-		"",
-		cacheDigestFunction,
-	)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	blobRN := NewBlobCASResourceName(hash, contentLength)
 	uw, err := cachetools.NewUploadWriter(ctx, bsClient, blobRN)
 	if err != nil {
 		return nil, err

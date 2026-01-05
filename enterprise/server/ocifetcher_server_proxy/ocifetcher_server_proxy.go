@@ -16,22 +16,18 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
-)
-
-const (
-	cacheDigestFunction = repb.DigestFunction_SHA256
 )
 
 type OCIFetcherServerProxy struct {
@@ -107,31 +103,51 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 	return nil
 }
 
-// fetchBlobToByteStreamAdapter adapts an OCIFetcher_FetchBlobServer to a
-// bspb.ByteStream_ReadServer for use with local.ReadCASResource.
-type fetchBlobToByteStreamAdapter struct {
-	grpc.ServerStream
-	fetchBlobStream ofpb.OCIFetcher_FetchBlobServer
+// fetchBlobStreamWriter is an io.Writer that sends decompressed data to a
+// FetchBlob stream.
+type fetchBlobStreamWriter struct {
+	stream ofpb.OCIFetcher_FetchBlobServer
 }
 
-func (a *fetchBlobToByteStreamAdapter) Send(resp *bspb.ReadResponse) error {
-	return a.fetchBlobStream.Send(&ofpb.FetchBlobResponse{Data: resp.GetData()})
-}
-
-func (a *fetchBlobToByteStreamAdapter) Context() context.Context {
-	return a.fetchBlobStream.Context()
-}
-
-// fetchBlobFromLocal streams the blob from the local ByteStream server.
-func (s *OCIFetcherServerProxy) fetchBlobFromLocal(ctx context.Context, hash gcr.Hash, sizeBytes int64, stream ofpb.OCIFetcher_FetchBlobServer) error {
-	d := &repb.Digest{
-		Hash:      hash.Hex,
-		SizeBytes: sizeBytes,
+func (w *fetchBlobStreamWriter) Write(p []byte) (int, error) {
+	if err := w.stream.Send(&ofpb.FetchBlobResponse{Data: p}); err != nil {
+		return 0, err
 	}
-	rn := digest.NewCASResourceName(d, "", cacheDigestFunction)
+	return len(p), nil
+}
 
-	adapter := &fetchBlobToByteStreamAdapter{
-		fetchBlobStream: stream,
+// decompressingByteStreamAdapter adapts ByteStream read responses to a
+// FetchBlob stream, decompressing ZSTD data before sending.
+type decompressingByteStreamAdapter struct {
+	grpc.ServerStream
+	ctx          context.Context
+	decompressor io.WriteCloser
+}
+
+func (a *decompressingByteStreamAdapter) Send(resp *bspb.ReadResponse) error {
+	_, err := a.decompressor.Write(resp.GetData())
+	return err
+}
+
+func (a *decompressingByteStreamAdapter) Context() context.Context {
+	return a.ctx
+}
+
+// fetchBlobFromLocal streams the blob from the local ByteStream server,
+// decompressing ZSTD data before sending to the FetchBlob stream.
+func (s *OCIFetcherServerProxy) fetchBlobFromLocal(ctx context.Context, hash gcr.Hash, sizeBytes int64, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	rn := ocicache.NewBlobCASResourceName(hash, sizeBytes)
+
+	streamWriter := &fetchBlobStreamWriter{stream: stream}
+	decompressor, err := compression.NewZstdDecompressor(streamWriter)
+	if err != nil {
+		return err
+	}
+	defer decompressor.Close()
+
+	adapter := &decompressingByteStreamAdapter{
+		ctx:          ctx,
+		decompressor: decompressor,
 	}
 	return s.local.ReadCASResource(ctx, rn, 0, 0, adapter)
 }
