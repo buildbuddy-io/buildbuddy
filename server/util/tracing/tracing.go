@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -47,11 +46,11 @@ var (
 	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
 	traceFractionOverrides    = flag.Slice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
 	ignoreForcedTracingHeader = flag.Bool("app.ignore_forced_tracing_header", false, "If set, we will not honor the forced tracing header.")
-
-	// bound overrides are parsed from the traceFractionOverrides flag.
-	initOverrideFractions sync.Once
-	overrideFractions     map[string]float64
 )
+
+// Re-initialized in Configure. Set here so tests that don't call Configure
+// still work.
+var tracer = otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
 
 const (
 	resourceDetectionTimeout      = 5 * time.Second
@@ -255,6 +254,7 @@ func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanEx
 	propagator := propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{})
 	otel.SetTextMapPropagator(propagator)
 	log.Infof("Tracing enabled with sampler: %s", sampler.Description())
+	tracer = otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
 	return nil
 }
 
@@ -376,7 +376,7 @@ func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // StartSpan starts a new span named after the calling function.
 func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	ctx, span := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, "unknown_go_function", opts...)
+	ctx, span := tracer.Start(ctx, "unknown_go_function", opts...)
 	if !span.IsRecording() {
 		return ctx, span
 	}
@@ -393,7 +393,7 @@ func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Cont
 // StartNamedSpan is like StartSpan, expect the caller specifies the name
 // instead of using the call stack.
 func StartNamedSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	return otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, name, opts...)
+	return tracer.Start(ctx, name, opts...)
 }
 
 func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
