@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/golang-jwt/jwt/v4"
 	"google.golang.org/grpc/metadata"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -210,7 +211,7 @@ func RequestContext(userID string, groupID string) *ctxpb.RequestContext {
 
 // WithAuthenticatedUserInfo sets the authenticated user to the given user.
 func WithAuthenticatedUserInfo(ctx context.Context, userInfo interfaces.UserInfo) context.Context {
-	jwt, err := claims.AssembleJWT(userInfo.(*claims.Claims))
+	jwt, err := claims.AssembleJWT(userInfo.(*claims.Claims), jwt.SigningMethodHS256)
 	if err != nil {
 		log.Errorf("Failed to mint JWT from UserInfo: %s", err)
 		return ctx
@@ -226,5 +227,5 @@ func (a *TestAuthenticator) TestJWTForUserID(userID string) (string, error) {
 	if u == nil {
 		return "", status.PermissionDeniedErrorf("user %s is unknown to TestAuthenticator", userID)
 	}
-	return claims.AssembleJWT(u.(*claims.Claims))
+	return claims.AssembleJWT(u.(*claims.Claims), jwt.SigningMethodHS256)
 }

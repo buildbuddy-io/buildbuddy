@@ -22,6 +22,7 @@ go_library(
         "//server/util/platform",
         "//server/util/proto",
         "//server/util/random",
+        "//server/util/rexec",
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_prometheus_client_golang//prometheus",

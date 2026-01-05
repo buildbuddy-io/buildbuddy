@@ -405,7 +405,7 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 	metadata := res.GetResult().GetExecutionMetadata()
 	stats := metadata.GetUsageStats()
 	auxMetadata := &espb.ExecutionAuxiliaryMetadata{}
-	if _, err := rexec.AuxiliaryMetadata(metadata, auxMetadata); err != nil {
+	if _, err := rexec.FindFirstAuxiliaryMetadata(metadata, auxMetadata); err != nil {
 		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionAuxiliaryMetadata: %s", err)
 	}
 

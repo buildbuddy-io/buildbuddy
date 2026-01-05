@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -133,13 +134,13 @@ func (l *FileCacheLoader) currentSnapshotVersion(ctx context.Context, key *fcpb.
 		return "", err
 	}
 
-	snapMetadata := acResult.GetExecutionMetadata().GetAuxiliaryMetadata()
-	if len(snapMetadata) < 1 {
-		return "", status.InternalErrorf("expected version metadata in auxiliary metadata")
-	}
 	versionMetadata := &fcpb.SnapshotVersionMetadata{}
-	if err := snapMetadata[0].UnmarshalTo(versionMetadata); err != nil {
+	ok, err := rexec.FindFirstAuxiliaryMetadata(acResult.GetExecutionMetadata(), versionMetadata)
+	if err != nil {
 		return "", status.WrapErrorf(err, "unmarshal version metadata")
+	}
+	if !ok {
+		return "", status.InternalErrorf("expected version metadata in auxiliary metadata")
 	}
 	return versionMetadata.VersionId, nil
 }
@@ -575,21 +576,21 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInstanceName string, snapshotActionResult *repb.ActionResult, tmpDir string, remoteEnabled bool) (*fcpb.SnapshotManifest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	snapMetadata := snapshotActionResult.GetExecutionMetadata().GetAuxiliaryMetadata()
-	if len(snapMetadata) < 1 {
-		return nil, status.InternalErrorf("expected vm config in snapshot auxiliary metadata")
-	}
 	vmConfig := &fcpb.VMConfiguration{}
-	if err := snapMetadata[0].UnmarshalTo(vmConfig); err != nil {
-		return nil, status.WrapErrorf(err, "unmarshall vm config")
+	ok, err := rexec.FindFirstAuxiliaryMetadata(snapshotActionResult.GetExecutionMetadata(), vmConfig)
+	if err != nil {
+		return nil, status.WrapErrorf(err, "unmarshal vm config")
+	}
+	if !ok {
+		return nil, status.InternalErrorf("expected vm config in snapshot auxiliary metadata")
 	}
 
 	var vmMetadata *fcpb.VMMetadata
-	if len(snapMetadata) >= 2 {
-		vmMetadata = &fcpb.VMMetadata{}
-		if err := snapMetadata[1].UnmarshalTo(vmMetadata); err != nil {
-			return nil, status.WrapErrorf(err, "unmarshall vm metadata")
-		}
+	vmMeta := &fcpb.VMMetadata{}
+	if ok, err := rexec.FindFirstAuxiliaryMetadata(snapshotActionResult.GetExecutionMetadata(), vmMeta); err != nil {
+		return nil, status.WrapErrorf(err, "unmarshal vm metadata")
+	} else if ok {
+		vmMetadata = vmMeta
 	}
 
 	manifest := &fcpb.SnapshotManifest{

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
@@ -20,7 +19,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-	gstatus "google.golang.org/grpc/status"
 )
 
 type ByteStreamServerProxy struct {
@@ -87,14 +85,36 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	requestTypeLabel := proxy_util.RequestTypeLabelFromContext(ctx)
 	meteredStream := &meteredReadServerStream{ByteStream_ReadServer: stream}
 	stream = meteredStream
-	cacheStatus, err := s.read(ctx, req, meteredStream)
-	recordReadMetrics(cacheStatus, requestTypeLabel, err, int(meteredStream.bytes))
+	readMetrics, err := s.read(ctx, req, meteredStream)
+	bsm := byteStreamMetrics{
+		requestType: requestTypeLabel,
+		compressor:  readMetrics.compressor,
+		err:         err,
+		bytes:       meteredStream.bytes,
+	}
+	recordReadMetrics(bsm, readMetrics.cacheStatus)
 	return err
 }
 
-func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream) (string, error) {
+type readMetrics struct {
+	cacheStatus string // should be metrics.HitStatusLabel/MissStatusLabel
+	compressor  string
+}
+
+func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream) (readMetrics, error) {
+	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
+	if err != nil {
+		return readMetrics{
+			cacheStatus: metrics.HitStatusLabel,
+			compressor:  "unknown",
+		}, err
+	}
+
 	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
-		return metrics.UncacheableStatusLabel, s.readRemoteOnly(ctx, req, stream)
+		return readMetrics{
+			cacheStatus: metrics.UncacheableStatusLabel,
+			compressor:  rn.GetCompressor().String(),
+		}, s.readRemoteOnly(ctx, req, stream)
 	}
 
 	// Store auth headers in context so they can be reused between the
@@ -104,14 +124,15 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 	if proxy_util.SkipRemote(ctx) {
 		if err := s.readLocalOnly(req, stream); err != nil {
 			log.CtxInfof(ctx, "Error reading local: %v", err)
-			return metrics.MissStatusLabel, err
+			return readMetrics{
+				cacheStatus: metrics.MissStatusLabel,
+				compressor:  rn.GetCompressor().String(),
+			}, err
 		}
-		return metrics.HitStatusLabel, nil
-	}
-
-	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
-	if err != nil {
-		return metrics.HitStatusLabel, nil
+		return readMetrics{
+			cacheStatus: metrics.HitStatusLabel,
+			compressor:  rn.GetCompressor().String(),
+		}, nil
 	}
 
 	localErr := s.local.ReadCASResource(ctx, rn, req.GetReadOffset(), req.GetReadLimit(), stream)
@@ -121,10 +142,16 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 	// cache, but keep it simple for now.
 	if localErr != nil && stream.frames == 0 {
 		// Recover from local error if no frames have been sent
-		return metrics.MissStatusLabel, s.readRemoteWriteLocal(req, stream)
+		return readMetrics{
+			cacheStatus: metrics.MissStatusLabel,
+			compressor:  rn.GetCompressor().String(),
+		}, s.readRemoteWriteLocal(req, stream)
 	} else {
 		s.atimeUpdater.EnqueueByResourceName(ctx, rn)
-		return metrics.HitStatusLabel, localErr
+		return readMetrics{
+			cacheStatus: metrics.HitStatusLabel,
+			compressor:  rn.GetCompressor().String(),
+		}, localErr
 	}
 }
 
@@ -259,27 +286,50 @@ func (s *ByteStreamServerProxy) readRemoteWriteLocal(req *bspb.ReadRequest, stre
 	return nil
 }
 
-func recordReadMetrics(cacheStatus string, proxyRequestType string, err error, bytesRead int) {
+type byteStreamMetrics struct {
+	requestType string
+	compressor  string
+	err         error
+	bytes       int64
+}
+
+func recordReadMetrics(bsm byteStreamMetrics, cacheStatus string) {
 	labels := prometheus.Labels{
-		metrics.StatusLabel:           strconv.Itoa(int(gstatus.Code(err))),
+		metrics.StatusLabel:           status.MetricsLabel(bsm.err),
 		metrics.CacheHitMissStatus:    cacheStatus,
-		metrics.CacheProxyRequestType: proxyRequestType,
+		metrics.CacheProxyRequestType: bsm.requestType,
+		metrics.CompressionType:       bsm.compressor,
 	}
 	metrics.ByteStreamProxiedReadRequests.With(labels).Inc()
-	metrics.ByteStreamProxiedReadBytes.With(labels).Add(float64(bytesRead))
+	if bsm.bytes > 0 {
+		metrics.ByteStreamProxiedReadBytes.With(labels).Add(float64(bsm.bytes))
+	}
 }
 
 // Wrapper around a ByteStream_WriteServer that counts the number of bytes
 // written through it.
 type meteredServerSideClientStream struct {
-	bytes int64
+	compressor string
+	bytes      int64
 	bspb.ByteStream_WriteServer
 }
 
 func (s *meteredServerSideClientStream) Recv() (*bspb.WriteRequest, error) {
 	message, err := s.ByteStream_WriteServer.Recv()
+	if err == nil {
+		s.detectCompressor(message)
+	}
 	s.bytes += int64(len(message.GetData()))
 	return message, err
+}
+
+func (s *meteredServerSideClientStream) detectCompressor(msg *bspb.WriteRequest) {
+	if s.compressor != "unknown" {
+		return
+	}
+	if rn, err := digest.ParseUploadResourceName(msg.GetResourceName()); err == nil {
+		s.compressor = rn.GetCompressor().String()
+	}
 }
 
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
@@ -287,7 +337,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	defer spn.End()
 
 	requestTypeLabel := proxy_util.RequestTypeLabelFromContext(stream.Context())
-	meteredStream := &meteredServerSideClientStream{ByteStream_WriteServer: stream}
+	meteredStream := &meteredServerSideClientStream{compressor: "unknown", ByteStream_WriteServer: stream}
 	stream = meteredStream
 	var err error
 	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
@@ -297,7 +347,13 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	} else {
 		err = s.dualWrite(ctx, stream)
 	}
-	recordWriteMetrics(meteredStream.bytes, err, requestTypeLabel)
+	bsm := byteStreamMetrics{
+		requestType: requestTypeLabel,
+		compressor:  meteredStream.compressor,
+		err:         err,
+		bytes:       meteredStream.bytes,
+	}
+	recordWriteMetrics(bsm)
 	return err
 }
 
@@ -417,15 +473,16 @@ func flushToRemote(stream bspb.ByteStream_WriteServer, remoteStream bspb.ByteStr
 	}
 }
 
-func recordWriteMetrics(bytesWritten int64, err error, proxyRequestType string) {
+func recordWriteMetrics(bsm byteStreamMetrics) {
 	labels := prometheus.Labels{
-		metrics.StatusLabel:           strconv.Itoa(int(gstatus.Code(err))),
+		metrics.StatusLabel:           status.MetricsLabel(bsm.err),
 		metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
-		metrics.CacheProxyRequestType: proxyRequestType,
+		metrics.CacheProxyRequestType: bsm.requestType,
+		metrics.CompressionType:       bsm.compressor,
 	}
 	metrics.ByteStreamProxiedWriteRequests.With(labels).Inc()
-	if bytesWritten > 0 {
-		metrics.ByteStreamProxiedWriteBytes.With(labels).Add(float64(bytesWritten))
+	if bsm.bytes > 0 {
+		metrics.ByteStreamProxiedWriteBytes.With(labels).Add(float64(bsm.bytes))
 	}
 }
 

@@ -983,3 +983,177 @@ func withIncomingMetadata(t *testing.T, ctx context.Context, rmd *repb.RequestMe
 	require.NoError(t, err)
 	return metadata.NewIncomingContext(ctx, metadata.Pairs(bazel_request.RequestMetadataKey, string(b)))
 }
+
+func makeAuxAny(t *testing.T, props []*repb.Platform_Property) *anypb.Any {
+	auxMd := &espb.ExecutionAuxiliaryMetadata{
+		PlatformOverrides: &repb.Platform{
+			Properties: props,
+		},
+	}
+	auxAny, err := anypb.New(auxMd)
+	require.NoError(t, err)
+	return auxAny
+}
+
+func TestRedactCachedExecuteResponse(t *testing.T) {
+	for _, test := range []struct {
+		name                      string
+		response                  *repb.ExecuteResponse
+		inputProperties           []*repb.Platform_Property
+		expectedAuxiliaryMetadata []*anypb.Any
+	}{
+		{
+			name:     "nil response",
+			response: nil,
+		},
+		{
+			name:     "no execution metadata",
+			response: &repb.ExecuteResponse{},
+		},
+		{
+			name: "no auxiliary metadata",
+			response: &repb.ExecuteResponse{
+				Result: &repb.ActionResult{
+					ExecutionMetadata: &repb.ExecutedActionMetadata{},
+				},
+			},
+		},
+		{
+			name: "redacts password property",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "container-registry-password", Value: "secret123"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "container-registry-password", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "redacts username property",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "container-registry-username", Value: "admin"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "container-registry-username", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "redacts env-overrides property",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "env-overrides", Value: "SECRET_KEY=abc123"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "env-overrides", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "case insensitive redaction",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "PASSWORD", Value: "secret1"},
+				{Name: "UserName", Value: "admin"},
+				{Name: "ENV-OVERRIDES", Value: "KEY=val"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "PASSWORD", Value: "<REDACTED>"},
+					{Name: "UserName", Value: "<REDACTED>"},
+					{Name: "ENV-OVERRIDES", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "preserves non-sensitive properties",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "pool", Value: "default"},
+				{Name: "workload-isolation-type", Value: "firecracker"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "pool", Value: "default"},
+					{Name: "workload-isolation-type", Value: "firecracker"},
+				}),
+			},
+		},
+		{
+			name: "mixed properties",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "pool", Value: "default"},
+				{Name: "container-registry-password", Value: "secret"},
+				{Name: "container-registry-username", Value: "admin"},
+				{Name: "workload-isolation-type", Value: "firecracker"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "pool", Value: "default"},
+					{Name: "container-registry-password", Value: "<REDACTED>"},
+					{Name: "container-registry-username", Value: "<REDACTED>"},
+					{Name: "workload-isolation-type", Value: "firecracker"},
+				}),
+			},
+		},
+		{
+			name: "redacts multiple auxiliary metadata entries",
+			response: &repb.ExecuteResponse{
+				Result: &repb.ActionResult{
+					ExecutionMetadata: &repb.ExecutedActionMetadata{
+						AuxiliaryMetadata: []*anypb.Any{
+							makeAuxAny(t, []*repb.Platform_Property{
+								{Name: "container-registry-password", Value: "secret1"},
+							}),
+							makeAuxAny(t, []*repb.Platform_Property{
+								{Name: "container-registry-password", Value: "secret2"},
+							}),
+						},
+					},
+				},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "container-registry-password", Value: "<REDACTED>"},
+				}),
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "container-registry-password", Value: "<REDACTED>"},
+				}),
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			var rsp *repb.ExecuteResponse
+
+			if test.response != nil {
+				rsp = test.response
+			} else if test.inputProperties != nil {
+				auxMd := &espb.ExecutionAuxiliaryMetadata{
+					PlatformOverrides: &repb.Platform{
+						Properties: test.inputProperties,
+					},
+				}
+				auxAny, err := anypb.New(auxMd)
+				require.NoError(t, err)
+				rsp = &repb.ExecuteResponse{
+					Result: &repb.ActionResult{
+						ExecutionMetadata: &repb.ExecutedActionMetadata{
+							AuxiliaryMetadata: []*anypb.Any{auxAny},
+						},
+					},
+				}
+			}
+
+			execution_server.RedactCachedExecuteResponse(ctx, rsp)
+
+			if test.expectedAuxiliaryMetadata != nil {
+				require.Empty(t, cmp.Diff(
+					test.expectedAuxiliaryMetadata,
+					rsp.GetResult().GetExecutionMetadata().GetAuxiliaryMetadata(),
+					protocmp.Transform(),
+				))
+			}
+		})
+	}
+}

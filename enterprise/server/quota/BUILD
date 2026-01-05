@@ -32,6 +32,7 @@ go_test(
         "//enterprise/server/backends/authdb",
         "//enterprise/server/backends/userdb",
         "//enterprise/server/experiments",
+        "//enterprise/server/testutil/testredis",
         "//proto:group_go_proto",
         "//server/environment",
         "//server/testutil/testauth",

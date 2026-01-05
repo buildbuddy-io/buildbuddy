@@ -18,6 +18,7 @@ go_library(
         "//server/util/ioutil",
         "//server/util/log",
         "//server/util/proto",
+        "//server/util/rexec",
         "//server/util/status",
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
