@@ -76,35 +76,32 @@ func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb
 func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 
-	// Get blob metadata from remote (handles AC lookup)
 	metadataResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
 		Ref:            req.GetRef(),
 		Credentials:    req.GetCredentials(),
 		BypassRegistry: req.GetBypassRegistry(),
 	})
 	if err != nil {
-		// Metadata fetch failed - fall through to remote blob fetch
-		// (remote will return appropriate error)
 		return s.fetchBlobFromRemote(ctx, req, stream)
 	}
 
-	// Parse the digest from the ref for local ByteStream lookup
-	hash, _, err := parseOCIBlobRef(req.GetRef())
+	blobRef, err := gcrname.ParseReference(req.GetRef())
+	if err != nil {
+		return s.fetchBlobFromRemote(ctx, req, stream)
+	}
+	digestRef, ok := blobRef.(gcrname.Digest)
+	if !ok {
+		return s.fetchBlobFromRemote(ctx, req, stream)
+	}
+	hash, err := gcr.NewHash(digestRef.DigestStr())
 	if err != nil {
 		return s.fetchBlobFromRemote(ctx, req, stream)
 	}
 
-	// Try to read from local cache using size from metadata
-	size := metadataResp.GetSize()
-	if size > 0 {
-		err = s.fetchBlobFromLocal(ctx, hash, size, stream)
-		if err == nil {
-			return nil // Success from local
-		}
-		// Local read failed, fall through to remote
+	if err := s.fetchBlobFromLocal(ctx, hash, metadataResp.GetSize(), stream); err != nil {
+		return s.fetchBlobFromRemote(ctx, req, stream)
 	}
-
-	return s.fetchBlobFromRemote(ctx, req, stream)
+	return nil
 }
 
 // fetchBlobToByteStreamAdapter adapts an OCIFetcher_FetchBlobServer to a
@@ -122,28 +119,7 @@ func (a *fetchBlobToByteStreamAdapter) Context() context.Context {
 	return a.fetchBlobStream.Context()
 }
 
-// parseOCIBlobRef parses an OCI blob reference and returns the digest hash and repository.
-// The ref format is like "gcr.io/org/repo@sha256:abc123..."
-func parseOCIBlobRef(ref string) (gcr.Hash, gcrname.Repository, error) {
-	blobRef, err := gcrname.ParseReference(ref)
-	if err != nil {
-		return gcr.Hash{}, gcrname.Repository{}, status.InvalidArgumentErrorf("invalid blob reference %q: %s", ref, err)
-	}
-
-	digestRef, ok := blobRef.(gcrname.Digest)
-	if !ok {
-		return gcr.Hash{}, gcrname.Repository{}, status.InvalidArgumentErrorf("blob reference must be a digest reference, got %q", ref)
-	}
-
-	gcrHash, err := gcr.NewHash(digestRef.DigestStr())
-	if err != nil {
-		return gcr.Hash{}, gcrname.Repository{}, status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
-	}
-
-	return gcrHash, digestRef.Context(), nil
-}
-
-// fetchBlobFromLocal reads the blob from the local ByteStream server.
+// fetchBlobFromLocal streams the blob from the local ByteStream server.
 func (s *OCIFetcherServerProxy) fetchBlobFromLocal(ctx context.Context, hash gcr.Hash, sizeBytes int64, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	d := &repb.Digest{
 		Hash:      hash.Hex,
