@@ -4,18 +4,23 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 )
 
-var proberBinaryRunfilePath string
+// Injected via x_defs in BUILD
+var (
+	proberBinaryRunfilePath string
+	bazelBinaryRunfilePath  string
+	outdirRunfilePath       string // contains repository_cache and MODULE.bazel.lock
+)
 
 func TestProber_Success(t *testing.T) {
 	// Set up RBE environment with BuildBuddy server and executor
@@ -28,9 +33,14 @@ func TestProber_Success(t *testing.T) {
 	proberPath, err := runfiles.Rlocation(proberBinaryRunfilePath)
 	require.NoError(t, err, "failed to locate prober binary")
 
-	// Get the test bazel binary and lockfile paths
-	bazelPath := testbazel.BinaryPath(t)
-	lockfilePath := testbazel.LockfilePath(t)
+	// Get the bazel binary path from runfiles
+	bazelPath, err := runfiles.Rlocation(bazelBinaryRunfilePath)
+	require.NoError(t, err, "failed to locate bazel binary")
+
+	// Get the lockfile path from the outdir
+	outdirPath, err := runfiles.Rlocation(outdirRunfilePath)
+	require.NoError(t, err, "failed to locate bazel outdir")
+	lockfilePath := filepath.Join(outdirPath, "MODULE.bazel.lock")
 
 	// Build bazel_args with remote executor and platform properties
 	bazelArgs := fmt.Sprintf(

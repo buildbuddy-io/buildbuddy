@@ -40,6 +40,12 @@ def _extract_bazel_installation_impl(ctx):
             touch MODULE.bazel BUILD
             echo >> .bazelrc "common --repository_cache=$REPOSITORY_CACHE"
             echo >> .bazelrc "common --noexperimental_convenience_symlinks"
+            # Enable bzlmod for older Bazel versions where it wasn't default
+            if [ "$ENABLE_BZLMOD" = "1" ]; then
+                echo >> .bazelrc "common --enable_bzlmod"
+                # Force lockfile generation for older Bazel versions
+                echo >> .bazelrc "common --lockfile_mode=update"
+            fi
 
             if [ "$WARM_REPOSITORY_CACHE" = "0" ]; then
                 # Run bazel with no args; this should install it to the install_base.
@@ -54,9 +60,13 @@ def _extract_bazel_installation_impl(ctx):
                     echo >>BUILD 'load("@rules_shell//shell:sh_test.bzl", "sh_test")'
                 fi
                 echo >>BUILD 'genrule(name = "genrule", outs = ["genrule.out"], cmd = "touch $@")'
-                echo >>BUILD 'sh_binary(name = "sh_binary", srcs = ["empty.sh"])'
-                echo >>BUILD 'sh_test(name = "sh_test", srcs = ["empty.sh"])'
-                touch empty.sh && chmod +x empty.sh
+                # Only include sh_binary/sh_test for Bazel 8+, as older versions
+                # trigger C++ toolchain configuration which requires gcc in the sandbox.
+                if [ "$INCLUDE_SHELL_RULES" = "1" ]; then
+                    echo >>BUILD 'sh_binary(name = "sh_binary", srcs = ["empty.sh"])'
+                    echo >>BUILD 'sh_test(name = "sh_test", srcs = ["empty.sh"])'
+                    touch empty.sh && chmod +x empty.sh
+                fi
                 _bazel fetch //...
                 # Copy lockfile; needed to avoid registry requests.
                 cp MODULE.bazel.lock "$OUT_DIR/MODULE.bazel.lock"
@@ -67,6 +77,8 @@ def _extract_bazel_installation_impl(ctx):
             "OUT_DIR": out_dir.path,
             "WARM_REPOSITORY_CACHE": "1" if ctx.attr.warm_repository_cache else "0",
             "USE_RULES_SHELL": "1" if ctx.attr.use_rules_shell else "0",
+            "INCLUDE_SHELL_RULES": "1" if ctx.attr.include_shell_rules else "0",
+            "ENABLE_BZLMOD": "1" if ctx.attr.enable_bzlmod else "0",
         },
     )
     return [DefaultInfo(files = depset([out_dir]))]
@@ -78,6 +90,8 @@ extract_bazel_installation = rule(
         "out_dir": attr.string(mandatory = True),
         "warm_repository_cache": attr.bool(default = False),
         "use_rules_shell": attr.bool(default = False),
+        "include_shell_rules": attr.bool(default = False),
+        "enable_bzlmod": attr.bool(default = False),
     },
     doc = "Pre-extract a bazel installation and optionally a repository cache to the given output directory.",
 )
@@ -99,20 +113,29 @@ def bazel_pkg_tar(name, versions = [], **kwargs):
             **kwargs
         )
 
-        # Pre-warm repository cache only for bazel 8+, where we've started
-        # using repository_cache combined with MODULE.bazel.lock to make
-        # bazel work without network access.
+        # Pre-warm repository cache for bazel 6+, using repository_cache
+        # combined with MODULE.bazel.lock to make bazel work without network access.
         major_version = int(version.split(".")[0])
-        warm_repository_cache = major_version >= 8
+        warm_repository_cache = major_version >= 6
 
         # For Bazel 9+, sh_binary and sh_test are no longer native rules.
         use_rules_shell = major_version >= 9
+
+        # Only include sh_binary/sh_test for Bazel 8+, as older versions
+        # trigger C++ toolchain configuration which requires gcc in the sandbox.
+        include_shell_rules = major_version >= 8
+
+        # Enable bzlmod explicitly for Bazel 6/7 where it wasn't the default.
+        enable_bzlmod = major_version < 8
+
         extract_bazel_installation(
             name = "bazel-{}_extract_installation".format(version),
             bazel = ":bazel-{}_crossplatform".format(version),
             out_dir = "bazel-{}_outdir".format(version),
             warm_repository_cache = warm_repository_cache,
             use_rules_shell = use_rules_shell,
+            include_shell_rules = include_shell_rules,
+            enable_bzlmod = enable_bzlmod,
             # If we are warming the repository cache then we need network access
             # so that this rule can download the dependencies. Targets that use
             # this rule can then use the cached dependencies without needing the
