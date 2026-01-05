@@ -22,6 +22,7 @@ var (
 	bazelArgs           = flag.String("bazel_args", "", "Space separated list of args to pass to Bazel")
 	bazelStartupOptions = flag.String("bazel_startup_options", "", "Space separated list of Bazel startup options to pass (appear before the command)")
 	proberName          = flag.String("prober_name", "", "Short, human-readable name of this prober. This name must be a valid bazel package name (only '.', '@', '-', '_' and alphanumeric characters allowed).")
+	moduleLockFile      = flag.String("module_lock_file", "", "Path to MODULE.bazel.lock file to copy into workspace (optional, for hermetic testing)")
 
 	numTargets         = flag.Int("num_targets", 10, "Number targets to generate")
 	numInputsPerTarget = flag.Int("num_inputs_per_target", 10, "Number of inputs each generated target will have")
@@ -65,6 +66,21 @@ func createWorkspace(dir string, numTargets, numInputsPerTarget, inputSizeBytes 
 	err := os.WriteFile(filepath.Join(dir, "WORKSPACE"), []byte(""), 0644)
 	if err != nil {
 		return err
+	}
+	// Create MODULE.bazel for bzlmod support
+	err = os.WriteFile(filepath.Join(dir, "MODULE.bazel"), []byte(""), 0644)
+	if err != nil {
+		return err
+	}
+	// Copy MODULE.bazel.lock if provided (enables hermetic testing without network requests)
+	if *moduleLockFile != "" {
+		lockContents, err := os.ReadFile(*moduleLockFile)
+		if err != nil {
+			return status.WrapError(err, "read module lock file")
+		}
+		if err := os.WriteFile(filepath.Join(dir, "MODULE.bazel.lock"), lockContents, 0644); err != nil {
+			return status.WrapError(err, "write module lock file")
+		}
 	}
 
 	if *proberName != "" {

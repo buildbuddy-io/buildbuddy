@@ -125,6 +125,13 @@ func repoCachePath(t testing.TB) string {
 }
 
 func lockfilePath(t testing.TB) string {
+	return LockfilePath(t)
+}
+
+// LockfilePath returns the path to the pre-cached MODULE.bazel.lock file.
+// This can be used to create hermetic bazel workspaces that don't require
+// network requests during dependency resolution.
+func LockfilePath(t testing.TB) string {
 	outdirPath, err := runfiles.Rlocation(outdirRlocationpath)
 	require.NoError(t, err)
 	return filepath.Join(outdirPath, "MODULE.bazel.lock")
