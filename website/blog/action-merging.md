@@ -14,12 +14,12 @@ BuildBuddy's remote execution engine merges in-flight executions of identical ac
 
 ## Overview
 
-Caching action results is one of the performance optimizations at the heart of Bazel. Unfortunately, neither the local nor remote Bazel caches provide a mechanism for sharing the results of pending executions. That means that if Alice submits a backend change that requires running BigSlowTest, then Bob submits a small frontend change while Alice's BigSlowTest is still running, Bob will have to run BigSlowTest too. This makes Bob's invocation slower and it might also waste external resources like simulator licenses or quota.
+Caching action results is one of the performance optimizations at the heart of Bazel. Unfortunately, neither the local nor remote Bazel caches provide a mechanism for sharing the results of pending executions. That means that if Alice submits a backend change that requires running BigSlowTest, then Bob submits a small frontend change while Alice's BigSlowTest is still running, Bob will have to run BigSlowTest too. This makes Bob's invocation slower and might also waste external resources like simulator licenses or quota.
 
 ![](/img/blog/action-merging-timeline.webp)
 _A timeline of Alice and Bob's unmerged BigSlowTest executions._
 
-While this might sound contrived, our action merging system merges >1,000 actions per second at peak today saving some long-running tests almost 3 hours. We are not the first to do this, Stripe has blogged about their internal solution to this problem [here](https://stripe.com/blog/fast-secure-builds-choose-two).
+While this might sound contrived, the action merging system described below merges >1,000 actions per second in production at peak today saving some long-running tests almost 3 hours. We are not the first to do this, Stripe has blogged about their internal solution to this problem [here](https://stripe.com/blog/fast-secure-builds-choose-two).
 
 ## Background
 
@@ -53,13 +53,13 @@ As we dig into the edge cases, let's call Alice's execution the "primary" execut
 
 ### Queued Executions
 
-We store all action merging data in Redis. While we could store it in the database, it's written frequently and not critical for correctness, so we keep it in Redis as an optimization. This data consists of a bidirectional mapping between the Action ID and the primary Execution ID for each pending execution, as well as a few other things. Because executions can disappear from the scheduler (for example, if the invocation is cancelled), we keep the TTLs on this data short to prevent merging against nonexistent executions.
+We store all action merging data in Redis. While we could store it in the database, it's written frequently and not critical for correctness, so we keep it in Redis to reduce database load. This data consists of a bidirectional mapping between the Action ID and the primary Execution ID for each pending execution, as well as a few other things. Because executions can disappear from the scheduler (for example, if the invocation is cancelled), we keep the TTLs on this data short to prevent merging against nonexistent executions.
 
 When an executor claims an execution, the scheduler updates the Redis action merging state to indicate the task has been claimed. It also increases the TTL and then periodically updates it as long as the executor is healthy. This action merging state is deleted when the primary execution finishes and the action result is stored in the cache. At this point, subsequent invocations can use the completed action result, no merging required.
 
 ### Cancelled Invocations
 
-Here's another hypothetical: if a unit test fails as part of Alice's invocation and she cancels the entire run, what happens to Bob's invocation? We ensure it runs to completion by reference-counting actions that have merged against a given execution and only cancelling executions with no waiting actions. Our implementation cuts a corner here in that we never decrement the action merging reference count. That would require tracking state about all of the merged executions, not just the primary one, and this isn't quite common enough to warrant that complexity. So, if Alice and Bob both cancel their invocations, the primary execution will run to completion even though no one is waiting for it.
+Here's another hypothetical: if a unit test fails as part of Alice's presubmit and she cancels the entire invocation, what happens to Bob's invocation? We ensure it runs to completion by reference-counting actions that have merged against a given execution and only cancelling executions with no waiting actions. Our implementation cuts a corner here in that we never decrement the action merging reference count. That would require tracking state about all of the merged executions, not just the primary one, and this isn't quite common enough to warrant that complexity. So, if Alice and Bob both cancel their invocations, the primary execution will run to completion even though no one is waiting for it.
 
 ### Stalled Executions
 
