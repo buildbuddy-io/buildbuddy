@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/webhooks"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
+	"github.com/buildbuddy-io/buildbuddy/server/cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
@@ -305,6 +306,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	if scheduler := env.GetSchedulerService(); scheduler != nil {
 		scpb.RegisterSchedulerServer(grpcServer, scheduler)
 	}
+	if cacheServer := env.GetCacheServer(); cacheServer != nil {
+		cspb.RegisterCacheServer(grpcServer, cacheServer)
+	}
 	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
 
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
@@ -404,6 +408,9 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		log.Fatalf("%v", err)
 	}
 	if err := push_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := cache_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := registerLocalGRPCClients(env); err != nil {

@@ -15,8 +15,6 @@ type CacheServer struct {
 	env environment.Env
 }
 
-var _ cspb.CacheServer = (*CacheServer)(nil)
-
 func Register(env *real_environment.RealEnv) error {
 	if env.GetCache() == nil {
 		return nil

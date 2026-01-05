@@ -31,6 +31,7 @@ go_library(
         "//server/build_event_protocol/build_event_server",
         "//server/build_event_protocol/webhooks",
         "//server/buildbuddy_server",
+        "//server/cache_server",
         "//server/endpoint_urls/build_buddy_url",
         "//server/gossip",
         "//server/http/csp",

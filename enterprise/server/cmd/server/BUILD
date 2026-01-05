@@ -76,7 +76,6 @@ go_library(
         "//enterprise/server/webhooks/github",
         "//enterprise/server/workflow/service",
         "//enterprise/server/workspace",
-        "//server/cache_server",
         "//server/config",
         "//server/interfaces",
         "//server/janitor",

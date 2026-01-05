@@ -60,7 +60,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workspace"
-	"github.com/buildbuddy-io/buildbuddy/server/cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
@@ -255,9 +254,6 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := scheduler_server.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := cache_server.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 
