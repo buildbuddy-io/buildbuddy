@@ -14,9 +14,9 @@ go_test(
     size = "medium",
     srcs = ["bazelrbe_prober_test.go"],
     data = [
-        "//tools/probers/bazelrbe",
         "//server/util/bazel:bazel-6.5.0_crossplatform",
         "//server/util/bazel:bazel-6.5.0_extract_installation",
+        "//tools/probers/bazelrbe",
     ],
     x_defs = {
         "proberBinaryRunfilePath": "$(rlocationpath //tools/probers/bazelrbe)",
@@ -32,9 +32,9 @@ go_test(
     size = "medium",
     srcs = ["bazelrbe_prober_test.go"],
     data = [
-        "//tools/probers/bazelrbe",
         "//server/util/bazel:bazel-7.7.1_crossplatform",
         "//server/util/bazel:bazel-7.7.1_extract_installation",
+        "//tools/probers/bazelrbe",
     ],
     x_defs = {
         "proberBinaryRunfilePath": "$(rlocationpath //tools/probers/bazelrbe)",
@@ -50,9 +50,9 @@ go_test(
     size = "medium",
     srcs = ["bazelrbe_prober_test.go"],
     data = [
-        "//tools/probers/bazelrbe",
         "//server/util/bazel:bazel-8.5.0_crossplatform",
         "//server/util/bazel:bazel-8.5.0_extract_installation",
+        "//tools/probers/bazelrbe",
     ],
     x_defs = {
         "proberBinaryRunfilePath": "$(rlocationpath //tools/probers/bazelrbe)",
@@ -71,3 +71,5 @@ test_suite(
         ":bazelrbe_prober_test_bazel8",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])
