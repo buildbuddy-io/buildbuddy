@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
@@ -574,11 +573,6 @@ func runOCIFetcherProxy(ctx context.Context, t *testing.T, cacheEnv *testenv.Tes
 	localBSS, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
 	env.SetLocalByteStreamServer(localBSS)
-
-	// Set up local ActionCacheServer for the proxy
-	localACS, err := action_cache_server.NewActionCacheServer(env)
-	require.NoError(t, err)
-	env.SetLocalActionCacheServer(localACS)
 
 	proxy, err := New(env)
 	require.NoError(t, err)
