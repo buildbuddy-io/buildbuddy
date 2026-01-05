@@ -1,4 +1,4 @@
-package bazelrbe_test
+package bazelrbe_prober_test
 
 import (
 	"context"
