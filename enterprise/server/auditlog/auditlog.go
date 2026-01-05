@@ -188,9 +188,9 @@ func (l *Logger) LogForSecret(ctx context.Context, secretName string, action alp
 }
 
 func filterEntry(entry *alpb.Entry, userEmail string) {
-	if strings.HasSuffix(userEmail, "@buildbuddy.io") {
+	if entry.AuthenticationInfo.User != nil && strings.HasSuffix(userEmail, "@buildbuddy.io") {
 		entry.AuthenticationInfo.User = &alpb.AuthenticatedUser{
-			UserEmail: "Buildbuddy Admin",
+			UserEmail: "BuildBuddy Admin",
 		}
 		entry.AuthenticationInfo.ClientIp = "0.0.0.0"
 	}

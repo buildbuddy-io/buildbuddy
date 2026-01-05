@@ -316,7 +316,7 @@ func TestChildGroupAuth(t *testing.T) {
 	require.True(t, status.IsPermissionDeniedError(err))
 }
 
-func TestFilterEntry_RedactsBuildBuddyUsers(t *testing.T) {
+func TestFilterEntry_RedactsBuildBuddyAdminUsers(t *testing.T) {
 	flags.Set(t, "app.audit_logs_enabled", true)
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
@@ -352,7 +352,7 @@ func TestFilterEntry_RedactsBuildBuddyUsers(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, bbResp.Entries, 1)
-	require.Equal(t, "Buildbuddy Admin", bbResp.Entries[0].AuthenticationInfo.User.UserEmail)
+	require.Equal(t, "BuildBuddy Admin", bbResp.Entries[0].AuthenticationInfo.User.UserEmail)
 	require.Equal(t, "0.0.0.0", bbResp.Entries[0].AuthenticationInfo.ClientIp)
 
 	// Retrieve logs for external user - should NOT be redacted.
@@ -366,4 +366,58 @@ func TestFilterEntry_RedactsBuildBuddyUsers(t *testing.T) {
 	require.Equal(t, extUser.Email, extResp.Entries[0].AuthenticationInfo.User.UserEmail)
 	// Client IP should not be "0.0.0.0" for external users (it may be empty in test environment).
 	require.NotEqual(t, "0.0.0.0", extResp.Entries[0].AuthenticationInfo.ClientIp)
+}
+
+func TestFilterEntry_APIKeyNotRedacted(t *testing.T) {
+	flags.Set(t, "app.audit_logs_enabled", true)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "testenv.use_clickhouse", true)
+	env := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, env)
+	err := auditlog.Register(env)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	auth.APIKeyProvider = func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) {
+		ui, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, apiKey)
+		require.NoError(t, err)
+		return claims.APIKeyGroupClaims(ctx, ui)
+	}
+
+	// Create a buildbuddy.io user.
+	bbUser := createUser(t, ctx, env, "BB2", "buildbuddy.io")
+	bbCtx := authUserCtx(ctx, env, t, bbUser.UserID)
+	bbGroup := getGroup(t, bbCtx, env).Group
+
+	// Create an API key for the buildbuddy.io user's group.
+	apiKey, err := env.GetAuthDB().CreateAPIKey(
+		bbCtx, bbGroup.GroupID, "test-api-key",
+		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
+		0, /*=expiresIn*/
+		false /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+
+	// Use the API key to log an event.
+	apiKeyCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, apiKey.Value)
+	groupUpdate := &grpb.UpdateGroupRequest{Name: "test-group-api-key"}
+	env.GetAuditLogger().LogForGroup(apiKeyCtx, bbGroup.GroupID, alpb.Action_UPDATE, groupUpdate)
+
+	// Retrieve logs - API key should NOT be redacted even though the user email is @buildbuddy.io.
+	resp, err := env.GetAuditLogger().GetLogs(bbCtx, &alpb.GetAuditLogsRequest{
+		RequestContext:  &ctxpb.RequestContext{GroupId: bbGroup.GroupID},
+		TimestampAfter:  timestamppb.New(time.Time{}),
+		TimestampBefore: timestamppb.New(time.Now()),
+	})
+	require.NoError(t, err)
+	require.Len(t, resp.Entries, 1)
+
+	// Verify that the entry shows API key authentication, not user authentication.
+	require.Nil(t, resp.Entries[0].AuthenticationInfo.User, "User should be nil for API key authentication")
+	require.NotNil(t, resp.Entries[0].AuthenticationInfo.ApiKey, "ApiKey should not be nil")
+	require.Equal(t, apiKey.APIKeyID, resp.Entries[0].AuthenticationInfo.ApiKey.Id)
+	require.Equal(t, "test-api-key", resp.Entries[0].AuthenticationInfo.ApiKey.Label)
 }
