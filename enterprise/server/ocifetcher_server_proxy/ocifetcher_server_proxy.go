@@ -87,55 +87,30 @@ func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb
 
 func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
-	meteredStream := &meteredFetchBlobServerStream{OCIFetcher_FetchBlobServer: stream}
 
 	// Parse the digest and repo from the ref
 	hash, repo, err := parseOCIBlobRef(req.GetRef())
 	if err != nil {
 		log.CtxDebugf(ctx, "Could not parse OCI blob ref %q: %v", req.GetRef(), err)
-		return s.fetchBlobFromRemote(ctx, req, meteredStream)
+		return s.fetchBlobFromRemote(ctx, req, stream)
 	}
 
 	// Try to get blob size from local action cache
 	size, err := s.getBlobSizeFromLocalAC(ctx, repo, hash)
 	if err == nil && size > 0 {
-		// Try local read
-		localErr := s.fetchBlobFromLocal(ctx, hash, size, meteredStream)
-		if localErr == nil {
-			return nil // Success from local
-		}
-		// Only fall back to remote if no frames have been sent yet
-		if meteredStream.frames > 0 {
-			return localErr
-		}
-		if !status.IsNotFoundError(localErr) {
-			log.CtxDebugf(ctx, "Error reading blob from local ByteStream server: %v", localErr)
-		}
+		// Local metadata exists - read from local (fail if local read fails)
+		return s.fetchBlobFromLocal(ctx, hash, size, stream)
 	}
 
-	// Fall back to remote
-	return s.fetchBlobFromRemote(ctx, req, meteredStream)
-}
-
-// meteredFetchBlobServerStream wraps an OCIFetcher_FetchBlobServer and counts
-// the number of frames and bytes sent through it.
-type meteredFetchBlobServerStream struct {
-	bytes  int64
-	frames int64
-	ofpb.OCIFetcher_FetchBlobServer
-}
-
-func (s *meteredFetchBlobServerStream) Send(resp *ofpb.FetchBlobResponse) error {
-	s.bytes += int64(len(resp.GetData()))
-	s.frames++
-	return s.OCIFetcher_FetchBlobServer.Send(resp)
+	// No local metadata, fall back to remote
+	return s.fetchBlobFromRemote(ctx, req, stream)
 }
 
 // fetchBlobToByteStreamAdapter adapts an OCIFetcher_FetchBlobServer to a
 // bspb.ByteStream_ReadServer for use with local.ReadCASResource.
 type fetchBlobToByteStreamAdapter struct {
 	grpc.ServerStream
-	fetchBlobStream *meteredFetchBlobServerStream
+	fetchBlobStream ofpb.OCIFetcher_FetchBlobServer
 }
 
 func (a *fetchBlobToByteStreamAdapter) Send(resp *bspb.ReadResponse) error {
@@ -206,7 +181,7 @@ func (s *OCIFetcherServerProxy) getBlobSizeFromLocalAC(ctx context.Context, repo
 }
 
 // fetchBlobFromLocal reads the blob from the local ByteStream server.
-func (s *OCIFetcherServerProxy) fetchBlobFromLocal(ctx context.Context, hash gcr.Hash, sizeBytes int64, stream *meteredFetchBlobServerStream) error {
+func (s *OCIFetcherServerProxy) fetchBlobFromLocal(ctx context.Context, hash gcr.Hash, sizeBytes int64, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	d := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: sizeBytes,
@@ -220,7 +195,7 @@ func (s *OCIFetcherServerProxy) fetchBlobFromLocal(ctx context.Context, hash gcr
 }
 
 // fetchBlobFromRemote fetches the blob from the remote OCIFetcher service.
-func (s *OCIFetcherServerProxy) fetchBlobFromRemote(ctx context.Context, req *ofpb.FetchBlobRequest, stream *meteredFetchBlobServerStream) error {
+func (s *OCIFetcherServerProxy) fetchBlobFromRemote(ctx context.Context, req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	remoteStream, err := s.remote.FetchBlob(ctx, req)
 	if err != nil {
 		return err
