@@ -102,15 +102,38 @@ func (w *World) Deviation() float64 {
 	return math.Sqrt(sumSquares / float64(len(w.numLeases)))
 }
 
-// ConvergenceTime calculates when the system converged (deviation stayed below threshold).
+// ConvergenceTime calculates when the system converged (stopped making changes).
+// A system is considered converged when lease counts haven't changed for consecutive snapshots.
 func (w *World) ConvergenceTime(threshold float64) int {
+	if len(w.history) < 2 {
+		return -1
+	}
+
+	// Look backwards to find when the system stopped changing
 	convergedAt := -1
-	for i := len(w.history) - 1; i >= 0; i-- {
-		if w.history[i].deviation > threshold {
+	for i := len(w.history) - 1; i >= 1; i-- {
+		// Check if lease counts changed between consecutive snapshots
+		changed := false
+		for nhid, count := range w.history[i].numLeases {
+			prevCount, exists := w.history[i-1].numLeases[nhid]
+			if !exists || count != prevCount {
+				changed = true
+				break
+			}
+		}
+
+		if changed {
+			// Found the last change, so convergence is at i+1 (if it exists)
+			if i+1 < len(w.history) {
+				convergedAt = w.history[i+1].tick
+			}
 			break
 		}
+
+		// Keep going backwards, update convergedAt to the earliest stable point
 		convergedAt = w.history[i].tick
 	}
+
 	return convergedAt
 }
 
@@ -240,7 +263,7 @@ type Result struct {
 }
 
 func (r Result) String() string {
-	return fmt.Sprintf("%-20s transfers=%-4d maxDev=%-6.1f%% converge=%-4d oscillations=%-3d final=%v\n", r.name, r.numTransfers, r.maxDeviation*100, r.convergenceTime, r.numOscillations, r.finalState)
+	return fmt.Sprintf("%-20s transfers=%-4d maxDev=%-6.1f%% convergesAt=%-4d oscillations=%-3d final=%v\n", r.name, r.numTransfers, r.maxDeviation*100, r.convergenceTime, r.numOscillations, r.finalState)
 }
 
 func (c Config) Run() Result {
@@ -277,7 +300,7 @@ func main() {
 		gossipIntervalMax: 10,
 		transferTimeMin:   2,
 		transferTimeMax:   5,
-		duration:          300,
+		duration:          1200,
 		strategy:          NewProductionRebalanceStrategy(),
 	}
 
