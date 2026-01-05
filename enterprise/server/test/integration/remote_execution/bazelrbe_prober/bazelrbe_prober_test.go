@@ -42,10 +42,13 @@ func TestProber_Success(t *testing.T) {
 	require.NoError(t, err, "failed to locate bazel outdir")
 	lockfilePath := filepath.Join(outdirPath, "MODULE.bazel.lock")
 
-	// Build bazel_args with remote executor and platform properties
+	// Bazel build args - repository_cache, lockfile enforcement, enable_bzlmod, and RBE config
+	// Note: --enable_bzlmod is a no-op for Bazel 8+ (already default) but necessary for 6/7
+	// Note: We don't use --install_base because install bases are platform-specific and
+	// the prewarmed one may have been created on a different platform (e.g., Linux via RBE)
 	bazelArgs := fmt.Sprintf(
-		"--remote_executor=%s --remote_default_exec_properties=OSFamily=%s --remote_default_exec_properties=Arch=%s",
-		env.GetRemoteExecutionTarget(), runtime.GOOS, runtime.GOARCH,
+		"--remote_executor=%s --remote_default_exec_properties=OSFamily=%s --remote_default_exec_properties=Arch=%s --repository_cache=%s/repository_cache --lockfile_mode=error --enable_bzlmod",
+		env.GetRemoteExecutionTarget(), runtime.GOOS, runtime.GOARCH, outdirPath,
 	)
 
 	// Run the prober with small values for faster test execution
