@@ -52,7 +52,7 @@ func InitModule(t testing.TB, workspaceDir string) {
 		testfs.WriteFile(t, workspaceDir, "MODULE.bazel", "")
 	}
 	if !testfs.Exists(t, workspaceDir, "MODULE.bazel.lock") {
-		lockfileContents := testfs.ReadFileAsString(t, "", lockfilePath(t))
+		lockfileContents := testfs.ReadFileAsString(t, "", LockfilePath(t))
 		testfs.WriteFile(t, workspaceDir, "MODULE.bazel.lock", lockfileContents)
 	}
 }
@@ -122,10 +122,6 @@ func repoCachePath(t testing.TB) string {
 	outdirPath, err := runfiles.Rlocation(outdirRlocationpath)
 	require.NoError(t, err)
 	return filepath.Join(outdirPath, "repository_cache")
-}
-
-func lockfilePath(t testing.TB) string {
-	return LockfilePath(t)
 }
 
 // LockfilePath returns the path to the pre-cached MODULE.bazel.lock file.
