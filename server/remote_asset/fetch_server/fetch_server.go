@@ -27,6 +27,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	cachepb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -360,7 +361,7 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 
 	// Lookup metadata to get the correct digest size to be returned to
 	// the client.
-	md, err := p.env.GetCacheClient().GetMetadata(ctx, &cachepb.GetCacheMetadataRequest{
+	md, err := getCacheClient(p.env).GetMetadata(ctx, &cachepb.GetCacheMetadataRequest{
 		ResourceName: cacheRN.ToProto(),
 	})
 	if err != nil {
@@ -516,4 +517,12 @@ func getCASClient(env environment.Env) repb.ContentAddressableStorageClient {
 		casClient = env.GetLocalContentAddressableStorageClient()
 	}
 	return casClient
+}
+func getCacheClient(env environment.Env) cspb.CacheClient {
+	cacheClient := env.GetCacheClient()
+	// If there is a local cache server, use it instead of the remote one.
+	if env.GetLocalCacheClient() != nil {
+		cacheClient = env.GetLocalCacheClient()
+	}
+	return cacheClient
 }
