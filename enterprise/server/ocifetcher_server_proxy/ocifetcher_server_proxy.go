@@ -45,11 +45,14 @@ func Register(env *real_environment.RealEnv) error {
 
 func New(env environment.Env) (*OCIFetcherServerProxy, error) {
 	if env.GetOCIFetcherClient() == nil {
-		return nil, fmt.Errorf("An OCIFetcherClient is required to enable the OCIFetcherServerProxy")
+		return nil, status.FailedPreconditionError("An OCIFetcherClient is required to enable the OCIFetcherServerProxy")
+	}
+	if env.GetLocalByteStreamServer() == nil {
+		return nil, status.FailedPreconditionError("A local byte stream server is required to enable the OCIFetcherServerProxy")
 	}
 	return &OCIFetcherServerProxy{
 		remote:        env.GetOCIFetcherClient(),
-		localBSServer: env.GetLocalByteStreamServer(), // Can be nil
+		localBSServer: env.GetLocalByteStreamServer(),
 	}, nil
 }
 
@@ -103,7 +106,6 @@ func (s *blobCacheWriteStream) Recv() (*bspb.WriteRequest, error) {
 	if err != nil {
 		s.remoteErr = err
 		if err == io.EOF {
-			// Send final request with FinishWrite=true
 			return &bspb.WriteRequest{
 				ResourceName: s.uploadRN,
 				WriteOffset:  s.writeOffset,
@@ -113,13 +115,11 @@ func (s *blobCacheWriteStream) Recv() (*bspb.WriteRequest, error) {
 		return nil, err
 	}
 
-	// Send to client
 	if err := s.clientStream.Send(resp); err != nil {
 		s.clientErr = err
 		return nil, err
 	}
 
-	// Return as WriteRequest for local cache
 	data := resp.GetData()
 	req := &bspb.WriteRequest{
 		ResourceName: s.uploadRN,
@@ -141,19 +141,12 @@ func (s *blobCacheWriteStream) Context() context.Context { return s.ctx }
 func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 
-	// Skip caching if no local byte stream server configured
-	if s.localBSServer == nil {
-		return s.fetchBlobPassthrough(req, stream)
-	}
-
-	// Parse ref to get hash
 	_, hash, err := parseDigestRef(req.GetRef())
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to parse ref %q, skipping cache: %v", req.GetRef(), err)
 		return s.fetchBlobPassthrough(req, stream)
 	}
 
-	// Get metadata to know the size (required for upload resource name)
 	metaResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
 		Ref:            req.GetRef(),
 		Credentials:    req.GetCredentials(),
@@ -164,18 +157,15 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		return s.fetchBlobPassthrough(req, stream)
 	}
 
-	// Build upload resource name with hash and size
 	d := &repb.Digest{Hash: hash.Hex, SizeBytes: metaResp.GetSize()}
 	rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
 	uploadRN := rn.NewUploadString()
 
-	// Start remote fetch
 	remoteStream, err := s.remote.FetchBlob(ctx, req)
 	if err != nil {
 		return err
 	}
 
-	// Create write stream adapter
 	cacheStream := &blobCacheWriteStream{
 		ctx:          ctx,
 		remoteStream: remoteStream,
@@ -183,13 +173,11 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		uploadRN:     uploadRN,
 	}
 
-	// Write to local cache (this drives the entire flow)
 	localErr := s.localBSServer.Write(cacheStream)
 	if localErr != nil {
 		log.CtxWarningf(ctx, "Error writing to local cache: %v", localErr)
 	}
 
-	// Check for client/remote errors
 	if cacheStream.clientErr != nil {
 		return cacheStream.clientErr
 	}
