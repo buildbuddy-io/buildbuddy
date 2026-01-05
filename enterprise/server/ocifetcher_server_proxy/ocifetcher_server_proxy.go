@@ -16,14 +16,22 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	gcrname "github.com/google/go-containerregistry/pkg/name"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 type OCIFetcherServerProxy struct {
-	remote ofpb.OCIFetcherClient
+	remote        ofpb.OCIFetcherClient
+	localBSServer interfaces.ByteStreamServer
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -40,7 +48,8 @@ func New(env environment.Env) (*OCIFetcherServerProxy, error) {
 		return nil, fmt.Errorf("An OCIFetcherClient is required to enable the OCIFetcherServerProxy")
 	}
 	return &OCIFetcherServerProxy{
-		remote: env.GetOCIFetcherClient(),
+		remote:        env.GetOCIFetcherClient(),
+		localBSServer: env.GetLocalByteStreamServer(), // Can be nil
 	}, nil
 }
 
@@ -56,7 +65,142 @@ func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb
 	return s.remote.FetchBlobMetadata(ctx, req)
 }
 
+func parseDigestRef(ref string) (gcrname.Repository, gcr.Hash, error) {
+	blobRef, err := gcrname.ParseReference(ref)
+	if err != nil {
+		return gcrname.Repository{}, gcr.Hash{}, err
+	}
+	digestRef, ok := blobRef.(gcrname.Digest)
+	if !ok {
+		return gcrname.Repository{}, gcr.Hash{}, status.InvalidArgumentErrorf("ref %q must be a digest ref", ref)
+	}
+	hash, err := gcr.NewHash(digestRef.DigestStr())
+	if err != nil {
+		return gcrname.Repository{}, gcr.Hash{}, err
+	}
+	return digestRef.Context(), hash, nil
+}
+
+// blobCacheWriteStream adapts the OCI fetcher stream to write to the local
+// ByteStream server while also sending responses to the client.
+// It implements bspb.ByteStream_WriteServer.
+type blobCacheWriteStream struct {
+	bspb.ByteStream_WriteServer // Embed for interface compliance
+
+	ctx          context.Context
+	remoteStream ofpb.OCIFetcher_FetchBlobClient
+	clientStream ofpb.OCIFetcher_FetchBlobServer
+	uploadRN     string
+
+	writeOffset int64
+	remoteErr   error
+	clientErr   error
+	finished    bool
+}
+
+func (s *blobCacheWriteStream) Recv() (*bspb.WriteRequest, error) {
+	resp, err := s.remoteStream.Recv()
+	if err != nil {
+		s.remoteErr = err
+		if err == io.EOF {
+			// Send final request with FinishWrite=true
+			return &bspb.WriteRequest{
+				ResourceName: s.uploadRN,
+				WriteOffset:  s.writeOffset,
+				FinishWrite:  true,
+			}, nil
+		}
+		return nil, err
+	}
+
+	// Send to client
+	if err := s.clientStream.Send(resp); err != nil {
+		s.clientErr = err
+		return nil, err
+	}
+
+	// Return as WriteRequest for local cache
+	data := resp.GetData()
+	req := &bspb.WriteRequest{
+		ResourceName: s.uploadRN,
+		Data:         data,
+		WriteOffset:  s.writeOffset,
+		FinishWrite:  false,
+	}
+	s.writeOffset += int64(len(data))
+	return req, nil
+}
+
+func (s *blobCacheWriteStream) SendAndClose(*bspb.WriteResponse) error {
+	s.finished = true
+	return nil
+}
+
+func (s *blobCacheWriteStream) Context() context.Context { return s.ctx }
+
 func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	ctx := stream.Context()
+
+	// Skip caching if no local byte stream server configured
+	if s.localBSServer == nil {
+		return s.fetchBlobPassthrough(req, stream)
+	}
+
+	// Parse ref to get hash
+	_, hash, err := parseDigestRef(req.GetRef())
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to parse ref %q, skipping cache: %v", req.GetRef(), err)
+		return s.fetchBlobPassthrough(req, stream)
+	}
+
+	// Get metadata to know the size (required for upload resource name)
+	metaResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
+		Ref:            req.GetRef(),
+		Credentials:    req.GetCredentials(),
+		BypassRegistry: req.GetBypassRegistry(),
+	})
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get blob metadata, skipping cache: %v", err)
+		return s.fetchBlobPassthrough(req, stream)
+	}
+
+	// Build upload resource name with hash and size
+	d := &repb.Digest{Hash: hash.Hex, SizeBytes: metaResp.GetSize()}
+	rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+	uploadRN := rn.NewUploadString()
+
+	// Start remote fetch
+	remoteStream, err := s.remote.FetchBlob(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	// Create write stream adapter
+	cacheStream := &blobCacheWriteStream{
+		ctx:          ctx,
+		remoteStream: remoteStream,
+		clientStream: stream,
+		uploadRN:     uploadRN,
+	}
+
+	// Write to local cache (this drives the entire flow)
+	localErr := s.localBSServer.Write(cacheStream)
+	if localErr != nil {
+		log.CtxWarningf(ctx, "Error writing to local cache: %v", localErr)
+	}
+
+	// Check for client/remote errors
+	if cacheStream.clientErr != nil {
+		return cacheStream.clientErr
+	}
+	if cacheStream.remoteErr != nil && cacheStream.remoteErr != io.EOF {
+		return cacheStream.remoteErr
+	}
+
+	return nil
+}
+
+func (s *OCIFetcherServerProxy) fetchBlobPassthrough(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 
 	remoteStream, err := s.remote.FetchBlob(ctx, req)
