@@ -8,7 +8,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -23,6 +26,7 @@ import (
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/grpc"
 )
 
 func TestNew_MissingClient(t *testing.T) {
@@ -610,4 +614,436 @@ func collectBlobData(t *testing.T, stream ofpb.OCIFetcher_FetchBlobClient) []byt
 		data = append(data, resp.GetData()...)
 	}
 	return data
+}
+
+// runOCIFetcherProxyWithLocalCache sets up the proxy server with a local ByteStream server
+// for caching and returns a client connected to the proxy.
+func runOCIFetcherProxyWithLocalCache(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient, localBSServer interfaces.ByteStreamServer) ofpb.OCIFetcherClient {
+	env := testenv.GetTestEnv(t)
+	env.SetOCIFetcherClient(remoteClient)
+	env.SetLocalByteStreamServer(localBSServer)
+
+	proxy, err := New(env)
+	require.NoError(t, err)
+
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	ofpb.RegisterOCIFetcherServer(grpcServer, proxy)
+	go runFunc()
+	t.Cleanup(func() { grpcServer.GracefulStop() })
+
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	return ofpb.NewOCIFetcherClient(conn)
+}
+
+// createLocalByteStreamServer creates a local ByteStreamServer backed by an in-memory cache.
+func createLocalByteStreamServer(t *testing.T) interfaces.ByteStreamServer {
+	env := testenv.GetTestEnv(t)
+	mc, err := memory_cache.NewMemoryCache(1e9) // 1GB
+	require.NoError(t, err)
+	env.SetCache(mc)
+
+	bs, err := byte_stream_server.NewByteStreamServer(env)
+	require.NoError(t, err)
+	return bs
+}
+
+// readFromLocalCache reads a blob from the local ByteStream server.
+func readFromLocalCache(ctx context.Context, t *testing.T, bsServer interfaces.ByteStreamServer, hash v1.Hash, size int64) []byte {
+	d := &repb.Digest{Hash: hash.Hex, SizeBytes: size}
+	rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+
+	req := &bspb.ReadRequest{
+		ResourceName: rn.DownloadString(),
+	}
+
+	reader := &testReadStream{ctx: ctx, data: make([]byte, 0)}
+	err := bsServer.Read(req, reader)
+	require.NoError(t, err)
+	return reader.data
+}
+
+// testReadStream is a mock ByteStream_ReadServer for reading from local cache.
+type testReadStream struct {
+	bspb.ByteStream_ReadServer
+	ctx  context.Context
+	data []byte
+}
+
+func (s *testReadStream) Send(resp *bspb.ReadResponse) error {
+	s.data = append(s.data, resp.GetData()...)
+	return nil
+}
+
+func (s *testReadStream) Context() context.Context { return s.ctx }
+
+// failingByteStreamServer is a mock that fails on Write after consuming all data.
+// It still calls Recv() to drive the data flow (which sends data to the client),
+// but returns an error at the end.
+type failingByteStreamServer struct {
+	interfaces.ByteStreamServer
+}
+
+func (f *failingByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
+	// Consume all data from the stream (this drives data to the client)
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if req.GetFinishWrite() {
+			break
+		}
+	}
+	// Fail after all data has been sent to client
+	return status.InternalError("simulated write failure")
+}
+
+// failingOCIFetcherClient is a mock OCI fetcher client that returns an error mid-stream.
+type failingOCIFetcherClient struct {
+	ofpb.OCIFetcherClient
+	realClient ofpb.OCIFetcherClient
+}
+
+// metadataFailingOCIFetcherClient fails on FetchBlobMetadata but succeeds on FetchBlob.
+type metadataFailingOCIFetcherClient struct {
+	ofpb.OCIFetcherClient
+	realClient ofpb.OCIFetcherClient
+}
+
+func (m *metadataFailingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	return nil, status.InternalError("simulated metadata failure")
+}
+
+func (m *metadataFailingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
+	return m.realClient.FetchBlob(ctx, req, opts...)
+}
+
+// immediateFailingOCIFetcherClient fails immediately on FetchBlob call.
+type immediateFailingOCIFetcherClient struct {
+	ofpb.OCIFetcherClient
+	realClient ofpb.OCIFetcherClient
+}
+
+func (i *immediateFailingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	return i.realClient.FetchBlobMetadata(ctx, req, opts...)
+}
+
+func (i *immediateFailingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
+	return nil, status.InternalError("simulated immediate fetch failure")
+}
+
+func (f *failingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
+	// Return a stream that fails after sending some data
+	return &failingFetchBlobStream{ctx: ctx}, nil
+}
+
+func (f *failingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	return f.realClient.FetchBlobMetadata(ctx, req)
+}
+
+type failingFetchBlobStream struct {
+	ofpb.OCIFetcher_FetchBlobClient
+	ctx       context.Context
+	callCount int
+}
+
+func (s *failingFetchBlobStream) Recv() (*ofpb.FetchBlobResponse, error) {
+	s.callCount++
+	if s.callCount == 1 {
+		// Send some data first
+		return &ofpb.FetchBlobResponse{Data: []byte("partial data")}, nil
+	}
+	// Then fail
+	return nil, status.InternalError("simulated remote read failure")
+}
+
+func (s *failingFetchBlobStream) Context() context.Context { return s.ctx }
+
+// TestFetchBlob_WritesToLocalCache tests that FetchBlob writes blobs to the local cache.
+func TestFetchBlob_WritesToLocalCache(t *testing.T) {
+	ctx := context.Background()
+
+	// Setup registry and push image
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+	layerSize, _ := layerMetadata(t, layer)
+
+	// Setup remote OCI fetcher
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+
+	// Setup local ByteStream server for proxy
+	localBSServer := createLocalByteStreamServer(t)
+
+	// Run proxy with local cache
+	proxyClient := runOCIFetcherProxyWithLocalCache(ctx, t, ociFetcherClient, localBSServer)
+
+	// Fetch blob
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + layerDigest.String(),
+	})
+	require.NoError(t, err)
+
+	data := collectBlobData(t, stream)
+	require.Equal(t, expectedData, data)
+
+	// Verify blob is in local cache
+	cachedData := readFromLocalCache(ctx, t, localBSServer, layerDigest, layerSize)
+	require.Equal(t, expectedData, cachedData)
+}
+
+// TestFetchBlob_BlobAlreadyInLocalCache tests that FetchBlob works when blob is already cached.
+func TestFetchBlob_BlobAlreadyInLocalCache(t *testing.T) {
+	ctx := context.Background()
+
+	// Setup registry and push image
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	// Setup remote OCI fetcher
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+
+	// Setup local ByteStream server for proxy
+	localBSServer := createLocalByteStreamServer(t)
+
+	// Run proxy with local cache
+	proxyClient := runOCIFetcherProxyWithLocalCache(ctx, t, ociFetcherClient, localBSServer)
+
+	// Fetch blob FIRST time to populate cache
+	stream1, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + layerDigest.String(),
+	})
+	require.NoError(t, err)
+	data1 := collectBlobData(t, stream1)
+	require.Equal(t, expectedData, data1)
+
+	// Fetch blob SECOND time - should still work even though blob is already in cache
+	stream2, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + layerDigest.String(),
+	})
+	require.NoError(t, err)
+	data2 := collectBlobData(t, stream2)
+	require.Equal(t, expectedData, data2)
+}
+
+// TestFetchBlob_LocalWriteFailure tests that FetchBlob still returns data even when
+// writing to the local cache fails.
+func TestFetchBlob_LocalWriteFailure(t *testing.T) {
+	ctx := context.Background()
+
+	// Setup registry and push image
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	// Setup remote OCI fetcher
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+
+	// Use a failing ByteStream server
+	failingBSServer := &failingByteStreamServer{}
+
+	// Run proxy with failing local cache
+	proxyClient := runOCIFetcherProxyWithLocalCache(ctx, t, ociFetcherClient, failingBSServer)
+
+	// Fetch blob - should still succeed even though local cache write fails
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + layerDigest.String(),
+	})
+	require.NoError(t, err)
+
+	data := collectBlobData(t, stream)
+	require.Equal(t, expectedData, data)
+}
+
+// TestFetchBlob_RemoteReadFailure tests that FetchBlob returns an error when
+// reading from the remote fails.
+func TestFetchBlob_RemoteReadFailure(t *testing.T) {
+	ctx := context.Background()
+
+	// Setup registry and push image
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+
+	// Setup real remote OCI fetcher (for FetchBlobMetadata)
+	_, bsClient, acClient := setupCacheEnv(t)
+	realOCIFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+
+	// Wrap it with a failing client
+	failingClient := &failingOCIFetcherClient{realClient: realOCIFetcherClient}
+
+	// Setup local ByteStream server for proxy
+	localBSServer := createLocalByteStreamServer(t)
+
+	// Run proxy with failing remote
+	proxyClient := runOCIFetcherProxyWithLocalCache(ctx, t, failingClient, localBSServer)
+
+	// Fetch blob - should fail with an error
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + layerDigest.String(),
+	})
+	require.NoError(t, err) // Initial call succeeds
+
+	// Error should come during streaming
+	for {
+		_, recvErr := stream.Recv()
+		if recvErr == io.EOF {
+			break
+		}
+		if recvErr != nil {
+			// Expected error
+			require.True(t, status.IsInternalError(recvErr), "expected InternalError, got: %v", recvErr)
+			return
+		}
+	}
+	t.Fatal("expected error during streaming, but got none")
+}
+
+// TestFetchBlob_InvalidRefFormat tests that FetchBlob fails when given an invalid ref.
+func TestFetchBlob_InvalidRefFormat(t *testing.T) {
+	ctx := context.Background()
+
+	// Setup remote OCI fetcher
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+
+	// Setup local ByteStream server for proxy
+	localBSServer := createLocalByteStreamServer(t)
+
+	// Run proxy with local cache
+	proxyClient := runOCIFetcherProxyWithLocalCache(ctx, t, ociFetcherClient, localBSServer)
+
+	// Try to fetch with invalid ref (not a digest ref)
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref: "not-a-valid-ref",
+	})
+	if err != nil {
+		// Error on initial call is acceptable
+		return
+	}
+
+	// Error might come during streaming
+	_, recvErr := stream.Recv()
+	require.Error(t, recvErr)
+}
+
+// TestFetchBlob_MetadataFailure tests that FetchBlob still returns data when
+// FetchBlobMetadata fails (falls back to passthrough without caching).
+func TestFetchBlob_MetadataFailure(t *testing.T) {
+	ctx := context.Background()
+
+	// Setup registry and push image
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	// Setup real remote OCI fetcher
+	_, bsClient, acClient := setupCacheEnv(t)
+	realOCIFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+
+	// Wrap it with a metadata-failing client
+	metadataFailingClient := &metadataFailingOCIFetcherClient{realClient: realOCIFetcherClient}
+
+	// Setup local ByteStream server for proxy
+	localBSServer := createLocalByteStreamServer(t)
+
+	// Run proxy with metadata-failing remote
+	proxyClient := runOCIFetcherProxyWithLocalCache(ctx, t, metadataFailingClient, localBSServer)
+
+	// Fetch blob - should succeed via passthrough (metadata failure causes cache skip)
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + layerDigest.String(),
+	})
+	require.NoError(t, err)
+
+	data := collectBlobData(t, stream)
+	require.Equal(t, expectedData, data)
+}
+
+// TestFetchBlob_RemoteImmediateFailure tests that FetchBlob returns an error when
+// the remote FetchBlob call fails immediately (before streaming starts).
+func TestFetchBlob_RemoteImmediateFailure(t *testing.T) {
+	ctx := context.Background()
+
+	// Setup registry and push image to get a valid ref
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+
+	// Setup real remote OCI fetcher (for FetchBlobMetadata)
+	_, bsClient, acClient := setupCacheEnv(t)
+	realOCIFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+
+	// Use an immediate-failing client
+	immediateFailingClient := &immediateFailingOCIFetcherClient{realClient: realOCIFetcherClient}
+
+	// Setup local ByteStream server for proxy
+	localBSServer := createLocalByteStreamServer(t)
+
+	// Run proxy with immediate-failing remote
+	proxyClient := runOCIFetcherProxyWithLocalCache(ctx, t, immediateFailingClient, localBSServer)
+
+	// Fetch blob - should fail with error
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + layerDigest.String(),
+	})
+	if err != nil {
+		// Error on initial call
+		require.True(t, status.IsInternalError(err), "expected InternalError, got: %v", err)
+		return
+	}
+
+	// Error might come during streaming
+	_, recvErr := stream.Recv()
+	require.Error(t, recvErr)
+	require.True(t, status.IsInternalError(recvErr), "expected InternalError, got: %v", recvErr)
 }
