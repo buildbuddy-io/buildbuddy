@@ -19,7 +19,7 @@ Caching action results is one of the performance optimizations at the heart of B
 ![](/img/blog/action-merging-timeline.webp)
 _A timeline of Alice and Bob's unmerged BigSlowTest executions._
 
-While this might sound contrived, our action merging system merges >1,000 actions per second at peak today saving some executions almost 3 hours. We are not the first to do this, Stripe has blogged about their internal solution to this problem here: https://stripe.com/blog/fast-secure-builds-choose-two.
+While this might sound contrived, our action merging system merges >1,000 actions per second at peak today saving some long-running tests almost 3 hours. We are not the first to do this, Stripe has blogged about their internal solution to this problem [here](https://stripe.com/blog/fast-secure-builds-choose-two).
 
 ## Background
 
@@ -31,7 +31,7 @@ Actions are the units of work Bazel runs as part of a larger invocation. An acti
 g++ your_file.cpp -o your_program_name
 ```
 
-Executions are runs of a single action, identified by an unique ID called an Execution ID that is generated when the execution starts. There will always be exactly one action per execution, but there could be zero, one, or many executions of an action.
+Executions are runs of a single action, identified by a unique ID called an Execution ID that is generated when the execution starts. There will always be exactly one action per execution, but there could be zero, one, or many executions of an action.
 
 ![](/img/blog/action-merging-definitions.webp)
 _A simple action and an execution of that action._
@@ -70,7 +70,7 @@ The first few times we observed this, we manually fixed the issue by deleting th
 ![](/img/blog/action-merging-hedging.webp)
 _How hedging unblocks merges against stuck executions._
 
-### Shards
+### A Scaling Bug
 
 When we added support for hedging, we also added a few metrics tracking action merging performance. We found that in the best case, hundreds of invocations merged against a single primary execution, and action merging saved hours for some invocations. This was encouraging to see! But over time, our metrics showed action merging performance decline. Initially, we chalked this up to different traffic patterns, but after digging in, Brandon noticed our action merging Redis client was configured to read and write action merging state from a single Redis shard instead of the entire Redis deployment. This meant that the effectiveness of action merging decreased proportionally as we increased the size of our Redis deployment. Whoops!
 
