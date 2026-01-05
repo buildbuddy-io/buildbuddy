@@ -3,7 +3,7 @@ slug: action-merging
 title: Action Merging
 description: Learn all the details about BuildBuddy's action deduplication mechanism
 authors: iain
-date: 2026-01-05:12:00:00
+date: 2026-01-05:14:00:00
 image: /img/blog/action-merging.webp
 tags: [product, engineering, performance]
 ---
