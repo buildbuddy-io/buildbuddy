@@ -10,7 +10,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// 4KiB block size
+// 4KiB cluster size is the default for both NTFS and ReFS(DevDrive)
+// References:
+//
+//	https://techcommunity.microsoft.com/blog/filecab/cluster-size-recommendations-for-refs-and-ntfs/425960
+//	https://learn.microsoft.com/en-us/windows-server/storage/file-server/ntfs-overview#support-for-large-volumes
 const clusterSize = int64(4096)
 
 func GetDirUsage(path string) (*DirUsage, error) {
