@@ -21,7 +21,7 @@
 .trend-chart {
   margin-bottom: 32px;
   padding-top: 32px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--color-gray-200);
 }
 
 .trend-chart.zoomable {
@@ -50,12 +50,13 @@
 }
 
 .trend-chart-hover {
-  background-color: rgba(255, 255, 255, 0.95);
+  background-color: var(--color-trends-hovercard-bg);
+  color: var(--color-hovercard-text);
   border-radius: 8px;
   padding: 16px;
   box-shadow:
-    0 3px 6px rgba(0, 0, 0, 0.16),
-    0 3px 6px rgba(0, 0, 0, 0.23);
+    0 3px 6px var(--color-shadow-tooltip),
+    0 3px 6px var(--color-shadow-tooltip-alt);
   pointer-events: none;
   z-index: 1;
 }
@@ -66,27 +67,27 @@
 
 .trends-clickable-bar:hover,
 .trends-clickable-bar.green:hover {
-  fill: #9ccc65;
+  fill: var(--color-light-green-400);
 }
 
 .trends-clickable-bar.red:hover {
-  fill: #e57373;
+  fill: var(--color-red-300);
 }
 
 .trends-clickable-bar.orange:hover {
-  fill: #ff8f00;
+  fill: var(--color-amber-800);
 }
 
 .trends-clickable-bar.black:hover {
-  fill: #424242;
+  fill: var(--color-gray-800);
 }
 
 .trends-clickable-bar.grey:hover {
-  fill: #ccc;
+  fill: var(--color-gray-400-alt);
 }
 
 .trends-clickable-bar.blue:hover {
-  fill: #29b6f6;
+  fill: var(--color-light-blue-400);
 }
 
 .trends svg.recharts-surface {
@@ -101,13 +102,13 @@
 
 .heatmap-zoom {
   cursor: pointer;
-  stroke: #616161;
-  fill: #eee;
+  stroke: var(--color-icon-default);
+  fill: var(--color-gray-200);
 }
 
 .heatmap-zoom:hover {
-  stroke: #414141;
-  fill: #ddd;
+  stroke: var(--color-gray-800-alt2);
+  fill: var(--color-gray-300-alt);
 }
 
 .drilldown-page-warning-section {
@@ -125,11 +126,11 @@
 }
 
 .drilldown-page-tooltip-base {
-  color: #8782bc;
+  color: var(--color-purple-300-alt);
 }
 
 .drilldown-page-tooltip-selected {
-  color: #4daf62;
+  color: var(--color-green-500-alt);
 }
 
 .drilldown-by-text {
@@ -209,11 +210,11 @@
 }
 
 .selection-summary-indicator.selection {
-  background-color: #4daf62;
+  background-color: var(--color-green-500-alt);
 }
 
 .selection-summary-indicator.baseline {
-  background-color: #8782bc;
+  background-color: var(--color-purple-300-alt);
 }
 
 .selection-summary-text {
@@ -250,11 +251,11 @@
 }
 
 .trend-change.up {
-  color: #4caf50;
+  color: var(--color-green-500);
 }
 
 .trend-change.down {
-  color: #f44336;
+  color: var(--color-red-500);
 }
 
 .trend-summary-block {

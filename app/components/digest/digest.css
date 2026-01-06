@@ -1,7 +1,8 @@
 .digest-component {
   display: inline-flex;
   align-items: center;
-  color: #000;
+  color: var(--color-digest-hash-text);
+  background-color: var(--color-digest-hash-bg);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -40,5 +41,6 @@
   padding: 0 8px;
   display: inline-block;
   white-space: nowrap;
-  background-color: #eee;
+  background-color: var(--color-digest-size-bg);
+  color: var(--color-digest-size-text);
 }
