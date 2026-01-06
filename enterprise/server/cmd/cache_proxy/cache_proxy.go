@@ -309,7 +309,6 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 		env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
 		env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
-		env.SetCacheClient(cspb.NewCacheClient(conn))
 	}
 	env.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(conn))
 
