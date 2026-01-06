@@ -62,7 +62,7 @@ genrule(
 }
 
 func createWorkspace(dir string, numTargets, numInputsPerTarget, inputSizeBytes int) error {
-	err := os.WriteFile(filepath.Join(dir, "WORKSPACE"), []byte(""), 0644)
+	err := os.WriteFile(filepath.Join(dir, "MODULE.bazel"), []byte(""), 0644)
 	if err != nil {
 		return err
 	}
