@@ -184,7 +184,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	var isLeader bool
 	_, _, err = s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (struct{}, error) {
 		isLeader = true
-		return struct{}{}, s.fetchStreamAndCacheBlob(ctx, digestRef, repo, hash, req.GetCredentials(), stream)
+		return struct{}{}, s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), stream)
 	})
 	if err != nil {
 		return err
@@ -432,9 +432,9 @@ func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.O
 	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, metadata.GetContentLength())
 }
 
-// fetchStreamAndCacheBlob fetches a blob from the upstream registry, streams it to the
+// fetchBlobFromRemoteWriteToCacheAndResponse fetches a blob from the upstream registry, streams it to the
 // response, and writes it to the cache simultaneously using read-through caching.
-func (s *ociFetcherServer) fetchStreamAndCacheBlob(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) error {
+func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	// Double-check cache to handle race between initial check and singleflight entry.
 	if err := s.fetchBlobFromCache(ctx, stream, repo, hash); err == nil {
 		return nil
