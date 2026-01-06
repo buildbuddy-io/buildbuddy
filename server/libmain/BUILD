@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//proto:auth_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:cache_service_go_proto",
         "//proto:encryption_go_proto",
         "//proto:hit_tracker_go_proto",
         "//proto:publish_build_event_go_proto",
@@ -30,6 +31,7 @@ go_library(
         "//server/build_event_protocol/build_event_server",
         "//server/build_event_protocol/webhooks",
         "//server/buildbuddy_server",
+        "//server/cache_server",
         "//server/endpoint_urls/build_buddy_url",
         "//server/gossip",
         "//server/http/csp",

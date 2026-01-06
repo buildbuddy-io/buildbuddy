@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -108,6 +109,7 @@ type Env interface {
 	GetByteStreamServer() bspb.ByteStreamServer
 	GetLocalActionCacheServer() repb.ActionCacheServer
 	GetActionCacheServer() repb.ActionCacheServer
+	GetCacheClient() cspb.CacheClient
 	GetPushServer() rapb.PushServer
 	GetFetchServer() rapb.FetchServer
 	GetCapabilitiesServer() repb.CapabilitiesServer
