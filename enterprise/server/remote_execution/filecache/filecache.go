@@ -463,8 +463,8 @@ func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n
 	}()
 	// TODO(sluongng): should we use
 	//   os.FileMode(node.GetNodeProperties().GetUnixMode().GetValue())
-	// here instead of 0644?
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	// here instead of 0o666?
+	if err := os.WriteFile(tmp, b, 0o666); err != nil {
 		return 0, status.InternalErrorf("filecache temp file write failed: %s", err)
 	}
 	if err := c.AddFile(ctx, node, tmp); err != nil {
