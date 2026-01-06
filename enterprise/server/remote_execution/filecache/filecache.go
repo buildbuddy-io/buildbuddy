@@ -456,18 +456,16 @@ func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n
 	if err != nil {
 		return 0, err
 	}
-	f, err := os.Create(tmp)
-	if err != nil {
-		return 0, status.InternalErrorf("filecache temp file creation failed: %s", err)
-	}
 	defer func() {
-		if err := os.Remove(tmp); err != nil {
+		if err := os.Remove(tmp); err != nil && !errors.Is(err, os.ErrNotExist) {
 			log.Warningf("Failed to remove filecache temp file: %s", err)
 		}
 	}()
-	n, err = f.Write(b)
-	if err != nil {
-		return n, err
+	// TODO(sluongng): should we use
+	//   os.FileMode(node.GetNodeProperties().GetUnixMode().GetValue())
+	// here instead of 0o666?
+	if err := os.WriteFile(tmp, b, 0o666); err != nil {
+		return 0, status.InternalErrorf("filecache temp file write failed: %s", err)
 	}
 	if err := c.AddFile(ctx, node, tmp); err != nil {
 		return 0, err
