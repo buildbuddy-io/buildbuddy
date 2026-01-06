@@ -10,12 +10,17 @@ STYLE_CSS = os.path.join(RUNFILES, '_main/enterprise/app/style.css')
 
 
 def parse_definitions(css):
-    """Parse --name: value; definitions from CSS."""
+    """Parse --name: value; definitions from CSS.
+    
+    Note: This parser assumes CSS variable definitions are on a single line.
+    Multi-line definitions are not currently supported.
+    """
     defs = set()
     for line in css.splitlines():
         line = line.strip()
         if line.startswith('--') and ':' in line:
-            name = line.split(':')[0].strip().lstrip('-')
+            raw_name = line.split(':')[0].strip()
+            name = raw_name[2:]  # Remove exactly the first two dashes
             defs.add(name)
     return defs
 
@@ -31,7 +36,10 @@ def parse_references(css):
                 break
             start += 6  # len('var(--')
             end = start
-            while end < len(line) and (line[end].isalnum() or line[end] == '-'):
+            # Parse variable name, stopping at comma (fallback) or closing paren
+            while (end < len(line)
+                   and line[end] not in (',', ')')
+                   and (line[end].isalnum() or line[end] in ('-', '_'))):
                 end += 1
             if end > start:
                 refs.add(line[start:end])
