@@ -1,4 +1,4 @@
-package remote_execution_test
+package cache_proxy_test
 
 import (
 	"strings"
