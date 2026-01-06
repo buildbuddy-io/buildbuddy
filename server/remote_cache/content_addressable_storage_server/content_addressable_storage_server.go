@@ -240,7 +240,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		checksum.Write(decompressedData)
 		computedDigest := hex.EncodeToString(checksum.Sum(nil))
 		if computedDigest != rn.GetDigest().GetHash() {
-			err := status.DataLossErrorf("Uploaded bytes checksum (%q) did not match digest (%q).", computedDigest, rn.GetDigest().GetHash())
+			err := status.InvalidArgumentErrorf("Uploaded bytes checksum (%q) did not match digest (%q).", computedDigest, rn.GetDigest().GetHash())
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 				Digest: rn.GetDigest(),
 				Status: gstatus.Convert(err).Proto(),
@@ -248,7 +248,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			continue
 		}
 		if int64(len(decompressedData)) != rn.GetDigest().GetSizeBytes() {
-			err := status.DataLossErrorf("Uploaded blob size (%d) did not match expected size (%d).", len(decompressedData), rn.GetDigest().GetSizeBytes())
+			err := status.InvalidArgumentErrorf("Uploaded blob size (%d) did not match expected size (%d).", len(decompressedData), rn.GetDigest().GetSizeBytes())
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 				Digest: rn.GetDigest(),
 				Status: gstatus.Convert(err).Proto(),
