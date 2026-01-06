@@ -585,6 +585,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             digest: digest,
             cacheType: scorecardResult.cacheType,
             instanceName: remoteInstanceName,
+            compressor: scorecardResult.compressor,
+            digestFunction: this.props.model.getDigestFunction(),
           }),
         })
       )
