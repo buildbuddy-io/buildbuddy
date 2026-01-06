@@ -1011,10 +1011,6 @@ func (r *Env) AddCacheProxy() *CacheProxy {
 	// Set up the proxy services and gRPC server.
 	s, err := grpc_server.New(proxyEnv, port, false, grpcServerConfig)
 	require.NoError(r.t, err)
-	proxyEnv.SetActionCacheClient(repb.NewActionCacheClient(appConn))
-	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(appConn))
-	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(appConn))
-	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(appConn))
 	require.NoError(r.t, capabilities_server_proxy.Register(proxyEnv))
 	require.NoError(r.t, action_cache_server_proxy.Register(proxyEnv))
 	require.NoError(r.t, byte_stream_server_proxy.Register(proxyEnv))
