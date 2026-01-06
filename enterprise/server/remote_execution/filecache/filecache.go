@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -124,6 +125,8 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
 	}
+	// Make sure we have the right path separator on Windows
+	rootDir = filepath.Clean(rootDir)
 	if deleteContent {
 		log.Infof("Cleaning up filecache %q", rootDir)
 		if err := disk.ForceRemove(context.Background(), rootDir); err != nil {
@@ -166,22 +169,32 @@ func (c *fileCache) TempDir() string {
 
 func filecachePath(rootDir, key string) string {
 	// Don't use filepath.Join since it's relatively slow and allocates more.
-	if *includeSubdirPrefix {
-		groupDir, file := filepath.Split(key)
-		return rootDir + "/" + groupDir + file[:*subdirPrefixLength] + "/" + file
+	if !strings.HasSuffix(rootDir, sep) {
+		rootDir += sep
 	}
-	return rootDir + "/" + key
+	if *includeSubdirPrefix {
+		key = filepath.FromSlash(key)
+		groupDir, file := filepath.Split(key)
+		return rootDir + groupDir + file[:*subdirPrefixLength] + sep + file
+	}
+	return rootDir + filepath.FromSlash(key)
 }
 
 const sep = string(filepath.Separator)
 
 func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (string, *repb.FileNode, error) {
-	if !strings.HasPrefix(fullPath, c.rootDir) {
+	// Make sure we have the right path separator on Windows
+	fullPath = filepath.Clean(fullPath)
+	if !c.pathWithinRootDir(fullPath) {
 		return "", nil, status.FailedPreconditionErrorf("Path %q not in rootDir: %q", fullPath, c.rootDir)
 	}
+	// pathWithinRootDir guarantees this won't error and won't escape rootDir.
+	rel, err := filepath.Rel(c.rootDir, fullPath)
+	if err != nil {
+		return "", nil, status.FailedPreconditionErrorf("Path %q not in rootDir %q: %w", fullPath, c.rootDir, err)
+	}
 
-	subdirPath := strings.TrimPrefix(fullPath, c.rootDir)
-	groupID, name := filepath.Split(subdirPath)
+	groupID, name := filepath.Split(rel)
 	groupID = strings.Trim(groupID, sep)
 
 	// Backwards compatible: scan files that are written in the new
@@ -379,7 +392,7 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 
 		// If the file being added is inside the filecache dir, and it
 		// is stored in an "old-style" location, then remove it.
-		if strings.HasPrefix(existingFilePath, c.rootDir) && filepath.Base(fp) == filepath.Base(existingFilePath) {
+		if c.pathWithinRootDir(existingFilePath) && filepath.Base(fp) == filepath.Base(existingFilePath) {
 			if err := syscall.Unlink(existingFilePath); err != nil {
 				log.Errorf("Failed to unlink existing filecache path: %q: %s", existingFilePath, err)
 			}
@@ -399,6 +412,21 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 		return status.InternalErrorf("could not add key %s to filecache lru", k)
 	}
 	return nil
+}
+
+// pathWithinRootDir reports whether fullPath is inside c.rootDir.
+// fullPath should already be cleaned via filepath.Clean.
+// Note: c.rootDir is always clean since NewFileCache cleans it on construction.
+func (c *fileCache) pathWithinRootDir(fullPath string) bool {
+	rootDir := c.rootDir
+	if runtime.GOOS == "windows" && !strings.EqualFold(filepath.VolumeName(rootDir), filepath.VolumeName(fullPath)) {
+		return false
+	}
+	rel, err := filepath.Rel(rootDir, fullPath)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+sep))
 }
 
 func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) error {
@@ -456,19 +484,17 @@ func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n
 	if err != nil {
 		return 0, err
 	}
-	f, err := os.Create(tmp)
-	if err != nil {
-		return 0, status.InternalErrorf("filecache temp file creation failed: %s", err)
+	// TODO(sluongng): should we use
+	//   os.FileMode(node.GetNodeProperties().GetUnixMode().GetValue())
+	// here instead of 0666?
+	if err := os.WriteFile(tmp, b, 0o666); err != nil {
+		return 0, status.InternalErrorf("filecache temp file write failed: %s", err)
 	}
 	defer func() {
 		if err := os.Remove(tmp); err != nil {
 			log.Warningf("Failed to remove filecache temp file: %s", err)
 		}
 	}()
-	n, err = f.Write(b)
-	if err != nil {
-		return n, err
-	}
 	if err := c.AddFile(ctx, node, tmp); err != nil {
 		return 0, err
 	}
