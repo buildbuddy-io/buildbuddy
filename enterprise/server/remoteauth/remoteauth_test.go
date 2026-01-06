@@ -77,7 +77,7 @@ func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
 	go runServer()
 	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
 	require.NoError(t, err)
-	authenticator, err := NewRemoteAuthenticatorWithTarget(conn)
+	authenticator, err := NewWithTarget(conn)
 	require.NoError(t, err)
 	return authenticator, &fakeAuthService
 }
