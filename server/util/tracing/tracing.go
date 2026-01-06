@@ -375,6 +375,12 @@ func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // StartSpan starts a new span named after the calling function.
+// Note:
+// (1) StartSpan doesn't support --app.trace_fraction_overrides, if you would
+// like to override the trace fraction with a specified function, please use
+// StartNamedSpan instead.
+// (2) If you want to record a trace inside a loop, or in a performance-critical
+// path, please use StartNamedSpan instead.
 func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	ctx, span := tracer.Start(ctx, "unknown_go_function", opts...)
 	if !span.IsRecording() {
