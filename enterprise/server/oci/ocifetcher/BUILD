@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher",
     deps = [
         "//enterprise/server/util/ocicache",
+        "//third_party/singleflight",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",

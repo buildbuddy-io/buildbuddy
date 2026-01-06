@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -47,6 +48,28 @@ var (
 	blobBufPool = bytebufferpool.VariableSize(blobChunkSize)
 )
 
+// blobFetchKey identifies a blob fetch for deduplication.
+// Includes registry, repository, digest, and credentials hash.
+type blobFetchKey struct {
+	registry   string
+	repository string
+	digest     string
+	credsHash  string
+}
+
+func blobDedupeKey(repo gcrname.Repository, h gcr.Hash, creds *rgpb.Credentials) blobFetchKey {
+	credsHash := ""
+	if creds != nil {
+		credsHash = hash.Strings(creds.GetUsername(), creds.GetPassword())
+	}
+	return blobFetchKey{
+		registry:   repo.RegistryStr(),
+		repository: repo.RepositoryStr(),
+		digest:     h.String(),
+		credsHash:  credsHash,
+	}
+}
+
 type ociFetcherServer struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
@@ -56,6 +79,11 @@ type ociFetcherServer struct {
 
 	mu        sync.Mutex
 	pullerLRU *lru.LRU[*pullerLRUEntry]
+
+	// blobFetchGroup deduplicates concurrent blob fetch requests.
+	// Only one request fetches from upstream and writes to cache;
+	// other requests wait and then read from cache.
+	blobFetchGroup singleflight.Group[blobFetchKey, struct{}]
 }
 
 // NewServer constructs an OCIFetcherServer that
@@ -150,43 +178,25 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", blobRef)
 	}
 
-	layer, err := withPullerRetry(ctx, s, blobRef, req.GetCredentials(), func(puller *remote.Puller) (gcr.Layer, error) {
-		return puller.Layer(ctx, digestRef)
+	// Singleflight: leader streams from upstream to response while caching,
+	// followers wait and then read from cache.
+	key := blobDedupeKey(repo, hash, req.GetCredentials())
+	var isLeader bool
+	_, _, err = s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (struct{}, error) {
+		isLeader = true
+		return struct{}{}, s.fetchStreamAndCacheBlob(ctx, digestRef, repo, hash, req.GetCredentials(), stream)
 	})
 	if err != nil {
 		return err
 	}
 
-	rc, err := layer.Compressed()
-	if err != nil {
-		return wrapError(err, "error getting compressed layer")
-	}
-	// Note: rc is closed by cachedRC.Close() in the happy path,
-	// or by defer rc.Close() in the early-return paths below.
-
-	mediaType, err := layer.MediaType()
-	if err != nil {
-		defer rc.Close()
-		log.CtxWarningf(ctx, "Could not get media type for layer, skipping cache: %s", err)
-		return s.streamBlob(rc, stream)
+	if isLeader {
+		// We ran the callback - already streamed to our response.
+		return nil
 	}
 
-	size, err := layer.Size()
-	if err != nil {
-		defer rc.Close()
-		log.CtxWarningf(ctx, "Could not get size for layer, skipping cache: %s", err)
-		return s.streamBlob(rc, stream)
-	}
-
-	cachedRC, err := ocicache.NewBlobReadThroughCacher(ctx, rc, s.bsClient, s.acClient, repo, hash, string(mediaType), size)
-	if err != nil {
-		defer rc.Close()
-		log.CtxWarningf(ctx, "Error creating read-through cacher, skipping cache: %s", err)
-		return s.streamBlob(rc, stream)
-	}
-	defer cachedRC.Close()
-
-	return s.streamBlob(cachedRC, stream)
+	// We were a follower - read from cache.
+	return s.fetchBlobFromCache(ctx, stream, repo, hash)
 }
 
 // FetchBlobMetadata returns OCI blob metadata (size, media type).
@@ -420,6 +430,57 @@ func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.O
 	}
 	w := &grpcStreamWriter{stream: stream}
 	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, metadata.GetContentLength())
+}
+
+// fetchStreamAndCacheBlob fetches a blob from the upstream registry, streams it to the
+// response, and writes it to the cache simultaneously using read-through caching.
+func (s *ociFetcherServer) fetchStreamAndCacheBlob(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	// Double-check cache to handle race between initial check and singleflight entry.
+	if err := s.fetchBlobFromCache(ctx, stream, repo, hash); err == nil {
+		return nil
+	} else if !status.IsNotFoundError(err) {
+		return err
+	}
+
+	// Fetch from upstream
+	layer, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (gcr.Layer, error) {
+		return puller.Layer(ctx, digestRef)
+	})
+	if err != nil {
+		return err
+	}
+
+	rc, err := layer.Compressed()
+	if err != nil {
+		return wrapError(err, "error getting compressed layer")
+	}
+	// Note: rc is closed by cachedRC.Close() in the happy path,
+	// or by defer rc.Close() in the early-return paths below.
+
+	mediaType, err := layer.MediaType()
+	if err != nil {
+		defer rc.Close()
+		log.CtxWarningf(ctx, "Could not get media type for layer, skipping cache: %s", err)
+		return s.streamBlob(rc, stream)
+	}
+
+	size, err := layer.Size()
+	if err != nil {
+		defer rc.Close()
+		log.CtxWarningf(ctx, "Could not get size for layer, skipping cache: %s", err)
+		return s.streamBlob(rc, stream)
+	}
+
+	// Read-through cacher: streams to response AND writes to cache
+	cachedRC, err := ocicache.NewBlobReadThroughCacher(ctx, rc, s.bsClient, s.acClient, repo, hash, string(mediaType), size)
+	if err != nil {
+		defer rc.Close()
+		log.CtxWarningf(ctx, "Error creating read-through cacher, skipping cache: %s", err)
+		return s.streamBlob(rc, stream)
+	}
+	defer cachedRC.Close()
+
+	return s.streamBlob(cachedRC, stream)
 }
 
 // streamBlob reads from rc and streams the data to the gRPC stream in chunks.
