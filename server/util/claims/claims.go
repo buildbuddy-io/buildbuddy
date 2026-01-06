@@ -537,22 +537,22 @@ func ServerAdminGroupID() string {
 	return *serverAdminGroupID
 }
 
-// ClaimsCache helps reduce CPU overhead due to JWT parsing by caching parsed
-// and verified JWT claims.
+// ClaimsParser parses and verifies encoded JWTs. It also caches the parsed
+// claims, if configured to do so, to reduce overhead due to redundant parsing.
 //
-// The JWTs used with this cache should have Expiration times rounded down to
-// the nearest minute, so that their cache key doesn't change as often and can
-// therefore be cached for longer.
-type ClaimsCache struct {
+// The JWTs used with the parser's cache should have Expiration times rounded
+// down to the nearest minute, so that their cache key doesn't change as often
+// and can therefore be cached for longer.
+type ClaimsParser struct {
 	ttl time.Duration
 
 	mu  sync.Mutex
 	lru interfaces.LRU[*Claims]
 }
 
-func NewClaimsCache() (*ClaimsCache, error) {
+func NewClaimsParser() (*ClaimsParser, error) {
 	if *claimsCacheTTL <= 0 {
-		return &ClaimsCache{ttl: *claimsCacheTTL, lru: nil}, nil
+		return &ClaimsParser{ttl: 0, lru: nil}, nil
 	}
 
 	config := &lru.Config[*Claims]{
@@ -563,10 +563,10 @@ func NewClaimsCache() (*ClaimsCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ClaimsCache{ttl: *claimsCacheTTL, lru: lru}, nil
+	return &ClaimsParser{ttl: *claimsCacheTTL, lru: lru}, nil
 }
 
-func (c *ClaimsCache) Get(token string) (*Claims, error) {
+func (c *ClaimsParser) Parse(token string) (*Claims, error) {
 	if c.ttl <= 0 {
 		return parseClaims(token)
 	}
