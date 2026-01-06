@@ -4,7 +4,6 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
     name = "bazelrbe_prober_test_bazel6",
-    size = "large",
     srcs = ["bazelrbe_prober_test.go"],
     data = [
         "//server/util/bazel:bazel-6.5.0_crossplatform",
@@ -24,7 +23,6 @@ go_test(
 
 go_test(
     name = "bazelrbe_prober_test_bazel7",
-    size = "large",
     srcs = ["bazelrbe_prober_test.go"],
     data = [
         "//server/util/bazel:bazel-7.6.1_crossplatform",
@@ -44,7 +42,6 @@ go_test(
 
 go_test(
     name = "bazelrbe_prober_test_bazel8",
-    size = "large",
     srcs = ["bazelrbe_prober_test.go"],
     data = [
         "//server/util/bazel:bazel-8.5.0_crossplatform",
