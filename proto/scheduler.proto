@@ -446,10 +446,6 @@ message CancelTaskReservationRequest {
   string task_id = 1;
 }
 
-// CancelTaskReservationResponse is sent from the executor to the scheduler to
-// acknowledge receipt of a CancelTaskReservationRequest.
-message CancelTaskReservationResponse {}
-
 message RegisterExecutorRequest {
   ExecutionNode node = 1;
 }
