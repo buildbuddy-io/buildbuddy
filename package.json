@@ -4,7 +4,8 @@
   "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "clean": "bazel clean && rm -rf node_modules"
+    "clean": "bazel clean && rm -rf node_modules",
+    "lint:css": "stylelint 'app/**/*.css' 'enterprise/app/**/*.css'"
   },
   "devDependencies": {
     "@types/d3-scale": "^3.3.5",
@@ -54,6 +55,8 @@
     "react-window": "^1.8.11",
     "recharts": "^2.15.1",
     "rxjs": "^6.6.7",
+    "stylelint": "^16.0.0",
+    "stylelint-value-no-unknown-custom-properties": "^6.0.0",
     "tslib": "^2.8.1",
     "typescript": "5.8.2",
     "uuid": "^8.3.2",

@@ -236,6 +236,7 @@ go_sdk_tool(
 )
 
 exports_files([
+    ".stylelintrc.json",
     "package.json",
     "yarn.lock",
 ])

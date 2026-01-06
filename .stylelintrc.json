@@ -1,0 +1,22 @@
+{
+  "plugins": ["stylelint-value-no-unknown-custom-properties"],
+  "ignoreFiles": ["website/**/*.css", "enterprise/app/code/monaco.css"],
+  "rules": {
+    "csstools/value-no-unknown-custom-properties": [
+      true,
+      {
+        "importFrom": [
+          "app/root/colors.css",
+          "app/root/root.css",
+          "enterprise/app/sidebar/sidebar.css",
+          {
+            "customProperties": {
+              "--depth": "0",
+              "--scrollbar-size": "16px"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

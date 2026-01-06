@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 
@@ -43,6 +45,7 @@ var (
 	bbCLIRlocationpath                         string
 	prettierRlocationpath                      string
 	prettierPluginOrganizeImportsRlocationpath string
+	stylelintRlocationpath                     string
 )
 
 var (
@@ -54,6 +57,8 @@ var (
 		{Name: "ProtoFormat", Run: runClangFormat},
 		// Fixes frontend-related files, configs, and docs.
 		{Name: "PrettierFormat", Run: runPrettier},
+		// Lints CSS files for undefined custom properties.
+		{Name: "StylelintLint", Run: runStylelint},
 		// tools/fix_go_deps.sh fixes go.mod, go.sum, deps.bzl, and MODULE.bzl.
 		// Runs exclusively because this might change deps.bzl which BuildFiles
 		// might also change.
@@ -223,6 +228,35 @@ func runPrettier(ctx context.Context, stdout, stderr io.Writer, fix bool, files 
 		cmd.Args = append(cmd.Args, "--write")
 	} else {
 		cmd.Args = append(cmd.Args, "--log-level=warn", "--check")
+	}
+	cmd.Args = append(cmd.Args, files...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	// For why we set BAZEL_BINDIR to ".", see
+	// https://github.com/aspect-build/rules_js/tree/dbb5af0d2a9a2bb50e4cf4a96dbc582b27567155#running-nodejs-programs
+	cmd.Env = append(cmd.Env, "BAZEL_BINDIR=.")
+	return cmd.Run()
+}
+
+func runStylelint(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	// Stylelint doesn't support fixing undefined custom properties, so we only
+	// run in check mode. If the config has changed, run on all CSS files.
+	if slices.Contains(files, ".stylelintrc.json") {
+		var err error
+		files, err = gitListFilesWithExtensions([]string{".css"})
+		if err != nil {
+			return fmt.Errorf("list files: %w", err)
+		}
+	} else {
+		files = filterToExtensions(files, []string{".css"})
+	}
+	if len(files) == 0 {
+		return nil
+	}
+	// Run stylelint.
+	cmd, err := getRunfileToolCommand(ctx, stylelintRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get stylelint command: %w", err)
 	}
 	cmd.Args = append(cmd.Args, files...)
 	cmd.Stdout = stdout

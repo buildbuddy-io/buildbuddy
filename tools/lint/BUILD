@@ -6,9 +6,11 @@ go_library(
     data = [
         "//:node_modules/prettier-plugin-organize-imports",
         "//:node_modules/prettier-plugin-organize-imports/dir",
+        "//:node_modules/stylelint-value-no-unknown-custom-properties",
         "//cli/cmd/bb",
         "//tools/clang-format",
         "//tools/prettier",
+        "//tools/stylelint",
         "@io_bazel_rules_go//go",
         "@org_golang_x_tools//cmd/goimports",
     ],
@@ -21,6 +23,7 @@ go_library(
         "prettierRlocationpath": "$(rlocationpath //tools/prettier)",
         "prettierPluginOrganizeImportsRlocationpath": "$(rlocationpath //:node_modules/prettier-plugin-organize-imports/dir)",
         "bbCLIRlocationpath": "$(rlocationpath //cli/cmd/bb)",
+        "stylelintRlocationpath": "$(rlocationpath //tools/stylelint)",
     },
     deps = [
         "//server/util/flag",
