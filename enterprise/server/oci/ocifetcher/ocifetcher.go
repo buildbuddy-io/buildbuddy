@@ -460,23 +460,23 @@ func (s *ociFetcherServer) fetchStreamAndCacheBlob(ctx context.Context, digestRe
 	mediaType, err := layer.MediaType()
 	if err != nil {
 		defer rc.Close()
-		log.CtxWarningf(ctx, "Could not get media type for layer, skipping cache: %s", err)
-		return s.streamBlob(rc, stream)
+		log.CtxWarningf(ctx, "Could not get media type for layer: %s", err)
+		return status.InternalErrorf("could not cache blob: %s", err)
 	}
 
 	size, err := layer.Size()
 	if err != nil {
 		defer rc.Close()
-		log.CtxWarningf(ctx, "Could not get size for layer, skipping cache: %s", err)
-		return s.streamBlob(rc, stream)
+		log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
+		return status.InternalErrorf("could not cache blob: %s", err)
 	}
 
 	// Read-through cacher: streams to response AND writes to cache
 	cachedRC, err := ocicache.NewBlobReadThroughCacher(ctx, rc, s.bsClient, s.acClient, repo, hash, string(mediaType), size)
 	if err != nil {
 		defer rc.Close()
-		log.CtxWarningf(ctx, "Error creating read-through cacher, skipping cache: %s", err)
-		return s.streamBlob(rc, stream)
+		log.CtxWarningf(ctx, "Error creating read-through cacher: %s", err)
+		return status.InternalErrorf("could not cache blob: %s", err)
 	}
 	defer cachedRC.Close()
 
