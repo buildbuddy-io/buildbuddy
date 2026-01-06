@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_capabilities_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_content_addressable_storage_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_service"
+	"github.com/buildbuddy-io/buildbuddy/server/cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
@@ -48,6 +49,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/grpc"
 
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
@@ -233,6 +235,13 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 		return err
 	}
 
+	// Register local clients pointing to the proxy servers.
+	conn, err := grpc_client.DialInternalWithoutPooling(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort()))
+	if err != nil {
+		return status.InternalErrorf("Error dialing local gRPC server: %s", err.Error())
+	}
+	env.SetLocalCacheClient(cspb.NewCacheClient(conn))
+
 	if env.GetSSLService().IsEnabled() {
 		s, err = grpc_server.New(env, grpc_server.GRPCSPort(), true, grpcServerConfig)
 		if err != nil {
@@ -325,9 +334,13 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	if err := ocifetcher_server_proxy.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
+	if err := cache_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 	repb.RegisterActionCacheServer(grpcServer, env.GetActionCacheServer())
 	bspb.RegisterByteStreamServer(grpcServer, env.GetByteStreamServer())
 	repb.RegisterContentAddressableStorageServer(grpcServer, env.GetCASServer())
+	cspb.RegisterCacheServer(grpcServer, env.GetCacheServer())
 	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
 	ofpb.RegisterOCIFetcherServer(grpcServer, env.GetOCIFetcherServer())
 	log.Infof("Cache proxy proxying requests to %s", *remoteCache)

@@ -110,6 +110,7 @@ type Env interface {
 	GetLocalActionCacheServer() repb.ActionCacheServer
 	GetActionCacheServer() repb.ActionCacheServer
 	GetCacheClient() cspb.CacheClient
+	GetLocalCacheClient() cspb.CacheClient
 	GetPushServer() rapb.PushServer
 	GetFetchServer() rapb.FetchServer
 	GetCapabilitiesServer() repb.CapabilitiesServer
