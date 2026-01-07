@@ -162,6 +162,16 @@ func (e *TransferCompleteEvent) Execute(w *World, strategy Strategy) {
 	w.numPendingTransfers--
 	w.numCompletedTransfers++
 
+	// Check if system is balanced for early stopping
+	if w.numPendingTransfers == 0 && w.isBalanced() {
+		if w.firstBalancedTime < 0 {
+			w.firstBalancedTime = w.currentTick
+		}
+	} else {
+		// Reset if no longer balanced or there are pending transfers
+		w.firstBalancedTime = -1
+	}
+
 	// Record snapshot after transfer completes
 	w.recordSnapshot()
 }
@@ -205,6 +215,10 @@ type World struct {
 	numPendingTransfers   int
 	numCompletedTransfers int
 	history               []Snapshot
+
+	// Early stopping
+	firstBalancedTime int // First time system became balanced (-1 if not balanced)
+	gracePeriod       int // Ticks to wait after balanced before stopping (e.g., 60000 = 60s)
 }
 
 // pickRandomNodes picks n random distinct nodes from the list
@@ -224,20 +238,22 @@ func pickRandomNodes(nodes []string, n int) []string {
 // NewWorld creates a new World with the given configuration.
 func NewWorld(c Config) *World {
 	w := &World{
-		shards:            make(map[int]*Shard),
-		nodeReplicas:      make(map[string][]int),
-		nodeLeases:        make(map[string][]int),
-		numLeases:         make(map[string]int),
-		views:             make(map[string]map[string]int),
-		eventQueue:        make(EventQueue, 0),
-		currentTick:       0,
-		history:           []Snapshot{},
+		shards:                  make(map[int]*Shard),
+		nodeReplicas:            make(map[string][]int),
+		nodeLeases:              make(map[string][]int),
+		numLeases:               make(map[string]int),
+		views:                   make(map[string]map[string]int),
+		eventQueue:              make(EventQueue, 0),
+		currentTick:             0,
+		history:                 []Snapshot{},
 		gossipIntervalMin:       c.gossipIntervalMin,
 		gossipIntervalMax:       c.gossipIntervalMax,
 		transferTimeMin:         c.transferTimeMin,
 		transferTimeMax:         c.transferTimeMax,
 		rebalanceInterval:       c.rebalanceInterval,
 		rebalanceIntervalJitter: c.rebalanceIntervalJitter,
+		firstBalancedTime:       -1,
+		gracePeriod:             60000, // 60 seconds grace period
 	}
 
 	heap.Init(&w.eventQueue)
@@ -363,6 +379,23 @@ func (w *World) mean() float64 {
 	return float64(sum) / float64(len(w.numLeases))
 }
 
+// isBalanced checks if the current state is balanced using production's canConverge logic
+func (w *World) isBalanced() bool {
+	const leaseCountMeanRatioThreshold = 0.05
+	const minLeaseCountThreshold = 2.0
+
+	mean := w.mean()
+	overfullThreshold := int(math.Ceil(mean + math.Max(mean*leaseCountMeanRatioThreshold, minLeaseCountThreshold)))
+	underfullThreshold := int(math.Floor(mean - math.Max(mean*leaseCountMeanRatioThreshold, minLeaseCountThreshold)))
+
+	for _, count := range w.numLeases {
+		if count > overfullThreshold || count < underfullThreshold {
+			return false
+		}
+	}
+	return true
+}
+
 // ConvergenceTime calculates when the system converged (stopped making changes).
 // A system is considered converged when lease counts haven't changed for consecutive snapshots AND there are no pending transfers.
 // Returns (tick, numTransfers) where tick is the time and numTransfers is how many transfers had completed, or (-1, -1) if not converged.
@@ -481,6 +514,13 @@ func (w *World) runUntil(endTime int, strategy Strategy) {
 			break
 		}
 
+		// Early stop if system has been balanced for the grace period
+		if w.firstBalancedTime >= 0 && item.time >= w.firstBalancedTime+w.gracePeriod {
+			w.currentTick = item.time
+			w.recordSnapshot()
+			return
+		}
+
 		// Advance time to this event
 		w.currentTick = item.time
 
@@ -578,8 +618,8 @@ func (s *AdaptiveProbabilisticStrategy) Decide(myNhid string, shardID int, repli
 	myAbsDeviation := math.Abs(myDeviation)
 	targetAbsDeviation := math.Abs(targetDeviation)
 
-	// Ignore if both deviations are small
-	if myAbsDeviation < float64(s.minAbsoluteThreshold) && targetAbsDeviation < float64(s.minAbsoluteThreshold) {
+	// Ignore if both deviations are small (match driver.go: only trigger when deviation > threshold)
+	if myAbsDeviation <= float64(s.minAbsoluteThreshold) && targetAbsDeviation <= float64(s.minAbsoluteThreshold) {
 		return ""
 	}
 
@@ -691,34 +731,62 @@ type Result struct {
 	convergenceIndex int
 	numOscillations  int
 	finalState       map[string]int
+	isBalanced       bool
+	maxDeviation     int
 }
 
 func (r Result) String() string {
-	return fmt.Sprintf("%-40s transfers=%-4d convergesAt=%-6d (op #%-3d) oscillations=%-3d final=%v\n", r.name, r.numTransfers, r.convergenceTime, r.convergenceIndex, r.numOscillations, r.finalState)
+	balanced := "✓"
+	if !r.isBalanced {
+		balanced = fmt.Sprintf("✗UNBALANCED(maxDev=%d)", r.maxDeviation)
+	}
+
+	convergence := fmt.Sprintf("convergesAt=%-6d (op #%-3d)", r.convergenceTime, r.convergenceIndex)
+	if r.convergenceTime < 0 || r.convergenceIndex < 0 {
+		convergence = "✗FAILED_TO_CONVERGE            "
+	}
+
+	return fmt.Sprintf("%-40s transfers=%-4d %s oscillations=%-3d %s final=%v\n",
+		r.name, r.numTransfers, convergence, r.numOscillations, balanced, r.finalState)
 }
 
 type AggregatedResult struct {
-	name                    string
-	runs                    int
-	avgTransfers            float64
-	avgConvergenceTime      float64
-	avgOscillations         float64
-	minOscillations         int
-	maxOscillations         int
-	stddevOscillations      float64
-	failedConvergenceCount  int
-	allResults              []Result
+	name                   string
+	runs                   int
+	avgTransfers           float64
+	avgConvergenceTime     float64
+	avgOscillations        float64
+	minOscillations        int
+	maxOscillations        int
+	stddevOscillations     float64
+	failedConvergenceCount int
+	unbalancedCount        int
+	allResults             []Result
 }
 
 func (ar AggregatedResult) String() string {
-	return fmt.Sprintf("%-40s runs=%d avgOsc=%.1f (min=%d max=%d std=%.1f) avgTransfers=%.1f avgConverge=%.0fms failedConv=%d\n",
-		ar.name, ar.runs, ar.avgOscillations, ar.minOscillations, ar.maxOscillations, ar.stddevOscillations, ar.avgTransfers, ar.avgConvergenceTime, ar.failedConvergenceCount)
+	return fmt.Sprintf("%-40s runs=%d avgOsc=%.1f (min=%d max=%d std=%.1f) avgTransfers=%.1f avgConverge=%.0fms failedConv=%d unbalanced=%d\n",
+		ar.name, ar.runs, ar.avgOscillations, ar.minOscillations, ar.maxOscillations, ar.stddevOscillations, ar.avgTransfers, ar.avgConvergenceTime, ar.failedConvergenceCount, ar.unbalancedCount)
 }
 
 func (c Config) Run() Result {
 	w := NewWorld(c)
 	w.runUntil(c.duration, c.strategy)
 	convTime, convIndex := w.ConvergenceTime(0.1)
+
+	// Calculate max deviation for reporting
+	mean := w.mean()
+	maxDeviation := 0
+	for _, count := range w.numLeases {
+		deviation := count - int(mean)
+		if deviation < 0 {
+			deviation = -deviation
+		}
+		if deviation > maxDeviation {
+			maxDeviation = deviation
+		}
+	}
+
 	return Result{
 		name:             c.name,
 		numTransfers:     w.numTransfers,
@@ -726,13 +794,15 @@ func (c Config) Run() Result {
 		convergenceIndex: convIndex,
 		numOscillations:  w.Oscillations(),
 		finalState:       w.numLeases,
+		isBalanced:       w.isBalanced(),
+		maxDeviation:     maxDeviation,
 	}
 }
 
-func (c Config) RunMultiple(iterations int) AggregatedResult {
-	results := make([]Result, iterations)
-	for i := 0; i < iterations; i++ {
-		results[i] = c.Run()
+func aggregateResults(name string, results []Result) AggregatedResult {
+	iterations := len(results)
+	if iterations == 0 {
+		return AggregatedResult{name: name}
 	}
 
 	// Calculate statistics
@@ -740,13 +810,18 @@ func (c Config) RunMultiple(iterations int) AggregatedResult {
 	minOsc := results[0].numOscillations
 	maxOsc := results[0].numOscillations
 	failedCount := 0
+	unbalancedCount := 0
 
 	for _, r := range results {
 		totalTransfers += r.numTransfers
-		if r.convergenceTime > 0 {
+		// Check if converged (both time and index must be non-negative)
+		if r.convergenceTime >= 0 && r.convergenceIndex >= 0 {
 			totalConvergenceTime += r.convergenceTime
 		} else {
 			failedCount++
+		}
+		if !r.isBalanced {
+			unbalancedCount++
 		}
 		totalOscillations += r.numOscillations
 		if r.numOscillations < minOsc {
@@ -773,7 +848,7 @@ func (c Config) RunMultiple(iterations int) AggregatedResult {
 	stddev := math.Sqrt(sumSquaredDiff / float64(iterations))
 
 	return AggregatedResult{
-		name:                   c.name,
+		name:                   name,
 		runs:                   iterations,
 		avgTransfers:           avgTransfers,
 		avgConvergenceTime:     avgConvergenceTime,
@@ -782,8 +857,43 @@ func (c Config) RunMultiple(iterations int) AggregatedResult {
 		maxOscillations:        maxOsc,
 		stddevOscillations:     stddev,
 		failedConvergenceCount: failedCount,
+		unbalancedCount:        unbalancedCount,
 		allResults:             results,
 	}
+}
+
+func (c Config) RunMultiple(iterations int) AggregatedResult {
+	results := make([]Result, iterations)
+	for i := 0; i < iterations; i++ {
+		results[i] = c.Run()
+	}
+	return aggregateResults(c.name, results)
+}
+
+func generateTestCase(numMachines int, numShards int) (string, []string, map[string]int) {
+	// Generate node IDs
+	nodes := make([]string, numMachines)
+	for i := 0; i < numMachines; i++ {
+		nodes[i] = fmt.Sprintf("nhid-%d", i+1)
+	}
+
+	// Distribute N shards among first M-1 machines (last machine is new node with 0)
+	initialLeases := make(map[string]int)
+	leasesPerNode := numShards / (numMachines - 1)
+	remainder := numShards % (numMachines - 1)
+
+	for i := 0; i < numMachines-1; i++ {
+		initialLeases[nodes[i]] = leasesPerNode
+		// Distribute remainder to first few nodes
+		if i < remainder {
+			initialLeases[nodes[i]]++
+		}
+	}
+	// New node with no leases
+	initialLeases[nodes[numMachines-1]] = 0
+
+	name := fmt.Sprintf("%d machines, %d shards", numMachines, numShards)
+	return name, nodes, initialLeases
 }
 
 func main() {
@@ -793,45 +903,24 @@ func main() {
 	// Test cases with different cluster sizes
 	// Each shard has 3 replicas distributed randomly
 	// Initial lease distribution simulates a new node joining
-	testCases := []struct {
-		name          string
-		numShards     int
-		nodes         []string
-		initialLeases map[string]int
+	testConfigs := []struct {
+		numMachines int
+		numShards   int
 	}{
-		{
-			name:      "5 machines, 100 shards",
-			numShards: 100,
-			nodes:     []string{"nhid-1", "nhid-2", "nhid-3", "nhid-4", "nhid-5"},
-			initialLeases: map[string]int{
-				"nhid-1": 25,
-				"nhid-2": 25,
-				"nhid-3": 25,
-				"nhid-4": 25,
-				"nhid-5": 0, // New node with no leases
-			},
-		},
-		{
-			name:      "10 machines, 100 shards",
-			numShards: 100,
-			nodes:     []string{"nhid-1", "nhid-2", "nhid-3", "nhid-4", "nhid-5", "nhid-6", "nhid-7", "nhid-8", "nhid-9", "nhid-10"},
-			initialLeases: map[string]int{
-				"nhid-1":  11,
-				"nhid-2":  11,
-				"nhid-3":  11,
-				"nhid-4":  11,
-				"nhid-5":  11,
-				"nhid-6":  11,
-				"nhid-7":  11,
-				"nhid-8":  11,
-				"nhid-9":  12,
-				"nhid-10": 0, // New node with no leases
-			},
-		},
+		{5, 100},
+		{5, 300},
+		{5, 600},
+		{10, 100},
+		{10, 300},
+		{10, 600},
+		{20, 100},
+		{20, 300},
+		{20, 600},
 	}
 
-	for _, tc := range testCases {
-		runTestCase(tc.name, tc.numShards, tc.nodes, tc.initialLeases, *iterations)
+	for _, tc := range testConfigs {
+		name, nodes, initialLeases := generateTestCase(tc.numMachines, tc.numShards)
+		runTestCase(name, tc.numShards, nodes, initialLeases, *iterations)
 	}
 }
 
@@ -845,104 +934,72 @@ func runTestCase(name string, numShards int, nodes []string, initialLeases map[s
 		transferTimeMin:   500,
 		transferTimeMax:   5000,
 		rebalanceInterval: 1000,
-		duration:          500_000,
+		duration:          1200_000,
 	}
 
 	fmt.Printf("\n=== %s ===\n", name)
 
-	// Define test strategies
+	// Define test strategies with factory functions to create fresh instances
 	testStrategies := []struct {
-		name      string
-		setupFunc func(Config) Config
+		name            string
+		strategyFactory func() Strategy
 	}{
-		{
-			name: "Production (baseline)",
-			setupFunc: func(c Config) Config {
-				c.name = "Production (baseline)"
-				c.strategy = NewProductionRebalanceStrategy()
-				return c
-			},
-		},
-		{
-			name: "Cooldown(5s)",
-			setupFunc: func(c Config) Config {
-				c.name = "Cooldown(5s)"
-				c.strategy = NewCooldownStrategy(NewProductionRebalanceStrategy(), 5000)
-				return c
-			},
-		},
-		{
-			name: "Cooldown(10s)",
-			setupFunc: func(c Config) Config {
-				c.name = "Cooldown(10s)"
-				c.strategy = NewCooldownStrategy(NewProductionRebalanceStrategy(), 10000)
-				return c
-			},
-		},
-		{
-			name: "Cooldown(5s±500ms)",
-			setupFunc: func(c Config) Config {
-				c.name = "Cooldown(5s±500ms)"
-				c.strategy = NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 5000, 500)
-				return c
-			},
-		},
-		{
-			name: "Cooldown(5s±1000ms)",
-			setupFunc: func(c Config) Config {
-				c.name = "Cooldown(5s±1000ms)"
-				c.strategy = NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 5000, 1000)
-				return c
-			},
-		},
-		{
-			name: "Cooldown(5s±2000ms)",
-			setupFunc: func(c Config) Config {
-				c.name = "Cooldown(5s±2000ms)"
-				c.strategy = NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 5000, 2000)
-				return c
-			},
-		},
-		{
-			name: "Prob(0.3) + Cooldown(5s)",
-			setupFunc: func(c Config) Config {
-				c.name = "Prob(0.3) + Cooldown(5s)"
-				c.strategy = NewCooldownStrategy(
-					NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.3),
-					5000,
-				)
-				return c
-			},
-		},
-		{
-			name: "Prob(0.5) + Cooldown(5s)",
-			setupFunc: func(c Config) Config {
-				c.name = "Prob(0.5) + Cooldown(5s)"
-				c.strategy = NewCooldownStrategy(
-					NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.5),
-					5000,
-				)
-				return c
-			},
-		},
-		{
-			name: "Adaptive(conservative) + Cooldown(5s)",
-			setupFunc: func(c Config) Config {
-				c.name = "Adaptive(conservative) + Cooldown(5s)"
-				c.strategy = NewCooldownStrategy(
-					NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 5, 0.20, 0.5),
-					5000,
-				)
-				return c
-			},
-		},
+		{"Production (baseline)", func() Strategy { return NewProductionRebalanceStrategy() }},
+		{"Cooldown(5s)", func() Strategy { return NewCooldownStrategy(NewProductionRebalanceStrategy(), 5000) }},
+		{"Cooldown(10s)", func() Strategy { return NewCooldownStrategy(NewProductionRebalanceStrategy(), 10000) }},
+		{"Cooldown(5s±500ms)", func() Strategy { return NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 5000, 500) }},
+		{"Cooldown(10s±500ms)", func() Strategy { return NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 10000, 500) }},
+		{"Prob(0.1)", func() Strategy {
+			return NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1)
+		}},
+		{"Prob(0.3)", func() Strategy {
+			return NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1)
+		}},
+		{"Prob(0.5)", func() Strategy {
+			return NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1)
+		}},
+		{"Adaptive(conservative)", func() Strategy {
+			return NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 3, 0.20, 0.5)
+		}},
+		{"Adaptive(moderate)", func() Strategy {
+			return NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 3, 0.15, 0.7)
+		}},
+		{"Adaptive(aggresive)", func() Strategy {
+			return NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 3, 0.10, 0.8)
+		}},
+		{"Prob(0.1) + Cooldown(10s)", func() Strategy {
+			return NewCooldownStrategy(NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1), 10000)
+		}},
+		{"Prob(0.3) + Cooldown(10s)", func() Strategy {
+			return NewCooldownStrategy(NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.3), 10000)
+		}},
+		{"Prob(0.5) + Cooldown(10s)", func() Strategy {
+			return NewCooldownStrategy(NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.5), 10000)
+		}},
+		{"Adaptive(conservative) + Cooldown(10s)", func() Strategy {
+			return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.20, 0.5), 10000)
+		}},
+		{"Adaptive(moderate) + Cooldown(10s)", func() Strategy {
+			return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.15, 0.7), 10000)
+		}},
+		{"Adaptive(aggresive) + Cooldown(10s)", func() Strategy {
+			return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.1, 0.8), 10000)
+		}},
 	}
 
 	var aggregatedResults []AggregatedResult
 
 	for _, strat := range testStrategies {
-		config := strat.setupFunc(baseConfig)
-		agg := config.RunMultiple(iterations)
+		// Run multiple iterations with fresh strategy instances
+		results := make([]Result, iterations)
+		for i := 0; i < iterations; i++ {
+			config := baseConfig
+			config.name = strat.name
+			config.strategy = strat.strategyFactory() // Create fresh strategy for each iteration
+			results[i] = config.Run()
+		}
+
+		agg := aggregateResults(strat.name, results)
 		aggregatedResults = append(aggregatedResults, agg)
 
 		if iterations == 1 {
