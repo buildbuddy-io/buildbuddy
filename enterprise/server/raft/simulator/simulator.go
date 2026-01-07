@@ -2,6 +2,7 @@ package main
 
 import (
 	"container/heap"
+	"flag"
 	"fmt"
 	"math"
 	"math/rand"
@@ -696,6 +697,24 @@ func (r Result) String() string {
 	return fmt.Sprintf("%-40s transfers=%-4d convergesAt=%-6d (op #%-3d) oscillations=%-3d final=%v\n", r.name, r.numTransfers, r.convergenceTime, r.convergenceIndex, r.numOscillations, r.finalState)
 }
 
+type AggregatedResult struct {
+	name                    string
+	runs                    int
+	avgTransfers            float64
+	avgConvergenceTime      float64
+	avgOscillations         float64
+	minOscillations         int
+	maxOscillations         int
+	stddevOscillations      float64
+	failedConvergenceCount  int
+	allResults              []Result
+}
+
+func (ar AggregatedResult) String() string {
+	return fmt.Sprintf("%-40s runs=%d avgOsc=%.1f (min=%d max=%d std=%.1f) avgTransfers=%.1f avgConverge=%.0fms failedConv=%d\n",
+		ar.name, ar.runs, ar.avgOscillations, ar.minOscillations, ar.maxOscillations, ar.stddevOscillations, ar.avgTransfers, ar.avgConvergenceTime, ar.failedConvergenceCount)
+}
+
 func (c Config) Run() Result {
 	w := NewWorld(c)
 	w.runUntil(c.duration, c.strategy)
@@ -710,7 +729,67 @@ func (c Config) Run() Result {
 	}
 }
 
+func (c Config) RunMultiple(iterations int) AggregatedResult {
+	results := make([]Result, iterations)
+	for i := 0; i < iterations; i++ {
+		results[i] = c.Run()
+	}
+
+	// Calculate statistics
+	var totalTransfers, totalConvergenceTime, totalOscillations int
+	minOsc := results[0].numOscillations
+	maxOsc := results[0].numOscillations
+	failedCount := 0
+
+	for _, r := range results {
+		totalTransfers += r.numTransfers
+		if r.convergenceTime > 0 {
+			totalConvergenceTime += r.convergenceTime
+		} else {
+			failedCount++
+		}
+		totalOscillations += r.numOscillations
+		if r.numOscillations < minOsc {
+			minOsc = r.numOscillations
+		}
+		if r.numOscillations > maxOsc {
+			maxOsc = r.numOscillations
+		}
+	}
+
+	avgTransfers := float64(totalTransfers) / float64(iterations)
+	avgOscillations := float64(totalOscillations) / float64(iterations)
+	avgConvergenceTime := float64(totalConvergenceTime) / float64(iterations-failedCount)
+	if failedCount == iterations {
+		avgConvergenceTime = -1
+	}
+
+	// Calculate standard deviation for oscillations
+	var sumSquaredDiff float64
+	for _, r := range results {
+		diff := float64(r.numOscillations) - avgOscillations
+		sumSquaredDiff += diff * diff
+	}
+	stddev := math.Sqrt(sumSquaredDiff / float64(iterations))
+
+	return AggregatedResult{
+		name:                   c.name,
+		runs:                   iterations,
+		avgTransfers:           avgTransfers,
+		avgConvergenceTime:     avgConvergenceTime,
+		avgOscillations:        avgOscillations,
+		minOscillations:        minOsc,
+		maxOscillations:        maxOsc,
+		stddevOscillations:     stddev,
+		failedConvergenceCount: failedCount,
+		allResults:             results,
+	}
+}
+
 func main() {
+	iterations := flag.Int("iterations", 1, "Number of iterations to run for each strategy (default 1 = single run)")
+	flag.Parse()
+
 	// Test cases with different cluster sizes
 	// Each shard has 3 replicas distributed randomly
 	// Initial lease distribution simulates a new node joining
@@ -751,225 +830,163 @@ func main() {
 		},
 	}
 
-	// Test each scenario with different strategies
 	for _, tc := range testCases {
-		baseConfig := Config{
-			numShards:         tc.numShards,
-			nodes:             tc.nodes,
-			initialLeases:     tc.initialLeases,
-			gossipIntervalMin: 5,       // 5ms
-			gossipIntervalMax: 10,      // 10ms
-			transferTimeMin:   500,     // 500ms
-			transferTimeMax:   5000,    // 5s
-			rebalanceInterval: 1000,    // 1000ms = 1 second (matches production)
-			duration:          500_000, // 500 seconds = ~8 minutes
-		}
+		runTestCase(tc.name, tc.numShards, tc.nodes, tc.initialLeases, *iterations)
+	}
+}
 
-		fmt.Printf("\n=== %s ===\n", tc.name)
-
-		// Baseline: Production strategy
-		config := baseConfig
-		config.name = "Production (baseline)"
-		config.strategy = NewProductionRebalanceStrategy()
-		fmt.Println(config.Run())
-
-		// Fixed Probabilistic strategies
-		for _, prob := range []float64{0.1, 0.3, 0.5, 0.7} {
-			config := baseConfig
-			config.name = fmt.Sprintf("Probabilistic (p=%.1f)", prob)
-			config.strategy = NewProbabilisticStrategy(NewProductionRebalanceStrategy(), prob)
-			fmt.Println(config.Run())
-		}
-
-		// Adaptive Probabilistic strategies
-		adaptiveConfigs := []struct {
-			name        string
-			minAbsolute int
-			relThresh   float64
-			maxProb     float64
-		}{
-			{"Adaptive (conservative)", 5, 0.20, 0.5},
-			{"Adaptive (moderate)", 3, 0.15, 0.7},
-			{"Adaptive (aggressive)", 2, 0.10, 0.8},
-		}
-		for _, ac := range adaptiveConfigs {
-			config := baseConfig
-			config.name = ac.name
-			config.strategy = NewAdaptiveProbabilisticStrategy(
-				NewProductionRebalanceStrategy(),
-				ac.minAbsolute,
-				ac.relThresh,
-				ac.maxProb,
-			)
-			fmt.Println(config.Run())
-		}
-
-		// Cooldown strategies
-		for _, cooldown := range []int{2000, 5000, 10000} {
-			config := baseConfig
-			config.name = fmt.Sprintf("Cooldown (%dms)", cooldown)
-			config.strategy = NewCooldownStrategy(NewProductionRebalanceStrategy(), cooldown)
-			fmt.Println(config.Run())
-		}
-
-		// Combinations: Probabilistic + Cooldown
-		for _, cooldown := range []int{5000, 10000} {
-			for _, prob := range []float64{0.1, 0.3, 0.5} {
-				config = baseConfig
-				config.name = fmt.Sprintf("Prob(%.1f) + Cooldown(%ds)", prob, cooldown/1000)
-				config.strategy = NewCooldownStrategy(
-					NewProbabilisticStrategy(NewProductionRebalanceStrategy(), prob),
-					cooldown,
-				)
-				fmt.Println(config.Run())
-			}
-		}
-
-		// Combinations: Adaptive + Cooldown
-		for _, cooldown := range []int{5000, 10000} {
-			adaptiveCooldownConfigs := []struct {
-				name        string
-				minAbsolute int
-				relThresh   float64
-				maxProb     float64
-			}{
-				{"conservative", 5, 0.20, 0.5},
-				{"moderate", 3, 0.15, 0.7},
-				{"aggressive", 2, 0.10, 0.8},
-			}
-			for _, ac := range adaptiveCooldownConfigs {
-				config = baseConfig
-				config.name = fmt.Sprintf("Adaptive(%s) + Cooldown(%ds)", ac.name, cooldown/1000)
-				config.strategy = NewCooldownStrategy(
-					NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), ac.minAbsolute, ac.relThresh, ac.maxProb),
-					cooldown,
-				)
-				fmt.Println(config.Run())
-			}
-		}
-
-		// Jitter experiments
-		fmt.Printf("\n--- Jitter Experiments ---\n")
-
-		// (1) Jitter on rebalance decisions only
-		for _, jitter := range []int{50, 100, 200, 500, 1000} {
-			config = baseConfig
-			config.name = fmt.Sprintf("Jitter: Rebalance ±%dms", jitter)
-			config.rebalanceIntervalJitter = jitter
-			config.strategy = NewProductionRebalanceStrategy()
-			fmt.Println(config.Run())
-		}
-
-		// (2) Jitter on cooldown only
-		for _, jitter := range []int{250, 500, 1000, 2000} {
-			config = baseConfig
-			config.name = fmt.Sprintf("Jitter: Cooldown(5s±%dms)", jitter)
-			config.strategy = NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 5000, jitter)
-			fmt.Println(config.Run())
-		}
-
-		// (2b) 10s cooldown with jitter
-		for _, jitter := range []int{500, 1000, 2000, 4000} {
-			config = baseConfig
-			config.name = fmt.Sprintf("Jitter: Cooldown(10s±%dms)", jitter)
-			config.strategy = NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 10000, jitter)
-			fmt.Println(config.Run())
-		}
-
-		// (3) Jitter on both rebalance + cooldown
-		jitterCombos := []struct {
-			rebalanceJitter int
-			cooldownJitter  int
-		}{
-			{100, 500},
-			{200, 1000},
-			{500, 2000},
-			{1000, 2000},
-		}
-		for _, jc := range jitterCombos {
-			config = baseConfig
-			config.name = fmt.Sprintf("Jitter: Rebalance±%dms + Cooldown(5s±%dms)", jc.rebalanceJitter, jc.cooldownJitter)
-			config.rebalanceIntervalJitter = jc.rebalanceJitter
-			config.strategy = NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 5000, jc.cooldownJitter)
-			fmt.Println(config.Run())
-		}
-
-		// Jitter + existing strategies (test with best performing ones)
-		config = baseConfig
-		config.name = "Jitter(±100ms) + Prob(0.5)"
-		config.rebalanceIntervalJitter = 100
-		config.strategy = NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.5)
-		fmt.Println(config.Run())
-
-		config = baseConfig
-		config.name = "Jitter(±500ms) + Prob(0.5)"
-		config.rebalanceIntervalJitter = 500
-		config.strategy = NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.5)
-		fmt.Println(config.Run())
-
-		config = baseConfig
-		config.name = "Jitter(±100ms) + Adaptive(moderate)"
-		config.rebalanceIntervalJitter = 100
-		config.strategy = NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 3, 0.15, 0.7)
-		fmt.Println(config.Run())
-
-		config = baseConfig
-		config.name = "Jitter(±500ms) + Adaptive(moderate)"
-		config.rebalanceIntervalJitter = 500
-		config.strategy = NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 3, 0.15, 0.7)
-		fmt.Println(config.Run())
-
-		// Jitter + Cooldown Jitter + Prob(0.1)
-		config = baseConfig
-		config.name = "Jitter(±100ms) + CooldownJitter(5s±500ms) + Prob(0.1)"
-		config.rebalanceIntervalJitter = 100
-		config.strategy = NewCooldownJitterStrategy(
-			NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1),
-			5000,
-			500,
-		)
-		fmt.Println(config.Run())
-
-		config = baseConfig
-		config.name = "Jitter(±500ms) + CooldownJitter(5s±2s) + Prob(0.1)"
-		config.rebalanceIntervalJitter = 500
-		config.strategy = NewCooldownJitterStrategy(
-			NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1),
-			5000,
-			2000,
-		)
-		fmt.Println(config.Run())
-
-		// 10s cooldown jitter combos
-		config = baseConfig
-		config.name = "Jitter(±100ms) + CooldownJitter(10s±500ms) + Prob(0.1)"
-		config.rebalanceIntervalJitter = 100
-		config.strategy = NewCooldownJitterStrategy(
-			NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1),
-			10000,
-			500,
-		)
-		fmt.Println(config.Run())
-
-		config = baseConfig
-		config.name = "Jitter(±500ms) + CooldownJitter(10s±1000ms) + Prob(0.1)"
-		config.rebalanceIntervalJitter = 500
-		config.strategy = NewCooldownJitterStrategy(
-			NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1),
-			10000,
-			1000,
-		)
-		fmt.Println(config.Run())
-
-		config = baseConfig
-		config.name = "Jitter(±500ms) + CooldownJitter(10s±2000ms) + Prob(0.1)"
-		config.rebalanceIntervalJitter = 500
-		config.strategy = NewCooldownJitterStrategy(
-			NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1),
-			10000,
-			2000,
-		)
-		fmt.Println(config.Run())
+func runTestCase(name string, numShards int, nodes []string, initialLeases map[string]int, iterations int) {
+	baseConfig := Config{
+		numShards:         numShards,
+		nodes:             nodes,
+		initialLeases:     initialLeases,
+		gossipIntervalMin: 5,
+		gossipIntervalMax: 10,
+		transferTimeMin:   500,
+		transferTimeMax:   5000,
+		rebalanceInterval: 1000,
+		duration:          500_000,
 	}
 
+	fmt.Printf("\n=== %s ===\n", name)
+
+	// Define test strategies
+	testStrategies := []struct {
+		name      string
+		setupFunc func(Config) Config
+	}{
+		{
+			name: "Production (baseline)",
+			setupFunc: func(c Config) Config {
+				c.name = "Production (baseline)"
+				c.strategy = NewProductionRebalanceStrategy()
+				return c
+			},
+		},
+		{
+			name: "Cooldown(5s)",
+			setupFunc: func(c Config) Config {
+				c.name = "Cooldown(5s)"
+				c.strategy = NewCooldownStrategy(NewProductionRebalanceStrategy(), 5000)
+				return c
+			},
+		},
+		{
+			name: "Cooldown(10s)",
+			setupFunc: func(c Config) Config {
+				c.name = "Cooldown(10s)"
+				c.strategy = NewCooldownStrategy(NewProductionRebalanceStrategy(), 10000)
+				return c
+			},
+		},
+		{
+			name: "Cooldown(5s±500ms)",
+			setupFunc: func(c Config) Config {
+				c.name = "Cooldown(5s±500ms)"
+				c.strategy = NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 5000, 500)
+				return c
+			},
+		},
+		{
+			name: "Cooldown(5s±1000ms)",
+			setupFunc: func(c Config) Config {
+				c.name = "Cooldown(5s±1000ms)"
+				c.strategy = NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 5000, 1000)
+				return c
+			},
+		},
+		{
+			name: "Cooldown(5s±2000ms)",
+			setupFunc: func(c Config) Config {
+				c.name = "Cooldown(5s±2000ms)"
+				c.strategy = NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 5000, 2000)
+				return c
+			},
+		},
+		{
+			name: "Prob(0.3) + Cooldown(5s)",
+			setupFunc: func(c Config) Config {
+				c.name = "Prob(0.3) + Cooldown(5s)"
+				c.strategy = NewCooldownStrategy(
+					NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.3),
+					5000,
+				)
+				return c
+			},
+		},
+		{
+			name: "Prob(0.5) + Cooldown(5s)",
+			setupFunc: func(c Config) Config {
+				c.name = "Prob(0.5) + Cooldown(5s)"
+				c.strategy = NewCooldownStrategy(
+					NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.5),
+					5000,
+				)
+				return c
+			},
+		},
+		{
+			name: "Adaptive(conservative) + Cooldown(5s)",
+			setupFunc: func(c Config) Config {
+				c.name = "Adaptive(conservative) + Cooldown(5s)"
+				c.strategy = NewCooldownStrategy(
+					NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 5, 0.20, 0.5),
+					5000,
+				)
+				return c
+			},
+		},
+	}
+
+	var aggregatedResults []AggregatedResult
+
+	for _, strat := range testStrategies {
+		config := strat.setupFunc(baseConfig)
+		agg := config.RunMultiple(iterations)
+		aggregatedResults = append(aggregatedResults, agg)
+
+		if iterations == 1 {
+			// Single run: just show the result directly
+			fmt.Printf("%s", agg.allResults[0].String())
+		} else {
+			// Multiple runs: show detailed results and summary
+			fmt.Printf("\n%s:\n", strat.name)
+			for i, r := range agg.allResults {
+				fmt.Printf("  Run %2d: %s", i+1, r.String())
+			}
+			fmt.Printf("  Summary: %s\n", agg.String())
+		}
+	}
+
+	// Show recommendations for multiple runs
+	if iterations > 1 {
+		showRecommendations(name, aggregatedResults)
+	}
+}
+
+func showRecommendations(testCaseName string, results []AggregatedResult) {
+	// Sort by average oscillations
+	sorted := make([]AggregatedResult, len(results))
+	copy(sorted, results)
+	// Use a simple sort with stable ordering
+	for i := 0; i < len(sorted)-1; i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			if sorted[j].avgOscillations < sorted[i].avgOscillations {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+
+	fmt.Printf("\n--- RECOMMENDATION for %s ---\n", testCaseName)
+	fmt.Printf("  Best strategy (lowest avg oscillations): %s\n", sorted[0].name)
+	fmt.Printf("    Avg Oscillations: %.1f (min=%d, max=%d, std=%.1f)\n",
+		sorted[0].avgOscillations, sorted[0].minOscillations, sorted[0].maxOscillations, sorted[0].stddevOscillations)
+	fmt.Printf("    Avg Convergence Time: %.0fms\n", sorted[0].avgConvergenceTime)
+	fmt.Printf("    Avg Transfers: %.1f\n", sorted[0].avgTransfers)
+
+	fmt.Printf("\n  Top 3 strategies by oscillations:\n")
+	for i := 0; i < 3 && i < len(sorted); i++ {
+		fmt.Printf("    %d. %s - avgOsc=%.1f std=%.1f\n",
+			i+1, sorted[i].name, sorted[i].avgOscillations, sorted[i].stddevOscillations)
+	}
 }
