@@ -843,3 +843,7 @@ func (c *Cache) recordMetrics(method string, err error, start time.Time) {
 		metrics.CacheMethod:    method,
 	}).Observe(float64(c.opts.Clock.Since(start).Microseconds()))
 }
+
+func (c *Cache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
+	return status.UnimplementedError("metacache.RegisterAtimeUpdater() unsupported")
+}

@@ -277,3 +277,10 @@ func (c *ComposableCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 func (c *ComposableCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }
+
+func (c *ComposableCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
+	if err := c.inner.RegisterAtimeUpdater(updater); err != nil {
+		return err
+	}
+	return c.outer.RegisterAtimeUpdater(updater)
+}

@@ -1225,3 +1225,10 @@ func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) b
 	return mc.defaultConfigDoNotUseDirectly.src.SupportsCompressor(compressor) &&
 		mc.defaultConfigDoNotUseDirectly.dest.SupportsCompressor(compressor)
 }
+
+func (mc *MigrationCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
+	if err := mc.defaultConfigDoNotUseDirectly.src.RegisterAtimeUpdater(updater); err != nil {
+		return err
+	}
+	return mc.defaultConfigDoNotUseDirectly.dest.RegisterAtimeUpdater(updater)
+}

@@ -1229,3 +1229,7 @@ func (p *partition) writer(ctx context.Context, r *rspb.ResourceName) (interface
 func (c *DiskCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }
+
+func (c *DiskCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
+	return status.UnimplementedError("disk_cache.RegisterAtimeUpdater() unsupported")
+}
