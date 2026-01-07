@@ -602,12 +602,11 @@ func TestFetchBlobWithUnknownQualifiers(t *testing.T) {
 }
 
 func TestFetchBlob_CacheProxy(t *testing.T) {
-	ctx := context.Background()
 	localEnv := testenv.GetTestEnv(t)
 	require.NoError(t, scratchspace.Init())
 
-	runRemoteCacheServers(t, ctx, localEnv)
-	clientConn := runFetchServerWithCacheProxy(ctx, localEnv, t)
+	runRemoteCacheServers(t, t.Context(), localEnv)
+	clientConn := runFetchServerWithCacheProxy(t.Context(), localEnv, t)
 	fetchClient := rapb.NewFetchClient(clientConn)
 
 	content := "hello world"
@@ -630,13 +629,13 @@ func TestFetchBlob_CacheProxy(t *testing.T) {
 		},
 		DigestFunction: repb.DigestFunction_BLAKE3,
 	}
-	resp, err := fetchClient.FetchBlob(ctx, request)
+	resp, err := fetchClient.FetchBlob(t.Context(), request)
 	require.NoError(t, err)
 	require.Equal(t, contentDigest.GetHash(), resp.GetBlobDigest().GetHash())
 	require.Equal(t, 1, remoteFetches)
 
 	// Verify on the second read, you can read the blob from local BSS server without another fetch from the HTTP server.
-	resp, err = fetchClient.FetchBlob(ctx, request)
+	resp, err = fetchClient.FetchBlob(t.Context(), request)
 	require.NoError(t, err)
 	require.Equal(t, contentDigest.GetHash(), resp.GetBlobDigest().GetHash())
 	require.Equal(t, 1, remoteFetches)
@@ -648,7 +647,7 @@ func TestFetchBlob_CacheProxy(t *testing.T) {
 	rn := digest.NewCASResourceName(contentDigest, "", repb.DigestFunction_BLAKE3)
 	buf := bytes.NewBuffer(make([]byte, 0, contentDigest.GetSizeBytes()))
 	remoteBSS := localEnv.GetByteStreamClient()
-	err = cachetools.GetBlob(ctx, remoteBSS, rn, buf)
+	err = cachetools.GetBlob(t.Context(), remoteBSS, rn, buf)
 	require.Error(t, err)
 }
 
@@ -656,12 +655,15 @@ func TestFetchBlob_CacheProxy(t *testing.T) {
 func runRemoteCacheServers(t testing.TB, ctx context.Context, localEnv *testenv.TestEnv) {
 	remoteEnv := testenv.GetTestEnv(t)
 
-	err := byte_stream_server.Register(remoteEnv)
-	require.NoError(t, err)
-	err = buildbuddy_server.Register(remoteEnv)
-	require.NoError(t, err)
-	err = content_addressable_storage_server.Register(remoteEnv)
-	require.NoError(t, err)
+	if err := byte_stream_server.Register(remoteEnv); err != nil {
+		t.Fatal(err)
+	}
+	if err := buildbuddy_server.Register(remoteEnv); err != nil {
+		t.Fatal(err)
+	}
+	if err := content_addressable_storage_server.Register(remoteEnv); err != nil {
+		t.Fatal(err)
+	}
 
 	remoteGRPCServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
 	bspb.RegisterByteStreamServer(remoteGRPCServer, remoteEnv.GetByteStreamServer())
@@ -682,8 +684,6 @@ func runRemoteCacheServers(t testing.TB, ctx context.Context, localEnv *testenv.
 func runFetchServerWithCacheProxy(ctx context.Context, env *testenv.TestEnv, t testing.TB) *grpc.ClientConn {
 	// Allow 127.0.0.1 so we can dial the server in the test.
 	flags.Set(t, "remote_asset.allowed_private_ips", []string{"127.0.0.0/8"})
-
-	env.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 
 	// Run the local GRPC servers. They handle local-only reads and writes to the proxy and are not exposed
 	// to external GRPC traffic.
