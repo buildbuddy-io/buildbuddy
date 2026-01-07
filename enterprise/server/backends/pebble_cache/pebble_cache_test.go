@@ -3424,7 +3424,7 @@ func TestAtimeUpdaters(t *testing.T) {
 	_, err = pc.Get(ctx, r)
 	require.NoError(t, err)
 
-	// Verify the atime updaters was called
+	// Verify the atime updater was called
 	calledFunc := func() bool {
 		return updater.calls.Load() > 0
 	}
