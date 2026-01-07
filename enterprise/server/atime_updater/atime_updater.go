@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/batch_operator"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gstatus "google.golang.org/grpc/status"
@@ -34,7 +35,10 @@ func Register(env *real_environment.RealEnv) error {
 		return err
 	}
 	updater.Start(env.GetHealthChecker())
-	env.SetAtimeUpdater(updater)
+	if env.GetAtimeUpdatingCache() == nil {
+		return status.InvalidArgumentError("Attempting to register atime updater without atime updating cache")
+	}
+	env.GetAtimeUpdatingCache().RegisterAtimeUpdater(updater)
 	return nil
 }
 

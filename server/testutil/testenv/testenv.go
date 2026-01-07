@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -32,8 +31,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
-
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -172,6 +169,7 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 		t.Fatal(err)
 	}
 	te.SetCache(c)
+	te.SetAtimeUpdatingCache(c)
 	byte_stream_client.RegisterPooledBytestreamClient(te)
 
 	switch *databaseType {
@@ -212,13 +210,4 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	hit_tracker.Register(te)
 
 	return te
-}
-
-type NoOpAtimeUpdater struct{}
-
-func (a *NoOpAtimeUpdater) Enqueue(_ context.Context, _ string, _ []*repb.Digest, _ repb.DigestFunction_Value) bool {
-	return true
-}
-func (a *NoOpAtimeUpdater) EnqueueByResourceName(_ context.Context, _ *digest.CASResourceName) bool {
-	return true
 }

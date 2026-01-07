@@ -56,6 +56,7 @@ type Env interface {
 	GetBuildEventHandler() interfaces.BuildEventHandler
 	GetBuildEventProxyClients() []pepb.PublishBuildEventClient
 	GetCache() interfaces.Cache
+	GetAtimeUpdatingCache() interfaces.AtimeUpdatingCache
 	GetUserDB() interfaces.UserDB
 	GetAuthDB() interfaces.AuthDB
 	GetInvocationStatService() interfaces.InvocationStatService
@@ -141,7 +142,6 @@ type Env interface {
 	GetRegistryService() interfaces.RegistryService
 	GetPubSub() interfaces.PubSub
 	GetClock() clockwork.Clock
-	GetAtimeUpdater() interfaces.DigestOperator
 	GetCPULeaser() interfaces.CPULeaser
 	GetHitTrackerFactory() interfaces.HitTrackerFactory
 	GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer

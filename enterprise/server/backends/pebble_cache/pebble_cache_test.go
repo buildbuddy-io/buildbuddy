@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -3377,4 +3378,55 @@ func TestGCSBlobStorageReadAfterTTL(t *testing.T) {
 		_, err := pc.Get(ctx, rn)
 		require.True(t, status.IsNotFoundError(err), err)
 	}
+}
+
+type fakeAtimeUpdater struct {
+	calls *atomic.Int32
+}
+
+func (u fakeAtimeUpdater) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool {
+	u.calls.Add(1)
+	return true
+}
+
+func (u fakeAtimeUpdater) EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool {
+	u.calls.Add(1)
+	return true
+}
+
+func TestAtimeUpdater(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	threshold := time.Microsecond
+	workers := 1
+	opts := &pebble_cache.Options{
+		RootDirectory:         testfs.MakeTempDir(t),
+		MaxSizeBytes:          1_000_000_000,
+		AtimeUpdateThreshold:  &threshold,
+		NumAtimeUpdateWorkers: &workers,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	// Create the resource name that we'll update
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, pc.Set(ctx, r, buf))
+
+	// Register updater now to prevent calling when the file was created above
+	updater := fakeAtimeUpdater{calls: &atomic.Int32{}}
+	pc.RegisterAtimeUpdater(updater)
+
+	// Call Get() to trigger an atime update
+	_, err = pc.Get(ctx, r)
+	require.NoError(t, err)
+
+	// Verify the atime updater was called
+	calledFunc := func() bool {
+		return updater.calls.Load() > 0
+	}
+	require.Eventually(t, calledFunc, time.Minute, 100*time.Millisecond)
 }
