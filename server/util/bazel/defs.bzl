@@ -127,6 +127,9 @@ def bazel_pkg_tar(name, versions = [], **kwargs):
             warm_repository_cache = warm_repository_cache,
             use_rules_shell = use_rules_shell,
             enable_bzlmod = enable_bzlmod,
+            # Linux-only: the extract_bazel_installation rule fails on Darwin in
+            # sandboxed builds because it can't find gcc/CC.
+            target_compatible_with = ["@platforms//os:linux"],
             # If we are warming the repository cache then we need network access
             # so that this rule can download the dependencies. Targets that use
             # this rule can then use the cached dependencies without needing the
