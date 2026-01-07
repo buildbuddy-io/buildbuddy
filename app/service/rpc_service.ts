@@ -2,6 +2,7 @@ import { BrowserHeaders } from "browser-headers";
 import * as protobufjs from "protobufjs";
 import { Subject } from "rxjs";
 import { $stream, buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
+import { cache } from "../../proto/cache_service_ts_proto";
 import { context } from "../../proto/context_ts_proto";
 import { google as google_code } from "../../proto/grpc_code_ts_proto";
 import { google as google_status } from "../../proto/grpc_status_ts_proto";
@@ -39,6 +40,15 @@ export type ExtendedBuildBuddyService = CancelableService<buildbuddy.service.Bui
  */
 export type BuildBuddyServiceRpcName = RpcMethodNames<buildbuddy.service.BuildBuddyService>;
 
+/**
+ * ExtendedCacheService is an extended version of CacheService with
+ * the following differences:
+ *
+ * - The `requestContext` field is automatically set on each request.
+ * - All RPC methods return a `CancelablePromise` instead of a `Promise`.
+ */
+export type ExtendedCacheService = CancelableService<cache.service.CacheService>;
+
 export type FileEncoding = "gzip" | "zstd" | "";
 
 export type FetchResponseType = "arraybuffer" | "stream" | "text" | "";
@@ -69,9 +79,14 @@ const structuredErrors = capabilities.config.streamingHttpEnabled;
 
 const SUBDOMAIN_REGEX = /^[a-zA-Z0-9-]+$/;
 
+const BUILDBUDDY_SERVICE_NAME = "BuildBuddyService";
+const CACHE_SERVICE_NAME = "CacheService";
+
 class RpcService {
   service: ExtendedBuildBuddyService;
+  cacheService: ExtendedCacheService;
   regionalServices = new Map<string, ExtendedBuildBuddyService>();
+  regionalCacheServices = new Map<string, ExtendedCacheService>();
   events: Subject<string>;
   requestContext = new context.RequestContext({
     timezoneOffsetMinutes: new Date().getTimezoneOffset(),
@@ -80,14 +95,19 @@ class RpcService {
   });
 
   constructor() {
-    this.service = this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, "")));
+    this.service = this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, "", BUILDBUDDY_SERVICE_NAME)));
+    this.cacheService = this.getExtendedCacheService(new cache.service.CacheService(this.rpc.bind(this, "", CACHE_SERVICE_NAME)));
     this.events = new Subject();
 
     if (capabilities.config.regions) {
       for (let r of capabilities.config.regions) {
         this.regionalServices.set(
           r.name,
-          this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, r.server)))
+          this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, r.server, BUILDBUDDY_SERVICE_NAME)))
+        );
+        this.regionalCacheServices.set(
+          r.name,
+          this.getExtendedCacheService(new cache.service.CacheService(this.rpc.bind(this, r.server, CACHE_SERVICE_NAME)))
         );
       }
     }
@@ -102,6 +122,36 @@ class RpcService {
       return true;
     }
     return false;
+  }
+
+  getRegionalCacheServiceOrDefault(server: string): ExtendedCacheService {
+    if (!capabilities.config.regions) {
+      return this.cacheService;
+    }
+
+    // grpcs uses https, let's just treat them as equivalent to make matching easier..
+    server = server.replace("grpcs://", "https://");
+
+    let bestMatch = this.cacheService;
+    let bestMatchDepth = 0;
+    for (let i = 0; i < capabilities.config.regions.length; i++) {
+      const region = capabilities.config.regions[i];
+      if (region.server === server) {
+        return this.regionalCacheServices.get(region.name) ?? this.cacheService;
+      }
+
+      // The server might not be in the regions list (e.g., if it's a
+      // custom cache backend URL, or in the case of local development).
+      // In that case, assume the cache is in the same region as the app
+      // server, and try to find the best match by finding the region
+      // whose server is the longest prefix of the cache server.
+      // (This could give false positives, but it's better than nothing.)
+      if (server.startsWith(region.server) && region.server.length > bestMatchDepth) {
+        bestMatchDepth = region.server.length;
+        bestMatch = this.regionalCacheServices.get(region.name) ?? this.cacheService;
+      }
+    }
+    return bestMatch;
   }
 
   getRegionalServiceOrDefault(server: string): ExtendedBuildBuddyService {
@@ -299,12 +349,13 @@ class RpcService {
 
   async rpc(
     server: string,
+    serviceName: string,
     method: { name: string; serverStreaming?: boolean },
     requestData: Uint8Array,
     callback: (error: any, data?: Uint8Array) => void,
     streamParams?: $stream.StreamingRPCParams
   ): Promise<void> {
-    const url = `${server || ""}/rpc/BuildBuddyService/${method.name}`;
+    const url = `${server || ""}/rpc/${serviceName || BUILDBUDDY_SERVICE_NAME}/${method.name}`;
     const init: RequestInit = { method: "POST", body: requestData };
     if (capabilities.config.regions?.map((r) => r.server).includes(server)) {
       init.credentials = "include";
@@ -363,6 +414,33 @@ class RpcService {
   private getExtendedService(service: buildbuddy.service.BuildBuddyService): ExtendedBuildBuddyService {
     const extendedService = Object.create(service);
     for (const rpcName of getRpcMethodNames(buildbuddy.service.BuildBuddyService)) {
+      const originalMethod = (service as any)[rpcName] as BaseRpcMethod<any, any>;
+      const method = (request: Record<string, any>, subscriber?: any) => {
+        if (this.requestContext && !request.requestContext) {
+          request.requestContext = this.requestContext;
+        }
+        if (originalMethod.serverStreaming) {
+          // ServerStream method already supports cancel function.
+          return originalMethod.call(service, request, subscriber);
+        } else {
+          // Wrap with our CancelablePromise util.
+          // TODO: add codegen support to allow canceling the underlying fetch
+          // for unary RPCs.
+          return new CancelablePromise(originalMethod.call(service, request));
+        }
+      };
+      // Preserve generated metadata attributes attached to each method.
+      for (const name of ["name", "serverStreaming"] as const) {
+        Object.defineProperty(method, name, { value: originalMethod[name] });
+      }
+      extendedService[rpcName] = method;
+    }
+    return extendedService;
+  }
+
+  private getExtendedCacheService(service: cache.service.CacheService): ExtendedCacheService {
+    const extendedService = Object.create(service);
+    for (const rpcName of getRpcMethodNames(cache.service.CacheService)) {
       const originalMethod = (service as any)[rpcName] as BaseRpcMethod<any, any>;
       const method = (request: Record<string, any>, subscriber?: any) => {
         if (this.requestContext && !request.requestContext) {

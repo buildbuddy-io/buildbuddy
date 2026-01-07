@@ -323,6 +323,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	if ht := env.GetHitTrackerServiceServer(); ht != nil {
 		hitpb.RegisterHitTrackerServiceServer(grpcServer, ht)
 	}
+	if cs := env.GetCacheServiceServer(); cs != nil {
+		cspb.RegisterCacheServiceServer(grpcServer, cs)
+	}
 	if crypter := env.GetCrypter(); crypter != nil {
 		enpb.RegisterEncryptionServiceServer(grpcServer, crypter)
 	}
@@ -447,6 +450,15 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	}
 	mux.Handle("/app/", interceptors.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
 	mux.Handle("/rpc/BuildBuddyService/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", protoletHandler))
+
+	// Generate HTTP (protolet) handlers for the CacheService API.
+	if cs := env.GetCacheServiceServer(); cs != nil {
+		cacheServiceProtoletHandler, err := protolet.GenerateHTTPHandlers("/rpc/CacheService/", "cache.service.CacheService", cs, env.GetGRPCServer())
+		if err != nil {
+			log.Fatalf("Error initializing RPC over HTTP handlers for CacheService: %s", err)
+		}
+		mux.Handle("/rpc/CacheService/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/CacheService/", cacheServiceProtoletHandler))
+	}
 	mux.Handle("/file/download", interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
 	mux.Handle("/file/view", interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())

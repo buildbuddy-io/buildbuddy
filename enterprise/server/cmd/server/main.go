@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service"
@@ -144,6 +145,9 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 		log.Fatalf("Error setting up auth service: %s", err)
 	}
 	hit_tracker_service.Register(env)
+	if err := cache_service.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	env.SetSplashPrinter(&splash.Printer{})
 }
