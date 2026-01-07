@@ -55,7 +55,7 @@ func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator
 	if err != nil {
 		return nil, err
 	}
-	claimsCache, err := claims.NewClaimsCache()
+	claimsParser, err := claims.NewClaimsParser()
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator
 		authClient:          authpb.NewAuthServiceClient(conn),
 		cache:               cache,
 		jwtExpirationBuffer: *jwtExpirationBuffer,
-		claimsCache:         claimsCache,
+		claimsParser:        claimsParser,
 	}, nil
 }
 
@@ -84,7 +84,7 @@ type RemoteAuthenticator struct {
 	cache               interfaces.LRU[string]
 	jwtExpirationBuffer time.Duration
 	mu                  sync.RWMutex // protects cache
-	claimsCache         *claims.ClaimsCache
+	claimsParser        *claims.ClaimsParser
 }
 
 // Unsupported in the remote authenticator.
@@ -124,7 +124,7 @@ func (a *RemoteAuthenticator) SSOEnabled() bool {
 
 func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
 	// If a JWT was provided, check if it's valid and use it if so.
-	jwt, c, err := getValidJwtFromContext(ctx, a.claimsCache, a.jwtExpirationBuffer)
+	jwt, c, err := getValidJwtFromContext(ctx, a.claimsParser, a.jwtExpirationBuffer)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
@@ -142,7 +142,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	jwt, found := a.cache.Get(key)
 	a.mu.RUnlock()
 	if found {
-		if c, err := jwtIsValid(jwt, a.claimsCache, a.jwtExpirationBuffer); err == nil {
+		if c, err := jwtIsValid(jwt, a.claimsParser, a.jwtExpirationBuffer); err == nil {
 			return authContext(ctx, jwt, c)
 		}
 		a.mu.Lock()
@@ -159,7 +159,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	a.mu.Lock()
 	a.cache.Add(key, jwt)
 	a.mu.Unlock()
-	c, err = jwtIsValid(jwt, a.claimsCache, a.jwtExpirationBuffer)
+	c, err = jwtIsValid(jwt, a.claimsParser, a.jwtExpirationBuffer)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
@@ -222,21 +222,21 @@ func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) 
 // - A valid JWT from the incoming RPC metadata or
 // - An error if an invalid JWT is present or
 // - An empty string and no error if no JWT is present
-func getValidJwtFromContext(ctx context.Context, claimsCache *claims.ClaimsCache, jwtExpirationTimeBuffer time.Duration) (string, *claims.Claims, error) {
+func getValidJwtFromContext(ctx context.Context, claimsParser *claims.ClaimsParser, jwtExpirationTimeBuffer time.Duration) (string, *claims.Claims, error) {
 	jwt := getLastMetadataValue(ctx, authutil.ContextTokenStringKey)
 	if jwt == "" {
 		return "", nil, nil
 	}
-	claims, err := jwtIsValid(jwt, claimsCache, jwtExpirationTimeBuffer)
+	claims, err := jwtIsValid(jwt, claimsParser, jwtExpirationTimeBuffer)
 	if err != nil {
 		return "", nil, err
 	}
 	return jwt, claims, nil
 }
 
-func jwtIsValid(jwt string, claimsCache *claims.ClaimsCache, jwtExpirationBuffer time.Duration) (*claims.Claims, error) {
-	// N.B. the ClaimsCache validates JWTs before returning them.
-	claims, err := claimsCache.Get(jwt)
+func jwtIsValid(jwt string, claimsParser *claims.ClaimsParser, jwtExpirationBuffer time.Duration) (*claims.Claims, error) {
+	// N.B. the ClaimsParser validates JWTs before returning them.
+	claims, err := claimsParser.Parse(jwt)
 	if err != nil {
 		return nil, err
 	}

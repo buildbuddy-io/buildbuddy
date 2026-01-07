@@ -99,7 +99,7 @@ func createInvocationForTesting(te environment.Env, user string) (string, error)
 
 func TestGetInvocation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1, user2, group2))
 	te.SetAuthenticator(auth)
 
 	iid, err := createInvocationForTesting(te, user1)
@@ -136,7 +136,7 @@ func TestGetInvocation(t *testing.T) {
 func TestGetInvocation_FetchChildren(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1, user2, group2))
 	te.SetAuthenticator(auth)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
 	require.NoError(t, err)
@@ -190,7 +190,7 @@ func TestGetInvocation_FetchChildren(t *testing.T) {
 
 func TestSearchInvocation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
 	te.SetAuthenticator(auth)
 
 	// Search Service is enterprise-only
@@ -213,7 +213,7 @@ func TestSearchInvocation(t *testing.T) {
 
 func TestUpdateInvocation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1, user2, group2))
 	te.SetAuthenticator(auth)
 	te.GetDBHandle().NewQuery(context.Background(), "create_invocation").Create(&tables.Group{GroupID: group1, SharingEnabled: true})
 
@@ -251,7 +251,7 @@ func TestUpdateInvocation(t *testing.T) {
 
 func TestDeleteInvocation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
 	te.SetAuthenticator(auth)
 
 	iid, err := createInvocationForTesting(te, user1)
@@ -290,7 +290,7 @@ func TestDeleteInvocation(t *testing.T) {
 func TestFileDownloadEndpoint(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
 	te.SetAuthenticator(auth)
 	err := buildbuddy_server.Register(te)
 	require.NoError(t, err)

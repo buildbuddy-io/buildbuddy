@@ -218,7 +218,7 @@ func (c *Claims) IsCustomerSSO() bool {
 	return c.SAML || c.CustomerSSO
 }
 
-func ParseClaims(token string) (*Claims, error) {
+func parseClaims(token string) (*Claims, error) {
 	keys := []string{*jwtKey}
 	if *newJwtKey != "" {
 		// Try the new key first.
@@ -466,7 +466,7 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 
 	// If context already contains a JWT, just verify it and return the claims.
 	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		claims, err := ParseClaims(tokenString)
+		claims, err := parseClaims(tokenString)
 		if err != nil {
 			return nil, err
 		}
@@ -534,26 +534,22 @@ func ServerAdminGroupID() string {
 	return *serverAdminGroupID
 }
 
-// ClaimsCache helps reduce CPU overhead due to JWT parsing by caching parsed
-// and verified JWT claims.
+// ClaimsParser parses and verifies encoded JWTs. It also caches the parsed
+// claims, if configured to do so, to reduce overhead due to redundant parsing.
 //
-// The JWTs used with this cache should have Expiration times rounded down to
-// the nearest minute, so that their cache key doesn't change as often and can
-// therefore be cached for longer.
-type ClaimsCache struct {
+// The JWTs used with the parser's cache should have Expiration times rounded
+// down to the nearest minute, so that their cache key doesn't change as often
+// and can therefore be cached for longer.
+type ClaimsParser struct {
 	ttl time.Duration
 
 	mu  sync.Mutex
 	lru interfaces.LRU[*Claims]
 }
 
-// Returns a ClaimsCache if the claims cache is enabled, or nil otherwise, or
-// an error if there's an error constructing the cache.
-//
-// Note: this function can return (nil, nil)!
-func NewClaimsCache() (*ClaimsCache, error) {
+func NewClaimsParser() (*ClaimsParser, error) {
 	if *claimsCacheTTL <= 0 {
-		return nil, nil
+		return &ClaimsParser{ttl: 0, lru: nil}, nil
 	}
 
 	config := &lru.Config[*Claims]{
@@ -564,10 +560,14 @@ func NewClaimsCache() (*ClaimsCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ClaimsCache{ttl: *claimsCacheTTL, lru: lru}, nil
+	return &ClaimsParser{ttl: *claimsCacheTTL, lru: lru}, nil
 }
 
-func (c *ClaimsCache) Get(token string) (*Claims, error) {
+func (c *ClaimsParser) Parse(token string) (*Claims, error) {
+	if c.ttl <= 0 {
+		return parseClaims(token)
+	}
+
 	c.mu.Lock()
 	v, ok := c.lru.Get(token)
 	c.mu.Unlock()
@@ -578,7 +578,7 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 		}
 	}
 
-	claims, err := ParseClaims(token)
+	claims, err := parseClaims(token)
 	if err != nil {
 		return nil, err
 	}

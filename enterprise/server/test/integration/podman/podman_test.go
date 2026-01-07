@@ -60,7 +60,7 @@ func getTestEnv(t *testing.T) *testenv.TestEnv {
 	flags.Set(t, "executor.podman.runtime", runtimePath)
 
 	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	env.SetCommandRunner(&commandutil.CommandRunner{})
 	return env
 }

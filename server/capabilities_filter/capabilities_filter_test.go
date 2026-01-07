@@ -148,7 +148,7 @@ func TestAllowedRPCs(t *testing.T) {
 			ctx := context.Background()
 			env := testenv.GetTestEnv(t)
 			users := testauth.TestUsers("US1", "GR1")
-			ta := testauth.NewTestAuthenticator(users)
+			ta := testauth.NewTestAuthenticator(t, users)
 			flags.Set(t, "auth.admin_group_id", test.ServerAdminGroupID)
 			env.SetAuthenticator(ta)
 			u := users["US1"].(*testauth.TestUser)

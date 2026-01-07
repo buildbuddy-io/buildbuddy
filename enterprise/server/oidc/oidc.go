@@ -305,20 +305,16 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 		return nil, err
 	}
 
-	claimsFunc := claims.ParseClaims
-	claimsCache, err := claims.NewClaimsCache()
+	claimsParser, err := claims.NewClaimsParser()
 	if err != nil {
 		return nil, err
-	}
-	if claimsCache != nil {
-		claimsFunc = claimsCache.Get
 	}
 
 	return &OpenIDAuthenticator{
 		env:                  env,
 		myURL:                build_buddy_url.WithPath(""),
 		authenticators:       authenticators,
-		parseClaims:          claimsFunc,
+		parseClaims:          claimsParser.Parse,
 		enableAnonymousUsage: AnonymousUsageEnabled(),
 	}, nil
 }
