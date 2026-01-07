@@ -11,26 +11,32 @@ import (
 // FindRebalanceLeaseOpForSimulation wraps the production lease rebalancing logic
 // for use in simulators and tests. Assumes all nodes are reachable.
 //
+// Parameters:
+//   - myNhid: the node ID making the decision
+//   - shardID: the shard ID being evaluated
+//   - replicas: the 3 node IDs that have replicas for this shard
+//   - leaseCounts: lease counts for all nodes in the cluster
+//
 // Returns the target nhid to transfer lease to, or empty string if no transfer recommended.
-func FindRebalanceLeaseOpForSimulation(myNhid string, leaseCounts map[string]int64) string {
+func FindRebalanceLeaseOpForSimulation(myNhid string, shardID int64, replicas []string, leaseCounts map[string]int64) string {
 	// Create mock Queue with fake storeMap
 	mockQueue := &Queue{
 		storeMap:  newMockStoreMap(leaseCounts),
 		apiClient: newMockAPIClient(),
 	}
 
-	// Build fake RangeDescriptor with replicas for each nhid
+	// Build RangeDescriptor with ONLY the 3 replicas for this shard
 	rd := &rfpb.RangeDescriptor{
-		RangeId:  1,
+		RangeId:  uint64(shardID),
 		Replicas: []*rfpb.ReplicaDescriptor{},
 	}
 	replicaID := uint64(1)
 	var localReplicaID uint64
-	for nhid := range leaseCounts {
+	for _, nhid := range replicas {
 		nhidCopy := nhid
 		rd.Replicas = append(rd.Replicas, &rfpb.ReplicaDescriptor{
 			ReplicaId: replicaID,
-			RangeId:   1,
+			RangeId:   uint64(shardID),
 			Nhid:      &nhidCopy,
 		})
 		if nhid == myNhid {
