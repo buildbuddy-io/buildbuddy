@@ -42,7 +42,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
-	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
@@ -1926,24 +1925,11 @@ func (s *BuildBuddyServer) RepoStatus(ctx context.Context, req *csinpb.RepoStatu
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/6146): Requests should be routed to the cache client for the cache proxy if applicable.
 func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCacheMetadataRequest) (*capb.GetCacheMetadataResponse, error) {
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
-	if err != nil {
-		return nil, err
-	}
-
-	resourceName := req.GetResourceName()
-	metadata, err := s.env.GetCache().Metadata(ctx, resourceName)
-	if err != nil {
-		return nil, err
-	}
-
-	return &capb.GetCacheMetadataResponse{
-		StoredSizeBytes: metadata.StoredSizeBytes,
-		DigestSizeBytes: metadata.DigestSizeBytes,
-		LastAccessUsec:  metadata.LastAccessTimeUsec,
-		LastModifyUsec:  metadata.LastModifyTimeUsec,
-	}, nil
+	return s.env.GetCacheClient().GetMetadata(ctx, &capb.GetCacheMetadataRequest{
+		ResourceName: req.GetResourceName(),
+	})
 }
 
 func (s *BuildBuddyServer) GetCacheScoreCard(ctx context.Context, req *capb.GetCacheScoreCardRequest) (*capb.GetCacheScoreCardResponse, error) {
