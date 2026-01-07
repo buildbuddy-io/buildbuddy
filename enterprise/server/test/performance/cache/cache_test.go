@@ -107,8 +107,8 @@ func setDigestsInCache(t testing.TB, ctx context.Context, c interfaces.Cache, db
 	}
 }
 
-func getMemoryCache(t testing.TB) interfaces.Cache {
-	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+func getMemoryCache(t testing.TB, env environment.Env) interfaces.Cache {
+	mc, err := memory_cache.NewMemoryCache(env, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +286,7 @@ func getAllCaches(b *testing.B, te environment.Env) []*namedCache {
 
 	time.Sleep(100 * time.Millisecond)
 	caches := []*namedCache{
-		{getMemoryCache(b), "LocalMemory"},
+		{getMemoryCache(b, te), "LocalMemory"},
 		{getDiskCache(b, te), "LocalDisk"},
 		{ddc, "DistDisk"},
 		{getPebbleCache(b, te), "LocalPebble"},

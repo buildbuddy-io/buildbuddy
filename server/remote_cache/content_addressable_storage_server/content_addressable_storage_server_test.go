@@ -405,7 +405,7 @@ func TestMalevolentCache(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	c, err := memory_cache.NewMemoryCache(1000000)
+	c, err := memory_cache.NewMemoryCache(te, 1000000)
 	if err != nil {
 		t.Fatal(err)
 	}

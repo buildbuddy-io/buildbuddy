@@ -224,7 +224,8 @@ type sizeUpdate struct {
 }
 
 type accessTimeUpdate struct {
-	key filestore.PebbleKey
+	key         filestore.PebbleKey
+	authHeaders map[string][]string
 }
 
 // PebbleCache implements the cache interface by storing metadata in a pebble
@@ -915,7 +916,7 @@ func (p *PebbleCache) updateDatabaseVersions(minVersion, maxVersion filestore.Pe
 	return nil
 }
 
-func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
+func (p *PebbleCache) updateAtime(update *accessTimeUpdate) error {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return err
@@ -923,16 +924,16 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	defer db.Close()
 
 	// Write Lock: because we read/modify/write below.
-	unlockFn := p.locker.Lock(key.LockID())
+	unlockFn := p.locker.Lock(update.key.LockID())
 	defer unlockFn()
 
 	md := sgpb.FileMetadataFromVTPool()
 	defer md.ReturnToVTPool()
-	version, err := p.lookupFileMetadataAndVersion(p.env.GetServerContext(), db, key, md)
+	version, err := p.lookupFileMetadataAndVersion(p.env.GetServerContext(), db, update.key, md)
 	if err != nil {
 		return err
 	}
-	keyBytes, err := key.Bytes(version)
+	keyBytes, err := update.key.Bytes(version)
 	if err != nil {
 		return err
 	}
@@ -965,7 +966,7 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 		}
 		if err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime); err != nil {
 			metrics.PebbleCacheAtimeUpdateGCSErrorCount.With(lbls).Inc()
-			log.Errorf("Error updating GCS custom time (%q): %s", key, err)
+			log.Errorf("Error updating GCS custom time (%q): %s", update.key, err)
 			return err
 		}
 		md.StorageMetadata.GcsMetadata.LastCustomTimeUsec = newAtime.UnixMicro()
@@ -977,7 +978,19 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 		return err
 	}
 	metrics.PebbleCacheAtimeUpdateCount.With(lbls).Inc()
-	return db.Set(keyBytes, protoBytes, pebble.NoSync)
+	if err := db.Set(keyBytes, protoBytes, pebble.NoSync); err != nil {
+		return err
+	}
+
+	// If there are any atime updaters registered, call them now.
+	d := md.GetFileRecord().GetDigest()
+	instanceName := md.GetFileRecord().GetIsolation().GetRemoteInstanceName()
+	digestFunction := md.GetFileRecord().GetDigestFunction()
+	if p.env.GetAtimeUpdater() != nil {
+		ctx := authutil.AddAuthHeadersToContext(context.Background(), update.authHeaders, p.env.GetAuthenticator())
+		p.env.GetAtimeUpdater().Enqueue(ctx, instanceName, []*repb.Digest{d}, digestFunction)
+	}
+	return nil
 }
 
 func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
@@ -1132,7 +1145,7 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
 	for {
 		select {
 		case accessTimeUpdate := <-p.accesses:
-			if err := p.updateAtime(accessTimeUpdate.key); err != nil {
+			if err := p.updateAtime(accessTimeUpdate); err != nil {
 				log.Warningf("[%s] Error updating atime: %s", p.name, err)
 			}
 		case <-quitChan:
@@ -1140,7 +1153,7 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
 			for {
 				select {
 				case u := <-p.accesses:
-					if err := p.updateAtime(u.key); err != nil {
+					if err := p.updateAtime(u); err != nil {
 						log.Warningf("[%s] Error updating atime: %s", p.name, err)
 					}
 				default:
@@ -1714,7 +1727,7 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, r *r
 		}
 	}
 
-	p.sendAtimeUpdate(key, md.GetLastAccessUsec())
+	p.sendAtimeUpdate(ctx, key, md.GetLastAccessUsec())
 	return nil
 }
 
@@ -1801,7 +1814,7 @@ func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op
 	p.edits <- up
 }
 
-func (p *PebbleCache) sendAtimeUpdate(key filestore.PebbleKey, lastAccessUsec int64) {
+func (p *PebbleCache) sendAtimeUpdate(ctx context.Context, key filestore.PebbleKey, lastAccessUsec int64) {
 	atime := time.UnixMicro(lastAccessUsec)
 
 	p.metrics.atimeDeltaWhenRead.Observe(float64(time.Since(atime).Milliseconds()))
@@ -1810,7 +1823,15 @@ func (p *PebbleCache) sendAtimeUpdate(key filestore.PebbleKey, lastAccessUsec in
 		return
 	}
 
-	up := &accessTimeUpdate{key}
+	authHeaders := map[string][]string{}
+	if p.env.GetAtimeUpdater() != nil {
+		// Only copy auth headers if they will be used by an atime updater.
+		authHeaders = authutil.GetAuthHeaders(ctx)
+	}
+	up := &accessTimeUpdate{
+		key:         key,
+		authHeaders: authHeaders,
+	}
 
 	// If the atimeBufferSize is 0, non-blocking writes do not make sense,
 	// so in that case just do a regular channel send. Otherwise; use a non-
@@ -3231,6 +3252,8 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 		return nil, err
 	}
 
+	p.sendAtimeUpdate(ctx, key, fileMetadata.GetLastAccessUsec())
+
 	// If this object was not chunked, and is somehow stored as a zero-
 	// length file, pretend it does not exist.
 	md := fileMetadata.GetStorageMetadata()
@@ -3292,7 +3315,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 		}
 		return nil, err
 	}
-	p.sendAtimeUpdate(key, fileMetadata.GetLastAccessUsec())
+	p.sendAtimeUpdate(ctx, key, fileMetadata.GetLastAccessUsec())
 
 	if !rawStorage {
 		if shouldDecrypt {

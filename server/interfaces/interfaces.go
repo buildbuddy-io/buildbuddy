@@ -1737,7 +1737,6 @@ type DigestOperator interface {
 	// the digest was successfully enqueued, false if not.
 	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool
 }
-
 type CPULeaser interface {
 	// Acquire returns an int numa node, and an []int set of CPUs that
 	// should be used as a cgroups cpuset. The returned cancel function

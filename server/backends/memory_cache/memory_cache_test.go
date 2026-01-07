@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -19,18 +18,13 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
-var (
-	emptyUserMap = testauth.TestUsers()
-)
-
-func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
+func getTestEnv(t *testing.T) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers()))
 	return te
 }
 
-func getAnonContext(t *testing.T) context.Context {
-	te := getTestEnv(t, emptyUserMap)
+func getAnonContext(t *testing.T, te *testenv.TestEnv) context.Context {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
@@ -39,12 +33,13 @@ func getAnonContext(t *testing.T) context.Context {
 }
 
 func TestIsolation(t *testing.T) {
+	te := getTestEnv(t)
 	maxSizeBytes := int64(1000000000) // 1GB
-	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	mc, err := memory_cache.NewMemoryCache(te, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := getAnonContext(t)
+	ctx := getAnonContext(t, te)
 
 	type test struct {
 		cacheType1     rspb.CacheType
@@ -137,8 +132,9 @@ func TestIsolation(t *testing.T) {
 }
 
 func TestGetSet(t *testing.T) {
+	te := getTestEnv(t)
 	maxSizeBytes := int64(1000000000) // 1GB
-	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	mc, err := memory_cache.NewMemoryCache(te, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +142,7 @@ func TestGetSet(t *testing.T) {
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
 	for _, testSize := range testSizes {
-		ctx := getAnonContext(t)
+		ctx := getAnonContext(t, te)
 		r, buf := testdigest.RandomCASResourceBuf(t, testSize)
 
 		// Set() the bytes in the cache.
@@ -179,12 +175,13 @@ func randomResources(t *testing.T, sizes ...int64) map[*rspb.ResourceName][]byte
 }
 
 func TestMultiGetSet(t *testing.T) {
+	te := getTestEnv(t)
 	maxSizeBytes := int64(1000000000) // 1GB
-	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	mc, err := memory_cache.NewMemoryCache(te, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := getAnonContext(t)
+	ctx := getAnonContext(t, te)
 	rnBufs := randomResources(t, 10, 20, 11, 30, 40)
 	if err := mc.SetMulti(ctx, rnBufs); err != nil {
 		t.Fatalf("Error multi-setting digests: %s", err.Error())
@@ -213,8 +210,9 @@ func TestMultiGetSet(t *testing.T) {
 }
 
 func TestReadWrite(t *testing.T) {
+	te := getTestEnv(t)
 	maxSizeBytes := int64(1000000000) // 1GB
-	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	mc, err := memory_cache.NewMemoryCache(te, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +220,7 @@ func TestReadWrite(t *testing.T) {
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
 	for _, testSize := range testSizes {
-		ctx := getAnonContext(t)
+		ctx := getAnonContext(t, te)
 		rn, buf := testdigest.RandomCASResourceBuf(t, testSize)
 		r := bytes.NewReader(buf)
 
@@ -253,10 +251,11 @@ func TestReadWrite(t *testing.T) {
 }
 
 func TestReadOffsetLimit(t *testing.T) {
-	mc, err := memory_cache.NewMemoryCache(1000)
+	te := getTestEnv(t)
+	mc, err := memory_cache.NewMemoryCache(te, 1000)
 	require.NoError(t, err)
 
-	ctx := getAnonContext(t)
+	ctx := getAnonContext(t, te)
 	size := int64(10)
 	r, buf := testdigest.RandomCASResourceBuf(t, size)
 	err = mc.Set(ctx, r, buf)
@@ -275,12 +274,13 @@ func TestReadOffsetLimit(t *testing.T) {
 }
 
 func TestSizeLimit(t *testing.T) {
+	te := getTestEnv(t)
 	maxSizeBytes := int64(1000) // 1000 bytes
-	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	mc, err := memory_cache.NewMemoryCache(te, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := getAnonContext(t)
+	ctx := getAnonContext(t, te)
 	rnBufs := randomResources(t, 400, 400, 400)
 	digestKeys := make([]*rspb.ResourceName, 0, len(rnBufs))
 	for rn, buf := range rnBufs {
@@ -312,12 +312,13 @@ func TestSizeLimit(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
+	te := getTestEnv(t)
 	maxSizeBytes := int64(1000) // 1000 bytes
-	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	mc, err := memory_cache.NewMemoryCache(te, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := getAnonContext(t)
+	ctx := getAnonContext(t, te)
 	rnBufs := randomResources(t, 400, 400)
 	digestKeys := make([]*rspb.ResourceName, 0, len(rnBufs))
 	for rn, buf := range rnBufs {

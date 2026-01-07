@@ -23,7 +23,6 @@ import (
 
 type ByteStreamServerProxy struct {
 	supportsEncryption func(context.Context) bool
-	atimeUpdater       interfaces.DigestOperator
 	authenticator      interfaces.Authenticator
 	local              interfaces.ByteStreamServer
 	remote             bspb.ByteStreamClient
@@ -39,10 +38,6 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env) (*ByteStreamServerProxy, error) {
-	atimeUpdater := env.GetAtimeUpdater()
-	if atimeUpdater == nil {
-		return nil, fmt.Errorf("An AtimeUpdater is required to enable ByteStreamServerProxy")
-	}
 	authenticator := env.GetAuthenticator()
 	if authenticator == nil {
 		return nil, fmt.Errorf("An Authenticator is required to enable ByteStreamServerProxy")
@@ -57,7 +52,6 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 	}
 	return &ByteStreamServerProxy{
 		supportsEncryption: remote_crypter.SupportsEncryption(env),
-		atimeUpdater:       atimeUpdater,
 		authenticator:      authenticator,
 		local:              local,
 		remote:             remote,
@@ -147,7 +141,6 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 			compressor:  rn.GetCompressor().String(),
 		}, s.readRemoteWriteLocal(req, stream)
 	} else {
-		s.atimeUpdater.EnqueueByResourceName(ctx, rn)
 		return readMetrics{
 			cacheStatus: metrics.HitStatusLabel,
 			compressor:  rn.GetCompressor().String(),

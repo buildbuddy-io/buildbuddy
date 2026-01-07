@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -25,6 +26,7 @@ import (
 var cacheInMemory = flag.Bool("cache.in_memory", false, "Whether or not to use the in_memory cache.")
 
 type MemoryCache struct {
+	env  environment.Env
 	l    interfaces.LRU[[]byte]
 	lock *sync.RWMutex
 }
@@ -48,7 +50,7 @@ func Register(env *real_environment.RealEnv) error {
 	if maxSizeBytes == 0 {
 		return status.FailedPreconditionError("Cache size must be greater than 0 if in_memory cache is enabled!")
 	}
-	c, err := NewMemoryCache(maxSizeBytes)
+	c, err := NewMemoryCache(env, maxSizeBytes)
 	if err != nil {
 		return status.InternalErrorf("Error configuring in-memory cache: %s", err)
 	}
@@ -56,12 +58,13 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
+func NewMemoryCache(env environment.Env, maxSizeBytes int64) (*MemoryCache, error) {
 	l, err := lru.NewLRU[[]byte](&lru.Config[[]byte]{MaxSize: maxSizeBytes, SizeFn: sizeFn})
 	if err != nil {
 		return nil, err
 	}
 	return &MemoryCache{
+		env:  env,
 		l:    l,
 		lock: &sync.RWMutex{},
 	}, nil
@@ -95,6 +98,8 @@ func (m *MemoryCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool,
 	m.lock.Lock()
 	contains := m.l.Contains(k)
 	m.lock.Unlock()
+
+	m.updateAtime(ctx, r)
 
 	return contains, nil
 }
@@ -152,6 +157,9 @@ func (m *MemoryCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 	if !ok {
 		return nil, status.NotFoundErrorf("Key %s not found", r.GetDigest())
 	}
+
+	m.updateAtime(ctx, r)
+
 	return v, nil
 }
 
@@ -245,4 +253,10 @@ func (m *MemoryCache) Stop() error {
 
 func (m *MemoryCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
+}
+
+func (m *MemoryCache) updateAtime(ctx context.Context, rn *rspb.ResourceName) {
+	if m.env.GetAtimeUpdater() != nil {
+		m.env.GetAtimeUpdater().Enqueue(ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
+	}
 }

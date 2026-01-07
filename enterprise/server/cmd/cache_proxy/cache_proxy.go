@@ -312,10 +312,8 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	}
 	env.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(conn))
 
-	// The atime updater must be registered after the remote CAS client (which
-	// it depends on), but before the local CAS server (which depends on it).
 	if err := atime_updater.Register(env); err != nil {
-		log.Fatalf("%v", err)
+		log.Fatalf("Error initializing atime updater: %v", err)
 	}
 
 	// Configure gRPC services.

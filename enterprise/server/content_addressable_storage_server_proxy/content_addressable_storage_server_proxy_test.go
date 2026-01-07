@@ -383,7 +383,6 @@ func testGetTree(t *testing.T, withCaching bool) {
 	casClient := repb.NewContentAddressableStorageClient(conn)
 	bsClient := bspb.NewByteStreamClient(conn)
 	proxyEnv := testenv.GetTestEnv(t)
-	proxyEnv.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
 	bsProxy := bspb.NewByteStreamClient(proxyConn)
@@ -554,9 +553,6 @@ func BenchmarkBatchReadBlobs(b *testing.B) {
 	ctx := testContext()
 	conn, _, _ := runRemoteCASS(ctx, testenv.GetTestEnv(b), b)
 	proxyEnv := testenv.GetTestEnv(b)
-	// The atime update runs background goroutines that can interfere with
-	// calls to atime_updater.Enqueue(). Disable it for benchmarking.
-	proxyEnv.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 	clock := clockwork.NewFakeClock()
 	proxyEnv.SetClock(clock)
 	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
@@ -644,9 +640,6 @@ func BenchmarkGetTree(b *testing.B) {
 	ctx := testContext()
 	conn, unaryRequests, streamRequests := runRemoteCASS(ctx, testenv.GetTestEnv(b), b)
 	proxyEnv := testenv.GetTestEnv(b)
-	// The atime update runs background goroutines that can interfere with
-	// calls to atime_updater.Enqueue(). Disable it for benchmarking.
-	proxyEnv.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, b)
 	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
 	bsProxy := bspb.NewByteStreamClient(proxyConn)
