@@ -5,6 +5,9 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_test(
     name = "bazelrbe_prober_test",
     srcs = ["bazelrbe_prober_test.go"],
+    # Linux-only: the extract_bazel_installation rule fails on Darwin in
+    # sandboxed builds because it can't find gcc/CC.
+    target_compatible_with = ["@platforms//os:linux"],
     data = [
         "//server/util/bazel:bazel-6.5.0_crossplatform",
         "//server/util/bazel:bazel-6.5.0_extract_installation",
