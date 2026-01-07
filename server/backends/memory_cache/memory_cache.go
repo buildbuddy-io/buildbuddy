@@ -25,8 +25,13 @@ import (
 var cacheInMemory = flag.Bool("cache.in_memory", false, "Whether or not to use the in_memory cache.")
 
 type MemoryCache struct {
-	l    interfaces.LRU[[]byte]
-	lock *sync.RWMutex
+	l            interfaces.LRU[[]byte]
+	lock         *sync.RWMutex
+	atimeUpdater interfaces.DigestOperator
+}
+
+func (c *MemoryCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) {
+	c.atimeUpdater = updater
 }
 
 func sizeFn(value []byte) int64 {
@@ -53,6 +58,7 @@ func Register(env *real_environment.RealEnv) error {
 		return status.InternalErrorf("Error configuring in-memory cache: %s", err)
 	}
 	env.SetCache(c)
+	env.SetAtimeUpdatingCache(c)
 	return nil
 }
 
@@ -95,6 +101,8 @@ func (m *MemoryCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool,
 	m.lock.Lock()
 	contains := m.l.Contains(k)
 	m.lock.Unlock()
+
+	m.updateAtime(ctx, r)
 
 	return contains, nil
 }
@@ -152,6 +160,7 @@ func (m *MemoryCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 	if !ok {
 		return nil, status.NotFoundErrorf("Key %s not found", r.GetDigest())
 	}
+	m.updateAtime(ctx, r)
 	return v, nil
 }
 
@@ -245,4 +254,10 @@ func (m *MemoryCache) Stop() error {
 
 func (m *MemoryCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
+}
+
+func (m *MemoryCache) updateAtime(ctx context.Context, rn *rspb.ResourceName) {
+	if m.atimeUpdater != nil {
+		m.atimeUpdater.Enqueue(ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
+	}
 }

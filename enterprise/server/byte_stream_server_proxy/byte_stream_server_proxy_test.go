@@ -113,9 +113,6 @@ func runRemoteServices(ctx context.Context, env *testenv.TestEnv, t testing.TB) 
 }
 
 func runBSProxy(ctx context.Context, client bspb.ByteStreamClient, env *testenv.TestEnv, t testing.TB) bspb.ByteStreamClient {
-	if env.GetAtimeUpdater() == nil {
-		env.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
-	}
 	env.SetByteStreamClient(client)
 	bss, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
@@ -530,8 +527,6 @@ func TestSkipRemote(t *testing.T) {
 func BenchmarkReadAlwaysPresent(b *testing.B) {
 	*log.LogLevel = "error"
 	log.Configure()
-	// Disable the atime updater as it can interfere with the request counter.
-	flags.Set(b, "cache_proxy.remote_atime_max_digests_per_group", 0)
 
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(b)

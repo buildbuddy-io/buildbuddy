@@ -313,6 +313,11 @@ type StoppableCache interface {
 	Stop() error
 }
 
+type AtimeUpdatingCache interface {
+	Cache
+	RegisterAtimeUpdater(updater DigestOperator)
+}
+
 type PooledByteStreamClient interface {
 	StreamBytestreamFile(ctx context.Context, url *url.URL, writer io.Writer) error
 	FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error)
