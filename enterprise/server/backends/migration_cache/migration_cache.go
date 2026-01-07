@@ -1218,6 +1218,24 @@ func (mc *MigrationCache) Stop() error {
 	return dstShutdownErr
 }
 
+func (mc *MigrationCache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	srcPartition, err := mc.defaultConfigDoNotUseDirectly.src.Partition(ctx, remoteInstanceName)
+	if err != nil {
+		return "", err
+	}
+	destPartition, err := mc.defaultConfigDoNotUseDirectly.dest.Partition(ctx, remoteInstanceName)
+	if err != nil {
+		return "", err
+	}
+	if srcPartition == "" {
+		return destPartition, nil
+	}
+	if destPartition == "" {
+		return srcPartition, nil
+	}
+	return srcPartition + "/" + destPartition, nil
+}
+
 // Compression should only be enabled during a migration if both the source and destination caches support the
 // compressor, in order to reduce complexity around trying to double read/write compressed bytes to one cache and
 // decompressed bytes to another

@@ -1226,6 +1226,14 @@ func (p *partition) writer(ctx context.Context, r *rspb.ResourceName) (interface
 	return cwc, nil
 }
 
+func (c *DiskCache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	partition, err := c.getPartition(ctx, remoteInstanceName)
+	if err != nil {
+		return "", err
+	}
+	return partition.id, nil
+}
+
 func (c *DiskCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }

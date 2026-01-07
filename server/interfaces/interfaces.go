@@ -304,6 +304,9 @@ type Cache interface {
 	Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error)
 	Writer(ctx context.Context, r *rspb.ResourceName) (CommittedWriteCloser, error)
 
+	// Returns the partition ID for the given context and remote instance name.
+	Partition(ctx context.Context, remoteInstanceName string) (string, error)
+
 	// SupportsCompressor returns whether the cache supports storing data compressed with the given compressor
 	SupportsCompressor(compressor repb.Compressor_Value) bool
 
