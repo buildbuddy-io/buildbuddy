@@ -3396,7 +3396,7 @@ func (u fakeAtimeUpdater) EnqueueByResourceName(ctx context.Context, rn *digest.
 
 func TestAtimeUpdater(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 
 	threshold := time.Microsecond
