@@ -406,11 +406,8 @@ func AssembleJWT(c *Claims, method jwt.SigningMethod) (string, error) {
 	// Round expiration times down to the nearest minute to improve stability
 	// of JWTs for caching purposes.
 	expiresAt -= (expiresAt % 60)
-
-	// Copy claims to avoid mutating so this function is thread-safe.
-	claimsCopy := *c
-	claimsCopy.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
-	token := jwt.NewWithClaims(method, claimsCopy)
+	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
+	token := jwt.NewWithClaims(method, c)
 	if method == jwt.SigningMethodHS256 {
 		return assembleHS256JWT(token)
 	} else if method == jwt.SigningMethodRS256 {

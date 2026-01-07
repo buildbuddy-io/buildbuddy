@@ -103,7 +103,9 @@ func (a *TestAuthenticator) AuthenticatedGRPCContext(ctx context.Context) contex
 	u, err := a.authenticateGRPCRequest(ctx)
 	var c *claims.Claims
 	if u != nil {
-		c = u.(*claims.Claims)
+		// Copy claims to avoid races reading/writing the JWT in the context
+		newClaims := *u.(*claims.Claims)
+		c = &newClaims
 	}
 	return claims.AuthContextWithJWT(ctx, c, err)
 }
