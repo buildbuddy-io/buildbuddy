@@ -29,10 +29,10 @@ var (
 type RoutingCASClient struct {
 	casClients   map[string]repb.ContentAddressableStorageClient
 	router       interfaces.CacheRoutingService
-	copyOp       batch_operator.DigestOperator
-	readOp       batch_operator.DigestOperator
-	readVerifyOp batch_operator.DigestOperator
-	treeOp       batch_operator.DigestOperator
+	copyOp       interfaces.DigestOperator
+	readOp       interfaces.DigestOperator
+	readVerifyOp interfaces.DigestOperator
+	treeOp       interfaces.DigestOperator
 }
 
 func New(env environment.Env) (*RoutingCASClient, error) {

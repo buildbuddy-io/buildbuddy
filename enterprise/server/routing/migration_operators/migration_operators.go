@@ -262,7 +262,7 @@ func CASBatchReadAndVerify(ctx context.Context, router interfaces.CacheRoutingSe
 	return nil
 }
 
-func RoutedCopy(ctx context.Context, groupID string, casCopy batch_operator.DigestOperator, bytestreamCopy batch_operator.DigestOperator, b *batch_operator.DigestBatch) error {
+func RoutedCopy(ctx context.Context, groupID string, casCopy interfaces.DigestOperator, bytestreamCopy interfaces.DigestOperator, b *batch_operator.DigestBatch) error {
 	smallStuff := []*repb.Digest{}
 	bigStuff := []*repb.Digest{}
 	for _, d := range b.Digests {
@@ -292,7 +292,7 @@ func RoutedCopy(ctx context.Context, groupID string, casCopy batch_operator.Dige
 	return enqueueErr
 }
 
-func GetTreeMirrorOperator(ctx context.Context, router interfaces.CacheRoutingService, copyOperator batch_operator.DigestOperator, groupID string, b *batch_operator.DigestBatch) error {
+func GetTreeMirrorOperator(ctx context.Context, router interfaces.CacheRoutingService, copyOperator interfaces.DigestOperator, groupID string, b *batch_operator.DigestBatch) error {
 	ctx = usageutil.DisableUsageTracking(ctx)
 	primary, _, err := router.GetCASClients(ctx)
 	if err != nil {
@@ -359,7 +359,7 @@ func ACReadAndVerify(ctx context.Context, router interfaces.CacheRoutingService,
 	return anyErr
 }
 
-func ACCopy(ctx context.Context, router interfaces.CacheRoutingService, copyOperator batch_operator.DigestOperator, groupID string, b *batch_operator.DigestBatch) error {
+func ACCopy(ctx context.Context, router interfaces.CacheRoutingService, copyOperator interfaces.DigestOperator, groupID string, b *batch_operator.DigestBatch) error {
 	ctx = usageutil.DisableUsageTracking(ctx)
 	primary, secondary, err := router.GetACClients(ctx)
 	if err != nil {

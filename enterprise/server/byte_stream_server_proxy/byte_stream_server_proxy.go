@@ -23,7 +23,7 @@ import (
 
 type ByteStreamServerProxy struct {
 	supportsEncryption func(context.Context) bool
-	atimeUpdater       interfaces.AtimeUpdater
+	atimeUpdater       interfaces.DigestOperator
 	authenticator      interfaces.Authenticator
 	local              interfaces.ByteStreamServer
 	remote             bspb.ByteStreamClient
