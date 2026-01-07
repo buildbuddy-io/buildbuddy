@@ -38,8 +38,9 @@ func runProber(t testing.TB, ctx context.Context, env *rbetest.Env, extraBazelAr
 		"--repository_cache=" + repoCachePath,
 		"--lockfile_mode=error",
 	}
-	// Bazel 6 needs --enable_bzlmod for MODULE.bazel support
-	if bazelMajorVersion == "6" {
+	// Bazel 6 and 7 need --enable_bzlmod for MODULE.bazel support.
+	// Bazel 8+ has bzlmod enabled by default.
+	if bazelMajorVersion == "6" || bazelMajorVersion == "7" {
 		bazelArgs = append(bazelArgs, "--enable_bzlmod")
 	}
 	bazelArgs = append(bazelArgs, extraBazelArgs...)
