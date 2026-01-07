@@ -440,13 +440,6 @@ func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.O
 // fetchBlobFromRemoteWriteToCacheAndResponse fetches a blob from the upstream registry, streams it to the
 // response, and writes it to the cache simultaneously using read-through caching.
 func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) error {
-	// Double-check cache to handle race between initial check and singleflight entry.
-	if err := s.fetchBlobFromCache(ctx, stream, repo, hash); err == nil {
-		return nil
-	} else if !status.IsNotFoundError(err) {
-		return err
-	}
-
 	layer, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (gcr.Layer, error) {
 		return puller.Layer(ctx, digestRef)
 	})
