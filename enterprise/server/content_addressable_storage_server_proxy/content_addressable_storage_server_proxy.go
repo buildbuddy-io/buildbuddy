@@ -31,7 +31,7 @@ var enableGetTreeCaching = flag.Bool("cache_proxy.enable_get_tree_caching", fals
 
 type CASServerProxy struct {
 	supportsEncryption func(context.Context) bool
-	atimeUpdater       interfaces.AtimeUpdater
+	atimeUpdater       interfaces.DigestOperator
 	authenticator      interfaces.Authenticator
 	local              repb.ContentAddressableStorageServer
 	remote             repb.ContentAddressableStorageClient

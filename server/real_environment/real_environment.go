@@ -139,7 +139,7 @@ type RealEnv struct {
 	registryService                      interfaces.RegistryService
 	pubsub                               interfaces.PubSub
 	clock                                clockwork.Clock
-	atimeUpdater                         interfaces.AtimeUpdater
+	atimeUpdater                         interfaces.DigestOperator
 	cpuLeaser                            interfaces.CPULeaser
 	ociRegistry                          interfaces.OCIRegistry
 	ociFetcherClient                     ofpb.OCIFetcherClient
@@ -857,10 +857,10 @@ func (r *RealEnv) SetClock(clock clockwork.Clock) {
 	r.clock = clock
 }
 
-func (r *RealEnv) GetAtimeUpdater() interfaces.AtimeUpdater {
+func (r *RealEnv) GetAtimeUpdater() interfaces.DigestOperator {
 	return r.atimeUpdater
 }
-func (r *RealEnv) SetAtimeUpdater(updater interfaces.AtimeUpdater) {
+func (r *RealEnv) SetAtimeUpdater(updater interfaces.DigestOperator) {
 	r.atimeUpdater = updater
 }
 
