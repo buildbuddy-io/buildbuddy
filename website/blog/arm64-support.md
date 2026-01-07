@@ -3,55 +3,36 @@ slug: arm64-support
 title: Remote Builds on linux/arm64 with BuildBuddy
 description: Announcing arm64 support for remote linux builds
 authors: zoey
-date: 2024-10-29:12:00:00
+date: 2026-01-08:12:00:00
 image: /img/blog/postgres-support.png
 tags: [product]
 ---
 
-You asked, and we answered: BuildBuddy now offers the option to build your arm64
-binaries remotely! We've created a new executor pool running on arm, and we've
-updated the `platform-linux` platform target in
-[`buildbuddy-toolchain`](https://github.com/buildbuddy-io/buildbuddy-toolchain)
-to automatically detect your architecture and set your platform appropriately.
-This should make maintaining a project that builds on both arm and amd
-ergonomic and easy!
+We're excited to announce that BuildBuddy's remote execution platform now supports the ARM64 (AArch64) architecture. This means you can run your builds and tests natively on ARM64 executors, unlocking faster builds for ARM64 targets and enabling teams to test on the same architecture they deploy to.
 
-<!-- truncate -->
+## Autoscaled Cloud ARM Support
 
-## Try it out!
+For several years now, we’ve supported native ARM64 builds using Bring Your Own Runners (BYOR) or using our cloud mac build machines. As more customers transition to the ARM architecture for cost or performance reasons, we want to make it even easier for your builds to run natively on Linux + ARM64 as well. So we’re closing the loop and adding support for autoscaled cloud Linux ARM64 runners. This means that no matter how big your build, we’re able to handle it, and you’ll only pay for the resources you actually use.
 
-On an arm64 machine, add to your project:
+We’ve made it easy to get started with ARM builds by adding support to the [`buildbuddy-toolchain`](https://github.com/buildbuddy-io/buildbuddy-toolchain) to automatically detect your architecture and set the platform appropriately. This makes maintaining a project that builds on both ARM64 and x86-64 ergonomic and easy, and removes the need for slow cross-compilation.
+
+## Getting Started
+
+Configuring your Bazel build to use BuildBuddy's arm64 executors is straightforward. Add the BuildBuddy toolchain to your WORKSPACE file:
 
 `WORKSPACE`:
 
-```
-# BuildBuddy Toolchain
-http_archive(
-    name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "baa9af1b9fcc96d18ac90a4dd68ebd2046c8beb76ed89aea9aabca30959ad30c",
-    strip_prefix = "buildbuddy-toolchain-287d6042ad151be92de03c83ef48747ba832c4e2",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/287d6042ad151be92de03c83ef48747ba832c4e2.tar.gz"],
-)
+```python
+bazel_dep(name = "toolchains_buildbuddy", version = "0.0.4")
 
-load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
-
-buildbuddy_deps()
-
-load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE", "buildbuddy")
-
-buildbuddy(
-    name = "buildbuddy_toolchain",
-    container_image = UBUNTU20_04_IMAGE,
-)
-
-register_execution_platforms(
-    "@buildbuddy_toolchain//:platform_linux",
-)
+# Use the extension to create toolchain and platform targets
+buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
 ```
 
-Then just build your project with remote execution specified like normal, and
-your build will sent off to the new arm executors to be built.
+[TODO(zoey): add picture here]: #
 
-As always, please report any problems you find to us either on our
-[GitHub repo](https://github.com/buildbuddy-io/buildbuddy) or come chat with us
-on [Slack](https://community.buildbuddy.io/)!
+Then build your project with remote execution enabled, and your build will run on the new ARM64 executors.
+
+[Example ARM build](https://app.buildbuddy.io/invocation/6615866d-3250-43d2-a7cb-012ee878c9a1) of [Abseil](https://github.com/abseil/abseil-cpp)
+
+As always, please report any problems you find to us either on our [GitHub repo](https://github.com/buildbuddy-io/buildbuddy) or come chat with us on [Slack](https://community.buildbuddy.io/)!
