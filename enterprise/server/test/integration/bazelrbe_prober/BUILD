@@ -64,3 +64,13 @@ go_test(
         "@io_bazel_rules_go//go/runfiles",
     ],
 )
+
+go_test(
+    name = "bazelrbe_prober_test",
+    srcs = ["bazelrbe_prober_test.go"],
+    deps = [
+        "//enterprise/server/test/integration/remote_execution/rbetest",
+        "@com_github_stretchr_testify//require",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)
