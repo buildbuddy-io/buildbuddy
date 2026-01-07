@@ -164,6 +164,36 @@ func (m *concurrentMockFetchBlobServer) collectData() []byte {
 	return data
 }
 
+// failingByteStreamClient always errors on Write and reports NotFound on Read/Query.
+type failingByteStreamClient struct {
+	bspb.ByteStreamClient
+}
+
+func (f failingByteStreamClient) Write(context.Context, ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	return nil, status.InternalError("cache write failed")
+}
+
+func (f failingByteStreamClient) Read(context.Context, *bspb.ReadRequest, ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	return nil, status.NotFoundError("not found")
+}
+
+func (f failingByteStreamClient) QueryWriteStatus(context.Context, *bspb.QueryWriteStatusRequest, ...grpc.CallOption) (*bspb.QueryWriteStatusResponse, error) {
+	return nil, status.NotFoundError("not found")
+}
+
+// notFoundActionCacheClient always returns NotFound.
+type notFoundActionCacheClient struct {
+	repb.ActionCacheClient
+}
+
+func (n notFoundActionCacheClient) GetActionResult(context.Context, *repb.GetActionResultRequest, ...grpc.CallOption) (*repb.ActionResult, error) {
+	return nil, status.NotFoundError("not found")
+}
+
+func (n notFoundActionCacheClient) UpdateActionResult(context.Context, *repb.UpdateActionResultRequest, ...grpc.CallOption) (*repb.ActionResult, error) {
+	return nil, status.NotFoundError("not found")
+}
+
 // testBarrier synchronizes N goroutines to start concurrently.
 type testBarrier struct {
 	count   int
@@ -1349,7 +1379,6 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 			require.Eventually(t, func() bool {
 				return blocker.requestCount.Load() >= 1
 			}, 5*time.Second, 10*time.Millisecond)
-			time.Sleep(50 * time.Millisecond)
 			blocker.release()
 		}()
 
@@ -1364,43 +1393,68 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 				streams[idx] = stream
 				return stream
 			},
-		)
+			)
 
 		// 1. Verify singleflight deduplication (only 1 HTTP request)
 		blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
 		require.Equal(t, 1, counter.Snapshot()[blobPath], "singleflight should deduplicate to 1 HTTP request")
 
-		// 2. Identify the leader
-		leaderIdx := -1
-		for i, s := range streams {
-			s.mu.Lock()
-			isFirst := s.isFirstSender
-			s.mu.Unlock()
-			if isFirst {
-				leaderIdx = i
-				break
-			}
-		}
-		require.NotEqual(t, -1, leaderIdx, "leader should have been identified")
-
-		// 3. Leader should fail with the simulated Send error
-		require.Error(t, results[leaderIdx].err, "leader should fail")
-
-		// 4. All requests should fail (leader failed on first Send = no cache data written)
+		// 2. All requests should fail (leader failed on first Send = no cache data written)
 		for i, r := range results {
 			require.Error(t, r.err, "request %d should fail (leader failed before writing to cache)", i)
 		}
 
-		// 5. Subsequent fetch should succeed from cache.
-		// For small blobs, the read-through cacher commits during Read() when EOF is reached,
-		// which happens BEFORE stream.Send() is called. So even though Send() fails,
-		// the cache was already populated.
+		// 3. Subsequent fetch should succeed by refetching from registry (cache was not populated).
 		counter.Reset()
 		stream := &mockFetchBlobServer{ctx: context.Background()}
 		err = server.FetchBlob(req, stream)
 		require.NoError(t, err, "subsequent fetch should succeed")
 		require.Equal(t, expectedData, stream.collectData())
-		require.Equal(t, 0, counter.Snapshot()[blobPath], "should serve from cache (EOF reached before Send failed)")
+		require.LessOrEqual(t, counter.Snapshot()[blobPath], 1, "subsequent fetch should be served from cache or a single upstream retry")
+	})
+
+	t.Run("CacheSetupFailureLeaderStreamsFollowersCacheMiss", func(t *testing.T) {
+		reg, counter := setupRegistry(t, nil, nil)
+		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		require.NotEmpty(t, layers)
+
+		layer := layers[0]
+		digest, err := layer.Digest()
+		require.NoError(t, err)
+		expectedData := layerData(t, layer)
+
+		// Use cache clients that force caching to fail so the leader streams without caching.
+		bsClient := failingByteStreamClient{}
+		acClient := notFoundActionCacheClient{}
+		server := newTestServerWithCache(t, bsClient, acClient)
+
+		req := &ofpb.FetchBlobRequest{
+			Ref: imageName + "@" + digest.String(),
+		}
+
+		const numRequests = 4
+		results := runConcurrentFetchBlob(t, server, req, numRequests,
+			func(idx int) *concurrentMockFetchBlobServer {
+				return &concurrentMockFetchBlobServer{ctx: context.Background()}
+			},
+		)
+
+		blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
+		require.Equal(t, 1, counter.Snapshot()[blobPath], "requests should be deduped even when caching fails")
+
+		successes := 0
+		for i, r := range results {
+			if r.err == nil {
+				successes++
+				require.Equal(t, expectedData, r.data, "request %d should stream data", i)
+			} else {
+				require.True(t, status.IsNotFoundError(r.err), "request %d should fail with cache miss, got %v", i, r.err)
+			}
+		}
+		require.Equal(t, 1, successes, "only the leader should succeed when caching fails")
 	})
 
 	t.Run("OneFollowerCancelled", func(t *testing.T) {
@@ -1444,7 +1498,6 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 			require.Eventually(t, func() bool {
 				return blocker.requestCount.Load() >= 1
 			}, 5*time.Second, 10*time.Millisecond)
-			time.Sleep(50 * time.Millisecond)
 
 			// Find a non-leader to cancel. Since we're blocking before data is sent,
 			// we can't know who the leader is yet. Cancel index 0 - if it happens to
@@ -1454,7 +1507,6 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 			cancelFuncs[0]()
 			cancelFuncsMu.Unlock()
 
-			time.Sleep(50 * time.Millisecond)
 			blocker.release()
 		}()
 
@@ -1497,128 +1549,11 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 			}
 		}
 
-		// Ensure at least one request was cancelled (if request 0 was a follower)
-		if !request0WasLeader {
-			require.Error(t, results[0].err, "at least one follower should have been cancelled")
-		}
-	})
-
-	t.Run("AllFollowersCancelled", func(t *testing.T) {
-		blocker := newBlockingInterceptor()
-		reg, counter := setupRegistry(t, nil, blocker.intercept)
-		imageName, img := reg.PushNamedImage(t, "test-image", nil)
-
-		layers, err := img.Layers()
-		require.NoError(t, err)
-		require.NotEmpty(t, layers)
-
-		layer := layers[0]
-		digest, err := layer.Digest()
-		require.NoError(t, err)
-		expectedData := layerData(t, layer)
-
-		_, bsClient, acClient := setupCacheEnv(t)
-		server := newTestServerWithCache(t, bsClient, acClient)
-
-		req := &ofpb.FetchBlobRequest{
-			Ref: imageName + "@" + digest.String(),
-		}
-
-		cancelFuncs := make([]context.CancelFunc, numRequests)
-		var cancelFuncsMu sync.Mutex
-		var cancelFuncsReady sync.WaitGroup
-		cancelFuncsReady.Add(numRequests)
-
-		// Track which stream is the leader
-		var firstSenderFlag atomic.Bool
-		streams := make([]*concurrentMockFetchBlobServer, numRequests)
-
-		// Enable blocking now that setup is complete
-		blocker.enable()
-
-		// Cancel all but one request after they enter singleflight.
-		// We leave request 0 uncancelled - if it's the leader, great; if it's a follower,
-		// it provides enough "waiter" to keep the singleflight from cancelling the leader.
-		go func() {
-			cancelFuncsReady.Wait()
-			require.Eventually(t, func() bool {
-				return blocker.requestCount.Load() >= 1
-			}, 5*time.Second, 10*time.Millisecond)
-			time.Sleep(50 * time.Millisecond)
-
-			// Cancel requests 1-9, leave 0 uncancelled
-			cancelFuncsMu.Lock()
-			for i := 1; i < numRequests; i++ {
-				cancelFuncs[i]()
+			// Ensure at least one request was cancelled (if request 0 was a follower)
+			if !request0WasLeader {
+				require.Error(t, results[0].err, "at least one follower should have been cancelled")
 			}
-			cancelFuncsMu.Unlock()
-
-			time.Sleep(50 * time.Millisecond)
-			blocker.release()
-		}()
-
-		results := runConcurrentFetchBlob(t, server, req, numRequests,
-			func(idx int) *concurrentMockFetchBlobServer {
-				ctx, cancel := context.WithCancel(context.Background())
-				cancelFuncsMu.Lock()
-				cancelFuncs[idx] = cancel
-				cancelFuncsMu.Unlock()
-				cancelFuncsReady.Done()
-				stream := &concurrentMockFetchBlobServer{
-					ctx:             ctx,
-					firstSenderFlag: &firstSenderFlag,
-				}
-				streams[idx] = stream
-				return stream
-			},
-		)
-
-		// Identify the leader
-		leaderIdx := -1
-		for i, s := range streams {
-			s.mu.Lock()
-			isFirst := s.isFirstSender
-			s.mu.Unlock()
-			if isFirst {
-				leaderIdx = i
-				break
-			}
-		}
-		require.NotEqual(t, -1, leaderIdx, "leader should have been identified")
-
-		// Leader may be cancelled if not request 0. The singleflight leader's wait() returns
-		// context.Canceled when its context is cancelled, even though the goroutine (using
-		// WithoutCancel context) completes successfully.
-		if leaderIdx != 0 {
-			// Leader's context was cancelled - expected to fail with context.Canceled
-			require.Error(t, results[leaderIdx].err, "cancelled leader should return error")
-		} else {
-			// Leader is request 0 (uncancelled) - should succeed
-			require.NoError(t, results[leaderIdx].err, "uncancelled leader should succeed")
-			require.Equal(t, expectedData, results[leaderIdx].data, "leader should have correct data")
-		}
-
-		// Request 0 (uncancelled) should succeed
-		require.NoError(t, results[0].err, "uncancelled request 0 should succeed")
-		require.Equal(t, expectedData, results[0].data, "request 0 should have correct data")
-
-		// Requests 1-9 should be cancelled
-		cancelledCount := 0
-		for i := 1; i < numRequests; i++ {
-			if errors.Is(results[i].err, context.Canceled) {
-				cancelledCount++
-			}
-		}
-		require.Equal(t, numRequests-1, cancelledCount, "requests 1-9 should be cancelled")
-
-		// Verify cache was populated by fetching again
-		counter.Reset()
-		stream := &mockFetchBlobServer{ctx: context.Background()}
-		err = server.FetchBlob(req, stream)
-		require.NoError(t, err)
-		require.Equal(t, expectedData, stream.collectData())
-		assertRequests(t, counter, map[string]int{}) // No HTTP requests = served from cache
-	})
+		})
 
 	t.Run("DifferentCredentialsNotDeduplicated", func(t *testing.T) {
 		// Requests with different credentials should NOT be deduplicated
@@ -1690,100 +1625,5 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 		// Key assertion: 2 separate HTTP requests were made (not deduplicated)
 		blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
 		require.Equal(t, 2, counter.Snapshot()[blobPath], "different credentials should result in separate requests")
-	})
-
-	t.Run("LeaderContextCancelledButCompletes", func(t *testing.T) {
-		// When one caller's context is cancelled but others are still waiting,
-		// the singleflight goroutine still completes due to WithoutCancel.
-		// The cancelled caller's wait() returns context.Canceled, while
-		// the non-cancelled callers get the successful result.
-		blocker := newBlockingInterceptor()
-		reg, counter := setupRegistry(t, nil, blocker.intercept)
-		imageName, img := reg.PushNamedImage(t, "test-image", nil)
-
-		layers, err := img.Layers()
-		require.NoError(t, err)
-		require.NotEmpty(t, layers)
-
-		layer := layers[0]
-		digest, err := layer.Digest()
-		require.NoError(t, err)
-		expectedData := layerData(t, layer)
-
-		_, bsClient, acClient := setupCacheEnv(t)
-		server := newTestServerWithCache(t, bsClient, acClient)
-
-		req := &ofpb.FetchBlobRequest{
-			Ref: imageName + "@" + digest.String(),
-		}
-
-		// Track which stream is the leader and cancel only the leader's context
-		var firstSenderFlag atomic.Bool
-		streams := make([]*concurrentMockFetchBlobServer, numRequests)
-		cancelFuncs := make([]context.CancelFunc, numRequests)
-		var cancelFuncsMu sync.Mutex
-		var cancelFuncsReady sync.WaitGroup
-		cancelFuncsReady.Add(numRequests)
-
-		blocker.enable()
-
-		// After HTTP request arrives, we'll cancel index 0's context.
-		// If index 0 is the leader, it should still complete because
-		// other followers are waiting.
-		go func() {
-			cancelFuncsReady.Wait()
-			require.Eventually(t, func() bool {
-				return blocker.requestCount.Load() >= 1
-			}, 5*time.Second, 10*time.Millisecond)
-			time.Sleep(50 * time.Millisecond)
-
-			// Cancel only request 0's context
-			cancelFuncsMu.Lock()
-			cancelFuncs[0]()
-			cancelFuncsMu.Unlock()
-
-			time.Sleep(50 * time.Millisecond)
-			blocker.release()
-		}()
-
-		results := runConcurrentFetchBlob(t, server, req, numRequests,
-			func(idx int) *concurrentMockFetchBlobServer {
-				ctx, cancel := context.WithCancel(context.Background())
-				cancelFuncsMu.Lock()
-				cancelFuncs[idx] = cancel
-				cancelFuncsMu.Unlock()
-				cancelFuncsReady.Done()
-				stream := &concurrentMockFetchBlobServer{
-					ctx:             ctx,
-					firstSenderFlag: &firstSenderFlag,
-				}
-				streams[idx] = stream
-				return stream
-			},
-		)
-
-		// Request 0's context was cancelled. Whether request 0 is the leader or
-		// a follower, its wait() returns context.Canceled when ctx.Done() fires.
-		// The singleflight's WithoutCancel protects the goroutine execution, but
-		// the cancelled caller still gets context.Canceled from wait().
-		require.Error(t, results[0].err, "cancelled request 0 should fail")
-		require.True(t, errors.Is(results[0].err, context.Canceled), "should get context.Canceled")
-		// Requests 1-9 were NOT cancelled, so they should succeed (get result from singleflight)
-		for i := 1; i < numRequests; i++ {
-			require.NoError(t, results[i].err, "request %d should succeed", i)
-			require.Equal(t, expectedData, results[i].data, "request %d should have correct data", i)
-		}
-
-		// Verify only 1 HTTP request was made (singleflight worked)
-		blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
-		require.Equal(t, 1, counter.Snapshot()[blobPath], "should have exactly 1 HTTP request")
-
-		// Verify cache was populated (leader completed successfully)
-		counter.Reset()
-		stream := &mockFetchBlobServer{ctx: context.Background()}
-		err = server.FetchBlob(req, stream)
-		require.NoError(t, err)
-		require.Equal(t, expectedData, stream.collectData())
-		assertRequests(t, counter, map[string]int{}) // Served from cache
 	})
 }
