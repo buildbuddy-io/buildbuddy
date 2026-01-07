@@ -1540,26 +1540,22 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 		// Check results based on whether request 0 was the leader or a follower
 		for i, r := range results {
 			if i == 0 {
-				if request0WasLeader {
-					// Leader continues despite cancellation (WithoutCancel)
-					require.NoError(t, r.err, "leader should succeed despite context cancellation")
-					require.Equal(t, expectedData, r.data, "leader should have correct data")
-				} else {
-					// Follower was cancelled
-					require.Error(t, r.err, "cancelled follower should fail")
-					require.True(t, errors.Is(r.err, context.Canceled), "cancelled follower should get context.Canceled, got: %v", r.err)
+				// The cancelled request may be a follower (expected context.Canceled) or the leader
+				// (singleflight waiter can return context.Canceled even though the goroutine completes).
+				if r.err != nil {
+					require.True(t, errors.Is(r.err, context.Canceled), "cancelled request 0 should get context.Canceled, got: %v", r.err)
+					continue
 				}
+				require.Equal(t, expectedData, r.data, "request 0 should have correct data if not cancelled")
 			} else {
 				require.NoError(t, r.err, "request %d should succeed", i)
 				require.Equal(t, expectedData, r.data, "request %d should have correct data", i)
 			}
 		}
 
-			// Ensure at least one request was cancelled (if request 0 was a follower)
-			if !request0WasLeader {
-				require.Error(t, results[0].err, "at least one follower should have been cancelled")
-			}
-		})
+		// Ensure at least one request was cancelled (we cancelled request 0's context)
+		require.Error(t, results[0].err, "cancelled request should return an error")
+	})
 
 	t.Run("DifferentCredentialsNotDeduplicated", func(t *testing.T) {
 		// Requests with different credentials should NOT be deduplicated
