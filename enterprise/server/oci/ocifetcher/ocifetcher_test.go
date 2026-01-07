@@ -98,7 +98,10 @@ type mockFetchBlobServer struct {
 }
 
 func (m *mockFetchBlobServer) Send(resp *ofpb.FetchBlobResponse) error {
-	m.responses = append(m.responses, resp)
+	// Copy bytes since upstream may reuse buffers.
+	cp := make([]byte, len(resp.GetData()))
+	copy(cp, resp.GetData())
+	m.responses = append(m.responses, &ofpb.FetchBlobResponse{Data: cp})
 	return nil
 }
 
@@ -146,7 +149,10 @@ func (m *concurrentMockFetchBlobServer) Send(resp *ofpb.FetchBlobResponse) error
 	}
 
 	m.sendCount++
-	m.responses = append(m.responses, resp)
+	// Copy bytes since upstream may reuse buffers.
+	cp := make([]byte, len(resp.GetData()))
+	copy(cp, resp.GetData())
+	m.responses = append(m.responses, &ofpb.FetchBlobResponse{Data: cp})
 	return nil
 }
 
