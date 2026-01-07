@@ -465,21 +465,21 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 	if err != nil {
 		defer rc.Close()
 		log.CtxWarningf(ctx, "Could not get media type for layer: %s", err)
-		return status.InternalErrorf("could not cache blob: %s", err)
+		return s.streamBlob(rc, stream)
 	}
 
 	size, err := layer.Size()
 	if err != nil {
 		defer rc.Close()
 		log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
-		return status.InternalErrorf("could not cache blob: %s", err)
+		return s.streamBlob(rc, stream)
 	}
 
 	cachedRC, err := ocicache.NewBlobReadThroughCacher(ctx, rc, s.bsClient, s.acClient, repo, hash, string(mediaType), size)
 	if err != nil {
 		defer rc.Close()
 		log.CtxWarningf(ctx, "Error creating read-through cacher: %s", err)
-		return status.InternalErrorf("could not cache blob: %s", err)
+		return s.streamBlob(rc, stream)
 	}
 	defer cachedRC.Close()
 
