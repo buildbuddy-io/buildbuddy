@@ -57,9 +57,11 @@ type blobFetchKey struct {
 	credsHash  string
 }
 
-func blobDedupeKey(repo gcrname.Repository, h gcr.Hash, creds *rgpb.Credentials) blobFetchKey {
-	credsHash := ""
-	if creds != nil {
+func makeBlobFetchKey(repo gcrname.Repository, h gcr.Hash, creds *rgpb.Credentials) blobFetchKey {
+	var credsHash string
+	if creds == nil {
+		credsHash = hash.Strings("", "")
+	} else {
 		credsHash = hash.Strings(creds.GetUsername(), creds.GetPassword())
 	}
 	return blobFetchKey{
@@ -136,6 +138,11 @@ func RegisterServer(env *real_environment.RealEnv) error {
 // Otherwise it streams the blob from the upstream remote registry, writing
 // to the byte stream server at the same time.
 //
+// FetchBlob guarantees there will be at most one request to the upstream remote registry
+// open at a time.
+// Requests that arrive while the blob is being fetched from an upstream remote registry
+// will wait until that fetch completes.
+//
 // Requests may have a bypass_registry flag set.
 // Server admins can bypass the registry: the blob will be streamed from the byte stream
 // server if present, and FetchBlob will not fall back to the remote registry.
@@ -178,10 +185,8 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", blobRef)
 	}
 
-	// Singleflight: leader streams from upstream to response while caching,
-	// followers wait and then read from cache.
-	key := blobDedupeKey(repo, hash, req.GetCredentials())
-	var isLeader bool
+	key := makeBlobFetchKey(repo, hash, req.GetCredentials())
+	isLeader := false
 	_, _, err = s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (struct{}, error) {
 		isLeader = true
 		return struct{}{}, s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), stream)
@@ -191,11 +196,11 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	}
 
 	if isLeader {
-		// We ran the callback - already streamed to our response.
 		return nil
 	}
 
-	// We were a follower - read from cache.
+	// This request had to wait for the leader to complete.
+	// Stream from cache.
 	return s.fetchBlobFromCache(ctx, stream, repo, hash)
 }
 
@@ -442,7 +447,6 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		return err
 	}
 
-	// Fetch from upstream
 	layer, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (gcr.Layer, error) {
 		return puller.Layer(ctx, digestRef)
 	})
@@ -450,12 +454,12 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		return err
 	}
 
+	// rc is closed by cachedRC.Close() in the happy path,
+	// or by defer rc.Close() in the early-return paths below.
 	rc, err := layer.Compressed()
 	if err != nil {
 		return wrapError(err, "error getting compressed layer")
 	}
-	// Note: rc is closed by cachedRC.Close() in the happy path,
-	// or by defer rc.Close() in the early-return paths below.
 
 	mediaType, err := layer.MediaType()
 	if err != nil {
@@ -471,7 +475,6 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		return status.InternalErrorf("could not cache blob: %s", err)
 	}
 
-	// Read-through cacher: streams to response AND writes to cache
 	cachedRC, err := ocicache.NewBlobReadThroughCacher(ctx, rc, s.bsClient, s.acClient, repo, hash, string(mediaType), size)
 	if err != nil {
 		defer rc.Close()
