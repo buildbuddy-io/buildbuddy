@@ -3,6 +3,7 @@ package bazelrbe_prober_test
 import (
 	"context"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ var (
 	bazelRlocationpath  string
 	proberRlocationpath string
 	bazelMajorVersion   string // "6", "7", or "8"
+	outdirRlocationpath string // Pre-extracted bazel installation with lockfile and repository_cache
 )
 
 func runProber(t testing.TB, ctx context.Context, env *rbetest.Env, extraBazelArgs ...string) error {
@@ -26,8 +28,15 @@ func runProber(t testing.TB, ctx context.Context, env *rbetest.Env, extraBazelAr
 	proberPath, err := runfiles.Rlocation(proberRlocationpath)
 	require.NoError(t, err, "failed to locate prober binary")
 
+	outdirPath, err := runfiles.Rlocation(outdirRlocationpath)
+	require.NoError(t, err, "failed to locate pre-extracted bazel installation")
+	lockfilePath := filepath.Join(outdirPath, "MODULE.bazel.lock")
+	repoCachePath := filepath.Join(outdirPath, "repository_cache")
+
 	bazelArgs := []string{
 		"--remote_executor=" + env.GetRemoteExecutionTarget(),
+		"--repository_cache=" + repoCachePath,
+		"--lockfile_mode=error",
 	}
 	// Bazel 6 needs --enable_bzlmod for MODULE.bazel support
 	if bazelMajorVersion == "6" {
@@ -38,6 +47,7 @@ func runProber(t testing.TB, ctx context.Context, env *rbetest.Env, extraBazelAr
 	args := []string{
 		"--bazel_binary=" + bazelPath,
 		"--bazel_args=" + strings.Join(bazelArgs, " "),
+		"--lockfile_path=" + lockfilePath,
 		"--prober_name=test",
 		"--num_targets=2",
 		"--num_inputs_per_target=2",

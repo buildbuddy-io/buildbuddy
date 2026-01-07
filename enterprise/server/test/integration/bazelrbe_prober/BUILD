@@ -7,10 +7,12 @@ go_test(
     srcs = ["bazelrbe_prober_test.go"],
     data = [
         "//server/util/bazel:bazel-6.5.0_crossplatform",
+        "//server/util/bazel:bazel-6.5.0_extract_installation",
         "//tools/probers/bazelrbe",
     ],
     x_defs = {
         "bazelRlocationpath": "$(rlocationpath //server/util/bazel:bazel-6.5.0_crossplatform)",
+        "outdirRlocationpath": "$(rlocationpath //server/util/bazel:bazel-6.5.0_extract_installation)",
         "proberRlocationpath": "$(rlocationpath //tools/probers/bazelrbe)",
         "bazelMajorVersion": "6",
     },
@@ -26,10 +28,12 @@ go_test(
     srcs = ["bazelrbe_prober_test.go"],
     data = [
         "//server/util/bazel:bazel-7.6.1_crossplatform",
+        "//server/util/bazel:bazel-7.6.1_extract_installation",
         "//tools/probers/bazelrbe",
     ],
     x_defs = {
         "bazelRlocationpath": "$(rlocationpath //server/util/bazel:bazel-7.6.1_crossplatform)",
+        "outdirRlocationpath": "$(rlocationpath //server/util/bazel:bazel-7.6.1_extract_installation)",
         "proberRlocationpath": "$(rlocationpath //tools/probers/bazelrbe)",
         "bazelMajorVersion": "7",
     },
@@ -45,10 +49,12 @@ go_test(
     srcs = ["bazelrbe_prober_test.go"],
     data = [
         "//server/util/bazel:bazel-8.5.0_crossplatform",
+        "//server/util/bazel:bazel-8.5.0_extract_installation",
         "//tools/probers/bazelrbe",
     ],
     x_defs = {
         "bazelRlocationpath": "$(rlocationpath //server/util/bazel:bazel-8.5.0_crossplatform)",
+        "outdirRlocationpath": "$(rlocationpath //server/util/bazel:bazel-8.5.0_extract_installation)",
         "proberRlocationpath": "$(rlocationpath //tools/probers/bazelrbe)",
         "bazelMajorVersion": "8",
     },

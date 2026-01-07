@@ -22,6 +22,7 @@ var (
 	bazelArgs           = flag.String("bazel_args", "", "Space separated list of args to pass to Bazel")
 	bazelStartupOptions = flag.String("bazel_startup_options", "", "Space separated list of Bazel startup options to pass (appear before the command)")
 	proberName          = flag.String("prober_name", "", "Short, human-readable name of this prober. This name must be a valid bazel package name (only '.', '@', '-', '_' and alphanumeric characters allowed).")
+	lockfilePath        = flag.String("lockfile_path", "", "Path to MODULE.bazel.lock file to copy into workspace (for offline bzlmod support)")
 
 	numTargets         = flag.Int("num_targets", 10, "Number targets to generate")
 	numInputsPerTarget = flag.Int("num_inputs_per_target", 10, "Number of inputs each generated target will have")
@@ -65,6 +66,17 @@ func createWorkspace(dir string, numTargets, numInputsPerTarget, inputSizeBytes 
 	err := os.WriteFile(filepath.Join(dir, "MODULE.bazel"), []byte(""), 0644)
 	if err != nil {
 		return err
+	}
+
+	if *lockfilePath != "" {
+		lockfileContents, err := os.ReadFile(*lockfilePath)
+		if err != nil {
+			return status.UnknownErrorf("failed to read lockfile: %s", err)
+		}
+		err = os.WriteFile(filepath.Join(dir, "MODULE.bazel.lock"), lockfileContents, 0644)
+		if err != nil {
+			return status.UnknownErrorf("failed to write lockfile: %s", err)
+		}
 	}
 
 	if *proberName != "" {
