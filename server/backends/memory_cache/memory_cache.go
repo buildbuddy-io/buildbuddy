@@ -58,7 +58,6 @@ func Register(env *real_environment.RealEnv) error {
 		return status.InternalErrorf("Error configuring in-memory cache: %s", err)
 	}
 	env.SetCache(c)
-	env.SetAtimeUpdatingCache(c)
 	return nil
 }
 

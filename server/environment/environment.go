@@ -56,7 +56,6 @@ type Env interface {
 	GetBuildEventHandler() interfaces.BuildEventHandler
 	GetBuildEventProxyClients() []pepb.PublishBuildEventClient
 	GetCache() interfaces.Cache
-	GetAtimeUpdatingCache() interfaces.AtimeUpdatingCache
 	GetUserDB() interfaces.UserDB
 	GetAuthDB() interfaces.AuthDB
 	GetInvocationStatService() interfaces.InvocationStatService

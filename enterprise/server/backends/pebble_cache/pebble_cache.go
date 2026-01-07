@@ -408,7 +408,6 @@ func Register(env *real_environment.RealEnv) error {
 		log.Warningf("Overriding configured cache with pebble cache [%s].", c.name)
 	}
 	env.SetCache(c)
-	env.SetAtimeUpdatingCache(c)
 	return nil
 }
 

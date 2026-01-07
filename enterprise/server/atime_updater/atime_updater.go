@@ -35,10 +35,10 @@ func Register(env *real_environment.RealEnv) error {
 		return err
 	}
 	updater.Start(env.GetHealthChecker())
-	if env.GetAtimeUpdatingCache() == nil {
-		return status.InvalidArgumentError("Attempting to register atime updater without atime updating cache")
+	if env.GetCache() == nil {
+		return status.InvalidArgumentError("Attempting to register atime updater without a cache")
 	}
-	env.GetAtimeUpdatingCache().RegisterAtimeUpdater(updater)
+	env.GetCache().RegisterAtimeUpdater(updater)
 	return nil
 }
 

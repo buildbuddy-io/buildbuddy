@@ -306,16 +306,15 @@ type Cache interface {
 
 	// SupportsCompressor returns whether the cache supports storing data compressed with the given compressor
 	SupportsCompressor(compressor repb.Compressor_Value) bool
+
+	// Registers an external (to the cache) atime updater that's called whenever
+	// the cache updates the atime of an artifact.
+	RegisterAtimeUpdater(updater DigestOperator)
 }
 
 type StoppableCache interface {
 	Cache
 	Stop() error
-}
-
-type AtimeUpdatingCache interface {
-	Cache
-	RegisterAtimeUpdater(updater DigestOperator)
 }
 
 type PooledByteStreamClient interface {

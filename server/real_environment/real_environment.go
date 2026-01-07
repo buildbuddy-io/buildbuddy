@@ -59,7 +59,6 @@ type RealEnv struct {
 	executionService                     interfaces.ExecutionService
 	executionSearchService               interfaces.ExecutionSearchService
 	cache                                interfaces.Cache
-	atimeUpdatingCache                   interfaces.AtimeUpdatingCache
 	userDB                               interfaces.UserDB
 	authDB                               interfaces.AuthDB
 	buildEventHandler                    interfaces.BuildEventHandler
@@ -257,13 +256,6 @@ func (r *RealEnv) GetCache() interfaces.Cache {
 }
 func (r *RealEnv) SetCache(c interfaces.Cache) {
 	r.cache = c
-}
-
-func (r *RealEnv) GetAtimeUpdatingCache() interfaces.AtimeUpdatingCache {
-	return r.atimeUpdatingCache
-}
-func (r *RealEnv) SetAtimeUpdatingCache(atimeUpdatingCache interfaces.AtimeUpdatingCache) {
-	r.atimeUpdatingCache = atimeUpdatingCache
 }
 
 func (r *RealEnv) GetAuthenticator() interfaces.Authenticator {

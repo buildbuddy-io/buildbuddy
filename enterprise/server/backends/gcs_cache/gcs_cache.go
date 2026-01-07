@@ -526,3 +526,6 @@ func (g *GCSCache) Stop() error {
 func (g *GCSCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }
+
+func (g *GCSCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) {
+}

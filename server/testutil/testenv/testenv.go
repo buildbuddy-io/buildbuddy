@@ -169,7 +169,6 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 		t.Fatal(err)
 	}
 	te.SetCache(c)
-	te.SetAtimeUpdatingCache(c)
 	byte_stream_client.RegisterPooledBytestreamClient(te)
 
 	switch *databaseType {
