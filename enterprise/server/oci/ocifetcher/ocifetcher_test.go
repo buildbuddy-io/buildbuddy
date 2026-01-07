@@ -1532,11 +1532,6 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 			},
 		)
 
-		// Determine if request 0 was the leader
-		streams[0].mu.Lock()
-		request0WasLeader := streams[0].isFirstSender
-		streams[0].mu.Unlock()
-
 		// Check results based on whether request 0 was the leader or a follower
 		for i, r := range results {
 			if i == 0 {
