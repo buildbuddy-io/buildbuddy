@@ -105,9 +105,6 @@ func NewFetchServer(env environment.Env) (*FetchServer, error) {
 }
 
 func checkPreconditions(env environment.Env) error {
-	if env.GetBuildBuddyServiceClient() == nil {
-		return status.FailedPreconditionError("missing BuildBuddyServiceClient")
-	}
 	if env.GetByteStreamClient() == nil {
 		return status.FailedPreconditionError("missing ByteStreamClient")
 	}
