@@ -373,5 +373,6 @@ func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }
 
-func (c *Cache) RegisterAtimeUpdater(updater interfaces.DigestOperator) {
+func (c *Cache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
+	return status.UnimplementedError("redis_cache.RegisterAtimeUpdater() unsupported")
 }

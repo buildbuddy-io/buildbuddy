@@ -38,8 +38,7 @@ func Register(env *real_environment.RealEnv) error {
 	if env.GetCache() == nil {
 		return status.InvalidArgumentError("Attempting to register atime updater without a cache")
 	}
-	env.GetCache().RegisterAtimeUpdater(updater)
-	return nil
+	return env.GetCache().RegisterAtimeUpdater(updater)
 }
 
 func new(env *real_environment.RealEnv) (batch_operator.BatchDigestOperator, error) {

@@ -617,5 +617,6 @@ func (s3c *S3Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }
 
-func (s3c *S3Cache) RegisterAtimeUpdater(updater interfaces.DigestOperator) {
+func (s3c *S3Cache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
+	return status.UnimplementedError("s3_cache.RegisterAtimeUpdater() unsupported")
 }

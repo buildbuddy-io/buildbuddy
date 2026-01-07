@@ -1552,5 +1552,6 @@ func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return false
 }
 
-func (c *Cache) RegisterAtimeUpdater(updater interfaces.DigestOperator) {
+func (c *Cache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
+	return c.local.RegisterAtimeUpdater(updater)
 }

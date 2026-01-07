@@ -309,7 +309,7 @@ type Cache interface {
 
 	// Registers an external (to the cache) atime updater that's called whenever
 	// the cache updates the atime of an artifact.
-	RegisterAtimeUpdater(updater DigestOperator)
+	RegisterAtimeUpdater(updater DigestOperator) error
 }
 
 type StoppableCache interface {

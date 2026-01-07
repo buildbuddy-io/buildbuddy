@@ -297,8 +297,9 @@ type PebbleCache struct {
 	}
 }
 
-func (c *PebbleCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) {
+func (c *PebbleCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
 	c.atimeUpdater = updater
+	return nil
 }
 
 type keyMigrator interface {
@@ -990,10 +991,10 @@ func (p *PebbleCache) updateAtime(update *accessTimeUpdate) error {
 	}
 
 	// Call the external atime updater, if registered.
-	d := md.GetFileRecord().GetDigest()
-	instanceName := md.GetFileRecord().GetIsolation().GetRemoteInstanceName()
-	digestFunction := md.GetFileRecord().GetDigestFunction()
 	if p.atimeUpdater != nil {
+		d := md.GetFileRecord().GetDigest()
+		instanceName := md.GetFileRecord().GetIsolation().GetRemoteInstanceName()
+		digestFunction := md.GetFileRecord().GetDigestFunction()
 		ctx := authutil.AddAuthHeadersToContext(context.Background(), update.authHeaders, p.env.GetAuthenticator())
 		p.atimeUpdater.Enqueue(ctx, instanceName, []*repb.Digest{d}, digestFunction)
 	}

@@ -30,8 +30,9 @@ type MemoryCache struct {
 	atimeUpdater interfaces.DigestOperator
 }
 
-func (c *MemoryCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) {
+func (c *MemoryCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
 	c.atimeUpdater = updater
+	return nil
 }
 
 func sizeFn(value []byte) int64 {
