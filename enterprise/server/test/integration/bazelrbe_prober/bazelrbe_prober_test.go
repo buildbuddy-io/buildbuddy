@@ -13,22 +13,40 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Injected via x_defs per Bazel version
+// Injected via x_defs for each Bazel version
 var (
-	bazelRlocationpath  string
-	proberRlocationpath string
-	bazelMajorVersion   string // "6", "7", or "8"
-	outdirRlocationpath string // Pre-extracted bazel installation with lockfile and repository_cache
+	bazel6Rlocationpath  string
+	outdir6Rlocationpath string
+	bazel7Rlocationpath  string
+	outdir7Rlocationpath string
+	bazel8Rlocationpath  string
+	outdir8Rlocationpath string
+	proberRlocationpath  string
 )
 
-func runProber(t testing.TB, ctx context.Context, env *rbetest.Env, extraBazelArgs ...string) error {
-	bazelPath, err := runfiles.Rlocation(bazelRlocationpath)
+type bazelVersion struct {
+	name                string
+	majorVersion        string
+	bazelRlocationpath  string
+	outdirRlocationpath string
+}
+
+func getBazelVersions() []bazelVersion {
+	return []bazelVersion{
+		{"Bazel6", "6", bazel6Rlocationpath, outdir6Rlocationpath},
+		{"Bazel7", "7", bazel7Rlocationpath, outdir7Rlocationpath},
+		{"Bazel8", "8", bazel8Rlocationpath, outdir8Rlocationpath},
+	}
+}
+
+func runProber(t testing.TB, ctx context.Context, env *rbetest.Env, v bazelVersion, extraBazelArgs ...string) error {
+	bazelPath, err := runfiles.Rlocation(v.bazelRlocationpath)
 	require.NoError(t, err, "failed to locate bazel binary")
 
 	proberPath, err := runfiles.Rlocation(proberRlocationpath)
 	require.NoError(t, err, "failed to locate prober binary")
 
-	outdirPath, err := runfiles.Rlocation(outdirRlocationpath)
+	outdirPath, err := runfiles.Rlocation(v.outdirRlocationpath)
 	require.NoError(t, err, "failed to locate pre-extracted bazel installation")
 	lockfilePath := filepath.Join(outdirPath, "MODULE.bazel.lock")
 	repoCachePath := filepath.Join(outdirPath, "repository_cache")
@@ -40,7 +58,7 @@ func runProber(t testing.TB, ctx context.Context, env *rbetest.Env, extraBazelAr
 	}
 	// Bazel 6 and 7 need --enable_bzlmod for MODULE.bazel support.
 	// Bazel 8+ has bzlmod enabled by default.
-	if bazelMajorVersion == "6" || bazelMajorVersion == "7" {
+	if v.majorVersion == "6" || v.majorVersion == "7" {
 		bazelArgs = append(bazelArgs, "--enable_bzlmod")
 	}
 	bazelArgs = append(bazelArgs, extraBazelArgs...)
@@ -62,13 +80,17 @@ func runProber(t testing.TB, ctx context.Context, env *rbetest.Env, extraBazelAr
 }
 
 func TestProberBasic(t *testing.T) {
-	env := rbetest.NewRBETestEnv(t)
-	env.AddBuildBuddyServer()
-	env.AddExecutor(t)
+	for _, v := range getBazelVersions() {
+		t.Run(v.name, func(t *testing.T) {
+			env := rbetest.NewRBETestEnv(t)
+			env.AddBuildBuddyServer()
+			env.AddExecutor(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
 
-	err := runProber(t, ctx, env)
-	require.NoError(t, err, "prober should complete successfully")
+			err := runProber(t, ctx, env, v)
+			require.NoError(t, err, "prober should complete successfully")
+		})
+	}
 }
