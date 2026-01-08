@@ -316,7 +316,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if err != nil {
 		// If there is a hash mismatch and the reader supports seeking, re-hash
 		// to check whether a concurrent mutation has occurred.
-		if rs, ok := in.(io.ReadSeeker); ok && status.IsDataLossError(err) {
+		if rs, ok := in.(io.ReadSeeker); ok && status.IsInvalidArgumentError(err) {
 			if err := checkConcurrentMutation(r.GetDigest(), r.GetDigestFunction(), rs); err != nil {
 				return nil, 0, retry.NonRetryableError(status.WrapError(err, "check for concurrent mutation during upload"))
 			}
@@ -330,13 +330,13 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		// either case, the remoteSize for uncompressed uploads should
 		// match the file size.
 		if remoteSize != r.GetDigest().GetSizeBytes() {
-			return nil, bytesUploaded, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+			return nil, bytesUploaded, status.InvalidArgumentErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
 		}
 	} else {
 		// -1 is returned if the blob already exists, otherwise the
 		// remoteSize should agree with what we uploaded.
 		if remoteSize != bytesUploaded && remoteSize != -1 {
-			return nil, bytesUploaded, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+			return nil, bytesUploaded, status.InvalidArgumentErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
 		}
 	}
 
@@ -356,7 +356,7 @@ type uploadRetryResult = struct {
 // If the blob already exists, this call will succeed and return the number of bytes uploaded before the server short-circuited the upload.
 // On error, it returns the number of bytes uploaded before the error (and the error).
 // UploadFromReader confirms that the expected number of bytes have been written to the CAS
-// and returns a DataLossError if not.
+// and returns an InvalidArgumentError if not.
 func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
 	// We can only retry if we can rewind the reader back to the beginning.
 	seeker, retryable := in.(io.Seeker)
@@ -716,7 +716,7 @@ func (ul *BatchCASUploader) flushCurrentBatch() error {
 			return err
 		}
 		for i, fileResponse := range rsp.GetResponses() {
-			if fileResponse.GetStatus().GetCode() == int32(gcodes.DataLoss) && i < len(req.GetRequests()) {
+			if fileResponse.GetStatus().GetCode() == int32(gcodes.InvalidArgument) && i < len(req.GetRequests()) {
 				// If there is a hash mismatch, re-hash the uncompressed payload
 				// to check whether a concurrent mutation occurred after we
 				// computed the original digest.
@@ -768,7 +768,7 @@ func checkConcurrentMutation(originalDigest *repb.Digest, digestFunction repb.Di
 		return status.DataLossErrorf("recompute digest: %s", err)
 	}
 	if !digest.Equal(computedDigest, originalDigest) {
-		return status.DataLossErrorf("possible concurrent mutation detected: digest changed from %s to %s", digest.String(originalDigest), digest.String(computedDigest))
+		return status.InvalidArgumentErrorf("possible concurrent mutation detected: digest changed from %s to %s", digest.String(originalDigest), digest.String(computedDigest))
 	}
 	return nil
 }

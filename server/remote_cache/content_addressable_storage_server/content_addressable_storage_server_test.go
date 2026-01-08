@@ -278,8 +278,8 @@ func TestBatchUpdateRejectCorruptBlobs(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, 3, len(rsp.GetResponses()))
-	assert.Equal(t, int32(gcodes.DataLoss), rsp.GetResponses()[0].GetStatus().GetCode())
-	assert.Equal(t, int32(gcodes.DataLoss), rsp.GetResponses()[1].GetStatus().GetCode())
+	assert.Equal(t, int32(gcodes.InvalidArgument), rsp.GetResponses()[0].GetStatus().GetCode())
+	assert.Equal(t, int32(gcodes.InvalidArgument), rsp.GetResponses()[1].GetStatus().GetCode())
 	assert.Equal(t, int32(gcodes.OK), rsp.GetResponses()[2].GetStatus().GetCode())
 }
 
