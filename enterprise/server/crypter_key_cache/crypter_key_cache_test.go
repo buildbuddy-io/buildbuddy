@@ -23,7 +23,7 @@ func setupAuth(t *testing.T, env *real_environment.RealEnv) context.Context {
 		UserID:  "user1",
 		GroupID: "group1",
 	}
-	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("user1", "group1")))
 	return testauth.WithAuthenticatedUserInfo(t.Context(), user)
 }
 

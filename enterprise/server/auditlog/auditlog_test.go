@@ -97,7 +97,7 @@ func TestGetLogs(t *testing.T) {
 		},
 	}
 
-	testAuth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+	testAuth := testauth.NewTestAuthenticator(map[string]interfaces.UserInfo{
 		group1AdminID:     adminUser,
 		group1AuditorID:   auditUser,
 		group1CacheUserID: cacheUser,

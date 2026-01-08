@@ -131,7 +131,7 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	testUsers := make(map[string]interfaces.UserInfo, 0)
 	testUsers["user1"] = &testauth.TestUser{UserID: "user1", GroupID: "group1", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
 
-	ta := testauth.NewTestAuthenticator(t, testUsers)
+	ta := testauth.NewTestAuthenticator(testUsers)
 	env.SetAuthenticator(ta)
 	s.enableUserOwnedExecutors = opts.userOwnedEnabled
 

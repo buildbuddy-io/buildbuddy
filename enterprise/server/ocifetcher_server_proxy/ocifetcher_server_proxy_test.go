@@ -546,7 +546,7 @@ func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteSt
 
 	env := testenv.GetTestEnv(t)
 	// Use TestAuthenticator to enable JWT parsing for bypass_registry tests
-	env.SetAuthenticator(testauth.NewTestAuthenticator(t, nil))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(nil))
 
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	ofpb.RegisterOCIFetcherServer(grpcServer, server)

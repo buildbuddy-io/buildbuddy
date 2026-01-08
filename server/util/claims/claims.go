@@ -57,6 +57,9 @@ var (
 
 	rsaPrivateKey *rsa.PrivateKey
 	rsaPublicKeys []string = []string{}
+
+	// Singleton ClaimsParser instance.
+	claimsParser *ClaimsParser
 )
 
 func Init() error {
@@ -103,6 +106,12 @@ func Init() error {
 	if oldPublicKey != "" {
 		rsaPublicKeys = append(rsaPublicKeys, oldPublicKey)
 	}
+
+	cp, err := newClaimsParser()
+	if err != nil {
+		return err
+	}
+	claimsParser = cp
 
 	return nil
 }
@@ -466,7 +475,7 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 
 	// If context already contains a JWT, just verify it and return the claims.
 	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		claims, err := parseClaims(tokenString)
+		claims, err := GetClaimsParser().Parse(tokenString)
 		if err != nil {
 			return nil, err
 		}
@@ -547,7 +556,11 @@ type ClaimsParser struct {
 	lru interfaces.LRU[*Claims]
 }
 
-func NewClaimsParser() (*ClaimsParser, error) {
+func GetClaimsParser() *ClaimsParser {
+	return claimsParser
+}
+
+func newClaimsParser() (*ClaimsParser, error) {
 	if *claimsCacheTTL <= 0 {
 		return &ClaimsParser{ttl: 0, lru: nil}, nil
 	}

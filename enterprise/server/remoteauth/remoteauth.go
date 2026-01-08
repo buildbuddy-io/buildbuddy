@@ -55,15 +55,11 @@ func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator
 	if err != nil {
 		return nil, err
 	}
-	claimsParser, err := claims.NewClaimsParser()
-	if err != nil {
-		return nil, err
-	}
 	return &RemoteAuthenticator{
 		authClient:          authpb.NewAuthServiceClient(conn),
 		cache:               cache,
 		jwtExpirationBuffer: *jwtExpirationBuffer,
-		claimsParser:        claimsParser,
+		claimsParser:        claims.GetClaimsParser(),
 	}, nil
 }
 

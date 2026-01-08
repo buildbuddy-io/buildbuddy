@@ -133,7 +133,7 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 		env.SetMetricsCollector(mc)
 		ut := testusage.NewTracker()
 		env.SetUsageTracker(ut)
-		ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+		ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
 		env.SetAuthenticator(ta)
 		env.SetClientIdentityService(&fakeIdentityService{})
 		incomingContextMetadata := make(map[string][]string)

@@ -101,7 +101,7 @@ type counters struct {
 
 func getExecutor(t *testing.T, runOverride rbetest.RunInterceptor) (*executor.Executor, *testenv.TestEnv, repb.ExecutionClient, *mockExecutionServer, *counters) {
 	env := enterprise_testenv.New(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	clock := clockwork.NewFakeClock()
 	env.SetClock(clock)
 	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)

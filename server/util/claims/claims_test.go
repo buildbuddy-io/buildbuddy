@@ -252,7 +252,7 @@ func TestExperimentTargetingGroupID(t *testing.T) {
 			ctx := t.Context()
 			ctx = metadata.NewIncomingContext(ctx, tc.grpcMetadata)
 			env := testenv.GetTestEnv(t)
-			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(
+			auth := testauth.NewTestAuthenticator(testauth.TestUsers(
 				"US1", adminGroupID,
 				"US2", nonAdminGroupID,
 			))

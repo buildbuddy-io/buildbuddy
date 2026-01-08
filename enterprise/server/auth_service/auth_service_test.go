@@ -25,20 +25,20 @@ func contextWithApiKey(t *testing.T, key string) context.Context {
 }
 
 func TestAuthenticateNoCreds(t *testing.T) {
-	service := AuthService{authenticator: testauth.NewTestAuthenticator(t, testauth.TestUsers("foo", "bar"))}
+	service := AuthService{authenticator: testauth.NewTestAuthenticator(testauth.TestUsers("foo", "bar"))}
 	_, err := service.Authenticate(t.Context(), &authpb.AuthenticateRequest{})
 	assert.True(t, status.IsUnauthenticatedError(err))
 }
 
 func TestAuthenticate(t *testing.T) {
-	service := AuthService{authenticator: testauth.NewTestAuthenticator(t, testauth.TestUsers("foo", "bar"))}
+	service := AuthService{authenticator: testauth.NewTestAuthenticator(testauth.TestUsers("foo", "bar"))}
 	resp, err := service.Authenticate(contextWithApiKey(t, "foo"), &authpb.AuthenticateRequest{})
 	assert.NoError(t, err)
 	assert.NotEqual(t, 0, len(*resp.Jwt))
 }
 
 func TestAuthenticate_HS256SigningMethod(t *testing.T) {
-	service := AuthService{authenticator: testauth.NewTestAuthenticator(t, testauth.TestUsers("foo", "bar"))}
+	service := AuthService{authenticator: testauth.NewTestAuthenticator(testauth.TestUsers("foo", "bar"))}
 	resp, err := service.Authenticate(contextWithApiKey(t, "foo"),
 		&authpb.AuthenticateRequest{})
 	assert.NoError(t, err)
@@ -59,7 +59,7 @@ func TestAuthenticate_RS256SigningMethod(t *testing.T) {
 	flags.Set(t, "auth.jwt_rsa_private_key", keyPair.PrivateKeyPEM)
 	require.NoError(t, claims.Init())
 
-	service := AuthService{authenticator: testauth.NewTestAuthenticator(t, testauth.TestUsers("foo", "bar"))}
+	service := AuthService{authenticator: testauth.NewTestAuthenticator(testauth.TestUsers("foo", "bar"))}
 
 	authResp, err := service.Authenticate(contextWithApiKey(t, "foo"),
 		&authpb.AuthenticateRequest{
@@ -85,7 +85,7 @@ func TestAuthenticate_RS256SigningMethod(t *testing.T) {
 }
 
 func TestAuthenticateWrongCreds(t *testing.T) {
-	service := AuthService{authenticator: testauth.NewTestAuthenticator(t, testauth.TestUsers("foo", "bar"))}
+	service := AuthService{authenticator: testauth.NewTestAuthenticator(testauth.TestUsers("foo", "bar"))}
 	_, err := service.Authenticate(contextWithApiKey(t, "baz"), &authpb.AuthenticateRequest{})
 	assert.True(t, status.IsUnauthenticatedError(err))
 }

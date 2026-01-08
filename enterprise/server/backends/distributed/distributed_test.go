@@ -46,7 +46,7 @@ var (
 
 func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticator, context.Context) {
 	te := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(t, userMap)
+	ta := testauth.NewTestAuthenticator(userMap)
 	te.SetAuthenticator(ta)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
 	if err != nil {
@@ -2319,7 +2319,7 @@ func TestNoEncryptedContentsInLookaside(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	tu := testauth.User("user", "group")
 	tu.CacheEncryptionEnabled = true
-	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{"user": tu})
+	ta := testauth.NewTestAuthenticator(map[string]interfaces.UserInfo{"user": tu})
 	env.SetAuthenticator(ta)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), ta)
 	require.NoError(t, err)

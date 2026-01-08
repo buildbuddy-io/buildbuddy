@@ -54,7 +54,7 @@ func getTestConfigs(t *testing.T, n int) []testConfig {
 	res := make([]testConfig, 0, n)
 	for i := 0; i < n; i++ {
 		c := testConfig{
-			ta:     testauth.NewTestAuthenticator(t, userMap),
+			ta:     testauth.NewTestAuthenticator(userMap),
 			env:    testenv.GetTestEnv(t),
 			config: getCacheConfig(t),
 		}
