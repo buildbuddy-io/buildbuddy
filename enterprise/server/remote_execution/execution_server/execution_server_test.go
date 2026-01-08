@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -194,6 +195,40 @@ func TestDispatch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, task.GetRequestMetadata().GetToolDetails(), "ToolDetails should be nil")
 	assert.Equal(t, iid, task.GetRequestMetadata().GetToolInvocationId(), "invocation ID should be passed along")
+}
+
+func TestDispatch_RecordsClientIP(t *testing.T) {
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	env, _, _ := setupEnv(t)
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	const testClientIP = "192.168.1.100"
+
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	ctx = context.WithValue(ctx, clientip.ContextKey, testClientIP)
+
+	action := &repb.Action{}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ad := arn.GetDigest()
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	taskID := arn.NewUploadString()
+	require.NoError(t, err)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
+	require.NoError(t, err)
+
+	exec, err := env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+	require.NoError(t, err)
+	assert.Equal(t, testClientIP, exec.GetClientIp())
 }
 
 func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
