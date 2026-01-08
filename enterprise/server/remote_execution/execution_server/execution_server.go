@@ -511,7 +511,7 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 	// invocation metadata.
 	if len(links) == 0 {
 		if s.env.GetOLAPDBHandle() != nil {
-			if err := s.env.GetOLAPDBHandle().FlushExecutionStats(ctx, nil, []*repb.StoredExecution{executionProto}); err != nil {
+			if err := s.env.GetOLAPDBHandle().FlushExecutionStats(ctx, &sipb.StoredInvocation{}, []*repb.StoredExecution{executionProto}); err != nil {
 				log.CtxErrorf(ctx, "failed to flush execution %q without invocation to clickhouse: %s", executionID, err)
 			}
 		}
