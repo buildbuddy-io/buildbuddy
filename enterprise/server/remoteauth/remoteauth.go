@@ -37,7 +37,7 @@ var (
 
 	target                 = flag.String("auth.remote.target", "", "The gRPC target of the remote authentication API.")
 	jwtExpirationBuffer    = flag.Duration("auth.remote.jwt_expiration_buffer", time.Minute, "Discard remote-auth minted JWTs if they're within this time buffer of their expiration time.")
-	alwaysUseRSASignedJWTs = flag.Bool("auth.remote.use_rsa_jwts", false, "TODO(iain)")
+	alwaysUseRSASignedJWTs = flag.Bool("auth.remote.use_rsa_jwts", false, "If true, the remote authenticator always uses RSA-signed JWTs.")
 )
 
 func Register(env *real_environment.RealEnv) error {
