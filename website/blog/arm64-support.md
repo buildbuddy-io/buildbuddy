@@ -29,7 +29,7 @@ bazel_dep(name = "toolchains_buildbuddy", version = "0.0.4")
 buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
 ```
 
-[TODO(zoey): add picture here]: #
+![](../static/img/blog/arm64_execution.png)
 
 Then build your project with remote execution enabled, and your build will run on the new ARM64 executors.
 
