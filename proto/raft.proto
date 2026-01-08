@@ -96,7 +96,7 @@ message DeleteSessionsResponse {}
 message FetchRangesRequest {
   // The filters are ORed.
 
-  // If set, filter ranges with the specified range ids. 
+  // If set, filter ranges with the specified range ids.
   repeated uint64 range_ids = 1;
   // If set, filter ranges that have a replica with this NHID.
   string nhid = 2;

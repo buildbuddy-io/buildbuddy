@@ -180,10 +180,10 @@ func TestStore_ErrGroupContextCancellation(t *testing.T) {
 
 type contextCheckingCache struct {
 	interfaces.Cache
-	
-	t                   *testing.T
-	checkContextOnSet   bool
-	setWasCalled        bool
+
+	t                 *testing.T
+	checkContextOnSet bool
+	setWasCalled      bool
 }
 
 func (c *contextCheckingCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
