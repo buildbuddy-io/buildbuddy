@@ -57,6 +57,17 @@ func GetEventLogPubSubChannel(invocationID string) string {
 	return fmt.Sprintf("eventlog/%s/updates", invocationID)
 }
 
+func GetRunLogPathFromInvocationIdAndAttempt(invocationId string, attempt uint64) string {
+	if attempt == 0 {
+		return invocationId + "/chunks/log/runlog"
+	}
+	return invocationId + "/" + strconv.FormatUint(attempt, 10) + "/chunks/log/runlog"
+}
+
+func GetRunLogPubSubChannel(invocationID string) string {
+	return fmt.Sprintf("runlog/%s/updates", invocationID)
+}
+
 // Gets the chunk of the event log specified by the request from the blobstore and returns a response containing it
 func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEventLogChunkRequest) (*elpb.GetEventLogChunkResponse, error) {
 	// TODO(zoey): this function is way too long; split it up.
@@ -69,22 +80,34 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	}
 
 	if inv.LastChunkId == "" {
-		// This invocation does not have chunked event logs; return an empty
-		// response to indicate that to the client.
-		return &elpb.GetEventLogChunkResponse{}, nil
+		if req.GetLogType() == elpb.GetEventLogChunkRequest_RUNLOG {
+			// Run logs are stored separately and do not currently rely on invocation
+			// metadata. Continue; we'll return empty if no chunks exist.
+		} else {
+			// This invocation does not have chunked event logs; return an empty
+			// response to indicate that to the client.
+			return &elpb.GetEventLogChunkResponse{}, nil
+		}
 	}
 
 	invocationInProgress := inv.InvocationStatus == int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
 	c := chunkstore.New(env.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
 	eventLogPath := GetEventLogPathFromInvocationIdAndAttempt(req.InvocationId, inv.Attempt)
+	startingId := inv.LastChunkId
+	if req.GetLogType() == elpb.GetEventLogChunkRequest_RUNLOG {
+		eventLogPath = GetRunLogPathFromInvocationIdAndAttempt(req.InvocationId, inv.Attempt)
+		// We don't persist a "last chunk id" for run logs today. Start scanning
+		// from the beginning (Chunkstore treats MaxUint16 as "unknown").
+		startingId = chunkstore.ChunkIndexAsStringId(math.MaxUint16)
+	}
 
 	// Get the id of the last chunk on disk after the last id stored in the db
-	lastChunkId, err := c.GetLastChunkId(ctx, eventLogPath, inv.LastChunkId)
+	lastChunkId, err := c.GetLastChunkId(ctx, eventLogPath, startingId)
 
 	// TODO(zoey): this should check for the status.NotFoundError, as that is the
 	// only one we can handle. Any other errors are real errors.
 	if err != nil {
-		if inv.LastChunkId != chunkstore.ChunkIndexAsStringId(math.MaxUint16) {
+		if req.GetLogType() != elpb.GetEventLogChunkRequest_RUNLOG && inv.LastChunkId != chunkstore.ChunkIndexAsStringId(math.MaxUint16) {
 			// The last chunk id recorded in the invocation table is wrong; the only
 			// valid reason for GetLastChunkId to fail with the starting index
 			// recorded in the invocation table is if no chunks have yet been written,

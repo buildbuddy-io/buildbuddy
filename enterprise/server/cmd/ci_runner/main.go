@@ -17,7 +17,6 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -209,6 +208,8 @@ var (
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 	invocationIDRegex        = regexp.MustCompile(`Streaming build results to:\s+.*?/invocation/([a-f0-9-]+)`)
+	runOutputBeginRegex      = regexp.MustCompile(`<BUILDBUDDY RUN OUTPUT BEGINS FOR ([a-f0-9-]+)>`)
+	runOutputEndRegex        = regexp.MustCompile(`<BUILDBUDDY RUN OUTPUT ENDS>`)
 )
 
 type workspace struct {
@@ -309,6 +310,11 @@ type buildEventReporter struct {
 	childInvocations   []string
 	childInvocationsMu sync.Mutex
 
+	runOutputMu            sync.Mutex
+	runOutputLineRemainder string
+	runOutputActiveIID     string
+	runOutputProgressCount map[string]int32
+
 	mu            sync.Mutex // protects(progressCount)
 	progressCount int32
 }
@@ -338,7 +344,16 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow, childInvocations: []string{}}, nil
+	return &buildEventReporter{
+		apiKey:                 apiKey,
+		bep:                    bep,
+		uploader:               uploader,
+		log:                    newInvocationLog(),
+		invocationID:           iid,
+		isWorkflow:             isWorkflow,
+		childInvocations:       []string{},
+		runOutputProgressCount: make(map[string]int32),
+	}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -453,12 +468,13 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		return err
 	}
 
-	r.log.writeListener = func(s string) {
-		r.emitBuildEventsForBazelCommands(s)
+	r.log.writeListener = func(s string) string {
+		processed := r.emitBuildEventsForBazelCommands(s)
 		// Flush whenever the log buffer fills past a certain threshold.
 		if size := r.log.Len(); size >= progressFlushThresholdBytes {
 			r.FlushProgress() // ignore error; it will surface in `bep.Finish()`
 		}
+		return processed
 	}
 
 	stopFlushingProgress := r.startBackgroundProgressFlush()
@@ -576,7 +592,70 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 //
 // Event publishing errors will be surfaced in the caller func when calling
 // `buildEventPublisher.Finish()`
-func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) {
+func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) string {
+	// Process line-by-line so we can suppress marker lines and divert the bytes
+	// between markers into separate RunOutputProgress events.
+	r.runOutputMu.Lock()
+	defer r.runOutputMu.Unlock()
+
+	combined := r.runOutputLineRemainder + output
+	lines := strings.SplitAfter(combined, "\n")
+	// If the last element does not end in "\n", keep it as remainder.
+	r.runOutputLineRemainder = ""
+	if len(lines) > 0 && !strings.HasSuffix(lines[len(lines)-1], "\n") {
+		r.runOutputLineRemainder = lines[len(lines)-1]
+		lines = lines[:len(lines)-1]
+	}
+
+	var passthrough strings.Builder
+	for _, line := range lines {
+		// Handle run output markers.
+		if m := runOutputBeginRegex.FindStringSubmatch(line); len(m) == 2 {
+			r.runOutputActiveIID = m[1]
+			// Suppress marker line.
+			continue
+		}
+		if runOutputEndRegex.MatchString(line) {
+			// End run output capture. Suppress marker line.
+			r.runOutputActiveIID = ""
+			continue
+		}
+
+		if r.runOutputActiveIID != "" {
+			r.emitRunOutputProgressLocked(r.runOutputActiveIID, line)
+			// Suppress run output from the main logs so it can be shown separately.
+			continue
+		}
+
+		// Not run output; keep in normal logs and scan for child invocations.
+		r.emitChildInvocationEventsForLine(line)
+		passthrough.WriteString(line)
+	}
+
+	return passthrough.String()
+}
+
+func (r *buildEventReporter) emitRunOutputProgressLocked(invocationID string, chunk string) {
+	if strings.TrimSpace(chunk) == "" {
+		return
+	}
+	count := r.runOutputProgressCount[invocationID]
+	r.runOutputProgressCount[invocationID] = count + 1
+	_ = r.Publish(&bespb.BuildEvent{
+		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_RunOutputProgress{
+			RunOutputProgress: &bespb.BuildEventId_RunOutputProgressId{
+				InvocationId: invocationID,
+				OpaqueCount:  count,
+			},
+		}},
+		Payload: &bespb.BuildEvent_RunOutputProgress{RunOutputProgress: &bespb.RunOutputProgress{
+			InvocationId: invocationID,
+			Stderr:       chunk,
+		}},
+	})
+}
+
+func (r *buildEventReporter) emitChildInvocationEventsForLine(output string) {
 	// Check whether a bazel invocation was invoked
 	iidMatches := invocationIDRegex.FindAllStringSubmatch(output, -1)
 	for _, m := range iidMatches {
@@ -951,11 +1030,11 @@ func (r *buildEventReporter) Printf(format string, vals ...interface{}) {
 type invocationLog struct {
 	lockingbuffer.LockingBuffer
 	writer        io.Writer
-	writeListener func(s string)
+	writeListener func(s string) string
 }
 
 func newInvocationLog() *invocationLog {
-	invLog := &invocationLog{writeListener: func(s string) {}}
+	invLog := &invocationLog{writeListener: func(s string) string { return s }}
 	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
 	return invLog
 }
@@ -965,8 +1044,8 @@ func (invLog *invocationLog) Write(b []byte) (int, error) {
 
 	redacted := redact.RedactText(output)
 
-	invLog.writeListener(redacted)
-	_, err := invLog.writer.Write([]byte(redacted))
+	processed := invLog.writeListener(redacted)
+	_, err := invLog.writer.Write([]byte(processed))
 
 	// Return the size of the original buffer even if a redacted size was written,
 	// or clients will return a short write error
@@ -1155,22 +1234,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			return err
 		}
 
-		// Capture any `bazel run` stdout/stderr in dedicated files, so we can
-		// publish them back into the Bazel invocation as a synthetic BES event.
-		//
-		// Note: the actual injection of `--run_under` happens in bazel wrapper
-		// mode, which reads this env var.
-		stdoutPath := filepath.Join(artifactsDir, "bazel_run.stdout")
-		stderrPath := filepath.Join(artifactsDir, "bazel_run.stderr")
-		exitCodePath := filepath.Join(artifactsDir, "bazel_run.exit_code")
 		stepEnv := map[string]string{
 			"BUILDBUDDY_CAPTURE_BAZEL_RUN_OUTPUT": "1",
-			"BUILDBUDDY_BAZEL_RUN_STDOUT_PATH":    stdoutPath,
-			"BUILDBUDDY_BAZEL_RUN_STDERR_PATH":    stderrPath,
-			"BUILDBUDDY_BAZEL_RUN_EXIT_CODE_PATH": exitCodePath,
 		}
 
-		childInvBefore := len(ar.reporter.ChildInvocations())
 		runErr := runBashCommand(ctx, step.Run, stepEnv, action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
 
@@ -1192,20 +1259,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 				},
 			}},
 		})
-
-		// If the step spawned a Bazel invocation and we captured run output,
-		// publish it back to the child invocation as a synthetic `RunOutput`
-		// event so the UI can display it separately from build logs.
-		childInvs := ar.reporter.ChildInvocations()
-		if childInvBefore <= len(childInvs) {
-			newChildInvs := childInvs[childInvBefore:]
-			if len(newChildInvs) > 0 {
-				childIID := newChildInvs[len(newChildInvs)-1]
-				if err := publishBazelRunOutputToInvocation(context.Background(), *besBackend, *cacheBackend, *remoteInstanceName, ar.reporter.apiKey, childIID, stdoutPath, stderrPath, exitCodePath); err != nil {
-					ar.reporter.Printf("WARNING: failed to publish bazel run output: %s", err)
-				}
-			}
-		}
 
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s%s (command exited with code %d)%s\n", ansiGray, formatNowUTC(), exitCode, ansiReset)
@@ -2149,27 +2202,24 @@ func (ws *workspace) writeBazelWrapperScript() error {
 	wrapperDir := filepath.Join(ws.rootDir, "wrappers")
 
 	// Wrapper used with `bazel run --run_under` to capture runtime stdout/stderr
-	// into files, while still streaming output to the terminal.
+	// by printing explicit begin/end markers.
 	runUnderWrapperPath := filepath.Join(ws.rootDir, "bazel-run-under-wrapper.sh")
 	runUnderWrapperContents := `#!/usr/bin/env bash
 set -uo pipefail
 
-stdout_path="${BUILDBUDDY_BAZEL_RUN_STDOUT_PATH:-}"
-stderr_path="${BUILDBUDDY_BAZEL_RUN_STDERR_PATH:-}"
-exit_code_path="${BUILDBUDDY_BAZEL_RUN_EXIT_CODE_PATH:-}"
-
-if [[ -z "${stdout_path}" || -z "${stderr_path}" || -z "${exit_code_path}" ]]; then
-  exec "$@"
+invocation_id="${BUILDBUDDY_INVOCATION_ID:-}"
+if [[ -n "${invocation_id}" ]]; then
+  >&2 echo "<BUILDBUDDY RUN OUTPUT BEGINS FOR ${invocation_id}>"
 fi
 
-mkdir -p "$(dirname "${stdout_path}")" "$(dirname "${stderr_path}")" "$(dirname "${exit_code_path}")"
-
 set +e
-"$@" > >(tee -a "${stdout_path}") 2> >(tee -a "${stderr_path}" >&2)
+"$@"
 ec=$?
 set -e
 
-printf "%s" "${ec}" > "${exit_code_path}"
+if [[ -n "${invocation_id}" ]]; then
+  >&2 echo "<BUILDBUDDY RUN OUTPUT ENDS>"
+fi
 exit "${ec}"
 `
 	if err := os.WriteFile(runUnderWrapperPath, []byte(runUnderWrapperContents), 0755); err != nil {
@@ -2693,109 +2743,9 @@ func runBazelWrapper() error {
 	return syscall.Exec(bazelBin, bazelCmd, os.Environ())
 }
 
-func publishBazelRunOutputToInvocation(ctx context.Context, besBackend, cacheBackend, instanceName, apiKey, invocationID string, stdoutPath, stderrPath, exitCodePath string) error {
-	// If there is no output to publish, do nothing.
-	_, stdoutErr := os.Stat(stdoutPath)
-	_, stderrErr := os.Stat(stderrPath)
-	if stdoutErr != nil && stderrErr != nil {
-		return nil
-	}
-
-	exitCode := int32(noExitCode)
-	if b, err := os.ReadFile(exitCodePath); err == nil {
-		if s := strings.TrimSpace(string(b)); s != "" {
-			if n, convErr := strconv.Atoi(s); convErr == nil {
-				exitCode = int32(n)
-			}
-		}
-	}
-
-	var stdoutFile *bespb.File
-	var stderrFile *bespb.File
-
-	// Prefer uploading to bytestream if cache backend is available.
-	if cacheBackend != "" {
-		conn, err := grpc_client.DialSimple(cacheBackend)
-		if err != nil {
-			return err
-		}
-		defer conn.Close()
-		bsClient := bspb.NewByteStreamClient(conn)
-
-		backendURL, err := url.Parse(cacheBackend)
-		if err != nil {
-			return err
-		}
-		bytestreamURIPrefix := "bytestream://" + backendURL.Host
-
-		if stdoutErr == nil {
-			d, err := cachetools.UploadFile(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, stdoutPath)
-			if err != nil {
-				return err
-			}
-			rn := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_SHA256)
-			stdoutFile = &bespb.File{
-				Name:   "stdout",
-				File:   &bespb.File_Uri{Uri: fmt.Sprintf("%s/%s", bytestreamURIPrefix, rn.DownloadString())},
-				Digest: rn.GetDigest().GetHash(),
-				Length: rn.GetDigest().GetSizeBytes(),
-			}
-		}
-		if stderrErr == nil {
-			d, err := cachetools.UploadFile(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, stderrPath)
-			if err != nil {
-				return err
-			}
-			rn := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_SHA256)
-			stderrFile = &bespb.File{
-				Name:   "stderr",
-				File:   &bespb.File_Uri{Uri: fmt.Sprintf("%s/%s", bytestreamURIPrefix, rn.DownloadString())},
-				Digest: rn.GetDigest().GetHash(),
-				Length: rn.GetDigest().GetSizeBytes(),
-			}
-		}
-	} else {
-		// Fallback: inline up to 1MiB.
-		const maxBytes = 1 << 20
-		if stdoutErr == nil {
-			b, err := os.ReadFile(stdoutPath)
-			if err != nil {
-				return err
-			}
-			if len(b) > maxBytes {
-				b = append(b[:maxBytes], []byte("\n<output truncated>\n")...)
-			}
-			stdoutFile = &bespb.File{Name: "stdout", File: &bespb.File_Contents{Contents: b}}
-		}
-		if stderrErr == nil {
-			b, err := os.ReadFile(stderrPath)
-			if err != nil {
-				return err
-			}
-			if len(b) > maxBytes {
-				b = append(b[:maxBytes], []byte("\n<output truncated>\n")...)
-			}
-			stderrFile = &bespb.File{Name: "stderr", File: &bespb.File_Contents{Contents: b}}
-		}
-	}
-
-	// Publish the synthetic event to the child invocation's BES stream.
-	pub, err := build_event_publisher.New(besBackend, apiKey, invocationID)
-	if err != nil {
-		return err
-	}
-	pub.Start(ctx)
-
-	e := &bespb.BuildEvent{
-		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_RunOutput{RunOutput: &bespb.BuildEventId_RunOutputId{}}},
-		Payload: &bespb.BuildEvent_RunOutput{RunOutput: &bespb.RunOutput{Stdout: stdoutFile, Stderr: stderrFile, ExitCode: exitCode}},
-	}
-	if err := pub.Publish(e); err != nil {
-		_ = pub.Finish()
-		return err
-	}
-	return pub.Finish()
-}
+// (deprecated) publishBazelRunOutputToInvocation was previously used to attach
+// run output as a bytestream-backed BES event. We now emit run output via
+// RunOutputProgress events and store it under chunks/log/runlog.
 
 // Parse and save the startup options for a bazel command in a file on disk.
 //

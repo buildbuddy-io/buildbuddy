@@ -3,6 +3,7 @@ import moment from "moment";
 import React from "react";
 import { Subscription } from "rxjs";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
+import { eventlog } from "../../proto/eventlog_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import { google as google_grpc_status } from "../../proto/grpc_status_ts_proto";
@@ -52,9 +53,6 @@ interface State {
   error: BuildBuddyError | null;
 
   model?: InvocationModel;
-  runOutputStdout?: string;
-  runOutputStderr?: string;
-  runOutputLoading?: boolean;
 
   /**
    * The CI runner execution responsible for creating this invocation, if
@@ -90,15 +88,15 @@ export default class InvocationComponent extends React.Component<Props, State> {
     error: null,
     keyboardShortcutHandle: "",
     childInvocations: [],
-    runOutputLoading: false,
   };
 
   private timeoutRef: number | undefined;
   private logsModel?: InvocationLogsModel;
   private logsSubscription?: Subscription;
+  private runLogsModel?: InvocationLogsModel;
+  private runLogsSubscription?: Subscription;
   private modelChangedSubscription?: Subscription;
   private runnerExecutionRPC?: CancelablePromise;
-  private runOutputRPC?: CancelablePromise;
   private cancelGroupIdOverride?: () => void;
 
   private seenChildInvocationConfiguredIds = new Set<string>();
@@ -117,8 +115,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
       this.fetchInvocation();
 
       this.logsModel = new InvocationLogsModel(this.props.invocationId);
+      this.runLogsModel = new InvocationLogsModel(this.props.invocationId, eventlog.GetEventLogChunkRequest.LogType.RUNLOG);
       // Re-render whenever we fetch new log chunks.
       this.logsSubscription = this.logsModel.onChange.subscribe({
+        next: () => this.forceUpdate(),
+      });
+      this.runLogsSubscription = this.runLogsModel.onChange.subscribe({
         next: () => this.forceUpdate(),
       });
       if (!this.isQueued() && !this.props.search.get("runnerFailed")) {
@@ -145,7 +147,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
       if (this.state.model) {
         this.modelChangedSubscription = this.state.model?.onChange.subscribe(() => this.forceUpdate());
       }
-      this.fetchRunOutput();
     }
 
     if (this.props.search.get("openChild") == "true" && this.state.childInvocations.length > 0) {
@@ -333,68 +334,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
     }, 3000);
   }
 
-  fetchRunOutput() {
-    this.runOutputRPC?.cancel();
-
-    const model = this.state.model;
-    if (!model || !model.hasRunOutput() || !model.runOutput) {
-      this.setState({ runOutputStdout: "", runOutputStderr: "", runOutputLoading: false });
-      return;
-    }
-
-    const ro = model.runOutput;
-
-    const promises: Promise<any>[] = [];
-    let stdout: string | undefined = undefined;
-    let stderr: string | undefined = undefined;
-
-    if (ro.stdout?.contents?.length) {
-      stdout = new TextDecoder().decode(ro.stdout.contents);
-    } else if (ro.stdout?.uri) {
-      promises.push(
-        rpcService.fetchBytestreamFile(ro.stdout.uri, model.getInvocationId(), "text").then((s) => (stdout = s))
-      );
-    }
-
-    if (ro.stderr?.contents?.length) {
-      stderr = new TextDecoder().decode(ro.stderr.contents);
-    } else if (ro.stderr?.uri) {
-      promises.push(
-        rpcService.fetchBytestreamFile(ro.stderr.uri, model.getInvocationId(), "text").then((s) => (stderr = s))
-      );
-    }
-
-    if (promises.length === 0) {
-      this.setState({ runOutputStdout: stdout ?? "", runOutputStderr: stderr ?? "", runOutputLoading: false });
-      return;
-    }
-
-    this.setState({ runOutputLoading: true });
-    this.runOutputRPC = new CancelablePromise(Promise.all(promises));
-    this.runOutputRPC
-      .then(() => this.setState({ runOutputStdout: stdout ?? "", runOutputStderr: stderr ?? "", runOutputLoading: false }))
-      .catch(() => this.setState({ runOutputStdout: stdout ?? "", runOutputStderr: stderr ?? "", runOutputLoading: false }));
-  }
-
   getBuildLogs(model: InvocationModel): string {
     if (!model.hasChunkedEventLogs()) {
       // Use the inlined console buffer if this invocation was created before
       // log chunking existed.
       return model.invocation.consoleBuffer;
     }
-    let logs = this.logsModel?.getLogs() ?? "";
-    if (model.hasRunOutput()) {
-      const stdout = this.state.runOutputStdout ?? "";
-      const stderr = this.state.runOutputStderr ?? "";
-      const combined = stdout + (stdout && stderr ? "\n" : "") + stderr;
-      logs += "\n\n----- Run output -----\n";
-      if (this.state.runOutputLoading && !combined) {
-        logs += "<loading run output>\n";
-      } else {
-        logs += combined;
-      }
-    }
-    return logs;
+    return this.logsModel?.getLogs() ?? "";
   }
 
   areBuildLogsLoading(model: InvocationModel) {
@@ -402,6 +348,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
       return false;
     }
     return Boolean(this.logsModel?.isFetching() && !this.logsModel?.getLogs());
+  }
+
+  getRunLogs(): string {
+    return this.runLogsModel?.getLogs() ?? "";
+  }
+
+  areRunLogsLoading(): boolean {
+    return Boolean(this.runLogsModel?.isFetching() && !this.runLogsModel?.getLogs());
   }
 
   isQueued(props = this.props, state = this.state) {
@@ -704,6 +658,17 @@ export default class InvocationComponent extends React.Component<Props, State> {
               dark={!this.props.preferences.lightTerminalEnabled}
               value={this.getBuildLogs(this.state.model)}
               loading={this.areBuildLogsLoading(this.state.model)}
+              expanded={activeTab === "log"}
+              fullLogsFetcher={fetchBuildLogs}
+            />
+          )}
+
+          {(activeTab === "all" || activeTab === "log") && this.state.model.getCommand() === "run" && (
+            <BuildLogsCardComponent
+              title={"Run output"}
+              dark={!this.props.preferences.lightTerminalEnabled}
+              value={this.getRunLogs()}
+              loading={this.areRunLogsLoading()}
               expanded={activeTab === "log"}
               fullLogsFetcher={fetchBuildLogs}
             />
