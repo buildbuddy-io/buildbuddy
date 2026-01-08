@@ -38,6 +38,7 @@ var (
 	target                 = flag.String("auth.remote.target", "", "The gRPC target of the remote authentication API.")
 	jwtExpirationBuffer    = flag.Duration("auth.remote.jwt_expiration_buffer", time.Minute, "Discard remote-auth minted JWTs if they're within this time buffer of their expiration time.")
 	alwaysUseRSASignedJWTs = flag.Bool("auth.remote.use_rsa_jwts", false, "If true, the remote authenticator always uses RSA-signed JWTs.")
+	rsaKeyRefreshPeriod    = flag.Duration("auth.remote.rsa_key_refresh_period", 5*time.Minute, "How often to refresh the RSA public keys cache. Set to 0 to disable caching.")
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -65,7 +66,7 @@ func newRemoteAuthenticator(
 		return nil, err
 	}
 	client := authpb.NewAuthServiceClient(conn)
-	provider := keyProvider{
+	provider := &keyProvider{
 		experimentFlagProvider: experimentFlagProvider,
 		client:                 client,
 	}
@@ -79,12 +80,17 @@ func newRemoteAuthenticator(
 		jwtExpirationBuffer:    *jwtExpirationBuffer,
 		claimsParser:           claimsParser,
 		experimentFlagProvider: experimentFlagProvider,
+		keyProvider:            provider,
 	}, nil
 }
 
 type keyProvider struct {
 	experimentFlagProvider interfaces.ExperimentFlagProvider
 	client                 authpb.AuthServiceClient
+
+	mu              sync.RWMutex
+	cachedRSAKeys   []string
+	cacheExpiration time.Time
 }
 
 func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
@@ -104,9 +110,36 @@ func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
 	return keys, nil
 }
 
-// TODO(go/b/4539): cache these keys (w support for invalidating).
 func (kp *keyProvider) getRSAPublicKeys(ctx context.Context) ([]string, error) {
-	return kp.fetchRSAPublicKeys(ctx)
+	refreshPeriod := *rsaKeyRefreshPeriod
+	if refreshPeriod <= 0 {
+		return kp.fetchRSAPublicKeys(ctx)
+	}
+
+	kp.mu.RLock()
+	keys := kp.cachedRSAKeys
+	expiration := kp.cacheExpiration
+	kp.mu.RUnlock()
+
+	if len(keys) > 0 && time.Now().Before(expiration) {
+		return keys, nil
+	}
+
+	kp.mu.Lock()
+	defer kp.mu.Unlock()
+
+	// Double-check after acquiring write lock.
+	if len(kp.cachedRSAKeys) > 0 && time.Now().Before(kp.cacheExpiration) {
+		return kp.cachedRSAKeys, nil
+	}
+
+	keys, err := kp.fetchRSAPublicKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	kp.cachedRSAKeys = keys
+	kp.cacheExpiration = time.Now().Add(refreshPeriod)
+	return keys, nil
 }
 
 func (kp *keyProvider) fetchRSAPublicKeys(ctx context.Context) ([]string, error) {
@@ -120,6 +153,13 @@ func (kp *keyProvider) fetchRSAPublicKeys(ctx context.Context) ([]string, error)
 		keys[i] = key.GetKey()
 	}
 	return keys, nil
+}
+
+func (kp *keyProvider) invalidateKeys() {
+	kp.mu.Lock()
+	defer kp.mu.Unlock()
+	kp.cachedRSAKeys = nil
+	kp.cacheExpiration = time.Time{}
 }
 
 func useRSASignedJWTs(
@@ -148,6 +188,7 @@ type RemoteAuthenticator struct {
 	mu                     sync.RWMutex // protects cache
 	claimsParser           *claims.ClaimsParser
 	experimentFlagProvider interfaces.ExperimentFlagProvider
+	keyProvider            *keyProvider
 }
 
 // Unsupported in the remote authenticator.
@@ -187,7 +228,7 @@ func (a *RemoteAuthenticator) SSOEnabled() bool {
 
 func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
 	// If a JWT was provided, check if it's valid and use it if so.
-	jwt, c, err := getValidJwtFromContext(ctx, a.claimsParser, a.jwtExpirationBuffer)
+	jwt, c, err := a.getValidJwtFromContext(ctx)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
@@ -205,7 +246,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	jwt, found := a.cache.Get(key)
 	a.mu.RUnlock()
 	if found {
-		if c, err := jwtIsValid(ctx, jwt, a.claimsParser, a.jwtExpirationBuffer); err == nil {
+		if c, err := a.jwtIsValid(ctx, jwt); err == nil {
 			return authContext(ctx, jwt, c)
 		}
 		a.mu.Lock()
@@ -222,7 +263,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	a.mu.Lock()
 	a.cache.Add(key, jwt)
 	a.mu.Unlock()
-	c, err = jwtIsValid(ctx, jwt, a.claimsParser, a.jwtExpirationBuffer)
+	c, err = a.jwtIsValid(ctx, jwt)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
@@ -289,25 +330,32 @@ func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) 
 // - A valid JWT from the incoming RPC metadata or
 // - An error if an invalid JWT is present or
 // - An empty string and no error if no JWT is present
-func getValidJwtFromContext(ctx context.Context, claimsParser *claims.ClaimsParser, jwtExpirationTimeBuffer time.Duration) (string, *claims.Claims, error) {
+func (a *RemoteAuthenticator) getValidJwtFromContext(ctx context.Context) (string, *claims.Claims, error) {
 	jwt := getLastMetadataValue(ctx, authutil.ContextTokenStringKey)
 	if jwt == "" {
 		return "", nil, nil
 	}
-	claims, err := jwtIsValid(ctx, jwt, claimsParser, jwtExpirationTimeBuffer)
+	claims, err := a.jwtIsValid(ctx, jwt)
 	if err != nil {
 		return "", nil, err
 	}
 	return jwt, claims, nil
 }
 
-func jwtIsValid(ctx context.Context, jwt string, claimsParser *claims.ClaimsParser, jwtExpirationBuffer time.Duration) (*claims.Claims, error) {
+func (a *RemoteAuthenticator) jwtIsValid(ctx context.Context, jwt string) (*claims.Claims, error) {
 	// N.B. the ClaimsParser validates JWTs before returning them.
-	claims, err := claimsParser.Parse(ctx, jwt)
+	claims, err := a.claimsParser.Parse(ctx, jwt)
+	if err != nil {
+		a.keyProvider.invalidateKeys()
+
+		// Try again with fresh keys, in case keys were rotated or signing
+		// method was changed.
+		claims, err = a.claimsParser.Parse(ctx, jwt)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if claims.ExpiresAt < time.Now().Add(jwtExpirationBuffer).Unix() {
+	if claims.ExpiresAt < time.Now().Add(a.jwtExpirationBuffer).Unix() {
 		return nil, status.NotFoundError("JWT will expire soon")
 	}
 	return claims, nil
