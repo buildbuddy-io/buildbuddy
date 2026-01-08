@@ -5,6 +5,7 @@
 // Eventually, this proxy service will
 //   - serve blobs from the local byte stream server and
 //   - singleflight requests for the same blob or manifest,
+//
 // reducing the amount of network traffic to the public internet
 // and byte stream servers in the cache proxies and apps
 // when multiple executors fetch the same uncached OCI image simultaneously.

@@ -1433,7 +1433,8 @@ message BuildMetrics {
     // TODO: Add the required analysis_cache_service_metadata_status.proto when
     // we have to use this field.
     // The result of the Skycache metadata lookup.
-    // devtools_blaze_proto.TopLevelTargetsMatchStatus metadata_lookup_result = 16;
+    // devtools_blaze_proto.TopLevelTargetsMatchStatus metadata_lookup_result =
+    // 16;
   }
   RemoteAnalysisCacheStatistics remote_analysis_cache_statistics = 13;
 }

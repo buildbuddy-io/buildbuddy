@@ -83,12 +83,12 @@ message RunRequest {
   // DEPRECATED: Use `steps` instead.
   string bazel_command = 4 [deprecated = true];
 
-  // DEPRECATED: Set OS and arch using the `exec_properties` named `os` and `arch`.
+  // DEPRECATED: Set OS and arch using the `exec_properties` named `os` and
+  // `arch`.
   string os = 7 [deprecated = true];
 
   // Arch on which to run. Defaults to "amd64".
   string arch = 8 [deprecated = true];
-
 }
 
 message Step {

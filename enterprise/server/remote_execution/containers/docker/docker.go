@@ -31,12 +31,12 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
-	dockerclient "github.com/docker/docker/client"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dti "github.com/docker/docker/api/types/image"
-	gstatus "google.golang.org/grpc/status"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	dockerclient "github.com/docker/docker/client"
 	units "github.com/docker/go-units"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
