@@ -743,3 +743,27 @@ func TestCommonPositionalArgument(t *testing.T) {
 	require.NoError(t, err, "error expanding %s", args)
 	assert.Equal(t, expectedExpandedArgs, expandedArgs.Format())
 }
+
+func TestBazelrcLexing(t *testing.T) {
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"WORKSPACE": "",
+		".bazelrc":  "common targetwitha#",
+	})
+
+	args := []string{
+		"build",
+	}
+
+	expectedExpandedArgs := []string{
+		"--ignore_all_rc_files",
+		"build",
+		"targetwitha#",
+	}
+	parsedArgs, err := ParseArgs(args)
+	require.NoError(t, err)
+	expandedArgs, err := resolveArgs(parsedArgs, ws)
+
+	require.NoError(t, err, "error expanding %s", args)
+	assert.Equal(t, expectedExpandedArgs, expandedArgs.Format())
+}
