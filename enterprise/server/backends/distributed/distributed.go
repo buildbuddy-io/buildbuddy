@@ -105,6 +105,7 @@ type peerInfo struct {
 	zone        string
 }
 
+// TODO(go/b/6456): use memory cache instead of LRU for lookaside cache
 type Cache struct {
 	authenticator        interfaces.Authenticator
 	local                interfaces.Cache

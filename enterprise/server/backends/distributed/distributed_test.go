@@ -2596,6 +2596,7 @@ func (t *tracedCache) Partition(ctx context.Context, remoteInstanceName string) 
 	return "", nil
 }
 
+// TODO(go/b/6456): use memory cache here
 type partitionContextKey struct{}
 type partitionedCache struct {
 	t             *testing.T
