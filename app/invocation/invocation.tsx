@@ -333,7 +333,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
       // log chunking existed.
       return model.invocation.consoleBuffer;
     }
-    return this.logsModel?.getLogs() ?? "";
+    let logs = this.logsModel?.getLogs() ?? "";
+    logs += "Hello adding run output here";
+    return logs;
   }
 
   areBuildLogsLoading(model: InvocationModel) {
