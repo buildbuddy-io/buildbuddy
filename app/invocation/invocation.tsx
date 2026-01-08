@@ -25,6 +25,7 @@ import InvocationActionCardComponent from "./invocation_action_card";
 import ArtifactsCardComponent from "./invocation_artifacts_card";
 import { InvocationBotCard } from "./invocation_bot_card";
 import BuildLogsCardComponent from "./invocation_build_logs_card";
+import InvocationRunOutputCardComponent from "./invocation_run_output_card";
 import CacheCardComponent from "./invocation_cache_card";
 import InvocationCoverageCardComponent from "./invocation_coverage_card";
 import InvocationDetailsCardComponent from "./invocation_details_card";
@@ -646,6 +647,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
               expanded={activeTab === "log"}
               fullLogsFetcher={fetchBuildLogs}
             />
+          )}
+
+          {(activeTab === "all" || activeTab === "log") && this.state.model.hasRunOutput() && (
+            <InvocationRunOutputCardComponent model={this.state.model} dark={!this.props.preferences.lightTerminalEnabled} />
           )}
 
           {(activeTab === "all" || activeTab === "log" || activeTab === "suggestions") && (

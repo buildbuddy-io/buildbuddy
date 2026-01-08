@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +28,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -42,6 +45,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -196,22 +200,41 @@ func TestWithPrivateRepo(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, 2, len(searchRsp.GetInvocation()))
-	// Find outer invocation because it will contain run output
+	// Find the bazel invocation; it should contain the synthetic RunOutput event.
 	var inv *inpb.Invocation
 	for _, i := range searchRsp.GetInvocation() {
-		if i.GetRole() == "HOSTED_BAZEL" {
+		if i.GetRole() != "HOSTED_BAZEL" {
 			inv = i
 		}
 	}
+	require.NotNil(t, inv)
 	invocationID := inv.InvocationId
 
-	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
-		InvocationId: invocationID,
-		MinLines:     math.MaxInt32,
+	invResp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{
+		RequestContext: reqCtx,
+		Lookup:         &inpb.InvocationLookup{InvocationId: invocationID},
 	})
 	require.NoError(t, err)
-	require.Contains(t, string(logResp.GetBuffer()), "Build completed successfully")
-	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
+	require.Greater(t, len(invResp.GetInvocation()), 0)
+
+	var runOutput *bespb.RunOutput
+	for _, ev := range invResp.GetInvocation()[0].GetEvent() {
+		if ro := ev.GetBuildEvent().GetRunOutput(); ro != nil {
+			runOutput = ro
+			break
+		}
+	}
+	require.NotNil(t, runOutput)
+	require.NotEmpty(t, runOutput.GetStdout().GetUri())
+
+	u, err := url.Parse(runOutput.GetStdout().GetUri())
+	require.NoError(t, err)
+	rn, err := digest.ParseDownloadResourceName(u.Path)
+	require.NoError(t, err)
+	var buf bytes.Buffer
+	err = cachetools.GetBlob(ctx, env.GetByteStreamClient(), rn, &buf)
+	require.NoError(t, err)
+	require.Contains(t, buf.String(), "FUTURE OF BUILDS!")
 }
 
 func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envModifier func(rbeEnv *rbetest.Env, e *testenv.TestEnv)) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
@@ -539,22 +562,41 @@ sh_binary(
 	require.NoError(t, err)
 
 	require.Equal(t, 2, len(searchRsp.GetInvocation()))
-	// Find outer invocation because it will contain run output
+	// Find the bazel invocation; it should contain the synthetic RunOutput event.
 	var inv *inpb.Invocation
 	for _, i := range searchRsp.GetInvocation() {
-		if i.GetRole() == "HOSTED_BAZEL" {
+		if i.GetRole() != "HOSTED_BAZEL" {
 			inv = i
 		}
 	}
+	require.NotNil(t, inv)
 	invocationID := inv.InvocationId
 
-	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
-		InvocationId: invocationID,
-		MinLines:     math.MaxInt32,
+	invResp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{
+		RequestContext: reqCtx,
+		Lookup:         &inpb.InvocationLookup{InvocationId: invocationID},
 	})
 	require.NoError(t, err)
-	require.Contains(t, string(logResp.GetBuffer()), "Build completed successfully")
-	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
+	require.Greater(t, len(invResp.GetInvocation()), 0)
+
+	var runOutput *bespb.RunOutput
+	for _, ev := range invResp.GetInvocation()[0].GetEvent() {
+		if ro := ev.GetBuildEvent().GetRunOutput(); ro != nil {
+			runOutput = ro
+			break
+		}
+	}
+	require.NotNil(t, runOutput)
+	require.NotEmpty(t, runOutput.GetStdout().GetUri())
+
+	u, err := url.Parse(runOutput.GetStdout().GetUri())
+	require.NoError(t, err)
+	rn, err := digest.ParseDownloadResourceName(u.Path)
+	require.NoError(t, err)
+	var buf bytes.Buffer
+	err = cachetools.GetBlob(ctx, env.GetByteStreamClient(), rn, &buf)
+	require.NoError(t, err)
+	require.Contains(t, buf.String(), "FUTURE OF BUILDS!")
 }
 
 func setupSecrets(t *testing.T) (func(*rbetest.Env, *testenv.TestEnv), *string) {

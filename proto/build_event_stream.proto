@@ -295,6 +295,9 @@ message BuildEventId {
   // default arguments and runtime files.
   message RunTargetAnalyzedId {}
 
+  // Identifier of an event providing output from `bazel run`.
+  message RunOutputId {}
+
   oneof id {
     UnknownBuildEventId unknown = 1;
     ProgressId progress = 2;
@@ -334,6 +337,7 @@ message BuildEventId {
     ChildInvocationsConfiguredId child_invocations_configured = 1002;
     ChildInvocationCompletedId child_invocation_completed = 1003;
     RunTargetAnalyzedId run_target_analyzed = 1004;
+    RunOutputId run_output = 1005;
   }
 }
 
@@ -1659,6 +1663,23 @@ message RunTargetAnalyzed {
   repeated Tree runfileDirectories = 4;
 }
 
+// Event describing the stdout/stderr produced by the binary executed via
+// `bazel run`.
+//
+// Note: Bazel's native BES does not include the runtime output of the executed
+// binary. This event is published separately by BuildBuddy tooling (for example
+// the CI runner) so the UI can display run output in a dedicated section.
+message RunOutput {
+  // Standard output produced by the executed binary.
+  File stdout = 1;
+
+  // Standard error produced by the executed binary.
+  File stderr = 2;
+
+  // Exit code of the executed binary (not the Bazel command).
+  int32 exit_code = 3;
+}
+
 // Message describing a build event. Events will have an identifier that
 // is unique within a given build invocation; they also announce follow-up
 // events as children. More details, which are specific to the kind of event
@@ -1705,5 +1726,6 @@ message BuildEvent {
     ChildInvocationsConfigured child_invocations_configured = 1002;
     ChildInvocationCompleted child_invocation_completed = 1003;
     RunTargetAnalyzed run_target_analyzed = 1004;
+    RunOutput run_output = 1005;
   }
 }

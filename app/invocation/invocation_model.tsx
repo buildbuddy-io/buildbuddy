@@ -65,6 +65,7 @@ export default class InvocationModel {
   expanded?: build_event_stream.BuildEvent;
   buildMetrics?: build_event_stream.BuildMetrics;
   buildToolLogs?: build_event_stream.BuildToolLogs;
+  runOutput?: build_event_stream.RunOutput;
 
   workspaceStatusMap = new Map<string, string>();
   toolLogMap = new Map<string, string>();
@@ -169,6 +170,9 @@ export default class InvocationModel {
       if (buildEvent.buildToolLogs) {
         this.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
       }
+      if (buildEvent.runOutput) {
+        this.runOutput = buildEvent.runOutput as build_event_stream.RunOutput;
+      }
       if (buildEvent.unstructuredCommandLine) {
         this.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
       }
@@ -240,6 +244,10 @@ export default class InvocationModel {
         }
       }
     }
+  }
+
+  hasRunOutput(): boolean {
+    return Boolean(this.runOutput?.stdout || this.runOutput?.stderr);
   }
 
   getUser() {

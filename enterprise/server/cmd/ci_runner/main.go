@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -305,7 +306,8 @@ type buildEventReporter struct {
 	cancelBackgroundFlush func()
 
 	// Child invocations detected by scanning the build logs
-	childInvocations []string
+	childInvocations   []string
+	childInvocationsMu sync.Mutex
 
 	mu            sync.Mutex // protects(progressCount)
 	progressCount int32
@@ -579,7 +581,9 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) {
 	iidMatches := invocationIDRegex.FindAllStringSubmatch(output, -1)
 	for _, m := range iidMatches {
 		iid := m[1]
+		r.childInvocationsMu.Lock()
 		childStarted := slices.Contains(r.childInvocations, iid)
+		r.childInvocationsMu.Unlock()
 
 		var buildEvent *bespb.BuildEvent
 		if childStarted {
@@ -595,7 +599,9 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) {
 				Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{}},
 			}
 		} else {
+			r.childInvocationsMu.Lock()
 			r.childInvocations = append(r.childInvocations, iid)
+			r.childInvocationsMu.Unlock()
 
 			cic := &bespb.ChildInvocationsConfigured{
 				Invocation: []*bespb.ChildInvocationsConfigured_InvocationMetadata{
@@ -621,6 +627,14 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) {
 			continue
 		}
 	}
+}
+
+func (r *buildEventReporter) ChildInvocations() []string {
+	r.childInvocationsMu.Lock()
+	defer r.childInvocationsMu.Unlock()
+	out := make([]string, len(r.childInvocations))
+	copy(out, r.childInvocations)
+	return out
 }
 
 func main() {
@@ -1133,6 +1147,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		if err := provisionArtifactsDir(ws, i); err != nil {
 			return err
 		}
+		artifactsDir := artifactsPathForCommand(ws, i)
 
 		// Provision the directory where we write bazel run scripts
 		runScriptDir := filepath.Join(ws.rootDir, runScriptDirName)
@@ -1140,10 +1155,25 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			return err
 		}
 
-		runErr := runBashCommand(ctx, step.Run, nil, action.BazelWorkspaceDir, ar.reporter)
+		// Capture any `bazel run` stdout/stderr in dedicated files, so we can
+		// publish them back into the Bazel invocation as a synthetic BES event.
+		//
+		// Note: the actual injection of `--run_under` happens in bazel wrapper
+		// mode, which reads this env var.
+		stdoutPath := filepath.Join(artifactsDir, "bazel_run.stdout")
+		stderrPath := filepath.Join(artifactsDir, "bazel_run.stderr")
+		exitCodePath := filepath.Join(artifactsDir, "bazel_run.exit_code")
+		stepEnv := map[string]string{
+			"BUILDBUDDY_CAPTURE_BAZEL_RUN_OUTPUT": "1",
+			"BUILDBUDDY_BAZEL_RUN_STDOUT_PATH":    stdoutPath,
+			"BUILDBUDDY_BAZEL_RUN_STDERR_PATH":    stderrPath,
+			"BUILDBUDDY_BAZEL_RUN_EXIT_CODE_PATH": exitCodePath,
+		}
+
+		childInvBefore := len(ar.reporter.ChildInvocations())
+		runErr := runBashCommand(ctx, step.Run, stepEnv, action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
 
-		artifactsDir := artifactsPathForCommand(ws, i)
 		namedSetID := filepath.Base(artifactsDir)
 		ar.reporter.Publish(&bespb.BuildEvent{
 			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_TargetCompleted{
@@ -1162,6 +1192,20 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 				},
 			}},
 		})
+
+		// If the step spawned a Bazel invocation and we captured run output,
+		// publish it back to the child invocation as a synthetic `RunOutput`
+		// event so the UI can display it separately from build logs.
+		childInvs := ar.reporter.ChildInvocations()
+		if childInvBefore <= len(childInvs) {
+			newChildInvs := childInvs[childInvBefore:]
+			if len(newChildInvs) > 0 {
+				childIID := newChildInvs[len(newChildInvs)-1]
+				if err := publishBazelRunOutputToInvocation(context.Background(), *besBackend, *cacheBackend, *remoteInstanceName, ar.reporter.apiKey, childIID, stdoutPath, stderrPath, exitCodePath); err != nil {
+					ar.reporter.Printf("WARNING: failed to publish bazel run output: %s", err)
+				}
+			}
+		}
 
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s%s (command exited with code %d)%s\n", ansiGray, formatNowUTC(), exitCode, ansiReset)
@@ -2103,6 +2147,35 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 // all bazel commands.
 func (ws *workspace) writeBazelWrapperScript() error {
 	wrapperDir := filepath.Join(ws.rootDir, "wrappers")
+
+	// Wrapper used with `bazel run --run_under` to capture runtime stdout/stderr
+	// into files, while still streaming output to the terminal.
+	runUnderWrapperPath := filepath.Join(ws.rootDir, "bazel-run-under-wrapper.sh")
+	runUnderWrapperContents := `#!/usr/bin/env bash
+set -uo pipefail
+
+stdout_path="${BUILDBUDDY_BAZEL_RUN_STDOUT_PATH:-}"
+stderr_path="${BUILDBUDDY_BAZEL_RUN_STDERR_PATH:-}"
+exit_code_path="${BUILDBUDDY_BAZEL_RUN_EXIT_CODE_PATH:-}"
+
+if [[ -z "${stdout_path}" || -z "${stderr_path}" || -z "${exit_code_path}" ]]; then
+  exec "$@"
+fi
+
+mkdir -p "$(dirname "${stdout_path}")" "$(dirname "${stderr_path}")" "$(dirname "${exit_code_path}")"
+
+set +e
+"$@" > >(tee -a "${stdout_path}") 2> >(tee -a "${stderr_path}" >&2)
+ec=$?
+set -e
+
+printf "%s" "${ec}" > "${exit_code_path}"
+exit "${ec}"
+`
+	if err := os.WriteFile(runUnderWrapperPath, []byte(runUnderWrapperContents), 0755); err != nil {
+		return status.InternalErrorf("Failed to write to %s: %s", runUnderWrapperPath, err)
+	}
+
 	for _, c := range []string{bazelBinaryName, bazeliskBinaryName} {
 		wrapperPath := filepath.Join(wrapperDir, c)
 		_, err := os.Stat(wrapperPath)
@@ -2594,9 +2667,134 @@ func runBazelWrapper() error {
 		backendLog.Errorf("Failed to cache startup options for bazel command %v: %v", originalArgs, err)
 	}
 
+	// If requested, capture `bazel run` target output using --run_under. This
+	// writes stdout/stderr to files specified in env vars, which are later
+	// published to the BES by the ci_runner.
+	if os.Getenv("BUILDBUDDY_CAPTURE_BAZEL_RUN_OUTPUT") == "1" {
+		bazelCmdName, _ := bazel.GetBazelCommandAndIndex(originalArgs)
+		if bazelCmdName == "run" {
+			alreadyHasRunUnder := false
+			for _, a := range originalArgs {
+				if strings.HasPrefix(a, "--run_under") {
+					alreadyHasRunUnder = true
+					break
+				}
+			}
+			if !alreadyHasRunUnder {
+				runUnderPath := filepath.Join(rootPath, "bazel-run-under-wrapper.sh")
+				runUnderFlag := "--run_under=" + runUnderPath
+				bazelCmd = appendBazelSubcommandArgs(bazelCmd, runUnderFlag)
+			}
+		}
+	}
+
 	// Replace the process running the bazel wrapper with the process running bazel,
 	// so there are no remaining traces of the wrapper script.
 	return syscall.Exec(bazelBin, bazelCmd, os.Environ())
+}
+
+func publishBazelRunOutputToInvocation(ctx context.Context, besBackend, cacheBackend, instanceName, apiKey, invocationID string, stdoutPath, stderrPath, exitCodePath string) error {
+	// If there is no output to publish, do nothing.
+	_, stdoutErr := os.Stat(stdoutPath)
+	_, stderrErr := os.Stat(stderrPath)
+	if stdoutErr != nil && stderrErr != nil {
+		return nil
+	}
+
+	exitCode := int32(noExitCode)
+	if b, err := os.ReadFile(exitCodePath); err == nil {
+		if s := strings.TrimSpace(string(b)); s != "" {
+			if n, convErr := strconv.Atoi(s); convErr == nil {
+				exitCode = int32(n)
+			}
+		}
+	}
+
+	var stdoutFile *bespb.File
+	var stderrFile *bespb.File
+
+	// Prefer uploading to bytestream if cache backend is available.
+	if cacheBackend != "" {
+		conn, err := grpc_client.DialSimple(cacheBackend)
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+		bsClient := bspb.NewByteStreamClient(conn)
+
+		backendURL, err := url.Parse(cacheBackend)
+		if err != nil {
+			return err
+		}
+		bytestreamURIPrefix := "bytestream://" + backendURL.Host
+
+		if stdoutErr == nil {
+			d, err := cachetools.UploadFile(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, stdoutPath)
+			if err != nil {
+				return err
+			}
+			rn := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_SHA256)
+			stdoutFile = &bespb.File{
+				Name:   "stdout",
+				File:   &bespb.File_Uri{Uri: fmt.Sprintf("%s/%s", bytestreamURIPrefix, rn.DownloadString())},
+				Digest: rn.GetDigest().GetHash(),
+				Length: rn.GetDigest().GetSizeBytes(),
+			}
+		}
+		if stderrErr == nil {
+			d, err := cachetools.UploadFile(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, stderrPath)
+			if err != nil {
+				return err
+			}
+			rn := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_SHA256)
+			stderrFile = &bespb.File{
+				Name:   "stderr",
+				File:   &bespb.File_Uri{Uri: fmt.Sprintf("%s/%s", bytestreamURIPrefix, rn.DownloadString())},
+				Digest: rn.GetDigest().GetHash(),
+				Length: rn.GetDigest().GetSizeBytes(),
+			}
+		}
+	} else {
+		// Fallback: inline up to 1MiB.
+		const maxBytes = 1 << 20
+		if stdoutErr == nil {
+			b, err := os.ReadFile(stdoutPath)
+			if err != nil {
+				return err
+			}
+			if len(b) > maxBytes {
+				b = append(b[:maxBytes], []byte("\n<output truncated>\n")...)
+			}
+			stdoutFile = &bespb.File{Name: "stdout", File: &bespb.File_Contents{Contents: b}}
+		}
+		if stderrErr == nil {
+			b, err := os.ReadFile(stderrPath)
+			if err != nil {
+				return err
+			}
+			if len(b) > maxBytes {
+				b = append(b[:maxBytes], []byte("\n<output truncated>\n")...)
+			}
+			stderrFile = &bespb.File{Name: "stderr", File: &bespb.File_Contents{Contents: b}}
+		}
+	}
+
+	// Publish the synthetic event to the child invocation's BES stream.
+	pub, err := build_event_publisher.New(besBackend, apiKey, invocationID)
+	if err != nil {
+		return err
+	}
+	pub.Start(ctx)
+
+	e := &bespb.BuildEvent{
+		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_RunOutput{RunOutput: &bespb.BuildEventId_RunOutputId{}}},
+		Payload: &bespb.BuildEvent_RunOutput{RunOutput: &bespb.RunOutput{Stdout: stdoutFile, Stderr: stderrFile, ExitCode: exitCode}},
+	}
+	if err := pub.Publish(e); err != nil {
+		_ = pub.Finish()
+		return err
+	}
+	return pub.Finish()
 }
 
 // Parse and save the startup options for a bazel command in a file on disk.

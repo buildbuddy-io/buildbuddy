@@ -149,6 +149,9 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 		v.maybeExtractOutputFile(p.TestSummary.GetFailed()...)
 	case *build_event_stream.BuildEvent_RunTargetAnalyzed:
 		v.maybeExtractOutputFile(p.RunTargetAnalyzed.GetRunfiles()...)
+	case *build_event_stream.BuildEvent_RunOutput:
+		v.maybeExtractOutputFile(p.RunOutput.GetStdout())
+		v.maybeExtractOutputFile(p.RunOutput.GetStderr())
 	case *build_event_stream.BuildEvent_Action:
 		v.maybeExtractOutputFile(p.Action.GetStdout())
 		v.maybeExtractOutputFile(p.Action.GetStderr())
