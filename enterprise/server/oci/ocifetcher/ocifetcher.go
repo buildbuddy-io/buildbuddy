@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
@@ -47,6 +48,30 @@ var (
 	blobBufPool = bytebufferpool.VariableSize(blobChunkSize)
 )
 
+// blobFetchKey identifies a blob fetch for deduplication.
+// Includes registry, repository, digest, and credentials hash.
+type blobFetchKey struct {
+	registry   string
+	repository string
+	digest     string
+	credsHash  string
+}
+
+func makeBlobFetchKey(repo gcrname.Repository, h gcr.Hash, creds *rgpb.Credentials) blobFetchKey {
+	var credsHash string
+	if creds == nil {
+		credsHash = hash.Strings("", "")
+	} else {
+		credsHash = hash.Strings(creds.GetUsername(), creds.GetPassword())
+	}
+	return blobFetchKey{
+		registry:   repo.RegistryStr(),
+		repository: repo.RepositoryStr(),
+		digest:     h.String(),
+		credsHash:  credsHash,
+	}
+}
+
 type ociFetcherServer struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
@@ -56,6 +81,11 @@ type ociFetcherServer struct {
 
 	mu        sync.Mutex
 	pullerLRU *lru.LRU[*pullerLRUEntry]
+
+	// blobFetchGroup deduplicates concurrent blob fetch requests.
+	// Only one request fetches from upstream and writes to cache;
+	// other requests wait and then read from cache.
+	blobFetchGroup singleflight.Group[blobFetchKey, struct{}]
 }
 
 // NewServer constructs an OCIFetcherServer that
@@ -108,6 +138,11 @@ func RegisterServer(env *real_environment.RealEnv) error {
 // Otherwise it streams the blob from the upstream remote registry, writing
 // to the byte stream server at the same time.
 //
+// FetchBlob guarantees there will be at most one request to the upstream remote registry
+// open at a time.
+// Requests that arrive while the blob is being fetched from an upstream remote registry
+// will wait until that fetch completes.
+//
 // Requests may have a bypass_registry flag set.
 // Server admins can bypass the registry: the blob will be streamed from the byte stream
 // server if present, and FetchBlob will not fall back to the remote registry.
@@ -150,43 +185,23 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", blobRef)
 	}
 
-	layer, err := withPullerRetry(ctx, s, blobRef, req.GetCredentials(), func(puller *remote.Puller) (gcr.Layer, error) {
-		return puller.Layer(ctx, digestRef)
+	key := makeBlobFetchKey(repo, hash, req.GetCredentials())
+	isLeader := false
+	_, _, err = s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (struct{}, error) {
+		isLeader = true
+		return struct{}{}, s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), stream)
 	})
 	if err != nil {
 		return err
 	}
 
-	rc, err := layer.Compressed()
-	if err != nil {
-		return wrapError(err, "error getting compressed layer")
-	}
-	// Note: rc is closed by cachedRC.Close() in the happy path,
-	// or by defer rc.Close() in the early-return paths below.
-
-	mediaType, err := layer.MediaType()
-	if err != nil {
-		defer rc.Close()
-		log.CtxWarningf(ctx, "Could not get media type for layer, skipping cache: %s", err)
-		return s.streamBlob(rc, stream)
+	if isLeader {
+		return nil
 	}
 
-	size, err := layer.Size()
-	if err != nil {
-		defer rc.Close()
-		log.CtxWarningf(ctx, "Could not get size for layer, skipping cache: %s", err)
-		return s.streamBlob(rc, stream)
-	}
-
-	cachedRC, err := ocicache.NewBlobReadThroughCacher(ctx, rc, s.bsClient, s.acClient, repo, hash, string(mediaType), size)
-	if err != nil {
-		defer rc.Close()
-		log.CtxWarningf(ctx, "Error creating read-through cacher, skipping cache: %s", err)
-		return s.streamBlob(rc, stream)
-	}
-	defer cachedRC.Close()
-
-	return s.streamBlob(cachedRC, stream)
+	// This request had to wait for the leader to complete.
+	// Stream from cache.
+	return s.fetchBlobFromCache(ctx, stream, repo, hash)
 }
 
 // FetchBlobMetadata returns OCI blob metadata (size, media type).
@@ -420,6 +435,48 @@ func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.O
 	}
 	w := &grpcStreamWriter{stream: stream}
 	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, metadata.GetContentLength())
+}
+
+// fetchBlobFromRemoteWriteToCacheAndResponse fetches a blob from the upstream registry, streams it to the
+// response, and writes it to the cache simultaneously using read-through caching.
+func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	layer, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (gcr.Layer, error) {
+		return puller.Layer(ctx, digestRef)
+	})
+	if err != nil {
+		return err
+	}
+
+	// rc is closed by cachedRC.Close() in the happy path,
+	// or by defer rc.Close() in the early-return paths below.
+	rc, err := layer.Compressed()
+	if err != nil {
+		return wrapError(err, "error getting compressed layer")
+	}
+
+	mediaType, err := layer.MediaType()
+	if err != nil {
+		defer rc.Close()
+		log.CtxWarningf(ctx, "Could not get media type for layer: %s", err)
+		return s.streamBlob(rc, stream)
+	}
+
+	size, err := layer.Size()
+	if err != nil {
+		defer rc.Close()
+		log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
+		return s.streamBlob(rc, stream)
+	}
+
+	cachedRC, err := ocicache.NewBlobReadThroughCacher(ctx, rc, s.bsClient, s.acClient, repo, hash, string(mediaType), size)
+	if err != nil {
+		defer rc.Close()
+		log.CtxWarningf(ctx, "Error creating read-through cacher: %s", err)
+		return s.streamBlob(rc, stream)
+	}
+	defer cachedRC.Close()
+
+	return s.streamBlob(cachedRC, stream)
 }
 
 // streamBlob reads from rc and streams the data to the gRPC stream in chunks.

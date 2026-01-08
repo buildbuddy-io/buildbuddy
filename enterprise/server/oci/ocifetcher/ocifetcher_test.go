@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -97,7 +98,10 @@ type mockFetchBlobServer struct {
 }
 
 func (m *mockFetchBlobServer) Send(resp *ofpb.FetchBlobResponse) error {
-	m.responses = append(m.responses, resp)
+	// Copy bytes since upstream may reuse buffers.
+	cp := make([]byte, len(resp.GetData()))
+	copy(cp, resp.GetData())
+	m.responses = append(m.responses, &ofpb.FetchBlobResponse{Data: cp})
 	return nil
 }
 
@@ -111,6 +115,134 @@ func (m *mockFetchBlobServer) collectData() []byte {
 		data = append(data, resp.GetData()...)
 	}
 	return data
+}
+
+// concurrentMockFetchBlobServer is a thread-safe mock with error injection support.
+type concurrentMockFetchBlobServer struct {
+	grpc.ServerStream
+	ctx           context.Context
+	mu            sync.Mutex
+	responses     []*ofpb.FetchBlobResponse
+	sendErr       error // If set, Send() returns this error
+	sendErrAfterN int   // Fail after N successful sends (0 = fail immediately)
+	sendCount     int
+	// If set, only fail if we successfully CAS this from false to true (i.e., we're the first sender)
+	firstSenderFlag *atomic.Bool
+	isFirstSender   bool // Set to true if we won the CAS race
+}
+
+func (m *concurrentMockFetchBlobServer) Send(resp *ofpb.FetchBlobResponse) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// On first send, determine if we're the first sender (leader)
+	if m.sendCount == 0 && m.firstSenderFlag != nil {
+		m.isFirstSender = m.firstSenderFlag.CompareAndSwap(false, true)
+	}
+
+	// Check if we should fail
+	if m.sendErr != nil {
+		shouldFail := m.firstSenderFlag == nil || m.isFirstSender
+		if shouldFail && m.sendCount >= m.sendErrAfterN {
+			return m.sendErr
+		}
+	}
+
+	m.sendCount++
+	// Copy bytes since upstream may reuse buffers.
+	cp := make([]byte, len(resp.GetData()))
+	copy(cp, resp.GetData())
+	m.responses = append(m.responses, &ofpb.FetchBlobResponse{Data: cp})
+	return nil
+}
+
+func (m *concurrentMockFetchBlobServer) Context() context.Context {
+	return m.ctx
+}
+
+func (m *concurrentMockFetchBlobServer) collectData() []byte {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var data []byte
+	for _, resp := range m.responses {
+		data = append(data, resp.GetData()...)
+	}
+	return data
+}
+
+// failingByteStreamClient always errors on Write and reports NotFound on Read/Query.
+type failingByteStreamClient struct {
+	bspb.ByteStreamClient
+}
+
+func (f failingByteStreamClient) Write(context.Context, ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	return nil, status.InternalError("cache write failed")
+}
+
+func (f failingByteStreamClient) Read(context.Context, *bspb.ReadRequest, ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	return nil, status.NotFoundError("not found")
+}
+
+func (f failingByteStreamClient) QueryWriteStatus(context.Context, *bspb.QueryWriteStatusRequest, ...grpc.CallOption) (*bspb.QueryWriteStatusResponse, error) {
+	return nil, status.NotFoundError("not found")
+}
+
+// notFoundActionCacheClient always returns NotFound.
+type notFoundActionCacheClient struct {
+	repb.ActionCacheClient
+}
+
+func (n notFoundActionCacheClient) GetActionResult(context.Context, *repb.GetActionResultRequest, ...grpc.CallOption) (*repb.ActionResult, error) {
+	return nil, status.NotFoundError("not found")
+}
+
+func (n notFoundActionCacheClient) UpdateActionResult(context.Context, *repb.UpdateActionResultRequest, ...grpc.CallOption) (*repb.ActionResult, error) {
+	return nil, status.NotFoundError("not found")
+}
+
+// blockingInterceptor blocks HTTP requests until signaled.
+type blockingInterceptor struct {
+	enabled      atomic.Bool   // Must be enabled before blocking starts
+	blockUntil   chan struct{}
+	requestCount atomic.Int32
+	failWithCode atomic.Int32 // 0 = don't fail, >0 = return this HTTP status for blob requests
+}
+
+func newBlockingInterceptor() *blockingInterceptor {
+	return &blockingInterceptor{
+		blockUntil: make(chan struct{}),
+	}
+}
+
+func (bi *blockingInterceptor) enable() {
+	bi.enabled.Store(true)
+}
+
+func (bi *blockingInterceptor) intercept(w http.ResponseWriter, r *http.Request) bool {
+	if !bi.enabled.Load() {
+		return true // Not enabled yet, let requests through (e.g., during image push)
+	}
+	if strings.Contains(r.URL.Path, "/blobs/") {
+		bi.requestCount.Add(1)
+		<-bi.blockUntil // Block until released
+
+		if code := bi.failWithCode.Load(); code > 0 {
+			w.WriteHeader(int(code))
+			return false
+		}
+	}
+	return true
+}
+
+func (bi *blockingInterceptor) release() {
+	close(bi.blockUntil)
+}
+
+// fetchResult holds the result of a concurrent FetchBlob call.
+type fetchResult struct {
+	idx  int
+	data []byte
+	err  error
 }
 
 func layerMetadata(t *testing.T, layer v1.Layer) (size int64, mediaType string) {
@@ -1007,4 +1139,350 @@ func TestServerBypassRegistry(t *testing.T) {
 		// Verify NO registry requests were made (can't resolve tag without registry)
 		assertRequests(t, counter, map[string]int{})
 	})
+}
+
+// runConcurrentFetchBlob runs numRequests concurrent FetchBlob calls and returns results.
+func runConcurrentFetchBlob(
+	t *testing.T,
+	server ofpb.OCIFetcherServer,
+	req *ofpb.FetchBlobRequest,
+	numRequests int,
+	streamFactory func(idx int) *concurrentMockFetchBlobServer,
+) []*fetchResult {
+	results := make([]*fetchResult, numRequests)
+	var wg sync.WaitGroup
+
+	for i := 0; i < numRequests; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			stream := streamFactory(i)
+			err := server.FetchBlob(req, stream)
+
+			results[i] = &fetchResult{
+				idx:  i,
+				data: stream.collectData(),
+				err:  err,
+			}
+		}()
+	}
+
+	wg.Wait()
+	return results
+}
+
+// TestFetchBlobSingleflightHappyPath verifies concurrent callers for the same blob are
+// deduplicated to a single upstream fetch and all receive the blob data.
+func TestFetchBlobSingleflightHappyPath(t *testing.T) {
+	const numRequests = 10
+
+	blocker := newBlockingInterceptor()
+	reg, counter := setupRegistry(t, nil, blocker.intercept)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	req := &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + digest.String(),
+	}
+
+	blocker.enable()
+	go func() {
+		require.Eventually(t, func() bool {
+			return blocker.requestCount.Load() >= 1
+		}, 5*time.Second, 10*time.Millisecond, "expected at least 1 HTTP request to arrive")
+		time.Sleep(50 * time.Millisecond)
+		blocker.release()
+	}()
+
+	results := runConcurrentFetchBlob(t, server, req, numRequests,
+		func(idx int) *concurrentMockFetchBlobServer {
+			return &concurrentMockFetchBlobServer{ctx: context.Background()}
+		},
+	)
+
+	blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
+	require.Equal(t, 1, counter.Snapshot()[blobPath], "expected exactly 1 HTTP request due to singleflight")
+
+	for i, r := range results {
+		require.NoError(t, r.err, "request %d should succeed", i)
+		require.Equal(t, expectedData, r.data, "request %d should have correct data", i)
+	}
+}
+
+// TestFetchBlobSingleflightCacheHit ensures concurrent callers hit the cache and do not
+// touch the registry when the blob is already cached.
+func TestFetchBlobSingleflightCacheHit(t *testing.T) {
+	const numRequests = 10
+
+	reg, counter := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	req := &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + digest.String(),
+	}
+
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(req, stream)
+	require.NoError(t, err)
+	counter.Reset()
+
+	results := runConcurrentFetchBlob(t, server, req, numRequests,
+		func(idx int) *concurrentMockFetchBlobServer {
+			return &concurrentMockFetchBlobServer{ctx: context.Background()}
+		},
+	)
+
+	assertRequests(t, counter, map[string]int{})
+
+	for i, r := range results {
+		require.NoError(t, r.err, "request %d should succeed", i)
+		require.Equal(t, expectedData, r.data, "request %d should have correct data", i)
+	}
+}
+
+// TestFetchBlobSingleflightLeaderFailsUpstream confirms an upstream failure still
+// deduplicates requests but propagates errors to all callers.
+func TestFetchBlobSingleflightLeaderFailsUpstream(t *testing.T) {
+	const numRequests = 10
+
+	blocker := newBlockingInterceptor()
+	blocker.failWithCode.Store(http.StatusInternalServerError)
+
+	reg, counter := setupRegistry(t, nil, blocker.intercept)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+
+	server := newTestServer(t)
+
+	req := &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + digest.String(),
+	}
+
+	blocker.enable()
+	go func() {
+		require.Eventually(t, func() bool {
+			return blocker.requestCount.Load() >= 1
+		}, 5*time.Second, 10*time.Millisecond)
+		blocker.release()
+	}()
+
+	results := runConcurrentFetchBlob(t, server, req, numRequests,
+		func(idx int) *concurrentMockFetchBlobServer {
+			return &concurrentMockFetchBlobServer{ctx: context.Background()}
+		},
+	)
+
+	blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
+	httpRequestCount := counter.Snapshot()[blobPath]
+	require.Less(t, httpRequestCount, numRequests, "singleflight should deduplicate (got %d requests for %d callers)", httpRequestCount, numRequests)
+
+	for i, r := range results {
+		require.Error(t, r.err, "request %d should fail", i)
+	}
+}
+
+// TestFetchBlobSingleflightLeaderSendFails ensures a leader Send failure causes all
+// callers to fail and the next request either hits cache or refetches successfully.
+func TestFetchBlobSingleflightLeaderSendFails(t *testing.T) {
+	const numRequests = 10
+
+	blocker := newBlockingInterceptor()
+	reg, counter := setupRegistry(t, nil, blocker.intercept)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	req := &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + digest.String(),
+	}
+
+	var firstSenderFlag atomic.Bool
+	streams := make([]*concurrentMockFetchBlobServer, numRequests)
+
+	blocker.enable()
+	go func() {
+		require.Eventually(t, func() bool {
+			return blocker.requestCount.Load() >= 1
+		}, 5*time.Second, 10*time.Millisecond)
+		blocker.release()
+	}()
+
+	results := runConcurrentFetchBlob(t, server, req, numRequests,
+		func(idx int) *concurrentMockFetchBlobServer {
+			stream := &concurrentMockFetchBlobServer{
+				ctx:             context.Background(),
+				sendErr:         status.InternalError("simulated Send failure"),
+				sendErrAfterN:   0,
+				firstSenderFlag: &firstSenderFlag,
+			}
+			streams[idx] = stream
+			return stream
+		},
+	)
+
+	blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
+	require.Equal(t, 1, counter.Snapshot()[blobPath], "singleflight should deduplicate to 1 HTTP request")
+
+	for i, r := range results {
+		require.Error(t, r.err, "request %d should fail (leader failed before writing to cache)", i)
+	}
+
+	counter.Reset()
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(req, stream)
+	require.NoError(t, err, "subsequent fetch should succeed")
+	require.Equal(t, expectedData, stream.collectData())
+	require.LessOrEqual(t, counter.Snapshot()[blobPath], 1, "subsequent fetch should be served from cache or a single upstream retry")
+}
+
+// TestFetchBlobSingleflightCacheSetupFailure validates that when caching setup fails,
+// the leader streams data but followers miss the cache and return NotFound after waiting.
+func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
+	reg, counter := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	bsClient := failingByteStreamClient{}
+	acClient := notFoundActionCacheClient{}
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	req := &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + digest.String(),
+	}
+
+	const numRequests = 4
+	results := runConcurrentFetchBlob(t, server, req, numRequests,
+		func(idx int) *concurrentMockFetchBlobServer {
+			return &concurrentMockFetchBlobServer{ctx: context.Background()}
+		},
+	)
+
+	blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
+	require.Equal(t, 1, counter.Snapshot()[blobPath], "requests should be deduped even when caching fails")
+
+	successes := 0
+	for i, r := range results {
+		if r.err == nil {
+			successes++
+			require.Equal(t, expectedData, r.data, "request %d should stream data", i)
+		} else {
+			require.True(t, status.IsNotFoundError(r.err), "request %d should fail with cache miss, got %v", i, r.err)
+		}
+	}
+	require.Equal(t, 1, successes, "only the leader should succeed when caching fails")
+}
+
+// TestFetchBlobSingleflightDifferentCredentials validates requests with different
+// credentials are not deduplicated and make separate upstream fetches.
+func TestFetchBlobSingleflightDifferentCredentials(t *testing.T) {
+	blocker := newBlockingInterceptor()
+	creds := &testregistry.BasicAuthCreds{Username: "user", Password: "pass"}
+	reg, counter := setupRegistry(t, creds, blocker.intercept)
+	imageName, img := reg.PushNamedImage(t, "test-image", creds)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	server := newTestServer(t)
+
+	creds1 := &rgpb.Credentials{Username: "user", Password: "pass"}
+	creds2 := &rgpb.Credentials{Username: "user", Password: "pass2"}
+
+	req1 := &ofpb.FetchBlobRequest{
+		Ref:         imageName + "@" + digest.String(),
+		Credentials: creds1,
+	}
+	req2 := &ofpb.FetchBlobRequest{
+		Ref:         imageName + "@" + digest.String(),
+		Credentials: creds2,
+	}
+
+	blocker.enable()
+
+	var wg sync.WaitGroup
+	var result1Err, result2Err error
+	var result1Data []byte
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		result1Err = server.FetchBlob(req1, stream)
+		result1Data = stream.collectData()
+	}()
+	go func() {
+		defer wg.Done()
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		result2Err = server.FetchBlob(req2, stream)
+	}()
+
+	require.Eventually(t, func() bool {
+		return blocker.requestCount.Load() >= 2
+	}, 5*time.Second, 10*time.Millisecond, "expected 2 HTTP requests (not deduplicated)")
+
+	blocker.release()
+	wg.Wait()
+
+	require.NoError(t, result1Err, "request with valid creds should succeed")
+	require.Equal(t, expectedData, result1Data)
+
+	require.Error(t, result2Err, "request with invalid creds should fail")
+
+	blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
+	require.Equal(t, 2, counter.Snapshot()[blobPath], "different credentials should result in separate requests")
 }
