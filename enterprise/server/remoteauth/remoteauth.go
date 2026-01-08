@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -34,19 +35,27 @@ const (
 var (
 	authHeaders = []string{authutil.APIKeyHeader}
 
-	target              = flag.String("auth.remote.target", "", "The gRPC target of the remote authentication API.")
-	jwtExpirationBuffer = flag.Duration("auth.remote.jwt_expiration_buffer", time.Minute, "Discard remote-auth minted JWTs if they're within this time buffer of their expiration time.")
+	target                 = flag.String("auth.remote.target", "", "The gRPC target of the remote authentication API.")
+	jwtExpirationBuffer    = flag.Duration("auth.remote.jwt_expiration_buffer", time.Minute, "Discard remote-auth minted JWTs if they're within this time buffer of their expiration time.")
+	alwaysUseRSASignedJWTs = flag.Bool("auth.remote.use_rsa_jwts", false, "TODO(iain)")
 )
 
-func NewRemoteAuthenticator() (*RemoteAuthenticator, error) {
+func Register(env *real_environment.RealEnv) error {
 	conn, err := grpc_client.DialSimple(*target)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return newRemoteAuthenticator(conn)
+	authenticator, err := newRemoteAuthenticator(env.GetExperimentFlagProvider(), conn)
+	if err != nil {
+		return err
+	}
+	env.SetAuthenticator(authenticator)
+	return nil
 }
 
-func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
+func newRemoteAuthenticator(
+	experimentFlagProvider interfaces.ExperimentFlagProvider,
+	conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
 	config := &lru.Config[string]{
 		MaxSize: jwtCacheSize,
 		SizeFn:  func(v string) int64 { return 1 },
@@ -55,16 +64,69 @@ func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator
 	if err != nil {
 		return nil, err
 	}
-	claimsParser, err := claims.NewClaimsParser()
+	client := authpb.NewAuthServiceClient(conn)
+	provider := keyProvider{
+		experimentFlagProvider: experimentFlagProvider,
+		client:                 client,
+	}
+	claimsParser, err := claims.NewClaimsParser(provider.provide)
 	if err != nil {
 		return nil, err
 	}
 	return &RemoteAuthenticator{
-		authClient:          authpb.NewAuthServiceClient(conn),
-		cache:               cache,
-		jwtExpirationBuffer: *jwtExpirationBuffer,
-		claimsParser:        claimsParser,
+		authClient:             authpb.NewAuthServiceClient(conn),
+		cache:                  cache,
+		jwtExpirationBuffer:    *jwtExpirationBuffer,
+		claimsParser:           claimsParser,
+		experimentFlagProvider: experimentFlagProvider,
 	}, nil
+}
+
+type keyProvider struct {
+	experimentFlagProvider interfaces.ExperimentFlagProvider
+	client                 authpb.AuthServiceClient
+}
+
+func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
+	keys := []string{}
+	if useRSASignedJWTs(ctx, kp.experimentFlagProvider) {
+		rsaKeys, err := kp.getRSAPublicKeys(ctx)
+		if err != nil {
+			return []string{}, err
+		}
+		keys = append(keys, rsaKeys...)
+	}
+	defaultKeys, err := claims.DefaultKeyProvider(ctx)
+	if err != nil {
+		return []string{}, err
+	}
+	keys = append(keys, defaultKeys...)
+	return keys, nil
+}
+
+// TODO(go/b/4539): cache these keys (w support for invalidating).
+func (kp *keyProvider) getRSAPublicKeys(ctx context.Context) ([]string, error) {
+	return kp.fetchRSAPublicKeys(ctx)
+}
+
+func (kp *keyProvider) fetchRSAPublicKeys(ctx context.Context) ([]string, error) {
+	req := authpb.GetPublicKeysRequest{}
+	resp, err := kp.client.GetPublicKeys(ctx, &req)
+	if err != nil {
+		return []string{}, err
+	}
+	keys := make([]string, len(resp.GetPublicKeys()))
+	for i, key := range resp.GetPublicKeys() {
+		keys[i] = key.GetKey()
+	}
+	return keys, nil
+}
+
+func useRSASignedJWTs(
+	ctx context.Context,
+	experimentFlagProvider interfaces.ExperimentFlagProvider) bool {
+	return *alwaysUseRSASignedJWTs ||
+		experimentFlagProvider.Boolean(ctx, "auth.remote.use_rsa_jwts", false)
 }
 
 // The claims cache must be keyed by subdomain and API key to avoid keys
@@ -80,11 +142,12 @@ func claimsCacheKey(ctx context.Context) (string, error) {
 }
 
 type RemoteAuthenticator struct {
-	authClient          authpb.AuthServiceClient
-	cache               interfaces.LRU[string]
-	jwtExpirationBuffer time.Duration
-	mu                  sync.RWMutex // protects cache
-	claimsParser        *claims.ClaimsParser
+	authClient             authpb.AuthServiceClient
+	cache                  interfaces.LRU[string]
+	jwtExpirationBuffer    time.Duration
+	mu                     sync.RWMutex // protects cache
+	claimsParser           *claims.ClaimsParser
+	experimentFlagProvider interfaces.ExperimentFlagProvider
 }
 
 // Unsupported in the remote authenticator.
@@ -142,7 +205,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	jwt, found := a.cache.Get(key)
 	a.mu.RUnlock()
 	if found {
-		if c, err := jwtIsValid(jwt, a.claimsParser, a.jwtExpirationBuffer); err == nil {
+		if c, err := jwtIsValid(ctx, jwt, a.claimsParser, a.jwtExpirationBuffer); err == nil {
 			return authContext(ctx, jwt, c)
 		}
 		a.mu.Lock()
@@ -159,7 +222,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	a.mu.Lock()
 	a.cache.Add(key, jwt)
 	a.mu.Unlock()
-	c, err = jwtIsValid(jwt, a.claimsParser, a.jwtExpirationBuffer)
+	c, err = jwtIsValid(ctx, jwt, a.claimsParser, a.jwtExpirationBuffer)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
@@ -205,7 +268,11 @@ func (a *RemoteAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt
 
 func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) {
 	sd := subdomain.Get(ctx)
-	resp, err := a.authClient.Authenticate(ctx, &authpb.AuthenticateRequest{Subdomain: &sd})
+	req := authpb.AuthenticateRequest{Subdomain: &sd}
+	if useRSASignedJWTs(ctx, a.experimentFlagProvider) {
+		req.JwtSigningMethod = authpb.JWTSigningMethod_RS256.Enum()
+	}
+	resp, err := a.authClient.Authenticate(ctx, &req)
 	if err != nil {
 		return "", err
 	}
@@ -227,16 +294,16 @@ func getValidJwtFromContext(ctx context.Context, claimsParser *claims.ClaimsPars
 	if jwt == "" {
 		return "", nil, nil
 	}
-	claims, err := jwtIsValid(jwt, claimsParser, jwtExpirationTimeBuffer)
+	claims, err := jwtIsValid(ctx, jwt, claimsParser, jwtExpirationTimeBuffer)
 	if err != nil {
 		return "", nil, err
 	}
 	return jwt, claims, nil
 }
 
-func jwtIsValid(jwt string, claimsParser *claims.ClaimsParser, jwtExpirationBuffer time.Duration) (*claims.Claims, error) {
+func jwtIsValid(ctx context.Context, jwt string, claimsParser *claims.ClaimsParser, jwtExpirationBuffer time.Duration) (*claims.Claims, error) {
 	// N.B. the ClaimsParser validates JWTs before returning them.
-	claims, err := claimsParser.Parse(jwt)
+	claims, err := claimsParser.Parse(ctx, jwt)
 	if err != nil {
 		return nil, err
 	}

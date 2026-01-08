@@ -10,6 +10,7 @@ go_library(
     deps = [
         "//proto:auth_go_proto",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/tables",
         "//server/util/authutil",
         "//server/util/claims",
@@ -29,10 +30,12 @@ go_test(
     srcs = ["remoteauth_test.go"],
     embed = [":remoteauth"],
     deps = [
+        "//enterprise/server/experiments",
         "//proto:auth_go_proto",
         "//server/interfaces",
         "//server/testutil/testenv",
         "//server/testutil/testgrpc",
+        "//server/testutil/testkeys",
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/status",

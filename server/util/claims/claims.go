@@ -218,11 +218,10 @@ func (c *Claims) IsCustomerSSO() bool {
 	return c.SAML || c.CustomerSSO
 }
 
-func parseClaims(token string) (*Claims, error) {
-	keys := []string{*jwtKey}
-	if *newJwtKey != "" {
-		// Try the new key first.
-		keys = []string{*newJwtKey, *jwtKey}
+func parseClaims(ctx context.Context, token string, keyProvider KeyProvider) (*Claims, error) {
+	keys, err := keyProvider(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	var lastErr error
@@ -466,7 +465,7 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 
 	// If context already contains a JWT, just verify it and return the claims.
 	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		claims, err := parseClaims(tokenString)
+		claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
 		if err != nil {
 			return nil, err
 		}
@@ -534,6 +533,18 @@ func ServerAdminGroupID() string {
 	return *serverAdminGroupID
 }
 
+// A lazily-evaluated provider of JWT signing keys that may be used to retrieve
+// keys for verifying JWTs.
+type KeyProvider func(ctx context.Context) ([]string, error)
+
+func DefaultKeyProvider(ctx context.Context) ([]string, error) {
+	if *newJwtKey != "" {
+		// Try the new key first.
+		return []string{*newJwtKey, *jwtKey}, nil
+	}
+	return []string{*jwtKey}, nil
+}
+
 // ClaimsParser parses and verifies encoded JWTs. It also caches the parsed
 // claims, if configured to do so, to reduce overhead due to redundant parsing.
 //
@@ -545,11 +556,13 @@ type ClaimsParser struct {
 
 	mu  sync.Mutex
 	lru interfaces.LRU[*Claims]
+
+	keyProvider KeyProvider
 }
 
-func NewClaimsParser() (*ClaimsParser, error) {
+func NewClaimsParser(keyProvider KeyProvider) (*ClaimsParser, error) {
 	if *claimsCacheTTL <= 0 {
-		return &ClaimsParser{ttl: 0, lru: nil}, nil
+		return &ClaimsParser{ttl: 0, keyProvider: keyProvider, lru: nil}, nil
 	}
 
 	config := &lru.Config[*Claims]{
@@ -560,12 +573,12 @@ func NewClaimsParser() (*ClaimsParser, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ClaimsParser{ttl: *claimsCacheTTL, lru: lru}, nil
+	return &ClaimsParser{ttl: *claimsCacheTTL, keyProvider: keyProvider, lru: lru}, nil
 }
 
-func (c *ClaimsParser) Parse(token string) (*Claims, error) {
+func (c *ClaimsParser) Parse(ctx context.Context, token string) (*Claims, error) {
 	if c.ttl <= 0 {
-		return parseClaims(token)
+		return parseClaims(ctx, token, c.keyProvider)
 	}
 
 	c.mu.Lock()
@@ -578,7 +591,7 @@ func (c *ClaimsParser) Parse(token string) (*Claims, error) {
 		}
 	}
 
-	claims, err := parseClaims(token)
+	claims, err := parseClaims(ctx, token, c.keyProvider)
 	if err != nil {
 		return nil, err
 	}
