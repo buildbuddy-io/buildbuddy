@@ -200,32 +200,6 @@ func (n notFoundActionCacheClient) UpdateActionResult(context.Context, *repb.Upd
 	return nil, status.NotFoundError("not found")
 }
 
-// testBarrier synchronizes N goroutines to start concurrently.
-type testBarrier struct {
-	count   int
-	waiting int
-	mu      sync.Mutex
-	cond    *sync.Cond
-}
-
-func newTestBarrier(count int) *testBarrier {
-	b := &testBarrier{count: count}
-	b.cond = sync.NewCond(&b.mu)
-	return b
-}
-
-func (b *testBarrier) Wait() {
-	b.mu.Lock()
-	b.waiting++
-	if b.waiting == b.count {
-		b.cond.Broadcast()
-	}
-	for b.waiting < b.count {
-		b.cond.Wait()
-	}
-	b.mu.Unlock()
-}
-
 // blockingInterceptor blocks HTTP requests until signaled.
 type blockingInterceptor struct {
 	enabled      atomic.Bool   // Must be enabled before blocking starts
@@ -1175,7 +1149,6 @@ func runConcurrentFetchBlob(
 	numRequests int,
 	streamFactory func(idx int) *concurrentMockFetchBlobServer,
 ) []*fetchResult {
-	barrier := newTestBarrier(numRequests)
 	results := make([]*fetchResult, numRequests)
 	var wg sync.WaitGroup
 
@@ -1185,9 +1158,6 @@ func runConcurrentFetchBlob(
 			defer wg.Done()
 
 			stream := streamFactory(i)
-
-			barrier.Wait() // All goroutines start together
-
 			err := server.FetchBlob(req, stream)
 
 			results[i] = &fetchResult{
