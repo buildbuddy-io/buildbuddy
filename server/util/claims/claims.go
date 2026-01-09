@@ -6,6 +6,8 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
+	"runtime"
 	"slices"
 	"sync"
 	"time"
@@ -49,6 +51,8 @@ var (
 	newJWTRSAPrivateKey = flag.String("auth.new_jwt_rsa_private_key", "", "PEM-encoded private key used to sign new RSA-signed JWTs during key rotation.", flag.Secret)
 
 	serverAdminGroupID = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
+
+	reparseJWTs = flag.Bool("auth.reparse_jwts", true, "Whether to permit re-parsing JWTs or not.")
 )
 
 var (
@@ -466,6 +470,14 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 
 	// If context already contains a JWT, just verify it and return the claims.
 	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
+		if !*reparseJWTs {
+			return nil, status.InternalError("Unpermitted attempt to reparse JWT")
+		}
+		caller := "unknown"
+		if _, file, line, ok := runtime.Caller(1); ok {
+			caller = fmt.Sprintf("%s:%d", file, line)
+		}
+		log.Infof("Reparsing JWT (caller: %s)", caller)
 		claims, err := parseClaims(tokenString)
 		if err != nil {
 			return nil, err
