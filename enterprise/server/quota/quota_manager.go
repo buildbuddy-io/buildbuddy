@@ -114,17 +114,34 @@ func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity in
 
 	allow, err := b.Allow(ctx, key, quantity)
 	if err != nil {
-		log.CtxWarningf(ctx, "Quota check for %q failed: %s", namespace, err)
+		metrics.QuotaAllowCount.With(prometheus.Labels{
+			metrics.QuotaNamespace:   namespace,
+			metrics.QuotaKey:         key,
+			metrics.QuotaAllowResult: "error",
+		}).Inc()
 		// Do not block traffic when the quota system has issues.
 		return nil
 	}
 	if allow {
+		metrics.QuotaAllowCount.With(prometheus.Labels{
+			metrics.QuotaNamespace:   namespace,
+			metrics.QuotaKey:         key,
+			metrics.QuotaAllowResult: "allowed",
+		}).Inc()
 		return nil
 	}
 
+	// TODO: Remove QuotaExceeded metric once dashboards are migrated.
+	// Replace: sum by (quota_namespace, quota_key) (rate(buildbuddy_quota_quota_exceeded_count{...}[...]))
+	// With:    sum by (quota_namespace, quota_key) (rate(buildbuddy_quota_allow_count{result="denied",...}[...]))
 	metrics.QuotaExceeded.With(prometheus.Labels{
 		metrics.QuotaNamespace: namespace,
 		metrics.QuotaKey:       key,
+	}).Inc()
+	metrics.QuotaAllowCount.With(prometheus.Labels{
+		metrics.QuotaNamespace:   namespace,
+		metrics.QuotaKey:         key,
+		metrics.QuotaAllowResult: "denied",
 	}).Inc()
 	return status.ResourceExhaustedErrorf(quotaExceededMessageTemplate, namespace)
 }

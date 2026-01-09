@@ -158,6 +158,9 @@ const (
 	// The key used for quota accounting, either a group ID or an IP address.
 	QuotaKey = "quota_key"
 
+	// The result of a quota Allow call: `allowed`, `denied`, or `error`.
+	QuotaAllowResult = "result"
+
 	// Describes the type of cache request
 	CacheRequestType = "type"
 
@@ -2444,6 +2447,17 @@ var (
 		Help:      "Total number of calls with empty quota key",
 	}, []string{
 		QuotaNamespace,
+	})
+
+	QuotaAllowCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "quota",
+		Name:      "allow_count",
+		Help:      "Total number of quota Allow calls by result: allowed, denied, or error.",
+	}, []string{
+		QuotaNamespace,
+		QuotaKey,
+		QuotaAllowResult,
 	})
 
 	ClickhouseInsertedCount = promauto.NewCounterVec(prometheus.CounterOpts{
