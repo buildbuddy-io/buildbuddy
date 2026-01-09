@@ -26,6 +26,7 @@
   border-radius: 2px;
   border: 2px solid var(--color-trace-border);
   box-sizing: border-box;
+  background: var(--color-white);
 }
 
 .trace-viewer .panel::-webkit-scrollbar-thumb {

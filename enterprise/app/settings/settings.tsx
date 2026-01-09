@@ -200,6 +200,34 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   <FilledButton className="settings-button" onClick={() => this.props.preferences.toggleDenseMode()}>
                     {this.props.preferences.denseModeEnabled ? "Disable" : "Enable"} dense mode
                   </FilledButton>
+                  {capabilities.config.darkModeEnabled && (
+                    <>
+                      <div className="settings-option-title">Theme</div>
+                      <div className="settings-option-description">
+                        Choose between light and dark mode for the BuildBuddy UI.
+                      </div>
+                      <div className="settings-button-group" role="group" aria-label="Theme selection">
+                        <FilledButton
+                          className={`settings-button ${this.props.preferences.themePreference === "light" ? "selected" : ""}`}
+                          onClick={() => this.props.preferences.setTheme("light")}
+                          aria-pressed={this.props.preferences.themePreference === "light"}>
+                          Light
+                        </FilledButton>
+                        <FilledButton
+                          className={`settings-button ${this.props.preferences.themePreference === "system" ? "selected" : ""}`}
+                          onClick={() => this.props.preferences.setTheme("system")}
+                          aria-pressed={this.props.preferences.themePreference === "system"}>
+                          System
+                        </FilledButton>
+                        <FilledButton
+                          className={`settings-button ${this.props.preferences.themePreference === "dark" ? "selected" : ""}`}
+                          onClick={() => this.props.preferences.setTheme("dark")}
+                          aria-pressed={this.props.preferences.themePreference === "dark"}>
+                          Dark
+                        </FilledButton>
+                      </div>
+                    </>
+                  )}
                   <div className="settings-option-title">Log viewer theme</div>
                   <div className="settings-option-description">
                     The log viewer theme allows you to switch between a light and dark log viewer.

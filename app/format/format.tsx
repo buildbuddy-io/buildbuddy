@@ -397,12 +397,12 @@ export function differenceInCalendarDays(start: Date, end: Date) {
   return moment(end).diff(start, "days");
 }
 
-export function colorHash(input: string) {
+export function colorHashHue(input: string): number {
   let num = 0;
   for (var i = 0; i < input.length; i++) {
     num = input.charCodeAt(i) + ((num << 5) - num);
   }
-  return `hsl(${(num % 360000) / 1000}, 50%, 80%)`;
+  return (num % 360000) / 1000;
 }
 
 export function enumLabel(e: string) {
@@ -435,7 +435,7 @@ export default {
   formatRole,
   formatWithCommas,
   formatDateRange,
-  colorHash,
+  colorHashHue,
   enumLabel,
   formatDateFromUsec,
   relativeTimeSeconds,

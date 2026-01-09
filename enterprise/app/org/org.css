@@ -118,7 +118,7 @@
 .organization-form .input-help-text,
 .organization-form .url-preview {
   font-size: 14px;
-  color: #333;
+  color: var(--color-form-help-text);
   margin-top: -8px;
 }
 
@@ -131,7 +131,7 @@
 }
 
 .organization-invite-link-container {
-  background: #eee;
+  background: var(--color-form-input-bg-secondary);
   border-radius: 8px;
   padding: 16px;
   display: inline-flex;

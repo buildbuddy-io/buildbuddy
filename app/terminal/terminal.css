@@ -4,7 +4,7 @@
   display: flex;
 }
 .terminal.light-terminal {
-  background: var(--color-bg-primary);
+  background: var(--color-white);
 }
 
 .terminal .terminal-search {
@@ -154,7 +154,7 @@
   color: var(--color-terminal-text);
 }
 .terminal.light-terminal .terminal-line {
-  color: var(--color-text-primary);
+  color: var(--color-gray-900);
 }
 
 /* Scrollbars */

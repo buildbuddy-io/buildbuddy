@@ -87,6 +87,7 @@
   font-family: monospace;
   font-size: 12px;
   background: var(--color-bg-code);
+  color: var(--color-text-primary);
   border-radius: 8px;
   padding-left: 16px;
   padding-right: 4px;
