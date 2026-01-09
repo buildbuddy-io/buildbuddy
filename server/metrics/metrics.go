@@ -349,6 +349,10 @@ const (
 	GRPCPoolIDLabel = "pool_id"
 
 	GRPCMethodLabel = "grpc_method"
+
+	OCIFetcherMethodLabel = "method"
+	OCIFetcherRoleLabel = "role"
+	OCIFetcherStatusLabel = "status"
 )
 
 // Label value constants
@@ -364,6 +368,12 @@ const (
 	OCIManifestResourceTypeLabel     = "manifest"
 	OCIBlobResourceTypeLabel         = "blob"
 	OCIBlobMetadataResourceTypeLabel = "blob_metadata"
+
+	OCIFetcherMethodFetchBlob = "FetchBlob"
+	OCIFetcherRoleLeader      = "leader"
+	OCIFetcherRoleWaiter      = "waiter"
+	OCIFetcherStatusOK        = "ok"
+	OCIFetcherStatusError     = "error"
 )
 
 // Other constants
@@ -3575,6 +3585,28 @@ var (
 	}, []string{
 		OCIResourceTypeLabel,
 		CacheEventTypeLabel,
+	})
+
+	OCIFetcherRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "ocifetcher",
+		Name:      "request_count",
+		Help:      "Number of OCIFetcher requests by method, role, and status.",
+	}, []string{
+		OCIFetcherMethodLabel,
+		OCIFetcherRoleLabel,
+		OCIFetcherStatusLabel,
+	})
+
+	OCIFetcherRequestDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "ocifetcher",
+		Name:      "request_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Hour, 5),
+		Help:      "Duration of OCIFetcher requests by method and role, in **microseconds**.",
+	}, []string{
+		OCIFetcherMethodLabel,
+		OCIFetcherRoleLabel,
 	})
 
 	InputTreeSetupOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
