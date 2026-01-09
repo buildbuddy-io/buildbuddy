@@ -833,8 +833,6 @@ type EventChannel struct {
 	requestedTerminalColumns         int
 	requestedTerminalLines           int
 	logWriter                        *eventlog.EventLogWriter
-	runLogWritersMu                  sync.Mutex
-	runLogWriters                    map[string]*eventlog.EventLogWriter
 	onClose                          func()
 	attempt                          uint64
 
@@ -878,12 +876,6 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		}
 		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
-	e.runLogWritersMu.Lock()
-	for _, w := range e.runLogWriters {
-		_ = w.Close(ctx)
-	}
-	e.runLogWriters = nil
-	e.runLogWritersMu.Unlock()
 
 	ti, err := e.tableInvocationFromProto(invocation, iid)
 	if err != nil {
@@ -1196,42 +1188,6 @@ func (e *EventChannel) InitializeLogWriter(iid string) error {
 	return err
 }
 
-func (e *EventChannel) getRunLogWriterForInvocation(invocationID string) (*eventlog.EventLogWriter, error) {
-	e.runLogWritersMu.Lock()
-	defer e.runLogWritersMu.Unlock()
-	if e.runLogWriters == nil {
-		e.runLogWriters = make(map[string]*eventlog.EventLogWriter)
-	}
-	if w, ok := e.runLogWriters[invocationID]; ok {
-		return w, nil
-	}
-	// Determine attempt from the invocation DB so we store run logs under the
-	// correct attempt path.
-	attempt := uint64(1)
-	if idb := e.env.GetInvocationDB(); idb != nil {
-		if inv, err := idb.LookupInvocation(e.ctx, invocationID); err == nil {
-			if inv.Attempt != 0 {
-				attempt = inv.Attempt
-			}
-		}
-	}
-	w, err := eventlog.NewEventLogWriter(
-		e.ctx,
-		e.env.GetBlobstore(),
-		e.env.GetKeyValStore(),
-		e.env.GetPubSub(),
-		eventlog.GetRunLogPubSubChannel(invocationID),
-		eventlog.GetRunLogPathFromInvocationIdAndAttempt(invocationID, attempt),
-		e.requestedTerminalColumns,
-		e.requestedTerminalLines,
-	)
-	if err != nil {
-		return nil, err
-	}
-	e.runLogWriters[invocationID] = w
-	return w, nil
-}
-
 func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid string) error {
 	if err := e.redactor.RedactAPIKey(e.ctx, event.GetBuildEvent()); err != nil {
 		return err
@@ -1286,23 +1242,6 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 			// writing it separately to blobstore
 			p.Progress.Stderr = ""
 			p.Progress.Stdout = ""
-		}
-	case *build_event_stream.BuildEvent_RunOutputProgress:
-		if *enableChunkedEventLogs {
-			targetIID := p.RunOutputProgress.GetInvocationId()
-			if targetIID == "" {
-				break
-			}
-			writer, err := e.getRunLogWriterForInvocation(targetIID)
-			if err != nil {
-				log.CtxWarningf(e.ctx, "Failed to initialize run log writer for %s: %s", targetIID, err)
-				break
-			}
-			if _, err := writer.Write(e.ctx, append([]byte(p.RunOutputProgress.GetStderr()), []byte(p.RunOutputProgress.GetStdout())...)); err != nil && err != context.Canceled {
-				log.CtxWarningf(e.ctx, "Failed to write run logs for event: %s", err)
-			}
-			p.RunOutputProgress.Stderr = ""
-			p.RunOutputProgress.Stdout = ""
 		}
 	}
 

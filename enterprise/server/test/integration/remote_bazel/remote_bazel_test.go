@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,8 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -38,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
@@ -45,13 +43,13 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	lspb "github.com/buildbuddy-io/buildbuddy/proto/logstream"
 	spb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -200,7 +198,7 @@ func TestWithPrivateRepo(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, 2, len(searchRsp.GetInvocation()))
-	// Find the bazel invocation; it should contain the synthetic RunOutput event.
+	// Find the bazel invocation; its run output should be available via LogStream.
 	var inv *inpb.Invocation
 	for _, i := range searchRsp.GetInvocation() {
 		if i.GetRole() != "HOSTED_BAZEL" {
@@ -210,31 +208,18 @@ func TestWithPrivateRepo(t *testing.T) {
 	require.NotNil(t, inv)
 	invocationID := inv.InvocationId
 
-	invResp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{
-		RequestContext: reqCtx,
-		Lookup:         &inpb.InvocationLookup{InvocationId: invocationID},
+	conn, err := grpc_client.DialSimple(bbServer.GRPCAddress())
+	require.NoError(t, err)
+	defer conn.Close()
+	logClient := lspb.NewLogStreamClient(conn)
+
+	key := fmt.Sprintf("invocation/%s/run_output", invocationID)
+	rsp, err := logClient.GetLogChunk(ctx, &lspb.GetLogChunkRequest{
+		Key:      key,
+		MinLines: math.MaxInt32,
 	})
 	require.NoError(t, err)
-	require.Greater(t, len(invResp.GetInvocation()), 0)
-
-	var runOutput *bespb.RunOutput
-	for _, ev := range invResp.GetInvocation()[0].GetEvent() {
-		if ro := ev.GetBuildEvent().GetRunOutput(); ro != nil {
-			runOutput = ro
-			break
-		}
-	}
-	require.NotNil(t, runOutput)
-	require.NotEmpty(t, runOutput.GetStdout().GetUri())
-
-	u, err := url.Parse(runOutput.GetStdout().GetUri())
-	require.NoError(t, err)
-	rn, err := digest.ParseDownloadResourceName(u.Path)
-	require.NoError(t, err)
-	var buf bytes.Buffer
-	err = cachetools.GetBlob(ctx, env.GetByteStreamClient(), rn, &buf)
-	require.NoError(t, err)
-	require.Contains(t, buf.String(), "FUTURE OF BUILDS!")
+	require.Contains(t, string(rsp.GetBuffer()), "FUTURE OF BUILDS!")
 }
 
 func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envModifier func(rbeEnv *rbetest.Env, e *testenv.TestEnv)) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
@@ -562,7 +547,7 @@ sh_binary(
 	require.NoError(t, err)
 
 	require.Equal(t, 2, len(searchRsp.GetInvocation()))
-	// Find the bazel invocation; it should contain the synthetic RunOutput event.
+	// Find the bazel invocation; its run output should be available via LogStream.
 	var inv *inpb.Invocation
 	for _, i := range searchRsp.GetInvocation() {
 		if i.GetRole() != "HOSTED_BAZEL" {
@@ -572,31 +557,18 @@ sh_binary(
 	require.NotNil(t, inv)
 	invocationID := inv.InvocationId
 
-	invResp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{
-		RequestContext: reqCtx,
-		Lookup:         &inpb.InvocationLookup{InvocationId: invocationID},
+	conn, err := grpc_client.DialSimple(bbServer.GRPCAddress())
+	require.NoError(t, err)
+	defer conn.Close()
+	logClient := lspb.NewLogStreamClient(conn)
+
+	key := fmt.Sprintf("invocation/%s/run_output", invocationID)
+	rsp, err := logClient.GetLogChunk(ctx, &lspb.GetLogChunkRequest{
+		Key:      key,
+		MinLines: math.MaxInt32,
 	})
 	require.NoError(t, err)
-	require.Greater(t, len(invResp.GetInvocation()), 0)
-
-	var runOutput *bespb.RunOutput
-	for _, ev := range invResp.GetInvocation()[0].GetEvent() {
-		if ro := ev.GetBuildEvent().GetRunOutput(); ro != nil {
-			runOutput = ro
-			break
-		}
-	}
-	require.NotNil(t, runOutput)
-	require.NotEmpty(t, runOutput.GetStdout().GetUri())
-
-	u, err := url.Parse(runOutput.GetStdout().GetUri())
-	require.NoError(t, err)
-	rn, err := digest.ParseDownloadResourceName(u.Path)
-	require.NoError(t, err)
-	var buf bytes.Buffer
-	err = cachetools.GetBlob(ctx, env.GetByteStreamClient(), rn, &buf)
-	require.NoError(t, err)
-	require.Contains(t, buf.String(), "FUTURE OF BUILDS!")
+	require.Contains(t, string(rsp.GetBuffer()), "FUTURE OF BUILDS!")
 }
 
 func setupSecrets(t *testing.T) (func(*rbetest.Env, *testenv.TestEnv), *string) {

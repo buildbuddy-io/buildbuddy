@@ -23,13 +23,6 @@ message GetEventLogChunkRequest {
   // many lines as are available.
   int32 min_lines = 4;
 
-  enum LogType {
-    EVENTLOG = 0;
-    RUNLOG = 1;
-  }
-
-  // Which log stream to fetch for the invocation.
-  LogType log_type = 5;
 }
 
 message GetEventLogChunkResponse {

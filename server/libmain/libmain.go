@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/logstream"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
@@ -63,6 +64,7 @@ import (
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
+	lspb "github.com/buildbuddy-io/buildbuddy/proto/logstream"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -312,6 +314,11 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
 
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
+
+	// Generic log streaming API (keyed by arbitrary strings).
+	if env.GetBlobstore() != nil {
+		lspb.RegisterLogStreamServer(grpcServer, logstream.New(env))
+	}
 
 	// Register API Server as a gRPC service.
 	if api := env.GetAPIService(); api != nil {

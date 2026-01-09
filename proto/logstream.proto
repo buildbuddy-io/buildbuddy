@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package logstream;
+
+import "proto/context.proto";
+
+option go_package = "proto;logstream";
+
+// LogStream is a generic append-only log storage API keyed by arbitrary strings.
+// It supports chunked reads (and streaming reads) similar to Eventlog, but is
+// not tied to build event streams or invocation IDs.
+service LogStream {
+  // Streams writes to one or more log keys.
+  rpc Write(stream WriteLogRequest) returns (WriteLogResponse);
+
+  // Reads a log chunk for a given key.
+  rpc GetLogChunk(GetLogChunkRequest) returns (GetLogChunkResponse);
+
+  // Streams log chunks as they become available.
+  rpc GetLog(GetLogChunkRequest) returns (stream GetLogChunkResponse);
+}
+
+message WriteLogRequest {
+  // The logical key identifying the log.
+  string key = 1;
+
+  // Bytes to append to the log.
+  bytes data = 2;
+}
+
+message WriteLogResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message GetLogChunkRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // The logical key identifying the log.
+  string key = 2;
+
+  // Optionally specify the chunk to be returned; gets the last chunk if empty.
+  string chunk_id = 3;
+
+  // Specify fewest lines that may be returned; additional chunks may be read
+  // to meet this requirement. If no more chunks are available to be read and
+  // this requirement is still not satisfied, the buffer will instead contain as
+  // many lines as are available.
+  int32 min_lines = 4;
+}
+
+message GetLogChunkResponse {
+  context.ResponseContext response_context = 1;
+
+  // The surrounding chunk ids. Empty if no such chunk exists.
+  string previous_chunk_id = 2;
+  string next_chunk_id = 3;
+
+  // The requested log data.
+  bytes buffer = 4;
+
+  // If the chunk is "live", i.e. not yet written to disk and subject to change.
+  bool live = 5;
+}
+
+message LiveLogChunk {
+  // The chunk id that this data will eventually be written to.
+  string chunk_id = 1;
+
+  // The cached log data.
+  bytes buffer = 2;
+}
+

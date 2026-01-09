@@ -52,6 +52,7 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	lspb "github.com/buildbuddy-io/buildbuddy/proto/logstream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -313,7 +314,9 @@ type buildEventReporter struct {
 	runOutputMu            sync.Mutex
 	runOutputLineRemainder string
 	runOutputActiveIID     string
-	runOutputProgressCount map[string]int32
+	logStreamConn          *grpc_client.ClientConnPool
+	logStreamClient        lspb.LogStreamClient
+	logStreamWriter        lspb.LogStream_WriteClient
 
 	mu            sync.Mutex // protects(progressCount)
 	progressCount int32
@@ -344,15 +347,26 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
+	var logStreamConn *grpc_client.ClientConnPool
+	var logStreamClient lspb.LogStreamClient
+	if besBackend != "" {
+		conn, err := grpc_client.DialSimple(besBackend)
+		if err == nil {
+			logStreamConn = conn
+			logStreamClient = lspb.NewLogStreamClient(conn)
+		}
+	}
+
 	return &buildEventReporter{
-		apiKey:                 apiKey,
-		bep:                    bep,
-		uploader:               uploader,
-		log:                    newInvocationLog(),
-		invocationID:           iid,
-		isWorkflow:             isWorkflow,
-		childInvocations:       []string{},
-		runOutputProgressCount: make(map[string]int32),
+		apiKey:           apiKey,
+		bep:              bep,
+		uploader:         uploader,
+		log:              newInvocationLog(),
+		invocationID:     iid,
+		isWorkflow:       isWorkflow,
+		childInvocations: []string{},
+		logStreamConn:    logStreamConn,
+		logStreamClient:  logStreamClient,
 	}, nil
 }
 
@@ -526,6 +540,15 @@ func (r *buildEventReporter) Stop() error {
 		return status.UnavailableErrorf("failed to publish build event: %s", err)
 	}
 
+	if r.logStreamWriter != nil {
+		_, _ = r.logStreamWriter.CloseAndRecv()
+		r.logStreamWriter = nil
+	}
+	if r.logStreamConn != nil {
+		_ = r.logStreamConn.Close()
+		r.logStreamConn = nil
+	}
+
 	return nil
 }
 
@@ -594,7 +617,7 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 // `buildEventPublisher.Finish()`
 func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) string {
 	// Process line-by-line so we can suppress marker lines and divert the bytes
-	// between markers into separate RunOutputProgress events.
+	// between markers into the generic LogStream service.
 	r.runOutputMu.Lock()
 	defer r.runOutputMu.Unlock()
 
@@ -639,20 +662,27 @@ func (r *buildEventReporter) emitRunOutputProgressLocked(invocationID string, ch
 	if strings.TrimSpace(chunk) == "" {
 		return
 	}
-	count := r.runOutputProgressCount[invocationID]
-	r.runOutputProgressCount[invocationID] = count + 1
-	_ = r.Publish(&bespb.BuildEvent{
-		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_RunOutputProgress{
-			RunOutputProgress: &bespb.BuildEventId_RunOutputProgressId{
-				InvocationId: invocationID,
-				OpaqueCount:  count,
-			},
-		}},
-		Payload: &bespb.BuildEvent_RunOutputProgress{RunOutputProgress: &bespb.RunOutputProgress{
-			InvocationId: invocationID,
-			Stderr:       chunk,
-		}},
-	})
+	if r.logStreamClient == nil {
+		return
+	}
+	if r.logStreamWriter == nil {
+		ctx := context.Background()
+		if r.apiKey != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, r.apiKey)
+		}
+		w, err := r.logStreamClient.Write(ctx)
+		if err != nil {
+			return
+		}
+		r.logStreamWriter = w
+	}
+	key := fmt.Sprintf("invocation/%s/run_output", invocationID)
+	if err := r.logStreamWriter.Send(&lspb.WriteLogRequest{
+		Key:  key,
+		Data: []byte(chunk),
+	}); err != nil {
+		r.logStreamWriter = nil
+	}
 }
 
 func (r *buildEventReporter) emitChildInvocationEventsForLine(output string) {
@@ -2744,8 +2774,7 @@ func runBazelWrapper() error {
 }
 
 // (deprecated) publishBazelRunOutputToInvocation was previously used to attach
-// run output as a bytestream-backed BES event. We now emit run output via
-// RunOutputProgress events and store it under chunks/log/runlog.
+// run output as a bytestream-backed BES event.
 
 // Parse and save the startup options for a bazel command in a file on disk.
 //

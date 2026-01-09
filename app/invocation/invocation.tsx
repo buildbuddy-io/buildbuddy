@@ -3,7 +3,6 @@ import moment from "moment";
 import React from "react";
 import { Subscription } from "rxjs";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
-import { eventlog } from "../../proto/eventlog_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import { google as google_grpc_status } from "../../proto/grpc_status_ts_proto";
@@ -93,8 +92,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
   private timeoutRef: number | undefined;
   private logsModel?: InvocationLogsModel;
   private logsSubscription?: Subscription;
-  private runLogsModel?: InvocationLogsModel;
-  private runLogsSubscription?: Subscription;
   private modelChangedSubscription?: Subscription;
   private runnerExecutionRPC?: CancelablePromise;
   private cancelGroupIdOverride?: () => void;
@@ -115,12 +112,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
       this.fetchInvocation();
 
       this.logsModel = new InvocationLogsModel(this.props.invocationId);
-      this.runLogsModel = new InvocationLogsModel(this.props.invocationId, eventlog.GetEventLogChunkRequest.LogType.RUNLOG);
       // Re-render whenever we fetch new log chunks.
       this.logsSubscription = this.logsModel.onChange.subscribe({
-        next: () => this.forceUpdate(),
-      });
-      this.runLogsSubscription = this.runLogsModel.onChange.subscribe({
         next: () => this.forceUpdate(),
       });
       if (!this.isQueued() && !this.props.search.get("runnerFailed")) {
@@ -350,13 +343,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
     return Boolean(this.logsModel?.isFetching() && !this.logsModel?.getLogs());
   }
 
-  getRunLogs(): string {
-    return this.runLogsModel?.getLogs() ?? "";
-  }
-
-  areRunLogsLoading(): boolean {
-    return Boolean(this.runLogsModel?.isFetching() && !this.runLogsModel?.getLogs());
-  }
 
   isQueued(props = this.props, state = this.state) {
     return !state.model && props.search.get("queued") === "true";
@@ -658,17 +644,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
               dark={!this.props.preferences.lightTerminalEnabled}
               value={this.getBuildLogs(this.state.model)}
               loading={this.areBuildLogsLoading(this.state.model)}
-              expanded={activeTab === "log"}
-              fullLogsFetcher={fetchBuildLogs}
-            />
-          )}
-
-          {(activeTab === "all" || activeTab === "log") && this.state.model.getCommand() === "run" && (
-            <BuildLogsCardComponent
-              title={"Run output"}
-              dark={!this.props.preferences.lightTerminalEnabled}
-              value={this.getRunLogs()}
-              loading={this.areRunLogsLoading()}
               expanded={activeTab === "log"}
               fullLogsFetcher={fetchBuildLogs}
             />
