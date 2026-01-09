@@ -114,8 +114,9 @@ func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity in
 
 	allow, err := b.Allow(ctx, key, quantity)
 	if err != nil {
-		log.CtxWarningf(ctx, "Quota check for %q failed: %s", namespace, err)
-		// Do not block traffic when the quota system has issues.
+		// TODO(buildbuddy-internal#6464): This fails periodically because of high concurrent
+		// requests to similar quota keys. Make this more resilient to failure, but silence
+		// errors for now.
 		return nil
 	}
 	if allow {
