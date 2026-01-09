@@ -45,11 +45,11 @@ archive_override(
 bazel_dep(name = "rules_docker", repo_name = "io_bazel_rules_docker")
 archive_override(
     module_name = "rules_docker",
-    integrity = "sha256-OCnau34lu1O2Ioi/r1wo1/LshUAYzLlpUo0FxOhTTRM=",
-    strip_prefix = "rules_docker-deebe7813c821e073c18ee47c86af06564988b7a",
+    integrity = "sha256-ZJKKxQn+3Hq3PkUa11PE5dOUEcxD/OE1688Kn+IaEJY=",
+    strip_prefix = "rules_docker-8dfcf8c84a822ae22c720ec245ea16db7165a5bf",
     # This is BuildBuddy fork of rules_docker with bzlmod support.
     # Diff: https://github.com/bazelbuild/rules_docker/compare/master...buildbuddy-io:rules_docker:master
-    urls = ["https://github.com/buildbuddy-io/rules_docker/archive/deebe7813c821e073c18ee47c86af06564988b7a.tar.gz"],
+    urls = ["https://github.com/buildbuddy-io/rules_docker/archive/8dfcf8c84a822ae22c720ec245ea16db7165a5bf.tar.gz"],
 )
 
 bazel_dep(name = "rules_k8s", repo_name = "io_bazel_rules_k8s")
@@ -87,7 +87,7 @@ bazel_dep(name = "redis", version = "5.0.4")
 bazel_dep(name = "rules_cc", version = "0.2.16")
 bazel_dep(name = "rules_go", version = "0.59.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_oci", version = "2.0.0")
-bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_python", version = "1.6.3")
 bazel_dep(name = "rules_python_gazelle_plugin", version = "1.6.3")
