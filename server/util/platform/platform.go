@@ -62,6 +62,7 @@ const (
 	containerRegistryUsernamePropertyName = "container-registry-username"
 	containerRegistryPasswordPropertyName = "container-registry-password"
 	containerRegistryBypassPropertyName   = "container-registry-bypass"
+	useOCIFetcherPropertyName             = "use-oci-fetcher"
 
 	// container-image prop value which behaves the same way as if the prop were
 	// empty or unset.
@@ -317,6 +318,10 @@ type Properties struct {
 	// This property can only be used by server admins, otherwise the execution
 	// request will be rejected.
 	ContainerRegistryBypass bool
+
+	// UseOCIFetcher enables using the OCI fetcher service for pulling container
+	// images instead of pulling directly from the registry.
+	UseOCIFetcher bool
 }
 
 type PersistentVolume struct {
@@ -503,6 +508,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		SnapshotReadPolicy:        snapshotReadPolicy,
 		RemoteSnapshotSavePolicy:  snapshotSavePolicy,
 		ContainerRegistryBypass:   boolProp(m, containerRegistryBypassPropertyName, false),
+		UseOCIFetcher:             boolProp(m, useOCIFetcherPropertyName, false),
 		RunnerCrashedExitCodes:    intListProp(m, runnerCrashedExitCodesPropertyName),
 		TransientErrorExitCodes:   intListProp(m, transientErrorExitCodes),
 	}, nil

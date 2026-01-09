@@ -38,7 +38,7 @@ func TestOciconv(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resolver)
 
-	path, err := ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{})
+	path, err := ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{}, false /*useOCIFetcher*/)
 	require.NoError(t, err)
 
 	fi, err := os.Stat(path)
@@ -138,7 +138,7 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resolver)
 	// This should fail because the credentials are invalid.
-	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{})
+	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{}, false /*useOCIFetcher*/)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "401 Unauthorized")
 
@@ -146,12 +146,12 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{
 		Username: "test",
 		Password: "test",
-	})
+	}, false /*useOCIFetcher*/)
 	require.NoError(t, err)
 
 	// Now that the image is cached, try pulling again with invalid credentials.
 	// This should still fail.
-	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{})
+	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{}, false /*useOCIFetcher*/)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "401 Unauthorized")
 
@@ -160,6 +160,6 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{
 		Username: "test",
 		Password: "test",
-	})
+	}, false /*useOCIFetcher*/)
 	require.NoError(t, err)
 }

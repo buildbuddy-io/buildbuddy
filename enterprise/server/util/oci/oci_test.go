@@ -366,8 +366,9 @@ func TestResolve(t *testing.T) {
 						registry.ImageAddress(nameToResolve),
 						tc.args.platform,
 						tc.args.credentials,
+						false, /*useOCIFetcher*/
 					)
-					if tc.checkError != nil {
+						if tc.checkError != nil {
 						require.True(t, tc.checkError(err))
 						continue
 					}
@@ -460,15 +461,16 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 				registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
 				for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
-					pulledImage, err := newResolver(t, te).Resolve(
-						context.Background(),
-						registry.ImageAddress(nameToResolve),
-						tc.args.platform,
-						tc.args.credentials,
-					)
-					require.NoError(t, err)
+						pulledImage, err := newResolver(t, te).Resolve(
+							context.Background(),
+							registry.ImageAddress(nameToResolve),
+							tc.args.platform,
+							tc.args.credentials,
+							false, /*useOCIFetcher*/
+						)
+						require.NoError(t, err)
 
-					counter.Reset()
+						counter.Reset()
 
 					layers, err := pulledImage.Layers()
 					require.NoError(t, err)
@@ -573,6 +575,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 			Os:   runtime.GOOS,
 		},
 		oci.Credentials{},
+		false, /*useOCIFetcher*/
 	)
 	require.NoError(t, err)
 
@@ -595,7 +598,9 @@ func pushAndFetchRandomImage(t *testing.T, te *testenv.TestEnv, registry *testre
 			Arch: runtime.GOARCH,
 			Os:   runtime.GOOS,
 		},
-		oci.Credentials{})
+		oci.Credentials{},
+		false, /*useOCIFetcher*/
+	)
 	return err
 }
 
@@ -882,6 +887,7 @@ func TestResolve_Concurrency(t *testing.T) {
 			Os:   runtime.GOOS,
 		},
 		oci.Credentials{},
+		false, /*useOCIFetcher*/
 	)
 	require.NoError(t, err)
 
@@ -968,6 +974,7 @@ func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imag
 		imageAddress,
 		tc.args.platform,
 		tc.args.credentials,
+		false, /*useOCIFetcher*/
 	)
 	require.NoError(t, err)
 
