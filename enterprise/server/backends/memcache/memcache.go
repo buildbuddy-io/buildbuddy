@@ -318,6 +318,10 @@ func (c *Cache) Stop() error {
 	return nil
 }
 
+func (c *Cache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	return "", nil
+}
+
 func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }

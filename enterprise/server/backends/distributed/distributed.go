@@ -105,6 +105,7 @@ type peerInfo struct {
 	zone        string
 }
 
+// TODO(go/b/6456): use memory cache instead of LRU for lookaside cache
 type Cache struct {
 	authenticator        interfaces.Authenticator
 	local                interfaces.Cache
@@ -375,7 +376,6 @@ func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key str
 	// Don't store contents for encrypted users/groups in the lookaside cache
 	// to avoid cache inconsistencies between the group's cache and the
 	// lookaside cache.
-	// TODO(go/b/5175): treat non-default-partition contents this way too.
 	if authutil.EncryptionEnabled(ctx, c.authenticator) {
 		return "", false
 	}
@@ -385,11 +385,19 @@ func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key str
 		// though they are technically AC entries, they are based on CAS
 		// content that does not change.
 		if rn, err := digest.ACResourceNameFromProto(r); err == nil {
-			return rn.ActionCacheString(), true
+			partition, err := c.local.Partition(ctx, rn.GetInstanceName())
+			if err != nil {
+				return "", false
+			}
+			return partition + "/" + rn.ActionCacheString(), true
 		}
 	} else if r.GetCacheType() == rspb.CacheType_CAS {
 		if rn, err := digest.CASResourceNameFromProto(r); err == nil {
-			return rn.DownloadString(), true
+			partition, err := c.local.Partition(ctx, rn.GetInstanceName())
+			if err != nil {
+				return "", false
+			}
+			return partition + "/" + rn.DownloadString(), true
 		}
 	}
 	return "", false
@@ -1535,6 +1543,10 @@ func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.Co
 		return nil, err
 	}
 	return mwc, nil
+}
+
+func (c *Cache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	return c.local.Partition(ctx, remoteInstanceName)
 }
 
 // SupportsCompressor Distributed compression should only be enabled if all peers support compression

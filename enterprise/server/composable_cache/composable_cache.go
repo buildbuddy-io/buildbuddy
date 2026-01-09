@@ -274,6 +274,24 @@ func (c *ComposableCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 	return innerWriter, nil
 }
 
+func (c *ComposableCache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	innerPartition, err := c.inner.Partition(ctx, remoteInstanceName)
+	if err != nil {
+		return "", err
+	}
+	outerPartition, err := c.outer.Partition(ctx, remoteInstanceName)
+	if err != nil {
+		return "", err
+	}
+	if innerPartition == "" {
+		return outerPartition, nil
+	}
+	if outerPartition == "" {
+		return innerPartition, nil
+	}
+	return outerPartition + "/" + innerPartition, nil
+}
+
 func (c *ComposableCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }

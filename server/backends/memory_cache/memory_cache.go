@@ -252,6 +252,10 @@ func (m *MemoryCache) Stop() error {
 	return nil
 }
 
+func (m *MemoryCache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	return "", nil
+}
+
 func (m *MemoryCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }

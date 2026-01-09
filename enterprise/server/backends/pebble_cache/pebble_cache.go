@@ -3206,6 +3206,11 @@ func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool 
 	}
 }
 
+func (p *PebbleCache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	_, partID := p.lookupGroupAndPartitionID(ctx, remoteInstanceName)
+	return partID, nil
+}
+
 // newChunkedReader returns a reader to read chunked content.
 // When shouldDecompress is true, the content read is decompressed.
 func (p *PebbleCache) newChunkedReader(ctx context.Context, chunkedMD *sgpb.StorageMetadata_ChunkedMetadata, shouldDecompress bool) (io.ReadCloser, error) {

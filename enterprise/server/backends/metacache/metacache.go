@@ -821,6 +821,11 @@ func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (cwc interface
 	return c.writerWithImmediateCommit(ctx, r, r.GetDigest().GetSizeBytes())
 }
 
+func (c *Cache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	_, partitionID := c.lookupGroupAndPartitionID(ctx, remoteInstanceName)
+	return partitionID, nil
+}
+
 // SupportsCompressor returns whether the cache supports storing data compressed
 // with the given compressor.
 func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
