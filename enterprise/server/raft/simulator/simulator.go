@@ -577,18 +577,32 @@ func (s *ProbabilisticStrategy) Decide(myNhid string, shardID int, replicas []st
 	return target
 }
 
+// calculateDistanceFromDeadZone returns how far a count is from the dead zone boundaries.
+// Returns 0 if inside the dead zone, otherwise returns the distance beyond the boundary.
+func calculateDistanceFromDeadZone(count float64, lowerBound, upperBound float64) float64 {
+	if count >= lowerBound && count <= upperBound {
+		return 0 // Inside dead zone
+	}
+	if count > upperBound {
+		return count - upperBound // Distance above upper boundary
+	}
+	return lowerBound - count // Distance below lower boundary
+}
+
 // AdaptiveProbabilisticStrategy applies probability based on how overfull the node is
 type AdaptiveProbabilisticStrategy struct {
 	base                 Strategy
-	minAbsoluteThreshold int     // Ignore deviations smaller than this (in lease count)
-	relativeThreshold    float64 // Relative deviation threshold (e.g., 0.2 = 20%)
+	minAbsoluteThreshold int     // Absolute dead zone threshold (e.g., 2 leases)
+	percentThreshold     float64 // Percent dead zone threshold (e.g., 0.05 = 5%)
+	relativeThreshold    float64 // Distance/mean ratio to reach maxProbability (e.g., 0.2 = 20%)
 	maxProbability       float64 // Cap maximum probability (e.g., 0.5 = 50%)
 }
 
-func NewAdaptiveProbabilisticStrategy(base Strategy, minAbsolute int, relativeThreshold float64, maxProb float64) *AdaptiveProbabilisticStrategy {
+func NewAdaptiveProbabilisticStrategy(base Strategy, minAbsolute int, percentThreshold float64, relativeThreshold float64, maxProb float64) *AdaptiveProbabilisticStrategy {
 	return &AdaptiveProbabilisticStrategy{
 		base:                 base,
 		minAbsoluteThreshold: minAbsolute,
+		percentThreshold:     percentThreshold,
 		relativeThreshold:    relativeThreshold,
 		maxProbability:       maxProb,
 	}
@@ -607,27 +621,29 @@ func (s *AdaptiveProbabilisticStrategy) Decide(myNhid string, shardID int, repli
 	}
 	mean := float64(sum) / float64(len(view))
 
+	// Define dead zone using BOTH percent and absolute (like driver.go)
+	// deadZone = max(mean * percentThreshold, minAbsoluteThreshold)
+	deadZoneWidth := math.Max(mean*s.percentThreshold, float64(s.minAbsoluteThreshold))
+	upperBound := mean + deadZoneWidth
+	lowerBound := mean - deadZoneWidth
+
 	myCount := float64(view[myNhid])
 	targetCount := float64(view[target])
 
-	myDeviation := myCount - mean
-	targetDeviation := targetCount - mean
+	// Calculate distance FROM dead zone for source and target
+	myDistance := calculateDistanceFromDeadZone(myCount, lowerBound, upperBound)
+	targetDistance := calculateDistanceFromDeadZone(targetCount, lowerBound, upperBound)
 
-	// Check if EITHER source is overfull enough OR target is underfull enough
-	// This respects the production algorithm's logic to help underfull nodes
-	myAbsDeviation := math.Abs(myDeviation)
-	targetAbsDeviation := math.Abs(targetDeviation)
-
-	// Ignore if both deviations are small (match driver.go: only trigger when deviation > threshold)
-	if myAbsDeviation <= float64(s.minAbsoluteThreshold) && targetAbsDeviation <= float64(s.minAbsoluteThreshold) {
+	// If both are in dead zone, no transfer
+	maxDistance := math.Max(myDistance, targetDistance)
+	if maxDistance == 0 {
 		return ""
 	}
 
-	// Calculate probability based on the larger relative deviation
-	// (either source overfullness or target underfullness)
-	maxAbsDeviation := math.Max(myAbsDeviation, targetAbsDeviation)
-	relativeDeviation := maxAbsDeviation / mean
-	probability := math.Min(s.maxProbability, relativeDeviation/s.relativeThreshold)
+	// Express distance as fraction of mean (scale-independent)
+	// relativeThreshold = "at this fraction of mean, reach maxProbability"
+	relativeDistance := maxDistance / mean
+	probability := math.Min(s.maxProbability, relativeDistance/s.relativeThreshold)
 
 	// Apply probability
 	if rand.Float64() > probability {
@@ -959,13 +975,13 @@ func runTestCase(name string, numShards int, nodes []string, initialLeases map[s
 			return NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1)
 		}},
 		{"Adaptive(conservative)", func() Strategy {
-			return NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 3, 0.20, 0.5)
+			return NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.20, 0.5)
 		}},
 		{"Adaptive(moderate)", func() Strategy {
-			return NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 3, 0.15, 0.7)
+			return NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.15, 0.7)
 		}},
 		{"Adaptive(aggresive)", func() Strategy {
-			return NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 3, 0.10, 0.8)
+			return NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.10, 0.8)
 		}},
 		{"Prob(0.1) + Cooldown(10s)", func() Strategy {
 			return NewCooldownStrategy(NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1), 10000)
@@ -977,13 +993,13 @@ func runTestCase(name string, numShards int, nodes []string, initialLeases map[s
 			return NewCooldownStrategy(NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.5), 10000)
 		}},
 		{"Adaptive(conservative) + Cooldown(10s)", func() Strategy {
-			return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.20, 0.5), 10000)
+			return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.20, 0.5), 10000)
 		}},
 		{"Adaptive(moderate) + Cooldown(10s)", func() Strategy {
-			return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.15, 0.7), 10000)
+			return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.15, 0.7), 10000)
 		}},
 		{"Adaptive(aggresive) + Cooldown(10s)", func() Strategy {
-			return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.1, 0.8), 10000)
+			return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.10, 0.8), 10000)
 		}},
 	}
 
