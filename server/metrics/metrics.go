@@ -1493,6 +1493,17 @@ var (
 		Stage,
 	})
 
+	// NOTE: Even if a snapshot manifest is fetched from the remote cache, some chunks may be fetched from the local cache.
+	// However it will likely be correlated with more chunks being fetched from the remote cache.
+	SnapshotSourceCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "snapshot_source_count",
+		Help:      "The number of snapshot manifests fetched from the local vs remote cache.",
+	}, []string{
+		ChunkSource,
+	})
+
 	FirecrackerExecDialDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
@@ -1539,6 +1550,16 @@ var (
 		Help:      "After a copy-on-write snapshot has been used, the total count of bytes dirtied.",
 	}, []string{
 		FileName,
+	})
+
+	COWSnapshotBytesRead = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_bytes_read",
+		Help:      "After a copy-on-write snapshot has been used, the number of bytes read from each source.",
+	}, []string{
+		FileName,
+		ChunkSource,
 	})
 
 	COWSnapshotEmptyChunkRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{

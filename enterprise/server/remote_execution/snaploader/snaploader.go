@@ -451,6 +451,9 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 		} else if foundLocalSnapshot {
 			if validateLocalSnapshot(ctx, manifest, opts, isFallback) {
 				log.CtxInfof(ctx, "Using local manifest")
+				metrics.SnapshotSourceCount.With(prometheus.Labels{
+					metrics.ChunkSource: "local_filecache",
+				}).Inc()
 				return manifest, nil
 			}
 		}
@@ -481,6 +484,9 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 		}
 	}
 
+	metrics.SnapshotSourceCount.With(prometheus.Labels{
+		metrics.ChunkSource: "remote_cache",
+	}).Inc()
 	return manifest, nil
 }
 
@@ -1168,6 +1174,10 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			metrics.FileName:    name,
 			metrics.ChunkSource: snaputil.ChunkSourceLabel(chunkSrc),
 		}).Observe(float64(count) / float64(len(chunks)))
+		metrics.COWSnapshotBytesRead.With(prometheus.Labels{
+			metrics.FileName:    name,
+			metrics.ChunkSource: snaputil.ChunkSourceLabel(chunkSrc),
+		}).Add(float64(int64(count) * cow.ChunkSizeBytes()))
 	}
 
 	return treeDigest, nil
