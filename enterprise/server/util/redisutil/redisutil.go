@@ -144,20 +144,14 @@ func getDialer(tlsConfig *tls.Config) func(ctx context.Context, network, addr st
 	}
 	// Wrap the dialer with retries.
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		var lastErr error
-		for r := retry.DefaultWithContext(ctx); r.Next(); {
-			if lastErr != nil {
-				log.CtxInfof(ctx, "Retrying redis dial error: dial %s %s: %s", network, addr, lastErr)
-			}
+		return retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (net.Conn, error) {
 			conn, err := dialer(ctx, network, addr)
 			if err != nil {
 				metrics.RedisClientDialErrors.Inc()
-				lastErr = err
-				continue
+				return nil, fmt.Errorf("dial %s %s: %w", network, addr, err)
 			}
 			return conn, nil
-		}
-		return nil, lastErr
+		})
 	}
 }
 
