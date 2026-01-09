@@ -10,10 +10,12 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -185,23 +187,38 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", blobRef)
 	}
 
+	start := time.Now()
 	key := makeBlobFetchKey(repo, hash, req.GetCredentials())
 	isLeader := false
 	_, _, err = s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (struct{}, error) {
 		isLeader = true
 		return struct{}{}, s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), stream)
 	})
-	if err != nil {
+
+	if isLeader {
+		recordFetchBlobMetrics(metrics.OCIFetcherRoleLeader, err, time.Since(start))
 		return err
 	}
 
-	if isLeader {
-		return nil
+	if err != nil {
+		recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
+		return err
 	}
 
 	// This request had to wait for the leader to complete.
 	// Stream from cache.
-	return s.fetchBlobFromCache(ctx, stream, repo, hash)
+	err = s.fetchBlobFromCache(ctx, stream, repo, hash)
+	recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
+	return err
+}
+
+func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
+	statusLabel := metrics.OCIFetcherStatusOK
+	if err != nil {
+		statusLabel = metrics.OCIFetcherStatusError
+	}
+	metrics.OCIFetcherRequestCount.WithLabelValues(metrics.OCIFetcherMethodFetchBlob, role, statusLabel).Inc()
+	metrics.OCIFetcherRequestDurationUsec.WithLabelValues(metrics.OCIFetcherMethodFetchBlob, role).Observe(float64(duration.Microseconds()))
 }
 
 // FetchBlobMetadata returns OCI blob metadata (size, media type).
