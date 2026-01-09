@@ -1257,6 +1257,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
 	}
 
+	metrics.SnapshotSourceCount.With(prometheus.Labels{
+		metrics.ChunkSource: snap.GetManifestFetchSource().String(),
+	}).Inc()
+
 	// Set unique per-run identifier on the vm metadata so this exact snapshot
 	// run can be identified
 	if snap.GetVMMetadata() == nil {

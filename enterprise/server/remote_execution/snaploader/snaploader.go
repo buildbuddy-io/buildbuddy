@@ -283,9 +283,10 @@ func fileDigest(filePath string) (*repb.Digest, error) {
 
 // Snapshot holds a snapshot manifest along with the corresponding cache key.
 type Snapshot struct {
-	key           *fcpb.SnapshotKey
-	manifest      *fcpb.SnapshotManifest
-	remoteEnabled bool
+	key                 *fcpb.SnapshotKey
+	manifest            *fcpb.SnapshotManifest
+	remoteEnabled       bool
+	manifestFetchSource snaputil.ChunkSource
 }
 
 func (s *Snapshot) GetKey() *fcpb.SnapshotKey {
@@ -310,6 +311,10 @@ func (s *Snapshot) GetFiles() []*repb.FileNode {
 
 func (s *Snapshot) GetChunkedFiles() []*fcpb.ChunkedFile {
 	return s.manifest.GetChunkedFiles()
+}
+
+func (s *Snapshot) GetManifestFetchSource() snaputil.ChunkSource {
+	return s.manifestFetchSource
 }
 
 type GetSnapshotOptions struct {
@@ -419,21 +424,22 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKe
 	allKeys := append([]*fcpb.SnapshotKey{keys.GetBranchKey()}, keys.FallbackKeys...)
 	for i, key := range allKeys {
 		isFallbackSnapshot := i > 0
-		manifest, err := l.getSnapshot(ctx, key, opts, isFallbackSnapshot)
+		manifest, manifestFetchSource, err := l.getSnapshot(ctx, key, opts, isFallbackSnapshot)
 		if err != nil {
 			lastErr = err
 			continue
 		}
 		return &Snapshot{
-			key:           key,
-			manifest:      manifest,
-			remoteEnabled: opts.RemoteReadEnabled,
+			key:                 key,
+			manifest:            manifest,
+			remoteEnabled:       opts.RemoteReadEnabled,
+			manifestFetchSource: manifestFetchSource,
 		}, nil
 	}
 	return nil, lastErr
 }
 
-func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *GetSnapshotOptions, isFallback bool) (*fcpb.SnapshotManifest, error) {
+func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *GetSnapshotOptions, isFallback bool) (*fcpb.SnapshotManifest, snaputil.ChunkSource, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -447,31 +453,28 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 		manifest, err := l.getLocalManifest(ctx, key, supportsRemoteFallback)
 		foundLocalSnapshot := err == nil
 		if !foundLocalSnapshot && (!opts.RemoteReadEnabled || !*snaputil.EnableRemoteSnapshotSharing) {
-			return nil, err
+			return nil, snaputil.ChunkSourceUnmapped, err
 		} else if foundLocalSnapshot {
 			if validateLocalSnapshot(ctx, manifest, opts, isFallback) {
 				log.CtxInfof(ctx, "Using local manifest")
-				metrics.SnapshotSourceCount.With(prometheus.Labels{
-					metrics.ChunkSource: "local_filecache",
-				}).Inc()
-				return manifest, nil
+				return manifest, snaputil.ChunkSourceLocalFilecache, nil
 			}
 		}
 		// If local snapshot is not valid or couldn't be found, fallback to
 		// fetching a remote snapshot.
 	} else if !opts.RemoteReadEnabled {
-		return nil, status.InternalErrorf("invalid state: EnableLocalSnapshotSharing=false and remoteEnabled=false")
+		return nil, snaputil.ChunkSourceUnmapped, status.InternalErrorf("invalid state: EnableLocalSnapshotSharing=false and remoteEnabled=false")
 	}
 
 	if opts.ReadPolicy == platform.ReadLocalSnapshotOnly {
-		return nil, status.NotFoundErrorf("local manifest not found")
+		return nil, snaputil.ChunkSourceUnmapped, status.NotFoundErrorf("local manifest not found")
 	}
 
 	// Fall back to fetching remote manifest.
 	log.CtxInfof(ctx, "Fetching remote manifest")
 	manifest, acResult, err := l.fetchRemoteManifest(ctx, key)
 	if err != nil {
-		return nil, status.WrapError(err, "fetch remote manifest")
+		return nil, snaputil.ChunkSourceUnmapped, status.WrapError(err, "fetch remote manifest")
 	}
 
 	// Unless reading the newest snapshot from the remote cache is requested,
@@ -484,10 +487,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 		}
 	}
 
-	metrics.SnapshotSourceCount.With(prometheus.Labels{
-		metrics.ChunkSource: "remote_cache",
-	}).Inc()
-	return manifest, nil
+	return manifest, snaputil.ChunkSourceRemoteCache, nil
 }
 
 func validateLocalSnapshot(ctx context.Context, manifest *fcpb.SnapshotManifest, opts *GetSnapshotOptions, isFallback bool) bool {
