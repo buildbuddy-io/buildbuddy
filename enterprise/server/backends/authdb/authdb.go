@@ -703,7 +703,7 @@ func (d *AuthDB) CreateImpersonationAPIKey(ctx context.Context, groupID string) 
 	// Can't check group membership because impersonation modifies
 	// group information.
 	if !u.IsImpersonating() {
-		if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		if err := claims.AuthorizeServerAdmin(ctx, d.env.GetJWTParser()); err != nil {
 			return nil, err
 		}
 	}

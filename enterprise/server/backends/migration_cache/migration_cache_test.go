@@ -51,7 +51,7 @@ func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.Tes
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
 
 	setMigrationState(t, migration_cache.SrcPrimary)
-	fp, err := experiments.NewFlagProvider("test-name")
+	fp, err := experiments.NewFlagProvider("test-name", te.GetJWTParser())
 	require.NoError(t, err)
 	te.SetExperimentFlagProvider(fp)
 	return te

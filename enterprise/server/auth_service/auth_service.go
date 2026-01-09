@@ -16,13 +16,17 @@ import (
 
 type AuthService struct {
 	authenticator interfaces.GRPCAuthenticator
+	jwtParser     interfaces.JWTParser
 }
 
 func Register(env *real_environment.RealEnv) error {
-	if err := claims.Init(); err != nil {
+	if err := claims.Register(env); err != nil {
 		return err
 	}
-	env.SetAuthService(AuthService{authenticator: env.GetAuthenticator()})
+	env.SetAuthService(AuthService{
+		authenticator: env.GetAuthenticator(),
+		jwtParser:     env.GetJWTParser(),
+	})
 	return nil
 }
 
@@ -40,7 +44,7 @@ func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateR
 	// RSA-256-signed one here). Fix this by cleaning up the authentication
 	// logic a bit and exposing the right way to get just the JWT we need.
 	if req.GetJwtSigningMethod() == authpb.JWTSigningMethod_RS256 {
-		userInfo, err := claims.ClaimsFromContext(ctx)
+		userInfo, err := claims.ClaimsFromContext(ctx, a.jwtParser)
 		if err != nil {
 			return nil, err
 		}

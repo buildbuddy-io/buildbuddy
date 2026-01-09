@@ -418,11 +418,12 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 	if efp := s.env.GetExperimentFlagProvider(); efp != nil {
 		// HACK: On an initial page load, the group id may not be set in the claims yet.
 		// Add it in here so the experiment flags are resolved correctly.
-		clm, err := claims.ClaimsFromContext(ctx)
+		clm, err := claims.ClaimsFromContext(ctx, s.env.GetJWTParser())
 		if err == nil {
 			if clm.GetGroupID() == "" {
-				clm.GroupID = selectedGroupID
-				ctx = claims.AuthContext(ctx, clm)
+				rawClaims := clm.(*claims.Claims)
+				rawClaims.GroupID = selectedGroupID
+				ctx = claims.AuthContext(ctx, rawClaims)
 			}
 		}
 		cs = efp.Boolean(ctx, "codesearch-allowed", false /*=default*/)
@@ -472,7 +473,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 	var group *tables.Group
 	if req.GetGroupId() != "" {
 		// Looking up by group ID is restricted to server admins.
-		if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		if err := claims.AuthorizeServerAdmin(ctx, s.env.GetJWTParser()); err != nil {
 			return nil, err
 		}
 		g, err := userDB.GetGroupByID(ctx, req.GetGroupId())

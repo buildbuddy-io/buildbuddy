@@ -53,7 +53,7 @@ func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	filecacheRootDir := testfs.MakeTempDir(t)
 	fileCacheMaxSizeBytes := int64(10e9)
-	fc, err := filecache.NewFileCache(filecacheRootDir, fileCacheMaxSizeBytes, false)
+	fc, err := filecache.NewFileCache(filecacheRootDir, fileCacheMaxSizeBytes, false, env.GetJWTParser())
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)

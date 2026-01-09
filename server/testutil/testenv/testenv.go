@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpostgres"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -207,6 +208,9 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	require.NoError(t, buildbuddy_server.Register(te))
 
 	hit_tracker.Register(te)
+	if err := claims.Register(te); err != nil {
+		t.Fatalf("Error configuring claims parser: %s", err)
+	}
 
 	return te
 }

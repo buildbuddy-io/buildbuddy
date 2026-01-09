@@ -710,7 +710,7 @@ func TestMetrics(t *testing.T) {
 	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", testFlags)
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
 	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
+	fp, err := experiments.NewFlagProvider("test", env.GetJWTParser())
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 	fakeProm := &fakePromQuerier{}

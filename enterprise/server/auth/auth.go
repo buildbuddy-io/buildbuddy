@@ -22,6 +22,12 @@ import (
 )
 
 func Register(ctx context.Context, env *real_environment.RealEnv) error {
+	// oidc.NewOpenIDAuthenticator depends on this being first, so that
+	// JWTParser is available in the environment.
+	if err := claims.Register(env); err != nil {
+		return status.InternalErrorf("Error registering JWTParser: %v", err)
+	}
+
 	httpAuthenticators := []interfaces.HTTPAuthenticator{}
 	userAuthenticators := []interfaces.UserAuthenticator{}
 

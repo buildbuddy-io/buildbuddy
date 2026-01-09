@@ -73,7 +73,7 @@ func (qm *QuotaManager) checkGroupBlocked(ctx context.Context) error {
 		return nil
 	}
 
-	c, err := claims.ClaimsFromContext(ctx)
+	c, err := claims.ClaimsFromContext(ctx, qm.env.GetJWTParser())
 	if err != nil {
 		return nil
 	}

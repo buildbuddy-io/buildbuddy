@@ -264,7 +264,7 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 	}
 
 	isServerAdmin := false
-	if err := claims.AuthorizeServerAdmin(ctx); err == nil {
+	if err := claims.AuthorizeServerAdmin(ctx, l.env.GetJWTParser()); err == nil {
 		isServerAdmin = true
 	}
 

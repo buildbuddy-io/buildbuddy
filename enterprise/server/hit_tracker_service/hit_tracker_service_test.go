@@ -236,7 +236,7 @@ func TestHitTrackerService_Usage(t *testing.T) {
 			mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
 			require.NoError(t, err)
 			env.SetMetricsCollector(mc)
-			ut := testusage.NewTracker()
+			ut := testusage.NewTracker(env)
 			env.SetUsageTracker(ut)
 			hit_tracker.Register(env)
 			require.NoError(t, hit_tracker_service.Register(env))

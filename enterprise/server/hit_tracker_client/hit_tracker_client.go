@@ -74,6 +74,7 @@ func (h *NoOpHitTrackerFactory) NewRemoteCASHitTracker(ctx context.Context, requ
 func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, conn grpc.ClientConnInterface) *HitTrackerFactory {
 	factory := HitTrackerFactory{
 		authenticator:        env.GetAuthenticator(),
+		jwtParser:            env.GetJWTParser(),
 		quit:                 make(chan struct{}, 1),
 		enqueueChan:          make(chan *enqueuedCacheHit, *enqueueChanSize),
 		maxPendingHitsPerKey: *maxPendingHitsPerKey,
@@ -125,6 +126,7 @@ type enqueuedCacheHit struct {
 
 type HitTrackerFactory struct {
 	authenticator interfaces.Authenticator
+	jwtParser     interfaces.JWTParser
 
 	quit chan struct{}
 	wg   sync.WaitGroup
@@ -228,7 +230,7 @@ func (h *HitTrackerClient) TrackMiss(d *repb.Digest) error {
 }
 
 func (h *HitTrackerFactory) groupID(ctx context.Context) string {
-	claims, err := claims.ClaimsFromContext(ctx)
+	claims, err := claims.ClaimsFromContext(ctx, h.jwtParser)
 	if err != nil {
 		return interfaces.AuthAnonymousUser
 	}
@@ -246,7 +248,7 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 	}
 
 	enqueuedHit := enqueuedCacheHit{
-		collection:  usageutil.CollectionFromRPCContext(ctx),
+		collection:  usageutil.CollectionFromRPCContext(ctx, h.jwtParser),
 		hit:         hit,
 		authHeaders: authutil.GetAuthHeaders(ctx),
 	}

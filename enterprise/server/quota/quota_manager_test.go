@@ -114,7 +114,7 @@ func TestQuotaFlagdBuckets(t *testing.T) {
 	domain := t.Name()
 	require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-	fp, err := experiments.NewFlagProvider(domain)
+	fp, err := experiments.NewFlagProvider(domain, env.GetJWTParser())
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 
@@ -180,7 +180,7 @@ func TestLoadQuotasFromFlagd(t *testing.T) {
 	domain := t.Name()
 	require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-	fp, err := experiments.NewFlagProvider(domain)
+	fp, err := experiments.NewFlagProvider(domain, env.GetJWTParser())
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 
@@ -352,7 +352,7 @@ func TestConcurrentBucketAccess(t *testing.T) {
 	domain := t.Name()
 	require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-	fp, err := experiments.NewFlagProvider(domain)
+	fp, err := experiments.NewFlagProvider(domain, env.GetJWTParser())
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 
@@ -400,7 +400,7 @@ func TestCheckGroupBlocked(t *testing.T) {
 		domain := t.Name()
 		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-		fp, err := experiments.NewFlagProvider(domain)
+		fp, err := experiments.NewFlagProvider(domain, env.GetJWTParser())
 		require.NoError(t, err)
 		env.SetExperimentFlagProvider(fp)
 
@@ -431,7 +431,7 @@ func TestCheckGroupBlocked(t *testing.T) {
 		domain := t.Name()
 		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-		fp, err := experiments.NewFlagProvider(domain)
+		fp, err := experiments.NewFlagProvider(domain, env.GetJWTParser())
 		require.NoError(t, err)
 		env.SetExperimentFlagProvider(fp)
 
@@ -459,7 +459,7 @@ func TestCheckGroupBlocked(t *testing.T) {
 		domain := t.Name()
 		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-		fp, err := experiments.NewFlagProvider(domain)
+		fp, err := experiments.NewFlagProvider(domain, env.GetJWTParser())
 		require.NoError(t, err)
 		env.SetExperimentFlagProvider(fp)
 
@@ -487,7 +487,7 @@ func TestCheckGroupBlocked(t *testing.T) {
 		domain := t.Name()
 		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-		fp, err := experiments.NewFlagProvider(domain)
+		fp, err := experiments.NewFlagProvider(domain, env.GetJWTParser())
 		require.NoError(t, err)
 		env.SetExperimentFlagProvider(fp)
 
@@ -514,7 +514,7 @@ func TestCheckGroupBlocked(t *testing.T) {
 		domain := t.Name()
 		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-		fp, err := experiments.NewFlagProvider(domain)
+		fp, err := experiments.NewFlagProvider(domain, env.GetJWTParser())
 		require.NoError(t, err)
 		env.SetExperimentFlagProvider(fp)
 

@@ -45,7 +45,7 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
 	env := testenv.GetTestEnv(t)
 	filecacheDir := testfs.MakeTempDir(t)
-	fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes, false)
+	fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes, false, env.GetJWTParser())
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)

@@ -20,6 +20,7 @@ go_library(
         "//server/testutil/testfs",
         "//server/testutil/testmysql",
         "//server/testutil/testpostgres",
+        "//server/util/claims",
         "//server/util/clickhouse",
         "//server/util/db",
         "//server/util/grpc_client",

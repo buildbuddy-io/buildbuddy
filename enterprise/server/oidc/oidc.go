@@ -222,7 +222,7 @@ type apiKeyGroupCacheEntry struct {
 type OpenIDAuthenticator struct {
 	env                  environment.Env
 	myURL                *url.URL
-	parseClaims          func(token string) (*claims.Claims, error)
+	jwtParser            interfaces.JWTParser
 	authenticators       []authenticator
 	enableAnonymousUsage bool
 }
@@ -305,16 +305,11 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 		return nil, err
 	}
 
-	claimsParser, err := claims.NewClaimsParser()
-	if err != nil {
-		return nil, err
-	}
-
 	return &OpenIDAuthenticator{
 		env:                  env,
 		myURL:                build_buddy_url.WithPath(""),
 		authenticators:       authenticators,
-		parseClaims:          claimsParser.Parse,
+		jwtParser:            env.GetJWTParser(),
 		enableAnonymousUsage: AnonymousUsageEnabled(),
 	}, nil
 }
@@ -498,7 +493,7 @@ func (a *OpenIDAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (inte
 	return a.authenticateGRPCRequest(ctx, false /* acceptJWT= */)
 }
 
-func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, acceptJWT bool) (*claims.Claims, error) {
+func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, acceptJWT bool) (interfaces.UserInfo, error) {
 	p, ok := peer.FromContext(ctx)
 
 	if ok && p != nil && p.AuthInfo != nil {
@@ -544,7 +539,7 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 
 	if acceptJWT {
 		// Check if we're already authenticated from incoming headers.
-		return claims.ClaimsFromContext(ctx)
+		return claims.ClaimsFromContext(ctx, a.jwtParser)
 	}
 
 	return nil, authutil.AnonymousUserError("gRPC request is missing credentials.")
@@ -689,7 +684,7 @@ func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces
 	// We don't return directly so that we can return a nil-interface instead of an interface holding a nil *Claims.
 	// Callers should be checking err before before accessing the user, but in case they don't this will prevent a nil
 	// dereference.
-	claims, err := claims.ClaimsFromContext(ctx)
+	claims, err := claims.ClaimsFromContext(ctx, a.jwtParser)
 	if err != nil {
 		return nil, err
 	}

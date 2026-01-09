@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -329,7 +330,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	} else if *cacheEnabledPercent > 0 && *cacheEnabledPercent < 100 {
 		cacheEnabled = rand.Intn(100) < *cacheEnabledPercent
 	}
-	isAnon := isAnonymousUser(ctx)
+	isAnon := isAnonymousUser(ctx, r.env.GetJWTParser())
 	if cacheEnabled && isAnon {
 		log.CtxInfof(ctx, "Anonymous user request, skipping manifest and layer cache for %q", imageRef)
 	}
@@ -843,7 +844,7 @@ func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
 	return pr, nil
 }
 
-func isAnonymousUser(ctx context.Context) bool {
-	_, err := claims.ClaimsFromContext(ctx)
+func isAnonymousUser(ctx context.Context, jwtParser interfaces.JWTParser) bool {
+	_, err := claims.ClaimsFromContext(ctx, jwtParser)
 	return authutil.IsAnonymousUserError(err)
 }

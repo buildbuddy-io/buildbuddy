@@ -24,55 +24,58 @@ import (
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
-func contextWithUnverifiedJWT(c *claims.Claims) context.Context {
-	authCtx := claims.AuthContextWithJWT(context.Background(), c, nil)
+func contextWithUnverifiedJWT(ctx context.Context, c *claims.Claims) context.Context {
+	authCtx := claims.AuthContextWithJWT(ctx, c, nil)
 	jwt := authCtx.Value(authutil.ContextTokenStringKey).(string)
-	return context.WithValue(context.Background(), authutil.ContextTokenStringKey, jwt)
+	return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 }
 
-func requireClaimsEqual(t *testing.T, expected *claims.Claims, actual *claims.Claims) {
-	expected.StandardClaims.ExpiresAt = 0
-	actual.StandardClaims.ExpiresAt = 0
+func requireClaimsEqual(t *testing.T, expected interfaces.UserInfo, actual interfaces.UserInfo) {
+	expected.(*claims.Claims).StandardClaims.ExpiresAt = 0
+	actual.(*claims.Claims).StandardClaims.ExpiresAt = 0
 	require.Equal(t, expected, actual)
 }
 
 func TestJWT(t *testing.T) {
 	c := &claims.Claims{UserID: "US123"}
-	testContext := contextWithUnverifiedJWT(c)
+	testContext := contextWithUnverifiedJWT(context.Background(), c)
 
-	parsedClaims, err := claims.ClaimsFromContext(testContext)
+	te := testenv.GetTestEnv(t)
+	parsedClaims, err := claims.ClaimsFromContext(testContext, te.GetJWTParser())
 	require.NoError(t, err)
 	requireClaimsEqual(t, c, parsedClaims)
 }
 
 func TestInvalidJWTKey(t *testing.T) {
 	c := &claims.Claims{UserID: "US123"}
-	testContext := contextWithUnverifiedJWT(c)
+	testContext := contextWithUnverifiedJWT(context.Background(), c)
+	te := testenv.GetTestEnv(t)
 
 	// Validation should fail since the JWT above was signed using a different
 	// key.
 	flags.Set(t, "auth.jwt_key", "foo")
-	_, err := claims.ClaimsFromContext(testContext)
+	_, err := claims.ClaimsFromContext(testContext, te.GetJWTParser())
 	require.ErrorContains(t, err, "signature is invalid")
 }
 
 func TestJWTKeyRotation(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	c := &claims.Claims{UserID: "US123"}
 
 	// Get JWT signed using old key.
-	testContext := contextWithUnverifiedJWT(c)
+	testContext := contextWithUnverifiedJWT(context.Background(), c)
 
 	// Validate with both keys in place.
 	flags.Set(t, "auth.new_jwt_key", "new_jwt_key")
-	parsedClaims, err := claims.ClaimsFromContext(testContext)
+	parsedClaims, err := claims.ClaimsFromContext(testContext, te.GetJWTParser())
 	require.NoError(t, err)
 	requireClaimsEqual(t, c, parsedClaims)
 
 	// Get JWT signed using new key.
-	testContext = contextWithUnverifiedJWT(c)
+	testContext = contextWithUnverifiedJWT(context.Background(), c)
 	// Validate with both keys in place.
 	flags.Set(t, "auth.new_jwt_key", "new_jwt_key")
-	parsedClaims, err = claims.ClaimsFromContext(testContext)
+	parsedClaims, err = claims.ClaimsFromContext(testContext, te.GetJWTParser())
 	require.NoError(t, err)
 	requireClaimsEqual(t, c, parsedClaims)
 }
@@ -249,7 +252,7 @@ func TestExperimentTargetingGroupID(t *testing.T) {
 			flags.Set(t, "auth.admin_group_id", adminGroupID)
 			require.NoError(t, claims.Init())
 
-			ctx := t.Context()
+			ctx := context.Background()
 			ctx = metadata.NewIncomingContext(ctx, tc.grpcMetadata)
 			env := testenv.GetTestEnv(t)
 			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(

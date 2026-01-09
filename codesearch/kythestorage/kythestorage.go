@@ -27,8 +27,8 @@ func OpenRaw(env environment.Env, db *pebble.DB) keyvalue.DB {
 }
 
 func (p *pebbleDB) groupID(ctx context.Context) ([]byte, error) {
-	if c, err := claims.ClaimsFromContext(ctx); err == nil {
-		return []byte(c.GroupID + "/"), nil
+	if c, err := claims.ClaimsFromContext(ctx, p.env.GetJWTParser()); err == nil {
+		return []byte(c.GetGroupID() + "/"), nil
 	}
 	return nil, status.UnauthenticatedError("user not authenticated")
 }

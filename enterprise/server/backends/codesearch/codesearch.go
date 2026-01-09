@@ -94,12 +94,12 @@ func (css *CodesearchService) getGitRepoAccessToken(ctx context.Context, groupId
 }
 
 func (css *CodesearchService) Index(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
-	claims, err := claims.ClaimsFromContext(ctx)
+	claims, err := claims.ClaimsFromContext(ctx, css.env.GetJWTParser())
 	if err != nil {
 		return nil, status.UnauthenticatedErrorf("failed to get claims from context: %s", err)
 	}
 
-	g, err := css.env.GetUserDB().GetGroupByID(ctx, claims.GroupID)
+	g, err := css.env.GetUserDB().GetGroupByID(ctx, claims.GetGroupID())
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func (css *CodesearchService) Index(ctx context.Context, req *inpb.IndexRequest)
 	}
 
 	if req.GetReplacementStrategy() == inpb.ReplacementStrategy_REPLACE_REPO {
-		token, err := css.getGitRepoAccessToken(ctx, claims.GroupID, req.GetGitRepo().GetRepoUrl())
+		token, err := css.getGitRepoAccessToken(ctx, claims.GetGroupID(), req.GetGitRepo().GetRepoUrl())
 		if err != nil {
 			return nil, err
 		}

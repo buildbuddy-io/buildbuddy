@@ -86,6 +86,8 @@ type ociFetcherServer struct {
 	// Only one request fetches from upstream and writes to cache;
 	// other requests wait and then read from cache.
 	blobFetchGroup singleflight.Group[blobFetchKey, struct{}]
+
+	jwtParser interfaces.JWTParser
 }
 
 // NewServer constructs an OCIFetcherServer that
@@ -95,7 +97,7 @@ type ociFetcherServer struct {
 //
 // It is preferred to construct only one server, so that there is only
 // one Puller cache per process.
-func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) (ofpb.OCIFetcherServer, error) {
+func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, jwtParser interfaces.JWTParser) (ofpb.OCIFetcherServer, error) {
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("OCIFetcherServer requires a non-nil byte stream client")
 	}
@@ -119,6 +121,7 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 		bsClient:          bsClient,
 		acClient:          acClient,
 		pullerLRU:         pullerLRU,
+		jwtParser:         jwtParser,
 	}, nil
 }
 
@@ -126,7 +129,7 @@ func RegisterServer(env *real_environment.RealEnv) error {
 	if !*enabled {
 		return nil
 	}
-	server, err := NewServer(env.GetByteStreamClient(), env.GetActionCacheClient())
+	server, err := NewServer(env.GetByteStreamClient(), env.GetActionCacheClient(), env.GetJWTParser())
 	if err != nil {
 		return err
 	}
@@ -149,7 +152,7 @@ func RegisterServer(env *real_environment.RealEnv) error {
 func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 
-	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry(), s.jwtParser); err != nil {
 		return err
 	}
 
@@ -212,7 +215,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 // Server admins can bypass the registry: the metadata will be served from the action cache
 // if present. If not present, FetchBlobMetadata will not fall back to the remote registry.
 func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
-	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry(), s.jwtParser); err != nil {
 		return nil, err
 	}
 
@@ -277,7 +280,7 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 // Server admins can bypass the registry: the manifest will be served from the action cache
 // if present. If not present, FetchManifest will not fall back to the remote registry.
 func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
-	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry(), s.jwtParser); err != nil {
 		return nil, err
 	}
 
@@ -355,7 +358,7 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 // Bypassing the registry is not possible. Requests that set the bypass_registry flag
 // will fail with an error.
 func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
-	if err := checkBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+	if err := checkBypassRegistry(ctx, req.GetBypassRegistry(), s.jwtParser); err != nil {
 		return nil, err
 	}
 	imageRef, err := gcrname.ParseReference(req.GetRef())
@@ -565,11 +568,11 @@ func withPullerRetry[T any](
 // authorizeBypassRegistry checks if bypass_registry is enabled and if so,
 // verifies the caller has server admin permissions. Returns an error if
 // bypass_registry is true but the caller is not a server admin.
-func authorizeBypassRegistry(ctx context.Context, bypassRegistry bool) error {
+func authorizeBypassRegistry(ctx context.Context, bypassRegistry bool, jwtParser interfaces.JWTParser) error {
 	if !bypassRegistry {
 		return nil
 	}
-	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+	if err := claims.AuthorizeServerAdmin(ctx, jwtParser); err != nil {
 		return status.PermissionDeniedErrorf("not authorized to bypass registry: %s", err)
 	}
 	return nil
@@ -577,11 +580,11 @@ func authorizeBypassRegistry(ctx context.Context, bypassRegistry bool) error {
 
 // checkBypassRegistry is used by FetchManifestMetadata which does not support
 // bypass_registry at all (it always needs registry access for credential validation).
-func checkBypassRegistry(ctx context.Context, bypassRegistry bool) error {
+func checkBypassRegistry(ctx context.Context, bypassRegistry bool, jwtParser interfaces.JWTParser) error {
 	if !bypassRegistry {
 		return nil
 	}
-	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+	if err := claims.AuthorizeServerAdmin(ctx, jwtParser); err != nil {
 		return status.PermissionDeniedErrorf("authorize bypass_registry: %s", err)
 	}
 	return status.NotFoundError("bypass_registry is not yet supported")

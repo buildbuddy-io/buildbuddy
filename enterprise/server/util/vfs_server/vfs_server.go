@@ -874,9 +874,9 @@ func (p *Server) createFile(ctx context.Context, mode uint32, parentNode *fsNode
 	return p.createNode(fsFileNode, localFilePath, mode, parentNode, name)
 }
 
-func groupIDStringFromContext(ctx context.Context) string {
-	if c, err := claims.ClaimsFromContext(ctx); err == nil {
-		return c.GroupID
+func groupIDStringFromContext(ctx context.Context, jwtParser interfaces.JWTParser) string {
+	if c, err := claims.ClaimsFromContext(ctx, jwtParser); err == nil {
+		return c.GetGroupID()
 	}
 	return interfaces.AuthAnonymousUser
 }
@@ -947,7 +947,7 @@ func (cf *casFetcher) dedupeDownloadToFileCache(ctx context.Context, node *fsNod
 		cf.mu.Unlock()
 	}()
 
-	dedupeKey := groupIDStringFromContext(ctx) + "-" + node.fileNode.GetDigest().GetHash()
+	dedupeKey := groupIDStringFromContext(ctx, cf.env.GetJWTParser()) + "-" + node.fileNode.GetDigest().GetHash()
 	_, _, err := downloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (struct{}, error) {
 		return struct{}{}, cf.downloadToFileCache(ctx, node)
 	})

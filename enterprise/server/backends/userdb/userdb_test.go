@@ -2275,7 +2275,7 @@ func TestChildGroupAuth(t *testing.T) {
 	gr2Ctx := env.GetAuthenticator().AuthContextFromAPIKey(
 		requestcontext.ContextWithProtoRequestContext(
 			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), key1.Value)
-	cl, err := claims.ClaimsFromContext(gr2Ctx)
+	cl, err := claims.ClaimsFromContext(gr2Ctx, env.GetJWTParser())
 	require.NoError(t, err)
 	require.Equal(t, us2Group.GroupID, cl.GetGroupID())
 }

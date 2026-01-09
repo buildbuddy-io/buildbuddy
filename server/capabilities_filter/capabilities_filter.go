@@ -226,7 +226,7 @@ func AllowedRPCs(ctx context.Context, env environment.Env, groupID string) []str
 	var out []string
 	out = append(out, getUnfilteredRPCs()...)
 
-	if err := claims.AuthorizeServerAdmin(ctx); err == nil {
+	if err := claims.AuthorizeServerAdmin(ctx, env.GetJWTParser()); err == nil {
 		out = append(out, serverAdminOnlyRPCs...)
 	}
 

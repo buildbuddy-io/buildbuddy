@@ -267,7 +267,7 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	} else if fcDir == "" {
 		fcDir = testRootDir
 	}
-	fc, err := filecache.NewFileCache(fcDir, fileCacheSize, false)
+	fc, err := filecache.NewFileCache(fcDir, fileCacheSize, false, env.GetJWTParser())
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
@@ -850,7 +850,7 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 
 			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 			filecacheRoot := testfs.MakeTempDir(t)
-			fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
+			fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false, env.GetJWTParser())
 			require.NoError(t, err)
 			fc.WaitForDirectoryScanToComplete()
 			env.SetFileCache(fc)
@@ -942,7 +942,7 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 			err = os.RemoveAll(filecacheRoot)
 			require.NoError(t, err)
 			filecacheRoot2 := testfs.MakeTempDir(t)
-			fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize, false)
+			fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize, false, env.GetJWTParser())
 			require.NoError(t, err)
 			fc2.WaitForDirectoryScanToComplete()
 			env.SetFileCache(fc2)
@@ -1034,11 +1034,11 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 			filecacheRoot1 := testfs.MakeTempDir(t)
-			fc, err := filecache.NewFileCache(filecacheRoot1, fileCacheSize/2, false)
+			fc, err := filecache.NewFileCache(filecacheRoot1, fileCacheSize/2, false, env.GetJWTParser())
 			require.NoError(t, err)
 			fc.WaitForDirectoryScanToComplete()
 			filecacheRoot2 := testfs.MakeTempDir(t)
-			fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize/2, false)
+			fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize/2, false, env.GetJWTParser())
 			require.NoError(t, err)
 			fc2.WaitForDirectoryScanToComplete()
 
@@ -1183,11 +1183,11 @@ func TestFirecracker_SnapshotSharing_ReadPolicy_FallbackSnapshot(t *testing.T) {
 			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 			filecacheRoot1 := testfs.MakeTempDir(t)
-			fc, err := filecache.NewFileCache(filecacheRoot1, fileCacheSize/2, false)
+			fc, err := filecache.NewFileCache(filecacheRoot1, fileCacheSize/2, false, env.GetJWTParser())
 			require.NoError(t, err)
 			fc.WaitForDirectoryScanToComplete()
 			filecacheRoot2 := testfs.MakeTempDir(t)
-			fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize/2, false)
+			fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize/2, false, env.GetJWTParser())
 			require.NoError(t, err)
 			fc2.WaitForDirectoryScanToComplete()
 
@@ -1511,7 +1511,7 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 
 	// Evict all artifacts from filecache, which should expire the base image.
 	fcDir := testfs.MakeTempDir(t)
-	fc, err := filecache.NewFileCache(fcDir, fileCacheSize, false)
+	fc, err := filecache.NewFileCache(fcDir, fileCacheSize, false, env.GetJWTParser())
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
@@ -1565,7 +1565,7 @@ func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
 
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	filecacheRoot := testfs.MakeDirAll(t, cfg.JailerRoot, "filecache")
-	fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
+	fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false, env.GetJWTParser())
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)

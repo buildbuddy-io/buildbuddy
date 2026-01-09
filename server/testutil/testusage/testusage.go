@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"slices"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -15,10 +17,11 @@ import (
 // Use [NewTracker] to get an instance.
 type Tracker struct {
 	increments []increment
+	jwtParser  interfaces.JWTParser ``
 }
 
-func NewTracker() *Tracker {
-	return &Tracker{}
+func NewTracker(env environment.Env) *Tracker {
+	return &Tracker{jwtParser: env.GetJWTParser()}
 }
 
 type increment struct {
@@ -28,13 +31,13 @@ type increment struct {
 }
 
 func (ut *Tracker) Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
-	c, err := claims.ClaimsFromContext(ctx)
+	c, err := claims.ClaimsFromContext(ctx, ut.jwtParser)
 	if err != nil {
 		// Don't track unauth'd or anonymous requests.
 		return nil
 	}
 
-	ut.increments = append(ut.increments, increment{c.GroupID, *labels, *counts})
+	ut.increments = append(ut.increments, increment{c.GetGroupID(), *labels, *counts})
 	return nil
 }
 

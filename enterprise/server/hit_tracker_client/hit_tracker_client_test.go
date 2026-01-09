@@ -68,6 +68,7 @@ func digestProto(hash string, sizeBytes int64) *repb.Digest {
 type testHitTracker struct {
 	t                  testing.TB
 	authenticator      interfaces.Authenticator
+	jwtParser          interfaces.JWTParser
 	wg                 sync.WaitGroup
 	casDownloads       map[string]*atomic.Int64
 	casBytesDownloaded map[string]*atomic.Int64
@@ -79,10 +80,11 @@ type testHitTracker struct {
 	acBytesUploaded    map[string]*atomic.Int64
 }
 
-func newTestHitTracker(t testing.TB, authenticator interfaces.Authenticator) *testHitTracker {
+func newTestHitTracker(t testing.TB, authenticator interfaces.Authenticator, jwtParser interfaces.JWTParser) *testHitTracker {
 	out := &testHitTracker{
 		t:                  t,
 		authenticator:      authenticator,
+		jwtParser:          jwtParser,
 		casDownloads:       map[string]*atomic.Int64{},
 		casBytesDownloaded: map[string]*atomic.Int64{},
 		casUploads:         map[string]*atomic.Int64{},
@@ -108,7 +110,7 @@ func newTestHitTracker(t testing.TB, authenticator interfaces.Authenticator) *te
 func (ht *testHitTracker) Track(ctx context.Context, req *hitpb.TrackRequest) (*hitpb.TrackResponse, error) {
 	ht.wg.Wait()
 
-	key := usageutil.EncodeCollection(usageutil.CollectionFromRPCContext(ctx))
+	key := usageutil.EncodeCollection(usageutil.CollectionFromRPCContext(ctx, ht.jwtParser))
 
 	for _, hit := range req.GetHits() {
 		if hit.GetCacheRequestType() == capb.RequestType_READ {
@@ -150,7 +152,7 @@ func setup(t testing.TB) (interfaces.Authenticator, *HitTrackerFactory, *testHit
 	te := testenv.GetTestEnv(t)
 	authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
 	te.SetAuthenticator(authenticator)
-	hitTrackerService := newTestHitTracker(t, authenticator)
+	hitTrackerService := newTestHitTracker(t, authenticator, te.GetJWTParser())
 	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	hitpb.RegisterHitTrackerServiceServer(grpcServer, hitTrackerService)
 	go runServer()

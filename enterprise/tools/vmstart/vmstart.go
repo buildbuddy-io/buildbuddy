@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -79,8 +80,11 @@ func getToolEnv() *real_environment.RealEnv {
 	if err := tracing.Configure(re); err != nil {
 		log.Fatalf("Failed to configure tracing: %s", err)
 	}
+	if err := claims.Register(re); err != nil {
+		log.Fatalf("Unable to initialize JWTParser: %v", err)
+	}
 
-	fc, err := filecache.NewFileCache(*snapshotDir, *snapshotDirMaxBytes, false)
+	fc, err := filecache.NewFileCache(*snapshotDir, *snapshotDirMaxBytes, false, re.GetJWTParser())
 	if err != nil {
 		log.Fatalf("Unable to setup filecache %s", err)
 	}

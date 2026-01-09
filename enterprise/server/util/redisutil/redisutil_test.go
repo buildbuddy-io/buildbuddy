@@ -533,7 +533,7 @@ func TestShardsMigration(t *testing.T) {
 	err := openfeature.SetProviderAndWait(provider)
 	require.NoError(t, err)
 
-	fp, err := experiments.NewFlagProvider("test")
+	fp, err := experiments.NewFlagProvider("test", env.GetJWTParser())
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 
@@ -593,7 +593,7 @@ func TestShardsMigration(t *testing.T) {
 func BenchmarkCommandBuffer_Flush_HIncrBy(b *testing.B) {
 	addr := testredis.Start(b).Target
 	rdb := redis.NewClient(redisutil.TargetToOptions(addr))
-	ctx := context.Background()
+	ctx := b.Context()
 	buf := redisutil.NewCommandBuffer(rdb)
 
 	for _, p := range []struct {

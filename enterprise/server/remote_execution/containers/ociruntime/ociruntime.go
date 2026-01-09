@@ -481,11 +481,11 @@ func (c *ociContainer) initPersistentVolumes(ctx context.Context) error {
 	if executor_auth.APIKey() != "" {
 		// If authentication is enabled, host mounts are only available to
 		// authenticated users.
-		c, err := claims.ClaimsFromContext(ctx)
+		c, err := claims.ClaimsFromContext(ctx, c.env.GetJWTParser())
 		if err != nil {
 			return status.UnauthenticatedErrorf("persistent volumes require authentication")
 		}
-		partition = c.GroupID
+		partition = c.GetGroupID()
 	}
 
 	for _, volume := range c.persistentVolumes {

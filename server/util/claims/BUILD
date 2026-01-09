@@ -10,6 +10,7 @@ go_library(
         "//proto:group_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/tables",
         "//server/util/authutil",
         "//server/util/capabilities",

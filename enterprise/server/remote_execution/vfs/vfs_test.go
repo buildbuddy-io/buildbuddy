@@ -37,7 +37,7 @@ func setupEnv(t *testing.T) environment.Env {
 	tmp := testfs.MakeTempDir(t)
 	env := testenv.GetTestEnv(t)
 	fileCachePath := filepath.Join(tmp, "filecache")
-	fc, err := filecache.NewFileCache(fileCachePath, 1_000_000, false /*=deleteContent*/)
+	fc, err := filecache.NewFileCache(fileCachePath, 1_000_000, false /*=deleteContent*/, env.GetJWTParser())
 	require.NoError(t, err)
 	env.SetFileCache(fc)
 
@@ -67,7 +67,7 @@ func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (
 	err = os.MkdirAll(back, 0755)
 	require.NoError(t, err)
 
-	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{})
+	tf, err := dirtools.NewTreeFetcher(context.Background(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{})
 	require.NoError(t, err)
 	_, err = tf.Start()
 	require.NoError(t, err)

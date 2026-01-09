@@ -158,11 +158,14 @@ func main() {
 
 func getToolEnv() *real_environment.RealEnv {
 	re := real_environment.NewBatchEnv()
+	if err := claims.Register(re); err != nil {
+		log.Fatalf("Unable to initialize JWTParser: %v", err)
+	}
 
 	// Set a large file cache size so this tool doesn't evict anything from
 	// the executor's filecache
 	fcSize := int64(1e18)
-	fc, err := filecache.NewFileCache(*filecacheDir, fcSize, false)
+	fc, err := filecache.NewFileCache(*filecacheDir, fcSize, false, re.GetJWTParser())
 	if err != nil {
 		log.Fatalf("Unable to setup filecache %s", err)
 	}

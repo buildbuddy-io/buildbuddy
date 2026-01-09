@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -59,6 +60,19 @@ var (
 	rsaPublicKeys []string = []string{}
 )
 
+func GetRSAPublicKeys() []string {
+	return rsaPublicKeys
+}
+
+func Register(env *real_environment.RealEnv) error {
+	JWTParser, err := NewJWTParser()
+	if err != nil {
+		return err
+	}
+	env.SetJWTParser(JWTParser)
+	return Init()
+}
+
 func Init() error {
 	rsaPrivateKey = nil
 	rsaPublicKeys = []string{}
@@ -75,8 +89,8 @@ func Init() error {
 
 	// Make both public keys available so that clients can verify JWTs during
 	// app rollouts.
+	newPrivateKey, newPublicKey, err = getRSAKeyPair(*newJWTRSAPrivateKey)
 	if *newJWTRSAPrivateKey != "" {
-		newPrivateKey, newPublicKey, err = getRSAKeyPair(*newJWTRSAPrivateKey)
 		if err != nil {
 			return err
 		}
@@ -146,6 +160,10 @@ type Claims struct {
 	// TODO(vadim): remove this field
 	SAML        bool `json:"saml,omitempty"`
 	CustomerSSO bool `json:"customer_sso,omitempty"`
+}
+
+func (c *Claims) ExpiresAt() time.Time {
+	return time.UnixMilli(c.StandardClaims.ExpiresAt * 1_000)
 }
 
 func (c *Claims) GetAPIKeyInfo() interfaces.APIKeyInfo {
@@ -400,7 +418,12 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	}, nil
 }
 
-func AssembleJWT(c *Claims, method jwt.SigningMethod) (string, error) {
+func AssembleJWT(userInfo interfaces.UserInfo, method jwt.SigningMethod) (string, error) {
+	c, ok := userInfo.(*Claims)
+	if !ok {
+		return "", status.InternalError("Invalid UserInfo supplied")
+	}
+
 	expirationTime := time.Now().Add(*jwtDuration)
 	expiresAt := expirationTime.Unix()
 	// Round expiration times down to the nearest minute to improve stability
@@ -435,21 +458,21 @@ func assembleRS256JWT(token *jwt.Token) (string, error) {
 // error. Note that this function assembles a JWT out of the provided Claims
 // and sets that in the context as well, so it should only be used in cases
 // where that is necessary.
-func AuthContextWithJWT(ctx context.Context, c *Claims, err error) context.Context {
+func AuthContextWithJWT(ctx context.Context, ui interfaces.UserInfo, err error) context.Context {
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
-	tokenString, err := AssembleJWT(c, jwt.SigningMethodHS256)
+	tokenString, err := AssembleJWT(ui, jwt.SigningMethodHS256)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
 	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, tokenString)
-	return AuthContext(ctx, c)
+	return AuthContext(ctx, ui)
 }
 
 // Returns a Context containing auth state for the the provided Claims.
-func AuthContext(ctx context.Context, c *Claims) context.Context {
-	ctx = context.WithValue(ctx, contextClaimsKey, c)
+func AuthContext(ctx context.Context, ui interfaces.UserInfo) context.Context {
+	ctx = context.WithValue(ctx, contextClaimsKey, ui)
 	// Note: we clear the error here in case it was set initially by the
 	// authentication handler, but then we want to re-authenticate later on in the
 	// request lifecycle, and authentication is successful.
@@ -457,7 +480,69 @@ func AuthContext(ctx context.Context, c *Claims) context.Context {
 	return authutil.AuthContextWithError(ctx, nil)
 }
 
-func ClaimsFromContext(ctx context.Context) (*Claims, error) {
+// ServerAdminGroupID returns the ID of the server admin group.
+// For auth checks, prefer using AuthorizeServerAdmin instead.
+func ServerAdminGroupID() string {
+	return *serverAdminGroupID
+}
+
+// JWTParser parses and verifies encoded JWTs. It also caches the parsed
+// claims, if configured to do so, to reduce overhead due to redundant parsing.
+//
+// The JWTs used with the parser's cache should have Expiration times rounded
+// down to the nearest minute, so that their cache key doesn't change as often
+// and can therefore be cached for longer.
+type JWTParser struct {
+	ttl time.Duration
+
+	mu  sync.Mutex
+	lru interfaces.LRU[*Claims]
+}
+
+func NewJWTParser() (interfaces.JWTParser, error) {
+	if *claimsCacheTTL <= 0 {
+		return &JWTParser{ttl: 0, lru: nil}, nil
+	}
+
+	config := &lru.Config[*Claims]{
+		MaxSize: claimsCacheSize,
+		SizeFn:  func(v *Claims) int64 { return 1 },
+	}
+	lru, err := lru.NewLRU[*Claims](config)
+	if err != nil {
+		return nil, err
+	}
+	return &JWTParser{ttl: *claimsCacheTTL, lru: lru}, nil
+}
+
+func (c *JWTParser) Parse(token string) (interfaces.UserInfo, error) {
+	if c.ttl <= 0 {
+		return parseClaims(token)
+	}
+
+	c.mu.Lock()
+	v, ok := c.lru.Get(token)
+	c.mu.Unlock()
+
+	if ok {
+		if claims := v; time.Now().Before(claims.ExpiresAt()) {
+			return claims, nil
+		}
+	}
+
+	claims, err := parseClaims(token)
+	if err != nil {
+		return nil, err
+	}
+
+	c.mu.Lock()
+	c.lru.Add(token, claims)
+	c.mu.Unlock()
+
+	return claims, nil
+}
+
+func ClaimsFromContext(ctx context.Context, parser interfaces.JWTParser) (interfaces.UserInfo, error) {
 	// If the context already contains trusted Claims, return them directly
 	// instead of re-parsing the JWT (which is expensive).
 	if claims, ok := ctx.Value(contextClaimsKey).(*Claims); ok && claims != nil {
@@ -466,7 +551,7 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 
 	// If context already contains a JWT, just verify it and return the claims.
 	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		claims, err := parseClaims(tokenString)
+		claims, err := parser.Parse(tokenString)
 		if err != nil {
 			return nil, err
 		}
@@ -495,8 +580,8 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 
 // AuthorizeServerAdmin checks whether the authenticated user is a server admin
 // (a member of the server admin group, with ORG_ADMIN capability).
-func AuthorizeServerAdmin(ctx context.Context) error {
-	u, err := ClaimsFromContext(ctx)
+func AuthorizeServerAdmin(ctx context.Context, parser interfaces.JWTParser) error {
+	u, err := ClaimsFromContext(ctx, parser)
 	if err != nil {
 		return err
 	}
@@ -526,70 +611,4 @@ func isAdminOfServerAdminGroup(memberships []*interfaces.GroupMembership) bool {
 		}
 	}
 	return false
-}
-
-// ServerAdminGroupID returns the ID of the server admin group.
-// For auth checks, prefer using AuthorizeServerAdmin instead.
-func ServerAdminGroupID() string {
-	return *serverAdminGroupID
-}
-
-// ClaimsParser parses and verifies encoded JWTs. It also caches the parsed
-// claims, if configured to do so, to reduce overhead due to redundant parsing.
-//
-// The JWTs used with the parser's cache should have Expiration times rounded
-// down to the nearest minute, so that their cache key doesn't change as often
-// and can therefore be cached for longer.
-type ClaimsParser struct {
-	ttl time.Duration
-
-	mu  sync.Mutex
-	lru interfaces.LRU[*Claims]
-}
-
-func NewClaimsParser() (*ClaimsParser, error) {
-	if *claimsCacheTTL <= 0 {
-		return &ClaimsParser{ttl: 0, lru: nil}, nil
-	}
-
-	config := &lru.Config[*Claims]{
-		MaxSize: claimsCacheSize,
-		SizeFn:  func(v *Claims) int64 { return 1 },
-	}
-	lru, err := lru.NewLRU[*Claims](config)
-	if err != nil {
-		return nil, err
-	}
-	return &ClaimsParser{ttl: *claimsCacheTTL, lru: lru}, nil
-}
-
-func (c *ClaimsParser) Parse(token string) (*Claims, error) {
-	if c.ttl <= 0 {
-		return parseClaims(token)
-	}
-
-	c.mu.Lock()
-	v, ok := c.lru.Get(token)
-	c.mu.Unlock()
-
-	if ok {
-		if claims := v; claims.ExpiresAt > time.Now().Unix() {
-			return claims, nil
-		}
-	}
-
-	claims, err := parseClaims(token)
-	if err != nil {
-		return nil, err
-	}
-
-	c.mu.Lock()
-	c.lru.Add(token, claims)
-	c.mu.Unlock()
-
-	return claims, nil
-}
-
-func GetRSAPublicKeys() []string {
-	return rsaPublicKeys
 }
