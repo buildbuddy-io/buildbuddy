@@ -2064,6 +2064,15 @@ var (
 		HTTPResponseCodeLabel,
 	})
 
+	// ## Redis client metrics
+
+	RedisClientDialErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "redis_client",
+		Name:      "dial_errors",
+		Help:      "The number of errors when dialing redis.",
+	})
+
 	// ## Internal metrics
 	//
 	// These metrics are for monitoring lower-level subsystems of BuildBuddy.
