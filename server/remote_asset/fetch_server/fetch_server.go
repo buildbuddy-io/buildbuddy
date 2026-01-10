@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -424,17 +425,14 @@ func mirrorToCache(
 	if checksumFunc == storageFunc && expectedChecksum != "" && rsp.ContentLength >= 0 {
 		d := &repb.Digest{Hash: expectedChecksum, SizeBytes: rsp.ContentLength}
 		rn := digest.NewCASResourceName(d, remoteInstanceName, storageFunc)
-		rn.SetCompressor(repb.Compressor_ZSTD)
-		if _, _, err := cachetools.UploadFromReader(ctx, bsClient, rn, rsp.Body); err != nil {
-			return nil, status.UnavailableErrorf("failed to upload %s to cache: %s", digest.String(d), err)
-		}
-		log.CtxInfof(ctx, "Mirrored %s to cache (digest: %s)", uri, digest.String(d))
+
+		uploadToCache(ctx, bsClient, uri, rn, rsp.Body)
+
 		return d, nil
 	}
 
-	// Otherwise we need to download the whole file before uploading to cache,
-	// since we don't know the digest. Download to disk rather than memory,
-	// since these downloads can be large.
+	// Otherwise we need to download the whole file in order to compute its digest.
+	// Download to disk rather than memory, since these downloads can be large.
 	//
 	// TODO: Support cache uploads with unknown digest length, so that we can
 	// pipe directly from the HTTP response to the cache.
@@ -459,31 +457,46 @@ func mirrorToCache(
 	// pointing to the CAS entry. That way, we would only need to store the download
 	// blob once.
 	if checksumFunc != storageFunc {
-		checksumDigestRN, err := cachetools.ComputeFileDigest(tmpFilePath, remoteInstanceName, checksumFunc)
-		if err != nil {
-			return nil, status.UnavailableErrorf("failed to compute checksum digest: %s", err)
-		}
-		if expectedChecksum != "" && checksumDigestRN.GetDigest().GetHash() != expectedChecksum {
-			return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, checksumDigestRN.GetDigest().Hash, expectedChecksum)
-		}
-		if _, err := cachetools.UploadFile(ctx, bsClient, remoteInstanceName, checksumFunc, tmpFilePath); err != nil {
-			// Best effort storing downloaded blob to our cache.
-			// This is Ok to fail because subsequent requests will simply get no cache hits
-			// and download blob again from upstream URL.
-			log.CtxWarningf(ctx, "failed to cache object with checksumFunc: %s", err)
+		if _, err := computeDigestAndUpload(ctx, bsClient, remoteInstanceName, checksumFunc, tmpFilePath, expectedChecksum, checksumFunc, uri); err != nil {
+			return nil, err
 		}
 	}
-	blobDigest, err := cachetools.UploadFile(ctx, bsClient, remoteInstanceName, storageFunc, tmpFilePath)
+
+	return computeDigestAndUpload(ctx, bsClient, remoteInstanceName, storageFunc, tmpFilePath, expectedChecksum, checksumFunc, uri)
+}
+
+func computeDigestAndUpload(ctx context.Context, bsClient bspb.ByteStreamClient, remoteInstanceName string, uploadDigestFunc repb.DigestFunction_Value, filePath string, expectedChecksum string, checksumFunc repb.DigestFunction_Value, uri string) (*repb.Digest, error) {
+	f, err := os.Open(filePath)
 	if err != nil {
-		return nil, status.UnavailableErrorf("failed to add object to cache: %s", err)
+		return nil, err
 	}
-	// If the requested digestFunc is supplied is the same with the checksum sri,
-	// verify the expected checksum of the downloaded file after storing it in our cache.
-	if checksumFunc == storageFunc && expectedChecksum != "" && blobDigest.Hash != expectedChecksum {
-		return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, blobDigest.Hash, expectedChecksum)
+	defer f.Close()
+
+	fileRN, err := cachetools.ComputeFileDigest(filePath, remoteInstanceName, uploadDigestFunc)
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to compute digest: %s", err)
+	} else if uploadDigestFunc == checksumFunc && expectedChecksum != "" && fileRN.GetDigest().GetHash() != expectedChecksum {
+		return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, fileRN.GetDigest().Hash, expectedChecksum)
 	}
-	log.CtxDebugf(ctx, "Mirrored %s to cache (digest: %s)", uri, digest.String(blobDigest))
-	return blobDigest, nil
+
+	uploadToCache(ctx, bsClient, uri, fileRN, f)
+
+	return fileRN.GetDigest(), nil
+}
+
+func uploadToCache(ctx context.Context, bsClient bspb.ByteStreamClient, uri string, rn *digest.CASResourceName, r io.Reader) {
+	// Always compress uploads.
+	rn.SetCompressor(repb.Compressor_ZSTD)
+
+	if _, _, err := cachetools.UploadFromReader(ctx, bsClient, rn, r); err != nil {
+		// Best effort store downloaded blob to our cache.
+		// This is Ok to fail because subsequent requests will simply re-download the blob from upstream URL.
+		errorMsg := fmt.Sprintf("fetch server failed to upload %s (digest: %s) to cache: %s", uri, digest.String(rn.GetDigest()), err)
+		log.CtxErrorf(ctx, errorMsg)
+		alert.CtxUnexpectedEvent(ctx, "fetch_server_upload", errorMsg)
+		return
+	}
+	log.CtxInfof(ctx, "Fetch server successfully mirrored %s to cache (digest: %s)", uri, digest.String(rn.GetDigest()))
 }
 
 func tempCopy(r io.Reader) (path string, err error) {

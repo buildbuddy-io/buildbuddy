@@ -718,6 +718,56 @@ func runFetchServerWithCacheProxy(ctx context.Context, env *testenv.TestEnv, t t
 	return conn
 }
 
+func TestFetchBlob_CacheUploadFailure(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	clientConn := runFetchServer(ctx, t, te)
+	fetchClient := rapb.NewFetchClient(clientConn)
+
+	content := "Hello world!"
+	contentDigest, err := digest.Compute(bytes.NewReader([]byte(content)), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, content)
+	}))
+	defer ts.Close()
+
+	// Simulate failures when writing to the cache.
+	failingBSClient := &failingByteStreamClient{
+		te.GetByteStreamClient(),
+	}
+	te.SetByteStreamClient(failingBSClient)
+
+	request := &rapb.FetchBlobRequest{
+		Uris: []string{ts.URL},
+		Qualifiers: []*rapb.Qualifier{
+			{
+				Name:  fetch_server.ChecksumQualifier,
+				Value: checksumQualifierFromContent(t, contentDigest.GetHash(), repb.DigestFunction_SHA256),
+			},
+		},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	resp, err := fetchClient.FetchBlob(ctx, request)
+
+	// Verify that even though the cache upload failed, the request succeeded.
+	assert.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, int32(0), resp.GetStatus().Code)
+	assert.Equal(t, contentDigest.GetHash(), resp.GetBlobDigest().GetHash())
+	assert.Equal(t, contentDigest.GetSizeBytes(), resp.GetBlobDigest().GetSizeBytes())
+}
+
+type failingByteStreamClient struct {
+	bspb.ByteStreamClient
+}
+
+func (f *failingByteStreamClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	return nil, fmt.Errorf("failed to write to cache")
+}
+
 func TestFetchDirectory(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
