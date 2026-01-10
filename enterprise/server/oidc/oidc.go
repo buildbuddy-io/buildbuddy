@@ -222,7 +222,7 @@ type apiKeyGroupCacheEntry struct {
 type OpenIDAuthenticator struct {
 	env                  environment.Env
 	myURL                *url.URL
-	parseClaims          func(token string) (*claims.Claims, error)
+	parseClaims          func(ctx context.Context, token string) (*claims.Claims, error)
 	authenticators       []authenticator
 	enableAnonymousUsage bool
 }
@@ -305,7 +305,7 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 		return nil, err
 	}
 
-	claimsParser, err := claims.NewClaimsParser()
+	claimsParser, err := claims.NewClaimsParser(claims.DefaultKeyProvider)
 	if err != nil {
 		return nil, err
 	}
