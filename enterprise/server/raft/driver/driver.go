@@ -550,7 +550,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		return action, action.Priority()
 	}
 
-	// Do not split when the there is a store that's unavailable and a replica is
+	// Do not split when there is a store that's unavailable and a replica is
 	// in the middle of a removal.
 	isClusterHealthy := rq.storeMap.AllStoresAvailableAndReady()
 	if isClusterHealthy {
