@@ -11,7 +11,6 @@ go_test(
         "//tools/probers/bazelrbe",
     ],
     shard_count = 3,
-    tags = ["docker"],
     x_defs = {
         "bazelrbeProberRunfilePath": "$(rlocationpath //tools/probers/bazelrbe)",
         "bazel6Runfilepath": "$(rlocationpath //server/util/bazel:bazel-6.5.0_crossplatform)",
