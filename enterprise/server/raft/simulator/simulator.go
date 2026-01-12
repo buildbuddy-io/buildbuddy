@@ -1032,46 +1032,52 @@ func runTestCase(name string, numShards int, nodes []string, initialLeases map[s
 		{"Theoretical Mean", func() Strategy {
 			return NewTheoreticalMeanStrategy(numShards, len(nodes))
 		}},
-		{"Cooldown(5s)", func() Strategy { return NewCooldownStrategy(NewProductionRebalanceStrategy(), 5000) }},
-		{"Cooldown(10s)", func() Strategy { return NewCooldownStrategy(NewProductionRebalanceStrategy(), 10000) }},
-		{"Cooldown(5s±500ms)", func() Strategy { return NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 5000, 500) }},
-		{"Cooldown(10s±500ms)", func() Strategy { return NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 10000, 500) }},
+		//{"Cooldown(5s)", func() Strategy { return NewCooldownStrategy(NewProductionRebalanceStrategy(), 5000) }},
+		//{"Cooldown(10s)", func() Strategy { return NewCooldownStrategy(NewProductionRebalanceStrategy(), 10000) }},
+		//{"Cooldown(5s±500ms)", func() Strategy { return NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 5000, 500) }},
+		//{"Cooldown(10s±500ms)", func() Strategy { return NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 10000, 500) }},
 		{"Prob(0.1)", func() Strategy {
 			return NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1)
 		}},
-		{"Prob(0.3)", func() Strategy {
-			return NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1)
+		{"Prob(0.1) + Theoretical Mean", func() Strategy {
+			return NewProbabilisticStrategy(NewTheoreticalMeanStrategy(numShards, len(nodes)), 0.1)
 		}},
-		{"Prob(0.5)", func() Strategy {
-			return NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1)
-		}},
+		//{"Prob(0.3)", func() Strategy {
+		//	return NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1)
+		//}},
+		//{"Prob(0.5)", func() Strategy {
+		//	return NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1)
+		//}},
 		{"Adaptive(conservative)", func() Strategy {
 			return NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.20, 0.5)
 		}},
-		{"Adaptive(moderate)", func() Strategy {
-			return NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.15, 0.7)
+		{"Adaptive(conservative) + Theoretical Mean", func() Strategy {
+			return NewAdaptiveProbabilisticStrategy(NewTheoreticalMeanStrategy(numShards, len(nodes)), 2, 0.05, 0.20, 0.5)
 		}},
-		{"Adaptive(aggresive)", func() Strategy {
-			return NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.10, 0.8)
-		}},
-		{"Prob(0.1) + Cooldown(10s)", func() Strategy {
-			return NewCooldownStrategy(NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1), 10000)
-		}},
-		{"Prob(0.3) + Cooldown(10s)", func() Strategy {
-			return NewCooldownStrategy(NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.3), 10000)
-		}},
-		{"Prob(0.5) + Cooldown(10s)", func() Strategy {
-			return NewCooldownStrategy(NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.5), 10000)
-		}},
-		{"Adaptive(conservative) + Cooldown(10s)", func() Strategy {
-			return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.20, 0.5), 10000)
-		}},
-		{"Adaptive(moderate) + Cooldown(10s)", func() Strategy {
-			return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.15, 0.7), 10000)
-		}},
-		{"Adaptive(aggresive) + Cooldown(10s)", func() Strategy {
-			return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.10, 0.8), 10000)
-		}},
+		//{"Adaptive(moderate)", func() Strategy {
+		//	return NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.15, 0.7)
+		//}},
+		//{"Adaptive(aggresive)", func() Strategy {
+		//	return NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.10, 0.8)
+		//}},
+		//{"Prob(0.1) + Cooldown(10s)", func() Strategy {
+		//	return NewCooldownStrategy(NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.1), 10000)
+		//}},
+		//{"Prob(0.3) + Cooldown(10s)", func() Strategy {
+		//	return NewCooldownStrategy(NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.3), 10000)
+		//}},
+		//{"Prob(0.5) + Cooldown(10s)", func() Strategy {
+		//	return NewCooldownStrategy(NewProbabilisticStrategy(NewProductionRebalanceStrategy(), 0.5), 10000)
+		//}},
+		//{"Adaptive(conservative) + Cooldown(10s)", func() Strategy {
+		//	return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.20, 0.5), 10000)
+		//}},
+		//{"Adaptive(moderate) + Cooldown(10s)", func() Strategy {
+		//	return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.15, 0.7), 10000)
+		//}},
+		//{"Adaptive(aggresive) + Cooldown(10s)", func() Strategy {
+		//	return NewCooldownStrategy(NewAdaptiveProbabilisticStrategy(NewProductionRebalanceStrategy(), 2, 0.05, 0.10, 0.8), 10000)
+		//}},
 	}
 
 	var aggregatedResults []AggregatedResult
