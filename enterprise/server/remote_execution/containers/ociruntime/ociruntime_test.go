@@ -1467,7 +1467,7 @@ func TestPathSanitization(t *testing.T) {
 
 			// Make sure we get an error when pulling this image.
 			ctx := context.Background()
-			_, err = imageStore.Pull(ctx, image, oci.Credentials{})
+			_, err = imageStore.Pull(ctx, image, oci.Credentials{}, false)
 			require.Error(t, err)
 			assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %T", err)
 			assert.Contains(t, err.Error(), test.ExpectedError)
@@ -1867,7 +1867,7 @@ func TestPullImage(t *testing.T) {
 			require.NoError(t, err)
 
 			ctx := context.Background()
-			img, err := imgStore.Pull(ctx, tc.image, oci.Credentials{})
+			img, err := imgStore.Pull(ctx, tc.image, oci.Credentials{}, false)
 			require.NoError(t, err)
 			require.NotNil(t, img)
 		})
