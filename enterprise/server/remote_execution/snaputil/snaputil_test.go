@@ -29,7 +29,7 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
 
 	env := testenv.GetTestEnv(t)
-	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 100_000, false)
+	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 100_000, false, env.GetJWTParser())
 	require.NoError(t, err)
 	env.SetFileCache(fc)
 	_, run, lis := testenv.RegisterLocalGRPCServer(t, env)

@@ -92,7 +92,8 @@ func TestPrimitiveFlags(t *testing.T) {
 		},
 	})
 
-	fp, err := experiments.NewFlagProvider("test-name")
+	env := testenv.GetTestEnv(t)
+	fp, err := experiments.NewFlagProvider("test-name", env.GetJWTParser())
 	require.NoError(t, err)
 
 	require.True(t, fp.Boolean(ctx, "bool_flag", false))
@@ -191,7 +192,8 @@ func TestStablePercentage(t *testing.T) {
 		// with the provider's internal goroutine that reads the file.
 		provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
 		openfeature.SetProviderAndWait(provider)
-		fp, err := experiments.NewFlagProvider("test-name")
+		env := testenv.GetTestEnv(t)
+		fp, err := experiments.NewFlagProvider("test-name", env.GetJWTParser())
 		require.NoError(t, err)
 
 		for j, param := range params {
@@ -245,7 +247,8 @@ func TestSelection(t *testing.T) {
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
 	openfeature.SetProviderAndWait(provider)
 
-	fp, err := experiments.NewFlagProvider("test-name")
+	env := testenv.GetTestEnv(t)
+	fp, err := experiments.NewFlagProvider("test-name", env.GetJWTParser())
 	require.NoError(t, err)
 
 	// A user without the targeting var 'email' should not get the flag, but
@@ -305,7 +308,8 @@ func TestMultiVariant(t *testing.T) {
 	openfeature.SetProviderAndWait(provider)
 	defer provider.Shutdown()
 
-	fp, err := experiments.NewFlagProvider("test-name")
+	env := testenv.GetTestEnv(t)
+	fp, err := experiments.NewFlagProvider("test-name", env.GetJWTParser())
 	require.NoError(t, err)
 
 	counts := map[string]int{}
@@ -355,7 +359,8 @@ func TestTargetingGroupID(t *testing.T) {
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
 	openfeature.SetProviderAndWait(provider)
 
-	fp, err := experiments.NewFlagProvider("test-name")
+	env := testenv.GetTestEnv(t)
+	fp, err := experiments.NewFlagProvider("test-name", env.GetJWTParser())
 	require.NoError(t, err)
 
 	t.Run("should use ExperimentTargetingGroupID as group_id var if set", func(t *testing.T) {
@@ -396,7 +401,8 @@ func TestSubscribe(t *testing.T) {
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
 	openfeature.SetProviderAndWait(provider)
 
-	fp, err := experiments.NewFlagProvider("test-name")
+	env := testenv.GetTestEnv(t)
+	fp, err := experiments.NewFlagProvider("test-name", env.GetJWTParser())
 	require.NoError(t, err)
 
 	ch := make(chan struct{}, 4)
@@ -476,7 +482,8 @@ func TestGroupStatusTargeting(t *testing.T) {
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
 	openfeature.SetProviderAndWait(provider)
 
-	fp, err := experiments.NewFlagProvider("test-name")
+	env := testenv.GetTestEnv(t)
+	fp, err := experiments.NewFlagProvider("test-name", env.GetJWTParser())
 	require.NoError(t, err)
 
 	t.Run("enterprise group gets enterprise feature", func(t *testing.T) {

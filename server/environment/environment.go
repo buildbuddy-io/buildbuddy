@@ -146,4 +146,5 @@ type Env interface {
 	GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer
 	GetExperimentFlagProvider() interfaces.ExperimentFlagProvider
 	GetOCIFetcherClient() ofpb.OCIFetcherClient
+	GetJWTParser() interfaces.JWTParser
 }

@@ -270,7 +270,8 @@ func TestApplyLimits_MaxDiskLimitDisabled(t *testing.T) {
 	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
 	defer testProvider.Cleanup()
 
-	fp, err := experiments.NewFlagProvider("")
+	env := testenv.GetTestEnv(t)
+	fp, err := experiments.NewFlagProvider("", env.GetJWTParser())
 	require.NoError(t, err)
 
 	sz := tasksize.ApplyLimits(
@@ -459,7 +460,7 @@ func TestSizer_P90CPUExperiment(t *testing.T) {
 `)
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
 	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
+	fp, err := experiments.NewFlagProvider("test", env.GetJWTParser())
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 

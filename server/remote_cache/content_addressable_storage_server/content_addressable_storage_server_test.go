@@ -855,7 +855,7 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 	})
 	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
 
-	fp, err := experiments.NewFlagProvider("test")
+	fp, err := experiments.NewFlagProvider("test", te.GetJWTParser())
 	require.NoError(t, err)
 	te.SetExperimentFlagProvider(fp)
 
@@ -967,7 +967,7 @@ func TestSplitBlobNotFound(t *testing.T) {
 	})
 	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
 
-	fp, err := experiments.NewFlagProvider("test")
+	fp, err := experiments.NewFlagProvider("test", te.GetJWTParser())
 	require.NoError(t, err)
 	te.SetExperimentFlagProvider(fp)
 
@@ -1009,7 +1009,7 @@ func TestSpliceBlobSingleChunk(t *testing.T) {
 	})
 	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
 
-	fp, err := experiments.NewFlagProvider("test")
+	fp, err := experiments.NewFlagProvider("test", te.GetJWTParser())
 	require.NoError(t, err)
 	te.SetExperimentFlagProvider(fp)
 

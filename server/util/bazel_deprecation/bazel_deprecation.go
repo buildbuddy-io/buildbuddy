@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -24,8 +25,8 @@ const (
 	warningKey          = "warnings"
 )
 
-func isAnonymousBuild(ctx context.Context) bool {
-	_, err := claims.ClaimsFromContext(ctx)
+func isAnonymousBuild(ctx context.Context, jwtParser interfaces.JWTParser) bool {
+	_, err := claims.ClaimsFromContext(ctx, jwtParser)
 	return status.IsUnauthenticatedError(err)
 }
 
@@ -115,7 +116,7 @@ func (w *Warner) Warn(ctx context.Context) error {
 		return nil
 	}
 
-	if *deprecateAnonymousAccess && isAnonymousBuild(ctx) {
+	if *deprecateAnonymousAccess && isAnonymousBuild(ctx, w.env.GetJWTParser()) {
 		defer w.incrementWarningCount(ctx)
 		return deprecationError("Anonymous BuildBuddy access is deprecated, and will soon be disabled.",
 			"No BuildBuddy API key was found attached to this build.", "", "To continue using BuildBuddy, create a free account at ",

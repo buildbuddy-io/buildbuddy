@@ -471,7 +471,7 @@ func TestTaskRouter_PersistentWorkerRouterDisabled(t *testing.T) {
 	})
 	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
 	defer testProvider.Cleanup()
-	fp, err := experiments.NewFlagProvider("test" /*=client*/)
+	fp, err := experiments.NewFlagProvider("test" /*=client*/, env.GetJWTParser())
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 
@@ -514,7 +514,7 @@ func TestTaskRouter_PersistentWorkerRouterEnabled(t *testing.T) {
 	})
 	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
 	defer testProvider.Cleanup()
-	fp, err := experiments.NewFlagProvider("test" /*=client*/)
+	fp, err := experiments.NewFlagProvider("test" /*=client*/, env.GetJWTParser())
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 

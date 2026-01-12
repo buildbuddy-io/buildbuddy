@@ -308,7 +308,8 @@ func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
 }`)
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
 	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
+	env := testenv.GetTestEnv(t)
+	fp, err := experiments.NewFlagProvider("test", env.GetJWTParser())
 	require.NoError(t, err)
 
 	env, ctx := getEnv(t, &schedulerOpts{userOwnedEnabled: true}, "user1")
@@ -363,7 +364,8 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 }`)
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
 	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
+	env := testenv.GetTestEnv(t)
+	fp, err := experiments.NewFlagProvider("test", env.GetJWTParser())
 	require.NoError(t, err)
 
 	env, ctx := getEnv(t, &schedulerOpts{}, "")

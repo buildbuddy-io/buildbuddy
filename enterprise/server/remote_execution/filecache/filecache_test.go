@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -55,10 +56,11 @@ func writeFileContent(t *testing.T, base, path, content string, executable bool)
 }
 
 func TestFilecache(t *testing.T) {
-	ctx := context.TODO()
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
 	fcDir := testfs.MakeTempDir(t)
 	// Create filecache
-	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	fc, err := filecache.NewFileCache(fcDir, 100000, false, te.GetJWTParser())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,13 +112,14 @@ func TestFilecache(t *testing.T) {
 
 func TestFileCacheGroupIsolation(t *testing.T) {
 	ctx := context.TODO()
+	te := testenv.GetTestEnv(t)
 	fcDir := testfs.MakeTempDir(t)
 	baseDir := testfs.MakeTempDir(t)
 	authedCtx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
 
 	{
 		// Create a filecache and add a couple files.
-		fc, err := filecache.NewFileCache(fcDir, 100000, false)
+		fc, err := filecache.NewFileCache(fcDir, 100000, false, te.GetJWTParser())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -135,7 +138,7 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 	{
 		// Recreate filecache and wait for it to scan exsting files.
 		// Ensure that they are still present.
-		fc, err := filecache.NewFileCache(fcDir, 100000, false)
+		fc, err := filecache.NewFileCache(fcDir, 100000, false, te.GetJWTParser())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -156,7 +159,7 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 	{
 		// Recreate filecache and wait for it to scan exsting files.
 		// Ensure that permissions are preserved.
-		fc, err := filecache.NewFileCache(fcDir, 100000, false)
+		fc, err := filecache.NewFileCache(fcDir, 100000, false, te.GetJWTParser())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -176,6 +179,7 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 
 func TestFileCacheOverwrite(t *testing.T) {
 	ctx := context.TODO()
+	te := testenv.GetTestEnv(t)
 	for _, test := range []struct {
 		Name       string
 		Executable bool
@@ -185,7 +189,7 @@ func TestFileCacheOverwrite(t *testing.T) {
 	} {
 		t.Run(test.Name, func(t *testing.T) {
 			filecacheRoot := testfs.MakeTempDir(t)
-			fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+			fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false, te.GetJWTParser())
 			require.NoError(t, err)
 			fc.WaitForDirectoryScanToComplete()
 			tempDir := testfs.MakeTempDir(t)
@@ -248,11 +252,12 @@ func TestFileCacheOverwrite(t *testing.T) {
 
 func TestFileCacheEviction(t *testing.T) {
 	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
 	// For now just assume the disk block size is 4096
 	const fsBlockSize = 4096
 	// Create a filecache that can only fit 1 physical block
 	filecacheRoot := testfs.MakeTempDir(t)
-	fc, err := filecache.NewFileCache(filecacheRoot, fsBlockSize, false)
+	fc, err := filecache.NewFileCache(filecacheRoot, fsBlockSize, false, te.GetJWTParser())
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	tempDir := testfs.MakeTempDir(t)
@@ -284,13 +289,14 @@ func TestFileCacheEviction(t *testing.T) {
 
 func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
 	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
 	// For now just assume the disk block size is 4096
 	const fsBlockSize = 4096
 	// Create a filecache that can fit 1 physical block plus one byte.
 	// Initialize it with a file that takes up 1 block, containing 1 byte.
 	filecacheRoot := testfs.MakeTempDir(t)
 	writeFileContent(t, filecacheRoot, "ANON/"+hash.String("A"), "A", false)
-	fc, err := filecache.NewFileCache(filecacheRoot, fsBlockSize+1, false)
+	fc, err := filecache.NewFileCache(filecacheRoot, fsBlockSize+1, false, te.GetJWTParser())
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	tempDir := testfs.MakeTempDir(t)
@@ -320,6 +326,7 @@ func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
 }
 
 func TestScanWithConcurrentAdd(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	for trial := 0; trial < 100; trial++ {
 		ctx := context.Background()
 		filecacheRoot := testfs.MakeTempDir(t)
@@ -340,7 +347,7 @@ func TestScanWithConcurrentAdd(t *testing.T) {
 		err := os.WriteFile(nodeToAddConcurrentlyPath, []byte(nodeContents[i]), 0644)
 		require.NoError(t, err)
 
-		fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+		fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false, te.GetJWTParser())
 		require.NoError(t, err)
 
 		// While the directory scan is in progress, re-add a random file
@@ -361,12 +368,13 @@ func TestScanWithConcurrentAdd(t *testing.T) {
 
 func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
 	fcDir := testfs.MakeTempDir(t)
 	scratchDir := testfs.MakeTempDir(t)
 
 	var unprefixedNodes []*repb.FileNode
 	{
-		fc, err := filecache.NewFileCache(fcDir, 4096*10, false)
+		fc, err := filecache.NewFileCache(fcDir, 4096*10, false, te.GetJWTParser())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -393,7 +401,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		flags.Set(t, "executor.subdir_prefix_length", 4)
 		log.Printf("Scanning old files")
 		// Recreate filecache and wait for it to scan existing files.
-		fc, err := filecache.NewFileCache(fcDir, 4096*10, false)
+		fc, err := filecache.NewFileCache(fcDir, 4096*10, false, te.GetJWTParser())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -447,7 +455,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		flags.Set(t, "executor.subdir_prefix_length", 2)
 		log.Printf("Scanning old files")
 
-		fc, err := filecache.NewFileCache(fcDir, 4096*10, false)
+		fc, err := filecache.NewFileCache(fcDir, 4096*10, false, te.GetJWTParser())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -494,9 +502,10 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 
 func TestFileCacheWriter(t *testing.T) {
 	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
 	fcDir := testfs.MakeTempDir(t)
 	// Create filecache
-	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	fc, err := filecache.NewFileCache(fcDir, 100000, false, te.GetJWTParser())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -616,7 +625,8 @@ func requireNotOwnerExecutable(t *testing.T, fi os.FileInfo) {
 
 func BenchmarkFilecacheLink(b *testing.B) {
 	// Use a simple Claims to speed up filecache.groupIDStringFromContext()
-	ctx := claims.AuthContextWithJWT(context.Background(), &claims.Claims{}, nil)
+	ctx := claims.AuthContextWithJWT(b.Context(), &claims.Claims{}, nil)
+	te := testenv.GetTestEnv(b)
 	flags.Set(b, "app.log_level", "warn")
 	log.Configure()
 
@@ -630,7 +640,7 @@ func BenchmarkFilecacheLink(b *testing.B) {
 	} {
 		b.Run(test.Name, func(b *testing.B) {
 			root := testfs.MakeTempDir(b)
-			fc, err := filecache.NewFileCache(testfs.MakeDirAll(b, root, "cache"), 100_000_000, false /*=delete*/)
+			fc, err := filecache.NewFileCache(testfs.MakeDirAll(b, root, "cache"), 100_000_000, false /*=delete*/, te.GetJWTParser())
 			require.NoError(b, err)
 			fc.WaitForDirectoryScanToComplete()
 			tmp := fc.TempDir()
@@ -697,7 +707,8 @@ func BenchmarkFilecacheLink(b *testing.B) {
 
 func BenchmarkContainsAdd(b *testing.B) {
 	// Use a simple Claims to speed up filecache.groupIDStringFromContext()
-	ctx := claims.AuthContextWithJWT(context.Background(), &claims.Claims{}, nil)
+	ctx := claims.AuthContextWithJWT(b.Context(), &claims.Claims{}, nil)
+	te := testenv.GetTestEnv(b)
 	flags.Set(b, "app.log_level", "warn")
 	log.Configure()
 
@@ -718,7 +729,7 @@ func BenchmarkContainsAdd(b *testing.B) {
 			startingHeap := m.HeapAlloc
 
 			root := testfs.MakeTempDir(b)
-			fc, err := filecache.NewFileCache(testfs.MakeDirAll(b, root, "cache"), test.MaxSize, false /*=delete*/)
+			fc, err := filecache.NewFileCache(testfs.MakeDirAll(b, root, "cache"), test.MaxSize, false /*=delete*/, te.GetJWTParser())
 			require.NoError(b, err)
 			fc.WaitForDirectoryScanToComplete()
 			tmp := fc.TempDir()
@@ -823,8 +834,9 @@ func fileDiskUsageRecursive(t *testing.T, path string) int64 {
 
 func TestFileCacheWriteCleansUpTempFile(t *testing.T) {
 	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
 	fcDir := testfs.MakeTempDir(t)
-	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	fc, err := filecache.NewFileCache(fcDir, 100000, false, te.GetJWTParser())
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 

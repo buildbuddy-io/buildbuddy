@@ -50,7 +50,7 @@ func Register(env *real_environment.RealEnv) error {
 		return err
 	}
 	// TODO: register shutdown function to close the provider?
-	fp, err := NewFlagProvider(*appName)
+	fp, err := NewFlagProvider(*appName, env.GetJWTParser())
 	if err != nil {
 		return err
 	}
@@ -61,9 +61,10 @@ func Register(env *real_environment.RealEnv) error {
 
 // NewFlagProvider creates a new ExperimentFlagProvider, it will use whatever
 // flag provider is installed in openfeature.
-func NewFlagProvider(clientName string) (*FlagProvider, error) {
+func NewFlagProvider(clientName string, jwtParser interfaces.JWTParser) (*FlagProvider, error) {
 	return &FlagProvider{
-		client: openfeature.NewClient(clientName),
+		client:    openfeature.NewClient(clientName),
+		jwtParser: jwtParser,
 	}, nil
 }
 
@@ -85,7 +86,8 @@ func (d *details) Variant() string {
 
 // FlagProvider implements the interface.ExperimentFlagProvider interface.
 type FlagProvider struct {
-	client *openfeature.Client
+	client    *openfeature.Client
+	jwtParser interfaces.JWTParser
 }
 
 // Statusz reports a simple statusz page so it's clear on a running app which
@@ -126,7 +128,7 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 		attributes:   make(map[string]interface{}, 0),
 	}
 
-	if claims, err := claims.ClaimsFromContext(ctx); err == nil {
+	if claims, err := claims.ClaimsFromContext(ctx, fp.jwtParser); err == nil {
 		options.targetingKey = claims.GetExperimentTargetingGroupID()
 		options.attributes["group_id"] = claims.GetExperimentTargetingGroupID()
 		options.attributes["user_id"] = claims.GetUserID()

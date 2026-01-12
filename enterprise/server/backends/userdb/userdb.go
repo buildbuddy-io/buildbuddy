@@ -412,7 +412,7 @@ func (d *UserDB) UpdateGroup(ctx context.Context, g *tables.Group) (string, erro
 }
 
 func (d *UserDB) UpdateGroupStatus(ctx context.Context, groupID string, status grpb.Group_GroupStatus) error {
-	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+	if err := claims.AuthorizeServerAdmin(ctx, d.env.GetJWTParser()); err != nil {
 		return err
 	}
 

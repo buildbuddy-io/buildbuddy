@@ -215,7 +215,7 @@ func (a *githubAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces
 	// We don't return directly so that we can return a nil-interface instead of an interface holding a nil *Claims.
 	// Callers should be checking err before before accessing the user, but in case they don't this will prevent a nil
 	// dereference.
-	claims, err := claims.ClaimsFromContext(ctx)
+	claims, err := claims.ClaimsFromContext(ctx, a.env.GetJWTParser())
 	if err != nil {
 		return nil, err
 	}

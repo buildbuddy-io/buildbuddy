@@ -540,11 +540,12 @@ func setupCacheEnv(t *testing.T) (*testenv.TestEnv, bspb.ByteStreamClient, repb.
 
 // runOCIFetcherServer creates an OCIFetcher server and returns a client connected to it.
 func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) ofpb.OCIFetcherClient {
+	env := testenv.GetTestEnv(t)
+
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
-	server, err := ocifetcher.NewServer(bsClient, acClient)
+	server, err := ocifetcher.NewServer(bsClient, acClient, env.GetJWTParser())
 	require.NoError(t, err)
 
-	env := testenv.GetTestEnv(t)
 	// Use TestAuthenticator to enable JWT parsing for bypass_registry tests
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, nil))
 

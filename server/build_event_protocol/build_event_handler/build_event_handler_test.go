@@ -771,7 +771,7 @@ PRIVATEKEYDATA
 
 func TestHandleEventWithUsageTracking(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	ut := testusage.NewTracker()
+	ut := testusage.NewTracker(te)
 	te.SetUsageTracker(ut)
 	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)

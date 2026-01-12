@@ -82,6 +82,7 @@ type fileCache struct {
 	lock        sync.Mutex
 	l           *lru.LRU[*entry]
 	dirScanDone chan struct{}
+	jwtParser   interfaces.JWTParser
 
 	linkFromFileCacheLatency prometheus.Observer
 	linkIntoFileCacheLatency prometheus.Observer
@@ -120,7 +121,7 @@ func evictFn(rootDir string) func(string, *entry, lru.EvictionReason) {
 // NewFileCache constructs an fileCache with maxSize that will cache files
 // in rootDir.
 // If deleteContent is true, the root dir will be deleted and recreated.
-func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*fileCache, error) {
+func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool, jwtParser interfaces.JWTParser) (*fileCache, error) {
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
 	}
@@ -141,6 +142,7 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 		rootDir:                  rootDir,
 		l:                        l,
 		dirScanDone:              make(chan struct{}),
+		jwtParser:                jwtParser,
 		linkFromFileCacheLatency: metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_from_filecache"}),
 		linkIntoFileCacheLatency: metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_into_filecache"}),
 		createParentDirLatency:   metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "create_parent_dir"}),
@@ -266,18 +268,18 @@ func groupSpecificKey(groupID string, node *repb.FileNode) string {
 	return groupID + "/" + node.GetDigest().GetHash()
 }
 
-func groupIDStringFromContext(ctx context.Context) string {
-	if c, err := claims.ClaimsFromContext(ctx); err == nil {
-		if len(c.GroupID) == 0 {
+func groupIDStringFromContext(ctx context.Context, jwtParser interfaces.JWTParser) string {
+	if c, err := claims.ClaimsFromContext(ctx, jwtParser); err == nil {
+		if len(c.GetGroupID()) == 0 {
 			log.CtxWarning(ctx, "Empty group id")
 		}
-		return c.GroupID
+		return c.GetGroupID()
 	}
 	return interfaces.AuthAnonymousUser
 }
 
-func key(ctx context.Context, node *repb.FileNode) string {
-	groupID := groupIDStringFromContext(ctx)
+func key(ctx context.Context, node *repb.FileNode, JWTParser interfaces.JWTParser) string {
+	groupID := groupIDStringFromContext(ctx, JWTParser)
 	k := groupSpecificKey(groupID, node)
 	return k
 }
@@ -287,7 +289,7 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 		c.requestCounter[hit].Inc()
 	}()
 
-	groupID := groupIDStringFromContext(ctx)
+	groupID := groupIDStringFromContext(ctx, c.jwtParser)
 	key := groupSpecificKey(groupID, node)
 
 	c.lock.Lock()
@@ -311,7 +313,7 @@ func (c *fileCache) Open(ctx context.Context, node *repb.FileNode) (f *os.File, 
 		c.requestCounter[hit].Inc()
 	}()
 
-	groupID := groupIDStringFromContext(ctx)
+	groupID := groupIDStringFromContext(ctx, c.jwtParser)
 	key := groupSpecificKey(groupID, node)
 
 	c.lock.Lock()
@@ -403,7 +405,7 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 
 func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) error {
 	start := time.Now()
-	groupID := groupIDStringFromContext(ctx)
+	groupID := groupIDStringFromContext(ctx, c.jwtParser)
 	// Locking happens in addFileToGroup().
 	err := c.addFileToGroup(groupID, node, existingFilePath)
 	if err != nil {
@@ -414,7 +416,7 @@ func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFi
 }
 
 func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
-	k := key(ctx, node)
+	k := key(ctx, node, c.jwtParser)
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -422,7 +424,7 @@ func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool 
 }
 
 func (c *fileCache) DeleteFile(ctx context.Context, node *repb.FileNode) bool {
-	k := key(ctx, node)
+	k := key(ctx, node, c.jwtParser)
 
 	c.lock.Lock()
 	defer c.lock.Unlock()

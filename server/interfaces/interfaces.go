@@ -105,6 +105,9 @@ type MirrorConfig struct {
 type UserInfo interface {
 	jwt.Claims
 
+	// Returns the time at which this JWT expires.
+	ExpiresAt() time.Time
+
 	// GetAPIKeyInfo returns the metadata for the API key used for
 	// authentication. An empty struct will be returned if an API key
 	// was not used.
@@ -1869,4 +1872,9 @@ type ExperimentFlagDetails interface {
 type ByteStreamServer interface {
 	bspb.ByteStreamServer
 	ReadCASResource(ctx context.Context, rn *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error
+}
+
+// Parses and verifies serialized JWTs.
+type JWTParser interface {
+	Parse(token string) (UserInfo, error)
 }

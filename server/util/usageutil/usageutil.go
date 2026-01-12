@@ -90,9 +90,9 @@ func ServerName() string {
 	return serverName
 }
 
-func CollectionFromRPCContext(ctx context.Context) *Collection {
+func CollectionFromRPCContext(ctx context.Context, parser interfaces.JWTParser) *Collection {
 	groupID := interfaces.AuthAnonymousUser
-	if claims, err := claims.ClaimsFromContext(ctx); err == nil {
+	if claims, err := claims.ClaimsFromContext(ctx, parser); err == nil {
 		groupID = claims.GetGroupID()
 	}
 	c := &Collection{

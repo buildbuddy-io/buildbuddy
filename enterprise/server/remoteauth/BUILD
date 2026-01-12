@@ -10,6 +10,7 @@ go_library(
     deps = [
         "//proto:auth_go_proto",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/tables",
         "//server/util/authutil",
         "//server/util/claims",

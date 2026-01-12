@@ -146,6 +146,7 @@ type RealEnv struct {
 	hitTrackerFactory                    interfaces.HitTrackerFactory
 	hitTrackerServiceServer              hitpb.HitTrackerServiceServer
 	experimentFlagProvider               interfaces.ExperimentFlagProvider
+	JWTParser                            interfaces.JWTParser
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -903,4 +904,11 @@ func (r *RealEnv) GetExperimentFlagProvider() interfaces.ExperimentFlagProvider 
 }
 func (r *RealEnv) SetExperimentFlagProvider(experimentFlagProvider interfaces.ExperimentFlagProvider) {
 	r.experimentFlagProvider = experimentFlagProvider
+}
+
+func (r *RealEnv) GetJWTParser() interfaces.JWTParser {
+	return r.JWTParser
+}
+func (r *RealEnv) SetJWTParser(JWTParser interfaces.JWTParser) {
+	r.JWTParser = JWTParser
 }

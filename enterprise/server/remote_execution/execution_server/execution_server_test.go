@@ -122,7 +122,7 @@ func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Hand
 	s, err := execution_server.NewExecutionServer(env)
 	require.NoError(t, err)
 	env.SetRemoteExecutionService(s)
-	env.SetUsageTracker(testusage.NewTracker())
+	env.SetUsageTracker(testusage.NewTracker(env))
 
 	_, run, lis := testenv.RegisterLocalGRPCServer(t, env)
 	testcache.Setup(t, env, lis)
@@ -260,7 +260,7 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 `)
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
 	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
+	fp, err := experiments.NewFlagProvider("test", env.GetJWTParser())
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 

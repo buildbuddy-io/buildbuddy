@@ -61,7 +61,7 @@ func setExperimentProvider(b *testing.B, te *real_environment.RealEnv) {
 		},
 	})
 	require.NoError(b, openfeature.SetProviderAndWait(testProvider))
-	fp, err := experiments.NewFlagProvider("")
+	fp, err := experiments.NewFlagProvider("", te.GetJWTParser())
 	require.NoError(b, err)
 	te.SetExperimentFlagProvider(fp)
 }

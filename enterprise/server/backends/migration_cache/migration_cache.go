@@ -358,9 +358,9 @@ func (c *config) decompressRead() bool {
 	return c.decompressPercentage > 0 && rand.Float64() < c.decompressPercentage
 }
 
-func groupID(ctx context.Context) string {
-	if c, err := claims.ClaimsFromContext(ctx); err == nil {
-		return c.GroupID
+func groupID(ctx context.Context, jwtParser interfaces.JWTParser) string {
+	if c, err := claims.ClaimsFromContext(ctx, jwtParser); err == nil {
+		return c.GetGroupID()
 	}
 	return interfaces.AuthAnonymousUser
 }
@@ -384,7 +384,7 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 			} else if !dstContains {
 				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "contains",
-					metrics.GroupID:          groupID(ctx),
+					metrics.GroupID:          groupID(ctx, mc.env.GetJWTParser()),
 				}).Inc()
 				if mc.logNotFoundErrors {
 					log.CtxWarningf(ctx, "Migration digest %v src contains, dest does not", r.GetDigest())
@@ -393,7 +393,7 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 			} else {
 				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "contains",
-					metrics.GroupID:          groupID(ctx),
+					metrics.GroupID:          groupID(ctx, mc.env.GetJWTParser()),
 				}).Inc()
 			}
 		}()
@@ -419,7 +419,7 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 				if status.IsNotFoundError(dstErr) {
 					metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
 						metrics.CacheRequestType: "metadata",
-						metrics.GroupID:          groupID(ctx),
+						metrics.GroupID:          groupID(ctx, mc.env.GetJWTParser()),
 					}).Inc()
 				}
 				if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
@@ -428,7 +428,7 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 			} else {
 				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "metadata",
-					metrics.GroupID:          groupID(ctx),
+					metrics.GroupID:          groupID(ctx, mc.env.GetJWTParser()),
 				}).Inc()
 			}
 		}()
@@ -463,12 +463,12 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.Res
 			if len(missingOnlyInDest) == 0 {
 				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "findMissing",
-					metrics.GroupID:          groupID(ctx),
+					metrics.GroupID:          groupID(ctx, mc.env.GetJWTParser()),
 				}).Inc()
 			} else {
 				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "findMissing",
-					metrics.GroupID:          groupID(ctx),
+					metrics.GroupID:          groupID(ctx, mc.env.GetJWTParser()),
 				}).Inc()
 				if mc.logNotFoundErrors {
 					log.CtxWarningf(ctx, "Migration FindMissing diff for digests %v: src %v, dest %v", resources, srcMissing, dstMissing)
@@ -514,13 +514,13 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 				if status.IsNotFoundError(dstErr) {
 					metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
 						metrics.CacheRequestType: "getMulti",
-						metrics.GroupID:          groupID(ctx),
+						metrics.GroupID:          groupID(ctx, mc.env.GetJWTParser()),
 					}).Inc()
 				}
 			} else {
 				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "getMulti",
-					metrics.GroupID:          groupID(ctx),
+					metrics.GroupID:          groupID(ctx, mc.env.GetJWTParser()),
 				}).Inc()
 			}
 		}
@@ -792,7 +792,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 			mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
 				metrics.CacheRequestType: "reader",
-				metrics.GroupID:          groupID(ctx)}).Inc()
+				metrics.GroupID:          groupID(ctx, mc.env.GetJWTParser())}).Inc()
 		} else {
 			mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 		}
@@ -800,7 +800,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 	}
 	metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
 		metrics.CacheRequestType: "reader",
-		metrics.GroupID:          groupID(ctx),
+		metrics.GroupID:          groupID(ctx, mc.env.GetJWTParser()),
 	}).Inc()
 
 	var decompressor io.WriteCloser
@@ -958,7 +958,7 @@ func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte
 				if status.IsNotFoundError(dstErr) {
 					metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
 						metrics.CacheRequestType: "get",
-						metrics.GroupID:          groupID(ctx),
+						metrics.GroupID:          groupID(ctx, mc.env.GetJWTParser()),
 					}).Inc()
 					if mc.logNotFoundErrors {
 						log.CtxWarningf(ctx, "Migration dest read of %q not found", r)
@@ -971,7 +971,7 @@ func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte
 			} else {
 				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "get",
-					metrics.GroupID:          groupID(ctx),
+					metrics.GroupID:          groupID(ctx, mc.env.GetJWTParser()),
 				}).Inc()
 			}
 		} else {
@@ -1143,7 +1143,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 
 	labels := prometheus.Labels{
 		metrics.CacheTypeLabel: cacheTypeLabel(c.d.GetCacheType()),
-		metrics.GroupID:        groupID(ctx),
+		metrics.GroupID:        groupID(ctx, mc.env.GetJWTParser()),
 	}
 	metrics.MigrationBlobsCopied.With(labels).Inc()
 	metrics.MigrationBytesCopied.With(labels).Add(float64(n))

@@ -131,7 +131,7 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 		mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
 		require.NoError(t, err)
 		env.SetMetricsCollector(mc)
-		ut := testusage.NewTracker()
+		ut := testusage.NewTracker(env)
 		env.SetUsageTracker(ut)
 		ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 		env.SetAuthenticator(ta)

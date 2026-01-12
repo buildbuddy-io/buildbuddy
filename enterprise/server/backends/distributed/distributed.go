@@ -108,6 +108,7 @@ type peerInfo struct {
 // TODO(go/b/6456): use memory cache instead of LRU for lookaside cache
 type Cache struct {
 	authenticator        interfaces.Authenticator
+	jwtParser            interfaces.JWTParser
 	local                interfaces.Cache
 	log                  log.Logger
 	lookasideMu          *sync.Mutex
@@ -211,6 +212,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	}
 	dc := &Cache{
 		authenticator:       env.GetAuthenticator(),
+		jwtParser:           env.GetJWTParser(),
 		local:               c,
 		lookasideMu:         &sync.Mutex{},
 		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", opts.ListenAddr)),
@@ -946,9 +948,9 @@ func dedupeBackfills(backfills []*backfillOrder) []*backfillOrder {
 	return deduped
 }
 
-func groupID(ctx context.Context) string {
-	if c, err := claims.ClaimsFromContext(ctx); err == nil {
-		return c.GroupID
+func groupID(ctx context.Context, jwtParser interfaces.JWTParser) string {
+	if c, err := claims.ClaimsFromContext(ctx, jwtParser); err == nil {
+		return c.GetGroupID()
 	}
 	return interfaces.AuthAnonymousUser
 }
@@ -964,7 +966,7 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) (
 		c.log.CtxDebugf(ctx, "backfill took %s err: %v", time.Since(start), err)
 	}()
 	backfills = dedupeBackfills(backfills)
-	groupID := groupID(ctx)
+	groupID := groupID(ctx, c.jwtParser)
 	eg, gCtx := errgroup.WithContext(ctx)
 	for _, bf := range backfills {
 		bf := bf

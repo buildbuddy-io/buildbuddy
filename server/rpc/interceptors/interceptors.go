@@ -94,7 +94,7 @@ func AddAuthToContext(env environment.Env, ctx context.Context) context.Context 
 	_, span := tracing.StartSpan(ctx)
 	defer span.End()
 	ctx = env.GetAuthenticator().AuthenticatedGRPCContext(ctx)
-	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+	if c, err := claims.ClaimsFromContext(ctx, env.GetJWTParser()); err == nil {
 		span.SetAttributes(attribute.String("group_id", c.GetGroupID()))
 		ctx = log.EnrichContext(ctx, "group_id", c.GetGroupID())
 		if c.GetUserID() != "" {

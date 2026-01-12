@@ -28,6 +28,7 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/resources",
+        "//server/util/claims",
         "//server/util/flagutil",
         "//server/util/grpc_client",
         "//server/util/healthcheck",

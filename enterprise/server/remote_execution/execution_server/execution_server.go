@@ -780,7 +780,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	// Check permissions for server admin-only properties.
 	if props.ContainerRegistryBypass {
-		if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		if err := claims.AuthorizeServerAdmin(ctx, s.env.GetJWTParser()); err != nil {
 			return nil, status.WrapError(err, "authorize container-registry-bypass property")
 		}
 	}

@@ -59,9 +59,9 @@ const (
 	BatchReadLimitBytes = min(2*1024*1024, rpcutil.GRPCMaxSizeBytes)
 )
 
-func groupIDStringFromContext(ctx context.Context) string {
-	if c, err := claims.ClaimsFromContext(ctx); err == nil {
-		return c.GroupID
+func groupIDStringFromContext(ctx context.Context, jwtParser interfaces.JWTParser) string {
+	if c, err := claims.ClaimsFromContext(ctx, jwtParser); err == nil {
+		return c.GetGroupID()
 	}
 	return interfaces.AuthAnonymousUser
 }
@@ -946,7 +946,7 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 					if len(f.fps) == 0 {
 						return status.FailedPreconditionError("empty file pointer list for key")
 					}
-					dedupeKey := downloadDedupeKey{groupID: groupIDStringFromContext(ctx), fetchKey: f.key}
+					dedupeKey := downloadDedupeKey{groupID: groupIDStringFromContext(ctx, ff.env.GetJWTParser()), fetchKey: f.key}
 					if ff.onlyDownloadToFileCache {
 						return ff.bytestreamReadToFilecache(ctx, ff.env.GetByteStreamClient(), dedupeKey, f.fps)
 					} else {
