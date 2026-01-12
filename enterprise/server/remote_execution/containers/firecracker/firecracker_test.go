@@ -326,227 +326,242 @@ func getExecutorConfig(t *testing.T) *firecracker.ExecutorConfig {
 }
 
 func TestFirecrackerRunSimple(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	for _, useOCIFetcher := range []bool{false, true} {
+		t.Run(fmt.Sprintf("useOCIFetcher=%v", useOCIFetcher), func(t *testing.T) {
+			ctx := context.Background()
+			env := getTestEnv(ctx, t, envOpts{})
+			rootDir := testfs.MakeTempDir(t)
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-	path := filepath.Join(workDir, "world.txt")
-	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
-		t.Fatal(err)
-	}
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "GREETING", Value: "Hello"},
-		},
-	}
-	expectedResult := &interfaces.CommandResult{
-		ExitCode: 0,
-		Stdout:   []byte("Hello world"),
-		Stderr:   []byte("foo"),
-	}
+			path := filepath.Join(workDir, "world.txt")
+			if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
+				t.Fatal(err)
+			}
+			cmd := &repb.Command{
+				Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
+				EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+					{Name: "GREETING", Value: "Hello"},
+				},
+			}
+			expectedResult := &interfaces.CommandResult{
+				ExitCode: 0,
+				Stdout:   []byte("Hello world"),
+				Stderr:   []byte("foo"),
+			}
 
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         2500,
-			EnableNetworking:  false,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         busyboxImage,
+				ActionWorkingDirectory: workDir,
+				UseOCIFetcher:          useOCIFetcher,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         2500,
+					EnableNetworking:  false,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: getExecutorConfig(t),
+			}
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	if res.Error != nil {
-		t.Fatal(res.Error)
-	}
+			// Run will handle the full lifecycle: no need to call Remove() here.
+			res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+			if res.Error != nil {
+				t.Fatal(res.Error)
+			}
 
-	assertCommandResult(t, expectedResult, res)
+			assertCommandResult(t, expectedResult, res)
+		})
+	}
 }
 
 func TestFirecrackerLifecycle(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	for _, useOCIFetcher := range []bool{false, true} {
+		t.Run(fmt.Sprintf("useOCIFetcher=%v", useOCIFetcher), func(t *testing.T) {
+			ctx := context.Background()
+			env := getTestEnv(ctx, t, envOpts{})
+			rootDir := testfs.MakeTempDir(t)
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-	path := filepath.Join(workDir, "world.txt")
-	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
-		t.Fatal(err)
-	}
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "GREETING", Value: "Hello"},
-		},
-	}
-	expectedResult := &interfaces.CommandResult{
-		ExitCode: 0,
-		Stdout:   []byte("Hello world"),
-		Stderr:   []byte("foo"),
-	}
+			path := filepath.Join(workDir, "world.txt")
+			if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
+				t.Fatal(err)
+			}
+			cmd := &repb.Command{
+				Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
+				EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+					{Name: "GREETING", Value: "Hello"},
+				},
+			}
+			expectedResult := &interfaces.CommandResult{
+				ExitCode: 0,
+				Stdout:   []byte("Hello world"),
+				Stderr:   []byte("foo"),
+			}
 
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         2500,
-			EnableNetworking:  false,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         busyboxImage,
+				ActionWorkingDirectory: workDir,
+				UseOCIFetcher:          useOCIFetcher,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         2500,
+					EnableNetworking:  false,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: getExecutorConfig(t),
+			}
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	cached, err := c.IsImageCached(ctx)
-	if err != nil {
-		t.Fatal(err)
+			cached, err := c.IsImageCached(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !cached {
+				if err := c.PullImage(ctx, oci.Credentials{}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				log.Debugf("Cleaning up...")
+				if err := c.Remove(ctx); err != nil {
+					t.Fatal(err)
+				}
+			})
+			res := c.Exec(ctx, cmd, nil)
+			if res.Error != nil {
+				t.Fatal(res.Error)
+			}
+			assertCommandResult(t, expectedResult, res)
+		})
 	}
-	if !cached {
-		if err := c.PullImage(ctx, oci.Credentials{}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		log.Debugf("Cleaning up...")
-		if err := c.Remove(ctx); err != nil {
-			t.Fatal(err)
-		}
-	})
-	res := c.Exec(ctx, cmd, nil)
-	if res.Error != nil {
-		t.Fatal(res.Error)
-	}
-	assertCommandResult(t, expectedResult, res)
 }
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	// Test for both small and large memory sizes
 	for _, memorySize := range []int64{minMemSizeMB, 4000} {
-		ctx := context.Background()
-		env := getTestEnv(ctx, t, envOpts{})
-		env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
-		rootDir := testfs.MakeTempDir(t)
-		workDir := testfs.MakeDirAll(t, rootDir, "work")
+		for _, useOCIFetcher := range []bool{false, true} {
+			t.Run(fmt.Sprintf("memorySize=%d/useOCIFetcher=%v", memorySize, useOCIFetcher), func(t *testing.T) {
+				ctx := context.Background()
+				env := getTestEnv(ctx, t, envOpts{})
+				env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+				rootDir := testfs.MakeTempDir(t)
+				workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-		cfg := getExecutorConfig(t)
-		opts := firecracker.ContainerOpts{
-			ContainerImage:         busyboxImage,
-			ActionWorkingDirectory: workDir,
-			VMConfiguration: &fcpb.VMConfiguration{
-				NumCpus:            1,
-				MemSizeMb:          memorySize,
-				EnableNetworking:   false,
-				ScratchDiskSizeMb:  100,
-				GuestKernelVersion: cfg.GuestKernelVersion,
-				FirecrackerVersion: cfg.FirecrackerVersion,
-				GuestApiVersion:    cfg.GuestAPIVersion,
-			},
-			ExecutorConfig: cfg,
+				cfg := getExecutorConfig(t)
+				opts := firecracker.ContainerOpts{
+					ContainerImage:         busyboxImage,
+					ActionWorkingDirectory: workDir,
+					UseOCIFetcher:          useOCIFetcher,
+					VMConfiguration: &fcpb.VMConfiguration{
+						NumCpus:            1,
+						MemSizeMb:          memorySize,
+						EnableNetworking:   false,
+						ScratchDiskSizeMb:  100,
+						GuestKernelVersion: cfg.GuestKernelVersion,
+						FirecrackerVersion: cfg.FirecrackerVersion,
+						GuestApiVersion:    cfg.GuestAPIVersion,
+					},
+					ExecutorConfig: cfg,
+				}
+				task := &repb.ExecutionTask{
+					Command: &repb.Command{
+						// Note: platform must match in order to share snapshots
+						Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+							{Name: "recycle-runner", Value: "true"},
+						}},
+						Arguments: []string{"./buildbuddy_ci_runner"},
+					},
+				}
+
+				c, err := firecracker.NewContainer(ctx, env, task, opts)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage); err != nil {
+					t.Fatalf("unable to pull image: %s", err)
+				}
+
+				if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+					t.Fatalf("unable to Create container: %s", err)
+				}
+				t.Cleanup(func() {
+					if err := c.Remove(ctx); err != nil {
+						t.Fatal(err)
+					}
+				})
+
+				cmd := &repb.Command{
+					// Run a script that increments /workspace/count (on workspacefs) and
+					// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
+					// This will let us test whether the scratchfs is sticking around across
+					// runs, and whether workspacefs is being correctly reset across runs.
+					Arguments: []string{"sh", "-c", `
+				for dir in /workspace /root; do
+					(
+						cd "$dir"
+						if [[ -e ./count ]]; then
+							count=$(cat ./count)
+							count=$((count+1))
+							printf "$count" > ./count
+						else
+							printf 0 > ./count
+						fi
+						echo "$PWD/count: $(cat count)"
+					)
+				done
+				# Accumulate some CPU usage.
+				cat /dev/zero | head -c 100000000 >/dev/null
+			`},
+				}
+
+				res := c.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(t, res.Error)
+				assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
+				require.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
+				require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
+
+				// Try pause, unpause, exec several times.
+				var cpuMillisObservations []float64
+				for i := 1; i <= 4; i++ {
+					if err := c.Pause(ctx); err != nil {
+						t.Fatalf("unable to pause container: %s", err)
+					}
+
+					countBefore := rand.Intn(100)
+					err := os.WriteFile(filepath.Join(workDir, "count"), []byte(fmt.Sprint(countBefore)), 0644)
+					require.NoError(t, err)
+
+					if err := c.Unpause(ctx); err != nil {
+						t.Fatalf("unable to unpause container: %s", err)
+					}
+
+					res := c.Exec(ctx, cmd, nil /*=stdio*/)
+					require.NoError(t, res.Error)
+					assert.Equal(t, int64(i), res.VMMetadata.GetSavedSnapshotVersionNumber())
+					assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
+					require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
+					cpuMillisObservations = append(cpuMillisObservations, float64(res.UsageStats.GetCpuNanos())/1e6)
+				}
+
+				// CPU usage should be reported per-task rather than accumulated over
+				// time. This means that the CPU usage observations should not be
+				// strictly increasing, or in the rare case that it's strictly
+				// increasing, the difference between the max and min reported usage
+				// should be pretty low.
+				spread := slices.Max(cpuMillisObservations) - slices.Min(cpuMillisObservations)
+				require.True(t, !slices.IsSorted(cpuMillisObservations) || spread < slices.Min(cpuMillisObservations), "unexpected CPU usage measurements %v", cpuMillisObservations)
+			})
 		}
-		task := &repb.ExecutionTask{
-			Command: &repb.Command{
-				// Note: platform must match in order to share snapshots
-				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
-					{Name: "recycle-runner", Value: "true"},
-				}},
-				Arguments: []string{"./buildbuddy_ci_runner"},
-			},
-		}
-
-		c, err := firecracker.NewContainer(ctx, env, task, opts)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage); err != nil {
-			t.Fatalf("unable to pull image: %s", err)
-		}
-
-		if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
-			t.Fatalf("unable to Create container: %s", err)
-		}
-		t.Cleanup(func() {
-			if err := c.Remove(ctx); err != nil {
-				t.Fatal(err)
-			}
-		})
-
-		cmd := &repb.Command{
-			// Run a script that increments /workspace/count (on workspacefs) and
-			// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
-			// This will let us test whether the scratchfs is sticking around across
-			// runs, and whether workspacefs is being correctly reset across runs.
-			Arguments: []string{"sh", "-c", `
-			for dir in /workspace /root; do
-				(
-					cd "$dir"
-					if [[ -e ./count ]]; then
-						count=$(cat ./count)
-						count=$((count+1))
-						printf "$count" > ./count
-					else
-						printf 0 > ./count
-					fi
-					echo "$PWD/count: $(cat count)"
-				)
-			done
-			# Accumulate some CPU usage.
-			cat /dev/zero | head -c 100000000 >/dev/null
-		`},
-		}
-
-		res := c.Exec(ctx, cmd, nil /*=stdio*/)
-		require.NoError(t, res.Error)
-		assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
-		require.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
-		require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
-
-		// Try pause, unpause, exec several times.
-		var cpuMillisObservations []float64
-		for i := 1; i <= 4; i++ {
-			if err := c.Pause(ctx); err != nil {
-				t.Fatalf("unable to pause container: %s", err)
-			}
-
-			countBefore := rand.Intn(100)
-			err := os.WriteFile(filepath.Join(workDir, "count"), []byte(fmt.Sprint(countBefore)), 0644)
-			require.NoError(t, err)
-
-			if err := c.Unpause(ctx); err != nil {
-				t.Fatalf("unable to unpause container: %s", err)
-			}
-
-			res := c.Exec(ctx, cmd, nil /*=stdio*/)
-			require.NoError(t, res.Error)
-			assert.Equal(t, int64(i), res.VMMetadata.GetSavedSnapshotVersionNumber())
-			assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
-			require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
-			cpuMillisObservations = append(cpuMillisObservations, float64(res.UsageStats.GetCpuNanos())/1e6)
-		}
-
-		// CPU usage should be reported per-task rather than accumulated over
-		// time. This means that the CPU usage observations should not be
-		// strictly increasing, or in the rare case that it's strictly
-		// increasing, the difference between the max and min reported usage
-		// should be pretty low.
-		spread := slices.Max(cpuMillisObservations) - slices.Min(cpuMillisObservations)
-		require.True(t, !slices.IsSorted(cpuMillisObservations) || spread < slices.Min(cpuMillisObservations), "unexpected CPU usage measurements %v", cpuMillisObservations)
 	}
 }
 

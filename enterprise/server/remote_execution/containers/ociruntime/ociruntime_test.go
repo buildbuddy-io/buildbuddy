@@ -257,46 +257,49 @@ func TestRunUsageStats(t *testing.T) {
 }
 
 func TestRunWithImage(t *testing.T) {
-	setupNetworking(t)
+	for _, useOCIFetcher := range []bool{false, true} {
+		t.Run(fmt.Sprintf("useOCIFetcher=%v", useOCIFetcher), func(t *testing.T) {
+			setupNetworking(t)
 
-	image := imageConfigTestImage(t)
+			image := imageConfigTestImage(t)
 
-	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+			ctx := context.Background()
+			env := testenv.GetTestEnv(t)
+			installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+			runtimeRoot := testfs.MakeTempDir(t)
+			flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
-	buildRoot := testfs.MakeTempDir(t)
-	cacheRoot := testfs.MakeTempDir(t)
+			buildRoot := testfs.MakeTempDir(t)
+			cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
-	require.NoError(t, err)
-	wd := testfs.MakeDirAll(t, buildRoot, "work")
+			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+			require.NoError(t, err)
+			wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		err := c.Remove(ctx)
-		require.NoError(t, err)
-	})
+			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+				ContainerImage: image,
+				UseOCIFetcher:  useOCIFetcher,
+			}})
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				err := c.Remove(ctx)
+				require.NoError(t, err)
+			})
 
-	// Run
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `
-			echo "$GREETING world!"
-			env | sort
-		`},
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "GREETING", Value: "Hello"},
-		},
-	}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{})
-	require.NoError(t, res.Error)
-	assert.Equal(t, `Hello world!
+			// Run
+			cmd := &repb.Command{
+				Arguments: []string{"sh", "-c", `
+				echo "$GREETING world!"
+				env | sort
+			`},
+				EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+					{Name: "GREETING", Value: "Hello"},
+				},
+			}
+			res := c.Run(ctx, cmd, wd, oci.Credentials{})
+			require.NoError(t, res.Error)
+			assert.Equal(t, `Hello world!
 GREETING=Hello
 HOME=/home/buildbuddy
 HOSTNAME=localhost
@@ -305,8 +308,10 @@ PWD=/buildbuddy-execroot
 SHLVL=1
 TEST_ENV_VAR=foo
 `, string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
-	assert.Equal(t, 0, res.ExitCode)
+			assert.Empty(t, string(res.Stderr))
+			assert.Equal(t, 0, res.ExitCode)
+		})
+	}
 }
 
 func TestRunOOM(t *testing.T) {
@@ -649,67 +654,70 @@ func TestStatsPostExec(t *testing.T) {
 }
 
 func TestPullCreateExecRemove(t *testing.T) {
-	setupNetworking(t)
+	for _, useOCIFetcher := range []bool{false, true} {
+		t.Run(fmt.Sprintf("useOCIFetcher=%v", useOCIFetcher), func(t *testing.T) {
+			setupNetworking(t)
 
-	image := imageConfigTestImage(t)
+			image := imageConfigTestImage(t)
 
-	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+			ctx := context.Background()
+			env := testenv.GetTestEnv(t)
+			installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+			runtimeRoot := testfs.MakeTempDir(t)
+			flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
-	buildRoot := testfs.MakeTempDir(t)
-	cacheRoot := testfs.MakeTempDir(t)
+			buildRoot := testfs.MakeTempDir(t)
+			cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
-	require.NoError(t, err)
-	wd := testfs.MakeDirAll(t, buildRoot, "work")
+			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+			require.NoError(t, err)
+			wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{
-		Props: &platform.Properties{
-			ContainerImage: image,
-		},
-	})
-	require.NoError(t, err)
+			c, err := provider.New(ctx, &container.Init{
+				Props: &platform.Properties{
+					ContainerImage: image,
+					UseOCIFetcher:  useOCIFetcher,
+				},
+			})
+			require.NoError(t, err)
 
-	// Pull
-	err = c.PullImage(ctx, oci.Credentials{})
-	require.NoError(t, err)
+			// Pull
+			err = c.PullImage(ctx, oci.Credentials{})
+			require.NoError(t, err)
 
-	// Ensure cached
-	cached, err := c.IsImageCached(ctx)
-	require.NoError(t, err)
-	assert.True(t, cached, "IsImageCached")
+			// Ensure cached
+			cached, err := c.IsImageCached(ctx)
+			require.NoError(t, err)
+			assert.True(t, cached, "IsImageCached")
 
-	// Create
-	require.NoError(t, err)
-	err = c.Create(ctx, wd)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		err = c.Remove(ctx)
-		require.NoError(t, err)
-	})
+			// Create
+			require.NoError(t, err)
+			err = c.Create(ctx, wd)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				err = c.Remove(ctx)
+				require.NoError(t, err)
+			})
 
-	// Exec
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-ec", `
-			touch /bin/foo.txt
-			pwd
-			env | sort
-		`},
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "GREETING", Value: "Hello"},
-		},
-	}
-	stdio := interfaces.Stdio{}
-	res := c.Exec(ctx, cmd, &stdio)
-	require.NoError(t, res.Error)
+			// Exec
+			cmd := &repb.Command{
+				Arguments: []string{"sh", "-ec", `
+				touch /bin/foo.txt
+				pwd
+				env | sort
+			`},
+				EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+					{Name: "GREETING", Value: "Hello"},
+				},
+			}
+			stdio := interfaces.Stdio{}
+			res := c.Exec(ctx, cmd, &stdio)
+			require.NoError(t, res.Error)
 
-	assert.Equal(t, 0, res.ExitCode)
-	assert.Empty(t, string(res.Stderr))
-	assert.Equal(t, `/buildbuddy-execroot
+			assert.Equal(t, 0, res.ExitCode)
+			assert.Empty(t, string(res.Stderr))
+			assert.Equal(t, `/buildbuddy-execroot
 GREETING=Hello
 HOME=/root
 HOSTNAME=localhost
@@ -719,14 +727,16 @@ SHLVL=1
 TEST_ENV_VAR=foo
 `, string(res.Stdout))
 
-	// Make sure that no cached images were modified.
-	layersRoot := filepath.Join(cacheRoot, "images", "oci")
-	err = filepath.WalkDir(layersRoot, func(path string, entry fs.DirEntry, err error) error {
-		require.NoError(t, err)
-		assert.NotEqual(t, entry.Name(), "foo.txt")
-		return nil
-	})
-	require.NoError(t, err)
+			// Make sure that no cached images were modified.
+			layersRoot := filepath.Join(cacheRoot, "images", "oci")
+			err = filepath.WalkDir(layersRoot, func(path string, entry fs.DirEntry, err error) error {
+				require.NoError(t, err)
+				assert.NotEqual(t, entry.Name(), "foo.txt")
+				return nil
+			})
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestCreateExecPauseUnpause(t *testing.T) {
@@ -1238,55 +1248,58 @@ func TestHighLayerCount(t *testing.T) {
 		{layerCount: 58},
 		{layerCount: 128},
 	} {
-		// Note that the "busybox" oci image has 1 layer
-		// and the following tests will add more layers on top of it.
-		t.Run(fmt.Sprintf("1And%dLayers", tc.layerCount), func(t *testing.T) {
-			// Create new layers on top of busybox
-			var lastContent string
-			var layers []containerregistry.Layer
-			for i := range tc.layerCount {
-				lastContent = fmt.Sprintf("layer %d", i)
-				content := []byte(lastContent)
+		for _, useOCIFetcher := range []bool{false, true} {
+			// Note that the "busybox" oci image has 1 layer
+			// and the following tests will add more layers on top of it.
+			t.Run(fmt.Sprintf("1And%dLayers/useOCIFetcher=%v", tc.layerCount, useOCIFetcher), func(t *testing.T) {
+				// Create new layers on top of busybox
+				var lastContent string
+				var layers []containerregistry.Layer
+				for i := range tc.layerCount {
+					lastContent = fmt.Sprintf("layer %d", i)
+					content := []byte(lastContent)
 
-				layer, err := crane.Layer(map[string][]byte{
-					"a.txt": content,
-				})
+					layer, err := crane.Layer(map[string][]byte{
+						"a.txt": content,
+					})
+					require.NoError(t, err)
+
+					layers = append(layers, layer)
+				}
+				testImg, err := mutate.AppendLayers(busyboxImg, layers...)
 				require.NoError(t, err)
 
-				layers = append(layers, layer)
-			}
-			testImg, err := mutate.AppendLayers(busyboxImg, layers...)
-			require.NoError(t, err)
+				// Start registry and push our new image there
+				reg := testregistry.Run(t, testregistry.Opts{})
+				imageRef := reg.Push(t, testImg, "foo:latest", nil)
 
-			// Start registry and push our new image there
-			reg := testregistry.Run(t, testregistry.Opts{})
-			imageRef := reg.Push(t, testImg, "foo:latest", nil)
-
-			// Start container to verify content
-			setupNetworking(t)
-			ctx := context.Background()
-			env := testenv.GetTestEnv(t)
-			installLeaserInEnv(t, env)
-			buildRoot := testfs.MakeTempDir(t)
-			cacheRoot := testfs.MakeTempDir(t)
-			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
-			require.NoError(t, err)
-			wd := testfs.MakeDirAll(t, buildRoot, "work")
-			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-				ContainerImage: imageRef,
-			}})
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, c.Remove(ctx))
+				// Start container to verify content
+				setupNetworking(t)
+				ctx := context.Background()
+				env := testenv.GetTestEnv(t)
+				installLeaserInEnv(t, env)
+				buildRoot := testfs.MakeTempDir(t)
+				cacheRoot := testfs.MakeTempDir(t)
+				provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+				require.NoError(t, err)
+				wd := testfs.MakeDirAll(t, buildRoot, "work")
+				c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+					ContainerImage: imageRef,
+					UseOCIFetcher:  useOCIFetcher,
+				}})
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					require.NoError(t, c.Remove(ctx))
+				})
+				cmd := &repb.Command{Arguments: []string{"sh", "-c", `cat /a.txt`}}
+				res := c.Run(ctx, cmd, wd, oci.Credentials{})
+				require.NoError(t, res.Error)
+				// Verify last layer wins
+				assert.Equal(t, lastContent, string(res.Stdout))
+				assert.Empty(t, string(res.Stderr))
+				assert.Equal(t, 0, res.ExitCode)
 			})
-			cmd := &repb.Command{Arguments: []string{"sh", "-c", `cat /a.txt`}}
-			res := c.Run(ctx, cmd, wd, oci.Credentials{})
-			require.NoError(t, res.Error)
-			// Verify last layer wins
-			assert.Equal(t, lastContent, string(res.Stdout))
-			assert.Empty(t, string(res.Stderr))
-			assert.Equal(t, 0, res.ExitCode)
-		})
+		}
 	}
 }
 
