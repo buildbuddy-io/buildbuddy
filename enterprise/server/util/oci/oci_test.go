@@ -368,7 +368,7 @@ func TestResolve(t *testing.T) {
 						tc.args.credentials,
 						false, /*useOCIFetcher*/
 					)
-						if tc.checkError != nil {
+					if tc.checkError != nil {
 						require.True(t, tc.checkError(err))
 						continue
 					}
@@ -461,16 +461,16 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 				registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
 				for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
-						pulledImage, err := newResolver(t, te).Resolve(
-							context.Background(),
-							registry.ImageAddress(nameToResolve),
-							tc.args.platform,
-							tc.args.credentials,
-							false, /*useOCIFetcher*/
-						)
-						require.NoError(t, err)
+					pulledImage, err := newResolver(t, te).Resolve(
+						context.Background(),
+						registry.ImageAddress(nameToResolve),
+						tc.args.platform,
+						tc.args.credentials,
+						false, /*useOCIFetcher*/
+					)
+					require.NoError(t, err)
 
-						counter.Reset()
+					counter.Reset()
 
 					layers, err := pulledImage.Layers()
 					require.NoError(t, err)
