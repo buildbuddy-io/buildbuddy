@@ -43,6 +43,7 @@ type IStoreMap interface {
 	GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats
 	DivideByStatus(repls []*rfpb.ReplicaDescriptor) *ReplicasByStatus
 	AllStoresAvailableAndReady() bool
+	CheckLeaseRebalancePrecondition() (float64, bool)
 }
 
 type StoreDetail struct {
@@ -74,16 +75,23 @@ type StoreMap struct {
 	startTime time.Time
 	clock     clockwork.Clock
 	log       log.Logger
+
+	minReplicasPerRange        int
+	minMetaRangeReplicas       int
+	missingLeaseCountThreshold int
 }
 
-func New(gossipManager interfaces.GossipService, clock clockwork.Clock, nhLogger log.Logger) *StoreMap {
+func New(gossipManager interfaces.GossipService, clock clockwork.Clock, nhLogger log.Logger, minReplicasPerRange, minMetaRangeReplicas, missingLeaseCountThreshold int) *StoreMap {
 	sm := &StoreMap{
-		mu:            &sync.RWMutex{},
-		startTime:     time.Now(),
-		storeDetails:  make(map[string]*StoreDetail),
-		gossipManager: gossipManager,
-		clock:         clock,
-		log:           nhLogger,
+		mu:                         &sync.RWMutex{},
+		startTime:                  time.Now(),
+		storeDetails:               make(map[string]*StoreDetail),
+		gossipManager:              gossipManager,
+		clock:                      clock,
+		log:                        nhLogger,
+		minReplicasPerRange:        minMetaRangeReplicas,
+		minMetaRangeReplicas:       minMetaRangeReplicas,
+		missingLeaseCountThreshold: missingLeaseCountThreshold,
 	}
 	gossipManager.AddListener(sm)
 	return sm
@@ -343,4 +351,42 @@ func (sm *StoreMap) AllStoresAvailableAndReady() bool {
 		}
 	}
 	return true
+}
+
+// CheckLeaseRebalancePrecondition() checks the cluster to see if we should
+// rebalance the lease count, and it also returns the theoretic global mean of
+// the lease count based on replica count.
+// Only rebalance leases when
+// 1) all stores are available and ready
+// 2) no big discrepancy between total lease count and total shard count
+func (sm *StoreMap) CheckLeaseRebalancePrecondition() (float64, bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	totalReplicaCount := 0
+	totalLeaseCount := 0
+
+	memberStatus := sm.getMemberStatus()
+	now := sm.clock.Now()
+
+	for _, sd := range sm.storeDetails {
+		status := sd.refreshAndComputeStatusLocked(memberStatus, now)
+		if status != storeStatusAvailable {
+			return 0, false
+		}
+		if !sd.usage.GetIsReady() {
+			return 0, false
+		}
+		totalReplicaCount += int(sd.usage.GetReplicaCount())
+		totalLeaseCount += int(sd.usage.GetLeaseCount())
+	}
+
+	totalShardCount := (totalReplicaCount-sm.minMetaRangeReplicas)/sm.minReplicasPerRange + 1
+	delta := totalShardCount - totalLeaseCount
+
+	if delta > sm.missingLeaseCountThreshold {
+		return 0, false
+	}
+
+	return float64(totalShardCount) / float64(len(sm.storeDetails)), true
 }
