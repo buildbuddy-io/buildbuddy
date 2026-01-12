@@ -104,12 +104,12 @@ func (e *RebalanceEvent) Execute(w *World, strategy Strategy) {
 			}
 
 			if validTarget {
-				completionTime := w.currentTick + w.randomTransferTime()
-				w.scheduleEvent(&TransferCompleteEvent{
+				// Schedule transfer initiation (lease is released immediately)
+				w.scheduleEvent(&TransferInitiatedEvent{
 					shardID:  shardID,
 					fromNhid: e.nhid,
 					toNhid:   targetNhid,
-					time:     completionTime,
+					time:     w.currentTick, // Initiate immediately
 				})
 				w.numTransfers++
 				w.numPendingTransfers++
@@ -129,23 +129,23 @@ func (e *RebalanceEvent) Execute(w *World, strategy Strategy) {
 	w.scheduleEvent(&RebalanceEvent{nhid: e.nhid, time: nextTime})
 }
 
-// TransferCompleteEvent - lease moves from source to destination
-type TransferCompleteEvent struct {
+// TransferInitiatedEvent - lease is released from source and transfer begins
+// This models production behavior where the lease is dropped immediately when transfer starts
+type TransferInitiatedEvent struct {
 	shardID  int
 	fromNhid string
 	toNhid   string
 	time     int
 }
 
-func (e *TransferCompleteEvent) Time() int { return e.time }
+func (e *TransferInitiatedEvent) Time() int { return e.time }
 
-func (e *TransferCompleteEvent) Execute(w *World, strategy Strategy) {
-	// Transfer the lease for this specific shard
+func (e *TransferInitiatedEvent) Execute(w *World, strategy Strategy) {
+	// Remove lease from source immediately (production behavior)
 	shard := w.shards[e.shardID]
-	shard.leaseHolder = e.toNhid
+	shard.leaseHolder = "" // No one holds lease during transfer
 
-	// Update node lease tracking
-	// Remove from source
+	// Update node lease tracking - remove from source
 	sourceLeases := w.nodeLeases[e.fromNhid]
 	for i, sid := range sourceLeases {
 		if sid == e.shardID {
@@ -153,12 +153,40 @@ func (e *TransferCompleteEvent) Execute(w *World, strategy Strategy) {
 			break
 		}
 	}
-	// Add to target
-	w.nodeLeases[e.toNhid] = append(w.nodeLeases[e.toNhid], e.shardID)
 
 	// Update lease counts
 	w.numLeases[e.fromNhid]--
+	w.inFlightLeases++
+
+	// Schedule completion
+	completionTime := w.currentTick + w.randomTransferTime()
+	w.scheduleEvent(&TransferCompleteEvent{
+		shardID: e.shardID,
+		toNhid:  e.toNhid,
+		time:    completionTime,
+	})
+}
+
+// TransferCompleteEvent - lease is acquired by destination
+type TransferCompleteEvent struct {
+	shardID int
+	toNhid  string
+	time    int
+}
+
+func (e *TransferCompleteEvent) Time() int { return e.time }
+
+func (e *TransferCompleteEvent) Execute(w *World, strategy Strategy) {
+	// Lease is acquired by destination
+	shard := w.shards[e.shardID]
+	shard.leaseHolder = e.toNhid
+
+	// Add to target node's lease tracking
+	w.nodeLeases[e.toNhid] = append(w.nodeLeases[e.toNhid], e.shardID)
+
+	// Update lease counts (lease was already removed from source in TransferInitiatedEvent)
 	w.numLeases[e.toNhid]++
+	w.inFlightLeases--
 	w.numPendingTransfers--
 	w.numCompletedTransfers++
 
@@ -195,6 +223,10 @@ type World struct {
 	nodeLeases   map[string][]int          // nhid -> list of shard IDs this node holds leases for
 	numLeases    map[string]int            // nhid -> lease count (derived from nodeLeases)
 	views        map[string]map[string]int // views[nhid][otherNhid] = belief about other's lease count
+
+	// Shard tracking
+	totalShards    int // Total number of shards (constant during simulation)
+	inFlightLeases int // Number of leases currently being transferred
 
 	// All intervals in ticks (1 tick = 1ms)
 	gossipIntervalMin       int
@@ -243,6 +275,8 @@ func NewWorld(c Config) *World {
 		nodeLeases:              make(map[string][]int),
 		numLeases:               make(map[string]int),
 		views:                   make(map[string]map[string]int),
+		totalShards:             c.numShards,
+		inFlightLeases:          0,
 		eventQueue:              make(EventQueue, 0),
 		currentTick:             0,
 		history:                 []Snapshot{},
@@ -554,6 +588,40 @@ func (s *ProductionRebalanceStrategy) Decide(myNhid string, shardID int, replica
 
 	// Call production algorithm via wrapper with shard's replicas
 	return driver.FindRebalanceLeaseOpForSimulation(myNhid, int64(shardID), replicas, leaseCounts)
+}
+
+// TheoreticalMeanStrategy uses theoretical mean based on total shard count
+// instead of observed lease counts on nodes.
+//
+// Key difference: During transfers, leases disappear from nodes temporarily,
+// causing observed mean to decrease. Theoretical mean uses total shard count
+// which remains constant.
+type TheoreticalMeanStrategy struct {
+	totalShards int
+	numMachines int
+}
+
+func NewTheoreticalMeanStrategy(totalShards, numMachines int) *TheoreticalMeanStrategy {
+	return &TheoreticalMeanStrategy{
+		totalShards: totalShards,
+		numMachines: numMachines,
+	}
+}
+
+func (s *TheoreticalMeanStrategy) Decide(myNhid string, shardID int, replicas []string, view map[string]int, currentTick int) string {
+	// Convert int to int64
+	leaseCounts := make(map[string]int64, len(view))
+	for nhid, count := range view {
+		leaseCounts[nhid] = int64(count)
+	}
+
+	// Calculate theoretical mean based on total shards
+	// Each shard has 3 replicas (leases), so total shards = total leases / 3
+	// Theoretical mean = total shards / num machines
+	theoreticalMean := float64(s.totalShards) / float64(s.numMachines)
+
+	// Call production algorithm with mean override
+	return driver.FindRebalanceLeaseOpWithMeanOverride(myNhid, int64(shardID), replicas, leaseCounts, &theoreticalMean)
 }
 
 // ProbabilisticStrategy wraps a base strategy and only executes transfers with a fixed probability
@@ -961,6 +1029,9 @@ func runTestCase(name string, numShards int, nodes []string, initialLeases map[s
 		strategyFactory func() Strategy
 	}{
 		{"Production (baseline)", func() Strategy { return NewProductionRebalanceStrategy() }},
+		{"Theoretical Mean", func() Strategy {
+			return NewTheoreticalMeanStrategy(numShards, len(nodes))
+		}},
 		{"Cooldown(5s)", func() Strategy { return NewCooldownStrategy(NewProductionRebalanceStrategy(), 5000) }},
 		{"Cooldown(10s)", func() Strategy { return NewCooldownStrategy(NewProductionRebalanceStrategy(), 10000) }},
 		{"Cooldown(5s±500ms)", func() Strategy { return NewCooldownJitterStrategy(NewProductionRebalanceStrategy(), 5000, 500) }},
