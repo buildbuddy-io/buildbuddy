@@ -2851,6 +2851,9 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	if shouldSaveSnapshot {
 		if err := c.saveSnapshot(ctx, snapDetails); err != nil {
+			if err := c.emitChunkedSnapshotMetrics(ctx); err != nil {
+				log.CtxWarningf(ctx, "Failed to emit snapshot metrics: %s", err)
+			}
 			return err
 		}
 	}
@@ -2888,17 +2891,17 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) e
 		chunkSourceCounter := make(map[snaputil.ChunkSource]int, 0)
 		bytesReadPerSource := make(map[snaputil.ChunkSource]int64, 0)
 		var dirtyBytes, dirtyChunkCount int64
-		for _, c := range chunks {
-			chunkSrc := c.Source()
+		for _, chunk := range chunks {
+			chunkSrc := chunk.Source()
 			chunkSourceCounter[chunkSrc]++
 
-			chunkSize, err := c.SizeBytes()
+			chunkSize, err := chunk.SizeBytes()
 			if err != nil {
 				return status.WrapError(err, "chunk size")
 			}
 
 			bytesReadPerSource[chunkSrc] += chunkSize
-			dirty := store.Dirty(c.Offset)
+			dirty := store.Dirty(chunk.Offset)
 			if dirty {
 				dirtyBytes += chunkSize
 				dirtyChunkCount++
