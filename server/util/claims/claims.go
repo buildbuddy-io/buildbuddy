@@ -477,7 +477,7 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 		if _, file, line, ok := runtime.Caller(1); ok {
 			caller = fmt.Sprintf("%s:%d", file, line)
 		}
-		log.Infof("Reparsing JWT (caller: %s)", caller)
+		log.Debugf("Reparsing JWT (caller: %s)", caller)
 		claims, err := parseClaims(tokenString)
 		if err != nil {
 			return nil, err
