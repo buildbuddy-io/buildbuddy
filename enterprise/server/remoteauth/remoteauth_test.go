@@ -18,9 +18,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"google.golang.org/grpc/metadata"
 
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
+	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 )
 
 type fakeAuthService struct {
@@ -242,7 +245,28 @@ func TestUseRSASignedJWTs(t *testing.T) {
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
 	require.False(t, useRSASignedJWTs(t.Context(), fp))
+
 	flags.Set(t, "auth.remote.use_rsa_jwts", true)
+	require.True(t, useRSASignedJWTs(t.Context(), fp))
+	flags.Set(t, "auth.remote.use_rsa_jwts", false)
+
+	testProvider := openfeatureTesting.NewTestProvider()
+	openfeature.SetProviderAndWait(testProvider)
+	t.Cleanup(func() {
+		testProvider.Cleanup()
+		openfeature.SetProviderAndWait(openfeature.NoopProvider{})
+	})
+
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"auth.remote.use_rsa_jwts": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants: map[string]any{
+				"on":  true,
+				"off": false,
+			},
+		},
+	})
 	require.True(t, useRSASignedJWTs(t.Context(), fp))
 }
 
