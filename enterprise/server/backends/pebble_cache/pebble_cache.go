@@ -2065,6 +2065,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		// order to generate CDC chunks, then compress those chunks.
 		decompressor, err = compression.NewZstdDecompressor(cdcw)
 		if err != nil {
+			db.Close()
 			return nil, err
 		}
 		wc = decompressor
@@ -2072,6 +2073,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 
 	chunker, err := chunker.New(ctx, p.averageChunkSizeBytes, cdcw.writeChunk)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 	cdcw.chunker = chunker
