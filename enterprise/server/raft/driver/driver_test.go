@@ -53,6 +53,21 @@ func (tsm *testStoreMap) AllStoresAvailableAndReady() bool {
 	return true
 }
 
+func (tsm *testStoreMap) CheckLeaseRebalancePrecondition() (float64, bool) {
+	totalReplicaCount := 0
+	totalLeaseCount := 0
+	for _, usage := range tsm.usages {
+		totalReplicaCount += int(usage.GetReplicaCount())
+		totalLeaseCount += int(usage.GetLeaseCount())
+	}
+	totalShardCount := (totalReplicaCount-5)/3 + 1
+	delta := totalShardCount - totalLeaseCount
+	if delta > 10 {
+		return 0.0, false
+	}
+	return float64(totalShardCount) / float64(len(tsm.usages)), true
+}
+
 func replicaKey(rd *rfpb.ReplicaDescriptor) string {
 	return fmt.Sprintf("c%dn%d", rd.GetRangeId(), rd.GetReplicaId())
 }
