@@ -49,7 +49,7 @@ func (tsm *testStoreMap) DivideByStatus(repls []*rfpb.ReplicaDescriptor) *storem
 	return tsm.replicasByStatus
 }
 
-func (tsm *testStoreMap) AllAvailableStoresReady() bool {
+func (tsm *testStoreMap) AllStoresAvailableAndReady() bool {
 	return true
 }
 
