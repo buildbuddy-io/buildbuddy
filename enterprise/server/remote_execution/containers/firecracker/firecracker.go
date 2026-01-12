@@ -572,6 +572,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		ExecutorConfig:         p.executorConfig,
 		NetworkPool:            p.networkPool,
 		MarshalledDNSOverrides: p.marshalledDNSOverrides,
+		UseOCIFetcher:          args.Props.UseOCIFetcher,
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {
@@ -681,6 +682,8 @@ type FirecrackerContainer struct {
 		conn *grpc.ClientConn
 		err  error
 	}
+
+	useOCIFetcher bool
 }
 
 var _ container.VM = (*FirecrackerContainer)(nil)
@@ -739,6 +742,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		loader:                 loader,
 		vmLog:                  vmLog,
 		cancelVmCtx:            func(err error) {},
+		useOCIFetcher:          opts.UseOCIFetcher,
 	}
 
 	if opts.CgroupSettings != nil {
@@ -2576,7 +2580,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := ociconv.CreateDiskImage(ctx, c.resolver, c.executorConfig.CacheRoot, c.containerImage, creds)
+	_, err := ociconv.CreateDiskImage(ctx, c.resolver, c.executorConfig.CacheRoot, c.containerImage, creds, c.useOCIFetcher)
 	if err != nil {
 		return err
 	}

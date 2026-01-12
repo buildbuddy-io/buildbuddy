@@ -69,4 +69,8 @@ type ContainerOpts struct {
 	// allowing for multiple locally-started VMs to avoid using
 	// conflicting network interfaces.
 	ForceVMIdx int
+
+	// UseOCIFetcher enables using the OCI fetcher service for pulling container
+	// images instead of pulling directly from the registry.
+	UseOCIFetcher bool
 }

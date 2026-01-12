@@ -307,9 +307,12 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 	return imageNameWithDigest, nil
 }
 
-func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
+func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials, useOCIFetcher bool) (gcr.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
+	// TODO: implement OCI fetcher support
+	_ = useOCIFetcher
 
 	imageRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
