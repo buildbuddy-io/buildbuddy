@@ -550,10 +550,9 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		return action, action.Priority()
 	}
 
-	// Do not split if there is a replica is dead or suspect or a replica is
+	// Do not split when the there is a store that's unavailable and a replica is
 	// in the middle of a removal.
-	allReady := rq.storeMap.AllAvailableStoresReady()
-	isClusterHealthy := len(replicasByStatus.SuspectReplicas) == 0 && numDeadReplicas == 0 && allReady
+	isClusterHealthy := rq.storeMap.AllStoresAvailableAndReady()
 	if isClusterHealthy {
 		if targetRangeSizeBytes := config.TargetRangeSizeBytes(); targetRangeSizeBytes > 0 {
 			usage, err := repl.Usage()
@@ -571,12 +570,10 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 				}
 			}
 		}
-	} else {
-		rq.log.Debugf("cannot split range %d: num of suspect replicas: %d, num deadReplicas: %d, num replicas marked for removal: %d, allReady=%t", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas, len(rd.GetRemoved()), allReady)
 	}
 
-	// Do not try to rebalance replica or leases if there is a dead or suspect,
-	// because it can make the system more unstable.
+	// Do not try to rebalance replica or leases when there is a store that's
+	// unavailabe because it can make the system more unstable.
 	if isClusterHealthy {
 		// For DriverConsiderRebalance check if there are rebalance opportunities.
 		storesWithStats := rq.storeMap.GetStoresWithStats()
@@ -591,8 +588,6 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 			action = DriverRebalanceLease
 			return action, action.Priority()
 		}
-	} else {
-		rq.log.Debugf("do not consider rebalance because range %d is not healthy. num of suspect replicas: %d, num deadReplicas: %d, allReady: %t", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas, allReady)
 	}
 
 	action = DriverNoop
