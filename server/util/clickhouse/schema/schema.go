@@ -153,7 +153,6 @@ type Execution struct {
 	UserID             string
 	Worker             string
 	ExecutorHostname   string
-	ClientIP           string
 
 	// Executor metadata
 	SelfHosted bool
@@ -338,7 +337,6 @@ func (e *Execution) AdditionalFields() []string {
 		"SelfHosted",
 		"ExecutorHostname",
 		"Experiments",
-		"ClientIP",
 	}
 }
 

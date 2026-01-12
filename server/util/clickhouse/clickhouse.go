@@ -308,7 +308,6 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) *s
 		UserID:                             in.GetUserId(),
 		Worker:                             in.GetWorker(),
 		ExecutorHostname:                   in.GetExecutorHostname(),
-		ClientIP:                           in.GetClientIp(),
 		SelfHosted:                         in.GetSelfHosted(),
 		Region:                             in.GetRegion(),
 		Stage:                              in.GetStage(),

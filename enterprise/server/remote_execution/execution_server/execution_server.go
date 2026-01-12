@@ -35,7 +35,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -257,7 +256,6 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 		executionProto.ActionMnemonic = rmd.GetActionMnemonic()
 		executionProto.OutputPath = primaryOutputPath(command)
 		executionProto.RequestedPool = requestedPool
-		executionProto.ClientIp = clientip.Get(ctx)
 		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executionProto); err != nil {
 			log.CtxErrorf(ctx, "Failed to write execution update to redis: %s", err)
 		}
