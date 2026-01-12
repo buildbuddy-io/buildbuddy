@@ -1551,14 +1551,14 @@ var (
 		FileName,
 	})
 
-	COWSnapshotEmptyChunkRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	COWSnapshotBytesRead = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
-		Name:      "cow_snapshot_empty_chunk_ratio",
-		Buckets:   prometheus.LinearBuckets(0, .05, 20),
-		Help:      "After a copy-on-write snapshot has been used, the ratio of empty (i.e. all 0s) /total chunks.",
+		Name:      "cow_snapshot_bytes_read",
+		Help:      "After a copy-on-write snapshot has been used, the number of bytes read from each source.",
 	}, []string{
 		FileName,
+		ChunkSource,
 	})
 
 	COWSnapshotChunkSourceRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{

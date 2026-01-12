@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -985,10 +984,10 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		}).Dec()
 	}
 
-	var dirtyBytes, dirtyChunkCount, emptyBytes, emptyChunkCount, compressedBytesWrittenRemotely int64
+	var compressedBytesWrittenRemotely int64
 	start := time.Now()
 	defer func() {
-		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty, %d MB (%d chunks) empty, %d MB compressed data written to the remote cache", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount, emptyBytes/(1024*1024), emptyChunkCount, compressedBytesWrittenRemotely/(1024*1024))
+		log.CtxDebugf(ctx, "Cached %q in %s - %d MB compressed data written to the remote cache", name, time.Since(start), compressedBytesWrittenRemotely/(1024*1024))
 	}()
 	size, err := cow.SizeBytes()
 	if err != nil {
@@ -999,10 +998,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			span.SetAttributes(
 				attribute.String("cow_name", name),
 				attribute.Int64("cow_size_bytes", size), // This includes non-dirty and all-zero chunks
-				attribute.Int64("dirty_bytes", dirtyBytes),
-				attribute.Int64("dirty_chunks", dirtyChunkCount),
-				attribute.Int64("empty_bytes", emptyBytes),
-				attribute.Int64("empty_chunks", emptyChunkCount),
 				attribute.Int64("compressed_bytes_written_remotely", compressedBytesWrittenRemotely),
 			)
 		}()
@@ -1040,8 +1035,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	eg.SetLimit(writeConcurrency)
 
 	chunks := cow.SortedChunks()
-	var mu sync.RWMutex
-	chunkSourceCounter := make(map[snaputil.ChunkSource]int, len(chunks))
 	chunkNodes := make([]*repb.FileNode, 0, len(chunks))
 	for i, c := range chunks {
 		if earlyExitCtx.Err() != nil {
@@ -1066,11 +1059,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 
 			ctx := earlyExitCtx
 
-			chunkSrc := c.Source()
-			mu.Lock()
-			chunkSourceCounter[chunkSrc]++
-			mu.Unlock()
-
 			// Get or compute the digest.
 			d, err := c.Digest()
 			if err != nil {
@@ -1078,21 +1066,10 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			}
 			fn.Digest = d
 
-			chunkSize, err := c.SizeBytes()
-			if err != nil {
-				return returnError(status.WrapError(err, "chunk size"))
-			}
-
 			// Skip caching chunks of all 0s
-			if d.GetHash() == allZerosDigest.GetHash() {
-				atomic.AddInt64(&emptyChunkCount, 1)
-				atomic.AddInt64(&emptyBytes, chunkSize)
-			} else {
+			if d.GetHash() != allZerosDigest.GetHash() {
 				dirty := cow.Dirty(c.Offset)
 				if dirty {
-					atomic.AddInt64(&dirtyChunkCount, 1)
-					atomic.AddInt64(&dirtyBytes, chunkSize)
-
 					// Sync dirty chunks to make sure the underlying file is up to date
 					// before we add it to cache.
 					if err := c.Sync(); err != nil {
@@ -1104,6 +1081,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 				// to re-cache it.
 				// If it was chunked directly from a snapshot file, it may not exist
 				// in the cache yet, and we should cache it.
+				chunkSrc := c.Source()
 				shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
 				if shouldCache {
 					path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
@@ -1151,23 +1129,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	}
 	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.CacheSnapshotRemotely, cacheOpts.CacheSnapshotLocally, treeDigest, remoteInstanceName, treeBytes, "snapshot_tree"); err != nil {
 		return nil, err
-	}
-
-	metrics.COWSnapshotDirtyChunkRatio.With(prometheus.Labels{
-		metrics.FileName: name,
-	}).Observe(float64(dirtyChunkCount) / float64(len(chunks)))
-	metrics.COWSnapshotDirtyBytes.With(prometheus.Labels{
-		metrics.FileName: name,
-	}).Add(float64(dirtyBytes))
-	metrics.COWSnapshotEmptyChunkRatio.With(prometheus.Labels{
-		metrics.FileName: name,
-	}).Observe(float64(emptyChunkCount) / float64(len(chunks)))
-
-	for chunkSrc, count := range chunkSourceCounter {
-		metrics.COWSnapshotChunkSourceRatio.With(prometheus.Labels{
-			metrics.FileName:    name,
-			metrics.ChunkSource: snaputil.ChunkSourceLabel(chunkSrc),
-		}).Observe(float64(count) / float64(len(chunks)))
 	}
 
 	return treeDigest, nil
