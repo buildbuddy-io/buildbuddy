@@ -29,6 +29,8 @@ actions:
       - run: "bazel run //tools/lint --config=linux-workflows"
   - name: Test (darwin_amd64)
     os: "darwin"
+    self_hosted: true
+    pool: workflows
     triggers:
       push:
         branches:
@@ -53,6 +55,8 @@ actions:
   - name: Test (darwin_arm64)
     os: "darwin"
     arch: "arm64"
+    self_hosted: true
+    pool: workflows
     triggers:
       push:
         branches:
