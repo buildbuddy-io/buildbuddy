@@ -2,7 +2,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 go_test(
     name = "bazelrbe_prober_test",
-    size = "large",
     srcs = ["bazelrbe_prober_test.go"],
     data = [
         "//server/util/bazel:bazel-6.5.0_crossplatform",
@@ -10,7 +9,6 @@ go_test(
         "//server/util/bazel:bazel-8.5.0_crossplatform",
         "//tools/probers/bazelrbe",
     ],
-    shard_count = 3,
     x_defs = {
         "bazelrbeProberRunfilePath": "$(rlocationpath //tools/probers/bazelrbe)",
         "bazel6Runfilepath": "$(rlocationpath //server/util/bazel:bazel-6.5.0_crossplatform)",
