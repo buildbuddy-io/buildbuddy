@@ -29,11 +29,11 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_firecracker_microvm_firecracker",
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
-            'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
-            'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
-        ]).format(release = "v1.14.0-x86_64"),
-        sha256 = "b0c60364661f396b92e350cb9d03e2e0c2140c4c24b1e48830eb7f79eb73e153",
-        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.14.0/firecracker-v1.14.0-x86_64.tgz"],
+            'filegroup(name = "firecracker", srcs = ["firecracker-{release}"])',
+            'filegroup(name = "jailer", srcs = ["jailer-{release}"])',
+        ]).format(release = "v1.13.0-with_clock_reset_patch-20251029-d33011c6788153a8a601e1b7000466c1ff1ecfc7"),
+        sha256 = "d08f5245fcb84c59bdb060385e3058f4667765afbea5c3cbfcb969d570d624bf",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-v1.13.0-with_clock_reset_patch.tgz"],
     )
     http_archive(
         name = "com_github_firecracker_microvm_firecracker_arm64",
