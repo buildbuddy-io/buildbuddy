@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 
 	"google.golang.org/grpc/codes"
 
@@ -407,9 +408,64 @@ func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAd
 }
 
 func (s *CASServerProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
-	return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently implemented")
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	if proxy_util.SkipRemote(ctx) {
+		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not supported for skipping remote")
+	}
+
+	var remoteResp *repb.SpliceBlobResponse
+	eg, goCtx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		var err error
+		remoteResp, err = s.remote.SpliceBlob(goCtx, req)
+		if err != nil {
+			return status.WrapError(err, "remote SpliceBlob")
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		if _, err := s.local.SpliceBlob(goCtx, req); err != nil {
+			return status.WrapError(err, "local SpliceBlob")
+		}
+		return nil
+	})
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return remoteResp, nil
 }
 
 func (s *CASServerProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
-	return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently implemented")
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	if proxy_util.SkipRemote(ctx) {
+		return nil, status.UnimplementedErrorf("SplitBlob RPC is not supported for skipping remote")
+	}
+
+	localResp, localErr := s.local.SplitBlob(ctx, req)
+	if localErr == nil {
+		return localResp, nil
+	}
+	if !status.IsNotFoundError(localErr) {
+		return nil, status.WrapError(localErr, "local SplitBlob")
+	}
+
+	remoteResp, remoteErr := s.remote.SplitBlob(ctx, req)
+	if remoteErr != nil {
+		return nil, status.WrapError(remoteErr, "remote SplitBlob")
+	}
+
+	if _, err := s.local.SpliceBlob(ctx, &repb.SpliceBlobRequest{
+		InstanceName:   req.GetInstanceName(),
+		BlobDigest:     req.GetBlobDigest(),
+		ChunkDigests:   remoteResp.GetChunkDigests(),
+		DigestFunction: req.GetDigestFunction(),
+	}); err != nil {
+		return nil, status.WrapError(err, "SplitBlob splice remote result to local")
+	}
+
+	return remoteResp, nil
 }
