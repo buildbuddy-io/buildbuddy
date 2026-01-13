@@ -268,9 +268,21 @@ func TestUseRSASignedJWTs(t *testing.T) {
 		},
 	})
 	require.True(t, useRSASignedJWTs(t.Context(), fp))
+
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"auth.remote.use_rsa_jwts": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "off",
+			Variants: map[string]any{
+				"on":  true,
+				"off": false,
+			},
+		},
+	})
+	require.False(t, useRSASignedJWTs(t.Context(), fp))
 }
 
-func TestKeyProviderReturnsDefaultKeys(t *testing.T) {
+func TestKeyProvider_DefaultKeys(t *testing.T) {
 	fakeAuth := &fakeAuthService{
 		nextErr: map[string]error{},
 		nextJwt: map[string]string{},
@@ -281,61 +293,58 @@ func TestKeyProviderReturnsDefaultKeys(t *testing.T) {
 	go runServer()
 	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
 	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
 
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
-	kp := keyProvider{
-		experimentFlagProvider: fp,
-		client:                 authpb.NewAuthServiceClient(conn),
-	}
-
-	// Without RSA enabled, only default keys should be returned.
-	keys, err := kp.provide(t.Context())
-	require.NoError(t, err)
-	require.NotEmpty(t, keys)
-
-	// The default key provider returns the JWT key(s).
-	defaultKeys, err := claims.DefaultKeyProvider(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, defaultKeys, keys)
-}
-
-func TestKeyProviderFetchesRSAKeys(t *testing.T) {
-	fakeAuth := &fakeAuthService{
-		nextErr: map[string]error{},
-		nextJwt: map[string]string{},
-	}
-	te := testenv.GetTestEnv(t)
-	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
-	authpb.RegisterAuthServiceServer(grpcServer, fakeAuth)
-	go runServer()
-	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
-	require.NoError(t, err)
-
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
-	kp := keyProvider{
-		experimentFlagProvider: fp,
-		client:                 authpb.NewAuthServiceClient(conn),
-	}
-
-	// Set up RSA public keys.
 	rsaKey1 := testkeys.GenerateRSAKeyPair(t).PublicKeyPEM
 	rsaKey2 := testkeys.GenerateRSAKeyPair(t).PublicKeyPEM
 	fakeAuth.setPublicKeys([]string{rsaKey1, rsaKey2})
+	require.NoError(t, claims.Init())
 
-	flags.Set(t, "auth.remote.use_rsa_jwts", true)
+	flags.Set(t, "auth.jwt_key", "jwtkeyfoo")
+	flags.Set(t, "auth.new_jwt_key", "jwtkeybar")
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	kp := keyProvider{
+		experimentFlagProvider: fp,
+		client:                 authpb.NewAuthServiceClient(conn),
+	}
 
 	keys, err := kp.provide(t.Context())
 	require.NoError(t, err)
+	require.Equal(t, []string{"jwtkeybar", "jwtkeyfoo"}, keys)
+}
 
-	// RSA keys should come first, followed by default keys.
-	defaultKeys, err := claims.DefaultKeyProvider(t.Context())
+func TestKeyProvider_RSAKeys(t *testing.T) {
+	fakeAuth := &fakeAuthService{
+		nextErr: map[string]error{},
+		nextJwt: map[string]string{},
+	}
+	te := testenv.GetTestEnv(t)
+	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	authpb.RegisterAuthServiceServer(grpcServer, fakeAuth)
+	go runServer()
+	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
 	require.NoError(t, err)
-	require.Equal(t, len(defaultKeys)+2, len(keys))
-	require.Equal(t, rsaKey1, keys[0])
-	require.Equal(t, rsaKey2, keys[1])
-	require.Equal(t, defaultKeys, keys[2:])
+	t.Cleanup(func() { conn.Close() })
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	kp := keyProvider{
+		experimentFlagProvider: fp,
+		client:                 authpb.NewAuthServiceClient(conn),
+	}
+
+	rsaKey1 := testkeys.GenerateRSAKeyPair(t).PublicKeyPEM
+	rsaKey2 := testkeys.GenerateRSAKeyPair(t).PublicKeyPEM
+	fakeAuth.setPublicKeys([]string{rsaKey1, rsaKey2})
+	flags.Set(t, "auth.remote.use_rsa_jwts", true)
+	flags.Set(t, "auth.jwt_key", "jwtkeyfoo")
+	flags.Set(t, "auth.new_jwt_key", "jwtkeybar")
+
+	keys, err := kp.provide(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []string{rsaKey1, rsaKey2, "jwtkeybar", "jwtkeyfoo"}, keys)
 }
 
 func TestAuthenticateRequestsRSAJWTs(t *testing.T) {

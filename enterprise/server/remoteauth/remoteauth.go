@@ -65,16 +65,16 @@ func newRemoteAuthenticator(
 		return nil, err
 	}
 	client := authpb.NewAuthServiceClient(conn)
-	provider := keyProvider{
+	keyProvider := keyProvider{
 		experimentFlagProvider: experimentFlagProvider,
 		client:                 client,
 	}
-	claimsParser, err := claims.NewClaimsParser(provider.provide)
+	claimsParser, err := claims.NewClaimsParser(keyProvider.provide)
 	if err != nil {
 		return nil, err
 	}
 	return &RemoteAuthenticator{
-		authClient:             authpb.NewAuthServiceClient(conn),
+		authClient:             client,
 		cache:                  cache,
 		jwtExpirationBuffer:    *jwtExpirationBuffer,
 		claimsParser:           claimsParser,
