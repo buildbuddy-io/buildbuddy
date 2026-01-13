@@ -151,7 +151,7 @@
 }
 
 .organization-invite-link-container .invite-link {
-  color: #212121;
+  color: var(--color-org-invite-link);
   font-weight: 600;
 }
 
@@ -313,6 +313,7 @@
 .org-members .org-member-name :is(svg, img) {
   width: 16px;
   height: 16px;
+  color: var(--color-org-member-github-icon);
 }
 
 .org-members .org-member-role {

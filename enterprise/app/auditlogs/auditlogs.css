@@ -36,10 +36,10 @@
     minmax(100px, max-content) /*method*/
     minmax(300px, max-content) /*request*/;
   max-width: fit-content;
-  border: 1px solid #eee;
+  border: 1px solid var(--color-auditlog-border);
   border-radius: 8px;
   overflow: hidden;
-  background: #eee;
+  background: var(--color-auditlog-border);
   gap: 1px;
 }
 
@@ -53,10 +53,10 @@
 }
 
 .audit-logs .audit-logs-header > * {
-  background: #fafafa;
+  background: var(--color-auditlog-header-bg);
   white-space: nowrap;
 }
 
 .audit-logs .audit-log-entry > * {
-  background: white;
+  background: var(--color-auditlog-entry-bg);
 }

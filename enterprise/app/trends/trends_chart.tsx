@@ -69,6 +69,13 @@ export enum ChartColor {
   BASICALLY_BLACK = "#212121",
 }
 
+function getResolvedColor(color: ChartColor): string {
+  if (color === ChartColor.BASICALLY_BLACK) {
+    return getComputedStyle(document.documentElement).getPropertyValue("--color-chart-black").trim() || color;
+  }
+  return color;
+}
+
 function chartColorToCssClass(c: ChartColor): string {
   switch (c) {
     case ChartColor.BLUE:
@@ -165,7 +172,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
           dot={false}
           dataKey={ds.extractValue}
           isAnimationActive={false}
-          stroke={ds.color ?? ChartColor.BLUE}
+          stroke={getResolvedColor(ds.color ?? ChartColor.BLUE)}
         />
       );
     }
@@ -180,7 +187,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
         dataKey={ds.extractValue}
         isAnimationActive={false}
         stackId={ds.stackId}
-        fill={color}>
+        fill={getResolvedColor(color)}>
         {this.props.data.map((date, index) => (
           <Cell
             cursor={ds.onClick ? "pointer" : "default"}
