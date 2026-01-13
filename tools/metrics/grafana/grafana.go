@@ -87,12 +87,8 @@ func run() error {
 		os.Setenv("DASHBOARDS_DIR", filepath.Join(workspaceRoot, dashboardsDir))
 		os.Setenv("GF_DATASOURCE_URL", strings.Replace(datasourceURL(), "localhost", "host.docker.internal", 1))
 
-		commandName := "docker-compose"
-		var args []string
-		if _, err := exec.LookPath("docker-compose"); err != nil {
-			commandName = "docker"
-			args = append(args, "compose")
-		}
+		commandName := "docker"
+		args := []string{"compose"}
 
 		args = append(args, "--file", "docker-compose.grafana.yml")
 		if !*kube {
