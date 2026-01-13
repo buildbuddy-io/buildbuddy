@@ -420,7 +420,7 @@ type Queue struct {
 }
 
 func NewQueue(store IStore, sender *sender.Sender, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock) *Queue {
-	storeMap := storemap.New(gossipManager, clock, nhlog*minReplicasPerRange, *minMetaRangeReplicas, *missingLeaseCountThreshold)
+	storeMap := storemap.New(gossipManager, clock, nhlog, *minReplicasPerRange, *minMetaRangeReplicas, *missingLeaseCountThreshold)
 	q := &Queue{
 		storeMap:             storeMap,
 		store:                store,
@@ -976,7 +976,14 @@ func canConvergeByRebalanceLease(choice *rebalanceChoice, mean float64) bool {
 	overfullThreshold := int64(math.Ceil(aboveMeanLeaseCountThreshold(mean)))
 	// The existing store is too far above the mean.
 	if choice.existing.usage.LeaseCount > overfullThreshold {
-		return true
+		// There is a candidate store that's below mean
+		for _, c := range choice.candidates {
+			if float64(c.usage.LeaseCount) < mean {
+				return true
+			}
+		}
+		// No candidate store is below mean, don't transfer.
+		return false
 	}
 
 	// The existing store is above the mean, but not too far; but there is at least one other store that is too far below the mean.
@@ -1050,6 +1057,7 @@ func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescrip
 	if !shouldRebalance {
 		return nil
 	}
+	rq.log.Infof("global Mean = %.2f", globalMean)
 	var existing *candidate
 	nhids := make([]string, 0, len(rd.GetReplicas()))
 	existingNHID := ""

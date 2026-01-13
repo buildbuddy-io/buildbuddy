@@ -946,20 +946,24 @@ func TestRebalanceLeases(t *testing.T) {
 			},
 			usages: []*rfpb.StoreUsage{
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					LeaseCount: 70,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					LeaseCount:   70,
+					ReplicaCount: 91,
 				},
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					LeaseCount: 10,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					LeaseCount:   10,
+					ReplicaCount: 91,
 				},
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					LeaseCount: 20,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					LeaseCount:   20,
+					ReplicaCount: 90,
 				},
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					LeaseCount: 20,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					LeaseCount:   20,
+					ReplicaCount: 90,
 				},
 			},
 			expected: &rebalanceOp{
@@ -986,20 +990,24 @@ func TestRebalanceLeases(t *testing.T) {
 			},
 			usages: []*rfpb.StoreUsage{
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					LeaseCount: 70,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					LeaseCount:   70,
+					ReplicaCount: 91,
 				},
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					LeaseCount: 20,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					LeaseCount:   20,
+					ReplicaCount: 91,
 				},
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					LeaseCount: 10,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					LeaseCount:   10,
+					ReplicaCount: 90,
 				},
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					LeaseCount: 20,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					LeaseCount:   20,
+					ReplicaCount: 90,
 				},
 			},
 			expected: &rebalanceOp{
@@ -1026,16 +1034,19 @@ func TestRebalanceLeases(t *testing.T) {
 			},
 			usages: []*rfpb.StoreUsage{
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					LeaseCount: 30,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					LeaseCount:   30,
+					ReplicaCount: 91,
 				},
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					LeaseCount: 31,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					LeaseCount:   31,
+					ReplicaCount: 91,
 				},
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					LeaseCount: 29,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					LeaseCount:   29,
+					ReplicaCount: 90,
 				},
 			},
 			expected: nil,
@@ -1059,20 +1070,106 @@ func TestRebalanceLeases(t *testing.T) {
 			},
 			usages: []*rfpb.StoreUsage{
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					LeaseCount: 70,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					LeaseCount:   70,
+					ReplicaCount: 161,
 				},
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					LeaseCount: 69,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					LeaseCount:   69,
+					ReplicaCount: 160,
 				},
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					LeaseCount: 69,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					LeaseCount:   69,
+					ReplicaCount: 160,
 				},
 				{
-					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					LeaseCount: 5,
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					LeaseCount:   5,
+					ReplicaCount: 160,
+				},
+			},
+			expected: nil,
+		},
+		{
+			desc: "no-rebalance-when-all-nodes-above-mean",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 1,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					LeaseCount:   75,
+					ReplicaCount: 161,
+				},
+				{
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					LeaseCount:   64,
+					ReplicaCount: 160,
+				},
+				{
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					LeaseCount:   69,
+					ReplicaCount: 160,
+				},
+				{
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					LeaseCount:   5,
+					ReplicaCount: 160,
+				},
+			},
+			expected: nil,
+		},
+		{
+			desc: "no-move-too-many-missing-leases",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 1,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					LeaseCount:   60,
+					ReplicaCount: 91,
+				},
+				{
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					LeaseCount:   5,
+					ReplicaCount: 91,
+				},
+				{
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					LeaseCount:   10,
+					ReplicaCount: 90,
+				},
+				{
+					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					LeaseCount:   20,
+					ReplicaCount: 90,
 				},
 			},
 			expected: nil,
