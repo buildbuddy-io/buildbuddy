@@ -1535,6 +1535,10 @@ func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream
 	}
 }
 
+func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEventLogServer) error {
+	return status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
 		return wfs.DeleteLegacyWorkflow(ctx, req)

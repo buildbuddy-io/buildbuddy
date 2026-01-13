@@ -60,8 +60,17 @@ func TestBuildBuddyServiceRPCsHaveRequestAndResponseContextFields(t *testing.T) 
 			// Unary RPC
 			actualReqType = methodFunc.In(1)
 			actualResType = methodFunc.Out(0)
+		} else if methodFunc.NumIn() == 1 {
+			// Client-streaming RPC: (stream) -> error
+			streamType := methodFunc.In(0)
+			recvMethod, ok := streamType.MethodByName("Recv")
+			require.True(t, ok)
+			actualReqType = recvMethod.Type.Out(0)
+			sendAndCloseMethod, ok := streamType.MethodByName("SendAndClose")
+			require.True(t, ok)
+			actualResType = sendAndCloseMethod.Type.In(0)
 		} else {
-			// Server-streaming RPC
+			// Server-streaming RPC: (req, stream) -> error
 			actualReqType = methodFunc.In(0)
 			streamType := methodFunc.In(1)
 			sendMethod, ok := streamType.MethodByName("Send")
