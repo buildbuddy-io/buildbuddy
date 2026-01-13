@@ -112,6 +112,21 @@ func (*fakeExecuteStream) Recv() (*longrunningpb.Operation, error) {
 	return &longrunningpb.Operation{Name: "fake-operation-name", Metadata: metadata}, nil
 }
 
+func TestRun_WithoutRepoURL(t *testing.T) {
+	te, ctx := getEnv(t)
+
+	r, err := New(te)
+	require.NoError(t, err)
+
+	_, err = r.Run(ctx, &rnpb.RunRequest{
+		Steps: []*rnpb.Step{{Run: "echo hello"}},
+	})
+	require.NoError(t, err)
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	require.Equal(t, 1, len(execClient.executeRequests))
+}
+
 func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 	te, ctx := getEnv(t)
 

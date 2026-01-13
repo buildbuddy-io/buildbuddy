@@ -634,6 +634,11 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		})
 	}
 
+	var runnerFlags []string
+	if req.GetSkipAutoCheckout() {
+		runnerFlags = append(runnerFlags, "--skip_auto_checkout")
+	}
+
 	rsp, err := r.Run(ctx, &rnpb.RunRequest{
 		GitRepo: &gitpb.GitRepo{RepoUrl: req.GetRepo()},
 		RepoState: &gitpb.RepoState{
@@ -649,7 +654,7 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		ExecProperties: execProps,
 		RemoteHeaders:  req.GetRemoteHeaders(),
 		RunRemotely:    true,
-		RunnerFlags:    []string{fmt.Sprintf("--skip_auto_checkout=%v", req.GetSkipAutoCheckout())},
+		RunnerFlags:    runnerFlags,
 	})
 	if err != nil {
 		return nil, err
