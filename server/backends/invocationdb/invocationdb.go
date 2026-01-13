@@ -118,7 +118,7 @@ func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocati
 		result := d.h.GORM(ctx, "invocationdb_update_invocation").Where(
 			"invocation_id = ? AND attempt = ?", ti.InvocationID, ti.Attempt).Updates(ti)
 		updated = result.RowsAffected > 0
-		err := result.Error
+		err = result.Error
 		if d.h.IsDeadlockError(err) {
 			log.Warningf("Encountered deadlock when attempting to update invocation table for invocation %s, attempt %d of %d", ti.InvocationID, r.AttemptNumber(), r.MaxAttempts())
 			continue
