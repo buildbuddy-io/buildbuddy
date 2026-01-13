@@ -18,8 +18,9 @@ import (
 )
 
 var (
-	deadStoreTimeout     = flag.Duration("cache.raft.dead_store_timeout", 5*time.Minute, "The amount of time after which we didn't receive alive status for a node, consider a store dead")
-	suspectStoreDuration = flag.Duration("cache.raft.suspect_store_duration", 30*time.Second, "The amount of time we consider a node suspect after it becomes unavailable")
+	deadStoreTimeout             = flag.Duration("cache.raft.dead_store_timeout", 5*time.Minute, "The amount of time after which we didn't receive alive status for a node, consider a store dead")
+	suspectStoreDuration         = flag.Duration("cache.raft.suspect_store_duration", 30*time.Second, "The amount of time we consider a node suspect after it becomes unavailable")
+	leaseRebalanceStableDuration = flag.Duration("cache.raft.lease_rebalance_stable_duration", 5*time.Minute, "The amount of time all stores must remain available and ready before lease rebalancing is allowed")
 )
 
 type storeStatus int
@@ -79,6 +80,9 @@ type StoreMap struct {
 	minReplicasPerRange        int
 	minMetaRangeReplicas       int
 	missingLeaseCountThreshold int
+
+	// Track when all stores first became available and ready
+	allStoresStableSince time.Time
 }
 
 func New(gossipManager interfaces.GossipService, clock clockwork.Clock, nhLogger log.Logger, minReplicasPerRange, minMetaRangeReplicas, missingLeaseCountThreshold int) *StoreMap {
@@ -358,13 +362,15 @@ func (sm *StoreMap) AllStoresAvailableAndReady() bool {
 // the lease count based on replica count.
 // Only rebalance leases when
 // 1) all stores are available and ready
-// 2) no big discrepancy between total lease count and total shard count
+// 2) all stores have been stable for the configured duration
+// 3) no big discrepancy between total lease count and total shard count
 func (sm *StoreMap) CheckLeaseRebalancePrecondition() (float64, bool) {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 
 	totalReplicaCount := 0
 	totalLeaseCount := 0
+	allAvailableAndReady := true
 
 	memberStatus := sm.getMemberStatus()
 	now := sm.clock.Now()
@@ -372,19 +378,46 @@ func (sm *StoreMap) CheckLeaseRebalancePrecondition() (float64, bool) {
 	for _, sd := range sm.storeDetails {
 		status := sd.refreshAndComputeStatusLocked(memberStatus, now)
 		if status != storeStatusAvailable {
-			return 0, false
+			allAvailableAndReady = false
+			break
 		}
 		if !sd.usage.GetIsReady() {
-			return 0, false
+			allAvailableAndReady = false
+			break
 		}
 		totalReplicaCount += int(sd.usage.GetReplicaCount())
 		totalLeaseCount += int(sd.usage.GetLeaseCount())
 	}
 
+	// If not all stores are available and ready, reset the stability timer
+	if !allAvailableAndReady {
+		sm.allStoresStableSince = time.Time{}
+		return 0, false
+	}
+
+	// All stores are available and ready. Check if they've been stable long enough.
+	now := sm.clock.Now()
+	if sm.allStoresStableSince.IsZero() {
+		// Just became stable, start the timer
+		sm.allStoresStableSince = now
+		sm.log.Info("All stores are now available and ready. Starting stability timer.")
+		return 0, false
+	}
+
+	// Check if stability duration has elapsed
+	stableDuration := sm.clock.Since(sm.allStoresStableSince)
+	if stableDuration < *leaseRebalanceStableDuration {
+		sm.log.Debugf("Waiting for cluster stability: %.0f/%.0f seconds elapsed",
+			stableDuration.Seconds(), leaseRebalanceStableDuration.Seconds())
+		return 0, false
+	}
+
+	// Cluster has been stable long enough. Check lease count threshold.
 	totalShardCount := (totalReplicaCount-sm.minMetaRangeReplicas)/sm.minReplicasPerRange + 1
 	delta := totalShardCount - totalLeaseCount
 
 	if delta > sm.missingLeaseCountThreshold {
+		sm.log.Infof("Too many missing leases: %d missing (threshold: %d)", delta, sm.missingLeaseCountThreshold)
 		return 0, false
 	}
 
