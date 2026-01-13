@@ -1038,9 +1038,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// wait until we've initialized the repo.
 	// Note that this has to happen after the BuildMetadata event is published.
 	publishedWorkspaceStatus := false
-	if *commitSHA == "" {
-		ar.reporter.Printf("WARNING: 'commit_sha' field is missing from ExecuteWorkflow request. Set a commit SHA to ensure there are no race conditions if the remote branch is updated.")
-	} else {
+	if *commitSHA != "" {
 		if err := ar.reporter.Publish(ar.workspaceStatusEvent()); err != nil {
 			return nil
 		}
