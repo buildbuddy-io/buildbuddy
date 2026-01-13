@@ -2855,8 +2855,15 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	if shouldSaveSnapshot {
 		if err := c.saveSnapshot(ctx, snapDetails); err != nil {
+			if err := c.emitChunkedSnapshotMetrics(ctx); err != nil {
+				log.CtxWarningf(ctx, "Failed to emit snapshot metrics: %s", err)
+			}
 			return err
 		}
+	}
+
+	if err := c.emitChunkedSnapshotMetrics(ctx); err != nil {
+		log.CtxWarningf(ctx, "Failed to emit snapshot metrics: %s", err)
 	}
 
 	// Finish cleaning up VM resources
@@ -2864,6 +2871,71 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		return err
 	}
 
+	return nil
+}
+
+func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) error {
+	if !snaputil.IsChunkedSnapshotSharingEnabled() {
+		return nil
+	}
+
+	chunkedStores := make(map[string]*copy_on_write.COWStore, 0)
+	if c.rootStore != nil {
+		chunkedStores[rootDriveID] = c.rootStore
+	}
+	if c.scratchStore != nil {
+		chunkedStores[scratchDriveID] = c.scratchStore
+	}
+	if c.memoryStore != nil {
+		chunkedStores[memoryChunkDirName] = c.memoryStore
+	}
+
+	for name, store := range chunkedStores {
+		chunks := store.SortedChunks()
+		chunkSourceCounter := make(map[snaputil.ChunkSource]int, 0)
+		bytesReadPerSource := make(map[snaputil.ChunkSource]int64, 0)
+		var dirtyBytes, dirtyChunkCount int64
+		for _, chunk := range chunks {
+			chunkSrc := chunk.Source()
+			chunkSourceCounter[chunkSrc]++
+
+			chunkSize, err := chunk.SizeBytes()
+			if err != nil {
+				return status.WrapError(err, "chunk size")
+			}
+
+			bytesReadPerSource[chunkSrc] += chunkSize
+			dirty := store.Dirty(chunk.Offset)
+			if dirty {
+				dirtyBytes += chunkSize
+				dirtyChunkCount++
+			}
+		}
+
+		var chunkSrcLog string
+		for chunkSrc, count := range chunkSourceCounter {
+			sourceLabel := snaputil.ChunkSourceLabel(chunkSrc)
+			bytesRead := bytesReadPerSource[chunkSrc]
+			metrics.COWSnapshotChunkSourceRatio.With(prometheus.Labels{
+				metrics.FileName:    name,
+				metrics.ChunkSource: sourceLabel,
+			}).Observe(float64(count) / float64(len(chunks)))
+			metrics.COWSnapshotBytesRead.With(prometheus.Labels{
+				metrics.FileName:    name,
+				metrics.ChunkSource: sourceLabel,
+			}).Add(float64(bytesReadPerSource[chunkSrc]))
+			chunkSrcLog += fmt.Sprintf(", %d MB read from %s", bytesRead/(1024*1024), sourceLabel)
+		}
+
+		metrics.COWSnapshotDirtyChunkRatio.With(prometheus.Labels{
+			metrics.FileName: name,
+		}).Observe(float64(dirtyChunkCount) / float64(len(chunks)))
+		metrics.COWSnapshotDirtyBytes.With(prometheus.Labels{
+			metrics.FileName: name,
+		}).Add(float64(dirtyBytes))
+
+		log.CtxDebugf(ctx, "For chunked %s snapshot, %d MB (%d chunks) were dirty%s", name, dirtyBytes/(1024*1024), dirtyChunkCount, chunkSrcLog)
+	}
 	return nil
 }
 
