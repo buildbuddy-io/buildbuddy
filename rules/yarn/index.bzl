@@ -20,7 +20,7 @@ export BAZEL_BINDIR=. &&
 export PATH=$$(pwd)/$$(dirname $(location {yarn})):$$(pwd)/$$(dirname $(NODE_PATH)):$$PATH &&
 cd $$(dirname $(location {package})) &&
 yarn install &&
-yarn {command}
+yarn {command} \\$$@
 EOF
 """
 
