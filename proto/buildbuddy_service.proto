@@ -225,6 +225,8 @@ service BuildBuddyService {
       returns (stream eventlog.GetEventLogChunkResponse);
   rpc WriteEventLog(stream eventlog.WriteEventLogRequest)
       returns (eventlog.WriteEventLogResponse);
+  rpc UpdateRunStatus(eventlog.UpdateRunStatusRequest)
+      returns (eventlog.UpdateRunStatusResponse);
 
   // Usage API
   rpc GetUsage(usage.GetUsageRequest) returns (usage.GetUsageResponse);

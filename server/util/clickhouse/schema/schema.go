@@ -113,6 +113,7 @@ type Invocation struct {
 	Tags                              []string `gorm:"type:Array(String);"`
 	RunID                             string
 	ParentRunID                       string
+	RunStatus                         int64
 }
 
 func (i *Invocation) ExcludedFields() []string {
@@ -642,5 +643,6 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		Tags:                              invocation_format.ConvertDBTagsToOLAP(ti.Tags),
 		RunID:                             ti.RunID,
 		ParentRunID:                       ti.ParentRunID,
+		RunStatus:                         ti.RunStatus,
 	}
 }

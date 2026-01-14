@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
 
 // This test ensures that we stop continuing to accrue chunks in the response
@@ -191,4 +192,38 @@ type testLogOutput struct{ t *testing.T }
 func (w *testLogOutput) Write(p []byte) (int, error) {
 	w.t.Log(string(p[:len(p)-1]))
 	return len(p), nil
+}
+
+func TestGetEventLogChunk_RunLogs(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+
+	invocationDB := &mockinvocationdb.MockInvocationDB{DB: make(map[string]*tables.Invocation)}
+	env.SetInvocationDB(invocationDB)
+
+	// Make a bare bones test invocation in the DB
+	testID := "test_id"
+	invocationDB.DB[testID] = &tables.Invocation{
+		InvocationID: testID,
+		RunStatus:    int64(inspb.OverallStatus_IN_PROGRESS),
+	}
+
+	blobstore := mockstore.New()
+	env.SetBlobstore(blobstore)
+
+	// Mock run logs.
+	blobPath := eventlog.GetRunLogPathFromInvocationId(testID)
+	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(0))] = []byte("Chunk 0\n")
+	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(1))] = []byte("Chunk 1\n")
+
+	rsp, err := eventlog.GetEventLogChunk(
+		env.GetServerContext(),
+		env,
+		&elpb.GetEventLogChunkRequest{
+			InvocationId: testID,
+			MinLines:     5,
+			Type:         elpb.LogType_RUN_LOG,
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "Chunk 0\nChunk 1\n", string(rsp.Buffer))
 }

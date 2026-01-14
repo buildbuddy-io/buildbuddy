@@ -1,11 +1,20 @@
 syntax = "proto3";
 
 import "proto/context.proto";
+import "proto/invocation_status.proto";
 import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
 package eventlog;
 
 option go_package = "proto;eventlog";
+
+enum LogType {
+  UNKNOWN_LOG = 0;
+  // Build logs streamed from the build event stream.
+  BUILD_LOG = 1;
+  // Run logs from executing the binary associated with a build.
+  RUN_LOG = 2;
+}
 
 message GetEventLogChunkRequest {
   // The request context.
@@ -22,6 +31,8 @@ message GetEventLogChunkRequest {
   // this requirement is still not satisfied, the buffer will instead contain as
   // many lines as are available.
   int32 min_lines = 4;
+
+  LogType type = 5;
 }
 
 message GetEventLogChunkResponse {
@@ -50,11 +61,6 @@ message LiveEventLogChunk {
   bytes buffer = 2;
 }
 
-enum LogType {
-  UNKNOWN_LOG = 0;
-  RUN_LOG = 1;
-}
-
 message LogMetadata {
   string invocation_id = 1;
 }
@@ -70,5 +76,17 @@ message WriteEventLogRequest {
 }
 
 message WriteEventLogResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message UpdateRunStatusRequest {
+  context.RequestContext request_context = 1;
+
+  string invocation_id = 2;
+
+  invocation_status.OverallStatus status = 3;
+}
+
+message UpdateRunStatusResponse {
   context.ResponseContext response_context = 1;
 }

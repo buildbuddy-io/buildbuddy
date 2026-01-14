@@ -40,6 +40,7 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -427,6 +428,7 @@ func TestWriteEventLog(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
 	te.SetAuthenticator(auth)
+
 	ctx, err := auth.WithAuthenticatedUser(t.Context(), user1)
 	require.NoError(t, err)
 	bbServer, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
@@ -441,13 +443,23 @@ func TestWriteEventLog(t *testing.T) {
 	t.Cleanup(func() { conn.Close() })
 	client := bbspb.NewBuildBuddyServiceClient(conn)
 
+	// Create an invocation that is generating run logs.
+	iid, err := createInvocationForTesting(te, user1)
+	require.NoError(t, err)
+	_, err = bbServer.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
+		InvocationId: iid,
+		Status:       inspb.OverallStatus_IN_PROGRESS,
+	})
+	require.NoError(t, err)
+
+	// Write event logs
 	stream, err := client.WriteEventLog(ctx)
 	require.NoError(t, err)
 
 	err = stream.Send(&elpb.WriteEventLogRequest{
 		Type: elpb.LogType_RUN_LOG,
 		Metadata: &elpb.LogMetadata{
-			InvocationId: "test-invocation",
+			InvocationId: iid,
 		},
 		Data: []byte("Line 1\n"),
 	})
@@ -456,7 +468,7 @@ func TestWriteEventLog(t *testing.T) {
 	err = stream.Send(&elpb.WriteEventLogRequest{
 		Type: elpb.LogType_RUN_LOG,
 		Metadata: &elpb.LogMetadata{
-			InvocationId: "test-invocation",
+			InvocationId: iid,
 		},
 		Data: []byte("Line 2\n"),
 	})
@@ -465,4 +477,15 @@ func TestWriteEventLog(t *testing.T) {
 	resp, err := stream.CloseAndRecv()
 	require.NoError(t, err)
 	require.NotNil(t, resp)
+
+	// Make sure we can read back the logs.
+	getLogStream, err := client.GetEventLog(ctx, &elpb.GetEventLogChunkRequest{
+		InvocationId: iid,
+		Type:         elpb.LogType_RUN_LOG,
+	})
+	require.NoError(t, err)
+
+	data, err := getLogStream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, "Line 1\nLine 2\n", string(data.GetBuffer()))
 }

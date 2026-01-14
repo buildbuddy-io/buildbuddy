@@ -64,6 +64,7 @@ import (
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/repo"
@@ -1487,7 +1488,11 @@ func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream
 	logsUpdated := make(<-chan string)
 	pubsub := s.env.GetPubSub()
 	if pubsub != nil {
-		subscriber := pubsub.Subscribe(ctx, eventlog.GetEventLogPubSubChannel(req.GetInvocationId()))
+		pubsubChannel := eventlog.GetEventLogPubSubChannel(req.GetInvocationId())
+		if req.GetType() == elpb.LogType_RUN_LOG {
+			pubsubChannel = eventlog.GetRunLogPubSubChannel(req.GetInvocationId())
+		}
+		subscriber := pubsub.Subscribe(ctx, pubsubChannel)
 		defer subscriber.Close()
 		logsUpdated = subscriber.Chan()
 	}
@@ -1552,8 +1557,6 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 			var eventLogPath string
 
 			switch req.GetType() {
-			case elpb.LogType_UNKNOWN_LOG:
-				return status.InvalidArgumentErrorf("Unsupported log type")
 			case elpb.LogType_RUN_LOG:
 				if req.GetMetadata().GetInvocationId() == "" {
 					return status.InvalidArgumentErrorf("missing invocation ID")
@@ -1561,6 +1564,8 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 
 				pubsubChannel = eventlog.GetRunLogPubSubChannel(req.GetMetadata().GetInvocationId())
 				eventLogPath = eventlog.GetRunLogPathFromInvocationId(req.GetMetadata().GetInvocationId())
+			default:
+				return status.InvalidArgumentErrorf("Unsupported log type")
 			}
 			eventLogWriter, err = eventlog.NewEventLogWriter(ctx, s.env.GetBlobstore(), s.env.GetKeyValStore(), s.env.GetPubSub(), pubsubChannel, eventLogPath, eventlog.DefaultTerminalLineLength, eventlog.DefaultTerminalLinesBuffered)
 			if err != nil {
@@ -1574,6 +1579,42 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 			return err
 		}
 	}
+}
+
+func (s *BuildBuddyServer) UpdateRunStatus(ctx context.Context, req *elpb.UpdateRunStatusRequest) (*elpb.UpdateRunStatusResponse, error) {
+	authenticatedUser, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	inv, err := s.env.GetInvocationDB().LookupInvocation(ctx, req.GetInvocationId())
+	if err != nil {
+		return nil, err
+	}
+
+	acl := perms.ToACLProto(&uidpb.UserId{Id: inv.UserID}, inv.GroupID, inv.Perms)
+	if err := perms.AuthorizeWrite(&authenticatedUser, acl); err != nil {
+		return nil, err
+	}
+
+	switch inspb.OverallStatus(inv.RunStatus) {
+	case inspb.OverallStatus_SUCCESS, inspb.OverallStatus_FAILURE, inspb.OverallStatus_DISCONNECTED:
+		return nil, status.FailedPreconditionErrorf("run is already complete, cannot be updated")
+	default:
+	}
+
+	switch req.GetStatus() {
+	case inspb.OverallStatus_SUCCESS, inspb.OverallStatus_FAILURE, inspb.OverallStatus_DISCONNECTED, inspb.OverallStatus_IN_PROGRESS:
+	default:
+		return nil, status.InvalidArgumentErrorf("invalid status")
+	}
+
+	inv.RunStatus = int64(req.GetStatus())
+	if _, err := s.env.GetInvocationDB().UpdateInvocation(ctx, inv); err != nil {
+		return nil, err
+	}
+
+	return &elpb.UpdateRunStatusResponse{}, nil
 }
 
 func (s *BuildBuddyServer) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
