@@ -833,9 +833,9 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		if rc, err := c.local.Reader(ctx, r, offset, limit); err == nil {
 			c.log.CtxDebugf(ctx, "Reader(%q) found locally", distributed_client.ResourceIsolationString(r))
 			readCloser = rc
-		} else if r.GetCacheType() == rspb.CacheType_CAS || isTreeCacheResource(r) {
-			// AC entries are can be updated, so we don't want to hold on to an
-			// old version.
+		} else if cacheable && (r.GetCacheType() == rspb.CacheType_CAS || isTreeCacheResource(r)) {
+			// AC entries can be updated, so we don't want to hold on to an old
+			// version.
 			if local, err := c.local.Writer(ctx, r); err == nil {
 				localWriter = local
 			}
