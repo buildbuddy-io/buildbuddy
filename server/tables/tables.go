@@ -167,6 +167,15 @@ type Invocation struct {
 	RunID                            string
 	BazelExitCode                    string
 
+	// RunExitCode is the exit code of the binary executed via `bazel run`.
+	// Only set when using the run_logger wrapper.
+	RunExitCode int32 `gorm:"default:NULL"`
+
+	// RunStatus tracks the status of the bazel run execution.
+	// Only set when using the run_logger wrapper.
+	// Maps to InvocationStatus enum.
+	RunStatus int64 `gorm:"default:NULL"`
+
 	// The user-specified setting of how to download outputs from remote cache.
 	// The value maps to invocation.DownloadOutputsOption
 	DownloadOutputsOption int64
