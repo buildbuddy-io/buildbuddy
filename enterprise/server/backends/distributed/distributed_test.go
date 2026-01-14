@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -56,8 +57,8 @@ func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticat
 	return te, ta, ctx
 }
 
-func newMemoryCache(t *testing.T, maxSizeBytes int64) interfaces.Cache {
-	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+func newMemoryCache(t *testing.T, env environment.Env, maxSizeBytes int64) interfaces.Cache {
+	mc, err := memory_cache.NewMemoryCache(env.GetAuthenticator(), maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,17 +114,17 @@ func TestBasicReadWrite(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -286,17 +287,17 @@ func TestContains(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -337,17 +338,17 @@ func TestContains_NotWritten(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -385,17 +386,17 @@ func TestReadMaxOffset(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -434,17 +435,17 @@ func TestReadOffsetLimit(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -488,22 +489,22 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 4 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
-	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache4 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config4 := baseConfig
 	config4.ListenAddr = peer4
 	dc4 := startNewDCache(t, env, config4, memoryCache4)
@@ -554,22 +555,22 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 4 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
-	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache4 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config4 := baseConfig
 	config4.ListenAddr = peer4
 	dc4 := startNewDCache(t, env, config4, memoryCache4)
@@ -635,17 +636,17 @@ func TestBackfill(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -713,17 +714,17 @@ func TestContainsMulti(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -775,17 +776,17 @@ func TestMetadata(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -829,17 +830,17 @@ func TestFindMissing(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -925,17 +926,17 @@ func TestGetMulti(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -1013,22 +1014,22 @@ func TestHintedHandoff(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 4 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
-	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache4 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config4 := baseConfig
 	config4.ListenAddr = peer4
 	dc4 := startNewDCache(t, env, config4, memoryCache4)
@@ -1119,17 +1120,17 @@ func TestDelete(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -1182,17 +1183,17 @@ func TestDelete_NonExistentFile(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -1233,8 +1234,8 @@ func TestSupportsCompressor(t *testing.T) {
 		{
 			name:                     "does not support zstd",
 			compressionLookupEnabled: true,
-			cache1:                   newMemoryCache(t, singleCacheSizeBytes),
-			cache2:                   newMemoryCache(t, singleCacheSizeBytes),
+			cache1:                   newMemoryCache(t, env, singleCacheSizeBytes),
+			cache2:                   newMemoryCache(t, env, singleCacheSizeBytes),
 			expected:                 false,
 		},
 		{
@@ -1294,7 +1295,7 @@ func TestExtraNodes(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1, err := NewDistributedCache(env, memoryCache1, config1, env.GetHealthChecker())
@@ -1303,7 +1304,7 @@ func TestExtraNodes(t *testing.T) {
 	}
 	dc1.StartListening()
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2, err := NewDistributedCache(env, memoryCache2, config2, env.GetHealthChecker())
@@ -1312,7 +1313,7 @@ func TestExtraNodes(t *testing.T) {
 	}
 	dc2.StartListening()
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3, err := NewDistributedCache(env, memoryCache3, config3, env.GetHealthChecker())
@@ -1384,7 +1385,7 @@ func TestExtraNodes(t *testing.T) {
 	dc3.StartListening()
 
 	// Now bring up the new nodes
-	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache4 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config4 := baseConfig
 	config4.ListenAddr = peer4
 	dc4, err := NewDistributedCache(env, memoryCache4, config4, env.GetHealthChecker())
@@ -1393,7 +1394,7 @@ func TestExtraNodes(t *testing.T) {
 	}
 	dc4.StartListening()
 
-	memoryCache5 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache5 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config5 := baseConfig
 	config5.ListenAddr = peer5
 	dc5, err := NewDistributedCache(env, memoryCache5, config5, env.GetHealthChecker())
@@ -1402,7 +1403,7 @@ func TestExtraNodes(t *testing.T) {
 	}
 	dc5.StartListening()
 
-	memoryCache6 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache6 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config6 := baseConfig
 	config6.ListenAddr = peer6
 	dc6, err := NewDistributedCache(env, memoryCache6, config6, env.GetHealthChecker())
@@ -1411,7 +1412,7 @@ func TestExtraNodes(t *testing.T) {
 	}
 	dc6.StartListening()
 
-	memoryCache7 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache7 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config7 := baseConfig
 	config7.ListenAddr = peer7
 	dc7, err := NewDistributedCache(env, memoryCache7, config7, env.GetHealthChecker())
@@ -1420,7 +1421,7 @@ func TestExtraNodes(t *testing.T) {
 	}
 	dc7.StartListening()
 
-	memoryCache8 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache8 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config8 := baseConfig
 	config8.ListenAddr = peer8
 	dc8, err := NewDistributedCache(env, memoryCache8, config8, env.GetHealthChecker())
@@ -1429,7 +1430,7 @@ func TestExtraNodes(t *testing.T) {
 	}
 	dc8.StartListening()
 
-	memoryCache9 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache9 := newMemoryCache(t, env, singleCacheSizeBytes)
 	config9 := baseConfig
 	config9.ListenAddr = peer9
 	dc9, err := NewDistributedCache(env, memoryCache9, config9, env.GetHealthChecker())
@@ -1503,17 +1504,17 @@ func TestExtraNodesReadOnly(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache1 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache2 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache3 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -1586,17 +1587,17 @@ func TestExtraNodesReadOnly(t *testing.T) {
 	dc3 = startNewDCache(t, env, config3, memoryCache3)
 
 	// Now bring up the new nodes
-	memoryCache4 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache4 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config4 := baseConfig
 	config4.ListenAddr = peer4
 	dc4 := startNewDCache(t, env, config4, memoryCache4)
 
-	memoryCache5 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache5 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config5 := baseConfig
 	config5.ListenAddr = peer5
 	dc5 := startNewDCache(t, env, config5, memoryCache5)
 
-	memoryCache6 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache6 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config6 := baseConfig
 	config6.ListenAddr = peer6
 	dc6 := startNewDCache(t, env, config6, memoryCache6)
@@ -1679,17 +1680,17 @@ func TestExtraNodesReadWrite(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache1 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache2 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache3 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -1762,17 +1763,17 @@ func TestExtraNodesReadWrite(t *testing.T) {
 	dc3 = startNewDCache(t, env, config3, memoryCache3)
 
 	// Now bring up the new nodes
-	memoryCache4 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache4 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config4 := baseConfig
 	config4.ListenAddr = peer4
 	dc4 := startNewDCache(t, env, config4, memoryCache4)
 
-	memoryCache5 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache5 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config5 := baseConfig
 	config5.ListenAddr = peer5
 	dc5 := startNewDCache(t, env, config5, memoryCache5)
 
-	memoryCache6 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache6 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config6 := baseConfig
 	config6.ListenAddr = peer6
 	dc6 := startNewDCache(t, env, config6, memoryCache6)
@@ -1838,17 +1839,17 @@ func TestReadThroughLookaside(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache1 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache2 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache3 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -1925,7 +1926,7 @@ func TestAbandonedReadDoesntWriteToLookaside(t *testing.T) {
 		ListenAddr:              peer,
 	}
 
-	memoryCache := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	dc := startNewDCache(t, env, config, memoryCache)
 	waitForReady(t, config.ListenAddr)
 
@@ -1969,17 +1970,17 @@ func TestGetMultiLookaside(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache1 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache2 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache3 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -2068,17 +2069,17 @@ func TestLookasideLimits(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache1 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache2 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache3 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -2139,17 +2140,17 @@ func TestTreeCacheLookaside(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache1 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache2 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache3 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -2245,17 +2246,17 @@ func TestReadThroughLocalCache(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 1.
-	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache1 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache2 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache3 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -2339,17 +2340,17 @@ func TestNoEncryptedContentsInLookaside(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 1.
-	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache1 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache2 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	memoryCache3 := traceCache(newMemoryCache(t, env, singleCacheSizeBytes))
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
@@ -2413,19 +2414,24 @@ func TestLookasidePartitionIsolation(t *testing.T) {
 		DisableLocalLookup:      true,
 	}
 
-	partition1 := traceCache(newMemoryCache(t, int64(1000000)))
-	partition2 := traceCache(newMemoryCache(t, int64(1000000)))
-	partitionedCache := partitionedCache{
-		t:             t,
-		authenticator: ta,
-		partitions: map[string]interfaces.Cache{
-			"group1": partition1,
-			"group2": partition2,
-		},
+	partitions := []disk.Partition{
+		{ID: "group1", MaxSizeBytes: 1000000},
+		{ID: "group2", MaxSizeBytes: 1000000},
 	}
+	mappings := []disk.PartitionMapping{
+		{GroupID: "group1", Prefix: "", PartitionID: "group1"},
+		{GroupID: "group2", Prefix: "", PartitionID: "group2"},
+	}
+	mc, err := memory_cache.NewMemoryCacheWithOptions(ta, &memory_cache.Options{
+		MaxSizeBytes:      2000000,
+		Partitions:        partitions,
+		PartitionMappings: mappings,
+	})
+	require.NoError(t, err)
+
 	config := baseConfig
 	config.ListenAddr = peer1
-	dc := startNewDCache(t, env, config, &partitionedCache)
+	dc := startNewDCache(t, env, config, mc)
 
 	waitForReady(t, config.ListenAddr)
 
@@ -2594,71 +2600,4 @@ func (t *tracedCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 
 func (t *tracedCache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
 	return "", nil
-}
-
-// TODO(go/b/6456): use memory cache here
-type partitionContextKey struct{}
-type partitionedCache struct {
-	t             *testing.T
-	authenticator interfaces.Authenticator
-	partitions    map[string]interfaces.Cache
-}
-
-func (pc *partitionedCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
-	return pc.partition(ctx).Contains(ctx, r)
-}
-func (pc *partitionedCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
-	return pc.partition(ctx).Metadata(ctx, r)
-}
-func (pc *partitionedCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
-	return pc.partition(ctx).FindMissing(ctx, resources)
-}
-func (pc *partitionedCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
-	return pc.partition(ctx).Get(ctx, r)
-}
-func (pc *partitionedCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	return pc.partition(ctx).GetMulti(ctx, resources)
-}
-func (pc *partitionedCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
-	return pc.partition(ctx).Set(ctx, r, data)
-}
-func (pc *partitionedCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
-	return pc.partition(ctx).SetMulti(ctx, kvs)
-}
-func (pc *partitionedCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
-	return pc.partition(ctx).Delete(ctx, r)
-}
-func (pc *partitionedCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
-	return pc.partition(ctx).Reader(ctx, r, uncompressedOffset, limit)
-}
-func (pc *partitionedCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	return pc.partition(ctx).Writer(ctx, r)
-}
-func (pc *partitionedCache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
-	userInfo, err := pc.authenticator.AuthenticatedUser(ctx)
-	if err != nil {
-		return "", err
-	}
-	return userInfo.GetGroupID(), nil
-}
-func (pc *partitionedCache) partition(ctx context.Context) interfaces.Cache {
-	partitionID, err := pc.Partition(ctx, "")
-	require.NoError(pc.t, err)
-	return pc.partitions[partitionID]
-}
-func (pc *partitionedCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
-	for _, partition := range pc.partitions {
-		if !partition.SupportsCompressor(compressor) {
-			return false
-		}
-	}
-	return true
-}
-func (pc *partitionedCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
-	for _, partition := range pc.partitions {
-		if err := partition.RegisterAtimeUpdater(updater); err != nil {
-			return err
-		}
-	}
-	return nil
 }
