@@ -61,7 +61,6 @@ func TestStoreStatusStateMachine(t *testing.T) {
 	require.Len(t, res.DeadReplicas, 0, "DeadReplicas")
 
 	// Node goes down -> unknown
-	log.Infof("set to leaving")
 	mockGossipManager.setMemberStatus(nhid, serf.StatusLeaving)
 	sm.updateStoreDetail(nhid, usage, serf.StatusLeaving)
 	res = sm.DivideByStatus(repls)

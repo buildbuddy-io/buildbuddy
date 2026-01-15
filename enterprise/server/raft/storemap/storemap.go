@@ -149,7 +149,7 @@ func (sm *StoreMap) DivideByStatus(repls []*rfpb.ReplicaDescriptor) *ReplicasByS
 	res := &ReplicasByStatus{}
 	for _, repl := range repls {
 		detail := sm.getDetailLocked(repl.GetNhid())
-		status := detail.refreshAndComputeStatus(sm.clock, memberStatus, now)
+		status := detail.refreshAndComputeStatusLocked(sm.clock, memberStatus, now)
 
 		switch status {
 		case storeStatusAvailable:
@@ -180,9 +180,8 @@ func (sm *StoreMap) getDetails(nhid string) *StoreDetail {
 	return sm.getDetailLocked(nhid)
 }
 
-func (sd *StoreDetail) refreshAndComputeStatus(clock clockwork.Clock, liveMemberStatus map[string]bool, now time.Time) storeStatus {
+func (sd *StoreDetail) refreshAndComputeStatusLocked(clock clockwork.Clock, liveMemberStatus map[string]bool, now time.Time) storeStatus {
 	currentlyAlive := liveMemberStatus[sd.nhid]
-	log.Infof("refresh: currentlyAlive = %t", currentlyAlive)
 	sd.updateTransitionsLocked(currentlyAlive, now)
 
 	if !currentlyAlive {
@@ -234,7 +233,6 @@ func (sm *StoreMap) updateStoreDetail(nhid string, usage *rfpb.StoreUsage, nodeS
 	}
 	now := sm.clock.Now()
 	currentlyAlive := nodeStatus == serf.StatusAlive
-	log.Infof("update to currently Alive=%t", currentlyAlive)
 	detail.updateTransitionsLocked(currentlyAlive, now)
 	return nil
 }
@@ -298,7 +296,7 @@ func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
 
 	alive := make([]*rfpb.StoreUsage, 0, len(sm.storeDetails))
 	for _, sd := range sm.storeDetails {
-		status := sd.refreshAndComputeStatus(sm.clock, memberStatus, now)
+		status := sd.refreshAndComputeStatusLocked(sm.clock, memberStatus, now)
 		if status == storeStatusAvailable {
 			alive = append(alive, sd.usage)
 		}
@@ -321,7 +319,7 @@ func (sm *StoreMap) GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats {
 		if !ok {
 			continue
 		}
-		status := sd.refreshAndComputeStatus(sm.clock, memberStatus, now)
+		status := sd.refreshAndComputeStatusLocked(sm.clock, memberStatus, now)
 
 		if status == storeStatusAvailable || status == storeStatusSuspect {
 			alive = append(alive, sd.usage)
@@ -331,14 +329,14 @@ func (sm *StoreMap) GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats {
 }
 
 func (sm *StoreMap) AllStoresAvailableAndReady() bool {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 
 	memberStatus := sm.getMemberStatus()
 	now := sm.clock.Now()
 
 	for _, sd := range sm.storeDetails {
-		status := sd.refreshAndComputeStatus(sm.clock, memberStatus, now)
+		status := sd.refreshAndComputeStatusLocked(sm.clock, memberStatus, now)
 		if status != storeStatusAvailable {
 			return false
 		}
