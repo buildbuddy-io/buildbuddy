@@ -25,9 +25,16 @@ var (
 type storeStatus int
 
 const (
+	// The store is never seen OR the store is currently down, but for
+	// less than deadStoreTimeout.
 	storeStatusUnknown storeStatus = iota
+	// The store is continuously unavailable > deadStoreTimeout
 	storeStatusDead
+	// The store is consistently alive for at lease suspectStoreDuration.
 	storeStatusAvailable
+	// The store is currently alive but recently recovered from being unavailable.
+	// We don't fully trust it yet. After suspectStoreDuration passes without the
+	// store becoming unavailable again, it becomes Available.
 	storeStatusSuspect
 )
 
@@ -39,8 +46,21 @@ type IStoreMap interface {
 }
 
 type StoreDetail struct {
-	usage             *rfpb.StoreUsage
-	lastUnavailableAt time.Time
+	usage *rfpb.StoreUsage
+
+	nhid string
+
+	// lastBecameUnavailableAt is the time when the store mostly recently
+	// transitioned from alive to not-alive. This is RESET when the store becomes
+	// available again.
+	lastBecameUnavailableAt time.Time
+
+	// lastBecameAvailableAt is the time when the store most recently
+	// transitioned from not-alive to alive. Used for the suspect window.
+	lastBecameAvailableAt time.Time
+
+	// wasAlive is the last known status.
+	wasAlive bool
 }
 
 type StoreMap struct {
@@ -55,7 +75,7 @@ type StoreMap struct {
 	log       log.Logger
 }
 
-func New(gossipManager interfaces.GossipService, clock clockwork.Clock, nhLogger log.Logger) IStoreMap {
+func create(gossipManager interfaces.GossipService, clock clockwork.Clock, nhLogger log.Logger) *StoreMap {
 	sm := &StoreMap{
 		mu:            &sync.RWMutex{},
 		startTime:     time.Now(),
@@ -68,19 +88,69 @@ func New(gossipManager interfaces.GossipService, clock clockwork.Clock, nhLogger
 	return sm
 }
 
+func New(gossipManager interfaces.GossipService, clock clockwork.Clock, nhLogger log.Logger) IStoreMap {
+	return create(gossipManager, clock, nhLogger)
+}
+
 type ReplicasByStatus struct {
 	LiveReplicas    []*rfpb.ReplicaDescriptor
 	DeadReplicas    []*rfpb.ReplicaDescriptor
 	SuspectReplicas []*rfpb.ReplicaDescriptor
 }
 
+func (sm *StoreMap) getStoreUsage(m serf.Member) *rfpb.StoreUsage {
+	usageTag := m.Tags[constants.StoreUsageTag]
+	if len(usageTag) == 0 {
+		return nil
+	}
+	usageBuf, err := base64.StdEncoding.DecodeString(usageTag)
+	if err != nil {
+		sm.log.Warningf("error b64 decoding usage tag: %s", err)
+		return nil
+	}
+	usage := &rfpb.StoreUsage{}
+	if err := proto.Unmarshal(usageBuf, usage); err != nil {
+		sm.log.Warningf("error unmarshaling usage buf: %s", err)
+		return nil
+	}
+	return usage
+}
+
+// getMemberStatus queries serf for the current status of all members and returns
+// a map from NHID to whether the member is alive
+func (sm *StoreMap) getMemberStatus() map[string]bool {
+	members := sm.gossipManager.Members()
+	result := make(map[string]bool, len(members))
+	for _, m := range members {
+		usage := sm.getStoreUsage(m)
+		if usage == nil {
+			log.Infof("skip because of nil usage")
+			continue
+		}
+		nhid := usage.GetNode().GetNhid()
+		if nhid != "" {
+			result[nhid] = (m.Status == serf.StatusAlive)
+		} else {
+			log.Infof("skip because of empty nhid")
+		}
+	}
+
+	log.Infof("result:%+v", result)
+	return result
+}
+
 func (sm *StoreMap) DivideByStatus(repls []*rfpb.ReplicaDescriptor) *ReplicasByStatus {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
+
+	memberStatus := sm.getMemberStatus()
+	now := sm.clock.Now()
+
 	res := &ReplicasByStatus{}
 	for _, repl := range repls {
-		detail := sm.getDetail(repl.GetNhid())
-		status := detail.status(sm.clock)
+		detail := sm.getDetailLocked(repl.GetNhid())
+		status := detail.refreshAndComputeStatus(sm.clock, memberStatus, now)
+
 		switch status {
 		case storeStatusAvailable:
 			res.LiveReplicas = append(res.LiveReplicas, repl)
@@ -95,30 +165,59 @@ func (sm *StoreMap) DivideByStatus(repls []*rfpb.ReplicaDescriptor) *ReplicasByS
 	return res
 }
 
-func (sm *StoreMap) getDetail(nhid string) *StoreDetail {
+func (sm *StoreMap) getDetailLocked(nhid string) *StoreDetail {
 	detail, ok := sm.storeDetails[nhid]
 	if !ok {
-		detail = &StoreDetail{}
+		detail = &StoreDetail{nhid: nhid}
 		sm.storeDetails[nhid] = detail
 	}
 	return detail
-
 }
 
-func (sd *StoreDetail) status(clock clockwork.Clock) storeStatus {
-	if !sd.lastUnavailableAt.IsZero() && clock.Since(sd.lastUnavailableAt) > *deadStoreTimeout {
-		return storeStatusDead
-	}
+func (sm *StoreMap) getDetails(nhid string) *StoreDetail {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	return sm.getDetailLocked(nhid)
+}
 
-	if sd.usage == nil {
+func (sd *StoreDetail) refreshAndComputeStatus(clock clockwork.Clock, liveMemberStatus map[string]bool, now time.Time) storeStatus {
+	currentlyAlive := liveMemberStatus[sd.nhid]
+	log.Infof("refresh: currentlyAlive = %t", currentlyAlive)
+	sd.updateTransitionsLocked(currentlyAlive, now)
+
+	if !currentlyAlive {
+		if !sd.lastBecameUnavailableAt.IsZero() && now.Sub(sd.lastBecameUnavailableAt) > *deadStoreTimeout {
+			return storeStatusDead
+		}
 		return storeStatusUnknown
 	}
 
-	if time.Since(sd.lastUnavailableAt) <= *suspectStoreDuration {
+	// The store is currently alive
+	if !sd.lastBecameAvailableAt.IsZero() && now.Sub(sd.lastBecameAvailableAt) <= *suspectStoreDuration {
+		// The store just became available recently
 		return storeStatusSuspect
 	}
 
+	// The store has been consistently available for longer than suspectDuration.
 	return storeStatusAvailable
+}
+
+// updateTransitionsLocked updates the transition timestaps based on state changes.
+// Must be called with sm.mu held
+func (sd *StoreDetail) updateTransitionsLocked(currentlyAlive bool, now time.Time) {
+	wasAlive := sd.wasAlive
+	if currentlyAlive && !wasAlive {
+		// unavailable -> available
+		sd.lastBecameAvailableAt = now
+		sd.lastBecameUnavailableAt = time.Time{}
+	} else if !currentlyAlive && wasAlive {
+		// available -> unavailable
+		sd.lastBecameUnavailableAt = now
+	} else if !currentlyAlive && !wasAlive && sd.lastBecameUnavailableAt.IsZero() {
+		sd.lastBecameUnavailableAt = now
+	}
+
+	sd.wasAlive = currentlyAlive
 }
 
 func (sm *StoreMap) updateStoreDetail(nhid string, usage *rfpb.StoreUsage, nodeStatus serf.MemberStatus) error {
@@ -129,16 +228,14 @@ func (sm *StoreMap) updateStoreDetail(nhid string, usage *rfpb.StoreUsage, nodeS
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	detail := sm.getDetail(nhid)
+	detail := sm.getDetailLocked(nhid)
 	if usage != nil {
 		detail.usage = usage
 	}
 	now := sm.clock.Now()
-	if nodeStatus != serf.StatusAlive {
-		detail.lastUnavailableAt = now
-	} else {
-		detail.lastUnavailableAt = time.Time{}
-	}
+	currentlyAlive := nodeStatus == serf.StatusAlive
+	log.Infof("update to currently Alive=%t", currentlyAlive)
+	detail.updateTransitionsLocked(currentlyAlive, now)
 	return nil
 }
 
@@ -149,20 +246,7 @@ func (sm *StoreMap) OnEvent(updateType serf.EventType, event serf.Event) {
 		return
 	}
 	for _, member := range memberEvent.Members {
-		var usage *rfpb.StoreUsage
-		usageTag := member.Tags[constants.StoreUsageTag]
-		if len(usageTag) == 0 {
-			sm.log.Debugf("member %q did not have usage tag yet", member.Name)
-		}
-		usageBuf, err := base64.StdEncoding.DecodeString(usageTag)
-		if err != nil {
-			sm.log.Warningf("error b64 decoding usage tag: %s", err)
-		}
-		usage = &rfpb.StoreUsage{}
-		if err := proto.Unmarshal(usageBuf, usage); err != nil {
-			sm.log.Warningf("error unmarshaling usage buf: %s", err)
-			usage = nil
-		}
+		usage := sm.getStoreUsage(member)
 		if err := sm.updateStoreDetail(usage.GetNode().GetNhid(), usage, member.Status); err != nil {
 			sm.log.Errorf("Error observing cluster change for node %+v: %s", usage.GetNode(), err)
 		}
@@ -208,9 +292,13 @@ func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
+	// Get current member status from serf
+	memberStatus := sm.getMemberStatus()
+	now := sm.clock.Now()
+
 	alive := make([]*rfpb.StoreUsage, 0, len(sm.storeDetails))
 	for _, sd := range sm.storeDetails {
-		status := sd.status(sm.clock)
+		status := sd.refreshAndComputeStatus(sm.clock, memberStatus, now)
 		if status == storeStatusAvailable {
 			alive = append(alive, sd.usage)
 		}
@@ -223,13 +311,18 @@ func (sm *StoreMap) GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
+	// Get current member status from serf
+	memberStatus := sm.getMemberStatus()
+	now := sm.clock.Now()
+
 	alive := make([]*rfpb.StoreUsage, 0, len(nhids))
 	for _, nhid := range nhids {
 		sd, ok := sm.storeDetails[nhid]
 		if !ok {
 			continue
 		}
-		status := sd.status(sm.clock)
+		status := sd.refreshAndComputeStatus(sm.clock, memberStatus, now)
+
 		if status == storeStatusAvailable || status == storeStatusSuspect {
 			alive = append(alive, sd.usage)
 		}
@@ -241,8 +334,11 @@ func (sm *StoreMap) AllStoresAvailableAndReady() bool {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
+	memberStatus := sm.getMemberStatus()
+	now := sm.clock.Now()
+
 	for _, sd := range sm.storeDetails {
-		status := sd.status(sm.clock)
+		status := sd.refreshAndComputeStatus(sm.clock, memberStatus, now)
 		if status != storeStatusAvailable {
 			return false
 		}
