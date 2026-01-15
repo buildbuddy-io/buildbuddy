@@ -99,6 +99,8 @@ var (
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
 	debugDisableCgroup      = flag.Bool("debug_disable_cgroup", false, "Disable firecracker cgroup setup.")
+
+	debugDontKillVMs = flag.Bool("debug_firecracker_never_kill", false, "Keep firecracker VMs running forever for debugging purposes.")
 )
 
 //go:embed guest_api_hash.sha256
@@ -2595,6 +2597,9 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 // Remove kills any processes currently running inside the container and
 // removes any resources associated with the container itself.
 func (c *FirecrackerContainer) Remove(ctx context.Context) error {
+	if *debugDontKillVMs {
+		return nil
+	}
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -2783,6 +2788,9 @@ func (c *FirecrackerContainer) stopMachine(ctx context.Context) error {
 // become invalid (e.g., the kernel's page cache may no longer be in sync with
 // the disk, which can cause all sorts of issues).
 func (c *FirecrackerContainer) Pause(ctx context.Context) error {
+	if *debugDontKillVMs {
+		return nil
+	}
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
