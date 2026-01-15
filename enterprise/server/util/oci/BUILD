@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/util/ocicache",
         "//enterprise/server/util/ocimanifest",
+        "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
