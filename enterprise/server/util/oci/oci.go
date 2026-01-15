@@ -447,22 +447,50 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		}
 	}
 
-	remoteDesc, err := puller.Get(ctx, digestOrTagRef)
-	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
+	var manifest []byte
+	var desc gcr.Descriptor
+	if useOCIFetcher && ociFetcherClient != nil {
+		resp, err := ociFetcherClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
+			Ref:            digestOrTagRef.String(),
+			Credentials:    &rgpb.Credentials{Username: credentials.Username, Password: credentials.Password},
+			BypassRegistry: credentials.bypassRegistry,
+		})
+		if err != nil {
+			if status.IsPermissionDeniedError(err) {
+				return nil, err
+			}
+			return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 		}
-		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+		parsedDigest, err := gcr.NewHash(resp.GetDigest())
+		if err != nil {
+			return nil, status.InternalErrorf("cannot parse digest from FetchManifest response: %s", err)
+		}
+		desc = gcr.Descriptor{
+			Digest:    parsedDigest,
+			Size:      resp.GetSize(),
+			MediaType: types.MediaType(resp.GetMediaType()),
+		}
+		manifest = resp.GetManifest()
+	} else {
+		remoteDesc, err := puller.Get(ctx, digestOrTagRef)
+		if err != nil {
+			if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+				return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
+			}
+			return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+		}
+		desc = remoteDesc.Descriptor
+		manifest = remoteDesc.Manifest
 	}
 
 	if useCache {
 		err := ocicache.WriteManifestToAC(
 			ctx,
-			remoteDesc.Manifest,
+			manifest,
 			acClient,
 			digestOrTagRef.Context(),
-			remoteDesc.Digest,
-			string(remoteDesc.MediaType),
+			desc.Digest,
+			string(desc.MediaType),
 			digestOrTagRef,
 		)
 		if err != nil {
@@ -473,8 +501,8 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 	return imageFromDescriptorAndManifest(
 		ctx,
 		digestOrTagRef.Context(),
-		remoteDesc.Descriptor,
-		remoteDesc.Manifest,
+		desc,
+		manifest,
 		platform,
 		acClient,
 		bsClient,
