@@ -162,7 +162,7 @@ body {
 }
 
 .keyboard-shortcut-title {
-  border-bottom: 1px solid var(--color-border-primary);
+  border-bottom: 1px solid #eee;
   text-align: center;
   width: 100%;
 }
@@ -191,5 +191,5 @@ body {
   margin-left: auto;
   margin-right: 8px;
   text-decoration: underline;
-  color: var(--color-form-help-text);
+  color: #333;
 }

@@ -10,8 +10,7 @@
 }
 
 .api-keys .error-container {
-  background: var(--color-banner-error-bg);
-  color: var(--color-banner-error-text);
+  background: #ffcdd2;
   padding: 16px;
   border-radius: 8px;
 }

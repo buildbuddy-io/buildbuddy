@@ -55,7 +55,6 @@
 .filled-button.filled-button.filled-button[disabled],
 .filled-button.filled-button.filled-button[disabled]:hover {
   background: var(--color-button-disabled-bg);
-  color: var(--color-button-disabled-text);
   cursor: not-allowed;
   box-shadow: none;
 }

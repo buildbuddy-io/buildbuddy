@@ -20,10 +20,6 @@
   color: var(--color-banner-warning-text);
 }
 
-.banner.banner-warning .icon {
-  stroke: var(--color-banner-warning-icon);
-}
-
 .banner.banner-error {
   background: var(--color-banner-error-bg);
   color: var(--color-banner-error-text);

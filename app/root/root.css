@@ -992,12 +992,11 @@ code .comment {
 
 .role-badge.CI_RUNNER {
   background: var(--color-bg-inverted);
-  color: var(--color-badge-workflow-text);
+  color: var(--color-text-inverted);
 }
 
 .role-badge.CI {
   background: var(--color-blue-gray-100);
-  color: var(--color-text-on-light-bg);
 }
 
 .role-badge.HOSTED_BAZEL {
@@ -1891,7 +1890,7 @@ code .comment {
 .sticky-loading-overlay .loading {
   height: 100vh;
   position: absolute;
-  background: var(--color-loading-overlay-bg);
+  background: var(--color-white-translucent);
 }
 
 .loading:before {

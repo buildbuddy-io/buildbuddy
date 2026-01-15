@@ -37,14 +37,14 @@
 .global-filter .option-group-title {
   font-weight: 600;
   font-size: 15px;
-  background: var(--color-popup-bg);
+  background: var(--color-bg-primary);
   padding: 4px 16px;
 }
 
 .global-filter .option-group-section-title {
   font-weight: 600;
   font-size: 15px;
-  background: var(--color-popup-bg);
+  background: var(--color-bg-primary);
   padding: 4px 16px;
   margin-top: 16px;
 }

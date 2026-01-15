@@ -2,7 +2,6 @@
   margin: 0;
   padding: 8px 0;
   list-style: none;
-  color: var(--color-menu-text);
 }
 
 .menu-list-item {
@@ -15,7 +14,7 @@
 }
 
 .menu-list-item:hover {
-  background: var(--color-menu-hover-bg);
+  background: #eee;
 }
 
 .menu-list-item.disabled {
