@@ -84,6 +84,7 @@ var (
 	firecrackerCgroupVersion              = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
 	debugStreamVMLogs                     = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
 	debugTerminal                         = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only. The default username and password are root/root.")
+	debugTerminalPort                     = flag.Int("executor.firecracker_debug_terminal_port", 0, "If set, listen on this port for debug terminal connections instead of using stdin/stdout. Connect with: socat -,raw,echo=0 TCP:localhost:<port>")
 	dieOnFirecrackerFailure               = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 	workspaceDiskSlackSpaceMB             = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
 	healthCheckInterval                   = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
@@ -686,6 +687,10 @@ type FirecrackerContainer struct {
 	}
 
 	useOCIFetcher bool
+
+	// Debug terminal listener and connection (when debugTerminalPort is set)
+	debugTerminalListener net.Listener
+	debugTerminalConn     net.Conn
 }
 
 var _ container.VM = (*FirecrackerContainer)(nil)
@@ -1710,7 +1715,26 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		}
 	}
 	if *debugTerminal {
-		cfg.JailerCfg.Stdin = os.Stdin
+		if *debugTerminalPort > 0 {
+			ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *debugTerminalPort))
+			if err != nil {
+				return nil, status.UnavailableErrorf("failed to listen on debug terminal port %d: %s", *debugTerminalPort, err)
+			}
+			c.debugTerminalListener = ln
+			log.Infof("Debug terminal listening on port %d. Connect with: socat -,raw,echo=0 TCP:localhost:%d", *debugTerminalPort, *debugTerminalPort)
+			conn, err := ln.Accept()
+			if err != nil {
+				ln.Close()
+				return nil, status.UnavailableErrorf("failed to accept debug terminal connection: %s", err)
+			}
+			c.debugTerminalConn = conn
+			log.Infof("Debug terminal connection established from %s", conn.RemoteAddr())
+			cfg.JailerCfg.Stdin = conn
+			cfg.JailerCfg.Stdout = conn
+			cfg.JailerCfg.Stderr = conn
+		} else {
+			cfg.JailerCfg.Stdin = os.Stdin
+		}
 	}
 	return cfg, nil
 }
@@ -2290,6 +2314,17 @@ func (c *FirecrackerContainer) closeVMExecConn(ctx context.Context) {
 	c.vmExec.conn, c.vmExec.err = nil, nil
 }
 
+func (c *FirecrackerContainer) closeDebugTerminal() {
+	if c.debugTerminalConn != nil {
+		c.debugTerminalConn.Close()
+		c.debugTerminalConn = nil
+	}
+	if c.debugTerminalListener != nil {
+		c.debugTerminalListener.Close()
+		c.debugTerminalListener = nil
+	}
+}
+
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -2626,6 +2661,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	defer cancel()
 
 	c.closeVMExecConn(ctx)
+	c.closeDebugTerminal()
 
 	defer c.cancelVmCtx(fmt.Errorf("VM removed"))
 
