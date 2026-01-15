@@ -84,6 +84,8 @@ go_test(
         "//proto:acl_go_proto",
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
+        "//proto:buildbuddy_service_go_proto",
+        "//proto:eventlog_go_proto",
         "//proto:invocation_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",

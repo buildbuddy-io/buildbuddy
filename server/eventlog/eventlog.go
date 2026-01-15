@@ -33,6 +33,12 @@ const (
 
 	// Max number of workers to run in parallel when fetching chunks.
 	numReadWorkers = 16
+
+	DefaultTerminalLineLength = 300
+	// Number of log lines to buffer before flushing them.
+	// This is used for progress logs that are live-updated. We only want to flush
+	// the finalized logs.
+	DefaultTerminalLinesBuffered = 10
 )
 
 var (
@@ -55,6 +61,14 @@ func GetEventLogPathFromInvocationIdAndAttempt(invocationId string, attempt uint
 
 func GetEventLogPubSubChannel(invocationID string) string {
 	return fmt.Sprintf("eventlog/%s/updates", invocationID)
+}
+
+func GetRunLogPathFromInvocationId(invocationId string) string {
+	return invocationId + "/chunks/log/runlog"
+}
+
+func GetRunLogPubSubChannel(invocationId string) string {
+	return fmt.Sprintf("runlog/%s/updates", invocationId)
 }
 
 // Gets the chunk of the event log specified by the request from the blobstore and returns a response containing it

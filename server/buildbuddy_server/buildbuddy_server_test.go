@@ -37,6 +37,8 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -419,4 +421,48 @@ func TestFileDownloadEndpoint(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestWriteEventLog(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
+	te.SetAuthenticator(auth)
+	ctx, err := auth.WithAuthenticatedUser(t.Context(), user1)
+	require.NoError(t, err)
+	bbServer, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, te)
+	bbspb.RegisterBuildBuddyServiceServer(grpcServer, bbServer)
+	go runFunc()
+
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := bbspb.NewBuildBuddyServiceClient(conn)
+
+	stream, err := client.WriteEventLog(ctx)
+	require.NoError(t, err)
+
+	err = stream.Send(&elpb.WriteEventLogRequest{
+		Type: elpb.LogType_RUN_LOG,
+		Metadata: &elpb.LogMetadata{
+			InvocationId: "test-invocation",
+		},
+		Data: []byte("Line 1\n"),
+	})
+	require.NoError(t, err)
+
+	err = stream.Send(&elpb.WriteEventLogRequest{
+		Type: elpb.LogType_RUN_LOG,
+		Metadata: &elpb.LogMetadata{
+			InvocationId: "test-invocation",
+		},
+		Data: []byte("Line 2\n"),
+	})
+	require.NoError(t, err)
+
+	resp, err := stream.CloseAndRecv()
+	require.NoError(t, err)
+	require.NotNil(t, resp)
 }

@@ -1536,7 +1536,44 @@ func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream
 }
 
 func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEventLogServer) error {
-	return status.UnimplementedError("Not implemented")
+	ctx := stream.Context()
+
+	var eventLogWriter *eventlog.EventLogWriter
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			return stream.SendAndClose(&elpb.WriteEventLogResponse{})
+		} else if err != nil {
+			return err
+		}
+
+		if eventLogWriter == nil {
+			var pubsubChannel string
+			var eventLogPath string
+
+			switch req.GetType() {
+			case elpb.LogType_UNKNOWN_LOG:
+				return status.InvalidArgumentErrorf("Unsupported log type")
+			case elpb.LogType_RUN_LOG:
+				if req.GetMetadata().GetInvocationId() == "" {
+					return status.InvalidArgumentErrorf("missing invocation ID")
+				}
+
+				pubsubChannel = eventlog.GetRunLogPubSubChannel(req.GetMetadata().GetInvocationId())
+				eventLogPath = eventlog.GetRunLogPathFromInvocationId(req.GetMetadata().GetInvocationId())
+			}
+			eventLogWriter, err = eventlog.NewEventLogWriter(ctx, s.env.GetBlobstore(), s.env.GetKeyValStore(), s.env.GetPubSub(), pubsubChannel, eventLogPath, eventlog.DefaultTerminalLineLength, eventlog.DefaultTerminalLinesBuffered)
+			if err != nil {
+				return err
+			}
+			defer eventLogWriter.Close(ctx)
+		}
+
+		_, err = eventLogWriter.Write(ctx, req.GetData())
+		if err != nil {
+			return err
+		}
+	}
 }
 
 func (s *BuildBuddyServer) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
