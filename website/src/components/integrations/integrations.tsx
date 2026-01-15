@@ -53,12 +53,7 @@ function Component() {
             shouldAutoDownload={() => true}
             threshold={10000}
           />
-          <img
-            alt="Jenkins Integration"
-            className={styles.logo}
-            style={{ padding: "16px 0" }}
-            src="/img/jenkins.svg"
-          />
+          <img alt="Jenkins Integration" className={styles.logo} style={{ padding: "16px 0" }} src="/img/jenkins.svg" />
           <Image
             alt="GCP Integration"
             className={styles.logo}
