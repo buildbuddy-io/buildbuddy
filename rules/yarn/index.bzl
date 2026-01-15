@@ -23,7 +23,7 @@ cd $$(dirname $(location {package})) &&
 yarn install &&""" +
 
     # To explain the complicated escaping here:
-    # python resolves `\\` to a literal backslash, giving us `\$$@`
+    # starlark resolves `\\` to a literal backslash, giving us `\$$@`
     #
     # genrule interprets `\` as a literal backslash, then resolves `$$` to a
     # literal dollar sign, giving us `\$@`
