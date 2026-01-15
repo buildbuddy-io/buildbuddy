@@ -47,6 +47,7 @@
   font-weight: 600;
   font-size: 20px;
   margin-bottom: 16px;
+  color: var(--color-text-primary);
 }
 
 .trend-chart-hover {
@@ -76,6 +77,10 @@
 
 .trends-clickable-bar.orange:hover {
   fill: var(--color-amber-800);
+}
+
+.trends-clickable-bar.black {
+  fill: var(--color-chart-black);
 }
 
 .trends-clickable-bar.black:hover {

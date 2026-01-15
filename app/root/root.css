@@ -383,8 +383,8 @@ svg.icon.yellow {
 }
 
 .tab.selected {
-  background: var(--color-bg-inverted);
-  color: var(--color-text-inverted);
+  background: var(--color-tab-selected-bg);
+  color: var(--color-tab-selected-text);
 }
 
 /** Runs **/
@@ -528,8 +528,8 @@ a.card:hover {
 }
 
 .card.dark {
-  background-color: var(--color-bg-inverted);
-  color: var(--color-text-inverted);
+  background-color: var(--color-terminal-bg);
+  color: var(--color-terminal-text);
 }
 
 .card.light-terminal {
@@ -992,11 +992,12 @@ code .comment {
 
 .role-badge.CI_RUNNER {
   background: var(--color-bg-inverted);
-  color: var(--color-text-inverted);
+  color: var(--color-badge-workflow-text);
 }
 
 .role-badge.CI {
   background: var(--color-blue-gray-100);
+  color: var(--color-text-on-light-bg);
 }
 
 .role-badge.HOSTED_BAZEL {
@@ -1890,7 +1891,7 @@ code .comment {
 .sticky-loading-overlay .loading {
   height: 100vh;
   position: absolute;
-  background: var(--color-white-translucent);
+  background: var(--color-loading-overlay-bg);
 }
 
 .loading:before {

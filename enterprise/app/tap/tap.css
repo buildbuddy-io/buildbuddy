@@ -381,7 +381,7 @@ SKIPPED = 13;
 }
 
 .tap .tap-block.status-3 {
-  background-color: var(--color-bg-inverted);
+  background-color: var(--color-tap-inactive-bg);
 }
 
 .tap .tap-block.status-4 {
@@ -405,7 +405,7 @@ SKIPPED = 13;
 }
 
 .tap .tap-block.status-9 {
-  background-color: var(--color-bg-inverted);
+  background-color: var(--color-tap-inactive-bg);
 }
 
 .tap .tap-block.status-10 {

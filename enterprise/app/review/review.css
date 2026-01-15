@@ -43,11 +43,11 @@
 }
 
 .reviews .pr-rows .pr:nth-child(odd) > div {
-  background-color: #f0f0f0;
+  background-color: var(--color-review-row-alt-bg);
 }
 
 .reviews .pr-header {
-  color: #666;
+  color: var(--color-review-muted-text);
   display: contents;
 }
 
@@ -96,7 +96,7 @@
 
 .reviews .empty-state {
   margin-top: 8px;
-  color: #666;
+  color: var(--color-review-muted-text);
 }
 
 .pr-view {
@@ -115,7 +115,7 @@
   padding: 32px 32px 16px;
   line-height: 36px;
   font-size: 32px;
-  background-color: #f8f8f8;
+  background-color: var(--color-review-header-bg);
   grid-column: span 2;
   display: flex;
   justify-content: space-between;
@@ -149,7 +149,7 @@
   vertical-align: baseline;
   display: inline-block;
   padding-right: 8px;
-  color: rgba(0, 0, 0, 0.8);
+  color: var(--color-review-details-text);
 }
 
 .pr-view .review-cell {
@@ -175,7 +175,7 @@
   font-size: 12px;
   line-height: 16px;
   border-radius: 4px;
-  background-color: #fff;
+  background-color: var(--color-bg-primary);
   font-family: "Source Code Pro", monospace;
   box-sizing: border-box;
   min-height: 150px;
@@ -185,7 +185,7 @@
 
 .pr-view.submitted .review-cell,
 .pr-view.submitted .single-file-header {
-  background-color: #fafafa;
+  background-color: var(--color-bg-secondary);
 }
 
 .pr-view.approved .review-cell,
@@ -201,7 +201,7 @@
 }
 
 .pr-view .attr-label {
-  color: #424242;
+  color: var(--color-review-label-text);
 }
 
 .pr-view .file-section table {
@@ -234,7 +234,7 @@
 }
 
 .pr-view .file-section .file-list-row:hover {
-  background-color: #e0e0e0;
+  background-color: var(--color-review-row-hover-bg);
 }
 
 .pr-view .diff-header {
@@ -251,7 +251,7 @@
   line-height: 16px;
   min-height: 16px;
   font-family: "Source Code Pro", monospace;
-  background-color: #f5f5f5;
+  background-color: var(--color-review-code-bg);
 }
 
 .pr-view .reply-bar {
@@ -272,12 +272,12 @@
   width: 52px;
   display: inline-block;
   margin: 0;
-  background-color: #f5f5f5;
+  background-color: var(--color-review-code-bg);
   text-align: end;
   box-sizing: border-box;
   padding-right: 8px;
   overflow: hidden;
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--color-review-line-number-text);
 }
 
 .pr-view .thread-line-number-space {
@@ -287,7 +287,7 @@
 .pr-view .source-line {
   width: calc(50% - 52px);
   display: inline-block;
-  background-color: #fff;
+  background-color: var(--color-bg-primary);
   margin: 0;
   vertical-align: top;
   min-height: 16px;
@@ -295,11 +295,11 @@
 }
 
 .pr-view .source-line.empty {
-  background-color: #f5f5f5;
+  background-color: var(--color-review-code-bg);
 }
 
 .pr-view .comment-block {
-  background-color: #fff;
+  background-color: var(--color-bg-primary);
 }
 
 .pr-view .threads {
@@ -314,7 +314,7 @@
 }
 
 .pr-view .thread-block {
-  background-color: #f5f5f5;
+  background-color: var(--color-review-code-bg);
   box-sizing: border-box;
   display: table-row;
 }
@@ -322,7 +322,7 @@
 .pr-view .thread-empty-side {
   width: calc(50% - 52px);
   display: inline-block;
-  background-color: #f5f5f5;
+  background-color: var(--color-review-code-bg);
   display: table-cell;
 }
 
@@ -492,7 +492,7 @@
 
 .pr-view .file-list-header {
   font-weight: 600;
-  color: #424242;
+  color: var(--color-review-label-text);
 }
 
 .pr-view .reviewer.strong {
