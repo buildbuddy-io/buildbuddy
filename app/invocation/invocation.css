@@ -40,7 +40,7 @@
 .input-tree-node .input-tree-node-size {
   background-color: var(--color-bg-hover);
   border-radius: 4px;
-  color: var(--color-black);
+  color: var(--color-tree-node-size-text);
   margin-left: 8px;
   padding: 0 8px;
   white-space: nowrap;
@@ -548,7 +548,7 @@
 
 .cache-requests-card-hovercard {
   margin: 12px;
-  background: var(--color-overlay-light-full);
+  background: var(--color-cache-hovercard-bg);
   border-radius: 8px;
   padding: 12px;
   box-shadow: 0 1px 3px var(--color-shadow-strong);
@@ -559,7 +559,8 @@
 
 .cache-result-hovercard {
   margin: 12px;
-  background: var(--color-overlay-light-strong);
+  background: var(--color-cache-hovercard-bg);
+  color: var(--color-cache-hovercard-text);
   border-radius: 8px;
   padding: 12px;
   box-shadow: 0 1px 3px var(--color-shadow-light);
