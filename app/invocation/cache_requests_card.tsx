@@ -862,7 +862,7 @@ ${commandWithRemoteRunnerFlags(compareModel.explicitCommandLine() + " --experime
     }
 
     const command = `
-curl -fsSL https://install.buildbuddy.io | bash
+curl -fsSL https://raw.githubusercontent.com/buildbuddy-io/buildbuddy/master/cli/install.sh | bash
 ${generateExecLogCmd1}
 ${generateExecLogCmd2}
 output=$(bb explain --old ${execLogOrInvocationId1} --new ${execLogOrInvocationId2})
