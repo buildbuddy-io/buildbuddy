@@ -449,7 +449,7 @@ func TestWriteEventLog(t *testing.T) {
 		Metadata: &elpb.LogMetadata{
 			InvocationId: "test-invocation",
 		},
-		Buffer: []byte("Line 1\n"),
+		Data: []byte("Line 1\n"),
 	})
 	require.NoError(t, err)
 
@@ -458,7 +458,7 @@ func TestWriteEventLog(t *testing.T) {
 		Metadata: &elpb.LogMetadata{
 			InvocationId: "test-invocation",
 		},
-		Buffer: []byte("Line 2\n"),
+		Data: []byte("Line 2\n"),
 	})
 	require.NoError(t, err)
 

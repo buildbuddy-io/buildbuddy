@@ -63,7 +63,7 @@ func GetEventLogPubSubChannel(invocationID string) string {
 	return fmt.Sprintf("eventlog/%s/updates", invocationID)
 }
 
-func GetRunLogPathFromInvocationIdAndAttempt(invocationId string) string {
+func GetRunLogPathFromInvocationId(invocationId string) string {
 	return invocationId + "/chunks/log/runlog"
 }
 

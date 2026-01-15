@@ -1543,10 +1543,8 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 		req, err := stream.Recv()
 		if err == io.EOF {
 			return stream.SendAndClose(&elpb.WriteEventLogResponse{})
-
 		} else if err != nil {
 			return err
-
 		}
 
 		if eventLogWriter == nil {
@@ -1562,7 +1560,7 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 				}
 
 				pubsubChannel = eventlog.GetRunLogPubSubChannel(req.GetMetadata().GetInvocationId())
-				eventLogPath = eventlog.GetRunLogPathFromInvocationIdAndAttempt(req.GetMetadata().GetInvocationId())
+				eventLogPath = eventlog.GetRunLogPathFromInvocationId(req.GetMetadata().GetInvocationId())
 			}
 			eventLogWriter, err = eventlog.NewEventLogWriter(ctx, s.env.GetBlobstore(), s.env.GetKeyValStore(), s.env.GetPubSub(), pubsubChannel, eventLogPath, eventlog.DefaultTerminalLineLength, eventlog.DefaultTerminalLinesBuffered)
 			if err != nil {
@@ -1571,7 +1569,7 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 			defer eventLogWriter.Close(ctx)
 		}
 
-		_, err = eventLogWriter.Write(ctx, req.GetBuffer())
+		_, err = eventLogWriter.Write(ctx, req.GetData())
 		if err != nil {
 			return err
 		}
