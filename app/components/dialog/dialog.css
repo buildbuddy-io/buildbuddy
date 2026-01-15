@@ -11,12 +11,11 @@
 
   max-width: 80vw;
   width: 640px;
-  background: var(--color-bg-card);
-  color: var(--color-text-primary);
+  background: white;
   border-radius: 8px;
   box-shadow:
-    0 1px 3px var(--color-popup-shadow),
-    0 3px 5px var(--color-popup-shadow-alt);
+    0 1px 3px rgba(0, 0, 0, 0.27),
+    0 3px 5px rgba(0, 0, 0, 0.12);
 
   padding: 16px 0;
   --dialog-side-padding: 24px;

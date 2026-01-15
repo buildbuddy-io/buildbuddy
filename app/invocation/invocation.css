@@ -1006,7 +1006,7 @@
 }
 
 .invocation-execution-row .status {
-  color: var(--color-hovercard-text);
+  color: var(--color-black);
   display: flex;
   gap: 8px;
   margin-bottom: 2px;
