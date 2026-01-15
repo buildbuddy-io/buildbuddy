@@ -128,7 +128,7 @@
 }
 
 .code-menu-back {
-  color: var(--color-black);
+  color: var(--color-code-text);
   margin-right: 8px;
 }
 
@@ -529,7 +529,7 @@
 .code-editor .code-viewer-tab.selected {
   border-bottom: 2px solid transparent;
   background-color: var(--color-bg-primary);
-  color: var(--color-black);
+  color: var(--color-code-text);
 }
 
 .code-editor .code-viewer-tab svg {
@@ -538,7 +538,7 @@
   color: transparent;
 }
 .code-editor .code-viewer-tab:hover {
-  color: var(--color-black);
+  color: var(--color-code-text);
 }
 
 .code-editor .code-viewer-tab:hover svg {

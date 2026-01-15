@@ -302,7 +302,7 @@ export default class CodeComponent extends React.Component<Props, State> {
 
     this.editor = monaco.editor.create(this.codeViewer.current!, {
       value: "",
-      theme: "vs",
+      theme: document.documentElement.classList.contains("dark") ? "vs-dark" : "vs",
       readOnly: this.isSingleFile() || Boolean(this.getQuery()),
     });
 

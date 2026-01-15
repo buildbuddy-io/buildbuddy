@@ -383,8 +383,8 @@ svg.icon.yellow {
 }
 
 .tab.selected {
-  background: var(--color-bg-inverted);
-  color: var(--color-text-inverted);
+  background: var(--color-tab-selected-bg);
+  color: var(--color-tab-selected-text);
 }
 
 /** Runs **/
@@ -528,8 +528,8 @@ a.card:hover {
 }
 
 .card.dark {
-  background-color: var(--color-bg-inverted);
-  color: var(--color-text-inverted);
+  background-color: var(--color-terminal-bg);
+  color: var(--color-terminal-text);
 }
 
 .card.light-terminal {

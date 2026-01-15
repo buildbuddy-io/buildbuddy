@@ -925,14 +925,14 @@
   margin-top: 16px;
   padding: 16px;
   border-radius: 8px;
-  background: var(--color-light-blue-50);
+  background: var(--color-banner-info-bg);
 }
 
 .invocation-share-dialog .error-message {
   margin-top: 16px;
   padding: 16px;
   border-radius: 8px;
-  background: var(--color-red-50);
+  background: var(--color-status-error-bg);
 }
 
 .invocation-share-dialog-footer .loading-message {
