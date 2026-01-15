@@ -285,8 +285,8 @@ func CreateStoresWithStats(usages []*rfpb.StoreUsage) *StoresWithStats {
 
 // Returns stores with stats that are alive
 func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 
 	// Get current member status from serf
 	memberStatus := sm.getMemberStatus()
@@ -304,8 +304,8 @@ func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
 
 // Returns stores with stats that are not dead (include both alive and suspect).
 func (sm *StoreMap) GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 
 	// Get current member status from serf
 	memberStatus := sm.getMemberStatus()
