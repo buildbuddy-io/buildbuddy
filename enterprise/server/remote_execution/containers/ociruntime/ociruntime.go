@@ -339,7 +339,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if err != nil {
 		return nil, err
 	}
-	if env.GetFileCache() == nil {
+	if *enableImageEviction && env.GetFileCache() == nil {
 		return nil, status.FailedPreconditionError("FileCache is required for OCI image storage")
 	}
 	imageStore, err := NewImageStore(resolver, imageCacheRoot, env.GetFileCache())
@@ -1566,7 +1566,7 @@ func NewImageStore(resolver *oci.Resolver, layersDir string, fileCache interface
 		// Populate the filecache by scanning existing layer directories.
 		// This ensures that existing layers are tracked for LRU eviction.
 		if err := s.populateFileCache(); err != nil {
-			log.Warningf("Failed to populate filecache with existing image layers: %s", err)
+			return nil, status.InternalErrorf("populate filecache with existing image layers: %s", err)
 		}
 	}
 
@@ -1597,8 +1597,7 @@ func (s *ImageStore) populateFileCache() error {
 		algorithmDir := filepath.Join(s.layersDir, algorithmEntry.Name())
 		layerEntries, err := os.ReadDir(algorithmDir)
 		if err != nil {
-			log.Warningf("Failed to read layer algorithm directory %s: %s", algorithmDir, err)
-			continue
+			return fmt.Errorf("read layer algorithm directory %s: %w", algorithmDir, err)
 		}
 
 		for _, layerEntry := range layerEntries {
