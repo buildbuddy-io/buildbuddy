@@ -66,8 +66,7 @@ message WriteEventLogRequest {
 
   LogMetadata metadata = 3;
 
-  // The data to write.
-  bytes buffer = 4;
+  bytes data = 4;
 }
 
 message WriteEventLogResponse {
