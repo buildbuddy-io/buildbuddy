@@ -100,6 +100,10 @@ type fileCache struct {
 	createParentDirLatency   prometheus.Observer
 	addFileLatency           prometheus.Observer
 	requestCounter           map[bool]prometheus.Counter
+
+	// testBeforeProcessTrash is an optional hook for testing, called before
+	// processing each trash batch. Not used in production.
+	testBeforeProcessTrash func()
 }
 
 // entry is used to hold a value in the LRU.
@@ -247,6 +251,14 @@ func (c *fileCache) Close() error {
 	return nil
 }
 
+// SetTestBeforeProcessTrash sets a hook that is called before processing each
+// trash batch. This is intended for testing only.
+func (c *fileCache) SetTestBeforeProcessTrash(hook func()) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.testBeforeProcessTrash = hook
+}
+
 func (c *fileCache) TempDir() string {
 	return filepath.Join(c.rootDir, tmpDir)
 }
@@ -263,7 +275,12 @@ func (c *fileCache) handleTrashNotifications() {
 		c.lock.Lock()
 		trashList := c.trashList
 		c.trashList = nil
+		hook := c.testBeforeProcessTrash
 		c.lock.Unlock()
+
+		if hook != nil {
+			hook()
+		}
 
 		// To get some visibility when trash collection is backing up,
 		// log when the list gets longer than a certain threshold.

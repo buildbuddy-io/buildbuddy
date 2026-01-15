@@ -964,6 +964,50 @@ func TestTrackExternalDirectory_DeferredDeletion_SingleLock(t *testing.T) {
 	require.NoDirExists(t, extDir1, "directory should be moved to trash after unlocking")
 }
 
+func TestTrackExternalDirectory_MoveToTrashFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based permission test is not reliable on Windows")
+	}
+
+	// This test exercises the error path where moveToTrash (os.Rename into the
+	// filecache temp dir) fails due to permissions. It forces the failure by
+	// making TempDir unwritable, then unlocks a directory awaiting deletion.
+	// Today the failure leaves the directory in place and stuck in
+	// awaitingDeletion; a fix would either retry later or remove the entry and
+	// surface/track the error so cleanup can proceed.
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 3000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	// Create and track a directory, keeping it locked.
+	extDir1 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir1, map[string]string{"file.txt": "contents1"})
+	unlock1, err := fc.TrackExternalDirectory(ctx, extDir1, 2000)
+	require.NoError(t, err)
+
+	// Track a second directory that causes eviction of the first.
+	extDir2 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir2, map[string]string{"file.txt": "contents2"})
+	unlock2, err := fc.TrackExternalDirectory(ctx, extDir2, 2000)
+	require.NoError(t, err)
+	defer unlock2()
+
+	// dir1 is locked, so deletion is deferred.
+	require.DirExists(t, extDir1, "locked directory should not be deleted during eviction")
+
+	// Make TempDir unwritable to force moveToTrash (rename) failure.
+	tempDir := fc.TempDir()
+	require.NoError(t, os.Chmod(tempDir, 0500))
+	t.Cleanup(func() { _ = os.Chmod(tempDir, 0700) })
+
+	// Unlock triggers moveToTrash, which should fail and leave the dir in place.
+	unlock1()
+	require.DirExists(t, extDir1, "directory should remain if moveToTrash fails")
+}
+
 func TestTrackExternalDirectory_DeferredDeletion_MultipleLocks(t *testing.T) {
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
@@ -1261,4 +1305,155 @@ func TestFilecache_ConcurrentDirectoryEvictionAndLocking(t *testing.T) {
 
 	err = eg.Wait()
 	require.NoError(t, err)
+}
+
+func TestTrackExternalDirectory_DoubleUnlockCorruptsRefCount(t *testing.T) {
+	// WHAT THIS TESTS:
+	// This test verifies that the unlock function returned by TrackExternalDirectory
+	// is idempotent - calling it multiple times should have no additional effect
+	// after the first call.
+	//
+	// WHY IT CURRENTLY FAILS:
+	// The unlock function (directoryHandle.unlock) decrements refCount unconditionally
+	// on every call. If called twice, refCount drops to 0 (or negative) even though
+	// another caller still holds a valid lock. This allows the directory to be
+	// evicted prematurely, violating the guarantee that locked directories won't
+	// be deleted.
+	//
+	// HOW TO FIX:
+	// Make the unlock function idempotent by tracking whether it has already been
+	// called. Options:
+	//   1. Use sync.Once in the returned closure
+	//   2. Add a boolean "unlocked" field to directoryHandle and check it
+	//   3. Return a wrapper struct with its own unlocked state instead of a bare func
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	// Small cache that can hold ~1.5 directories of size 2000.
+	fc, err := filecache.NewFileCache(fcDir, 3000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	extDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir, map[string]string{"file.txt": "contents"})
+
+	// Get two locks on the same directory.
+	unlock1, err := fc.TrackExternalDirectory(ctx, extDir, 2000)
+	require.NoError(t, err)
+	unlock2, err := fc.TrackExternalDirectory(ctx, extDir, 2000)
+	require.NoError(t, err)
+	// refCount is now 2
+
+	// Bug: call unlock1 twice - this should be idempotent but isn't.
+	unlock1() // refCount = 1
+	unlock1() // refCount = 0 (BUG: should still be 1!)
+
+	// Track another directory that causes eviction of the first.
+	extDir2 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir2, map[string]string{"file.txt": "contents2"})
+	unlock3, err := fc.TrackExternalDirectory(ctx, extDir2, 2000)
+	require.NoError(t, err)
+	defer unlock3()
+
+	// BUG: extDir may be deleted even though unlock2 was never called.
+	// The directory should still exist because we still hold unlock2.
+	require.DirExists(t, extDir, "directory should still exist - unlock2 was never called")
+
+	unlock2() // proper cleanup
+}
+
+func TestFilecache_CloseDoesNotDrainTrash(t *testing.T) {
+	// WHAT THIS TESTS:
+	// This test verifies that Close() properly drains any remaining items from
+	// the trash list before returning. The trash worker runs in a background
+	// goroutine that processes directories queued for deletion.
+	//
+	// WHY IT CURRENTLY FAILS:
+	// The handleTrashNotifications goroutine uses a select with two cases:
+	//   case <-c.closed: return
+	//   case <-c.trashCh: // process trash
+	// When Close() is called, it closes the `closed` channel. If the worker is
+	// currently processing a batch and new items are added to trashList, then
+	// when the worker loops back to the select, both channels may be ready
+	// (closed is always ready once closed, trashCh has a pending notification).
+	// Go's select picks randomly, so ~50% of the time it exits without processing
+	// the new items. This test uses a hook to deterministically trigger this race.
+	//
+	// HOW TO FIX:
+	// Drain remaining trash before exiting in handleTrashNotifications. Options:
+	//   1. After seeing <-c.closed, do one final drain of trashList before returning
+	//   2. Use a priority select pattern (check trashCh in a non-blocking select first)
+	//   3. Process any remaining items in Close() itself after wg.Wait() returns
+	//
+	// Strategy: Use a test hook to block the trash worker at a precise moment,
+	// then add more items to trash and call Close(). This deterministically
+	// triggers the race condition.
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	// Cache can hold 2 dirs of size 1000, but not 3.
+	fc, err := filecache.NewFileCache(fcDir, 2500, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+
+	// Channel to control when the worker proceeds.
+	workerCanProceed := make(chan struct{})
+	workerStartedProcessing := make(chan struct{}, 1)
+
+	// Set up hook: signal when worker starts processing, then block until released.
+	fc.SetTestBeforeProcessTrash(func() {
+		select {
+		case workerStartedProcessing <- struct{}{}:
+		default:
+		}
+		<-workerCanProceed
+	})
+
+	// Create two directories.
+	dir1 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, dir1, map[string]string{"file.txt": "1"})
+
+	dir2 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, dir2, map[string]string{"file.txt": "2"})
+
+	// Track both directories, then unlock them so they're eligible for eviction.
+	unlock1, err := fc.TrackExternalDirectory(ctx, dir1, 1000)
+	require.NoError(t, err)
+	unlock1()
+
+	unlock2, err := fc.TrackExternalDirectory(ctx, dir2, 1000)
+	require.NoError(t, err)
+	unlock2()
+
+	// Evict dir1 by adding a new directory. Worker will wake up and block on hook.
+	evictDir1 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, evictDir1, map[string]string{"file.txt": "e1"})
+	unlockE1, err := fc.TrackExternalDirectory(ctx, evictDir1, 1000)
+	require.NoError(t, err)
+
+	// Wait for worker to start processing (it will block on the hook).
+	<-workerStartedProcessing
+
+	// Now evict dir2 - this adds to trashList while worker is blocked.
+	evictDir2 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, evictDir2, map[string]string{"file.txt": "e2"})
+	unlockE2, err := fc.TrackExternalDirectory(ctx, evictDir2, 1000)
+	require.NoError(t, err)
+
+	// Call Close() while worker is still blocked. This closes the `closed` channel.
+	// When we release the worker, it will loop back to select and see `closed`.
+	tempDir := fc.TempDir()
+	go func() {
+		// Give Close() a moment to close the channel before we unblock.
+		time.Sleep(10 * time.Millisecond)
+		close(workerCanProceed)
+	}()
+	fc.Close()
+
+	unlockE1()
+	unlockE2()
+
+	// Check that trash was cleaned up on Close.
+	matches, err := filepath.Glob(filepath.Join(tempDir, ".trash-*"))
+	require.NoError(t, err)
+	require.Empty(t, matches, "trash should be drained on Close, but found: %v", matches)
 }
