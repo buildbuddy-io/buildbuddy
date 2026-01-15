@@ -345,40 +345,42 @@ func TestResolve(t *testing.T) {
 		},
 	} {
 		for _, useCachePercent := range []int{0, 100} {
-			t.Run(tc.name+fmt.Sprintf("/use_cache_percent_%d", useCachePercent), func(t *testing.T) {
-				te := testenv.GetTestEnv(t)
-				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
-				registry := testregistry.Run(t, tc.opts)
-				_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles, nil)
+			for _, useOCIFetcher := range []bool{false, true} {
+				t.Run(tc.name+fmt.Sprintf("/use_cache_percent_%d/use_oci_fetcher_%v", useCachePercent, useOCIFetcher), func(t *testing.T) {
+					te := testenv.GetTestEnv(t)
+					flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+					flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
+					registry := testregistry.Run(t, tc.opts)
+					_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles, nil)
 
-				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-					Add: pushedImage,
-					Descriptor: v1.Descriptor{
-						Platform: &tc.imagePlatform,
-					},
-				})
-				registry.PushIndex(t, index, tc.imageName+"_index", nil)
+					index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
+						Add: pushedImage,
+						Descriptor: v1.Descriptor{
+							Platform: &tc.imagePlatform,
+						},
+					})
+					registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
-				for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
-					pulledImage, err := newResolver(t, te).Resolve(
-						context.Background(),
-						registry.ImageAddress(nameToResolve),
-						tc.args.platform,
-						tc.args.credentials,
-						false /*=useOCIFetcher*/,
-					)
-					if tc.checkError != nil {
-						require.True(t, tc.checkError(err))
-						continue
+					for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
+						pulledImage, err := newResolver(t, te).Resolve(
+							context.Background(),
+							registry.ImageAddress(nameToResolve),
+							tc.args.platform,
+							tc.args.credentials,
+							useOCIFetcher,
+						)
+						if tc.checkError != nil {
+							require.True(t, tc.checkError(err))
+							continue
+						}
+						require.NoError(t, err)
+						layers, err := pulledImage.Layers()
+						require.NoError(t, err)
+						require.Equal(t, 1, len(layers))
+						require.Empty(t, cmp.Diff(tc.imageFiles, layerFiles(t, layers[0])))
 					}
-					require.NoError(t, err)
-					layers, err := pulledImage.Layers()
-					require.NoError(t, err)
-					require.Equal(t, 1, len(layers))
-					require.Empty(t, cmp.Diff(tc.imageFiles, layerFiles(t, layers[0])))
-				}
-			})
+				})
+			}
 		}
 	}
 }
