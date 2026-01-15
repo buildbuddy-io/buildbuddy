@@ -1296,6 +1296,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		resultsURL = assembleURL(req.Host, req.Protocol, "")
 		resultsURL += "/invocation/"
 	}
+	// Use "build" rather than "common" because non-build commands (e.g. mod/query) don't have good BES support.
 	configOptions = append(configOptions, makeConfigOption("build", "bes_results_url", replaceSubdomain(resultsURL)))
 
 	grpcPort := "1985"
@@ -1311,6 +1312,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		return nil, err
 	}
 
+	// Use "build" rather than "common" because non-build commands (e.g. mod/query) don't have good BES support.
 	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", replaceSubdomain(eventsAPIURL)))
 
 	if s.env.GetCache() != nil {
@@ -1318,7 +1320,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		if cacheAPIURL == "" {
 			cacheAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", replaceSubdomain(cacheAPIURL)))
+		configOptions = append(configOptions, makeConfigOption("common", "remote_cache", replaceSubdomain(cacheAPIURL)))
 	}
 
 	if remote_execution_config.RemoteExecutionEnabled() {
@@ -1326,7 +1328,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		if remoteExecutionAPIURL == "" {
 			remoteExecutionAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		configOptions = append(configOptions, makeConfigOption("build", "remote_executor", replaceSubdomain(remoteExecutionAPIURL)))
+		configOptions = append(configOptions, makeConfigOption("common", "remote_executor", replaceSubdomain(remoteExecutionAPIURL)))
 	}
 
 	credentials := make([]*bzpb.Credentials, len(groupAPIKeys))
