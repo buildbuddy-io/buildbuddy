@@ -54,6 +54,8 @@ func LimitStdOutErrWriter(w io.Writer) io.Writer {
 }
 
 // limitWriter limits the number of bytes written to it.
+// It returns a ResourceExhausted error if a write occurs that would exceed the limit.
+// Before returning a ResourceExhausted error, it writes as many bytes as possible before the limit would be reached.
 type limitWriter struct {
 	w     io.Writer
 	limit uint64
@@ -65,33 +67,26 @@ func (lw *limitWriter) Write(p []byte) (int, error) {
 	if lw.limit == 0 {
 		return lw.w.Write(p)
 	}
-	if lw.n >= lw.limit {
-		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", lw.n+uint64(len(p)), lw.limit)
-	}
 	totalRequested := lw.n + uint64(len(p))
-	if totalRequested <= lw.limit {
-		n, err := lw.w.Write(p)
-		lw.n += uint64(n)
-		if err != nil {
-			return n, err
-		}
-		return n, nil
-	}
-	remaining := lw.limit - lw.n
-	if remaining == 0 {
+	if lw.n >= lw.limit {
 		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
 	}
-	toWrite := p[:int(remaining)]
-	n, err := lw.w.Write(toWrite)
+	remaining := lw.limit - lw.n
+	writeSize := min(uint64(len(p)), remaining)
+
+	n, err := lw.w.Write(p[:writeSize])
 	lw.n += uint64(n)
 	if err != nil {
 		return n, err
 	}
-	if uint64(n) < remaining {
-		// Underlying writer wrote fewer bytes; limit not yet hit.
-		return n, nil
+	if writeSize < uint64(len(p)) {
+		if uint64(n) < writeSize {
+			// Underlying writer wrote fewer bytes; limit not yet hit.
+			return n, nil
+		}
+		return n, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
 	}
-	return n, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
+	return n, nil
 }
 
 func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
