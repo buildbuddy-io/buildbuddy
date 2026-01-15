@@ -86,7 +86,7 @@ var (
 	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
 	minPIDsLimit            = flag.Int64("executor.oci.min_pids_limit", 0, "Min value to use for pids.max (PID limit). The scheduler may set a higher value for larger tasks. This can be used for rare cases where the scheduler does not provide a high enough limit.")
 	cgroupMemoryCushion     = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
-	enableImageEviction = flag.Bool("executor.oci.image_eviction_enabled", false, "If true, track OCI image layers in the filecache LRU for eviction. When enabled, unused image layers can be evicted to make room for other cached files.")
+	enableImageEviction     = flag.Bool("executor.oci.image_eviction_enabled", false, "If true, track OCI image layers in the filecache LRU for eviction. When enabled, unused image layers can be evicted to make room for other cached files.")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
@@ -339,7 +339,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if err != nil {
 		return nil, err
 	}
-	if env.GetFileCache() == nil {
+	if *enableImageEviction && env.GetFileCache() == nil {
 		return nil, status.FailedPreconditionError("FileCache is required for OCI image storage")
 	}
 	imageStore, err := NewImageStore(resolver, imageCacheRoot, env.GetFileCache())
@@ -1566,7 +1566,7 @@ func NewImageStore(resolver *oci.Resolver, layersDir string, fileCache interface
 		// Populate the filecache by scanning existing layer directories.
 		// This ensures that existing layers are tracked for LRU eviction.
 		if err := s.populateFileCache(); err != nil {
-			log.Warningf("Failed to populate filecache with existing image layers: %s", err)
+			return nil, status.InternalErrorf("populate filecache with existing image layers: %s", err)
 		}
 	}
 
@@ -1597,8 +1597,7 @@ func (s *ImageStore) populateFileCache() error {
 		algorithmDir := filepath.Join(s.layersDir, algorithmEntry.Name())
 		layerEntries, err := os.ReadDir(algorithmDir)
 		if err != nil {
-			log.Warningf("Failed to read layer algorithm directory %s: %s", algorithmDir, err)
-			continue
+			return fmt.Errorf("read layer algorithm directory %s: %w", algorithmDir, err)
 		}
 
 		for _, layerEntry := range layerEntries {

@@ -1043,7 +1043,7 @@ func TestNetworking(t *testing.T) {
 			ctx := context.Background()
 			env := testenv.GetTestEnv(t)
 			installLeaserInEnv(t, env)
-	installFileCacheInEnv(t, env)
+			installFileCacheInEnv(t, env)
 
 			runtimeRoot := testfs.MakeTempDir(t)
 			flags.Set(t, "executor.network_stats_enabled", true)
@@ -1295,7 +1295,7 @@ func TestHighLayerCount(t *testing.T) {
 			ctx := context.Background()
 			env := testenv.GetTestEnv(t)
 			installLeaserInEnv(t, env)
-	installFileCacheInEnv(t, env)
+			installFileCacheInEnv(t, env)
 			buildRoot := testfs.MakeTempDir(t)
 			cacheRoot := testfs.MakeTempDir(t)
 			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
