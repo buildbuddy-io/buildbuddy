@@ -30,7 +30,7 @@ const (
 	storeStatusUnknown storeStatus = iota
 	// The store is continuously unavailable > deadStoreTimeout
 	storeStatusDead
-	// The store is consistently alive for at lease suspectStoreDuration.
+	// The store is consistently alive for at least suspectStoreDuration.
 	storeStatusAvailable
 	// The store is currently alive but recently recovered from being unavailable.
 	// We don't fully trust it yet. After suspectStoreDuration passes without the
@@ -48,6 +48,7 @@ type IStoreMap interface {
 type StoreDetail struct {
 	usage *rfpb.StoreUsage
 
+	// The node host ID of the store
 	nhid string
 
 	// lastBecameUnavailableAt is the time when the store mostly recently
@@ -75,7 +76,7 @@ type StoreMap struct {
 	log       log.Logger
 }
 
-func create(gossipManager interfaces.GossipService, clock clockwork.Clock, nhLogger log.Logger) *StoreMap {
+func New(gossipManager interfaces.GossipService, clock clockwork.Clock, nhLogger log.Logger) *StoreMap {
 	sm := &StoreMap{
 		mu:            &sync.RWMutex{},
 		startTime:     time.Now(),
@@ -86,10 +87,6 @@ func create(gossipManager interfaces.GossipService, clock clockwork.Clock, nhLog
 	}
 	gossipManager.AddListener(sm)
 	return sm
-}
-
-func New(gossipManager interfaces.GossipService, clock clockwork.Clock, nhLogger log.Logger) IStoreMap {
-	return create(gossipManager, clock, nhLogger)
 }
 
 type ReplicasByStatus struct {
@@ -124,18 +121,17 @@ func (sm *StoreMap) getMemberStatus() map[string]bool {
 	for _, m := range members {
 		usage := sm.getStoreUsage(m)
 		if usage == nil {
-			log.Infof("skip because of nil usage")
+			sm.log.Infof("skip member %q because of nil usage", m.Name)
 			continue
 		}
 		nhid := usage.GetNode().GetNhid()
 		if nhid != "" {
 			result[nhid] = (m.Status == serf.StatusAlive)
 		} else {
-			log.Infof("skip because of empty nhid")
+			sm.log.Infof("skip member %q because of empty nhid", m.Name)
 		}
 	}
 
-	log.Infof("result:%+v", result)
 	return result
 }
 
@@ -149,7 +145,7 @@ func (sm *StoreMap) DivideByStatus(repls []*rfpb.ReplicaDescriptor) *ReplicasByS
 	res := &ReplicasByStatus{}
 	for _, repl := range repls {
 		detail := sm.getDetailLocked(repl.GetNhid())
-		status := detail.refreshAndComputeStatusLocked(sm.clock, memberStatus, now)
+		status := detail.refreshAndComputeStatusLocked(memberStatus, now)
 
 		switch status {
 		case storeStatusAvailable:
@@ -180,7 +176,7 @@ func (sm *StoreMap) getDetails(nhid string) *StoreDetail {
 	return sm.getDetailLocked(nhid)
 }
 
-func (sd *StoreDetail) refreshAndComputeStatusLocked(clock clockwork.Clock, liveMemberStatus map[string]bool, now time.Time) storeStatus {
+func (sd *StoreDetail) refreshAndComputeStatusLocked(liveMemberStatus map[string]bool, now time.Time) storeStatus {
 	currentlyAlive := liveMemberStatus[sd.nhid]
 	sd.updateTransitionsLocked(currentlyAlive, now)
 
@@ -212,8 +208,10 @@ func (sd *StoreDetail) updateTransitionsLocked(currentlyAlive bool, now time.Tim
 	} else if !currentlyAlive && wasAlive {
 		// available -> unavailable
 		sd.lastBecameUnavailableAt = now
+		sd.lastBecameAvailableAt = time.Time{}
 	} else if !currentlyAlive && !wasAlive && sd.lastBecameUnavailableAt.IsZero() {
 		sd.lastBecameUnavailableAt = now
+		sd.lastBecameAvailableAt = time.Time{}
 	}
 
 	sd.wasAlive = currentlyAlive
@@ -296,7 +294,7 @@ func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
 
 	alive := make([]*rfpb.StoreUsage, 0, len(sm.storeDetails))
 	for _, sd := range sm.storeDetails {
-		status := sd.refreshAndComputeStatusLocked(sm.clock, memberStatus, now)
+		status := sd.refreshAndComputeStatusLocked(memberStatus, now)
 		if status == storeStatusAvailable {
 			alive = append(alive, sd.usage)
 		}
@@ -319,7 +317,7 @@ func (sm *StoreMap) GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats {
 		if !ok {
 			continue
 		}
-		status := sd.refreshAndComputeStatusLocked(sm.clock, memberStatus, now)
+		status := sd.refreshAndComputeStatusLocked(memberStatus, now)
 
 		if status == storeStatusAvailable || status == storeStatusSuspect {
 			alive = append(alive, sd.usage)
@@ -336,7 +334,7 @@ func (sm *StoreMap) AllStoresAvailableAndReady() bool {
 	now := sm.clock.Now()
 
 	for _, sd := range sm.storeDetails {
-		status := sd.refreshAndComputeStatusLocked(sm.clock, memberStatus, now)
+		status := sd.refreshAndComputeStatusLocked(memberStatus, now)
 		if status != storeStatusAvailable {
 			return false
 		}
