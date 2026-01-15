@@ -494,6 +494,10 @@ func (fc *fakeFilecache) TempDir() string {
 	panic("unimplemented")
 }
 
+func (fc *fakeFilecache) TrackExternalDirectory(ctx context.Context, path string, sizeBytes int64) (unlock func(), err error) {
+	return func() {}, nil
+}
+
 type fakeBytestreamClient struct {
 	mu        *sync.Mutex
 	data      map[string][]byte
