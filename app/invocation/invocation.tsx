@@ -343,6 +343,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     return Boolean(this.logsModel?.isFetching() && !this.logsModel?.getLogs());
   }
 
+
   isQueued(props = this.props, state = this.state) {
     return !state.model && props.search.get("queued") === "true";
   }

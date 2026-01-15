@@ -400,6 +400,16 @@ proto_library(
 )
 
 proto_library(
+    name = "logstream_proto",
+    srcs = [
+        "logstream.proto",
+    ],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+proto_library(
     name = "workflow_proto",
     srcs = [
         "workflow.proto",
@@ -1320,6 +1330,19 @@ go_proto_library(
     deps = [
         ":context_go_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "logstream_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/logstream",
+    proto = ":logstream_proto",
+    deps = [
+        ":context_go_proto",
     ],
 )
 
@@ -2362,6 +2385,14 @@ ts_proto_library(
     deps = [
         ":context_ts_proto",
         ":vtproto_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "logstream_ts_proto",
+    proto = ":logstream_proto",
+    deps = [
+        ":context_ts_proto",
     ],
 )
 

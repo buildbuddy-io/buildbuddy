@@ -242,6 +242,7 @@ export default class InvocationModel {
     }
   }
 
+
   getUser() {
     let invocationUser = this.invocation.user;
     if (invocationUser) {

@@ -52,6 +52,7 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	lspb "github.com/buildbuddy-io/buildbuddy/proto/logstream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -208,6 +209,8 @@ var (
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 	invocationIDRegex        = regexp.MustCompile(`Streaming build results to:\s+.*?/invocation/([a-f0-9-]+)`)
+	runOutputBeginRegex      = regexp.MustCompile(`<BUILDBUDDY RUN OUTPUT BEGINS FOR ([a-f0-9-]+)>`)
+	runOutputEndRegex        = regexp.MustCompile(`<BUILDBUDDY RUN OUTPUT ENDS>`)
 )
 
 type workspace struct {
@@ -305,7 +308,15 @@ type buildEventReporter struct {
 	cancelBackgroundFlush func()
 
 	// Child invocations detected by scanning the build logs
-	childInvocations []string
+	childInvocations   []string
+	childInvocationsMu sync.Mutex
+
+	runOutputMu            sync.Mutex
+	runOutputLineRemainder string
+	runOutputActiveIID     string
+	logStreamConn          *grpc_client.ClientConnPool
+	logStreamClient        lspb.LogStreamClient
+	logStreamWriter        lspb.LogStream_WriteClient
 
 	mu            sync.Mutex // protects(progressCount)
 	progressCount int32
@@ -336,7 +347,27 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow, childInvocations: []string{}}, nil
+	var logStreamConn *grpc_client.ClientConnPool
+	var logStreamClient lspb.LogStreamClient
+	if besBackend != "" {
+		conn, err := grpc_client.DialSimple(besBackend)
+		if err == nil {
+			logStreamConn = conn
+			logStreamClient = lspb.NewLogStreamClient(conn)
+		}
+	}
+
+	return &buildEventReporter{
+		apiKey:           apiKey,
+		bep:              bep,
+		uploader:         uploader,
+		log:              newInvocationLog(),
+		invocationID:     iid,
+		isWorkflow:       isWorkflow,
+		childInvocations: []string{},
+		logStreamConn:    logStreamConn,
+		logStreamClient:  logStreamClient,
+	}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -451,12 +482,13 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		return err
 	}
 
-	r.log.writeListener = func(s string) {
-		r.emitBuildEventsForBazelCommands(s)
+	r.log.writeListener = func(s string) string {
+		processed := r.emitBuildEventsForBazelCommands(s)
 		// Flush whenever the log buffer fills past a certain threshold.
 		if size := r.log.Len(); size >= progressFlushThresholdBytes {
 			r.FlushProgress() // ignore error; it will surface in `bep.Finish()`
 		}
+		return processed
 	}
 
 	stopFlushingProgress := r.startBackgroundProgressFlush()
@@ -506,6 +538,15 @@ func (r *buildEventReporter) Stop() error {
 		// reported to the Git provider successfully. Terminate with a code indicating
 		// that the executor can retry the action, so that we have another chance.
 		return status.UnavailableErrorf("failed to publish build event: %s", err)
+	}
+
+	if r.logStreamWriter != nil {
+		_, _ = r.logStreamWriter.CloseAndRecv()
+		r.logStreamWriter = nil
+	}
+	if r.logStreamConn != nil {
+		_ = r.logStreamConn.Close()
+		r.logStreamConn = nil
 	}
 
 	return nil
@@ -574,12 +615,84 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 //
 // Event publishing errors will be surfaced in the caller func when calling
 // `buildEventPublisher.Finish()`
-func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) {
+func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) string {
+	// Process line-by-line so we can suppress marker lines and divert the bytes
+	// between markers into the generic LogStream service.
+	r.runOutputMu.Lock()
+	defer r.runOutputMu.Unlock()
+
+	combined := r.runOutputLineRemainder + output
+	lines := strings.SplitAfter(combined, "\n")
+	// If the last element does not end in "\n", keep it as remainder.
+	r.runOutputLineRemainder = ""
+	if len(lines) > 0 && !strings.HasSuffix(lines[len(lines)-1], "\n") {
+		r.runOutputLineRemainder = lines[len(lines)-1]
+		lines = lines[:len(lines)-1]
+	}
+
+	var passthrough strings.Builder
+	for _, line := range lines {
+		// Handle run output markers.
+		if m := runOutputBeginRegex.FindStringSubmatch(line); len(m) == 2 {
+			r.runOutputActiveIID = m[1]
+			// Suppress marker line.
+			continue
+		}
+		if runOutputEndRegex.MatchString(line) {
+			// End run output capture. Suppress marker line.
+			r.runOutputActiveIID = ""
+			continue
+		}
+
+		if r.runOutputActiveIID != "" {
+			r.emitRunOutputProgressLocked(r.runOutputActiveIID, line)
+			// Suppress run output from the main logs so it can be shown separately.
+			continue
+		}
+
+		// Not run output; keep in normal logs and scan for child invocations.
+		r.emitChildInvocationEventsForLine(line)
+		passthrough.WriteString(line)
+	}
+
+	return passthrough.String()
+}
+
+func (r *buildEventReporter) emitRunOutputProgressLocked(invocationID string, chunk string) {
+	if strings.TrimSpace(chunk) == "" {
+		return
+	}
+	if r.logStreamClient == nil {
+		return
+	}
+	if r.logStreamWriter == nil {
+		ctx := context.Background()
+		if r.apiKey != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, r.apiKey)
+		}
+		w, err := r.logStreamClient.Write(ctx)
+		if err != nil {
+			return
+		}
+		r.logStreamWriter = w
+	}
+	key := fmt.Sprintf("invocation/%s/run_output", invocationID)
+	if err := r.logStreamWriter.Send(&lspb.WriteLogRequest{
+		Key:  key,
+		Data: []byte(chunk),
+	}); err != nil {
+		r.logStreamWriter = nil
+	}
+}
+
+func (r *buildEventReporter) emitChildInvocationEventsForLine(output string) {
 	// Check whether a bazel invocation was invoked
 	iidMatches := invocationIDRegex.FindAllStringSubmatch(output, -1)
 	for _, m := range iidMatches {
 		iid := m[1]
+		r.childInvocationsMu.Lock()
 		childStarted := slices.Contains(r.childInvocations, iid)
+		r.childInvocationsMu.Unlock()
 
 		var buildEvent *bespb.BuildEvent
 		if childStarted {
@@ -595,7 +708,9 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) {
 				Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{}},
 			}
 		} else {
+			r.childInvocationsMu.Lock()
 			r.childInvocations = append(r.childInvocations, iid)
+			r.childInvocationsMu.Unlock()
 
 			cic := &bespb.ChildInvocationsConfigured{
 				Invocation: []*bespb.ChildInvocationsConfigured_InvocationMetadata{
@@ -621,6 +736,14 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) {
 			continue
 		}
 	}
+}
+
+func (r *buildEventReporter) ChildInvocations() []string {
+	r.childInvocationsMu.Lock()
+	defer r.childInvocationsMu.Unlock()
+	out := make([]string, len(r.childInvocations))
+	copy(out, r.childInvocations)
+	return out
 }
 
 func main() {
@@ -937,11 +1060,11 @@ func (r *buildEventReporter) Printf(format string, vals ...interface{}) {
 type invocationLog struct {
 	lockingbuffer.LockingBuffer
 	writer        io.Writer
-	writeListener func(s string)
+	writeListener func(s string) string
 }
 
 func newInvocationLog() *invocationLog {
-	invLog := &invocationLog{writeListener: func(s string) {}}
+	invLog := &invocationLog{writeListener: func(s string) string { return s }}
 	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
 	return invLog
 }
@@ -951,8 +1074,8 @@ func (invLog *invocationLog) Write(b []byte) (int, error) {
 
 	redacted := redact.RedactText(output)
 
-	invLog.writeListener(redacted)
-	_, err := invLog.writer.Write([]byte(redacted))
+	processed := invLog.writeListener(redacted)
+	_, err := invLog.writer.Write([]byte(processed))
 
 	// Return the size of the original buffer even if a redacted size was written,
 	// or clients will return a short write error
@@ -1131,6 +1254,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		if err := provisionArtifactsDir(ws, i); err != nil {
 			return err
 		}
+		artifactsDir := artifactsPathForCommand(ws, i)
 
 		// Provision the directory where we write bazel run scripts
 		runScriptDir := filepath.Join(ws.rootDir, runScriptDirName)
@@ -1138,10 +1262,13 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			return err
 		}
 
-		runErr := runBashCommand(ctx, step.Run, nil, action.BazelWorkspaceDir, ar.reporter)
+		stepEnv := map[string]string{
+			"BUILDBUDDY_CAPTURE_BAZEL_RUN_OUTPUT": "1",
+		}
+
+		runErr := runBashCommand(ctx, step.Run, stepEnv, action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
 
-		artifactsDir := artifactsPathForCommand(ws, i)
 		namedSetID := filepath.Base(artifactsDir)
 		ar.reporter.Publish(&bespb.BuildEvent{
 			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_TargetCompleted{
@@ -2101,6 +2228,32 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 // all bazel commands.
 func (ws *workspace) writeBazelWrapperScript() error {
 	wrapperDir := filepath.Join(ws.rootDir, "wrappers")
+
+	// Wrapper used with `bazel run --run_under` to capture runtime stdout/stderr
+	// by printing explicit begin/end markers.
+	runUnderWrapperPath := filepath.Join(ws.rootDir, "bazel-run-under-wrapper.sh")
+	runUnderWrapperContents := `#!/usr/bin/env bash
+set -uo pipefail
+
+invocation_id="${BUILDBUDDY_INVOCATION_ID:-}"
+if [[ -n "${invocation_id}" ]]; then
+  >&2 echo "<BUILDBUDDY RUN OUTPUT BEGINS FOR ${invocation_id}>"
+fi
+
+set +e
+"$@"
+ec=$?
+set -e
+
+if [[ -n "${invocation_id}" ]]; then
+  >&2 echo "<BUILDBUDDY RUN OUTPUT ENDS>"
+fi
+exit "${ec}"
+`
+	if err := os.WriteFile(runUnderWrapperPath, []byte(runUnderWrapperContents), 0755); err != nil {
+		return status.InternalErrorf("Failed to write to %s: %s", runUnderWrapperPath, err)
+	}
+
 	for _, c := range []string{bazelBinaryName, bazeliskBinaryName} {
 		wrapperPath := filepath.Join(wrapperDir, c)
 		_, err := os.Stat(wrapperPath)
@@ -2592,10 +2745,34 @@ func runBazelWrapper() error {
 		backendLog.Errorf("Failed to cache startup options for bazel command %v: %v", originalArgs, err)
 	}
 
+	// If requested, capture `bazel run` target output using --run_under. This
+	// writes stdout/stderr to files specified in env vars, which are later
+	// published to the BES by the ci_runner.
+	if os.Getenv("BUILDBUDDY_CAPTURE_BAZEL_RUN_OUTPUT") == "1" {
+		bazelCmdName, _ := bazel.GetBazelCommandAndIndex(originalArgs)
+		if bazelCmdName == "run" {
+			alreadyHasRunUnder := false
+			for _, a := range originalArgs {
+				if strings.HasPrefix(a, "--run_under") {
+					alreadyHasRunUnder = true
+					break
+				}
+			}
+			if !alreadyHasRunUnder {
+				runUnderPath := filepath.Join(rootPath, "bazel-run-under-wrapper.sh")
+				runUnderFlag := "--run_under=" + runUnderPath
+				bazelCmd = appendBazelSubcommandArgs(bazelCmd, runUnderFlag)
+			}
+		}
+	}
+
 	// Replace the process running the bazel wrapper with the process running bazel,
 	// so there are no remaining traces of the wrapper script.
 	return syscall.Exec(bazelBin, bazelCmd, os.Environ())
 }
+
+// (deprecated) publishBazelRunOutputToInvocation was previously used to attach
+// run output as a bytestream-backed BES event.
 
 // Parse and save the startup options for a bazel command in a file on disk.
 //

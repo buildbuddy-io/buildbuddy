@@ -22,6 +22,7 @@ message GetEventLogChunkRequest {
   // this requirement is still not satisfied, the buffer will instead contain as
   // many lines as are available.
   int32 min_lines = 4;
+
 }
 
 message GetEventLogChunkResponse {

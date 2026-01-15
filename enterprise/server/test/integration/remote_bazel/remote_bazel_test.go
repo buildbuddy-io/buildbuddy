@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
@@ -48,6 +49,7 @@ import (
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	lspb "github.com/buildbuddy-io/buildbuddy/proto/logstream"
 	spb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -196,22 +198,28 @@ func TestWithPrivateRepo(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, 2, len(searchRsp.GetInvocation()))
-	// Find outer invocation because it will contain run output
+	// Find the bazel invocation; its run output should be available via LogStream.
 	var inv *inpb.Invocation
 	for _, i := range searchRsp.GetInvocation() {
-		if i.GetRole() == "HOSTED_BAZEL" {
+		if i.GetRole() != "HOSTED_BAZEL" {
 			inv = i
 		}
 	}
+	require.NotNil(t, inv)
 	invocationID := inv.InvocationId
 
-	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
-		InvocationId: invocationID,
-		MinLines:     math.MaxInt32,
+	conn, err := grpc_client.DialSimple(bbServer.GRPCAddress())
+	require.NoError(t, err)
+	defer conn.Close()
+	logClient := lspb.NewLogStreamClient(conn)
+
+	key := fmt.Sprintf("invocation/%s/run_output", invocationID)
+	rsp, err := logClient.GetLogChunk(ctx, &lspb.GetLogChunkRequest{
+		Key:      key,
+		MinLines: math.MaxInt32,
 	})
 	require.NoError(t, err)
-	require.Contains(t, string(logResp.GetBuffer()), "Build completed successfully")
-	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
+	require.Contains(t, string(rsp.GetBuffer()), "FUTURE OF BUILDS!")
 }
 
 func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envModifier func(rbeEnv *rbetest.Env, e *testenv.TestEnv)) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
@@ -539,22 +547,28 @@ sh_binary(
 	require.NoError(t, err)
 
 	require.Equal(t, 2, len(searchRsp.GetInvocation()))
-	// Find outer invocation because it will contain run output
+	// Find the bazel invocation; its run output should be available via LogStream.
 	var inv *inpb.Invocation
 	for _, i := range searchRsp.GetInvocation() {
-		if i.GetRole() == "HOSTED_BAZEL" {
+		if i.GetRole() != "HOSTED_BAZEL" {
 			inv = i
 		}
 	}
+	require.NotNil(t, inv)
 	invocationID := inv.InvocationId
 
-	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
-		InvocationId: invocationID,
-		MinLines:     math.MaxInt32,
+	conn, err := grpc_client.DialSimple(bbServer.GRPCAddress())
+	require.NoError(t, err)
+	defer conn.Close()
+	logClient := lspb.NewLogStreamClient(conn)
+
+	key := fmt.Sprintf("invocation/%s/run_output", invocationID)
+	rsp, err := logClient.GetLogChunk(ctx, &lspb.GetLogChunkRequest{
+		Key:      key,
+		MinLines: math.MaxInt32,
 	})
 	require.NoError(t, err)
-	require.Contains(t, string(logResp.GetBuffer()), "Build completed successfully")
-	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
+	require.Contains(t, string(rsp.GetBuffer()), "FUTURE OF BUILDS!")
 }
 
 func setupSecrets(t *testing.T) (func(*rbetest.Env, *testenv.TestEnv), *string) {
