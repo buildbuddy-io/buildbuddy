@@ -3,7 +3,7 @@ slug: arm64-support
 title: Remote Builds on linux/arm64 with BuildBuddy
 description: Announcing arm64 support for remote linux builds
 authors: zoey
-date: 2026-01-08:12:00:00
+date: 2026-01-15:12:00:00
 image: /img/blog/postgres-support.png
 tags: [product]
 ---
