@@ -163,7 +163,8 @@ func runGoimports(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 		cmd.Args = append(cmd.Args, "-d")
 	}
 	cmd.Args = append(cmd.Args, files...)
-	cmd.Stdout = stdout
+	stdoutCounter := &ioutil.Counter{}
+	cmd.Stdout = io.MultiWriter(stdout, stdoutCounter)
 	cmd.Stderr = stderr
 	// goimports requires 'go' to be in PATH.
 	goPath, err := runfiles.Rlocation(goRlocationpath)
@@ -172,7 +173,13 @@ func runGoimports(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 	}
 	path := os.Getenv("PATH")
 	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(goPath)+":"+path)
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	if stdoutCounter.Count() > 0 {
+		return fmt.Errorf("goimports found lint errors")
+	}
+	return nil
 }
 
 func runClangFormat(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {

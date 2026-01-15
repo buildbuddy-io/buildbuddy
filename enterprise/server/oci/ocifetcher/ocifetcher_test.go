@@ -202,7 +202,7 @@ func (n notFoundActionCacheClient) UpdateActionResult(context.Context, *repb.Upd
 
 // blockingInterceptor blocks HTTP requests until signaled.
 type blockingInterceptor struct {
-	enabled      atomic.Bool   // Must be enabled before blocking starts
+	enabled      atomic.Bool // Must be enabled before blocking starts
 	blockUntil   chan struct{}
 	requestCount atomic.Int32
 	failWithCode atomic.Int32 // 0 = don't fail, >0 = return this HTTP status for blob requests
