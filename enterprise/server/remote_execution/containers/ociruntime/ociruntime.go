@@ -86,6 +86,7 @@ var (
 	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
 	minPIDsLimit            = flag.Int64("executor.oci.min_pids_limit", 0, "Min value to use for pids.max (PID limit). The scheduler may set a higher value for larger tasks. This can be used for rare cases where the scheduler does not provide a high enough limit.")
 	cgroupMemoryCushion     = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
+	enableImageEviction = flag.Bool("executor.oci.image_eviction_enabled", false, "If true, track OCI image layers in the filecache LRU for eviction. When enabled, unused image layers can be evicted to make room for other cached files.")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
@@ -338,7 +339,10 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if err != nil {
 		return nil, err
 	}
-	imageStore, err := NewImageStore(resolver, imageCacheRoot)
+	if env.GetFileCache() == nil {
+		return nil, status.FailedPreconditionError("FileCache is required for OCI image storage")
+	}
+	imageStore, err := NewImageStore(resolver, imageCacheRoot, env.GetFileCache())
 	if err != nil {
 		return nil, err
 	}
@@ -412,6 +416,7 @@ type ociContainer struct {
 	containersRoot string
 	imageCacheRoot string
 	imageStore     *ImageStore
+	lockedImage    *LockedImage
 
 	cid                    string
 	workDir                string
@@ -553,11 +558,10 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	}
 
 	// Create config.json from the image config and command
-	image, ok := c.imageStore.CachedImage(c.imageRef)
-	if !ok {
+	if c.lockedImage == nil {
 		return fmt.Errorf("image must be cached before creating OCI bundle")
 	}
-	cmd, err := withImageConfig(cmd, image)
+	cmd, err := withImageConfig(cmd, c.lockedImage.Image)
 	if err != nil {
 		return fmt.Errorf("apply image config to command: %w", err)
 	}
@@ -581,14 +585,29 @@ func (c *ociContainer) IsolationType() string {
 }
 
 func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
-	_, ok := c.imageStore.CachedImage(c.imageRef)
-	return ok, nil
+	if c.lockedImage != nil {
+		return true, nil
+	}
+
+	lockedImage, ok := c.imageStore.GetCachedImageAndLock(ctx, c.imageRef)
+	if !ok {
+		return false, nil
+	}
+
+	c.lockedImage = lockedImage
+	return true, nil
 }
 
 func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
-	if _, err := c.imageStore.Pull(ctx, c.imageRef, creds, c.useOCIFetcher); err != nil {
+	if c.lockedImage != nil {
+		return nil
+	}
+
+	lockedImage, err := c.imageStore.PullAndLockImage(ctx, c.imageRef, creds, c.useOCIFetcher)
+	if err != nil {
 		return status.WrapError(err, "pull OCI image")
 	}
+	c.lockedImage = lockedImage
 	return nil
 }
 
@@ -680,11 +699,10 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 	for _, e := range baseEnv {
 		args = append(args, "--env="+e)
 	}
-	image, ok := c.imageStore.CachedImage(c.imageRef)
-	if !ok {
+	if c.lockedImage == nil {
 		return commandutil.ErrorResult(status.UnavailableError("exec called before pulling image"))
 	}
-	cmd, err := withImageConfig(cmd, image)
+	cmd, err := withImageConfig(cmd, c.lockedImage.Image)
 	if err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("apply image config: %s", err))
 	}
@@ -741,8 +759,14 @@ func (c *ociContainer) Unpause(ctx context.Context) error {
 	return c.invokeRuntimeSimple(ctx, "resume", c.cid)
 }
 
-//nolint:nilness
 func (c *ociContainer) Remove(ctx context.Context) error {
+	defer func() {
+		if c.lockedImage != nil {
+			c.lockedImage.Unlock()
+			c.lockedImage = nil
+		}
+	}()
+
 	if c.cid == "" {
 		// We haven't created anything yet
 		return nil
@@ -750,7 +774,7 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 
 	var firstErr error
 
-	if err := c.invokeRuntimeSimple(ctx, "delete", "--force", c.cid); err != nil && firstErr == nil {
+	if err := c.invokeRuntimeSimple(ctx, "delete", "--force", c.cid); err != nil {
 		firstErr = status.UnavailableErrorf("delete container: %s", err)
 	}
 
@@ -953,8 +977,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	}
 
 	// Create an overlayfs with the pulled image layers.
-	image, ok := c.imageStore.CachedImage(c.imageRef)
-	if !ok {
+	if c.lockedImage == nil {
 		return fmt.Errorf("bad state: attempted to create rootfs before pulling image")
 	}
 
@@ -973,7 +996,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	optionsTpl := "lowerdir=%s,upperdir=%s,workdir=%s,userxattr,volatile"
 	tplLen := len(optionsTpl) - 3*len("%s")
 	var lowerDirs []string
-	for _, layer := range image.Layers {
+	for _, layer := range c.lockedImage.Layers {
 		path := layerPath(c.imageCacheRoot, layer.DiffID)
 		// Skip empty dirs - these can cause conflicts since they will always
 		// have the same digest, and also just add more overhead.
@@ -1048,8 +1071,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 
 func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*specs.Spec, error) {
 	env := append(baseEnv, commandutil.EnvStringList(cmd)...)
-	image, _ := c.imageStore.CachedImage(c.imageRef)
-	user, err := getUser(ctx, image, c.rootfsPath(), c.user, c.forceRoot)
+	user, err := getUser(ctx, c.lockedImage.Image, c.rootfsPath(), c.user, c.forceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("get container user: %w", err)
 	}
@@ -1490,9 +1512,25 @@ type ImageStore struct {
 	layersDir      string
 	imagePullGroup singleflight.Group[string, *Image]
 	layerPullGroup singleflight.Group[string, any]
+	// fileCache is used for managing layer eviction.
+	fileCache interfaces.FileCache
 
 	mu           sync.RWMutex
 	cachedImages map[string]*Image
+}
+
+// LockedImage represents a cached image that will not be evicted from filecache
+// until Unlock is called.
+type LockedImage struct {
+	*Image
+	unlockFns []func()
+}
+
+func (l *LockedImage) Unlock() {
+	for _, unlock := range l.unlockFns {
+		unlock()
+	}
+	l.unlockFns = nil
 }
 
 // Image represents a cached image, including all layer digests and image
@@ -1508,25 +1546,114 @@ type Image struct {
 
 // ImageLayer represents a resolved image layer.
 type ImageLayer struct {
+	// Path is the path where the layer is stored on disk.
+	Path string
+	// Size is the size of the layer in bytes.
+	Size int64
 	// DiffID is the uncompressed image digest.
 	DiffID ctr.Hash
 }
 
-func NewImageStore(resolver *oci.Resolver, layersDir string) (*ImageStore, error) {
-	return &ImageStore{
+func NewImageStore(resolver *oci.Resolver, layersDir string, fileCache interfaces.FileCache) (*ImageStore, error) {
+	s := &ImageStore{
 		resolver:     resolver,
 		layersDir:    layersDir,
+		fileCache:    fileCache,
 		cachedImages: map[string]*Image{},
-	}, nil
+	}
+
+	if *enableImageEviction {
+		// Populate the filecache by scanning existing layer directories.
+		// This ensures that existing layers are tracked for LRU eviction.
+		if err := s.populateFileCache(); err != nil {
+			log.Warningf("Failed to populate filecache with existing image layers: %s", err)
+		}
+	}
+
+	return s, nil
 }
 
-// Pull downloads and extracts image layers to a directory, skipping layers
-// that have already been downloaded, and deduping concurrent downloads for the
-// same layer.
-// Pull always re-authenticates the credentials with the image registry.
+// populateFileCache scans the layers directory and registers existing layer
+// directories with the filecache. This ensures that layers from previous runs
+// are tracked for LRU eviction.
+func (s *ImageStore) populateFileCache() error {
+	ctx := context.Background()
+
+	// The layers directory structure is: {layersDir}/{algorithm}/{hash}/
+	// e.g., /cache/images/oci/v2/sha256/abc123.../
+	entries, err := os.ReadDir(s.layersDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read	layers directory: %w", err)
+	}
+
+	var populatedCount int
+	for _, algorithmEntry := range entries {
+		if !algorithmEntry.IsDir() {
+			continue
+		}
+		algorithmDir := filepath.Join(s.layersDir, algorithmEntry.Name())
+		layerEntries, err := os.ReadDir(algorithmDir)
+		if err != nil {
+			log.Warningf("Failed to read layer algorithm directory %s: %s", algorithmDir, err)
+			continue
+		}
+
+		for _, layerEntry := range layerEntries {
+			if !layerEntry.IsDir() {
+				continue
+			}
+			layerPath := filepath.Join(algorithmDir, layerEntry.Name())
+			info, err := layerEntry.Info()
+			if err != nil {
+				log.Warningf("Failed to get info for layer %s: %s", layerPath, err)
+				continue
+			}
+
+			// Get the size of the layer directory.
+			size, err := disk.DirSize(layerPath)
+			if err != nil {
+				log.Warningf("Failed to get size of layer %s: %s", layerPath, err)
+				continue
+			}
+
+			// Track the layer directory in the filecache.
+			unlock, err := s.fileCache.TrackExternalDirectory(ctx, layerPath, size)
+			if err != nil {
+				if status.IsNotFoundError(err) {
+					// Layer not in cache yet, will be added when used.
+					continue
+				}
+				log.Warningf("Failed to track layer %s in filecache: %s", layerPath, err)
+				continue
+			}
+			// Immediately unlock since we're just populating the cache.
+			unlock()
+			populatedCount++
+			log.Debugf("Populated filecache with layer %s (size=%d, mtime=%s)", layerPath, size, info.ModTime())
+		}
+	}
+
+	if populatedCount > 0 {
+		log.Infof("Populated filecache with %d existing image layers", populatedCount)
+	}
+	return nil
+}
+
+// PullAndLockImage downloads and extracts image layers to a directory, skipping
+// layers that have already been downloaded, and deduping concurrent downloads
+// for the same layer.
+//
+// It always re-authenticates the credentials with the image registry.
 // Each layer is extracted to a subdirectory given by {algorithm}/{hash}, e.g.
 // "sha256/abc123".
-func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Credentials, useOCIFetcher bool) (*Image, error) {
+//
+// The returned image is locked to prevent eviction from filecache while it is
+// in use. The caller is responsible for unlocking the image once it is no
+// longer being used.
+func (s *ImageStore) PullAndLockImage(ctx context.Context, imageName string, creds oci.Credentials, useOCIFetcher bool) (*LockedImage, error) {
 	key := hash.Strings(imageName, creds.Username, creds.Password)
 	image, _, err := s.imagePullGroup.Do(ctx, key, func(ctx context.Context) (*Image, error) {
 		image, err := s.pull(ctx, imageName, creds, useOCIFetcher)
@@ -1540,18 +1667,62 @@ func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Crede
 
 		return image, nil
 	})
-	return image, err
+	if err != nil {
+		return nil, err
+	}
+	return s.lockImage(ctx, image)
 }
 
-// CachedLayers returns references to the cached image layers if the image
-// has been pulled. The second return value indicates whether the image has
-// been pulled - if false, the returned slice of layers will be nil.
-func (s *ImageStore) CachedImage(imageName string) (image *Image, ok bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// GetCachedImageAndLock atomically (1) gets a reference to the cached image,
+// and (2) locks the image if it exists to prevent it from being evicted from
+// cache. The caller MUST call [*LockedImage.Unlock] on the returned image once
+// it is no longer used, in order to re-mark the image as eligible for eviction.
+func (s *ImageStore) GetCachedImageAndLock(ctx context.Context, imageName string) (_ *LockedImage, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	image, ok = s.cachedImages[imageName]
-	return image, ok
+	image, ok := s.cachedImages[imageName]
+	if !ok {
+		return nil, false
+	}
+
+	lockedImage, err := s.lockImage(ctx, image)
+	if err != nil {
+		// An image layer was evicted - don't report the image as cached.
+		return nil, false
+	}
+
+	return lockedImage, true
+}
+
+func (s *ImageStore) lockImage(ctx context.Context, image *Image) (*LockedImage, error) {
+	// If image cache eviction is disabled, return a LockedImage with no-op
+	// unlock since we're not tracking layers in the filecache.
+	if !*enableImageEviction {
+		return &LockedImage{Image: image}, nil
+	}
+
+	// Lock all image layers to prevent eviction.
+	var unlockFns []func()
+	for _, layer := range image.Layers {
+		unlock, err := s.fileCache.TrackExternalDirectory(ctx, layer.Path, layer.Size)
+		if err != nil {
+			// Unlock any layers that we were able to lock, to ensure we don't
+			// end up with a partially locked image.
+			for _, unlock := range unlockFns {
+				unlock()
+			}
+			if !status.IsNotFoundError(err) {
+				log.CtxErrorf(ctx, "Failed to track cached image layer directory %q: %s", layer.Path, err)
+			}
+			return nil, status.UnavailableErrorf("track cached image layer directory: %s", err)
+		}
+		unlockFns = append(unlockFns, unlock)
+	}
+	return &LockedImage{
+		Image:     image,
+		unlockFns: unlockFns,
+	}, nil
 }
 
 func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Credentials, useOCIFetcher bool) (*Image, error) {
@@ -1575,7 +1746,7 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 		layer := layer
 		resolvedLayer := &ImageLayer{}
 		resolvedImage.Layers = append(resolvedImage.Layers, resolvedLayer)
-		eg.Go(func() error {
+		eg.Go(func() (err error) {
 			d, err := layer.DiffID()
 			if err != nil {
 				return status.UnavailableErrorf("get layer digest: %s", err)
@@ -1583,21 +1754,45 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 			resolvedLayer.DiffID = d
 
 			destDir := layerPath(s.layersDir, d)
-
-			// If the destination directory already exists then we can skip
-			// the download.
-			if _, err := os.Stat(destDir); err != nil {
-				if !os.IsNotExist(err) {
-					return status.UnavailableErrorf("stat layer directory: %s", err)
-				}
-			} else {
-				return nil
-			}
+			resolvedLayer.Path = destDir
 
 			size, err := layer.Size()
 			if err != nil {
 				return status.UnavailableErrorf("get layer size: %s", err)
 			}
+			resolvedLayer.Size = size
+
+			// Check whether the layer already exists and can be reused.
+			if *enableImageEviction {
+				// Check via the filecache LRU - this also temporarily locks the
+				// layer to prevent eviction during the existence check.
+				unlock, err := s.fileCache.TrackExternalDirectory(ctx, destDir, size)
+				if err != nil {
+					if !status.IsNotFoundError(err) {
+						return status.UnavailableErrorf("stat layer directory: %s", err)
+					}
+					// Layer not in cache, fall through to download it.
+				} else {
+					// Layer exists in cache. Release the lock for now - we will
+					// properly re-lock the layers individually later, once we
+					// are outside of the singleflight group.
+					//
+					// This does introduce a tiny period where the layer could
+					// get evicted if there is a high filecache churn rate, but
+					// we assume this will be rare enough that a client retry is
+					// acceptable in this case.
+					unlock()
+					return nil
+				}
+			} else {
+				// Image cache eviction disabled - just check if dir exists on disk.
+				if _, err := os.Stat(destDir); err == nil {
+					return nil
+				}
+			}
+
+			// Layer dir does not exist in cache, so we need to download it.
+
 			start := time.Now()
 			log.CtxDebugf(ctx, "Pulling layer %s (%.2f MiB)", d.Hex, float64(size)/1e6)
 			defer func() { log.CtxDebugf(ctx, "Pulled layer %s in %s", d.Hex, time.Since(start)) }()
