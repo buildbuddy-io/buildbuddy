@@ -65,7 +65,7 @@ class DocsGenerator(object):
             if line == "":
                 self.label_constant_comments = []
                 return
-            m = re.match(r'(\w+) = "(.*)"', line)
+            m = re.match(r'(\w+)\s*=\s*"(.*)"', line)
             if m:
                 self.label_constants[m.group(1)] = {
                     "value": m.group(2),

@@ -351,9 +351,7 @@ const (
 	GRPCMethodLabel = "grpc_method"
 
 	OCIFetcherMethodLabel = "method"
-	
-	OCIFetcherRoleLabel = "role"
-
+	OCIFetcherRoleLabel   = "role"
 	OCIFetcherStatusLabel = "status"
 )
 
