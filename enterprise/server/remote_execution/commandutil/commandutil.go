@@ -67,26 +67,20 @@ func (lw *limitWriter) Write(p []byte) (int, error) {
 	if lw.limit == 0 {
 		return lw.w.Write(p)
 	}
-	totalRequested := lw.n + uint64(len(p))
+	pSize := uint64(len(p))
+	totalRequested := lw.n + pSize
 	if lw.n >= lw.limit {
+		// n could have been increased from a previous write and reached limit
 		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
 	}
-	remaining := lw.limit - lw.n
-	writeSize := min(uint64(len(p)), remaining)
 
+	writeSize := min(pSize, lw.limit-lw.n)
 	n, err := lw.w.Write(p[:writeSize])
 	lw.n += uint64(n)
-	if err != nil {
-		return n, err
-	}
-	if writeSize < uint64(len(p)) {
-		if uint64(n) < writeSize {
-			// Underlying writer wrote fewer bytes; limit not yet hit.
-			return n, nil
-		}
+	if err == nil && writeSize < pSize {
 		return n, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
 	}
-	return n, nil
+	return n, err
 }
 
 func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
