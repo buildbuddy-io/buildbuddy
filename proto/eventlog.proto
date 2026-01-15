@@ -49,3 +49,26 @@ message LiveEventLogChunk {
   // The cached log data
   bytes buffer = 2;
 }
+
+enum LogType {
+  UNKNOWN_LOG = 0;
+  RUN_LOG = 1;
+}
+
+message LogMetadata {
+  string invocation_id = 1;
+}
+
+message WriteEventLogRequest {
+  context.RequestContext request_context = 1;
+
+  LogType type = 2;
+
+  LogMetadata metadata = 3;
+
+  bytes data = 4;
+}
+
+message WriteEventLogResponse {
+  context.ResponseContext response_context = 1;
+}
