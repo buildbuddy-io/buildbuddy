@@ -587,7 +587,7 @@ func parseDNSOverrides() (string, error) {
 		return "", nil
 	}
 	for _, o := range *dnsOverrides {
-		if o.RedirectToHostname == "" || o.HostnameToOverride == "" {
+		if o.HostnameToOverride == "" {
 			return "", status.InvalidArgumentErrorf("invalid empty dns override %+v", o)
 		}
 		// Ensure hostnames end with '.' so they are not resolved as relative names.

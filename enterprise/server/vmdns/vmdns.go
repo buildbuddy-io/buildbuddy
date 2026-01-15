@@ -38,6 +38,10 @@ func (s *DNSServer) Run() error {
 
 func (s *DNSServer) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	for _, o := range s.overrides {
+		// If the redirect hostname is not set, don't override the request.
+		if strings.HasSuffix(req.Question[0].Name, o.HostnameToOverride) && o.RedirectToHostname == "" {
+			break
+		}
 		if strings.HasSuffix(req.Question[0].Name, o.HostnameToOverride) && !strings.HasSuffix(req.Question[0].Name, o.RedirectToHostname) {
 			s.overrideResponse(w, req, o.RedirectToHostname)
 			return
