@@ -911,6 +911,16 @@ type FileCache interface {
 	// added to the cache unless the hash matches.
 	Writer(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (CommittedWriteCloser, error)
 
+	// TrackExternalDirectory tracks a pre-existing directory using the
+	// filecache and locks it, protecting it from eviction until unlocked. It
+	// returns NotFound if the dir does not exist. The dir is not moved to the
+	// filecache directory, so the caller must manually re-track during executor
+	// startup. The filecache takes sole responsibility for deleting the
+	// directory.
+	//
+	// See filecache.go for more details.
+	TrackExternalDirectory(ctx context.Context, path string, size int64) (unlock func(), err error)
+
 	// TempDir returns a directory that is guaranteed to be on the same device
 	// as the filecache. The directory is not unique per call. Callers should
 	// generate globally unique file names under this directory.
