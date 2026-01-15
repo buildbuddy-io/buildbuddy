@@ -62,16 +62,7 @@ archive_override(
     urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/2457e25475c111168fc3de8e1169adfe2e817801.tar.gz"],
 )
 
-bazel_dep(name = "toolchains_protoc", version = "0.6.0")  # must come BEFORE protobuf so the toolchain registration wins
-bazel_dep(name = "protobuf", repo_name = "com_google_protobuf")
-
-# TODO(tyler-french): remove once https://github.com/protocolbuffers/protobuf/pull/19679 is included in a protobuf release.
-archive_override(
-    module_name = "protobuf",
-    integrity = "sha256-escvR0NBkLeowzVsjSbTzVsopPtU3f5+gESVq5puD2Y=",
-    strip_prefix = "protobuf-4986a7722460e3163f37c98da1cb47f52c6406e1",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/4986a7722460e3163f37c98da1cb47f52c6406e1.tar.gz"],
-)
+bazel_dep(name = "protobuf", version = "33.4", repo_name = "com_google_protobuf")
 
 ## Regular bazel_deps
 
