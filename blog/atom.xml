@@ -2,11 +2,23 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2026-01-05T14:00:00.000Z</updated>
+    <updated>2026-01-15T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Remote Builds on linux/arm64 with BuildBuddy]]></title>
+        <id>https://www.buildbuddy.io/blog/arm64-support</id>
+        <link href="https://www.buildbuddy.io/blog/arm64-support"/>
+        <updated>2026-01-15T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[Announcing arm64 support for remote linux builds]]></summary>
+        <author>
+            <name>Zoey Greer</name>
+            <uri>https://www.github.com/tempoz</uri>
+        </author>
+        <category label="product" term="product"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Action Merging]]></title>
         <id>https://www.buildbuddy.io/blog/action-merging</id>
@@ -253,17 +265,5 @@
         </author>
         <category label="company" term="company"/>
         <category label="team" term="team"/>
-    </entry>
-    <entry>
-        <title type="html"><![CDATA[Donating rules_xcodeproj to the Mobile Native Foundation]]></title>
-        <id>https://www.buildbuddy.io/blog/donating-rules_xcodeproj-to-the-mobile-native-foundation</id>
-        <link href="https://www.buildbuddy.io/blog/donating-rules_xcodeproj-to-the-mobile-native-foundation"/>
-        <updated>2023-03-22T09:00:00.000Z</updated>
-        <summary type="html"><![CDATA[We are solidifying the community ownership of rules_xcodeproj by donating it to the Mobile Native Foundation.]]></summary>
-        <author>
-            <name>Brentley Jones</name>
-            <uri>https://brentleyjones.com</uri>
-        </author>
-        <category label="rules_xcodeproj" term="rules_xcodeproj"/>
     </entry>
 </feed>

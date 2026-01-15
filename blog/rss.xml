@@ -4,10 +4,18 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Mon, 05 Jan 2026 14:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Thu, 15 Jan 2026 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Remote Builds on linux/arm64 with BuildBuddy]]></title>
+            <link>https://www.buildbuddy.io/blog/arm64-support</link>
+            <guid>https://www.buildbuddy.io/blog/arm64-support</guid>
+            <pubDate>Thu, 15 Jan 2026 12:00:00 GMT</pubDate>
+            <description><![CDATA[Announcing arm64 support for remote linux builds]]></description>
+            <category>product</category>
+        </item>
         <item>
             <title><![CDATA[Action Merging]]></title>
             <link>https://www.buildbuddy.io/blog/action-merging</link>
@@ -178,14 +186,6 @@
             <description><![CDATA[To fulfill our mission of bringing the world's best developer tools to every company, keeping our business running smoothly is as important as ensuring our customers' builds run smoothly. That's why we're excited to share that Grace Chuang is joining BuildBuddy!]]></description>
             <category>company</category>
             <category>team</category>
-        </item>
-        <item>
-            <title><![CDATA[Donating rules_xcodeproj to the Mobile Native Foundation]]></title>
-            <link>https://www.buildbuddy.io/blog/donating-rules_xcodeproj-to-the-mobile-native-foundation</link>
-            <guid>https://www.buildbuddy.io/blog/donating-rules_xcodeproj-to-the-mobile-native-foundation</guid>
-            <pubDate>Wed, 22 Mar 2023 09:00:00 GMT</pubDate>
-            <description><![CDATA[We are solidifying the community ownership of rules_xcodeproj by donating it to the Mobile Native Foundation.]]></description>
-            <category>rules_xcodeproj</category>
         </item>
     </channel>
 </rss>
