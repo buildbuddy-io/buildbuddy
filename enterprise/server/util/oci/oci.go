@@ -50,7 +50,7 @@ var (
 	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 
-	cacheEnabledPercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
+	cacheEnabledPercent = flag.Int("executor.container_registry.use_cache_percent", 100, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
 )
 
 type Registry struct {

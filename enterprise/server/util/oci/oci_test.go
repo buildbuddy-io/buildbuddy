@@ -4,14 +4,12 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -344,11 +342,9 @@ func TestResolve(t *testing.T) {
 			},
 		},
 	} {
-		for _, useCachePercent := range []int{0, 100} {
-			t.Run(tc.name+fmt.Sprintf("/use_cache_percent_%d", useCachePercent), func(t *testing.T) {
-				te := testenv.GetTestEnv(t)
-				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
+		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 				registry := testregistry.Run(t, tc.opts)
 				_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles, nil)
 
@@ -378,8 +374,7 @@ func TestResolve(t *testing.T) {
 					require.Equal(t, 1, len(layers))
 					require.Empty(t, cmp.Diff(tc.imageFiles, layerFiles(t, layers[0])))
 				}
-			})
-		}
+		})
 	}
 }
 
@@ -437,68 +432,64 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 			},
 		},
 	} {
-		for _, useCachePercent := range []int{0, 100} {
-			name := tc.name + "/use_cache_percent_" + strconv.Itoa(useCachePercent)
-			t.Run(name, func(t *testing.T) {
-				te := testenv.GetTestEnv(t)
-				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
-				counter := testhttp.NewRequestCounter()
-				registry := testregistry.Run(t, testregistry.Opts{
-					HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-						counter.Inc(r)
-						return true
-					},
-				})
-				_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, tc.imageName+"_image", nil)
-
-				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-					Add: pushedImage,
-					Descriptor: v1.Descriptor{
-						Platform: &tc.imagePlatform,
-					},
-				})
-				registry.PushIndex(t, index, tc.imageName+"_index", nil)
-
-				for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
-					pulledImage, err := newResolver(t, te).Resolve(
-						context.Background(),
-						registry.ImageAddress(nameToResolve),
-						tc.args.platform,
-						tc.args.credentials,
-						false /*=useOCIFetcher*/,
-					)
-					require.NoError(t, err)
-
-					counter.Reset()
-
-					layers, err := pulledImage.Layers()
-					require.NoError(t, err)
-
-					expected := map[string]int{}
-					require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
-
-					configDigest, err := pulledImage.ConfigName()
-					require.NoError(t, err)
-					expected = map[string]int{
-						http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
-					}
-
-					// To make the DiffID() request counts always be zero,
-					// fetch the config file here. Otherwise the first
-					// Layer.DiffID() call will make a request to fetch the config file.
-					_, err = pulledImage.ConfigFile()
-					require.NoError(t, err)
-					require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
-
-					for _, layer := range layers {
-						_, err := layer.DiffID()
-						require.NoError(t, err)
-						require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
-					}
-				}
+		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+			counter := testhttp.NewRequestCounter()
+			registry := testregistry.Run(t, testregistry.Opts{
+				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+					counter.Inc(r)
+					return true
+				},
 			})
-		}
+			_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, tc.imageName+"_image", nil)
+
+			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
+				Add: pushedImage,
+				Descriptor: v1.Descriptor{
+					Platform: &tc.imagePlatform,
+				},
+			})
+			registry.PushIndex(t, index, tc.imageName+"_index", nil)
+
+			for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
+				pulledImage, err := newResolver(t, te).Resolve(
+					context.Background(),
+					registry.ImageAddress(nameToResolve),
+					tc.args.platform,
+					tc.args.credentials,
+					false /*=useOCIFetcher*/,
+				)
+				require.NoError(t, err)
+
+				counter.Reset()
+
+				layers, err := pulledImage.Layers()
+				require.NoError(t, err)
+
+				expected := map[string]int{}
+				require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
+
+				configDigest, err := pulledImage.ConfigName()
+				require.NoError(t, err)
+				expected = map[string]int{
+					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
+				}
+
+				// To make the DiffID() request counts always be zero,
+				// fetch the config file here. Otherwise the first
+				// Layer.DiffID() call will make a request to fetch the config file.
+				_, err = pulledImage.ConfigFile()
+				require.NoError(t, err)
+				require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
+
+				for _, layer := range layers {
+					_, err := layer.DiffID()
+					require.NoError(t, err)
+					require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
+				}
+			}
+		})
 	}
 }
 
@@ -698,7 +689,6 @@ func TestResolve_WithCache(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			te := setupTestEnvWithCache(t)
 			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-			flags.Set(t, "executor.container_registry.use_cache_percent", 100)
 			counter := testhttp.NewRequestCounter()
 			registry := testregistry.Run(t, testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -838,7 +828,6 @@ func contextWithUnverifiedJWT(c *claims.Claims) context.Context {
 func TestResolve_Concurrency(t *testing.T) {
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
 	counter := testhttp.NewRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
