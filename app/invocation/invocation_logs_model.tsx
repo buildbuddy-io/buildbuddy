@@ -29,7 +29,7 @@ export default class InvocationLogsModel {
   // Server-stream based state
   private stream?: Cancelable;
 
-  constructor(private invocationId: string) {}
+  constructor(private invocationId: string, private logType: eventlog.LogType = eventlog.LogType.BUILD_LOG) {}
 
   startFetching() {
     this.stopFetching();
@@ -68,6 +68,7 @@ export default class InvocationLogsModel {
           invocationId: this.invocationId,
           chunkId,
           minLines: MIN_LINES,
+          type: this.logType,
         });
       },
       {
@@ -92,6 +93,7 @@ export default class InvocationLogsModel {
           invocationId: this.invocationId,
           chunkId,
           minLines: MIN_LINES,
+          type: this.logType,
         })
       )
     ).subscribe({
