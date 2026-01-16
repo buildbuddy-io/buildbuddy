@@ -358,6 +358,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		ociFetcherClient,
 		credentials,
 		useCache,
+		useOCIFetcher,
 	)
 }
 
@@ -365,7 +366,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 // then falls back to fetching from the upstream remote registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool) (gcr.Image, error) {
+func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) (gcr.Image, error) {
 	if useCache {
 		var desc *gcr.Descriptor
 		digest, hasDigest := getDigest(digestOrTagRef)
@@ -380,7 +381,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		// - Resolves the tag to a digest (if not already present)
 		if !hasDigest || !credentials.bypassRegistry {
 			var err error
-			desc, err = fetchManifestMetadata(ctx, digestOrTagRef, puller, ociFetcherClient, credentials)
+			desc, err = fetchManifestMetadata(ctx, digestOrTagRef, puller, ociFetcherClient, credentials, useOCIFetcher)
 			if err != nil {
 				return nil, err
 			}
@@ -423,11 +424,12 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				ociFetcherClient,
 				credentials,
 				useCache,
+				useOCIFetcher,
 			)
 		}
 	}
 
-	desc, rawManifest, err := fetchManifest(ctx, digestOrTagRef, puller, ociFetcherClient, credentials)
+	desc, rawManifest, err := fetchManifest(ctx, digestOrTagRef, puller, ociFetcherClient, credentials, useOCIFetcher)
 	if err != nil {
 		return nil, err
 	}
@@ -459,13 +461,16 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		ociFetcherClient,
 		credentials,
 		useCache,
+		useOCIFetcher,
 	)
 }
 
 // fetchManifestMetadata makes a HEAD request for the manifest metadata.
-// If ociFetcherClient is non-nil, it uses the OCIFetcher service.
-// Otherwise, it uses the puller directly.
-func fetchManifestMetadata(ctx context.Context, digestOrTagRef gcrname.Reference, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials) (*gcr.Descriptor, error) {
+// ociFetcherClient must be non-nil when useOCIFetcher is true.
+func fetchManifestMetadata(ctx context.Context, digestOrTagRef gcrname.Reference, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useOCIFetcher bool) (*gcr.Descriptor, error) {
+	if useOCIFetcher && ociFetcherClient == nil {
+		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
+	}
 	if ociFetcherClient != nil {
 		resp, err := ociFetcherClient.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
 			Ref:            digestOrTagRef.String(),
@@ -497,9 +502,11 @@ func fetchManifestMetadata(ctx context.Context, digestOrTagRef gcrname.Reference
 }
 
 // fetchManifest fetches the manifest for the given image reference.
-// If ociFetcherClient is non-nil, it uses the OCIFetcher service.
-// Otherwise, it uses the puller directly.
-func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials) (*gcr.Descriptor, []byte, error) {
+// ociFetcherClient must be non-nil when useOCIFetcher is true.
+func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useOCIFetcher bool) (*gcr.Descriptor, []byte, error) {
+	if useOCIFetcher && ociFetcherClient == nil {
+		return nil, nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
+	}
 	if ociFetcherClient != nil {
 		resp, err := ociFetcherClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
 			Ref:            digestOrTagRef.String(),
@@ -533,7 +540,11 @@ func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller
 // imageFromDescriptorAndManifest returns an Image from the given manifest (if the manifest is an image manifest),
 // finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
 // and otherwise returns an error.
-func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool) (gcr.Image, error) {
+// ociFetcherClient must be non-nil when useOCIFetcher is true.
+func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) (gcr.Image, error) {
+	if useOCIFetcher && ociFetcherClient == nil {
+		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
+	}
 	if desc.MediaType.IsSchema1() {
 		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
 	}
@@ -559,6 +570,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 			ociFetcherClient,
 			credentials,
 			useCache,
+			useOCIFetcher,
 		)
 	}
 
@@ -573,6 +585,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 		ociFetcherClient,
 		credentials,
 		useCache,
+		useOCIFetcher,
 	), nil
 }
 
@@ -627,7 +640,7 @@ func getDigest(ref gcrname.Reference) (gcr.Hash, bool) {
 	return hash, true
 }
 
-func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool) *imageFromRawManifest {
+func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) *imageFromRawManifest {
 	i := &imageFromRawManifest{
 		repo:             repo,
 		desc:             desc,
@@ -639,6 +652,7 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		ociFetcherClient: ociFetcherClient,
 		credentials:      credentials,
 		useCache:         useCache,
+		useOCIFetcher:    useOCIFetcher,
 	}
 	i.fetchRawConfigOnce = sync.OnceValues(func() ([]byte, error) {
 		manifest, err := i.Manifest()
@@ -684,6 +698,7 @@ type imageFromRawManifest struct {
 	ociFetcherClient ofpb.OCIFetcherClient
 	credentials      Credentials
 	useCache         bool
+	useOCIFetcher    bool
 
 	fetchRawConfigOnce func() ([]byte, error)
 }
@@ -869,9 +884,11 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 }
 
 // fetchFromRemote fetches the layer from the remote registry.
-// If ociFetcherClient is non-nil, it uses the OCIFetcher service.
-// Otherwise, it uses the puller directly.
+// ociFetcherClient must be non-nil when useOCIFetcher is true.
 func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
+	if l.image.useOCIFetcher && l.image.ociFetcherClient == nil {
+		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
+	}
 	if l.image.ociFetcherClient != nil {
 		ref := l.repo.Digest(l.digest.String())
 		// Create a cancellable context so that Close() can abort the stream
