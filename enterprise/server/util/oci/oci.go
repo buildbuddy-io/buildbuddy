@@ -427,22 +427,19 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		}
 	}
 
-	remoteDesc, err := puller.Get(ctx, digestOrTagRef)
+	desc, rawManifest, err := fetchManifest(ctx, digestOrTagRef, puller, ociFetcherClient, credentials)
 	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+		return nil, err
 	}
 
 	if useCache {
 		err := ocicache.WriteManifestToAC(
 			ctx,
-			remoteDesc.Manifest,
+			rawManifest,
 			acClient,
 			digestOrTagRef.Context(),
-			remoteDesc.Digest,
-			string(remoteDesc.MediaType),
+			desc.Digest,
+			string(desc.MediaType),
 			digestOrTagRef,
 		)
 		if err != nil {
@@ -453,8 +450,8 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 	return imageFromDescriptorAndManifest(
 		ctx,
 		digestOrTagRef.Context(),
-		remoteDesc.Descriptor,
-		remoteDesc.Manifest,
+		*desc,
+		rawManifest,
 		platform,
 		acClient,
 		bsClient,
@@ -497,6 +494,40 @@ func fetchManifestMetadata(ctx context.Context, digestOrTagRef gcrname.Reference
 		return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
 	}
 	return desc, nil
+}
+
+// fetchManifest fetches the manifest for the given image reference.
+// If ociFetcherClient is non-nil, it uses the OCIFetcher service.
+// Otherwise, it uses the puller directly.
+func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials) (*gcr.Descriptor, []byte, error) {
+	if ociFetcherClient != nil {
+		resp, err := ociFetcherClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
+			Ref:            digestOrTagRef.String(),
+			Credentials:    credentials.ToProto(),
+			BypassRegistry: credentials.bypassRegistry,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		digest, err := gcr.NewHash(resp.GetDigest())
+		if err != nil {
+			return nil, nil, status.InternalErrorf("invalid digest %q from OCI fetcher: %s", resp.GetDigest(), err)
+		}
+		return &gcr.Descriptor{
+			Digest:    digest,
+			Size:      resp.GetSize(),
+			MediaType: types.MediaType(resp.GetMediaType()),
+		}, resp.GetManifest(), nil
+	}
+
+	remoteDesc, err := puller.Get(ctx, digestOrTagRef)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
+		}
+		return nil, nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+	}
+	return &remoteDesc.Descriptor, remoteDesc.Manifest, nil
 }
 
 // imageFromDescriptorAndManifest returns an Image from the given manifest (if the manifest is an image manifest),

@@ -1280,6 +1280,11 @@ func TestResolveWithOCIFetcher_NoClient(t *testing.T) {
 //
 // Both direct image references and index references are tested for each scenario.
 func TestResolveWithOCIFetcher(t *testing.T) {
+	// Helper to check for auth errors - OCIFetcher returns Unauthenticated for 401 errors,
+	// while the direct puller path returns PermissionDenied. Accept either.
+	isAuthError := func(err error) bool {
+		return status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err)
+	}
 	for _, tc := range []resolveTestCase{
 		{
 			name: "resolving an existing image without credentials succeeds",
@@ -1341,7 +1346,7 @@ func TestResolveWithOCIFetcher(t *testing.T) {
 					Os:   runtime.GOOS,
 				},
 			},
-			checkError: status.IsPermissionDeniedError,
+			checkError: isAuthError,
 			opts: testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 					if r.Method == "GET" {
@@ -1513,7 +1518,9 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 
 				configDigest, err := pulledImage.ConfigName()
 				require.NoError(t, err)
+				// With OCIFetcher, fetching the config blob also requires an auth request.
 				expected = map[string]int{
+					http.MethodGet + " /v2/":                                                       1,
 					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
 				}
 
@@ -1573,12 +1580,12 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	require.NoError(t, err)
 
 	imageAddress := registry.ImageAddress(imageName + "_image")
-	// With OCIFetcher, there are 2 GET /v2/ requests:
-	// 1. From the resolver's puller (for manifest GET)
-	// 2. From the OCIFetcher server (for manifest HEAD metadata)
+	// With OCIFetcher, there are 2 GET /v2/ requests and 2 HEAD manifest requests:
+	// - GET /v2/: From OCIFetcher server for both FetchManifestMetadata and FetchManifest
+	// - HEAD manifest: From FetchManifestMetadata and from FetchManifest (which does HEAD before GET)
 	expected := map[string]int{
 		http.MethodGet + " /v2/": 2,
-		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
+		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               2,
 		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
 		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
 		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
