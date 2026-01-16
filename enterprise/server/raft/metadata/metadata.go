@@ -43,7 +43,6 @@ import (
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	oss_cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
-	_ "github.com/buildbuddy-io/buildbuddy/server/gossip"
 )
 
 var (
@@ -97,6 +96,11 @@ type Config struct {
 	FileStorer filestore.Store
 
 	GCS cache_config.GCSConfig
+
+	// The nodehost ID
+	NHID string
+
+	GossipManager interfaces.GossipService
 }
 
 // data needed to update last access time.
@@ -112,8 +116,7 @@ type Server struct {
 	raftAddr string
 	grpcAddr string
 
-	registry      registry.NodeRegistry
-	gossipManager interfaces.GossipService
+	registry registry.NodeRegistry
 
 	store          *store.Store
 	clusterStarter *bringup.ClusterStarter
@@ -210,6 +213,21 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		LogDBConfigType:   store.LargeMemLogDBConfigType,
 		GCS:               *gcsConfig,
 	}
+
+	configDir := filepath.Join(rcConfig.RootDir, configDirName)
+	if err := disk.EnsureDirectoryExists(configDir); err != nil {
+		return nil, err
+	}
+	nhid, err := hostid.GetHostID(configDir)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get host id from %s", configDir)
+	}
+	gossipManager, err := gossip.New(nhid)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create gossip manager with name %q", nhid)
+	}
+	rcConfig.NHID = nhid
+	rcConfig.GossipManager = gossipManager
 	return New(env, rcConfig)
 }
 
@@ -227,16 +245,9 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 		return nil, err
 	}
 
-	configDir := filepath.Join(conf.RootDir, configDirName)
-	nhid, err := hostid.GetHostID(configDir)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get host id from %s", configDir)
+	if conf.GossipManager == nil {
+		return nil, status.FailedPreconditionError("raft cache requires gossip be enabled")
 	}
-	gossipManager, err := gossip.New(nhid)
-	if err != nil {
-		return nil, fmt.Errorf("fail to create gossip manager with name %q", nhid)
-	}
-	rc.gossipManager = gossipManager
 
 	fileStorer := conf.FileStorer
 	filestoreOpts := make([]filestore.Option, 0)
@@ -264,7 +275,7 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 	rc.grpcAddr = fmt.Sprintf("%s:%d", conf.Hostname, conf.GRPCPort)
 	grpcListeningAddr := fmt.Sprintf("%s:%d", conf.ListenAddr, conf.GRPCPort)
 
-	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, nhid, rc.conf.Partitions, rc.conf.LogDBConfigType, rc.fileStorer, rc.gossipManager)
+	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, rc.conf.NHID, rc.conf.Partitions, rc.conf.LogDBConfigType, rc.fileStorer, rc.conf.GossipManager)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +286,7 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
-	clusterStarter, err := bringup.New(rc.grpcAddr, rc.gossipManager, rc.store, rc.conf.Partitions)
+	clusterStarter, err := bringup.New(rc.grpcAddr, rc.conf.GossipManager, rc.store, rc.conf.Partitions)
 	if err != nil {
 		return nil, err
 	}
@@ -363,8 +374,8 @@ func (rc *Server) Stop(ctx context.Context) error {
 		}
 		rc.store.Stop(ctx)
 		log.Infof("raft cache store stopped")
-		rc.gossipManager.Leave()
-		rc.gossipManager.Shutdown()
+		rc.conf.GossipManager.Leave()
+		rc.conf.GossipManager.Shutdown()
 
 	})
 	return nil
