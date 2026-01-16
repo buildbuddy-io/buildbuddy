@@ -1520,7 +1520,7 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 				require.NoError(t, err)
 				// With OCIFetcher, fetching the config blob also requires an auth request.
 				expected = map[string]int{
-					http.MethodGet + " /v2/":                                                       1,
+					http.MethodGet + " /v2/": 1,
 					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
 				}
 
