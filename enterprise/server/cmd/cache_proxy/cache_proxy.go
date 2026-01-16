@@ -28,7 +28,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_capabilities_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_content_addressable_storage_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_service"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -38,6 +37,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -69,6 +70,14 @@ var (
 	serverType = flag.String("server_type", "cache-proxy", "The server type to match on health checks")
 
 	remoteCache = flag.String("cache_proxy.remote_cache", "grpcs://remote.buildbuddy.dev", "The backing remote cache.")
+
+	headersToPropagate = []string{
+		authutil.APIKeyHeader,
+		authutil.ContextTokenStringKey,
+		usageutil.ClientHeaderName,
+		usageutil.OriginHeaderName,
+		authutil.ClientIdentityHeaderName,
+		bazel_request.RequestMetadataKey}
 )
 
 func main() {
@@ -96,7 +105,7 @@ func main() {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
 	env.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
-	authenticator, err := remoteauth.New()
+	authenticator, err := remoteauth.NewRemoteAuthenticator()
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -207,10 +216,10 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 	// Add the API-Key, JWT, client-identity, etc... propagating interceptor.
 	grpcServerConfig := grpc_server.GRPCServerConfig{
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
-			interceptors.PropagateMetadataUnaryInterceptor(proxy_util.HeadersToPropagate...),
+			interceptors.PropagateMetadataUnaryInterceptor(headersToPropagate...),
 		},
 		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
-			interceptors.PropagateMetadataStreamInterceptor(proxy_util.HeadersToPropagate...),
+			interceptors.PropagateMetadataStreamInterceptor(headersToPropagate...),
 		},
 	}
 

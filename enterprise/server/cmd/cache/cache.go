@@ -85,7 +85,7 @@ func main() {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
 	env.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
-	authenticator, err := remoteauth.New()
+	authenticator, err := remoteauth.NewRemoteAuthenticator()
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
