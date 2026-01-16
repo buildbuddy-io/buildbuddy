@@ -1518,10 +1518,13 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 
 				configDigest, err := pulledImage.ConfigName()
 				require.NoError(t, err)
-				// With OCIFetcher, fetching the config blob also requires an auth request.
+				// With OCIFetcher, fetching the config blob uses FetchBlob which:
+				// - Reuses the puller from Resolve() (no additional GET /v2/)
+				// - Makes a HEAD request for the config blob to get size for caching
+				// - Makes a GET request for the config blob data
 				expected = map[string]int{
-					http.MethodGet + " /v2/": 1,
-					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
+					http.MethodHead + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
+					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String():  1,
 				}
 
 				// To make the DiffID() request counts always be zero,
@@ -1580,11 +1583,14 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	require.NoError(t, err)
 
 	imageAddress := registry.ImageAddress(imageName + "_image")
-	// With OCIFetcher, there are 2 GET /v2/ requests and 2 HEAD manifest requests:
-	// - GET /v2/: From OCIFetcher server for both FetchManifestMetadata and FetchManifest
-	// - HEAD manifest: From FetchManifestMetadata and from FetchManifest (which does HEAD before GET)
+	// With OCIFetcher, there are:
+	// - 1 GET /v2/: From OCIFetcher server (puller is cached after first request)
+	// - 2 HEAD manifest: From FetchManifestMetadata and from FetchManifest (which does HEAD before GET)
+	// - 1 GET manifest
+	// - 1 HEAD + 1 GET for config blob
+	// - 1 HEAD + 1 GET for each layer blob (HEAD is for getting size for caching)
 	expected := map[string]int{
-		http.MethodGet + " /v2/": 2,
+		http.MethodGet + " /v2/": 1,
 		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               2,
 		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
 		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
@@ -1592,6 +1598,7 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	}
 	for digest, _ := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
+		expected[http.MethodHead+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
 	counter.Reset()
 	c := &claims.Claims{UserID: "US123"}
