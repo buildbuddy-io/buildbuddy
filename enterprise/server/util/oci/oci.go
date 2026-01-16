@@ -33,6 +33,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/jonboulle/clockwork"
 
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
@@ -311,9 +312,6 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	// TODO: implement OCI fetcher support
-	_ = useOCIFetcher
-
 	imageRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
@@ -338,6 +336,11 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	}
 	useCache := cacheEnabled && !isAnon
 
+	var ociFetcherClient ofpb.OCIFetcherClient
+	if useOCIFetcher {
+		ociFetcherClient = r.env.GetOCIFetcherClient()
+	}
+
 	return fetchImageFromCacheOrRemote(
 		ctx,
 		imageRef,
@@ -349,7 +352,8 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		r.env.GetActionCacheClient(),
 		r.env.GetByteStreamClient(),
 		puller,
-		credentials.bypassRegistry,
+		ociFetcherClient,
+		credentials,
 		useCache,
 	)
 }
@@ -358,27 +362,24 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 // then falls back to fetching from the upstream remote registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool, useCache bool) (gcr.Image, error) {
+func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool) (gcr.Image, error) {
 	if useCache {
 		var desc *gcr.Descriptor
 		digest, hasDigest := getDigest(digestOrTagRef)
 		// For now, we cannot bypass the registry for tag references,
 		// since cached manifest AC entries need the resolved digest as part of
 		// the key. Log a warning in this case.
-		if !hasDigest && bypassRegistry {
+		if !hasDigest && credentials.bypassRegistry {
 			log.CtxWarningf(ctx, "Cannot bypass registry for tag reference %q (need to make a registry request to resolve tag to digest)", digestOrTagRef)
 		}
 		// Make a HEAD request for the manifest. This does two things:
 		// - Authenticates with the registry (if not bypassing)
 		// - Resolves the tag to a digest (if not already present)
-		if !hasDigest || !bypassRegistry {
+		if !hasDigest || !credentials.bypassRegistry {
 			var err error
-			desc, err = puller.Head(ctx, digestOrTagRef)
+			desc, err = fetchManifestMetadata(ctx, digestOrTagRef, puller, ociFetcherClient, credentials)
 			if err != nil {
-				if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-					return nil, status.PermissionDeniedErrorf("cannot access image manifest: %s", err)
-				}
-				return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
+				return nil, err
 			}
 			digest = desc.Digest
 		}
@@ -416,7 +417,8 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				acClient,
 				bsClient,
 				puller,
-				bypassRegistry,
+				ociFetcherClient,
+				credentials,
 				useCache,
 			)
 		}
@@ -454,15 +456,50 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		acClient,
 		bsClient,
 		puller,
-		bypassRegistry,
+		ociFetcherClient,
+		credentials,
 		useCache,
 	)
+}
+
+// fetchManifestMetadata makes a HEAD request for the manifest metadata.
+// If ociFetcherClient is non-nil, it uses the OCIFetcher service.
+// Otherwise, it uses the puller directly.
+func fetchManifestMetadata(ctx context.Context, digestOrTagRef gcrname.Reference, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials) (*gcr.Descriptor, error) {
+	if ociFetcherClient != nil {
+		resp, err := ociFetcherClient.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
+			Ref:            digestOrTagRef.String(),
+			Credentials:    credentials.ToProto(),
+			BypassRegistry: credentials.bypassRegistry,
+		})
+		if err != nil {
+			return nil, err
+		}
+		digest, err := gcr.NewHash(resp.GetDigest())
+		if err != nil {
+			return nil, status.InternalErrorf("invalid digest %q from OCI fetcher: %s", resp.GetDigest(), err)
+		}
+		return &gcr.Descriptor{
+			Digest:    digest,
+			Size:      resp.GetSize(),
+			MediaType: types.MediaType(resp.GetMediaType()),
+		}, nil
+	}
+
+	desc, err := puller.Head(ctx, digestOrTagRef)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("cannot access image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
+	}
+	return desc, nil
 }
 
 // imageFromDescriptorAndManifest returns an Image from the given manifest (if the manifest is an image manifest),
 // finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
 // and otherwise returns an error.
-func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, bypassRegistry bool, useCache bool) (gcr.Image, error) {
+func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool) (gcr.Image, error) {
 	if desc.MediaType.IsSchema1() {
 		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
 	}
@@ -485,7 +522,8 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 			acClient,
 			bsClient,
 			puller,
-			bypassRegistry,
+			ociFetcherClient,
+			credentials,
 			useCache,
 		)
 	}

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -40,6 +41,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -959,9 +961,22 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	require.NoError(t, err)
 	require.NotNil(t, te.GetClientIdentityService())
 
-	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	grpcServer, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, localGRPClis)
+
+	// Set up OCI fetcher server and client
+	ociFetcherServer, err := ocifetcher.NewServer(te.GetByteStreamClient(), te.GetActionCacheClient())
+	require.NoError(t, err)
+	ofpb.RegisterOCIFetcherServer(grpcServer, ociFetcherServer)
+
 	go runServer()
+
+	// Create OCI fetcher client and set it on the env
+	conn, err := testenv.LocalGRPCConn(context.Background(), localGRPClis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	te.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(conn))
+
 	return te
 }
 
@@ -1534,8 +1549,11 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	require.NoError(t, err)
 
 	imageAddress := registry.ImageAddress(imageName + "_image")
+	// With OCIFetcher, there are 2 GET /v2/ requests:
+	// 1. From the resolver's puller (for manifest GET)
+	// 2. From the OCIFetcher server (for manifest HEAD metadata)
 	expected := map[string]int{
-		http.MethodGet + " /v2/": 1,
+		http.MethodGet + " /v2/": 2,
 		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
 		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
 		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
