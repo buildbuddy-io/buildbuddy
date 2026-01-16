@@ -1576,6 +1576,7 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 			defer eventLogWriter.Close(ctx)
 		}
 
+		log.Infof("Sending data (len=%d): %q", len(req.GetData()), string(req.GetData()))
 		_, err = eventLogWriter.Write(ctx, req.GetData())
 		if err != nil {
 			return err
