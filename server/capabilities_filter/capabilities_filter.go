@@ -117,6 +117,7 @@ var (
 		"ExecuteWorkflow",
 		"InvalidateSnapshot",
 		"WriteEventLog",
+		"UpdateRunStatus",
 		// Org API keys (implementation only returns developer-visible keys
 		// for developers; admins can see all keys).
 		"GetApiKeys",

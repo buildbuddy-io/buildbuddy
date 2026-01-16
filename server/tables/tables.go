@@ -167,6 +167,10 @@ type Invocation struct {
 	RunID                            string
 	BazelExitCode                    string
 
+	// For invocations with run logs, the status of the executable running.
+	// Type is `invocation_status.OverallStatus`.
+	RunStatus int64
+
 	// The user-specified setting of how to download outputs from remote cache.
 	// The value maps to invocation.DownloadOutputsOption
 	DownloadOutputsOption int64
