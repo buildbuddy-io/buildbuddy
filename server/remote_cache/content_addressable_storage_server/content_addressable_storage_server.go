@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
@@ -1151,6 +1152,11 @@ func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *r
 		return nil, err
 	}
 
+	// Record that a chunked write operation occurred for this invocation.
+	if md := bazel_request.GetRequestMetadata(ctx); md != nil {
+		hit_tracker.RecordChunkedOperation(ctx, s.env, md.GetToolInvocationId())
+	}
+
 	return &repb.SpliceBlobResponse{
 		BlobDigest: req.GetBlobDigest(),
 	}, nil
@@ -1179,5 +1185,11 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 		// the blob as a single chunk to better comply with the RE API contract.
 		return nil, err
 	}
+
+	// Record that a chunked read operation occurred for this invocation.
+	if md := bazel_request.GetRequestMetadata(ctx); md != nil {
+		hit_tracker.RecordChunkedOperation(ctx, s.env, md.GetToolInvocationId())
+	}
+
 	return manifest.ToSplitBlobResponse(), nil
 }

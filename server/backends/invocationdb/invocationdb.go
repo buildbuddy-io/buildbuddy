@@ -354,6 +354,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 		TotalUncachedActionExecUsec:       i.TotalUncachedActionExecUsec,
 		DownloadThroughputBytesPerSecond:  i.DownloadThroughputBytesPerSecond,
 		UploadThroughputBytesPerSecond:    i.UploadThroughputBytesPerSecond,
+		ChunkingEnabled:                   i.ChunkingEnabled,
 	}
 	out.LastChunkId = i.LastChunkId
 	if i.LastChunkId != "" {

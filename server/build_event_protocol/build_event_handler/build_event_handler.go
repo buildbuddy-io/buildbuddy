@@ -922,6 +922,7 @@ func fillInvocationFromCacheStats(cacheStats *capb.CacheStats, ti *tables.Invoca
 	ti.UploadThroughputBytesPerSecond = cacheStats.GetUploadThroughputBytesPerSecond()
 	ti.TotalCachedActionExecUsec = cacheStats.GetTotalCachedActionExecUsec()
 	ti.TotalUncachedActionExecUsec = cacheStats.GetTotalUncachedActionExecUsec()
+	ti.ChunkingEnabled = cacheStats.GetChunkingEnabled()
 }
 
 func invocationStatusLabel(ti *tables.Invocation) string {

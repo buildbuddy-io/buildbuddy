@@ -37,6 +37,12 @@ export default class CacheCardComponent extends React.Component<Props> {
                   This invocation was created with a read-only API key. No artifacts were written to the cache.
                 </div>
               )}
+              {hasCacheStats && this.props.model.cacheStats[0]?.chunkingEnabled && (
+                <div className="cache-details">
+                  <AlertCircleIcon className="icon" />
+                  Cache chunking was enabled for this invocation. Cache statistics may not be completely accurate.
+                </div>
+              )}
               {this.props.model.cacheStats.map((cacheStat) => {
                 const downloadThroughput = BITS_PER_BYTE * (+cacheStat.downloadThroughputBytesPerSecond / 1000000);
                 const uploadThroughput = BITS_PER_BYTE * (+cacheStat.uploadThroughputBytesPerSecond / 1000000);

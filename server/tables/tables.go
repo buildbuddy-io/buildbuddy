@@ -160,6 +160,11 @@ type Invocation struct {
 	// that misses the action cache.
 	TotalUncachedActionExecUsec int64
 
+	// ChunkingEnabled indicates whether content-defined chunking was used for
+	// this invocation's cache requests, which may affect the accuracy of cache
+	// statistics.
+	ChunkingEnabled bool
+
 	DownloadThroughputBytesPerSecond int64
 	InvocationUUID                   []byte `gorm:"size:16;default:NULL;uniqueIndex:invocation_invocation_uuid;unique"`
 	Success                          bool

@@ -74,6 +74,9 @@ const (
 	CachedActionExecUsec
 	UncachedActionExecUsec
 
+	// ChunkedOperations tracks whether any chunked read/write operations occurred.
+	ChunkedOperations
+
 	// New counter types go here!
 )
 
@@ -848,7 +851,23 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 	cs.TotalCachedActionExecUsec = counts[counterField(false, CachedActionExecUsec)]
 	cs.TotalUncachedActionExecUsec = counts[counterField(false, UncachedActionExecUsec)]
 
+	// Check if any chunked operations were recorded for this invocation.
+	cs.ChunkingEnabled = counts[counterField(false, ChunkedOperations)] > 0
+
 	return cs
+}
+
+// RecordChunkedOperation records that a chunked read/write operation occurred
+// for the given invocation. This is used to show a warning in the UI that
+// cache statistics may not be completely accurate.
+func RecordChunkedOperation(ctx context.Context, env environment.Env, iid string) {
+	c := env.GetMetricsCollector()
+	if c == nil || iid == "" {
+		return
+	}
+	if err := c.IncrementCount(ctx, counterKey(iid), counterField(false, ChunkedOperations), 1); err != nil {
+		log.CtxDebugf(ctx, "Failed to record chunked operation for invocation %s: %s", iid, err)
+	}
 }
 
 func CleanupCacheStats(ctx context.Context, env environment.Env, iid string) {
