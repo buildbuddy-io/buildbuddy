@@ -39,7 +39,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -228,8 +227,6 @@ func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr str
 	if err != nil {
 		return nil, err
 	}
-	// temporary: write nhid to gossip config directory
-	gossip.WriteHostID(nodeHost.ID())
 
 	registry := regHolder.r
 	apiClient := client.NewAPIClient(env, nodeHost.ID(), registry)
