@@ -182,6 +182,7 @@ gazelle_python_manifest(
 # gazelle:exclude website/**
 #
 # gazelle:python_library_naming_convention $package_name$_py_library
+# gazelle:python_generation_mode file
 #
 ## Prefer generated BUILD files to be called BUILD over BUILD.bazel
 # gazelle:build_file_name BUILD,BUILD.bazel

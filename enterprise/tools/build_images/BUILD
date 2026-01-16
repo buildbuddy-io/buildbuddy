@@ -5,7 +5,7 @@ py_library(
     srcs = ["build_image.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//enterprise/tools/build_images/lib:lib_py_library",
+        "//enterprise/tools/build_images/lib:check_buildx_support",
         "@pypi//requests",
     ],
 )
