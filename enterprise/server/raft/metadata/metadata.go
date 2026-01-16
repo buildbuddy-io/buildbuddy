@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/gcsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -153,6 +154,10 @@ func clearPrevCache(dir string, currentSubDir string) error {
 	return nil
 }
 
+// Temporary method to write host id.
+func WriteHostID(hostID string) {
+}
+
 func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 	if *hostName == "" {
 		return nil, status.FailedPreconditionError("raft hostname must be configured")
@@ -265,6 +270,14 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 	if err := rc.store.Start(); err != nil {
 		return nil, err
 	}
+
+	configDir
+	err := hostid.WriteHostID(*configDir, hostID)
+	if err != nil {
+		log.Errorf("failed to write HostID %q to %q: %s", hostID, *configDir, err)
+		return
+	}
+	log.Infof("successfully write hostID: %q to %q", hostID, *configDir)
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.

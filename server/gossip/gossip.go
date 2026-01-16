@@ -243,16 +243,6 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-// Temporary method to write host id.
-func WriteHostID(hostID string) {
-	err := hostid.WriteHostID(*configDir, hostID)
-	if err != nil {
-		log.Errorf("failed to write HostID %q to %q: %s", hostID, *configDir, err)
-		return
-	}
-	log.Infof("successfully write hostID: %q to %q", hostID, *configDir)
-}
-
 func New(nodeName, listenAddress string, join []string) (*GossipManager, error) {
 	subLog := log.NamedSubLogger(fmt.Sprintf("GossipManager(%s)", nodeName))
 	if *logLevel != "" {
