@@ -336,12 +336,8 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	}
 	useCache := cacheEnabled && !isAnon
 
-	var ociFetcherClient ofpb.OCIFetcherClient
-	if useOCIFetcher {
-		ociFetcherClient = r.env.GetOCIFetcherClient()
-		if ociFetcherClient == nil {
-			return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
-		}
+	if useOCIFetcher && r.env.GetOCIFetcherClient() == nil {
+		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
 	}
 
 	return fetchImageFromCacheOrRemote(
@@ -355,7 +351,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		r.env.GetActionCacheClient(),
 		r.env.GetByteStreamClient(),
 		puller,
-		ociFetcherClient,
+		r.env.GetOCIFetcherClient(),
 		credentials,
 		useCache,
 		useOCIFetcher,
@@ -834,7 +830,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 
 	// When using OCIFetcher, the server handles caching, so we don't need
 	// to wrap with a read-through cacher on the client side.
-	if l.image.useCache && l.image.ociFetcherClient == nil {
+	if l.image.useCache && !l.image.useOCIFetcher {
 		mediaType, err := l.MediaType()
 		if err != nil {
 			log.CtxWarningf(l.image.ctx, "Could not get media type for layer: %s", err)
