@@ -1232,7 +1232,14 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	require.Empty(t, cmp.Diff(expectedRefresh, counter.Snapshot()))
 }
 
-// TestResolveWithOCIFetcher tests Resolve with useOCIFetcher=true.
+// TestResolveWithOCIFetcher exercises Resolver.Resolve with useOCIFetcher=true,
+// validating basic image resolution scenarios:
+//   - Resolving an existing image without credentials succeeds and returns correct layer contents
+//   - Resolving an invalid image name returns InvalidArgumentError
+//   - Resolving an image without proper authorization returns PermissionDeniedError
+//   - Resolving a platform-specific image matches the correct variant even when not explicitly specified
+//
+// Both direct image references and index references are tested for each scenario.
 func TestResolveWithOCIFetcher(t *testing.T) {
 	for _, tc := range []resolveTestCase{
 		{
@@ -1369,8 +1376,18 @@ func TestResolveWithOCIFetcher(t *testing.T) {
 	}
 }
 
-// TestResolveWithOCIFetcher_Layers_DiffIDs tests that Layer.DiffID() does not
-// result in HTTP requests when using useOCIFetcher=true.
+// TestResolveWithOCIFetcher_Layers_DiffIDs exercises Resolver.Resolve with
+// useOCIFetcher=true and verifies that calling Image.Layers() or Layer.DiffID()
+// does not result in additional HTTP requests to the registry beyond fetching
+// the config file.
+//
+// This is a regression test for an incident where the go-containerregistry
+// library would fetch the entire uncompressed layer to compute the DiffID
+// if it wasn't available in the config file.
+//
+// Expected behavior:
+//   - Image.Layers() makes no HTTP requests
+//   - Layer.DiffID() makes no HTTP requests after ConfigFile() is fetched
 func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 	for _, tc := range []resolveTestCase{
 		{
@@ -1478,7 +1495,14 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 	}
 }
 
-// TestResolveWithOCIFetcher_Concurrency tests concurrent layer fetching with useOCIFetcher=true.
+// TestResolveWithOCIFetcher_Concurrency exercises Resolver.Resolve with
+// useOCIFetcher=true and verifies correct behavior when multiple goroutines
+// concurrently access layer contents.
+//
+// Expected behavior:
+//   - Each layer is fetched exactly once from the registry (no duplicate requests)
+//   - All goroutines receive correct layer data and DiffIDs
+//   - No race conditions occur during concurrent access
 func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
