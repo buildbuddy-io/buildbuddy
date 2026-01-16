@@ -9,6 +9,9 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/metrics",
+        "//server/util/authutil",
+        "//server/util/bazel_request",
+        "//server/util/usageutil",
         "@org_golang_google_grpc//metadata",
     ],
 )
