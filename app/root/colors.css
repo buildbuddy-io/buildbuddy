@@ -103,6 +103,7 @@
   --color-overlay-dark-border: rgba(0, 0, 0, 0.15);
   --color-overlay-dark-divider: rgba(0, 0, 0, 0.2);
   --color-overlay-dark-medium: rgba(0, 0, 0, 0.6);
+  --color-overlay-dark-solid: rgba(33, 33, 33, 0.95);
   --color-overlay-dark-strong: rgba(0, 0, 0, 0.8);
   --color-overlay-dark-subtle: rgba(0, 0, 0, 0.05);
   --color-overlay-dark-text: rgba(0, 0, 0, 0.7);
@@ -203,6 +204,8 @@
   --color-button-primary-bg: var(--color-gray-900);
   --color-button-primary-hover: var(--color-gray-700);
   --color-button-primary-text: var(--color-white);
+  --color-cache-hovercard-bg: var(--color-overlay-light-strong);
+  --color-cache-hovercard-text: inherit;
   --color-chart-black: var(--color-gray-900);
   --color-chart-stroke: var(--color-white);
   --color-code-text: var(--color-black);
@@ -378,6 +381,7 @@
   --color-trace-scrollbar-corner: var(--color-gray-300);
   --color-trace-scrollbar-thumb: var(--color-gray-400);
   --color-trace-zoom-factor-bg: var(--color-yellow-highlight);
+  --color-tree-node-size-text: var(--color-black);
   --color-trends-hovercard-bg: var(--color-overlay-light-solid);
   --color-url-input-bg: var(--color-gray-100);
   --color-workflows-bg: var(--color-gray-50-alt);
@@ -422,6 +426,8 @@
   --color-button-primary-bg: var(--color-gray-800);
   --color-button-primary-hover: var(--color-gray-700);
   --color-button-primary-text: var(--color-white);
+  --color-cache-hovercard-bg: var(--color-overlay-dark-solid);
+  --color-cache-hovercard-text: var(--color-white);
   --color-chart-black: var(--color-white);
   --color-chart-stroke: var(--color-bg-card);
   --color-code-text: var(--color-white);
@@ -475,6 +481,7 @@
   --color-hovercard-muted: var(--color-blue-gray-200);
   --color-hovercard-text: var(--color-white);
   --color-icon-default: var(--color-text-tertiary);
+  --color-icon-subtle: var(--color-gray-500);
   --color-link: var(--color-blue-400);
   --color-link-hover: var(--color-blue-300);
   --color-link-plain: var(--color-gray-200);
@@ -516,7 +523,7 @@
   --color-search-bar-selected-bg: var(--color-gray-700);
   --color-search-highlight-bg: var(--color-green-900);
   --color-search-input-border: var(--color-border-secondary);
-  --color-search-item-hover-bg: var(--color-bg-hover);
+  --color-search-item-hover-bg: var(--color-overlay-light-subtle);
   --color-search-more-button-bg: var(--color-bg-secondary);
   --color-search-muted-text: var(--color-text-secondary);
   --color-search-result-header-bg: var(--color-blue-900);
@@ -566,6 +573,7 @@
   --color-text-muted: var(--color-gray-600-alt);
   --color-text-placeholder: var(--color-gray-700-alt);
   --color-text-primary: var(--color-gray-300);
+  --color-text-primary-translucent: var(--color-gray-400);
   --color-text-secondary: var(--color-gray-400);
   --color-text-tertiary: var(--color-gray-500);
   --color-trace-border: var(--color-gray-900);
@@ -578,6 +586,7 @@
   --color-trace-scrollbar-corner: var(--color-gray-900);
   --color-trace-scrollbar-thumb: var(--color-gray-800);
   --color-trace-zoom-factor-bg: var(--color-amber-800-alt);
+  --color-tree-node-size-text: var(--color-gray-200);
   --color-trends-hovercard-bg: var(--color-gray-800);
   --color-url-input-bg: var(--color-bg-tertiary);
   --color-workflows-bg: var(--color-gray-800);
