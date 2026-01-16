@@ -369,7 +369,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) (gcr.Image, error) {
 	// When using OCIFetcher, skip the separate metadata request and just fetch
 	// the full manifest. The OCIFetcher server caches manifests, so this avoids
-	// an extra round trip while still being efficient.
+	// an extra round trip.
 	if useCache && !useOCIFetcher {
 		var desc *gcr.Descriptor
 		digest, hasDigest := getDigest(digestOrTagRef)
@@ -488,7 +488,7 @@ func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller
 	if useOCIFetcher && ociFetcherClient == nil {
 		return nil, nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
 	}
-	if ociFetcherClient != nil {
+	if useOCIFetcher {
 		resp, err := ociFetcherClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
 			Ref:            digestOrTagRef.String(),
 			Credentials:    credentials.ToProto(),
@@ -870,7 +870,7 @@ func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
 	if l.image.useOCIFetcher && l.image.ociFetcherClient == nil {
 		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
 	}
-	if l.image.ociFetcherClient != nil {
+	if l.image.useOCIFetcher {
 		ref := l.repo.Digest(l.digest.String())
 		// Create a cancellable context so that Close() can abort the stream
 		// if the caller doesn't read to EOF.
