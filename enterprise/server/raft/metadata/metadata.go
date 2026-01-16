@@ -154,10 +154,6 @@ func clearPrevCache(dir string, currentSubDir string) error {
 	return nil
 }
 
-// Temporary method to write host id.
-func WriteHostID(hostID string) {
-}
-
 func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 	if *hostName == "" {
 		return nil, status.FailedPreconditionError("raft hostname must be configured")

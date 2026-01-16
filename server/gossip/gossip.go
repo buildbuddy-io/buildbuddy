@@ -229,7 +229,6 @@ func Register(env *real_environment.RealEnv) error {
 	}
 	name := *nodeName
 	if name == "" {
-		// TODO(luluz): pass config dir.
 		name = hostid.GetFailsafeHostID("")
 	}
 
