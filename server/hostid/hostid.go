@@ -106,6 +106,10 @@ func WriteHostID(dir string, hostID string) error {
 	if dir == "" || hostID == "" {
 		return errors.New("dir or hostID is empty, don't write host id")
 	}
+	if err := disk.EnsureDirectoryExists(dir); err != nil {
+		return fmt.Errorf("EnsureDirectoryExists failed: %s", err)
+	}
+
 	hostIDFilepath := path.Join(dir, hostIDFilename)
 	hostIDFile, err := os.OpenFile(hostIDFilepath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {

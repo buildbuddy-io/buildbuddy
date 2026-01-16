@@ -271,8 +271,9 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 	err = hostid.WriteHostID(configDir, store.NHID())
 	if err != nil {
 		log.Errorf("failed to write HostID %q to %q: %s", store.NHID(), configDir, err)
+	} else {
+		log.Infof("successfully write hostID: %q to %q", store.NHID(), configDir)
 	}
-	log.Infof("successfully write hostID: %q to %q", store.NHID(), configDir)
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
