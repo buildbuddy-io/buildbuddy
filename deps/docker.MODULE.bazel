@@ -71,3 +71,9 @@ dockerfile_image(
     dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/run_script:Dockerfile",
     visibility = ["//visibility:public"],
 )
+
+dockerfile_image(
+    name = "xfsprogs_image",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/test_images/xfsprogs_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
