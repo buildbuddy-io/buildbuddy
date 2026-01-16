@@ -874,15 +874,19 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
 	if l.image.ociFetcherClient != nil {
 		ref := l.repo.Digest(l.digest.String())
-		stream, err := l.image.ociFetcherClient.FetchBlob(l.image.ctx, &ofpb.FetchBlobRequest{
+		// Create a cancellable context so that Close() can abort the stream
+		// if the caller doesn't read to EOF.
+		ctx, cancel := context.WithCancel(l.image.ctx)
+		stream, err := l.image.ociFetcherClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
 			Ref:            ref.String(),
 			Credentials:    l.image.credentials.ToProto(),
 			BypassRegistry: l.image.credentials.bypassRegistry,
 		})
 		if err != nil {
+			cancel()
 			return nil, err
 		}
-		return newStreamReader(stream), nil
+		return newStreamReader(stream, cancel), nil
 	}
 
 	remoteLayer, err := l.createRemoteLayer()
@@ -920,11 +924,12 @@ func (l *layerFromDigest) MediaType() (types.MediaType, error) {
 // streamReader wraps a FetchBlob stream as an io.ReadCloser.
 type streamReader struct {
 	stream ofpb.OCIFetcher_FetchBlobClient
+	cancel context.CancelFunc
 	buf    []byte
 }
 
-func newStreamReader(stream ofpb.OCIFetcher_FetchBlobClient) *streamReader {
-	return &streamReader{stream: stream}
+func newStreamReader(stream ofpb.OCIFetcher_FetchBlobClient, cancel context.CancelFunc) *streamReader {
+	return &streamReader{stream: stream, cancel: cancel}
 }
 
 func (r *streamReader) Read(p []byte) (int, error) {
@@ -940,7 +945,11 @@ func (r *streamReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
+// Close cancels the underlying gRPC stream context to release resources.
+// This is safe to call even if the stream has been fully read (cancel is a no-op
+// after the context is already done).
 func (r *streamReader) Close() error {
+	r.cancel()
 	return nil
 }
 
