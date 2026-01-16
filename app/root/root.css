@@ -1957,3 +1957,19 @@ code .comment {
 .recharts-pie-sector path {
   stroke: var(--color-chart-stroke);
 }
+
+.recharts-cartesian-axis-tick-value {
+  fill: var(--color-chart-axis);
+}
+
+.recharts-cartesian-grid line {
+  stroke: var(--color-chart-grid);
+}
+
+.recharts-legend-item-text {
+  color: var(--color-text-primary);
+}
+
+.recharts-tooltip-cursor {
+  fill: var(--color-chart-hover-cursor);
+}

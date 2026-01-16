@@ -162,6 +162,7 @@
   white-space: nowrap;
   height: 24px;
   background: var(--color-bg-info-subtle);
+  color: var(--color-hovercard-text);
   border-radius: 12px;
   height: inherit;
   padding: 2px 8px;

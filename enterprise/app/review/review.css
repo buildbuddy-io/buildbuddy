@@ -64,7 +64,7 @@
 }
 
 .reviews .pr-review-approved {
-  color: #4caf50;
+  color: var(--color-review-status-approved);
 }
 
 .reviews .pr-review-requested {
@@ -86,12 +86,12 @@
 }
 
 .reviews .pr-status:before {
-  background-color: #ffc107;
+  background-color: var(--color-review-status-pending);
 }
 
 .reviews .pr-status-approved:before,
 .reviews .pr-status-mergeable:before {
-  background-color: #4caf50;
+  background-color: var(--color-review-status-approved);
 }
 
 .reviews .empty-state {
@@ -124,15 +124,15 @@
 .pr-view .header-separator {
   height: 6px;
   grid-column: span 2;
-  background-color: #ffc107;
+  background-color: var(--color-review-status-pending);
 }
 
 .pr-view.submitted .header-separator {
-  background-color: #9e9e9e;
+  background-color: var(--color-review-status-submitted);
 }
 
 .pr-view.approved .header-separator {
-  background-color: #8bc34a;
+  background-color: var(--color-review-icon-approved);
 }
 
 .pr-view .review-title {
@@ -154,11 +154,11 @@
 
 .pr-view .review-cell {
   padding: 16px 32px;
-  background-color: #ffecb3;
+  background-color: var(--color-review-cell-bg);
 }
 
 .pr-view.approved .icon {
-  stroke: #8bc34a;
+  stroke: var(--color-review-icon-approved);
 }
 
 .pr-view .review-actions {
@@ -167,7 +167,7 @@
 }
 
 .pr-view .review-actions .filled-button {
-  background-color: #d32f2f;
+  background-color: var(--color-red-700);
 }
 
 .pr-view .description {
@@ -190,7 +190,7 @@
 
 .pr-view.approved .review-cell,
 .pr-view.approved .single-file-header {
-  background-color: #f1f8e9;
+  background-color: var(--color-review-cell-approved-bg);
 }
 
 .pr-view .attr-grid {
@@ -238,7 +238,7 @@
 }
 
 .pr-view .diff-header {
-  background-color: #e1f5fe;
+  background-color: var(--color-review-diff-header-bg);
   font-size: 12px;
   line-height: 16px;
   font-family: "Source Code Pro", monospace;
@@ -262,7 +262,7 @@
 .pr-view .reply-fake-link {
   margin-right: 24px;
   cursor: pointer;
-  color: #3f51b5;
+  color: var(--color-review-link);
   font-weight: 600;
   text-decoration: underline;
 }
@@ -342,7 +342,7 @@
 
 .pr-view .thread {
   display: inline-block;
-  background-color: #ffecb3;
+  background-color: var(--color-review-thread-bg);
   vertical-align: top;
   min-height: 16px;
   white-space: normal;
@@ -350,19 +350,19 @@
   width: 100%;
   box-sizing: border-box;
   border-radius: 2px;
-  box-shadow: 0 0 4px #ccc;
+  box-shadow: 0 0 4px var(--color-review-thread-shadow);
 }
 
 .pr-view .thread.user-replied {
-  background-color: #fff8e1;
+  background-color: var(--color-review-thread-replied-bg);
 }
 
 .pr-view .thread.resolved {
-  background-color: #e0e0e0;
+  background-color: var(--color-review-thread-resolved-bg);
 }
 
 .pr-view .thread.resolved.user-replied {
-  background-color: #eee;
+  background-color: var(--color-review-thread-resolved-replied-bg);
 }
 
 .pr-view .resolution-pill-box {
@@ -374,22 +374,22 @@
   border-radius: 8px;
   line-height: 16px;
   padding: 0 8px;
-  background-color: #ffd54f;
-  color: #795548;
+  background-color: var(--color-review-pill-bg);
+  color: var(--color-review-pill-text);
   font-weight: 600;
 }
 
 .pr-view .user-replied .resolution-pill {
-  background-color: #ffe082;
+  background-color: var(--color-review-pill-replied-bg);
 }
 
 .pr-view .resolution-pill.resolved {
-  background-color: #bdbdbd;
-  color: #616161;
+  background-color: var(--color-review-pill-resolved-bg);
+  color: var(--color-review-pill-resolved-text);
 }
 
 .pr-view .user-replied .resolution-pill.resolved {
-  background-color: #e0e0e0;
+  background-color: var(--color-review-pill-resolved-replied-bg);
 }
 
 .pr-view .thread-comment {
@@ -401,7 +401,7 @@
 
 .pr-view .comment-divider {
   height: 0.5px;
-  background-color: #bbb;
+  background-color: var(--color-review-divider);
   width: calc(100% - 20px);
   margin: 0 10px;
 }
@@ -416,7 +416,7 @@
 }
 
 .pr-view .comment-timestamp {
-  color: #9e9e9e;
+  color: var(--color-review-timestamp);
 }
 
 .pr-view .comment-body {
@@ -427,7 +427,7 @@
 .pr-view .action-status {
   display: inline-block;
   border-radius: 4px;
-  background-color: #e0e0e0;
+  background-color: var(--color-review-action-bg);
   padding: 0 4px;
   margin: 0 2px 2px 0;
   font-size: 12px;
@@ -436,33 +436,23 @@
 
 .pr-view .action-status.failure {
   border-radius: 6px;
-  background-color: #f44336;
-  color: #fff;
+  background-color: var(--color-review-action-failure-bg);
+  color: var(--color-review-action-failure-text);
 }
 
 .pr-view .source-line.right.new,
 .pr-view .source-line.right.modified {
-  background-color: #c8e6c9;
+  background-color: var(--color-review-diff-add-bg);
 }
 
 .pr-view .source-line.left.new,
 .pr-view .source-line.left.modified {
-  background-color: #ffcdd2;
-}
-
-.pr-view .source-line.right.new,
-.pr-view .source-line.right.modified {
-  background-color: #c8e6c9;
-}
-
-.pr-view .source-line.left.new,
-.pr-view .source-line.left.modified {
-  background-color: #ffcdd2;
+  background-color: var(--color-review-diff-remove-bg);
 }
 
 .pr-view .review-cell.header {
   padding: 8px 32px;
-  background-color: #e1f5fe;
+  background-color: var(--color-review-diff-header-bg);
   display: flex;
   align-items: center;
   font-weight: 600;
@@ -482,7 +472,7 @@
 }
 
 .pr-view .select-option-sha {
-  color: #ccc;
+  color: var(--color-review-sha-text);
 }
 
 .pr-view .expand-button {
@@ -500,7 +490,7 @@
 }
 
 .pr-view .reviewer.approved {
-  color: #4caf50;
+  color: var(--color-review-status-approved);
 }
 
 .pr-view .reply-modal-approve-button {
@@ -513,7 +503,7 @@
 
 .pr-view .single-file-header {
   padding: 8px 32px;
-  background-color: #ffecb3;
+  background-color: var(--color-review-cell-bg);
   grid-column: span 2;
   display: flex;
   justify-content: space-between;
@@ -545,8 +535,8 @@
 
 .line-with-comment-indicator::before {
   content: "+";
-  background-color: #1e88e5;
-  color: #fff;
+  background-color: var(--color-review-comment-indicator-bg);
+  color: var(--color-review-comment-indicator-text);
   font-weight: bolder;
   cursor: pointer;
   border-radius: 4px;

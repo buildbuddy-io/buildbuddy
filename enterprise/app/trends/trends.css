@@ -68,11 +68,11 @@
 
 .trends-clickable-bar:hover,
 .trends-clickable-bar.green:hover {
-  fill: var(--color-light-green-400);
+  fill: var(--color-chart-bar-hover-green);
 }
 
 .trends-clickable-bar.red:hover {
-  fill: var(--color-red-300);
+  fill: var(--color-chart-bar-hover-red);
 }
 
 .trends-clickable-bar.orange:hover {
@@ -84,15 +84,15 @@
 }
 
 .trends-clickable-bar.black:hover {
-  fill: var(--color-gray-800);
+  fill: var(--color-chart-bar-hover-black);
 }
 
 .trends-clickable-bar.grey:hover {
-  fill: var(--color-gray-400-alt);
+  fill: var(--color-chart-bar-hover-grey);
 }
 
 .trends-clickable-bar.blue:hover {
-  fill: var(--color-light-blue-400);
+  fill: var(--color-chart-bar-hover-blue);
 }
 
 .trends svg.recharts-surface {
@@ -103,6 +103,14 @@
 .heatmap-svg {
   user-select: none;
   cursor: pointer;
+}
+
+.heatmap-svg line {
+  stroke: var(--color-heatmap-axis);
+}
+
+.heatmap-svg text {
+  fill: var(--color-heatmap-axis);
 }
 
 .heatmap-zoom {

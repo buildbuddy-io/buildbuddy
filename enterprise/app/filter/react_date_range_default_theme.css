@@ -205,7 +205,7 @@
 .rdrInRange,
 .rdrStartEdge,
 .rdrEndEdge {
-  background: currentColor;
+  background: var(--color-datepicker-selection-bg);
   position: absolute;
   top: 5px;
   left: 0;
@@ -278,7 +278,7 @@
 .rdrDayStartPreview,
 .rdrDayInPreview,
 .rdrDayEndPreview {
-  background: var(--color-overlay-light-subtle);
+  background: var(--color-datepicker-preview-bg);
   position: absolute;
   top: 3px;
   left: 0px;
