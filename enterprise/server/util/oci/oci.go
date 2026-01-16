@@ -367,7 +367,10 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
 func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) (gcr.Image, error) {
-	if useCache {
+	// When using OCIFetcher, skip the separate metadata request and just fetch
+	// the full manifest. The OCIFetcher server caches manifests, so this avoids
+	// an extra round trip while still being efficient.
+	if useCache && !useOCIFetcher {
 		var desc *gcr.Descriptor
 		digest, hasDigest := getDigest(digestOrTagRef)
 		// For now, we cannot bypass the registry for tag references,
@@ -381,7 +384,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		// - Resolves the tag to a digest (if not already present)
 		if !hasDigest || !credentials.bypassRegistry {
 			var err error
-			desc, err = fetchManifestMetadata(ctx, digestOrTagRef, puller, ociFetcherClient, credentials, useOCIFetcher)
+			desc, err = fetchManifestMetadata(ctx, digestOrTagRef, puller)
 			if err != nil {
 				return nil, err
 			}
@@ -465,32 +468,10 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 	)
 }
 
-// fetchManifestMetadata makes a HEAD request for the manifest metadata.
-// ociFetcherClient must be non-nil when useOCIFetcher is true.
-func fetchManifestMetadata(ctx context.Context, digestOrTagRef gcrname.Reference, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useOCIFetcher bool) (*gcr.Descriptor, error) {
-	if useOCIFetcher && ociFetcherClient == nil {
-		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
-	}
-	if ociFetcherClient != nil {
-		resp, err := ociFetcherClient.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
-			Ref:            digestOrTagRef.String(),
-			Credentials:    credentials.ToProto(),
-			BypassRegistry: credentials.bypassRegistry,
-		})
-		if err != nil {
-			return nil, err
-		}
-		digest, err := gcr.NewHash(resp.GetDigest())
-		if err != nil {
-			return nil, status.InternalErrorf("invalid digest %q from OCI fetcher: %s", resp.GetDigest(), err)
-		}
-		return &gcr.Descriptor{
-			Digest:    digest,
-			Size:      resp.GetSize(),
-			MediaType: types.MediaType(resp.GetMediaType()),
-		}, nil
-	}
-
+// fetchManifestMetadata makes a HEAD request for the manifest metadata using the puller.
+// This is only used when useOCIFetcher=false; when useOCIFetcher=true, we skip the
+// metadata request and fetch the full manifest directly via fetchManifest.
+func fetchManifestMetadata(ctx context.Context, digestOrTagRef gcrname.Reference, puller *remote.Puller) (*gcr.Descriptor, error) {
 	desc, err := puller.Head(ctx, digestOrTagRef)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {

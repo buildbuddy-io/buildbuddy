@@ -1585,13 +1585,14 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	imageAddress := registry.ImageAddress(imageName + "_image")
 	// With OCIFetcher, there are:
 	// - 1 GET /v2/: From OCIFetcher server (puller is cached after first request)
-	// - 2 HEAD manifest: From FetchManifestMetadata and from FetchManifest (which does HEAD before GET)
+	// - 1 HEAD manifest: From FetchManifest (which does HEAD before GET)
+	//   Note: We skip the separate FetchManifestMetadata call when using OCIFetcher
 	// - 1 GET manifest
 	// - 1 HEAD + 1 GET for config blob
 	// - 1 HEAD + 1 GET for each layer blob (HEAD is for getting size for caching)
 	expected := map[string]int{
 		http.MethodGet + " /v2/": 1,
-		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               2,
+		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
 		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
 		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
 		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
