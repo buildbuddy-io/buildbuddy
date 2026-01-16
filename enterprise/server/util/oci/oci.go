@@ -339,6 +339,9 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	var ociFetcherClient ofpb.OCIFetcherClient
 	if useOCIFetcher {
 		ociFetcherClient = r.env.GetOCIFetcherClient()
+		if ociFetcherClient == nil {
+			return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
+		}
 	}
 
 	return fetchImageFromCacheOrRemote(

@@ -1247,6 +1247,30 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	require.Empty(t, cmp.Diff(expectedRefresh, counter.Snapshot()))
 }
 
+// TestResolveWithOCIFetcher_NoClient verifies that Resolve fails with
+// FailedPreconditionError when useOCIFetcher=true but no OCIFetcherClient
+// is configured in the environment.
+func TestResolveWithOCIFetcher_NoClient(t *testing.T) {
+	// Use a test env without OCIFetcherClient configured
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	registry := testregistry.Run(t, testregistry.Opts{})
+	registry.PushNamedImage(t, "test_image", nil)
+
+	_, err := newResolver(t, te).Resolve(
+		context.Background(),
+		registry.ImageAddress("test_image"),
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{},
+		true, /*=useOCIFetcher*/
+	)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got: %v", err)
+	require.Contains(t, err.Error(), "OCIFetcherClient is required")
+}
+
 // TestResolveWithOCIFetcher exercises Resolver.Resolve with useOCIFetcher=true,
 // validating basic image resolution scenarios:
 //   - Resolving an existing image without credentials succeeds and returns correct layer contents
