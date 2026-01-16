@@ -107,14 +107,14 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     if (this.state.cache == "read")
       return (
         <span>
-          build --noremote_upload_local_results{" "}
+          common --noremote_upload_local_results{" "}
           <span className="comment"># Uploads logs & artifacts without writing to cache</span>
         </span>
       );
     if (this.state.cache == "top")
       return (
         <span>
-          build --remote_download_toplevel{" "}
+          common --remote_download_toplevel{" "}
           <span className="comment"># Helps remove network bottleneck if caching is enabled</span>
         </span>
       );
@@ -122,7 +122,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
   }
 
   getRemoteOptions() {
-    return <span>build --remote_timeout=10m</span>;
+    return <span>common --remote_timeout=10m</span>;
   }
 
   getRemoteExecution() {
@@ -135,8 +135,8 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     if (this.state.auth == "cert") {
       return (
         <div>
-          <div>build --tls_client_certificate=buildbuddy-cert.pem</div>
-          <div>build --tls_client_key=buildbuddy-key.pem</div>
+          <div>common --tls_client_certificate=buildbuddy-cert.pem</div>
+          <div>common --tls_client_key=buildbuddy-key.pem</div>
         </div>
       );
     }
@@ -147,7 +147,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
 
       return (
         <div>
-          <div>build --remote_header=x-buildbuddy-api-key={selectedCredential.apiKey.value}</div>
+          <div>common --remote_header=x-buildbuddy-api-key={selectedCredential.apiKey.value}</div>
         </div>
       );
     }
