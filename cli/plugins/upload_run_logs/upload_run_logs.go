@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
@@ -65,15 +67,19 @@ func main() {
 
 	exitCode := runCommand(ctx, bbClient, flag.Args())
 
-	invStatus := inspb.OverallStatus_SUCCESS
-	if exitCode != 0 {
-		invStatus = inspb.OverallStatus_FAILURE
-	}
-	if _, err := bbClient.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
-		InvocationId: *invocationID,
-		Status:       invStatus,
-	}); err != nil {
-		log.Warnf("Failed to update run status: %s", err)
+	// If exit code is 130, it means user canceled (SIGINT)
+	// runCommand already marked it as DISCONNECTED, so don't update again
+	if exitCode != 130 {
+		invStatus := inspb.OverallStatus_SUCCESS
+		if exitCode != 0 {
+			invStatus = inspb.OverallStatus_FAILURE
+		}
+		if _, err := bbClient.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
+			InvocationId: *invocationID,
+			Status:       invStatus,
+		}); err != nil {
+			log.Warnf("Failed to update run status: %s", err)
+		}
 	}
 
 	os.Exit(exitCode)
@@ -92,17 +98,49 @@ func runCommand(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, arg
 	}
 	defer ptmx.Close()
 
+	// Set up signal handling to forward signals to child but not exit immediately
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	canceledByUser := false
+
+	go func() {
+		sig := <-sigChan
+		log.Printf("Received signal %v, forwarding to child process and finishing log upload...", sig)
+		canceledByUser = true
+		// Forward signal to the child process
+		if cmd.Process != nil {
+			cmd.Process.Signal(sig)
+		}
+	}()
+
 	copyOutputDone := make(chan error)
 	go func() {
 		copyOutputDone <- streamOutput(ctx, bbClient, ptmx, stream)
 	}()
 
+	// Wait for command to finish
 	cmdErr := cmd.Wait()
+
+	// Wait for all output to be streamed
 	<-copyOutputDone
 
+	// Close the stream
 	_, err = stream.CloseAndRecv()
 	if err != nil {
 		log.Warnf("Failed to close stream: %s", err)
+	}
+
+	// If user canceled, mark as disconnected
+	if canceledByUser {
+		log.Printf("Marking run as disconnected due to user cancellation")
+		if _, err := bbClient.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
+			InvocationId: *invocationID,
+			Status:       inspb.OverallStatus_DISCONNECTED,
+		}); err != nil {
+			log.Warnf("Failed to update run status: %s", err)
+		}
+		// Return non-zero exit code to indicate cancellation
+		return 130 // Standard exit code for SIGINT
 	}
 
 	if cmdErr != nil {
@@ -117,36 +155,67 @@ func runCommand(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, arg
 // streamOutput streams output to both stdout and uploads them to the BuildBuddy server.
 func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, r io.Reader, stream bbspb.BuildBuddyService_WriteEventLogClient) error {
 	uploadRunLogs := true
-	buf := make([]byte, bufferSize)
+
+	// Accumulation buffer - we fill this before sending
+	sendBuf := make([]byte, 0, bufferSize)
+	// Temporary read buffer
+	readBuf := make([]byte, 32*1024) // 32KB reads
+
+	sendData := func(data []byte) error {
+		if !uploadRunLogs || len(data) == 0 {
+			return nil
+		}
+
+		if err := stream.Send(&elpb.WriteEventLogRequest{
+			Type: elpb.LogType_RUN_LOG,
+			Metadata: &elpb.LogMetadata{
+				InvocationId: *invocationID,
+			},
+			Data: data,
+		}); err != nil {
+			log.Warnf("Failed to stream run logs: %s", err)
+			if _, err := bbClient.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
+				InvocationId: *invocationID,
+				Status:       inspb.OverallStatus_DISCONNECTED,
+			}); err != nil {
+				log.Warnf("Failed to update run status: %s", err)
+			}
+			uploadRunLogs = false
+			return err
+		}
+		return nil
+	}
+
 	for {
-		n, err := r.Read(buf)
+		n, err := r.Read(readBuf)
+		if n > 0 {
+			// Write to stdout immediately
+			os.Stdout.Write(readBuf[:n])
+
+			// Accumulate in send buffer
+			sendBuf = append(sendBuf, readBuf[:n]...)
+
+			// Send if buffer is full
+			if len(sendBuf) >= bufferSize {
+				if err := sendData(sendBuf); err != nil {
+					// Continue reading even if upload fails
+					sendBuf = sendBuf[:0]
+					continue
+				}
+				// Reset buffer after successful send
+				sendBuf = sendBuf[:0]
+			}
+		}
+
 		if err == io.EOF {
+			// Flush any remaining data
+			if len(sendBuf) > 0 {
+				sendData(sendBuf)
+			}
 			return nil
 		}
 		if err != nil {
 			return err
-		}
-
-		os.Stdout.Write(buf[:n])
-
-		// TODO(Maggie): Add retries and a server-side mechanism to ensure idempotency.
-		if uploadRunLogs {
-			if err := stream.Send(&elpb.WriteEventLogRequest{
-				Type: elpb.LogType_RUN_LOG,
-				Metadata: &elpb.LogMetadata{
-					InvocationId: *invocationID,
-				},
-				Data: buf[:n],
-			}); err != nil {
-				log.Warnf("Failed to stream run logs: %s", err)
-				if _, err := bbClient.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
-					InvocationId: *invocationID,
-					Status:       inspb.OverallStatus_DISCONNECTED,
-				}); err != nil {
-					log.Warnf("Failed to update run status: %s", err)
-				}
-				uploadRunLogs = false
-			}
 		}
 	}
 }
