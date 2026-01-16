@@ -27,7 +27,6 @@ var (
 	listenAddr     = flag.String("gossip.listen_addr", "", "The address to listen for gossip traffic on. Ex. 'localhost:1991'")
 	join           = flag.Slice("gossip.join", []string{}, "The nodes to join/gossip with. Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
 	nodeName       = flag.String("gossip.node_name", "", "The gossip node's name. If empty will default to host_id.'")
-	configDir      = flag.String("gossip.config_dir", "", "The directory to store the node name")
 	secretKey      = flag.String("gossip.secret_key", "", "The value should be either 16, 24, or 32 bytes.")
 	retransmitMult = flag.Int("gossip.retransmit_mult", 0, "The retransmit multiplier for a failed broadcast over gossip. If zero, use the default value")
 	logLevel       = flag.String("gossip.log_level", "", "The desired log level for the gossip package. If empty, this flag will be ignored and app.log_level will be applied. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug', ''}")

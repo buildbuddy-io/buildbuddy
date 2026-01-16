@@ -72,6 +72,8 @@ const (
 	// flushing any atime updates in an incomplete batch (that have not
 	// already been flushed due to throughput)
 	atimeFlushPeriod = 10 * time.Second
+
+	configDirName = "config"
 )
 
 type Config struct {
