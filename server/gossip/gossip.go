@@ -229,6 +229,7 @@ func Register(env *real_environment.RealEnv) error {
 	}
 	name := *nodeName
 	if name == "" {
+		// TODO(luluz): pass config dir.
 		name = hostid.GetFailsafeHostID("")
 	}
 
@@ -240,6 +241,16 @@ func Register(env *real_environment.RealEnv) error {
 	}
 	env.SetGossipService(gossipManager)
 	return nil
+}
+
+// Temporary method to write host id.
+func WriteHostID(hostID string) {
+	err := hostid.WriteHostID(*configDir, hostID)
+	if err != nil {
+		log.Errorf("failed to write HostID %q to %q: %s", hostID, *configDir, err)
+		return
+	}
+	log.Infof("successfully write hostID: %q to %q", hostID, *configDir)
 }
 
 func New(nodeName, listenAddress string, join []string) (*GossipManager, error) {

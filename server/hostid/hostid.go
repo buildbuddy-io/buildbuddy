@@ -1,7 +1,9 @@
 package hostid
 
 import (
+	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -97,6 +99,22 @@ func getOrCreateHostId(dir string) (string, error) {
 		return "", err
 	}
 	return id.String(), nil
+}
+
+// A temporary method to write hostID to hostIDFile
+func WriteHostID(dir string, hostID string) error {
+	if dir == "" || hostID == "" {
+		return errors.New("dir or hostID is empty, don't write host id")
+	}
+	hostIDFilepath := path.Join(dir, hostIDFilename)
+	hostIDFile, err := os.OpenFile(hostIDFilepath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to create file %s: %s", hostIDFilepath, err)
+	}
+	if _, err = io.WriteString(hostIDFile, hostID); err != nil {
+		return fmt.Errorf("failed to write %q to %q: %s", hostID, hostIDFilepath, err)
+	}
+	return nil
 }
 
 func GetHostID(dir string) (string, error) {
