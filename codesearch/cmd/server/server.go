@@ -65,7 +65,7 @@ func main() {
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := real_environment.NewRealEnv(healthChecker)
 
-	authenticator, err := remoteauth.New()
+	authenticator, err := remoteauth.NewRemoteAuthenticator()
 	if err != nil {
 		log.Fatal(err.Error())
 	}

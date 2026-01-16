@@ -38,15 +38,15 @@ var (
 	jwtExpirationBuffer = flag.Duration("auth.remote.jwt_expiration_buffer", time.Minute, "Discard remote-auth minted JWTs if they're within this time buffer of their expiration time.")
 )
 
-func New() (*RemoteAuthenticator, error) {
+func NewRemoteAuthenticator() (*RemoteAuthenticator, error) {
 	conn, err := grpc_client.DialSimple(*target)
 	if err != nil {
 		return nil, err
 	}
-	return NewWithTarget(conn)
+	return newRemoteAuthenticator(conn)
 }
 
-func NewWithTarget(conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
+func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
 	config := &lru.Config[string]{
 		MaxSize: jwtCacheSize,
 		SizeFn:  func(v string) int64 { return 1 },
