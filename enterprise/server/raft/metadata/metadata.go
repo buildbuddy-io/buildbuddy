@@ -19,6 +19,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/gcsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -225,9 +227,16 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 		return nil, err
 	}
 
-	if env.GetGossipService() == nil {
-		return nil, status.FailedPreconditionError("raft cache requires gossip be enabled")
+	configDir := filepath.Join(conf.RootDir, configDirName)
+	nhid, err := hostid.GetHostID(configDir)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get host id from %s", configDir)
 	}
+	gossipManager, err := gossip.New(nhid)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create gossip manager with name %q", nhid)
+	}
+	rc.gossipManager = gossipManager
 
 	fileStorer := conf.FileStorer
 	filestoreOpts := make([]filestore.Option, 0)
@@ -251,13 +260,11 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 		rc.gcsTTLDays = *conf.GCS.TTLDays
 	}
 
-	rc.gossipManager = env.GetGossipService()
-
 	rc.raftAddr = fmt.Sprintf("%s:%d", conf.Hostname, conf.HTTPPort)
 	rc.grpcAddr = fmt.Sprintf("%s:%d", conf.Hostname, conf.GRPCPort)
 	grpcListeningAddr := fmt.Sprintf("%s:%d", conf.ListenAddr, conf.GRPCPort)
 
-	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, rc.conf.Partitions, rc.conf.LogDBConfigType, rc.fileStorer)
+	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, nhid, rc.conf.Partitions, rc.conf.LogDBConfigType, rc.fileStorer, rc.gossipManager)
 	if err != nil {
 		return nil, err
 	}

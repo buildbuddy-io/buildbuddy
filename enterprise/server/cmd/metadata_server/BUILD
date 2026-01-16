@@ -17,7 +17,6 @@ go_library(
         "//enterprise/server/remoteauth",
         "//proto:metadata_service_go_proto",
         "//server/config",
-        "//server/gossip",
         "//server/http/interceptors",
         "//server/real_environment",
         "//server/ssl",

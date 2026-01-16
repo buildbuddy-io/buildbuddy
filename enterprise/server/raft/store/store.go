@@ -203,14 +203,14 @@ func getLogDbConfig(t LogDBConfigType) dbConfig.LogDBConfig {
 	return dbConfig.GetDefaultLogDBConfig()
 }
 
-func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr string, partitions []disk.Partition, logDBConfigType LogDBConfigType, filestorer filestore.Store) (*Store, error) {
+func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr, nhid string, partitions []disk.Partition, logDBConfigType LogDBConfigType, filestorer filestore.Store, gossipManager interfaces.GossipService) (*Store, error) {
 	rangeCache := rangecache.New()
 	raftListener := listener.NewRaftListener()
-	gossipManager := env.GetGossipService()
 	regHolder := &registryHolder{raftAddr, grpcAddr, gossipManager, nil}
 	logDBConfig := getLogDbConfig(logDBConfigType)
 	logDBConfig.KVLRUCacheSize = *dragonboatBlockCacheSizeBytes
 	nhc := dbConfig.NodeHostConfig{
+		NodeHostID:     nhid,
 		WALDir:         filepath.Join(rootDir, "wal"),
 		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
 		RTTMillisecond: constants.RTTMillisecond,

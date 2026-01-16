@@ -163,7 +163,7 @@ func startNodes(t *testing.T, configs []testConfig) []*metadata.Server {
 		i := i
 		lN := joinList[i]
 		joinList := joinList
-		gs, err := gossip.New("name-"+lN, lN, joinList)
+		gs, err := gossip.NewWithArgs("name-"+lN, lN, joinList)
 		require.NoError(t, err)
 		config.env.SetGossipService(gs)
 		eg.Go(func() error {

@@ -8,14 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/rs/zerolog"
 
@@ -220,29 +217,11 @@ func (lw *logWriter) Write(d []byte) (int, error) {
 	return len(d), nil
 }
 
-func Register(env *real_environment.RealEnv) error {
-	if *listenAddr == "" {
-		return nil
-	}
-	if len(*join) == 0 {
-		return status.FailedPreconditionError("Gossip listen address specified but no join target set")
-	}
-	name := *nodeName
-	if name == "" {
-		name = hostid.GetFailsafeHostID("")
-	}
-
-	// Initialize a gossip manager, which will contact other nodes
-	// and exchange information.
-	gossipManager, err := New(name, *listenAddr, *join)
-	if err != nil {
-		return err
-	}
-	env.SetGossipService(gossipManager)
-	return nil
+func New(nodeName string) (*GossipManager, error) {
+	return NewWithArgs(nodeName, *listenAddr, *join)
 }
 
-func New(nodeName, listenAddress string, join []string) (*GossipManager, error) {
+func NewWithArgs(nodeName, listenAddress string, join []string) (*GossipManager, error) {
 	subLog := log.NamedSubLogger(fmt.Sprintf("GossipManager(%s)", nodeName))
 	if *logLevel != "" {
 		if l, err := zerolog.ParseLevel(*logLevel); err != nil {
