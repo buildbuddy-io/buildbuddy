@@ -570,6 +570,8 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 		acClient,
 		bsClient,
 		puller,
+		ociFetcherClient,
+		credentials,
 		useCache,
 	), nil
 }
@@ -625,16 +627,18 @@ func getDigest(ref gcrname.Reference) (gcr.Hash, bool) {
 	return hash, true
 }
 
-func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, useCache bool) *imageFromRawManifest {
+func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool) *imageFromRawManifest {
 	i := &imageFromRawManifest{
-		repo:        repo,
-		desc:        desc,
-		rawManifest: rawManifest,
-		ctx:         ctx,
-		acClient:    acClient,
-		bsClient:    bsClient,
-		puller:      puller,
-		useCache:    useCache,
+		repo:             repo,
+		desc:             desc,
+		rawManifest:      rawManifest,
+		ctx:              ctx,
+		acClient:         acClient,
+		bsClient:         bsClient,
+		puller:           puller,
+		ociFetcherClient: ociFetcherClient,
+		credentials:      credentials,
+		useCache:         useCache,
 	}
 	i.fetchRawConfigOnce = sync.OnceValues(func() ([]byte, error) {
 		manifest, err := i.Manifest()
@@ -673,11 +677,13 @@ type imageFromRawManifest struct {
 	desc        gcr.Descriptor
 	rawManifest []byte
 
-	ctx      context.Context
-	acClient repb.ActionCacheClient
-	bsClient bspb.ByteStreamClient
-	puller   *remote.Puller
-	useCache bool
+	ctx              context.Context
+	acClient         repb.ActionCacheClient
+	bsClient         bspb.ByteStreamClient
+	puller           *remote.Puller
+	ociFetcherClient ofpb.OCIFetcherClient
+	credentials      Credentials
+	useCache         bool
 
 	fetchRawConfigOnce func() ([]byte, error)
 }
@@ -825,16 +831,14 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		}
 	}
 
-	remoteLayer, err := l.createRemoteLayer()
-	if err != nil {
-		return nil, err
-	}
-	upstream, err := remoteLayer.Compressed()
+	upstream, err := l.fetchFromRemote()
 	if err != nil {
 		return nil, err
 	}
 
-	if l.image.useCache {
+	// When using OCIFetcher, the server handles caching, so we don't need
+	// to wrap with a read-through cacher on the client side.
+	if l.image.useCache && l.image.ociFetcherClient == nil {
 		mediaType, err := l.MediaType()
 		if err != nil {
 			log.CtxWarningf(l.image.ctx, "Could not get media type for layer: %s", err)
@@ -864,6 +868,30 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	return upstream, nil
 }
 
+// fetchFromRemote fetches the layer from the remote registry.
+// If ociFetcherClient is non-nil, it uses the OCIFetcher service.
+// Otherwise, it uses the puller directly.
+func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
+	if l.image.ociFetcherClient != nil {
+		ref := l.repo.Digest(l.digest.String())
+		stream, err := l.image.ociFetcherClient.FetchBlob(l.image.ctx, &ofpb.FetchBlobRequest{
+			Ref:            ref.String(),
+			Credentials:    l.image.credentials.ToProto(),
+			BypassRegistry: l.image.credentials.bypassRegistry,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return newStreamReader(stream), nil
+	}
+
+	remoteLayer, err := l.createRemoteLayer()
+	if err != nil {
+		return nil, err
+	}
+	return remoteLayer.Compressed()
+}
+
 // Uncompressed fetches the compressed bytes from the upstream server
 // and returns a ReadCloser that decompresses as it reads.
 func (l *layerFromDigest) Uncompressed() (io.ReadCloser, error) {
@@ -887,6 +915,33 @@ func (l *layerFromDigest) Size() (int64, error) {
 
 func (l *layerFromDigest) MediaType() (types.MediaType, error) {
 	return types.DockerLayer, nil
+}
+
+// streamReader wraps a FetchBlob stream as an io.ReadCloser.
+type streamReader struct {
+	stream ofpb.OCIFetcher_FetchBlobClient
+	buf    []byte
+}
+
+func newStreamReader(stream ofpb.OCIFetcher_FetchBlobClient) *streamReader {
+	return &streamReader{stream: stream}
+}
+
+func (r *streamReader) Read(p []byte) (int, error) {
+	if len(r.buf) == 0 {
+		resp, err := r.stream.Recv()
+		if err != nil {
+			return 0, err
+		}
+		r.buf = resp.GetData()
+	}
+	n := copy(p, r.buf)
+	r.buf = r.buf[n:]
+	return n, nil
+}
+
+func (r *streamReader) Close() error {
+	return nil
 }
 
 func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
