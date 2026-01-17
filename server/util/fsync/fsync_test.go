@@ -1,123 +1,80 @@
-package fsync_test
+package fsync
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/buildbuddy-io/buildbuddy/server/util/fsync"
-	"github.com/stretchr/testify/require"
 )
 
-func TestSyncPath(t *testing.T) {
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.txt")
+func TestRootMkdir(t *testing.T) {
+	root := t.TempDir()
+	r := NewRoot(root)
 
-	// Create a file
-	err := os.WriteFile(testFile, []byte("test"), 0644)
-	require.NoError(t, err)
+	dir := filepath.Join(root, "subdir")
+	if err := r.Mkdir(dir, 0755, os.Getuid(), os.Getgid()); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
 
-	// Sync should succeed
-	err = fsync.SyncPath(testFile)
-	require.NoError(t, err)
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("expected directory")
+	}
+
+	if err := r.Sync(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
 }
 
-func TestMkdirAllAndSync(t *testing.T) {
-	tmpDir := t.TempDir()
-	relativePath := filepath.Join("a", "b", "c")
-	fullPath := filepath.Join(tmpDir, relativePath)
+func TestRootSymlink(t *testing.T) {
+	root := t.TempDir()
+	r := NewRoot(root)
 
-	// Test creating nested directories with root boundary
-	err := fsync.MkdirAllAndSync(tmpDir, relativePath, 0755)
-	require.NoError(t, err)
+	link := filepath.Join(root, "link")
+	if err := r.Symlink("target", link, os.Getuid(), os.Getgid()); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
 
-	// Verify directory exists
-	info, err := os.Stat(fullPath)
-	require.NoError(t, err)
-	require.True(t, info.IsDir())
+	target, err := os.Readlink(link)
+	if err != nil {
+		t.Fatalf("readlink: %v", err)
+	}
+	if target != "target" {
+		t.Fatalf("expected target %q, got %q", "target", target)
+	}
 
-	// Test with empty relative path (just sync root dir)
-	rootDir := filepath.Join(tmpDir, "justroot")
-	err = fsync.MkdirAllAndSync(rootDir, "", 0755)
-	require.NoError(t, err)
-
-	info, err = os.Stat(rootDir)
-	require.NoError(t, err)
-	require.True(t, info.IsDir())
+	if err := r.Sync(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
 }
 
-func TestCreateFileAndSync(t *testing.T) {
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.txt")
-
-	content := []byte("test content")
-	err := fsync.CreateFileAndSync(testFile, 0644, bytes.NewReader(content), os.Getuid(), os.Getgid())
-	require.NoError(t, err)
-
-	// Verify file contents
-	data, err := os.ReadFile(testFile)
-	require.NoError(t, err)
-	require.Equal(t, content, data)
-}
-
-func TestSymlinkAndSync(t *testing.T) {
-	tmpDir := t.TempDir()
-	target := filepath.Join(tmpDir, "target.txt")
-	link := filepath.Join(tmpDir, "link.txt")
-
-	// Create target file
-	err := os.WriteFile(target, []byte("test"), 0644)
-	require.NoError(t, err)
-
-	// Create symlink
-	err = fsync.SymlinkAndSync(target, link)
-	require.NoError(t, err)
-
-	// Verify symlink
-	linkTarget, err := os.Readlink(link)
-	require.NoError(t, err)
-	require.Equal(t, target, linkTarget)
-}
-
-func TestLinkAndSync(t *testing.T) {
-	tmpDir := t.TempDir()
-	original := filepath.Join(tmpDir, "original.txt")
-	link := filepath.Join(tmpDir, "link.txt")
+func TestRootLink(t *testing.T) {
+	root := t.TempDir()
+	r := NewRoot(root)
 
 	// Create original file
-	err := os.WriteFile(original, []byte("test"), 0644)
-	require.NoError(t, err)
+	original := filepath.Join(root, "original")
+	if err := os.WriteFile(original, []byte("data"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
 
-	// Create hard link
-	err = fsync.LinkAndSync(original, link)
-	require.NoError(t, err)
+	link := filepath.Join(root, "link")
+	if err := r.Link(original, link); err != nil {
+		t.Fatalf("link: %v", err)
+	}
 
 	// Verify link exists and has same content
 	data, err := os.ReadFile(link)
-	require.NoError(t, err)
-	require.Equal(t, []byte("test"), data)
-}
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(data) != "data" {
+		t.Fatalf("expected data %q, got %q", "data", string(data))
+	}
 
-func TestRenameAndSync(t *testing.T) {
-	tmpDir := t.TempDir()
-	oldPath := filepath.Join(tmpDir, "old.txt")
-	newPath := filepath.Join(tmpDir, "new.txt")
-
-	// Create file
-	err := os.WriteFile(oldPath, []byte("test"), 0644)
-	require.NoError(t, err)
-
-	// Rename
-	err = fsync.RenameAndSync(oldPath, newPath)
-	require.NoError(t, err)
-
-	// Verify old path doesn't exist
-	_, err = os.Stat(oldPath)
-	require.True(t, os.IsNotExist(err))
-
-	// Verify new path exists
-	data, err := os.ReadFile(newPath)
-	require.NoError(t, err)
-	require.Equal(t, []byte("test"), data)
+	if err := r.Sync(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
 }

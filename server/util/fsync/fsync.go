@@ -5,71 +5,60 @@
 package fsync
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"golang.org/x/sys/unix"
 )
 
-// SyncPath opens a path and syncs it to disk.
-func SyncPath(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open path for sync: %w", err)
-	}
-	defer f.Close()
-	return f.Sync()
+// Root tracks filesystem operations within a root directory and syncs them
+// all at once when Sync is called. This is more efficient than syncing after
+// each operation.
+type Root struct {
+	root   string
+	paths  map[string]struct{}
+	synced map[string]struct{}
 }
 
-// SyncParentDir syncs the parent directory of a path to disk.
-func SyncParentDir(path string) error {
-	return SyncPath(filepath.Dir(path))
+// NewRoot creates a Root that will track and sync paths within the given root
+// directory. The root directory itself will be synced when Sync is called.
+func NewRoot(root string) *Root {
+	return &Root{
+		root:   filepath.Clean(root),
+		paths:  make(map[string]struct{}),
+		synced: make(map[string]struct{}),
+	}
 }
 
-// MkdirAllAndSync creates a directory tree and syncs all created directories up to a specified root directory.
-// The rootDir parameter specifies where to stop recursing upward after syncing it.
-// The relativePath parameter is a child path relative to rootDir.
-func MkdirAllAndSync(rootDir string, relativePath string, mode os.FileMode) error {
-	if rootDir == "" {
-		return nil
+// add registers a path to be synced when Sync is called.
+func (r *Root) add(path string) {
+	if path != "" {
+		r.paths[filepath.Clean(path)] = struct{}{}
 	}
+}
 
-	cleanRoot := filepath.Clean(rootDir)
+// addParent registers the parent directory of a path to be synced.
+func (r *Root) addParent(path string) {
+	r.add(filepath.Dir(path))
+}
 
-	fullPath := cleanRoot
-	if relativePath != "" {
-		fullPath = filepath.Clean(filepath.Join(cleanRoot, relativePath))
-	}
-
-	if err := os.MkdirAll(fullPath, mode); err != nil {
+// Mkdir creates a directory and sets ownership.
+func (r *Root) Mkdir(path string, mode os.FileMode, uid, gid int) error {
+	if err := os.Mkdir(path, mode); err != nil {
 		return err
 	}
-
-	for dir := fullPath; ; {
-		if err := SyncPath(dir); err != nil {
-			return err
-		}
-
-		if dir == cleanRoot {
-			break
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-
-		dir = parent
+	if err := os.Chown(path, uid, gid); err != nil {
+		return err
 	}
-
-	return SyncParentDir(cleanRoot)
+	r.add(path)
+	return nil
 }
 
-// CreateFileAndSync creates a file, writes data to it, sets ownership, syncs both the file
-// and its parent directory, then closes the file.
-func CreateFileAndSync(path string, mode os.FileMode, data io.Reader, uid, gid int) error {
+// CreateFile creates a file, writes data to it, and sets ownership.
+func (r *Root) CreateFile(path string, mode os.FileMode, data io.Reader, uid, gid int) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
@@ -79,84 +68,129 @@ func CreateFileAndSync(path string, mode os.FileMode, data io.Reader, uid, gid i
 	if _, err := io.Copy(f, data); err != nil {
 		return err
 	}
-
 	if err := f.Chown(uid, gid); err != nil {
 		return err
 	}
-
-	if err := f.Sync(); err != nil {
-		return err
-	}
-
 	if err := f.Close(); err != nil {
 		return err
 	}
-
-	if err := SyncParentDir(path); err != nil {
-		return err
-	}
-
+	r.add(path)
+	r.addParent(path)
 	return nil
 }
 
-// SymlinkAndSync creates a symbolic link and syncs the parent directory.
-func SymlinkAndSync(oldname, newname string) error {
+// Symlink creates a symbolic link and sets ownership.
+func (r *Root) Symlink(oldname, newname string, uid, gid int) error {
 	if err := os.Symlink(oldname, newname); err != nil {
 		return err
 	}
-	return SyncParentDir(newname)
+	if err := os.Lchown(newname, uid, gid); err != nil {
+		return err
+	}
+	r.addParent(newname)
+	return nil
 }
 
-// LinkAndSync creates a hard link and syncs the parent directory.
-func LinkAndSync(oldname, newname string) error {
+// Link creates a hard link.
+func (r *Root) Link(oldname, newname string) error {
 	if err := os.Link(oldname, newname); err != nil {
 		return err
 	}
-	return SyncParentDir(newname)
+	r.addParent(newname)
+	return nil
 }
 
-// ChownAndSync changes ownership of a path and syncs the path to disk.
-func ChownAndSync(path string, uid, gid int) error {
-	if err := os.Chown(path, uid, gid); err != nil {
-		return err
-	}
-	return SyncPath(path)
-}
-
-// LchownAndSync changes ownership of a symlink and syncs the parent directory.
-func LchownAndSync(path string, uid, gid int) error {
-	if err := os.Lchown(path, uid, gid); err != nil {
-		return err
-	}
-	return SyncParentDir(path)
-}
-
-// MknodAndSync creates a device node and syncs the parent directory.
-func MknodAndSync(path string, mode uint32, dev int) error {
+// Mknod creates a device node.
+func (r *Root) Mknod(path string, mode uint32, dev int) error {
 	if err := unix.Mknod(path, mode, dev); err != nil {
 		return err
 	}
-	return SyncParentDir(path)
+	r.addParent(path)
+	return nil
 }
 
-// SetxattrAndSync sets an extended attribute and syncs the path to disk.
-func SetxattrAndSync(path string, attr string, data []byte, flags int) error {
+// Setxattr sets an extended attribute.
+func (r *Root) Setxattr(path string, attr string, data []byte, flags int) error {
 	if err := unix.Setxattr(path, attr, data, flags); err != nil {
 		return err
 	}
-	return SyncPath(path)
+	r.add(path)
+	return nil
 }
 
-// RenameAndSync renames a path and syncs both the source and destination parent directories.
-func RenameAndSync(oldpath, newpath string) error {
+// Rename renames a path.
+func (r *Root) Rename(oldpath, newpath string) error {
 	if err := os.Rename(oldpath, newpath); err != nil {
 		return err
 	}
-	if err := SyncParentDir(newpath); err != nil {
-		return err
+	r.addParent(newpath)
+	r.addParent(oldpath)
+	return nil
+}
+
+// Sync syncs all tracked paths. Paths are synced longest-first to ensure
+// descendants are flushed before parents.
+func (r *Root) Sync() error {
+	ordered := make([]string, 0, len(r.paths))
+	for path := range r.paths {
+		ordered = append(ordered, path)
 	}
-	if err := SyncParentDir(oldpath); err != nil {
-		return err
+	sort.Slice(ordered, func(i, j int) bool {
+		if len(ordered[i]) == len(ordered[j]) {
+			return ordered[i] > ordered[j]
+		}
+		return len(ordered[i]) > len(ordered[j])
+	})
+	for _, path := range ordered {
+		if err := r.syncUpwards(path); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+func (r *Root) syncUpwards(path string) error {
+	for cur := filepath.Clean(path); ; {
+		if cur == "" || cur == "." {
+			break
+		}
+		if _, ok := r.synced[cur]; ok {
+			break
+		}
+		if r.root != "" {
+			if cur == r.root {
+				if _, explicitlyTracked := r.paths[cur]; explicitlyTracked {
+					if err := SyncPath(cur); err != nil {
+						return err
+					}
+				}
+				r.synced[cur] = struct{}{}
+				break
+			}
+			if !strings.HasPrefix(cur, r.root+string(os.PathSeparator)) {
+				break
+			}
+		}
+		if err := SyncPath(cur); err != nil {
+			return err
+		}
+		r.synced[cur] = struct{}{}
+
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		cur = parent
+	}
+	return nil
+}
+
+// SyncPath opens a path and syncs it to disk.
+func SyncPath(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return f.Sync()
 }

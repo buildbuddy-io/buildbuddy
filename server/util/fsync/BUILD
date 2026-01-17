@@ -5,14 +5,13 @@ go_library(
     srcs = ["fsync.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/fsync",
     visibility = ["//visibility:public"],
-    deps = ["@org_golang_x_sys//unix"],
+    deps = [
+        "@org_golang_x_sys//unix",
+    ],
 )
 
 go_test(
     name = "fsync_test",
     srcs = ["fsync_test.go"],
-    deps = [
-        ":fsync",
-        "@com_github_stretchr_testify//require",
-    ],
+    embed = [":fsync"],
 )
