@@ -115,38 +115,59 @@ func runCommand(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, arg
 // streamOutput streams output to both stdout and uploads them to the BuildBuddy server.
 func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, r io.Reader, stream bbspb.BuildBuddyService_WriteEventLogClient) error {
 	uploadRunLogs := true
-	buf := make([]byte, bufferSize)
+	writeBuf := make([]byte, bufferSize)
+	readBuf := make([]byte, bufferSize)
 	for {
-		n, err := r.Read(buf)
+		n, err := r.Read(readBuf)
 		if err == io.EOF {
+			if len(writeBuf) > 0 {
+				_ = uploadLogs(ctx, bbClient, stream, writeBuf)
+			}
 			return nil
 		}
 		if err != nil {
 			return err
 		}
 
-		os.Stdout.Write(buf[:n])
+		os.Stdout.Write(readBuf[:n])
 
-		// TODO(Maggie): Add retries and a server-side mechanism to ensure idempotency.
-		if uploadRunLogs {
-			if err := stream.Send(&elpb.WriteEventLogRequest{
-				Type: elpb.LogType_RUN_LOG,
-				Metadata: &elpb.LogMetadata{
-					InvocationId: *invocationID,
-				},
-				Data: buf[:n],
-			}); err != nil {
-				log.Warnf("Failed to stream run logs: %s", err)
-				if _, err := bbClient.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
-					InvocationId: *invocationID,
-					Status:       inspb.OverallStatus_DISCONNECTED,
-				}); err != nil {
-					log.Warnf("Failed to update run status: %s", err)
-				}
+		if !uploadRunLogs {
+			continue
+		}
+
+		// Flush writes to the server once we've accumulated enough data.
+		if len(writeBuf)+n > bufferSize {
+			if err := uploadLogs(ctx, bbClient, stream, writeBuf); err != nil {
 				uploadRunLogs = false
+				continue
 			}
+
+			writeBuf = readBuf[:n]
+		} else {
+			writeBuf = append(writeBuf, readBuf[:n]...)
 		}
 	}
+}
+
+func uploadLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, stream bbspb.BuildBuddyService_WriteEventLogClient, data []byte) error {
+	// TODO(Maggie): Add retries and a server-side mechanism to ensure idempotency.
+	if err := stream.Send(&elpb.WriteEventLogRequest{
+		Type: elpb.LogType_RUN_LOG,
+		Metadata: &elpb.LogMetadata{
+			InvocationId: *invocationID,
+		},
+		Data: data,
+	}); err != nil {
+		log.Warnf("Failed to stream run logs: %s", err)
+		if _, err := bbClient.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
+			InvocationId: *invocationID,
+			Status:       inspb.OverallStatus_DISCONNECTED,
+		}); err != nil {
+			log.Warnf("Failed to update run status: %s", err)
+		}
+		return err
+	}
+	return nil
 }
 
 // If uploading run logs fails, run the original command normally.
