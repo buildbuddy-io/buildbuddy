@@ -154,8 +154,14 @@ export default class InvocationModel {
           buildEvent.childInvocationCompleted
         );
       }
-      if (buildEvent.configuration && buildEvent?.id?.configuration?.id != "none") {
-        this.configuration = buildEvent.configuration as build_event_stream.Configuration;
+      // Only report target configurations by skipping tool (aka exec) configs. There can still be multiple distinct
+      // target configurations due to transitions, so we merge their properties into comma-separated lists of all values
+      // that were seen (usually there will only be one).
+      if (buildEvent.configuration && !buildEvent.configuration.isTool && buildEvent?.id?.configuration?.id != "none") {
+        this.configuration = this.mergeTargetConfigurations(
+          this.configuration,
+          buildEvent.configuration as build_event_stream.Configuration
+        );
       }
       if (buildEvent.workspaceInfo) {
         this.workspaceConfig = buildEvent.workspaceInfo as build_event_stream.WorkspaceConfig;
@@ -1069,5 +1075,38 @@ export default class InvocationModel {
     } catch {
       console.error("Error downloading execution log");
     }
+  }
+
+  private mergeTargetConfigurations(
+    current: build_event_stream.Configuration | undefined,
+    next: build_event_stream.Configuration
+  ): build_event_stream.Configuration {
+    if (!current) {
+      return next;
+    }
+    const makeVariableKeys = new Set<string>([
+      ...Object.keys(current.makeVariable || {}),
+      ...Object.keys(next.makeVariable || {}),
+    ]);
+    const mergedMakeVariables: { [key: string]: string } = {};
+    for (const key of makeVariableKeys) {
+      mergedMakeVariables[key] = this.mergeCommaSeparatedLists(
+        current.makeVariable ? current.makeVariable[key] : undefined,
+        next.makeVariable ? next.makeVariable[key] : undefined
+      );
+    }
+    return build_event_stream.Configuration.create({
+      mnemonic: this.mergeCommaSeparatedLists(current.mnemonic, next.mnemonic),
+      platformName: this.mergeCommaSeparatedLists(current.platformName, next.platformName),
+      cpu: this.mergeCommaSeparatedLists(current.cpu, next.cpu),
+      makeVariable: mergedMakeVariables,
+      isTool: false,
+    });
+  }
+
+  private mergeCommaSeparatedLists(current: string | undefined, next: string | undefined): string {
+    const split = (current || "").split(",").concat((next || "").split(","));
+    const uniqueItems = new Set(split.map((s) => s.trim()).filter((s) => s !== ""));
+    return Array.from(uniqueItems).join(", ");
   }
 }
