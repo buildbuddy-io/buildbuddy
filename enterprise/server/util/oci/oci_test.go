@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -40,6 +41,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -959,9 +961,22 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	require.NoError(t, err)
 	require.NotNil(t, te.GetClientIdentityService())
 
-	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	grpcServer, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, localGRPClis)
+
+	// Set up OCI fetcher server and client
+	ociFetcherServer, err := ocifetcher.NewServer(te.GetByteStreamClient(), te.GetActionCacheClient())
+	require.NoError(t, err)
+	ofpb.RegisterOCIFetcherServer(grpcServer, ociFetcherServer)
+
 	go runServer()
+
+	// Create OCI fetcher client and set it on the env
+	conn, err := testenv.LocalGRPCConn(context.Background(), localGRPClis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	te.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(conn))
+
 	return te
 }
 
@@ -1232,6 +1247,30 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	require.Empty(t, cmp.Diff(expectedRefresh, counter.Snapshot()))
 }
 
+// TestResolveWithOCIFetcher_NoClient verifies that Resolve fails with
+// FailedPreconditionError when useOCIFetcher=true but no OCIFetcherClient
+// is configured in the environment.
+func TestResolveWithOCIFetcher_NoClient(t *testing.T) {
+	// Use a test env without OCIFetcherClient configured
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	registry := testregistry.Run(t, testregistry.Opts{})
+	registry.PushNamedImage(t, "test_image", nil)
+
+	_, err := newResolver(t, te).Resolve(
+		context.Background(),
+		registry.ImageAddress("test_image"),
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{},
+		true, /*=useOCIFetcher*/
+	)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got: %v", err)
+	require.Contains(t, err.Error(), "OCIFetcherClient is required")
+}
+
 // TestResolveWithOCIFetcher exercises Resolver.Resolve with useOCIFetcher=true,
 // validating basic image resolution scenarios:
 //   - Resolving an existing image without credentials succeeds and returns correct layer contents
@@ -1241,6 +1280,11 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 //
 // Both direct image references and index references are tested for each scenario.
 func TestResolveWithOCIFetcher(t *testing.T) {
+	// Helper to check for auth errors - OCIFetcher returns Unauthenticated for 401 errors,
+	// while the direct puller path returns PermissionDenied. Accept either.
+	isAuthError := func(err error) bool {
+		return status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err)
+	}
 	for _, tc := range []resolveTestCase{
 		{
 			name: "resolving an existing image without credentials succeeds",
@@ -1302,7 +1346,7 @@ func TestResolveWithOCIFetcher(t *testing.T) {
 					Os:   runtime.GOOS,
 				},
 			},
-			checkError: status.IsPermissionDeniedError,
+			checkError: isAuthError,
 			opts: testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 					if r.Method == "GET" {
@@ -1474,8 +1518,13 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 
 				configDigest, err := pulledImage.ConfigName()
 				require.NoError(t, err)
+				// With OCIFetcher, fetching the config blob uses FetchBlob which:
+				// - Reuses the puller from Resolve() (no additional GET /v2/)
+				// - Makes a HEAD request for the config blob to get size for caching
+				// - Makes a GET request for the config blob data
 				expected = map[string]int{
-					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
+					http.MethodHead + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
+					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String():  1,
 				}
 
 				// To make the DiffID() request counts always be zero,
@@ -1534,6 +1583,13 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	require.NoError(t, err)
 
 	imageAddress := registry.ImageAddress(imageName + "_image")
+	// With OCIFetcher, there are:
+	// - 1 GET /v2/: From OCIFetcher server (puller is cached after first request)
+	// - 1 HEAD manifest: From FetchManifest (which does HEAD before GET)
+	//   Note: We skip the separate FetchManifestMetadata call when using OCIFetcher
+	// - 1 GET manifest
+	// - 1 HEAD + 1 GET for config blob
+	// - 1 HEAD + 1 GET for each layer blob (HEAD is for getting size for caching)
 	expected := map[string]int{
 		http.MethodGet + " /v2/": 1,
 		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
@@ -1543,6 +1599,7 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	}
 	for digest, _ := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
+		expected[http.MethodHead+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
 	counter.Reset()
 	c := &claims.Claims{UserID: "US123"}
