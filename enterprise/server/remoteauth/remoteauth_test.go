@@ -8,21 +8,30 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"google.golang.org/grpc/metadata"
+
+	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
+	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 )
 
 type fakeAuthService struct {
-	nextJwt map[string]string
-	nextErr map[string]error
+	nextJwt    map[string]string
+	nextErr    map[string]error
+	publicKeys []string
+
+	lastAuthRequest *authpb.AuthenticateRequest
 
 	mu sync.Mutex
 }
@@ -32,6 +41,7 @@ func (a *fakeAuthService) Reset() *fakeAuthService {
 	defer a.mu.Unlock()
 	a.nextErr = map[string]error{}
 	a.nextJwt = map[string]string{}
+	a.lastAuthRequest = nil
 	return a
 }
 
@@ -52,6 +62,7 @@ func (a *fakeAuthService) setNextErr(t *testing.T, sub string, err error) {
 func (a *fakeAuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.lastAuthRequest = req
 	if a.nextErr[req.GetSubdomain()] != nil {
 		err := a.nextErr[req.GetSubdomain()]
 		a.nextErr[req.GetSubdomain()] = nil
@@ -62,8 +73,29 @@ func (a *fakeAuthService) Authenticate(ctx context.Context, req *authpb.Authenti
 	return &authpb.AuthenticateResponse{Jwt: &jwt}, nil
 }
 
+func (a *fakeAuthService) getLastAuthRequest() *authpb.AuthenticateRequest {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.lastAuthRequest
+}
+
 func (a *fakeAuthService) GetPublicKeys(ctx context.Context, req *authpb.GetPublicKeysRequest) (*authpb.GetPublicKeysResponse, error) {
-	return &authpb.GetPublicKeysResponse{}, status.UnimplementedError("GetPublicKeys unimplemented")
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.publicKeys == nil {
+		return &authpb.GetPublicKeysResponse{}, nil
+	}
+	keys := make([]*authpb.PublicKey, len(a.publicKeys))
+	for i, k := range a.publicKeys {
+		keys[i] = &authpb.PublicKey{Key: &k}
+	}
+	return &authpb.GetPublicKeysResponse{PublicKeys: keys}, nil
+}
+
+func (a *fakeAuthService) setPublicKeys(keys []string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.publicKeys = keys
 }
 
 func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
@@ -77,7 +109,9 @@ func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
 	go runServer()
 	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
 	require.NoError(t, err)
-	authenticator, err := newRemoteAuthenticator(conn)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	authenticator, err := newRemoteAuthenticator(fp, conn)
 	require.NoError(t, err)
 	return authenticator, &fakeAuthService
 }
@@ -205,4 +239,134 @@ func TestSubdomains(t *testing.T) {
 	ctx = subdomain.Context(contextWithApiKey(t, "bar"), "foosub")
 	ctx = authenticator.AuthenticatedGRPCContext(ctx)
 	require.Equal(t, bazJwt, ctx.Value(authutil.ContextTokenStringKey))
+}
+
+func TestUseRSASignedJWTs(t *testing.T) {
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	require.False(t, useRSASignedJWTs(t.Context(), fp))
+
+	flags.Set(t, "auth.remote.use_rsa_jwts", true)
+	require.True(t, useRSASignedJWTs(t.Context(), fp))
+	flags.Set(t, "auth.remote.use_rsa_jwts", false)
+
+	testProvider := openfeatureTesting.NewTestProvider()
+	openfeature.SetProviderAndWait(testProvider)
+	t.Cleanup(func() {
+		testProvider.Cleanup()
+		openfeature.SetProviderAndWait(openfeature.NoopProvider{})
+	})
+
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"auth.remote.use_rsa_jwts": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants: map[string]any{
+				"on":  true,
+				"off": false,
+			},
+		},
+	})
+	require.True(t, useRSASignedJWTs(t.Context(), fp))
+
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"auth.remote.use_rsa_jwts": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "off",
+			Variants: map[string]any{
+				"on":  true,
+				"off": false,
+			},
+		},
+	})
+	require.False(t, useRSASignedJWTs(t.Context(), fp))
+}
+
+func TestKeyProvider_DefaultKeys(t *testing.T) {
+	fakeAuth := &fakeAuthService{
+		nextErr: map[string]error{},
+		nextJwt: map[string]string{},
+	}
+	te := testenv.GetTestEnv(t)
+	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	authpb.RegisterAuthServiceServer(grpcServer, fakeAuth)
+	go runServer()
+	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	rsaKey1 := testkeys.GenerateRSAKeyPair(t).PublicKeyPEM
+	rsaKey2 := testkeys.GenerateRSAKeyPair(t).PublicKeyPEM
+	fakeAuth.setPublicKeys([]string{rsaKey1, rsaKey2})
+	require.NoError(t, claims.Init())
+
+	flags.Set(t, "auth.jwt_key", "jwtkeyfoo")
+	flags.Set(t, "auth.new_jwt_key", "jwtkeybar")
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	kp := keyProvider{
+		experimentFlagProvider: fp,
+		client:                 authpb.NewAuthServiceClient(conn),
+	}
+
+	keys, err := kp.provide(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []string{"jwtkeybar", "jwtkeyfoo"}, keys)
+}
+
+func TestKeyProvider_RSAKeys(t *testing.T) {
+	fakeAuth := &fakeAuthService{
+		nextErr: map[string]error{},
+		nextJwt: map[string]string{},
+	}
+	te := testenv.GetTestEnv(t)
+	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	authpb.RegisterAuthServiceServer(grpcServer, fakeAuth)
+	go runServer()
+	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	kp := keyProvider{
+		experimentFlagProvider: fp,
+		client:                 authpb.NewAuthServiceClient(conn),
+	}
+
+	rsaKey1 := testkeys.GenerateRSAKeyPair(t).PublicKeyPEM
+	rsaKey2 := testkeys.GenerateRSAKeyPair(t).PublicKeyPEM
+	fakeAuth.setPublicKeys([]string{rsaKey1, rsaKey2})
+	flags.Set(t, "auth.remote.use_rsa_jwts", true)
+	flags.Set(t, "auth.jwt_key", "jwtkeyfoo")
+	flags.Set(t, "auth.new_jwt_key", "jwtkeybar")
+
+	keys, err := kp.provide(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []string{rsaKey1, rsaKey2, "jwtkeybar", "jwtkeyfoo"}, keys)
+}
+
+func TestAuthenticateRequestsRSAJWTs(t *testing.T) {
+	authenticator, fakeAuth := setup(t)
+	fooJwt := validJwt(t, "foo")
+	barJwt := validJwt(t, "bar")
+
+	// Without RSA flag, the request should not specify RS256.
+	fakeAuth.Reset().setNextJwt(t, "", fooJwt)
+	ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
+	require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
+	req := fakeAuth.getLastAuthRequest()
+	require.NotNil(t, req)
+	require.Nil(t, req.JwtSigningMethod)
+
+	// With RSA flag enabled, the request should specify RS256.
+	flags.Set(t, "auth.remote.use_rsa_jwts", true)
+	fakeAuth.Reset().setNextJwt(t, "", barJwt)
+	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "bar"))
+	require.Equal(t, barJwt, ctx.Value(authutil.ContextTokenStringKey))
+	req = fakeAuth.getLastAuthRequest()
+	require.NotNil(t, req)
+	require.NotNil(t, req.JwtSigningMethod)
+	require.Equal(t, authpb.JWTSigningMethod_RS256, req.GetJwtSigningMethod())
 }
