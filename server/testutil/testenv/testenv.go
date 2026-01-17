@@ -164,7 +164,8 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 		healthChecker.WaitForGracefulShutdown()
 	})
 	te := real_environment.NewRealEnv(healthChecker)
-	c, err := memory_cache.NewMemoryCache(1000 * 1000 * 1000 /* 1GB */)
+	te.SetAuthenticator(nullauth.NewNullAuthenticator(true /*=anonymousUsageEnabled*/))
+	c, err := memory_cache.NewMemoryCache(te.GetAuthenticator(), 1000*1000*1000 /* 1GB */)
 	if err != nil {
 		t.Fatal(err)
 	}
