@@ -176,6 +176,12 @@ const (
 	// Describes the type of compression
 	CompressionType = "compression"
 
+	// Whether the request was handled using chunking
+	ChunkedLabel = "chunked"
+
+	// Source of chunked manifest lookup (local_hit, remote_hit, remote_error)
+	ChunkedManifestSourceLabel = "manifest_source"
+
 	// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
@@ -3451,6 +3457,7 @@ var (
 		CacheHitMissStatus,
 		CacheProxyRequestType,
 		CompressionType,
+		ChunkedLabel,
 	})
 	ByteStreamProxiedWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3462,6 +3469,7 @@ var (
 		CacheHitMissStatus,
 		CacheProxyRequestType,
 		CompressionType,
+		ChunkedLabel,
 	})
 	ByteStreamProxiedReadBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3473,6 +3481,7 @@ var (
 		CacheHitMissStatus,
 		CacheProxyRequestType,
 		CompressionType,
+		ChunkedLabel,
 	})
 	ByteStreamProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3484,6 +3493,106 @@ var (
 		CacheHitMissStatus,
 		CacheProxyRequestType,
 		CompressionType,
+		ChunkedLabel,
+	})
+	ByteStreamChunkedWriteBlobBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_write_blob_bytes",
+		Help:      "Original blob size in bytes for chunked writes.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+	})
+	ByteStreamChunkedWriteChunkBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_write_chunk_bytes_total",
+		Help:      "Total chunk bytes produced during chunked writes (sum of all chunk sizes).",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+	})
+	ByteStreamChunkedWriteDedupedChunkBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_write_chunk_bytes_deduped",
+		Help:      "Chunk bytes that were deduplicated (already existed on remote) during chunked writes.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+	})
+	ByteStreamChunkedWriteChunksTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_write_chunks_total",
+		Help:      "Total number of chunks produced during chunked writes.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+	})
+	ByteStreamChunkedWriteChunksDeduped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_write_chunks_deduped",
+		Help:      "Number of chunks that were deduplicated (already existed on remote) during chunked writes.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+	})
+	ByteStreamChunkedReadRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_read_requests",
+		Help:      "Total number of successful chunked read requests.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+	})
+	ByteStreamChunkedReadBlobBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_read_blob_bytes",
+		Help:      "Original blob size in bytes for chunked reads.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+	})
+	ByteStreamChunkedReadChunksTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_read_chunks_total",
+		Help:      "Total number of chunks read during chunked reads.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+	})
+	ByteStreamChunkedReadChunksLocal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_read_chunks_local",
+		Help:      "Number of chunks served from local cache during chunked reads.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+	})
+	ByteStreamChunkedReadChunksRemote = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_read_chunks_remote",
+		Help:      "Number of chunks fetched from remote during chunked reads.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+	})
+	ByteStreamChunkedManifestLookups = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_manifest_lookups",
+		Help:      "Manifest lookup outcomes (source: local_hit, remote_hit, remote_error).",
+	}, []string{
+		StatusLabel,
+		ChunkedManifestSourceLabel,
 	})
 
 	CapabilitiesProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{
