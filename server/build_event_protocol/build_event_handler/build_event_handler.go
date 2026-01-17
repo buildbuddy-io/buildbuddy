@@ -879,6 +879,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	if err != nil {
 		return err
 	}
+	e.preservePublicShare(ctx, ti)
 
 	e.recordInvocationMetrics(ti)
 	updated, err := e.env.GetInvocationDB().UpdateInvocation(ctx, ti)
@@ -1369,6 +1370,7 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 		return err
 	}
 	ti.Attempt = e.attempt
+	e.preservePublicShare(ctx, ti)
 	updated, err := db.UpdateInvocation(ctx, ti)
 	if err != nil {
 		return err
@@ -1378,6 +1380,22 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 		return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt, no build metadata written.", e.attempt, invocationID)
 	}
 	return nil
+}
+
+func (e *EventChannel) preservePublicShare(ctx context.Context, ti *tables.Invocation) {
+	if ti == nil || ti.InvocationID == "" {
+		return
+	}
+	if ti.Perms&perms.OTHERS_READ != 0 {
+		return
+	}
+	existing, err := e.env.GetInvocationDB().LookupInvocation(ctx, ti.InvocationID)
+	if err != nil {
+		return
+	}
+	if existing.Perms&perms.OTHERS_READ != 0 {
+		ti.Perms |= perms.OTHERS_READ
+	}
 }
 
 func (e *EventChannel) GetNumDroppedEvents() uint64 {
