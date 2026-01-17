@@ -112,6 +112,7 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 	invocationID := lookup.GetInvocationId()
 	actionDigestHash := lookup.GetActionDigestHash()
 	executionID := lookup.GetExecutionId()
+	targetLabel := lookup.GetTargetLabel()
 
 	// If executions.write_execution_progress_state_to_redis is enabled,
 	// executions that are still in progress will be buffered in Redis.
@@ -139,6 +140,11 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 				return e.ExecutionId != executionID
 			})
 		}
+		if targetLabel != "" {
+			ex = slices.DeleteFunc(ex, func(e *repb.StoredExecution) bool {
+				return e.TargetLabel != targetLabel
+			})
+		}
 		// Convert buffered representation to OLAP table representation.
 		inProgressExecutions = make([]*olaptables.Execution, len(ex))
 		for i, e := range ex {
@@ -163,6 +169,11 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		if executionID != "" {
 			ex = slices.DeleteFunc(ex, func(e *repb.StoredExecution) bool {
 				return e.ExecutionId != executionID
+			})
+		}
+		if targetLabel != "" {
+			ex = slices.DeleteFunc(ex, func(e *repb.StoredExecution) bool {
+				return e.TargetLabel != targetLabel
 			})
 		}
 		// Convert buffered representation to OLAP table representation.
@@ -234,6 +245,9 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		}
 		if executionID != "" {
 			q.AddWhereClause(`execution_id = ?`, executionID)
+		}
+		if targetLabel != "" {
+			q.AddWhereClause(`target_label = ?`, targetLabel)
 		}
 		q.AddWhereClause(`updated_at_usec >= ?`, rangeStartUsec)
 		q.AddWhereClause(`updated_at_usec <= ?`, rangeEndUsec)

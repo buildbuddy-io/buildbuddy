@@ -192,6 +192,7 @@ ts_library(
         "//app/components/button:link_button",
         "//app/format",
         "//app/invocation:cache_requests_card",
+        "//app/invocation:invocation_exec_log_card",
         "//app/invocation:invocation_model",
         "//app/invocation:invocation_suggestion_card",
         "//app/invocation:link_github_repo_modal",

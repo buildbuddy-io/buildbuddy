@@ -23,6 +23,7 @@ import { OutlinedButton } from "../components/button/button";
 import { OutlinedLinkButton } from "../components/button/link_button";
 import format from "../format/format";
 import CacheRequestsCardComponent from "../invocation/cache_requests_card";
+import InvocationExecLogCard from "../invocation/invocation_exec_log_card";
 import InvocationModel from "../invocation/invocation_model";
 import { getTestShardingSuggestion, SuggestionComponent } from "../invocation/invocation_suggestion_card";
 import LinkGithubRepoModal from "../invocation/link_github_repo_modal";
@@ -41,7 +42,7 @@ import TargetTestLogCardComponent from "./target_test_log_card";
 
 const Status = api_common.v1.Status;
 
-type SectionFilter = "all" | "documents" | "logs" | "coverage" | "actions" | "artifacts" | "cache";
+type SectionFilter = "all" | "documents" | "logs" | "coverage" | "actions" | "artifacts" | "cache" | "executions";
 
 interface SectionTab {
   id: SectionFilter;
@@ -67,14 +68,12 @@ interface State {
   loading: boolean;
   target?: target.Target;
   isLinkRepoModalOpen: boolean;
-  sectionFilter: SectionFilter;
 }
 
 export default class TargetV2Component extends React.Component<TargetProps, State> {
   state: State = {
     loading: false,
     isLinkRepoModalOpen: false,
-    sectionFilter: "all",
   };
 
   componentDidMount() {
@@ -294,6 +293,24 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     return "#1";
   }
 
+  private getSectionFromHash(): SectionFilter {
+    const hash = this.props.tab?.replace("#", "") || "";
+    const validSections: SectionFilter[] = [
+      "all",
+      "documents",
+      "logs",
+      "coverage",
+      "actions",
+      "artifacts",
+      "cache",
+      "executions",
+    ];
+    if (validSections.includes(hash as SectionFilter)) {
+      return hash as SectionFilter;
+    }
+    return "all";
+  }
+
   async executeRemoteBazelQuery(target: string) {
     const isSupported = await supportsRemoteRun(this.props.model.getRepo());
     if (!isSupported) {
@@ -330,9 +347,11 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     if (capabilities.config.detailedCacheStatsEnabled) {
       sectionTabs.push({ id: "cache", label: "Cache" });
     }
-    const activeSection = sectionTabs.some((tab) => tab.id === this.state.sectionFilter)
-      ? this.state.sectionFilter
-      : "all";
+    if (this.props.model.getIsRBEEnabled()) {
+      sectionTabs.push({ id: "executions", label: "Executions" });
+    }
+    const sectionFromHash = this.getSectionFromHash();
+    const activeSection = sectionTabs.some((tab) => tab.id === sectionFromHash) ? sectionFromHash : "all";
     return (
       <div className="target-page">
         <div className="shelf">
@@ -442,12 +461,13 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
           {this.renderTestShardingSuggestionCard(resultEvents)}
           <div className="tabs target-section-tabs">
             {sectionTabs.map((tab) => (
-              <span
+              <a
                 key={tab.id}
-                className={`tab ${activeSection === tab.id ? "selected" : ""}`}
-                onClick={(e) => this.setState({ sectionFilter: tab.id })}>
+                href={tab.id === "all" ? "#" : `#${tab.id}`}
+                debug-id={`target-section-tab-${tab.id}`}
+                className={`tab ${activeSection === tab.id ? "selected" : ""}`}>
                 {tab.label}
-              </span>
+              </a>
             ))}
           </div>
           {resultEvents.length > 1 && (
@@ -531,6 +551,14 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
               groupBy={1} // Action
               show={0} // All
               exactMatch={true}
+            />
+          )}
+          {(activeSection === "all" || activeSection === "executions") && this.props.model.getIsRBEEnabled() && (
+            <InvocationExecLogCard
+              model={this.props.model}
+              search={this.props.search}
+              filter=""
+              targetLabel={this.props.label}
             />
           )}
         </div>
