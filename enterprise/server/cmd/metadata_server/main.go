@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -68,10 +67,6 @@ func main() {
 
 	env.SetListenAddr(*listen)
 	if err := ssl.Register(env); err != nil {
-		log.Fatal(err.Error())
-	}
-
-	if err := gossip.Register(env); err != nil {
 		log.Fatal(err.Error())
 	}
 

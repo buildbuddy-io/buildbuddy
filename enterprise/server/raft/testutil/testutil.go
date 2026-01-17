@@ -145,7 +145,7 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 
 func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	nodeAddr := localAddr(t)
-	gm, err := gossip.New("name-"+nodeAddr, nodeAddr, sf.gossipAddrs)
+	gm, err := gossip.NewWithArgs("name-"+nodeAddr, nodeAddr, sf.gossipAddrs)
 	require.NoError(t, err)
 	sf.gossipAddrs = append(sf.gossipAddrs, nodeAddr)
 

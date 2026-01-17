@@ -38,6 +38,7 @@ import (
 
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
+	guuid "github.com/google/uuid"
 )
 
 var (
@@ -69,7 +70,10 @@ func localAddr(t *testing.T) string {
 }
 
 func getCacheConfig(t *testing.T) *metadata.Config {
+	id, err := guuid.NewRandom()
+	require.NoError(t, err)
 	return &metadata.Config{
+		NHID:            id.String(),
 		RootDir:         testfs.MakeTempDir(t),
 		Hostname:        "127.0.0.1",
 		ListenAddr:      "127.0.0.1",
@@ -163,9 +167,9 @@ func startNodes(t *testing.T, configs []testConfig) []*metadata.Server {
 		i := i
 		lN := joinList[i]
 		joinList := joinList
-		gs, err := gossip.New("name-"+lN, lN, joinList)
+		gs, err := gossip.NewWithArgs(config.config.NHID, lN, joinList)
 		require.NoError(t, err)
-		config.env.SetGossipService(gs)
+		config.config.GossipManager = gs
 		eg.Go(func() error {
 			n, err := metadata.New(config.env, config.config)
 			if err != nil {

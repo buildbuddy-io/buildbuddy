@@ -805,14 +805,6 @@ func (r *RealEnv) SetSCIMService(val interfaces.SCIMService) {
 	r.scimService = val
 }
 
-func (r *RealEnv) GetGossipService() interfaces.GossipService {
-	return r.gossipService
-}
-
-func (r *RealEnv) SetGossipService(g interfaces.GossipService) {
-	r.gossipService = g
-}
-
 func (r *RealEnv) GetCommandRunner() interfaces.CommandRunner {
 	return r.commandRunner
 }

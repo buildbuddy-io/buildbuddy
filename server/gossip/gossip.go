@@ -8,14 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/rs/zerolog"
 
@@ -26,7 +23,6 @@ import (
 var (
 	listenAddr     = flag.String("gossip.listen_addr", "", "The address to listen for gossip traffic on. Ex. 'localhost:1991'")
 	join           = flag.Slice("gossip.join", []string{}, "The nodes to join/gossip with. Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
-	nodeName       = flag.String("gossip.node_name", "", "The gossip node's name. If empty will default to host_id.'")
 	secretKey      = flag.String("gossip.secret_key", "", "The value should be either 16, 24, or 32 bytes.")
 	retransmitMult = flag.Int("gossip.retransmit_mult", 0, "The retransmit multiplier for a failed broadcast over gossip. If zero, use the default value")
 	logLevel       = flag.String("gossip.log_level", "", "The desired log level for the gossip package. If empty, this flag will be ignored and app.log_level will be applied. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug', ''}")
@@ -220,29 +216,11 @@ func (lw *logWriter) Write(d []byte) (int, error) {
 	return len(d), nil
 }
 
-func Register(env *real_environment.RealEnv) error {
-	if *listenAddr == "" {
-		return nil
-	}
-	if len(*join) == 0 {
-		return status.FailedPreconditionError("Gossip listen address specified but no join target set")
-	}
-	name := *nodeName
-	if name == "" {
-		name = hostid.GetFailsafeHostID("")
-	}
-
-	// Initialize a gossip manager, which will contact other nodes
-	// and exchange information.
-	gossipManager, err := New(name, *listenAddr, *join)
-	if err != nil {
-		return err
-	}
-	env.SetGossipService(gossipManager)
-	return nil
+func New(nodeName string) (*GossipManager, error) {
+	return NewWithArgs(nodeName, *listenAddr, *join)
 }
 
-func New(nodeName, listenAddress string, join []string) (*GossipManager, error) {
+func NewWithArgs(nodeName, listenAddress string, join []string) (*GossipManager, error) {
 	subLog := log.NamedSubLogger(fmt.Sprintf("GossipManager(%s)", nodeName))
 	if *logLevel != "" {
 		if l, err := zerolog.ParseLevel(*logLevel); err != nil {
