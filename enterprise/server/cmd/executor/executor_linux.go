@@ -143,8 +143,7 @@ func setupNetworking(rootContext context.Context) {
 		}
 	}
 	if err := networking.Configure(rootContext); err != nil {
-		fmt.Printf("Error configuring secondary network: %s", err)
-		os.Exit(1)
+		log.Fatalf("Failed to configure networking: %s", err)
 	}
 }
 
