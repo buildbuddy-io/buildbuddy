@@ -12,16 +12,12 @@ import (
 type WriteFunc func([]byte) error
 
 type Chunker struct {
-	ctx context.Context
-	pw  *io.PipeWriter
-	pr  *io.PipeReader
+	pw *io.PipeWriter
 
 	done chan struct{}
 
 	mu  sync.Mutex // protexts err
 	err error
-
-	writeChunkFn WriteFunc
 }
 
 func (c *Chunker) Write(buf []byte) (int, error) {
@@ -48,11 +44,8 @@ func (c *Chunker) Close() error {
 func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker, error) {
 	pr, pw := io.Pipe()
 	c := &Chunker{
-		ctx:          ctx,
-		pr:           pr,
-		pw:           pw,
-		done:         make(chan struct{}),
-		writeChunkFn: writeChunkFn,
+		pw:   pw,
+		done: make(chan struct{}),
 	}
 	cdcOpts := fastcdc.Options{
 		AverageSize: averageSize,
@@ -89,7 +82,7 @@ func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker
 				}
 				return
 			}
-			if err := c.writeChunkFn(chunk.Data); err != nil {
+			if err := writeChunkFn(chunk.Data); err != nil {
 				err = status.InternalErrorf("writeChunkFn failed: %s", err)
 				pr.CloseWithError(err)
 				c.mu.Lock()
@@ -103,10 +96,14 @@ func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker
 	}()
 
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-c.done:
+			return
+		case <-ctx.Done():
+		}
+		pr.CloseWithError(ctx.Err())
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		pr.CloseWithError(ctx.Err())
 		if c.err == nil {
 			c.err = ctx.Err()
 		}
