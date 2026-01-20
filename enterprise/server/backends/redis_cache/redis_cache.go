@@ -75,10 +75,6 @@ func NewCache(redisClient redis.UniversalClient) *Cache {
 	}
 }
 
-func (c *Cache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
-	return status.UnimplementedError("Redis Cache does not support registering atimeupdater")
-}
-
 func (c *Cache) eligibleForCache(d *repb.Digest) bool {
 	return d.GetSizeBytes() < c.cutoffSizeBytes
 }
