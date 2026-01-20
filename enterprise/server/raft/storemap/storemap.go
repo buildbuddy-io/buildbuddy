@@ -396,7 +396,7 @@ func (sm *StoreMap) CheckLeaseRebalancePrecondition() (float64, bool) {
 	}
 
 	// All stores are available and ready. Check if they've been stable long enough.
-	now := sm.clock.Now()
+	now = sm.clock.Now()
 	if sm.allStoresStableSince.IsZero() {
 		// Just became stable, start the timer
 		sm.allStoresStableSince = now
@@ -413,11 +413,18 @@ func (sm *StoreMap) CheckLeaseRebalancePrecondition() (float64, bool) {
 	}
 
 	// Cluster has been stable long enough. Check lease count threshold.
+	// total replica count = (total shard count - 1) * minReplicasPerRange + minMetaRangeReplicas.
 	totalShardCount := (totalReplicaCount-sm.minMetaRangeReplicas)/sm.minReplicasPerRange + 1
+
+	// Estimate the number of ranges without a lease.
 	delta := totalShardCount - totalLeaseCount
 
+	// Each range should have a lease. When a range doesn't have a lease,
+	// read/write with RangeLease to the range needs to wait until there is a
+	// lease to succeed. Therefore, when a cluster has too many ranges without
+	// leases, we should pause lease-rebalancing.
 	if delta > sm.missingLeaseCountThreshold {
-		sm.log.Infof("Too many missing leases: %d missing (threshold: %d)", delta, sm.missingLeaseCountThreshold)
+		sm.log.Infof("Too many ranges w/o leases: %d missing (threshold: %d)", delta, sm.missingLeaseCountThreshold)
 		return 0, false
 	}
 

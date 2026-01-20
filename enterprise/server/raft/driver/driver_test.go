@@ -60,7 +60,12 @@ func (tsm *testStoreMap) CheckLeaseRebalancePrecondition() (float64, bool) {
 		totalReplicaCount += int(usage.GetReplicaCount())
 		totalLeaseCount += int(usage.GetLeaseCount())
 	}
+	// Each range (except for the meta range) by default has 3
+	// replicas and the meta range have 5 replicas.
+	// Therefore,
+	// total replica count = (total shard count - 1) * 3 + 5.
 	totalShardCount := (totalReplicaCount-5)/3 + 1
+	// Estimate the number of ranges without a lease.
 	delta := totalShardCount - totalLeaseCount
 	if delta > 10 {
 		return 0.0, false
