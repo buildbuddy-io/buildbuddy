@@ -855,9 +855,8 @@ func (s *Store) Stop(ctx context.Context) error {
 	elapsed := time.Since(voteBufferStart)
 
 	if elapsed < minVoteBufferPeriod {
-		// If there is not enough time pass until the leader is transferred, we
-		// wait. So that this node can cast a vote to make the new leader
-		// election smoother.
+		//If not enough time passed since we dropped leadership, wait a bit to
+		//allow this node to cast a vote in the new leader election.
 		remaining := minVoteBufferPeriod - elapsed
 		select {
 		case <-time.After(remaining):
@@ -940,9 +939,8 @@ func (s *Store) tryDroppingLeadership(ctx context.Context) (int, error) {
 		}
 
 		remainingLeader++
-		rd := s.GetRange(clusterInfo.ShardID)
-		targetReplicaID := s.findTargetReplicaIDForLeadershipTransfer(ctx, rd, clusterInfo.ReplicaID)
 		eg.Go(func() error {
+			rd := s.GetRange(clusterInfo.ShardID)
 			log.Debugf("Dropping leadership of shard %d from replica %d", clusterInfo.ShardID, clusterInfo.ReplicaID)
 			for _, repl := range rd.GetReplicas() {
 				if repl.GetReplicaId() == clusterInfo.ReplicaID {
@@ -952,7 +950,7 @@ func (s *Store) tryDroppingLeadership(ctx context.Context) (int, error) {
 					log.Debugf("Drop leadership of shard %d, skipping replica id %d on NHID: %s", clusterInfo.ShardID, repl.GetReplicaId(), repl.GetNhid())
 					continue
 				}
-				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, targetReplicaID); err != nil {
+				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, repl.GetReplicaId()); err != nil {
 					s.log.Warningf("Error transferring leadership: %s", err)
 				}
 			}
