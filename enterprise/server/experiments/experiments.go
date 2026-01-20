@@ -43,7 +43,10 @@ func Register(env *real_environment.RealEnv) error {
 		if err != nil {
 			return err
 		}
-		provider = flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithHost(host), flagd.WithPort(uint16(intPort)))
+		provider, err = flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithHost(host), flagd.WithPort(uint16(intPort)))
+		if err != nil {
+			return err
+		}
 	}
 
 	if err := openfeature.SetProviderAndWait(provider); err != nil {

@@ -189,7 +189,8 @@ func TestStablePercentage(t *testing.T) {
 
 		// Create a new provider after each write. Otherwise the test can race
 		// with the provider's internal goroutine that reads the file.
-		provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+		provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+		require.NoError(t, err)
 		openfeature.SetProviderAndWait(provider)
 		fp, err := experiments.NewFlagProvider("test-name")
 		require.NoError(t, err)
@@ -242,7 +243,8 @@ func TestSelection(t *testing.T) {
 }
 `
 	offlineFlagPath := writeFlagConfig(t, testFlags)
-	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
 	openfeature.SetProviderAndWait(provider)
 
 	fp, err := experiments.NewFlagProvider("test-name")
@@ -301,7 +303,8 @@ func TestMultiVariant(t *testing.T) {
 }
 `
 	offlineFlagPath := writeFlagConfig(t, testFlags)
-	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
 	openfeature.SetProviderAndWait(provider)
 	defer provider.Shutdown()
 
@@ -352,7 +355,8 @@ func TestTargetingGroupID(t *testing.T) {
 	`
 
 	offlineFlagPath := writeFlagConfig(t, testFlags)
-	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
 	openfeature.SetProviderAndWait(provider)
 
 	fp, err := experiments.NewFlagProvider("test-name")
@@ -393,7 +397,8 @@ func TestSubscribe(t *testing.T) {
 	`
 
 	offlineFlagPath := writeFlagConfig(t, testFlags)
-	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
 	openfeature.SetProviderAndWait(provider)
 
 	fp, err := experiments.NewFlagProvider("test-name")
@@ -473,7 +478,8 @@ func TestGroupStatusTargeting(t *testing.T) {
 	`
 
 	offlineFlagPath := writeFlagConfig(t, testFlags)
-	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
 	openfeature.SetProviderAndWait(provider)
 
 	fp, err := experiments.NewFlagProvider("test-name")
