@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -112,20 +111,19 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 // UpdateInvocation updates an existing invocation with the given
 // id and attempt number. It returns whether a row was updated.
 func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
-	updated := false
-	var err error
-	for r := retry.DefaultWithContext(ctx); r.Next(); {
-		result := d.h.GORM(ctx, "invocationdb_update_invocation").Where(
-			"invocation_id = ? AND attempt = ?", ti.InvocationID, ti.Attempt).Updates(ti)
-		updated = result.RowsAffected > 0
-		err := result.Error
-		if d.h.IsDeadlockError(err) {
-			log.Warningf("Encountered deadlock when attempting to update invocation table for invocation %s, attempt %d of %d", ti.InvocationID, r.AttemptNumber(), r.MaxAttempts())
-			continue
+	return retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (bool, error) {
+		result := d.h.GORM(ctx, "invocationdb_update_invocation").Where("invocation_id = ? AND attempt = ?", ti.InvocationID, ti.Attempt).Updates(ti)
+		updated := result.RowsAffected > 0
+
+		if err := result.Error; d.h.IsDeadlockError(err) {
+			return updated, status.UnavailableErrorf("update invocation %s: deadlock: %s", ti.InvocationID, err)
+		} else if err != nil {
+			// Don't retry non-deadlock errors.
+			return updated, retry.NonRetryableError(err)
+		} else {
+			return updated, nil
 		}
-		break
-	}
-	return updated, err
+	})
 }
 
 func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string, acl *aclpb.ACL) error {
