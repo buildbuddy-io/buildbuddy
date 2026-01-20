@@ -34,9 +34,10 @@ import (
 )
 
 var (
-	minReplicasPerRange   = flag.Int("cache.raft.min_replicas_per_range", 3, "The minimum number of replicas each range should have")
-	minMetaRangeReplicas  = flag.Int("cache.raft.min_meta_range_replicas", 5, "The minimum number of replicas each range for meta range")
-	newReplicaGracePeriod = flag.Duration("cache.raft.new_replica_grace_period", 5*time.Minute, "The amount of time we allow for a new replica to catch up to the leader's before we start to consider it to be behind.")
+	minReplicasPerRange        = flag.Int("cache.raft.min_replicas_per_range", 3, "The minimum number of replicas each range should have")
+	minMetaRangeReplicas       = flag.Int("cache.raft.min_meta_range_replicas", 5, "The minimum number of replicas the meta range should have")
+	missingLeaseCountThreshold = flag.Int("cache.raft.missing_lease_count_threshold", 5, "When the number of ranges without leases is greater than this number, don't rebalance leases")
+	newReplicaGracePeriod      = flag.Duration("cache.raft.new_replica_grace_period", 5*time.Minute, "The amount of time we allow for a new replica to catch up to the leader's before we start to consider it to be behind.")
 )
 
 const (
@@ -419,7 +420,7 @@ type Queue struct {
 }
 
 func NewQueue(store IStore, sender *sender.Sender, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock) *Queue {
-	storeMap := storemap.New(gossipManager, clock, nhlog)
+	storeMap := storemap.New(gossipManager, clock, nhlog, *minReplicasPerRange, *minMetaRangeReplicas, *missingLeaseCountThreshold)
 	q := &Queue{
 		storeMap:             storeMap,
 		store:                store,
@@ -583,7 +584,11 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 			action = DriverRebalanceReplica
 			return action, action.Priority()
 		}
-		op = rq.findRebalanceLeaseOp(ctx, rd, repl.ReplicaID())
+	}
+
+	_, canRebalanceLeases := rq.storeMap.CheckLeaseRebalancePrecondition()
+	if canRebalanceLeases {
+		op := rq.findRebalanceLeaseOp(ctx, rd, repl.ReplicaID())
 		if op != nil {
 			action = DriverRebalanceLease
 			return action, action.Priority()
@@ -964,19 +969,26 @@ func canConvergeByRebalanceReplica(choice *rebalanceChoice, allStores *storemap.
 	return false
 }
 
-func canConvergeByRebalanceLease(choice *rebalanceChoice, allStores *storemap.StoresWithStats) bool {
+func canConvergeByRebalanceLease(choice *rebalanceChoice, mean float64) bool {
 	if len(choice.candidates) == 0 {
 		return false
 	}
-	overfullThreshold := int64(math.Ceil(aboveMeanLeaseCountThreshold(allStores.LeaseCount.Mean)))
+	overfullThreshold := int64(math.Ceil(aboveMeanLeaseCountThreshold(mean)))
 	// The existing store is too far above the mean.
 	if choice.existing.usage.LeaseCount > overfullThreshold {
-		return true
+		// There is a candidate store that's below mean
+		for _, c := range choice.candidates {
+			if float64(c.usage.LeaseCount) < mean {
+				return true
+			}
+		}
+		// No candidate store is below mean, don't transfer.
+		return false
 	}
 
 	// The existing store is above the mean, but not too far; but there is at least one other store that is too far below the mean.
-	if float64(choice.existing.usage.LeaseCount) > allStores.LeaseCount.Mean {
-		underfullThreshold := int64(math.Floor(belowMeanLeaseCountThreshold(allStores.LeaseCount.Mean)))
+	if float64(choice.existing.usage.LeaseCount) > mean {
+		underfullThreshold := int64(math.Floor(belowMeanLeaseCountThreshold(mean)))
 		for _, c := range choice.candidates {
 			if c.usage.LeaseCount < underfullThreshold {
 				return true
@@ -1041,6 +1053,11 @@ func (rq *Queue) rebalanceLease(ctx context.Context, rd *rfpb.RangeDescriptor, l
 }
 
 func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescriptor, localReplicaID uint64) *rebalanceOp {
+	globalMean, shouldRebalance := rq.storeMap.CheckLeaseRebalancePrecondition()
+	if !shouldRebalance {
+		return nil
+	}
+	rq.log.Infof("global Mean = %.2f", globalMean)
 	var existing *candidate
 	nhids := make([]string, 0, len(rd.GetReplicas()))
 	existingNHID := ""
@@ -1070,7 +1087,7 @@ func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescrip
 	}
 
 	existing.leaseCount = existing.usage.LeaseCount
-	existing.leaseCountMeanLevel = leaseCountMeanLevel(storesWithStats, existing.usage)
+	existing.leaseCountMeanLevel = leaseCountMeanLevel(globalMean, existing.usage)
 	choice := &rebalanceChoice{
 		existing:   existing,
 		candidates: make([]*candidate, 0, len(rd.GetReplicas())-1),
@@ -1093,10 +1110,10 @@ func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescrip
 			nhid:                repl.GetNhid(),
 			usage:               store.usage,
 			leaseCount:          store.usage.LeaseCount,
-			leaseCountMeanLevel: leaseCountMeanLevel(storesWithStats, store.usage),
+			leaseCountMeanLevel: leaseCountMeanLevel(globalMean, store.usage),
 		})
 	}
-	if !canConvergeByRebalanceLease(choice, storesWithStats) {
+	if !canConvergeByRebalanceLease(choice, globalMean) {
 		return nil
 	}
 
@@ -1637,9 +1654,9 @@ func replicaCountMeanLevel(storesWithStats *storemap.StoresWithStats, su *rfpb.S
 	return aroundMean
 }
 
-func leaseCountMeanLevel(storesWithStats *storemap.StoresWithStats, su *rfpb.StoreUsage) meanLevel {
-	maxLeaseCount := aboveMeanLeaseCountThreshold(storesWithStats.LeaseCount.Mean)
-	minLeaseCount := belowMeanLeaseCountThreshold(storesWithStats.LeaseCount.Mean)
+func leaseCountMeanLevel(mean float64, su *rfpb.StoreUsage) meanLevel {
+	maxLeaseCount := aboveMeanLeaseCountThreshold(mean)
+	minLeaseCount := belowMeanLeaseCountThreshold(mean)
 	curLeaseCount := float64(su.GetLeaseCount())
 	if curLeaseCount < minLeaseCount {
 		return belowMean
