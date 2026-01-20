@@ -3,6 +3,7 @@ import moment from "moment";
 import React from "react";
 import { Subscription } from "rxjs";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
+import { eventlog } from "../../proto/eventlog_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import { google as google_grpc_status } from "../../proto/grpc_status_ts_proto";
@@ -91,7 +92,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
   private timeoutRef: number | undefined;
   private logsModel?: InvocationLogsModel;
+  private runLogsModel?: InvocationLogsModel;
   private logsSubscription?: Subscription;
+  private runLogsSubscription?: Subscription;
   private modelChangedSubscription?: Subscription;
   private runnerExecutionRPC?: CancelablePromise;
   private cancelGroupIdOverride?: () => void;
@@ -111,7 +114,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     } else {
       this.fetchInvocation();
 
-      this.logsModel = new InvocationLogsModel(this.props.invocationId);
+      this.logsModel = new InvocationLogsModel(this.props.invocationId, eventlog.LogType.BUILD_LOG);
       // Re-render whenever we fetch new log chunks.
       this.logsSubscription = this.logsModel.onChange.subscribe({
         next: () => this.forceUpdate(),
@@ -119,6 +122,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
       if (!this.isQueued() && !this.props.search.get("runnerFailed")) {
         this.logsModel.startFetching();
       }
+
+      this.runLogsModel = new InvocationLogsModel(this.props.invocationId, eventlog.LogType.RUN_LOG);
+      this.runLogsSubscription = this.runLogsModel.onChange.subscribe({
+        next: () => this.forceUpdate(),
+      });
     }
   }
 
@@ -179,6 +187,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
     if (this.isQueued(prevProps, prevState) && !this.isQueued() && this.state.model) {
       this.logsModel?.startFetching();
     }
+    // If a run status was set on the invocation, start fetching run logs.
+    if (this.state.model?.hasRunStatus() && !prevState.model?.hasRunStatus()) {
+      this.runLogsModel?.startFetching();
+    }
     // If we have an invocation, or we failed to fetch an invocation and the CI
     // runner failed, we're no longer queued.
     if (
@@ -200,6 +212,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
     }
     this.logsModel?.stopFetching();
     this.logsSubscription?.unsubscribe();
+    this.runLogsModel?.stopFetching();
+    this.runLogsSubscription?.unsubscribe();
     this.runnerExecutionRPC?.cancel();
     shortcuts.deregister(this.state.keyboardShortcutHandle);
 
@@ -341,6 +355,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
       return false;
     }
     return Boolean(this.logsModel?.isFetching() && !this.logsModel?.getLogs());
+  }
+
+  getRunLogs(): string {
+    return this.runLogsModel?.getLogs() ?? "";
+  }
+
+  areRunLogsLoading() {
+    return Boolean(this.runLogsModel?.isFetching() && !this.runLogsModel?.getLogs());
   }
 
   isQueued(props = this.props, state = this.state) {
@@ -649,6 +671,20 @@ export default class InvocationComponent extends React.Component<Props, State> {
               fullLogsFetcher={fetchBuildLogs}
             />
           )}
+
+          {(activeTab === "all" || activeTab === "log") &&
+            this.state.model.hasRunStatus() &&
+            this.getRunLogs().length > 0 && (
+              <BuildLogsCardComponent
+                title="Run output"
+                dark={!this.props.preferences.lightTerminalEnabled}
+                value={this.getRunLogs()}
+                loading={this.areRunLogsLoading()}
+                expanded={activeTab === "log"}
+                // TODO: Implement full logs fetcher for run logs.
+                fullLogsFetcher={() => {}}
+              />
+            )}
 
           {(activeTab === "all" || activeTab === "log" || activeTab === "suggestions") && (
             <SuggestionCardComponent
