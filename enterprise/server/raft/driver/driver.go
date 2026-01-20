@@ -1057,7 +1057,6 @@ func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescrip
 	if !shouldRebalance {
 		return nil
 	}
-	rq.log.Infof("global Mean = %.2f", globalMean)
 	var existing *candidate
 	nhids := make([]string, 0, len(rd.GetReplicas()))
 	existingNHID := ""
