@@ -306,7 +306,8 @@ func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
 		}
 	}
 }`)
-	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
+	require.NoError(t, err)
 	openfeature.SetProviderAndWait(provider)
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
@@ -361,7 +362,8 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 		}
 	}
 }`)
-	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
+	require.NoError(t, err)
 	openfeature.SetProviderAndWait(provider)
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
