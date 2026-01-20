@@ -2622,3 +2622,107 @@ func TestImageResurrection(t *testing.T) {
 	_, err = os.Stat(layerDir)
 	require.NoError(t, err, "layer directory should exist after resurrection/re-pull")
 }
+
+func TestPopulateFileCacheTracksLayerDirsNotAlgorithmDir(t *testing.T) {
+	// This test verifies that populateFileCache correctly tracks individual
+	// layer directories (e.g., /v2/sha256/abc123...), and not some higher level
+	// dir like /sha256/, which would result in all layer dirs being evicted at
+	// once (which would be bad).
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	flags.Set(t, "executor.oci.image_eviction_enabled", true)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	// Use a small filecache so we can test eviction behavior.
+	// The busybox image is ~2.5MB.
+	const filecacheSize = 5_000_000
+	fcDir := testfs.MakeTempDir(t)
+	fc1, err := filecache.NewFileCache(fcDir, filecacheSize, false)
+	require.NoError(t, err)
+	fc1.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc1)
+
+	provider1, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	// Pull an image to create layer directories
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	c, err := provider1.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+
+	// Remove the container and close the first filecache, simulating an
+	// executor shutdown
+	err = c.Remove(ctx)
+	require.NoError(t, err)
+	fc1.Close()
+
+	// Sanity check that the layer directories still exist after "shutting
+	// down" the executor
+	algorithmDir := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layerEntries, err := os.ReadDir(algorithmDir)
+	require.NoError(t, err)
+	require.NotEmpty(t, layerEntries, "expected at least one layer directory")
+
+	var layerDirs []string
+	for _, entry := range layerEntries {
+		if entry.IsDir() {
+			layerDirs = append(layerDirs, filepath.Join(algorithmDir, entry.Name()))
+		}
+	}
+	require.NotEmpty(t, layerDirs, "expected at least one layer directory")
+
+	// Simulate an executor restart by creating a new filecache and provider.
+	// The new provider's populateFileCache should scan and track the existing
+	// layer directories.
+	fc2, err := filecache.NewFileCache(fcDir, filecacheSize, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc2.Close() })
+	fc2.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc2)
+
+	provider2, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	_ = provider2 // We just need it to populate the cache
+
+	// Apply eviction pressure by adding a large file
+	largeFile := filepath.Join(fc2.TempDir(), "large_file")
+	err = os.WriteFile(largeFile, make([]byte, filecacheSize), 0644)
+	require.NoError(t, err)
+
+	node := &repb.FileNode{
+		Digest: &repb.Digest{
+			Hash:      "deadbeef00000000000000000000000000000000000000000000000000000007",
+			SizeBytes: filecacheSize,
+		},
+	}
+	err = fc2.AddFile(ctx, node, largeFile)
+	require.NoError(t, err)
+
+	// The algorithm directory (sha256) must still exist, since we should only
+	// be evicting the individual layer dirs.
+	_, err = os.Stat(algorithmDir)
+	require.NoError(t, err, "algorithm directory (sha256) should NOT be evicted - only individual layers should be tracked")
+
+	// The individual layer directories should be evicted (moved to trash and deleted)
+	for _, layerDir := range layerDirs {
+		_, err = os.Stat(layerDir)
+		assert.True(t, os.IsNotExist(err), "layer directory %s should be evicted, but still exists", layerDir)
+	}
+}
