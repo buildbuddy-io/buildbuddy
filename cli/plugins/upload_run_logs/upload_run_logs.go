@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
@@ -23,14 +25,16 @@ var (
 	target       = flag.String("target", "grpcs://remote.buildbuddy.io", "BuildBuddy server to stream logs to.")
 	apiKey       = flag.String("api_key", "", "BuildBuddy API key.")
 	invocationID = flag.String("invocation_id", "", "Invocation ID for the associated build. Logs will be sent to this invocation's URL.")
-)
 
-const (
-	bufferSize = 1 << 20 // 1MB
+	bufferSize = flag.Int("buffer_size", 1<<20, "Size of the buffer to use for streaming logs. Defaults to 1MB.")
 )
 
 func main() {
 	flag.Parse()
+
+	if len(flag.Args()) == 0 {
+		log.Fatalf("No command arguments provided")
+	}
 
 	apiKey := *apiKey
 	if apiKey == "" {
@@ -101,7 +105,10 @@ func runCommand(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, arg
 	}()
 
 	cmdErr := cmd.Wait()
-	<-copyOutputDone
+	copyErr := <-copyOutputDone
+	if copyErr != nil {
+		log.Warnf("Failed to stream output: %s", copyErr)
+	}
 
 	if cmdErr != nil {
 		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
@@ -115,11 +122,12 @@ func runCommand(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, arg
 // streamOutput streams output to both stdout and uploads them to the BuildBuddy server.
 func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, r io.Reader, stream bbspb.BuildBuddyService_WriteEventLogClient) error {
 	uploadRunLogs := true
-	writeBuf := make([]byte, bufferSize)
-	readBuf := make([]byte, bufferSize)
+	writeBuf := make([]byte, 0, *bufferSize)
+	readBuf := make([]byte, *bufferSize)
 	for {
 		n, err := r.Read(readBuf)
-		if err == io.EOF {
+		// When the PTY is closed, it returns EIO.
+		if err == io.EOF || errors.Is(err, syscall.EIO) {
 			if len(writeBuf) > 0 {
 				_ = uploadLogs(ctx, bbClient, stream, writeBuf)
 			}
@@ -136,16 +144,16 @@ func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, r
 		}
 
 		// Flush writes to the server once we've accumulated enough data.
-		if len(writeBuf)+n > bufferSize {
+		if len(writeBuf) > 0 && len(writeBuf)+n > *bufferSize {
 			if err := uploadLogs(ctx, bbClient, stream, writeBuf); err != nil {
 				uploadRunLogs = false
 				continue
 			}
 
-			writeBuf = readBuf[:n]
-		} else {
-			writeBuf = append(writeBuf, readBuf[:n]...)
+			// Reset the write buffer.
+			writeBuf = writeBuf[:0]
 		}
+		writeBuf = append(writeBuf, readBuf[:n]...)
 	}
 }
 

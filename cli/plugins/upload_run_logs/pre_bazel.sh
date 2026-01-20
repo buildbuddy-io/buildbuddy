@@ -12,14 +12,24 @@ BES_BACKEND=$(
   sed 's/^--bes_backend=//' |
   tail -n1
 )
+BES_BACKEND_FLAG=""
+if [[ "$BES_BACKEND" != "" ]]; then
+  BES_BACKEND_FLAG=" --target=$BES_BACKEND"
+fi
 
 API_KEY=$(
   grep -oE -- '--remote_header=x-buildbuddy-api-key=[^[:space:]]+' "$1" |
   sed 's/^--remote_header=x-buildbuddy-api-key=//' |
   tail -n1
 )
+API_KEY_FLAG=""
+if [[ "$API_KEY" != "" ]]; then
+  API_KEY_FLAG=" --api_key=$API_KEY"
+fi
 
 IID=$(uuidgen)
 
-echo "--run_under=//cli/plugins/upload_run_logs:upload_run_logs --target=$BES_BACKEND --api_key=$API_KEY --invocation_id=$IID" >> "$1"
-echo "--invocation_id=$IID" >>"$1"
+# Ensure the build uses the invocation ID passed to the plugin.
+echo "--invocation_id=$IID" >> "$1"
+# Run the plugin.
+echo "--run_under=//cli/plugins/upload_run_logs:upload_run_logs $BES_BACKEND_FLAG $API_KEY_FLAG --invocation_id=$IID" >> "$1"

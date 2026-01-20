@@ -369,5 +369,6 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	out.Tags, _ = invocation_format.SplitAndTrimAndDedupeTags(i.Tags, false)
 	out.ParentRunId = i.ParentRunID
 	out.RunId = i.RunID
+	out.RunStatus = inspb.OverallStatus(i.RunStatus)
 	return out
 }
