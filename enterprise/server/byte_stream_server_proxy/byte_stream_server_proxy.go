@@ -273,8 +273,9 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 	}
 
 	if copyManifestToLocal {
-		// TODO(buildbuddy-internal#6426): Do this asynchronously.
-		if err := manifest.Store(ctx, s.localCache); err != nil {
+		// Skip validation since the manifest was already validated by the remote.
+		// The origin is always the source of truth, and should ALWAYS validate.
+		if err := manifest.StoreWithoutValidation(ctx, s.localCache); err != nil {
 			return m, err
 		}
 	}
