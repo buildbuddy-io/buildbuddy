@@ -2312,7 +2312,7 @@
     "@@toolchains_buildbuddy+//:extensions.bzl%buildbuddy": {
       "general": {
         "bzlTransitiveDigest": "lWa6Z0bfkK+GLxGpbRuJ/rFqT50PcvllkL8aIGUpSc4=",
-        "usagesDigest": "0aqGArWWoTiJTvk7EUVZOtOj+zrO+Ns5dO+UJ8AHFvg=",
+        "usagesDigest": "f+fbART/h4bW7nvCtHZMHs89PKoYGgjs/3jmXBcTZ30=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -2320,7 +2320,7 @@
           "buildbuddy_toolchain": {
             "repoRuleId": "@@toolchains_buildbuddy+//:rules.bzl%_buildbuddy_toolchain",
             "attributes": {
-              "container_image": "gcr.io/flame-public/rbe-ubuntu20-04:latest",
+              "container_image": "gcr.io/flame-public/rbe-ubuntu22-04:latest",
               "llvm": false,
               "java_version": "",
               "gcc_version": "",
