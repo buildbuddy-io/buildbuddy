@@ -28,6 +28,16 @@ func TestRootMkdir(t *testing.T) {
 	}
 }
 
+func TestNewRootTracksRoot(t *testing.T) {
+	root := t.TempDir()
+	r := NewRoot(root)
+
+	cleanRoot := filepath.Clean(root)
+	if _, ok := r.paths[cleanRoot]; !ok {
+		t.Fatalf("expected root %q to be tracked", cleanRoot)
+	}
+}
+
 func TestRootSymlink(t *testing.T) {
 	root := t.TempDir()
 	r := NewRoot(root)

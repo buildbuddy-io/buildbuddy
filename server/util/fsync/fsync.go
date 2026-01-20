@@ -26,11 +26,15 @@ type Root struct {
 // NewRoot creates a Root that will track and sync paths within the given root
 // directory. The root directory itself will be synced when Sync is called.
 func NewRoot(root string) *Root {
-	return &Root{
+	r := &Root{
 		root:   filepath.Clean(root),
 		paths:  make(map[string]struct{}),
 		synced: make(map[string]struct{}),
 	}
+	if r.root != "" && r.root != "." {
+		r.add(r.root)
+	}
+	return r
 }
 
 // add registers a path to be synced when Sync is called.
@@ -63,12 +67,13 @@ func (r *Root) CreateFile(path string, mode os.FileMode, data io.Reader, uid, gi
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
 	if _, err := io.Copy(f, data); err != nil {
+		_ = f.Close()
 		return err
 	}
 	if err := f.Chown(uid, gid); err != nil {
+		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {
