@@ -1579,9 +1579,11 @@ func NewImageStore(resolver *oci.Resolver, layersDir string, fileCache interface
 func (s *ImageStore) populateFileCache() error {
 	ctx := context.Background()
 
-	// The layers directory structure is: {layersDir}/{algorithm}/{hash}/
+	// The layers directory structure is: {layersDir}/{version}/{algorithm}/{hash}/
 	// e.g., /cache/images/oci/v2/sha256/abc123.../
-	entries, err := os.ReadDir(s.layersDir)
+	// We only scan the current version directory.
+	versionDir := filepath.Join(s.layersDir, imageCacheVersion)
+	entries, err := os.ReadDir(versionDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -1594,7 +1596,7 @@ func (s *ImageStore) populateFileCache() error {
 		if !algorithmEntry.IsDir() {
 			continue
 		}
-		algorithmDir := filepath.Join(s.layersDir, algorithmEntry.Name())
+		algorithmDir := filepath.Join(versionDir, algorithmEntry.Name())
 		layerEntries, err := os.ReadDir(algorithmDir)
 		if err != nil {
 			return fmt.Errorf("read layer algorithm directory %s: %w", algorithmDir, err)
