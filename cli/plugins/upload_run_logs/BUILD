@@ -1,6 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
-package(default_visibility = ["//cli:__subpackages__"])
+# gazelle:default_visibility //cli:__subpackages__,//enterprise:__subpackages__
+package(default_visibility = [
+    "//cli:__subpackages__",
+    "//enterprise:__subpackages__",
+])
 
 go_binary(
     name = "upload_run_logs",
@@ -23,9 +27,4 @@ go_library(
         "@com_github_creack_pty//:pty",
         "@org_golang_google_grpc//metadata",
     ],
-)
-
-sh_binary(
-    name = "test_echo",
-    srcs = ["test_echo.sh"],
 )
