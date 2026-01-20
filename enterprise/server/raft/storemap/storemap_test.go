@@ -25,7 +25,7 @@ func TestStoreStatusStateMachine(t *testing.T) {
 		members: make(map[string]serf.Member),
 	}
 
-	sm := New(mockGossipManager, clock, log.NamedSubLogger("test"))
+	sm := New(mockGossipManager, clock, log.NamedSubLogger("test"), 3, 5, 5)
 
 	nhid := "node-1"
 	usage := &rfpb.StoreUsage{
@@ -91,7 +91,7 @@ func TestMissingUsageTag(t *testing.T) {
 		members: make(map[string]serf.Member),
 	}
 
-	sm := New(mockGossipManager, clock, log.NamedSubLogger("test"))
+	sm := New(mockGossipManager, clock, log.NamedSubLogger("test"), 3, 5, 5)
 
 	nhid := "node-1"
 
