@@ -82,6 +82,7 @@ bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_python", version = "1.8.1")
 bazel_dep(name = "rules_python_gazelle_plugin", version = "1.8.1")
+bazel_dep(name = "rules_uv", version = "0.89.2")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "rules_bazel_integration_test", version = "0.34.0")
 
