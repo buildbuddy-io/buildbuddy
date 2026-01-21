@@ -653,7 +653,7 @@ func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationReques
 		for name, count := range q.resourcesUsed.Custom {
 			metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
 				metrics.CustomResourceNameLabel: name,
-			}).Set(float64(count))
+			}).Set(float64(count / 1e6))
 		}
 		log.CtxDebugf(q.rootContext, "Claimed task resources. Queue stats: %s", q.stats())
 	}
@@ -674,7 +674,7 @@ func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequ
 		for name, count := range q.resourcesUsed.Custom {
 			metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
 				metrics.CustomResourceNameLabel: name,
-			}).Set(float64(count))
+			}).Set(float64(count / 1e6))
 		}
 		log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
 	}
