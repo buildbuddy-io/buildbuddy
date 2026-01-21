@@ -340,6 +340,8 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
 	}
 
+	log.CtxDebugf(ctx, "[OCIFetcher] Client: Resolve ref=%q useOCIFetcher=%v useCache=%v", imageRef.String(), useOCIFetcher, useCache)
+
 	return fetchImageFromCacheOrRemote(
 		ctx,
 		imageRef,
@@ -485,18 +487,21 @@ func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller
 		return nil, nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
 	}
 	if useOCIFetcher {
+		log.CtxDebugf(ctx, "[OCIFetcher] Client: FetchManifest request ref=%q bypassRegistry=%v hasCredentials=%v", digestOrTagRef.String(), credentials.bypassRegistry, !credentials.IsEmpty())
 		resp, err := ociFetcherClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
 			Ref:            digestOrTagRef.String(),
 			Credentials:    credentials.ToProto(),
 			BypassRegistry: credentials.bypassRegistry,
 		})
 		if err != nil {
+			log.CtxDebugf(ctx, "[OCIFetcher] Client: FetchManifest failed ref=%q err=%v", digestOrTagRef.String(), err)
 			return nil, nil, err
 		}
 		digest, err := gcr.NewHash(resp.GetDigest())
 		if err != nil {
 			return nil, nil, status.InternalErrorf("invalid digest %q from OCI fetcher: %s", resp.GetDigest(), err)
 		}
+		log.CtxDebugf(ctx, "[OCIFetcher] Client: FetchManifest success ref=%q digest=%q size=%d mediaType=%q", digestOrTagRef.String(), resp.GetDigest(), resp.GetSize(), resp.GetMediaType())
 		return &gcr.Descriptor{
 			Digest:    digest,
 			Size:      resp.GetSize(),
@@ -868,6 +873,7 @@ func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
 	}
 	if l.image.useOCIFetcher {
 		ref := l.repo.Digest(l.digest.String())
+		log.CtxDebugf(l.image.ctx, "[OCIFetcher] Client: FetchBlob request ref=%q bypassRegistry=%v hasCredentials=%v", ref.String(), l.image.credentials.bypassRegistry, !l.image.credentials.IsEmpty())
 		// Create a cancellable context so that Close() can abort the stream
 		// if the caller doesn't read to EOF.
 		ctx, cancel := context.WithCancel(l.image.ctx)
@@ -877,9 +883,11 @@ func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
 			BypassRegistry: l.image.credentials.bypassRegistry,
 		})
 		if err != nil {
+			log.CtxDebugf(l.image.ctx, "[OCIFetcher] Client: FetchBlob failed ref=%q err=%v", ref.String(), err)
 			cancel()
 			return nil, err
 		}
+		log.CtxDebugf(l.image.ctx, "[OCIFetcher] Client: FetchBlob success (stream opened) ref=%q", ref.String())
 		return newStreamReader(stream, cancel), nil
 	}
 

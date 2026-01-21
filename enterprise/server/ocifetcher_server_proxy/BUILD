@@ -11,6 +11,7 @@ go_library(
         "//proto:oci_fetcher_go_proto",
         "//server/environment",
         "//server/real_environment",
+        "//server/util/log",
         "//server/util/status",
     ],
 )
