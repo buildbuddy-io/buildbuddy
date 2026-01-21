@@ -931,14 +931,16 @@ func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string) (
 	// path MTU because GCP machines have smaller MTUs. This requires the
 	// xt_TCPMSS kernel module, which may not be available in all environments.
 	if err := runCommand(ctx, "iptables", "--wait", "-t", "mangle", "-A",
-		"FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS",
-		"--clamp-mss-to-pmtu"); err != nil {
-		log.CtxWarningf(ctx, "Failed to set up TCPMSS clamping (xt_TCPMSS module may not be available): %s", err)
+		"FORWARD", "-i", vethPair.hostDevice, "-p", "tcp", "--tcp-flags",
+		"SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"); err != nil {
+		log.CtxWarningf(ctx, "Failed to set up TCPMSS clamping (xt_TCPMSS "+
+			"module may not be available): %s", err)
 	} else {
 		cleanupStack = append(cleanupStack, func(ctx context.Context) error {
 			return runCommand(ctx, "iptables", "--wait", "-t", "mangle", "-D",
-				"FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j",
-				"TCPMSS", "--clamp-mss-to-pmtu")
+				"FORWARD", "-i", vethPair.hostDevice, "-p", "tcp",
+				"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS",
+				"--clamp-mss-to-pmtu")
 		})
 	}
 
