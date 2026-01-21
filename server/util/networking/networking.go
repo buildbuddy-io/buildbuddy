@@ -920,6 +920,7 @@ func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string) (
 	for _, command := range [][]string{
 		{"ip", "tuntap", "add", "name", tapDeviceName, "mode", "tap"},
 		{"ip", "addr", "add", tapAddr, "dev", tapDeviceName},
+		{"ip", "link", "set", tapDeviceName, "mtu", "1460"},
 		{"ip", "link", "set", tapDeviceName, "up"},
 	} {
 		if err := runCommand(ctx, namespace(netns, command...)...); err != nil {
