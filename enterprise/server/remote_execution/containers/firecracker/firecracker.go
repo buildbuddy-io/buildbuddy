@@ -2161,6 +2161,17 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		return status.UnavailableErrorf("start machine: %s. vmlog: %s", err, c.vmLog.Tail())
 	}
 	c.machine = m
+
+	// Start tcpdump on the VM's network interface to capture traffic for debugging.
+	if c.network != nil {
+		tcpdumpCmd := exec.CommandContext(vmCtx, "ip", "netns", "exec", filepath.Base(c.network.NamespacePath()), "tcpdump", "-i", tapDeviceName, "-w", "/tmp/tcpdump.txt")
+		if err := tcpdumpCmd.Start(); err != nil {
+			log.CtxWarningf(ctx, "Failed to start tcpdump: %s", err)
+		} else {
+			log.CtxInfof(ctx, "Started tcpdump on %s, writing to /tmp/tcpdump.txt", tapDeviceName)
+		}
+	}
+
 	return nil
 }
 
