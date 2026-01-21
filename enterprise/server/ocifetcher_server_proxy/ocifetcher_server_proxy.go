@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 )
 
 type OCIFetcherServerProxy struct {
@@ -46,12 +47,12 @@ func New(env environment.Env) (*OCIFetcherServerProxy, error) {
 	}, nil
 }
 
-func hasCredentials(username string) bool {
-	return username != ""
+func hasCredentials(creds *rgpb.Credentials) bool {
+	return creds != nil && (creds.GetUsername() != "" || creds.GetPassword() != "")
 }
 
 func (s *OCIFetcherServerProxy) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
-	log.CtxDebugf(ctx, "[OCIFetcher] Proxy: FetchManifest entry ref=%q bypassRegistry=%v hasCredentials=%v", req.GetRef(), req.GetBypassRegistry(), hasCredentials(req.GetCredentials().GetUsername()))
+	log.CtxDebugf(ctx, "[OCIFetcher] Proxy: FetchManifest entry ref=%q bypassRegistry=%v hasCredentials=%v", req.GetRef(), req.GetBypassRegistry(), hasCredentials(req.GetCredentials()))
 	resp, err := s.remote.FetchManifest(ctx, req)
 	if err != nil {
 		log.CtxDebugf(ctx, "[OCIFetcher] Proxy: FetchManifest failed ref=%q err=%v", req.GetRef(), err)
@@ -62,7 +63,7 @@ func (s *OCIFetcherServerProxy) FetchManifest(ctx context.Context, req *ofpb.Fet
 }
 
 func (s *OCIFetcherServerProxy) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
-	log.CtxDebugf(ctx, "[OCIFetcher] Proxy: FetchManifestMetadata entry ref=%q bypassRegistry=%v hasCredentials=%v", req.GetRef(), req.GetBypassRegistry(), hasCredentials(req.GetCredentials().GetUsername()))
+	log.CtxDebugf(ctx, "[OCIFetcher] Proxy: FetchManifestMetadata entry ref=%q bypassRegistry=%v hasCredentials=%v", req.GetRef(), req.GetBypassRegistry(), hasCredentials(req.GetCredentials()))
 	resp, err := s.remote.FetchManifestMetadata(ctx, req)
 	if err != nil {
 		log.CtxDebugf(ctx, "[OCIFetcher] Proxy: FetchManifestMetadata failed ref=%q err=%v", req.GetRef(), err)
@@ -73,7 +74,7 @@ func (s *OCIFetcherServerProxy) FetchManifestMetadata(ctx context.Context, req *
 }
 
 func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
-	log.CtxDebugf(ctx, "[OCIFetcher] Proxy: FetchBlobMetadata entry ref=%q bypassRegistry=%v hasCredentials=%v", req.GetRef(), req.GetBypassRegistry(), hasCredentials(req.GetCredentials().GetUsername()))
+	log.CtxDebugf(ctx, "[OCIFetcher] Proxy: FetchBlobMetadata entry ref=%q bypassRegistry=%v hasCredentials=%v", req.GetRef(), req.GetBypassRegistry(), hasCredentials(req.GetCredentials()))
 	resp, err := s.remote.FetchBlobMetadata(ctx, req)
 	if err != nil {
 		log.CtxDebugf(ctx, "[OCIFetcher] Proxy: FetchBlobMetadata failed ref=%q err=%v", req.GetRef(), err)
@@ -86,7 +87,7 @@ func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb
 func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 
-	log.CtxDebugf(ctx, "[OCIFetcher] Proxy: FetchBlob entry ref=%q bypassRegistry=%v hasCredentials=%v", req.GetRef(), req.GetBypassRegistry(), hasCredentials(req.GetCredentials().GetUsername()))
+	log.CtxDebugf(ctx, "[OCIFetcher] Proxy: FetchBlob entry ref=%q bypassRegistry=%v hasCredentials=%v", req.GetRef(), req.GetBypassRegistry(), hasCredentials(req.GetCredentials()))
 	remoteStream, err := s.remote.FetchBlob(ctx, req)
 	if err != nil {
 		log.CtxDebugf(ctx, "[OCIFetcher] Proxy: FetchBlob failed ref=%q err=%v", req.GetRef(), err)

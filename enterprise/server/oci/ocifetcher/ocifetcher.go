@@ -680,7 +680,7 @@ func wrapError(err error, message string) error {
 }
 
 func hasCredentials(creds *rgpb.Credentials) bool {
-	return creds != nil && creds.GetUsername() != ""
+	return creds != nil && (creds.GetUsername() != "" || creds.GetPassword() != "")
 }
 
 type grpcStreamWriter struct {

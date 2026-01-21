@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:oci_fetcher_go_proto",
+        "//proto:registry_go_proto",
         "//server/environment",
         "//server/real_environment",
         "//server/util/log",
