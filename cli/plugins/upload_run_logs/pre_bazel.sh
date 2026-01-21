@@ -31,5 +31,8 @@ IID=$(uuidgen)
 
 # Ensure the build uses the invocation ID passed to the plugin.
 echo "--invocation_id=$IID" >> "$1"
-# Run the plugin.
-echo "--run_under=//cli/plugins/upload_run_logs:upload_run_logs $BES_BACKEND_FLAG $API_KEY_FLAG --invocation_id=$IID" >> "$1"
+
+# Build the plugin in a separate invocation so it doesn't show up in the current build logs.
+bazel build //cli/plugins/upload_run_logs:upload_run_logs > /dev/null 2>&1
+# Add the plugin to the build command.
+echo "--run_under=$(bazel info workspace)/bazel-bin/cli/plugins/upload_run_logs/upload_run_logs_/upload_run_logs $BES_BACKEND_FLAG $API_KEY_FLAG --invocation_id=$IID" >> "$1"
