@@ -812,6 +812,23 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
+	// Inject use-oci-fetcher platform property via experiment.
+	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
+		const useOCIFetcherExperiment = "remote_execution.use_oci_fetcher"
+		useOCIFetcher, details := fp.BooleanDetails(ctx, useOCIFetcherExperiment, false)
+		if useOCIFetcher {
+			executionTask.PlatformOverrides.Properties = append(
+				executionTask.PlatformOverrides.Properties,
+				&repb.Platform_Property{
+					Name:  "use-oci-fetcher",
+					Value: "true",
+				})
+		}
+		if details.Variant() != "" {
+			executionTask.Experiments = append(executionTask.Experiments, useOCIFetcherExperiment+":"+details.Variant())
+		}
+	}
+
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
 	secretService := s.env.GetSecretService()
 	if props.IncludeSecrets {
