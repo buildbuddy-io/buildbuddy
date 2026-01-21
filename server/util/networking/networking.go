@@ -926,6 +926,20 @@ func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string) (
 			return nil, status.WrapError(err, "set up tap device")
 		}
 	}
+
+	// Rewrite SYN packets sent through the host to have an MTU equal to the
+	// path MTU because GCP machines have smaller MTUs.
+	if err := runCommand(ctx, "iptables", "-t", "mangle", "-A", "FORWARD", "-p",
+		"tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS",
+		"--clamp-mss-to-pmtu"); err != nil {
+		return nil, status.WrapError(err, "set up TCPMSS clamping")
+	}
+	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
+		return runCommand(ctx, "iptables", "-t", "mangle", "-D", "FORWARD",
+			"-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS",
+			"--clamp-mss-to-pmtu")
+	})
+
 	v := &VMNetwork{
 		netns:    netns,
 		vmIP:     vmIP,
