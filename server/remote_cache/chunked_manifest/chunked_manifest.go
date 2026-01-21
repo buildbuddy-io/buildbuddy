@@ -70,7 +70,8 @@ func (cm *ChunkedManifest) ToSpliceBlobRequest() *repb.SpliceBlobRequest {
 }
 
 // Store saves the chunked manifest to the cache as an AC entry, keyed by the
-// blob digest.
+// blob digest. It validates that all chunks exist and their combined hash
+// matches the blob digest.
 func (cm *ChunkedManifest) Store(ctx context.Context, cache interfaces.Cache) error {
 	if len(cm.ChunkDigests) == 0 {
 		return status.InvalidArgumentError("chunked manifest must have at least one chunk")
@@ -100,6 +101,25 @@ func (cm *ChunkedManifest) Store(ctx context.Context, cache interfaces.Cache) er
 		return cm.verifyChunks(goCtx, cache)
 	})
 
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	return cm.store(ctx, cache)
+}
+
+// StoreWithoutValidation saves the chunked manifest to the cache without
+// validating that chunks exist or verifying the blob digest. This should only
+// be used when the manifest is known to be valid, such as when copying a
+// manifest from a trusted remote cache that has already validated it.
+func (cm *ChunkedManifest) StoreWithoutValidation(ctx context.Context, cache interfaces.Cache) error {
+	if len(cm.ChunkDigests) == 0 {
+		return status.InvalidArgumentError("chunked manifest must have at least one chunk")
+	}
+	return cm.store(ctx, cache)
+}
+
+func (cm *ChunkedManifest) store(ctx context.Context, cache interfaces.Cache) error {
 	ar := &repb.ActionResult{
 		OutputFiles: make([]*repb.OutputFile, 0, len(cm.ChunkDigests)),
 	}
@@ -117,10 +137,6 @@ func (cm *ChunkedManifest) Store(ctx context.Context, cache interfaces.Cache) er
 
 	acRNProto, err := acResourceName(cm.BlobDigest, cm.InstanceName, cm.DigestFunction)
 	if err != nil {
-		return err
-	}
-
-	if err := g.Wait(); err != nil {
 		return err
 	}
 

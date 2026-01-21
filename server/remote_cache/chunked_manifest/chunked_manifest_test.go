@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -192,4 +193,130 @@ func (c *contextCheckingCache) Set(ctx context.Context, r *rspb.ResourceName, da
 		require.NoError(c.t, ctx.Err())
 	}
 	return c.Cache.Set(ctx, r, data)
+}
+
+func TestStoreWithoutValidation_InvalidDigest(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 100)
+	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 150)
+	chunk3RN, chunk3Data := testdigest.RandomCASResourceBuf(t, 200)
+
+	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
+	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
+	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3Data))
+
+	invalidDigest, err := digest.Compute(bytes.NewReader([]byte("completely different data")), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	cm := &chunked_manifest.ChunkedManifest{
+		BlobDigest:     invalidDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
+		InstanceName:   "test-instance",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err = cm.Store(ctx, cache)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "computed digest")
+	assert.ErrorContains(t, err, "does not match expected")
+
+	err = cm.StoreWithoutValidation(ctx, cache)
+	require.NoError(t, err)
+
+	loadedCM, err := chunked_manifest.Load(ctx, cache, invalidDigest, "test-instance", repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	assert.Equal(t, invalidDigest.GetHash(), loadedCM.BlobDigest.GetHash())
+	assert.Equal(t, len(cm.ChunkDigests), len(loadedCM.ChunkDigests))
+}
+
+func TestStoreWithoutValidation_MissingChunks(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	chunk1RN, _ := testdigest.RandomCASResourceBuf(t, 100)
+	chunk2RN, _ := testdigest.RandomCASResourceBuf(t, 150)
+
+	blobDigest, err := digest.Compute(bytes.NewReader([]byte("some blob data")), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	cm := &chunked_manifest.ChunkedManifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest()},
+		InstanceName:   "test-instance",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err = cm.Store(ctx, cache)
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err))
+
+	err = cm.StoreWithoutValidation(ctx, cache)
+	require.NoError(t, err)
+}
+
+func BenchmarkStore(b *testing.B) {
+	*log.LogLevel = "error"
+	log.Configure()
+
+	sizes := []int{1 * 1024 * 1024, 10 * 1024 * 1024, 100 * 1024 * 1024}
+
+	for _, size := range sizes {
+		ctx := context.Background()
+		te := testenv.GetTestEnv(b)
+		ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+		require.NoError(b, err)
+		cache := te.GetCache()
+
+		blobRN, blobData := testdigest.RandomCASResourceBuf(b, int64(size))
+
+		const chunkSize = 512 * 1024
+		var chunkDigests []*repb.Digest
+		for i := 0; i < len(blobData); i += chunkSize {
+			end := i + chunkSize
+			if end > len(blobData) {
+				end = len(blobData)
+			}
+			chunk := blobData[i:end]
+			d, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+			require.NoError(b, err)
+			chunkDigests = append(chunkDigests, d)
+			rn := digest.NewCASResourceName(d, "bench", repb.DigestFunction_SHA256)
+			require.NoError(b, cache.Set(ctx, rn.ToProto(), chunk))
+		}
+
+		cm := &chunked_manifest.ChunkedManifest{
+			BlobDigest:     blobRN.GetDigest(),
+			ChunkDigests:   chunkDigests,
+			InstanceName:   "bench",
+			DigestFunction: repb.DigestFunction_SHA256,
+		}
+
+		name := fmt.Sprintf("%dMB", size/(1024*1024))
+
+		b.Run(name+"/WithValidation", func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := cm.Store(ctx, cache); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		b.Run(name+"/WithoutValidation", func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := cm.StoreWithoutValidation(ctx, cache); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }

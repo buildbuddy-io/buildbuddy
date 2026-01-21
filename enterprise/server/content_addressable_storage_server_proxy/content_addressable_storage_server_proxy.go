@@ -13,9 +13,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -35,6 +37,7 @@ type CASServerProxy struct {
 	authenticator      interfaces.Authenticator
 	local              repb.ContentAddressableStorageServer
 	remote             repb.ContentAddressableStorageClient
+	localCache         interfaces.Cache
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -64,6 +67,7 @@ func New(env environment.Env) (*CASServerProxy, error) {
 		authenticator:      authenticator,
 		local:              local,
 		remote:             remote,
+		localCache:         env.GetCache(),
 	}
 	return &proxy, nil
 }
@@ -458,14 +462,17 @@ func (s *CASServerProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobReque
 		return nil, status.WrapError(remoteErr, "remote SplitBlob")
 	}
 
-	if _, err := s.local.SpliceBlob(ctx, &repb.SpliceBlobRequest{
-		InstanceName:   req.GetInstanceName(),
-		BlobDigest:     req.GetBlobDigest(),
-		ChunkDigests:   remoteResp.GetChunkDigests(),
-		DigestFunction: req.GetDigestFunction(),
-	}); err != nil {
-		return nil, status.WrapError(err, "SplitBlob splice remote result to local")
+	// Store the manifest locally, skipping validation since it was already
+	// validated by the remote.
+	if s.localCache != nil {
+		ctx, err := prefix.AttachUserPrefixToContext(ctx, s.authenticator)
+		if err != nil {
+			return nil, err
+		}
+		manifest := chunked_manifest.FromSplitResponse(req, remoteResp)
+		if err := manifest.StoreWithoutValidation(ctx, s.localCache); err != nil {
+			return nil, status.WrapError(err, "SplitBlob store remote manifest to local")
+		}
 	}
-
 	return remoteResp, nil
 }
