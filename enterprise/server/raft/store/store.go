@@ -83,13 +83,11 @@ var (
 )
 
 const (
-	deleteSessionsRateLimit      = 1
-	removeZombieRateLimit        = 1
-	numReplicaStarter            = 50
-	checkReplicaCaughtUpInterval = 1 * time.Second
-	maxWaitTimeForReplicaRange   = 30 * time.Second
-	metricsRefreshPeriod         = 30 * time.Second
-	minVoteBufferPeriod          = 2 * time.Second
+	deleteSessionsRateLimit = 1
+	removeZombieRateLimit   = 1
+	numReplicaStarter       = 50
+	metricsRefreshPeriod    = 30 * time.Second
+	minVoteBufferPeriod     = 5 * time.Second
 
 	// listenerID for replicaStatusWaiter
 	listenerID = "replicaStatusWaiter"
