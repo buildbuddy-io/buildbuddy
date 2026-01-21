@@ -1340,7 +1340,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "assigned_custom_resources",
-		Help:      "Custom resources on the executor currently allocated for task execution.",
+		Help:      "Custom resources on the executor currently allocated for task execution. Custom resources are dimensionless values configured via executor.custom_resources.",
 	}, []string{
 		CustomResourceNameLabel,
 	})
@@ -1349,7 +1349,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "assignable_custom_resources",
-		Help:      "Maximum custom resources that can be allocated for task execution.",
+		Help:      "Maximum custom resources that can be allocated for task execution. Custom resources are dimensionless values configured via executor.custom_resources.",
 	}, []string{
 		CustomResourceNameLabel,
 	})
