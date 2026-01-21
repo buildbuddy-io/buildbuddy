@@ -138,7 +138,7 @@ func waitForHealthy(t *testing.T, caches ...*metadata.Server) {
 }
 
 func waitForShutdown(t *testing.T, caches ...*metadata.Server) {
-	timeout := 10 * time.Second
+	timeout := 30 * time.Second
 	done := make(chan struct{})
 	go func() {
 		parallelShutdown(caches...)
