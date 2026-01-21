@@ -272,8 +272,8 @@ github.com/bazelbuild/buildtools v0.0.0-20250930140053-2eb4fccefb52 h1:njQAmjTv/
 github.com/bazelbuild/buildtools v0.0.0-20250930140053-2eb4fccefb52/go.mod h1:PLNUetjLa77TCCziPsz0EI8a6CUxgC+1jgmWv0H25tg=
 github.com/bazelbuild/rules_go v0.59.0 h1:RLhOwYIqeMgBpKelHEWTfIPjA37so3oa/rX+/qqq/P4=
 github.com/bazelbuild/rules_go v0.59.0/go.mod h1:Pn30cb4M513fe2rQ6GiJ3q8QyrRsgC7zhuDvi50Lw4Y=
-github.com/bazelbuild/rules_webtesting v0.2.1-0.20250212231324-7a1c88f61e35 h1:8iFEccri5HBi43hKpNGesGtekRZNZIMB0vVaHXB2QXs=
-github.com/bazelbuild/rules_webtesting v0.2.1-0.20250212231324-7a1c88f61e35/go.mod h1:v9uZWLrWZWyJdpqVPhOtq67qoSB3MhhiAQXMwNlnYf4=
+github.com/bazelbuild/rules_webtesting v0.2.1-0.20250911195827-e09c04b7d4d1 h1:H1Kdr6+3QV2I+kU/X2PVwIZL1vI0gQlXDH9gXixcA3g=
+github.com/bazelbuild/rules_webtesting v0.2.1-0.20250911195827-e09c04b7d4d1/go.mod h1:v9uZWLrWZWyJdpqVPhOtq67qoSB3MhhiAQXMwNlnYf4=
 github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e h1:Th4pNly+xoH2szOq4aA+uAFmg5h37BCyq3pFqnZGJ70=
 github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e/go.mod h1:led5f4NrGeXrUKOlQA36mgNtNs7gVo86eZUOX42q5+8=
 github.com/beevik/etree v1.1.0/go.mod h1:r8Aw8JqVegEf0w2fDnATrX9VpkMcyFeM0FhwO62wh+A=
