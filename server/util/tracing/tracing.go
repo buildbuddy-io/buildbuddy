@@ -242,7 +242,7 @@ func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanEx
 
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSpanProcessor(bsp),
-		sdktrace.WithSampler(sdktrace.ParentBased(sampler)),
+		sdktrace.WithSampler(sdktrace.ParentBased(sampler, sdktrace.WithRemoteParentNotSampled(sampler))),
 		sdktrace.WithResource(res))
 	otel.SetTracerProvider(tp)
 	// Re-enable this if GCS tracing is fixed to not include blob names in span names
