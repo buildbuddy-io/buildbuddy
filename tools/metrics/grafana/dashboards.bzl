@@ -5,6 +5,7 @@ DASHBOARD_NAMES = [
     "buildbuddy",
     "cache-proxy",
     "cache",
+    "cdc",
     "clickhouse",
     "container-metrics",
     "envoy",
