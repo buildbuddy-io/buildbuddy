@@ -2164,19 +2164,11 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 
 	// Start tcpdump on the VM's network interface to capture traffic for debugging.
 	if c.network != nil {
-		tcpdumpFile, err := os.Create("/tmp/tcpdump.txt")
-		if err != nil {
-			log.CtxWarningf(ctx, "Failed to create tcpdump output file: %s", err)
+		tcpdumpCmd := exec.CommandContext(vmCtx, "ip", "netns", "exec", filepath.Base(c.network.NamespacePath()), "tcpdump", "-i", tapDeviceName, "-w", "/tmp/tcpdump.pcap")
+		if err := tcpdumpCmd.Start(); err != nil {
+			log.CtxWarningf(ctx, "Failed to start tcpdump: %s", err)
 		} else {
-			tcpdumpCmd := exec.CommandContext(vmCtx, "ip", "netns", "exec", filepath.Base(c.network.NamespacePath()), "tcpdump", "-i", tapDeviceName, "-l", "-n")
-			tcpdumpCmd.Stdout = tcpdumpFile
-			tcpdumpCmd.Stderr = tcpdumpFile
-			if err := tcpdumpCmd.Start(); err != nil {
-				log.CtxWarningf(ctx, "Failed to start tcpdump: %s", err)
-				tcpdumpFile.Close()
-			} else {
-				log.CtxInfof(ctx, "Started tcpdump on %s, writing to /tmp/tcpdump.txt", tapDeviceName)
-			}
+			log.CtxInfof(ctx, "Started tcpdump on %s, writing to /tmp/tcpdump.pcap", tapDeviceName)
 		}
 	}
 
