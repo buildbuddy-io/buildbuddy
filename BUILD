@@ -11,6 +11,7 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@rules_python//python:pip.bzl", "compile_pip_requirements")
 load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
+load("@rules_uv//uv:pip.bzl", "pip_compile")
 load("//rules/go:index.bzl", "go_sdk_tool")
 
 package(default_visibility = ["//visibility:public"])
@@ -122,9 +123,12 @@ gazelle_binary(
     ],
 )
 
-compile_pip_requirements(
+pip_compile(
     name = "requirements",
-    src = "requirements.txt",
+    exec_properties = {
+        "dockerNetwork": "bridge",
+    },
+    requirements_in = "requirements.txt",
     requirements_txt = "requirements.lock",
 )
 
