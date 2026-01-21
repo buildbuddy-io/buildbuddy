@@ -937,13 +937,22 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	defer func() {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
 		defer cancel()
-		_ = ws.Remove(ctx)
+		if err := ws.Remove(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to remove warmup workspace: %s", err)
+		}
 	}()
 	c, err := p.newContainer(ctx, platProps, st, ws.Path())
 	if err != nil {
 		log.Errorf("Error warming up %q image %q: %s", cfg.Isolation, platProps.ContainerImage, err)
 		return err
 	}
+	defer func() {
+		ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
+		defer cancel()
+		if err := c.Remove(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to remove warmup container: %s", err)
+		}
+	}()
 
 	creds, err := oci.CredentialsFromProperties(platProps)
 	if err != nil {
