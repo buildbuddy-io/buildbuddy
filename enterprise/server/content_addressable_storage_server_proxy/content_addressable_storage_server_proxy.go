@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/sync/errgroup"
 
 	"google.golang.org/grpc/codes"
 
@@ -419,26 +418,9 @@ func (s *CASServerProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobReq
 		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not supported for skipping remote")
 	}
 
-	var remoteResp *repb.SpliceBlobResponse
-	eg, goCtx := errgroup.WithContext(ctx)
-	eg.Go(func() error {
-		var err error
-		remoteResp, err = s.remote.SpliceBlob(goCtx, req)
-		if err != nil {
-			return status.WrapError(err, "remote SpliceBlob")
-		}
-		return nil
-	})
-	eg.Go(func() error {
-		if _, err := s.local.SpliceBlob(goCtx, req); err != nil {
-			return status.WrapError(err, "local SpliceBlob")
-		}
-		return nil
-	})
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-	return remoteResp, nil
+	// The local proxy might not have all chunks available,
+	// so call SpliceBlob on remote only.
+	return s.remote.SpliceBlob(ctx, req)
 }
 
 func (s *CASServerProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
