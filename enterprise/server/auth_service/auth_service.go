@@ -18,11 +18,15 @@ type AuthService struct {
 	authenticator interfaces.GRPCAuthenticator
 }
 
+func New(authenticator interfaces.Authenticator) AuthService {
+	return AuthService{authenticator: authenticator}
+}
+
 func Register(env *real_environment.RealEnv) error {
 	if err := claims.Init(); err != nil {
 		return err
 	}
-	env.SetAuthService(AuthService{authenticator: env.GetAuthenticator()})
+	env.SetAuthService(New(env.GetAuthenticator()))
 	return nil
 }
 
