@@ -930,6 +930,7 @@ func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string) (
 	// Rewrite SYN packets sent through the host to have an MTU equal to the
 	// path MTU because GCP machines have smaller MTUs. This requires the
 	// xt_TCPMSS kernel module, which may not be available in all environments.
+	// TODO(go/b/6539): remove this.
 	if err := runCommand(ctx, "iptables", "--wait", "-t", "mangle", "-A",
 		"FORWARD", "-i", vethPair.hostDevice, "-p", "tcp", "--tcp-flags",
 		"SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"); err != nil {
