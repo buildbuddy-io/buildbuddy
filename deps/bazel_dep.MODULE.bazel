@@ -31,14 +31,14 @@ single_version_override(
 bazel_dep(name = "rules_webtesting")
 archive_override(
     module_name = "rules_webtesting",
-    integrity = "sha256-wJV/ZIAEYtzoEynx+f6NYA1ilAIrK6ppbUuaeI0+j3Y=",
+    integrity = "sha256-aVW/XWEzpcgbNRb9cnAdnp7wAzQrUffBTjbcExPLyY8=",
     patch_strip = 1,
     patches = [
         "//buildpatches/bazel_dep:rules_webtesting.patch",
     ],
-    strip_prefix = "rules_webtesting-7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed",
+    strip_prefix = "rules_webtesting-e09c04b7d4d1e91ac1cd6f08283246d350c65379",
     urls = [
-        "https://github.com/bazelbuild/rules_webtesting/archive/7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed.tar.gz",
+        "https://github.com/bazelbuild/rules_webtesting/archive/e09c04b7d4d1e91ac1cd6f08283246d350c65379.tar.gz",
     ],
 )
 
