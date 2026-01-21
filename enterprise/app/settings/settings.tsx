@@ -206,6 +206,18 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       <div className="settings-option-description">
                         Choose between light and dark mode for the BuildBuddy UI.
                       </div>
+                      <div className="settings-option-warning">
+                        <AlertCircle className="icon" />
+                        <span>
+                          Dark mode is experimental.{" "}
+                          <a
+                            href="https://github.com/buildbuddy-io/buildbuddy/issues/new?template=bug_report.md"
+                            target="_blank"
+                            rel="noopener noreferrer">
+                            Report issues
+                          </a>
+                        </span>
+                      </div>
                       <div className="settings-button-group" role="group" aria-label="Theme selection">
                         <FilledButton
                           className={`settings-button ${this.props.preferences.themePreference === "light" ? "selected" : ""}`}

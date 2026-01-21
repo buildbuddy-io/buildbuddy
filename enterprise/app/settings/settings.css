@@ -28,6 +28,30 @@
   margin-bottom: 16px;
 }
 
+.settings-option-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background-color: var(--color-banner-warning-bg);
+  border-radius: 4px;
+  color: var(--color-banner-warning-text);
+  font-size: 14px;
+}
+
+.settings-option-warning .icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--color-banner-warning-icon);
+}
+
+.settings-option-warning a {
+  color: var(--color-banner-warning-text);
+  text-decoration: underline;
+}
+
 .settings .settings-button,
 .settings .settings-link-button a {
   padding: 16px 32px;
