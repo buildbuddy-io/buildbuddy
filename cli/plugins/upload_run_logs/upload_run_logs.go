@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
@@ -27,6 +28,12 @@ var (
 	invocationID = flag.String("invocation_id", "", "Invocation ID for the associated build. Logs will be sent to this invocation's URL.")
 
 	bufferSize = flag.Int("buffer_size", 1<<20, "Size of the buffer to use for streaming logs. Defaults to 1MB.")
+)
+
+const (
+	// Even if not enough data has been written to flush a chunk, flush it after this much time has passed to ensure
+	// the UI is relatively up-to-date.
+	flushChunkTimeout = 15 * time.Second
 )
 
 func main() {
@@ -122,6 +129,9 @@ func runCommand(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, arg
 // streamOutput streams output to both stdout and uploads them to the BuildBuddy server.
 func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, r io.Reader, stream bbspb.BuildBuddyService_WriteEventLogClient) error {
 	uploadRunLogs := true
+	flushTimer := time.NewTimer(flushChunkTimeout)
+	defer flushTimer.Stop()
+
 	writeBuf := make([]byte, 0, *bufferSize)
 	readBuf := make([]byte, *bufferSize)
 	for {
@@ -143,12 +153,28 @@ func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, r
 			continue
 		}
 
+		forceFlush := false
+		select {
+		case <-flushTimer.C:
+			forceFlush = true
+		default:
+		}
+
 		// Flush writes to the server once we've accumulated enough data.
-		if len(writeBuf) > 0 && len(writeBuf)+n > *bufferSize {
+		if len(writeBuf) > 0 && (len(writeBuf)+n > *bufferSize || forceFlush) {
 			if err := uploadLogs(ctx, bbClient, stream, writeBuf); err != nil {
 				uploadRunLogs = false
 				continue
 			}
+
+			// Reset the flush timer.
+			if !flushTimer.Stop() {
+				select {
+				case <-flushTimer.C:
+				default:
+				}
+			}
+			flushTimer.Reset(flushChunkTimeout)
 
 			// Reset the write buffer.
 			writeBuf = writeBuf[:0]
