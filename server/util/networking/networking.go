@@ -42,6 +42,7 @@ var (
 	taskIPRange                   = flag.String("executor.task_ip_range", "192.168.0.0/16", "Subnet to allocate IP addresses from for actions that require network access. Must be a /16 range.")
 	taskAllowedPrivateIPs         = flag.Slice("executor.task_allowed_private_ips", []string{}, "Allowed private IPs that should be reachable from actions: either 'default', an IP address, or IP range. Private IP ranges as defined in RFC1918 are otherwise blocked.")
 	networkStatsEnabled           = flag.Bool("executor.network_stats_enabled", false, "Enable basic tx/rx statistics.")
+	clampMSSToPMTU                = flag.Bool("executor.clamp-mss-to-pmtu", false, "Clamp the TCP MSS to the PMTU for outgoing connections.")
 
 	// Private IP ranges, as defined in RFC1918.
 	PrivateIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
@@ -931,18 +932,20 @@ func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string) (
 	// path MTU because GCP machines have smaller MTUs. This requires the
 	// xt_TCPMSS kernel module, which may not be available in all environments.
 	// TODO(go/b/6539): remove this.
-	if err := runCommand(ctx, "iptables", "--wait", "-t", "mangle", "-A",
-		"FORWARD", "-i", vethPair.hostDevice, "-p", "tcp", "--tcp-flags",
-		"SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"); err != nil {
-		log.CtxWarningf(ctx, "Failed to set up TCPMSS clamping (xt_TCPMSS "+
-			"module may not be available): %s", err)
-	} else {
-		cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-			return runCommand(ctx, "iptables", "--wait", "-t", "mangle", "-D",
-				"FORWARD", "-i", vethPair.hostDevice, "-p", "tcp",
-				"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS",
-				"--clamp-mss-to-pmtu")
-		})
+	if *clampMSSToPMTU {
+		if err := runCommand(ctx, "iptables", "--wait", "-t", "mangle", "-A",
+			"FORWARD", "-i", vethPair.hostDevice, "-p", "tcp", "--tcp-flags",
+			"SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"); err != nil {
+			log.CtxWarningf(ctx, "Failed to set up TCPMSS clamping (xt_TCPMSS "+
+				"module may not be available): %s", err)
+		} else {
+			cleanupStack = append(cleanupStack, func(ctx context.Context) error {
+				return runCommand(ctx, "iptables", "--wait", "-t", "mangle", "-D",
+					"FORWARD", "-i", vethPair.hostDevice, "-p", "tcp",
+					"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS",
+					"--clamp-mss-to-pmtu")
+			})
+		}
 	}
 
 	v := &VMNetwork{
