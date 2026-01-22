@@ -10,7 +10,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -49,36 +48,30 @@ var (
 		watchoptdef.WatcherFlags.Name(): watchoptdef.WatcherFlags,
 	}
 
-	flagShortNamePattern = regexp.MustCompile(`^[a-z]$`)
-
 	// make this a var so the test can replace it.
 	bazelHelp = runBazelHelpWithCache
 
-	generateParserOnce = sync.OnceValue(
-		func() *struct {
-			p *Parser
-			error
-		} {
-			type Return = struct {
-				p *Parser
-				error
-			}
+	generateParserOnce = sync.OnceValues(
+		func() (*Parser, error) {
 			protoHelp, err := bazelHelp()
 			if err != nil {
-				return &Return{nil, err}
+				return nil, err
 			}
 			flagCollection, err := DecodeHelpFlagsAsProto(protoHelp)
 			if err != nil {
-				return &Return{nil, err}
+				return nil, err
 			}
 			parser, err := GenerateParser(flagCollection)
+			if err != nil {
+				return nil, err
+			}
 			for name, d := range nativeDefinitions {
 				if err := parser.AddOptionDefinition(d); err != nil {
 					log.Warnf("Error initializing command-line parser when adding bb-specific definition for '%s': %s", name, err)
 				}
 			}
 			parser.StartupOptionParser.Aliases = shortcuts.Shortcuts
-			return &Return{parser, err}
+			return parser, nil
 		},
 	)
 )
@@ -602,8 +595,7 @@ func GenerateParser(flagCollection *bfpb.FlagCollection, commandsToPartition ...
 }
 
 func GetParser() (*Parser, error) {
-	once := generateParserOnce()
-	return once.p, once.error
+	return generateParserOnce()
 }
 
 func CanonicalizeArgs(args []string) ([]string, error) {
