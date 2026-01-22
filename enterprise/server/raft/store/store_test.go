@@ -2532,7 +2532,7 @@ func TestSetupNewPartitions(t *testing.T) {
 
 		replicas := s1.ListOpenReplicasForTest()
 		if len(replicas) < 7 {
-			log.Infof("====num of replicas: %d", len(replicas))
+			log.Infof("====num of replicas on %s: %d", s1.NHID(), len(replicas))
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}
