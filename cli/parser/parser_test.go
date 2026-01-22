@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,11 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
-	bfpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_flags"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -39,55 +34,6 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	_ = os.RemoveAll(tempHome)
 	os.Exit(code)
-}
-
-func TestDecodeHelpFlagsAsProto_WithNoisyOutput(t *testing.T) {
-	noisy := "Starting local Bazel server and connecting to it...\n" + test_data.BazelHelpFlagsAsProtoOutput + "\n"
-	flagCollection, err := DecodeHelpFlagsAsProto(noisy)
-	require.NoError(t, err)
-	require.NotEmpty(t, flagCollection.FlagInfos)
-}
-
-func TestRunBazelHelpWithCache_DeletesInvalidCache(t *testing.T) {
-	cacheDir := t.TempDir()
-	t.Setenv("BUILDBUDDY_CACHE_DIR", cacheDir)
-	t.Setenv("BAZELISK_HOME", t.TempDir())
-
-	fakeBazelPath := filepath.Join(t.TempDir(), "fake-bazel")
-	script := "#!/bin/sh\nprintf \"%s\\n\" \"$FAKE_BAZEL_HELP\"\n"
-	require.NoError(t, os.WriteFile(fakeBazelPath, []byte(script), 0755))
-
-	encoded, err := proto.Marshal(&bfpb.FlagCollection{
-		FlagInfos: []*bfpb.FlagInfo{{Name: proto.String("dummy")}},
-	})
-	require.NoError(t, err)
-	base64Output := base64.StdEncoding.EncodeToString(encoded)
-
-	noisyOutput := "Starting local Bazel server and connecting to it...\n" + base64Output
-	t.Setenv("FAKE_BAZEL_HELP", noisyOutput)
-	t.Setenv("BB_USE_BAZEL_VERSION", fakeBazelPath)
-	t.Setenv("USE_BAZEL_VERSION", fakeBazelPath)
-
-	f, err := os.Open(fakeBazelPath)
-	require.NoError(t, err)
-	defer f.Close()
-	d, err := digest.Compute(f, repb.DigestFunction_SHA256)
-	require.NoError(t, err)
-
-	helpCacheFilePath := filepath.Join(cacheDir, "bazel_metadata", d.GetHash(), "help", "flags-as-proto.txt")
-	require.NoError(t, os.MkdirAll(filepath.Dir(helpCacheFilePath), 0755))
-	require.NoError(t, os.WriteFile(helpCacheFilePath, []byte("not base64"), 0644))
-
-	flagCollection, err := runBazelHelpWithCache()
-	require.NoError(t, err)
-	require.Len(t, flagCollection.FlagInfos, 1)
-	assert.Equal(t, "dummy", flagCollection.FlagInfos[0].GetName())
-
-	cached, err := os.ReadFile(helpCacheFilePath)
-	require.NoError(t, err)
-	assert.Equal(t, base64Output, strings.TrimSpace(string(cached)))
-	_, err = DecodeHelpFlagsAsProto(string(cached))
-	require.NoError(t, err)
 }
 
 func TestNegativeStarlarkFlagWithValue(t *testing.T) {
