@@ -662,7 +662,21 @@ func runBazelHelpWithCache() (*bfpb.FlagCollection, error) {
 		return nil, fmt.Errorf("failed to read from bazel metadata cache: %s", err)
 	}
 	if err == nil {
-		return DecodeHelpFlagsAsProto(string(b))
+		cachedProto := strings.TrimSpace(string(b))
+		if flags, err := DecodeHelpFlagsAsProto(cachedProto); err == nil {
+			return flags, err
+		}
+		// If decode failed, attempt to decode the last line of the file instead
+		// This is because it's possible that an old file was corrupted with other stdout messages.
+		lines := strings.Split(cachedProto, "\n")
+		flags, err := DecodeHelpFlagsAsProto(lines[len(lines)-1])
+		if err == nil {
+			return flags, err
+		}
+		log.Warnf("Invalid cached flags-as-proto file at %s: %s; deleting and regenerating", helpCacheFilePath, err)
+		if err := os.Remove(helpCacheFilePath); err != nil {
+			log.Warnf("Failed to delete cached flags-as-proto file at %s: %s", helpCacheFilePath, err)
+		}
 	}
 
 	tmp, err := os.CreateTemp("", "bazel-*")
@@ -704,10 +718,26 @@ func runBazelHelpWithCache() (*bfpb.FlagCollection, error) {
 	if err := tmp.Close(); err != nil {
 		return nil, fmt.Errorf("failed to close temp file: %s", err)
 	}
-	if err := disk.MoveFile(tmp.Name(), helpCacheFilePath); err != nil {
-		return nil, fmt.Errorf("failed to write to bazel metadata cache: %s", err)
+	// Typically 'bazel help flags-as-proto' output the protobuf in 1 single base64 encoded line
+	// Use the last line to avoid
+	out := strings.TrimSpace(buf.String())
+	flags, err := DecodeHelpFlagsAsProto(out)
+	if err == nil {
+		if err := disk.MoveFile(tmp.Name(), helpCacheFilePath); err != nil {
+			return nil, fmt.Errorf("failed to write to bazel metadata cache: %s", err)
+		}
+		return flags, err
 	}
-	return DecodeHelpFlagsAsProto(buf.String())
+	// retry by parsing only the last line
+	lines := strings.Split(out, "/n")
+	lastLine := lines[len(lines)-1]
+	flags, err = DecodeHelpFlagsAsProto(lastLine)
+	if err == nil {
+		if err := os.WriteFile(helpCacheFilePath, []byte(lastLine), 0o600); err != nil {
+			return nil, fmt.Errorf("failed to write to bazel metadata cache: %s", err)
+		}
+	}
+	return flags, err
 }
 
 // ResolveArgs removes all rc-file options from the args, appends an
