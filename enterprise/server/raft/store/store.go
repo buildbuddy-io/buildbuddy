@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -2477,6 +2478,10 @@ func (w *updateTagsWorker) updateTags() error {
 		storeTags[constants.ZoneTag] = zone
 	} else {
 		storeTags[constants.ZoneTag] = "local"
+	}
+
+	if podIndex := os.Getenv("MY_POD_INDEX"); podIndex != "" {
+		storeTags[constants.PodIndexTag] = podIndex
 	}
 
 	storeTags[constants.GRPCAddressTag] = w.store.grpcAddr
