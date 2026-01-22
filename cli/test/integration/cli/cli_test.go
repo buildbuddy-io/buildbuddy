@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -419,4 +420,56 @@ func retryUntilSuccess(t *testing.T, f func() error) {
 	}
 	// testcli.DumpSidecarLog(t)
 	require.FailNowf(t, "timed out waiting for function to succeed", "last error: %s", err)
+}
+
+func TestBazelHelpCacheInvalidation(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+
+	cacheDir := t.TempDir()
+	bazeliskHome := t.TempDir()
+
+	cmd := testcli.BazelCommand(t, ws, "shutdown")
+	cmd.Env = append(os.Environ(),
+		"BUILDBUDDY_CACHE_DIR="+cacheDir,
+		"BAZELISK_HOME="+bazeliskHome,
+	)
+	_, err := testcli.Output(cmd)
+	require.NoError(t, err)
+
+	cmd = testcli.Command(t, ws, "help", "completion")
+	cmd.Env = append(os.Environ(),
+		"BUILDBUDDY_CACHE_DIR="+cacheDir,
+		"BAZELISK_HOME="+bazeliskHome,
+	)
+	output, err := testcli.Output(cmd)
+	require.NoError(t, err, "output: %s", string(output))
+	require.Contains(t, string(output), `BAZEL_STARTUP_OPTIONS="`)
+
+	paths, err := filepath.Glob(filepath.Join(cacheDir, "bazel_metadata", "*", "help", "flags-as-proto.txt"))
+	require.NoError(t, err)
+	require.Len(t, paths, 1)
+	helpCacheFilePath := paths[0]
+	require.NoError(t, os.WriteFile(helpCacheFilePath, []byte("not base64"), 0644))
+
+	cmd = testcli.BazelCommand(t, ws, "shutdown")
+	cmd.Env = append(os.Environ(),
+		"BUILDBUDDY_CACHE_DIR="+cacheDir,
+		"BAZELISK_HOME="+bazeliskHome,
+	)
+	_, err = testcli.Output(cmd)
+	require.NoError(t, err)
+
+	cmd = testcli.Command(t, ws, "help", "completion")
+	cmd.Env = append(os.Environ(),
+		"BUILDBUDDY_CACHE_DIR="+cacheDir,
+		"BAZELISK_HOME="+bazeliskHome,
+	)
+	output, err = testcli.Output(cmd)
+	require.NoError(t, err, "output: %s", string(output))
+	require.Contains(t, string(output), `BAZEL_STARTUP_OPTIONS="`)
+
+	cached, err := os.ReadFile(helpCacheFilePath)
+	require.NoError(t, err)
+	_, err = parser.DecodeHelpFlagsAsProto(string(cached))
+	require.NoError(t, err)
 }
