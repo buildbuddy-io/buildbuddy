@@ -1863,6 +1863,16 @@ var (
 		BlobstoreTypeLabel,
 	})
 
+	EventLogBytesWritten = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "event_log_bytes_written",
+		Help:      "Number of event log bytes written.",
+	}, []string{
+		EventName,
+		GroupID,
+	})
+
 	// # SQL metrics
 	//
 	// The following metrics are for monitoring the SQL database configured

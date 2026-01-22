@@ -831,6 +831,7 @@ type EventChannel struct {
 	requestedTerminalColumns         int
 	requestedTerminalLines           int
 	logWriter                        *eventlog.EventLogWriter
+	logBytesWritten                  int64
 	onClose                          func()
 	attempt                          uint64
 
@@ -947,6 +948,7 @@ func (e *EventChannel) getGroupIDForMetrics() string {
 
 func (e *EventChannel) recordInvocationMetrics(ti *tables.Invocation) {
 	statusLabel := invocationStatusLabel(ti)
+	groupID := e.getGroupIDForMetrics()
 	metrics.InvocationCount.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,
 		metrics.BazelExitCode:         ti.BazelExitCode,
@@ -958,8 +960,14 @@ func (e *EventChannel) recordInvocationMetrics(ti *tables.Invocation) {
 	}).Observe(float64(ti.DurationUsec))
 	metrics.InvocationDurationUsExported.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,
-		metrics.GroupID:               e.getGroupIDForMetrics(),
+		metrics.GroupID:               groupID,
 	}).Observe(float64(ti.DurationUsec))
+	if e.logBytesWritten > 0 {
+		metrics.EventLogBytesWritten.With(map[string]string{
+			metrics.EventName: "build_log",
+			metrics.GroupID:   groupID,
+		}).Add(float64(e.logBytesWritten))
+	}
 }
 
 func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
@@ -1233,7 +1241,10 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 					return err
 				}
 			}
-			if _, err := e.logWriter.Write(e.ctx, append([]byte(p.Progress.GetStderr()), []byte(p.Progress.GetStdout())...)); err != nil && err != context.Canceled {
+			n, err := e.logWriter.Write(e.ctx, append([]byte(p.Progress.GetStderr()), []byte(p.Progress.GetStdout())...))
+			if err == nil {
+				e.logBytesWritten += int64(n)
+			} else if err != context.Canceled {
 				log.CtxWarningf(e.ctx, "Failed to write build logs for event: %s", err)
 			}
 			// Don't store the log in the protostream if we're
