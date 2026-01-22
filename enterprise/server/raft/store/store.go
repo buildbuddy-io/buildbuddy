@@ -940,17 +940,20 @@ func (s *Store) tryDroppingLeadership(ctx context.Context) (int, error) {
 		eg.Go(func() error {
 			rd := s.GetRange(clusterInfo.ShardID)
 			log.Debugf("Dropping leadership of shard %d from replica %d", clusterInfo.ShardID, clusterInfo.ReplicaID)
+			// Try to transfer leadership to other replicas. Dragonboat doesn't
+			// retry on a different target if it fail to transfer the leader.
 			for _, repl := range rd.GetReplicas() {
 				if repl.GetReplicaId() == clusterInfo.ReplicaID {
 					continue
 				}
 				if connReady, err := s.apiClient.HaveReadyConnections(ctx, repl); err != nil || !connReady {
-					log.Debugf("Drop leadership of shard %d, skipping replica id %d on NHID: %s", clusterInfo.ShardID, repl.GetReplicaId(), repl.GetNhid())
+					log.Debugf("Drop leadership of shard %d: skipping replica id %d on NHID %q b/c connReady = %t, err = %s", clusterInfo.ShardID, repl.GetReplicaId(), repl.GetNhid(), connReady, err)
 					continue
 				}
 				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, repl.GetReplicaId()); err != nil {
 					s.log.Warningf("Error transferring leadership: %s", err)
 				}
+				log.Debugf("Dropping leadership of shard %d: attempt to transfer from c%dn%d to c%dn%d (nhid: %q)", clusterInfo.ShardID, clusterInfo.ShardID, clusterInfo.ReplicaID, clusterInfo.ShardID, repl.GetReplicaId(), repl.GetNhid())
 			}
 			return nil
 		})
