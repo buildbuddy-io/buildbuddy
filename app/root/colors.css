@@ -5,6 +5,7 @@
   /* TODO(buildbuddy-internal#6443): Replace these overlay colors with simpler primitives */
   --color-amber-100: #ffecb3;
   --color-amber-200: #ffe082;
+  --color-amber-50: #fff8e1;
   --color-amber-50-alt: #fef7e0;
   --color-amber-500: #ffc107;
   --color-amber-800: #ff8f00;
@@ -44,6 +45,7 @@
   --color-brown-800: #4e342e;
   --color-cyan-400: #26c6da;
   --color-cyan-600: #00acc1;
+  --color-deep-orange-800: #d84315;
   --color-deep-purple-500: #673ab7;
   --color-gray-100: #f5f5f5;
   --color-gray-100-alt: #f0f0f0;
@@ -212,6 +214,11 @@
   --color-chart-black: var(--color-gray-900);
   --color-chart-stroke: var(--color-white);
   --color-code-text: var(--color-black);
+  --color-compare-diff-row-bg: var(--color-amber-50);
+  --color-compare-left-bg: var(--color-orange-100);
+  --color-compare-left-text: var(--color-deep-orange-800);
+  --color-compare-right-bg: var(--color-blue-100);
+  --color-compare-right-text: var(--color-blue-800);
   --color-datepicker-bg: var(--color-white);
   --color-datepicker-border: var(--color-blue-gray-50);
   --color-datepicker-button-bg: var(--color-blue-gray-50);
@@ -475,6 +482,11 @@
   --color-chart-black: var(--color-white);
   --color-chart-stroke: var(--color-bg-card);
   --color-code-text: var(--color-white);
+  --color-compare-diff-row-bg: var(--color-gray-900-alt);
+  --color-compare-left-bg: var(--color-brown-800);
+  --color-compare-left-text: var(--color-amber-500);
+  --color-compare-right-bg: var(--color-blue-900);
+  --color-compare-right-text: var(--color-blue-100);
   --color-datepicker-bg: var(--color-bg-card);
   --color-datepicker-border: var(--color-gray-700);
   --color-datepicker-button-bg: var(--color-gray-700);
