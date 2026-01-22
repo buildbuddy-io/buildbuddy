@@ -26,7 +26,7 @@ import (
 var chunkedManifestSalt = flag.String("cache.chunking.ac_key_salt", "", "If set, salt the AC key with this value.")
 
 const (
-	chunkedManifestPrefix = "_bb_chunked_manifest_v1_/"
+	chunkedManifestPrefix = "_bb_chunked_manifest_v2_/"
 	chunkOutputFilePrefix = "chunk_"
 )
 

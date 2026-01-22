@@ -6,7 +6,8 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/jotfs/fastcdc-go"
+
+	fastcdc "github.com/jotfs/fastcdc-go/v2020"
 )
 
 type WriteFunc func([]byte) error
@@ -16,7 +17,7 @@ type Chunker struct {
 
 	done chan struct{}
 
-	mu  sync.Mutex // protexts err
+	mu  sync.Mutex // protects err
 	err error
 }
 
