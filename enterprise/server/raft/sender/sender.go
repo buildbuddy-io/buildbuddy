@@ -216,6 +216,7 @@ func (s *Sender) runOnMetaRange(ctx context.Context, fn runFunc) error {
 		metaRangeDescriptor := s.GetMetaRangeDescriptor()
 		if metaRangeDescriptor == nil {
 			log.CtxWarning(ctx, "RangeCache did not have meta range yet")
+			lastError = status.UnauthenticatedError("RangeCache did not have meta range yet")
 			continue
 		}
 		_, err := s.tryReplicas(ctx, metaRangeDescriptor, fn, rfpb.Header_LINEARIZABLE)
@@ -227,7 +228,7 @@ func (s *Sender) runOnMetaRange(ctx context.Context, fn runFunc) error {
 		}
 		lastError = err
 	}
-	return status.UnavailableErrorf("sender.runOnMetaRange exceeded retry, lastError: %s", lastError)
+	return status.UnavailableErrorf("sender.runOnMetaRange exceeded retry, lastError: %v", lastError)
 }
 
 // FetchRangeDescriptors fetches range descriptors.
