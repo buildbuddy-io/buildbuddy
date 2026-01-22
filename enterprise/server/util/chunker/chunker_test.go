@@ -107,7 +107,8 @@ func TestChunker_ContextCancellation(t *testing.T) {
 	cancel()
 
 	largeData := make([]byte, 1<<20)
-	c.Write(largeData)
+	_, err = c.Write(largeData)
+	require.ErrorIs(t, err, context.Canceled)
 
 	err = c.Close()
 	require.ErrorIs(t, err, context.Canceled)
