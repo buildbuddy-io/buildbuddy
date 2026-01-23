@@ -1770,25 +1770,24 @@ func (s *Store) checkReplicaMembership(ctx context.Context, rangeID uint64, nhid
 	if err != nil {
 		return nil, err
 	}
+	res := &replicaMembership{
+		removed: set.FromSeq(maps.Keys(membership.Removed)),
+	}
 	for replicaID, addr := range membership.NonVotings {
 		if addr == nhid {
-			return &replicaMembership{
-				replicaID:   replicaID,
-				isNonVoting: true,
-				removed:     set.FromSeq(maps.Keys(membership.Removed)),
-			}, nil
+			res.replicaID = replicaID
+			res.isNonVoting = true
+			return res, nil
 		}
 	}
 	for replicaID, addr := range membership.Nodes {
 		if addr == nhid {
-			return &replicaMembership{
-				replicaID:   replicaID,
-				isNonVoting: false,
-				removed:     set.FromSeq(maps.Keys(membership.Removed)),
-			}, nil
+			res.replicaID = replicaID
+			res.isNonVoting = false
+			return res, nil
 		}
 	}
-	return nil, nil
+	return res, nil
 }
 
 func (s *Store) newRangeDescriptorFromRaftMembership(ctx context.Context, rangeID uint64) (*rfpb.RangeDescriptor, error) {
@@ -3217,19 +3216,19 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 
 	if existingStaging != nil {
 		newReplicaID = existingStaging.GetReplicaId()
-		if replicaMembership != nil {
+		if replicaMembership.removed.Contains(newReplicaID) {
+			s.log.CtxWarningf(ctx, "staging replica c%dn%d is a replica previously removed on raft", rangeID, newReplicaID)
+			_, err = s.removeStagingReplicaFromRangeDescriptor(ctx, rangeID, newReplicaID, rd)
+			if err != nil {
+				return nil, status.WrapErrorf(err, "AddReplica failed to add staging replica c%dn%d on %q, staging replica id is previously used and removed on raft, failed to clean up staging replica", rangeID, newReplicaID, node.GetNhid())
+			}
+			return nil, status.InternalErrorf("AddReplica failed to add staging replica c%dn%d on %q, staging replica id is previously used and removed on raft. ", rangeID, newReplicaID, node.GetNhid())
+		}
+		if replicaMembership.replicaID != 0 {
 			if newReplicaID != replicaMembership.replicaID {
 				errStr := fmt.Sprintf("c%dn%d is on nhid %q in staging replicas, but raft membership holds replica id %d", rangeID, newReplicaID, node.GetNhid(), replicaMembership.replicaID)
 				alert.UnexpectedEvent("staging-replica-id-mismatch", errStr)
 				return nil, status.InternalError(errStr)
-			}
-			if replicaMembership.removed.Contains(newReplicaID) {
-				s.log.CtxWarningf(ctx, "staging replica c%dn%d is a replica previously removed on raft", rangeID, newReplicaID)
-				_, err = s.removeStagingReplicaFromRangeDescriptor(ctx, rangeID, newReplicaID, rd)
-				if err != nil {
-					return nil, status.WrapErrorf(err, "AddReplica failed to add staging replica c%dn%d on %q, staging replica id is previously used and removed on raft, failed to clean up staging replica", rangeID, newReplicaID, node.GetNhid())
-				}
-				return nil, status.InternalErrorf("AddReplica failed to add staging replica c%dn%d on %q, staging replica id is previously used and removed on raft. ", rangeID, newReplicaID, node.GetNhid())
 			}
 			if replicaMembership.isNonVoting {
 				state = addReplicaStateNonVoter
@@ -3248,7 +3247,7 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 		if !ok {
 			return nil, status.WrapErrorf(err, "AddReplica failed to add range(%d) to node %q: the reserved ID %d is less than existing replica IDs: %+v", rangeID, node.GetNhid(), newReplicaID, rd)
 		}
-		if replicaMembership != nil && replicaMembership.removed.Contains(newReplicaID) {
+		if replicaMembership.removed.Contains(newReplicaID) {
 			return nil, status.WrapErrorf(err, "AddReplica failed to add range(%d) to node %q: the reserved ID %d is in the removed list", rangeID, node.GetNhid(), newReplicaID)
 		}
 		rd, err = s.addStagingReplicaToRangeDescriptor(ctx, rangeID, newReplicaID, node.GetNhid(), rd)
