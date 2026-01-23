@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -38,12 +39,17 @@ var (
 	jwtExpirationBuffer = flag.Duration("auth.remote.jwt_expiration_buffer", time.Minute, "Discard remote-auth minted JWTs if they're within this time buffer of their expiration time.")
 )
 
-func New() (*RemoteAuthenticator, error) {
+func Register(env *real_environment.RealEnv) error {
 	conn, err := grpc_client.DialSimple(*target)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return NewWithTarget(conn)
+	authenticator, err := NewWithTarget(conn)
+	if err != nil {
+		return err
+	}
+	env.SetAuthenticator(authenticator)
+	return nil
 }
 
 func NewWithTarget(conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
