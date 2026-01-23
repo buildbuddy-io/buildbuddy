@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -3547,11 +3548,10 @@ func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, rangeID, replic
 
 func (s *Store) removeStagingReplicaFromRangeDescriptor(ctx context.Context, rangeID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
 	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
-	for i, replica := range newDescriptor.Staging {
-		if replica.GetReplicaId() == replicaID {
-			newDescriptor.Staging = append(newDescriptor.Staging[:i], newDescriptor.Staging[i+1:]...)
-		}
-	}
+	newDescriptor.Staging = slices.DeleteFunc(newDescriptor.Staging, func(repl *rfpb.ReplicaDescriptor) bool {
+		return repl.GetReplicaId() == replicaID
+	})
+
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
 	if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
