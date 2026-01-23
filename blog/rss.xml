@@ -4,10 +4,19 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Thu, 15 Jan 2026 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Mon, 26 Jan 2026 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Snapshot, Chunk, Clone: Fast Runners at Scale]]></title>
+            <link>https://www.buildbuddy.io/blog/fast-runners-at-scale</link>
+            <guid>https://www.buildbuddy.io/blog/fast-runners-at-scale</guid>
+            <pubDate>Mon, 26 Jan 2026 12:00:00 GMT</pubDate>
+            <description><![CDATA[At BuildBuddy, our core mission is to make builds faster. We use Firecracker snapshots to keep warmed-up workers available on demand.]]></description>
+            <category>performance</category>
+            <category>infrastructure</category>
+        </item>
         <item>
             <title><![CDATA[Remote Builds on linux/arm64 with BuildBuddy]]></title>
             <link>https://www.buildbuddy.io/blog/arm64-support</link>
@@ -177,15 +186,6 @@
             <pubDate>Mon, 22 May 2023 12:00:00 GMT</pubDate>
             <description><![CDATA[We're happy to announce keyboard shortcuts in BuildBuddy.]]></description>
             <category>product</category>
-        </item>
-        <item>
-            <title><![CDATA[Welcoming Grace Chuang]]></title>
-            <link>https://www.buildbuddy.io/blog/welcoming-grace-chuang</link>
-            <guid>https://www.buildbuddy.io/blog/welcoming-grace-chuang</guid>
-            <pubDate>Mon, 03 Apr 2023 12:00:00 GMT</pubDate>
-            <description><![CDATA[To fulfill our mission of bringing the world's best developer tools to every company, keeping our business running smoothly is as important as ensuring our customers' builds run smoothly. That's why we're excited to share that Grace Chuang is joining BuildBuddy!]]></description>
-            <category>company</category>
-            <category>team</category>
         </item>
     </channel>
 </rss>
