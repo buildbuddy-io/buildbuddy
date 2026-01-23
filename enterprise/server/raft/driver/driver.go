@@ -586,13 +586,9 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		}
 	}
 
-	_, canRebalanceLeases := rq.storeMap.CheckLeaseRebalancePrecondition()
-	if canRebalanceLeases {
-		op := rq.findRebalanceLeaseOp(ctx, rd, repl.ReplicaID())
-		if op != nil {
-			action = DriverRebalanceLease
-			return action, action.Priority()
-		}
+	if rq.findRebalanceLeaseOp(ctx, rd, repl.ReplicaID()) != nil {
+		action = DriverRebalanceLease
+		return action, action.Priority()
 	}
 
 	action = DriverNoop
