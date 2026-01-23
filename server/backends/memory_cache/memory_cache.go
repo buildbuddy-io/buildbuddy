@@ -3,18 +3,19 @@ package memory_cache
 import (
 	"bytes"
 	"context"
-	"flag"
 	"io"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
-	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -24,10 +25,21 @@ import (
 
 var cacheInMemory = flag.Bool("cache.in_memory", false, "Whether or not to use the in_memory cache.")
 
+const DefaultPartitionID = "default"
+
+type Options struct {
+	MaxSizeBytes      int64
+	Partitions        []disk.Partition
+	PartitionMappings []disk.PartitionMapping
+}
+
 type MemoryCache struct {
-	l            interfaces.LRU[[]byte]
-	lock         *sync.RWMutex
-	atimeUpdater interfaces.DigestOperator
+	authenticator     interfaces.Authenticator
+	lrus              map[string]interfaces.LRU[[]byte] // partitionID -> LRU
+	mu                *sync.RWMutex
+	atimeUpdater      interfaces.DigestOperator
+	partitions        []disk.Partition
+	partitionMappings []disk.PartitionMapping
 }
 
 func (c *MemoryCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
@@ -54,7 +66,8 @@ func Register(env *real_environment.RealEnv) error {
 	if maxSizeBytes == 0 {
 		return status.FailedPreconditionError("Cache size must be greater than 0 if in_memory cache is enabled!")
 	}
-	c, err := NewMemoryCache(maxSizeBytes)
+
+	c, err := NewMemoryCacheWithOptions(env.GetAuthenticator(), &Options{MaxSizeBytes: maxSizeBytes})
 	if err != nil {
 		return status.InternalErrorf("Error configuring in-memory cache: %s", err)
 	}
@@ -62,15 +75,70 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
-	l, err := lru.NewLRU[[]byte](&lru.Config[[]byte]{MaxSize: maxSizeBytes, SizeFn: sizeFn})
-	if err != nil {
-		return nil, err
+func NewMemoryCache(authenticator interfaces.Authenticator, maxSizeBytes int64) (*MemoryCache, error) {
+	return NewMemoryCacheWithOptions(authenticator, &Options{MaxSizeBytes: maxSizeBytes})
+}
+
+func NewMemoryCacheWithOptions(authenticator interfaces.Authenticator, opts *Options) (*MemoryCache, error) {
+	if opts.MaxSizeBytes == 0 {
+		return nil, status.FailedPreconditionError("Cache size must be greater than 0")
 	}
-	return &MemoryCache{
-		l:    l,
-		lock: &sync.RWMutex{},
-	}, nil
+
+	// Validate partition config
+	for _, pm := range opts.PartitionMappings {
+		found := false
+		for _, p := range opts.Partitions {
+			if p.ID == pm.PartitionID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, status.NotFoundErrorf("Mapping to unknown partition %q", pm.PartitionID)
+		}
+	}
+	var totalPartitionSize int64
+	for _, p := range opts.Partitions {
+		totalPartitionSize += p.MaxSizeBytes
+	}
+	if totalPartitionSize > opts.MaxSizeBytes {
+		return nil, status.FailedPreconditionErrorf("Sum of partition sizes (%d bytes) exceeds max cache size (%d bytes)", totalPartitionSize, opts.MaxSizeBytes)
+	}
+
+	m := &MemoryCache{
+		authenticator:     authenticator,
+		lrus:              make(map[string]interfaces.LRU[[]byte]),
+		mu:                &sync.RWMutex{},
+		partitions:        opts.Partitions,
+		partitionMappings: opts.PartitionMappings,
+	}
+
+	// Create an LRU for each partition.
+	for _, p := range opts.Partitions {
+		l, err := lru.NewLRU[[]byte](&lru.Config[[]byte]{
+			MaxSize: p.MaxSizeBytes,
+			SizeFn:  sizeFn,
+		})
+		if err != nil {
+			return nil, err
+		}
+		m.lrus[p.ID] = l
+	}
+
+	// Create a default LRU for unpartitioned data using remaining space.
+	defaultSize := opts.MaxSizeBytes - totalPartitionSize
+	if defaultSize > 0 {
+		l, err := lru.NewLRU[[]byte](&lru.Config[[]byte]{
+			MaxSize: defaultSize,
+			SizeFn:  sizeFn,
+		})
+		if err != nil {
+			return nil, err
+		}
+		m.lrus[DefaultPartitionID] = l
+	}
+
+	return m, nil
 }
 
 func (m *MemoryCache) key(ctx context.Context, r *rspb.ResourceName) (string, error) {
@@ -78,19 +146,32 @@ func (m *MemoryCache) key(ctx context.Context, r *rspb.ResourceName) (string, er
 	if err := rn.Validate(); err != nil {
 		return "", err
 	}
-	userPrefix, err := prefix.UserPrefixFromContext(ctx)
-	if err != nil {
-		return "", err
-	}
+
 	hash := rn.GetDigest().GetHash()
 
 	var key string
 	if r.GetCacheType() == rspb.CacheType_AC {
-		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(r.GetCacheType()), r.GetInstanceName(), hash)
+		// AC entries are isolated by group since they are not content-addressed.
+		groupID := getGroupID(ctx, m.authenticator)
+		key = filepath.Join(groupID, "ac", r.GetInstanceName(), hash)
 	} else {
-		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(r.GetCacheType()), hash)
+		// CAS entries are shared across groups since they are content-addressed
+		// (same hash = same content).
+		key = filepath.Join("cas", hash)
 	}
 	return key, nil
+}
+
+func (m *MemoryCache) lru(ctx context.Context, remoteInstanceName string) (interfaces.LRU[[]byte], error) {
+	partitionID, err := m.Partition(ctx, remoteInstanceName)
+	if err != nil {
+		return nil, err
+	}
+	l, ok := m.lrus[partitionID]
+	if !ok {
+		return nil, status.NotFoundErrorf("no LRU for partition %q", partitionID)
+	}
+	return l, nil
 }
 
 func (m *MemoryCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
@@ -98,9 +179,13 @@ func (m *MemoryCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool,
 	if err != nil {
 		return false, err
 	}
-	m.lock.Lock()
-	contains := m.l.Contains(k)
-	m.lock.Unlock()
+	l, err := m.lru(ctx, r.GetInstanceName())
+	if err != nil {
+		return false, err
+	}
+	m.mu.Lock()
+	contains := l.Contains(k)
+	m.mu.Unlock()
 
 	m.updateAtime(ctx, r)
 
@@ -114,9 +199,13 @@ func (m *MemoryCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 	if err != nil {
 		return nil, err
 	}
-	m.lock.Lock()
-	v, contains := m.l.Get(k)
-	m.lock.Unlock()
+	l, err := m.lru(ctx, r.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	v, contains := l.Get(k)
+	m.mu.Unlock()
 
 	if !contains {
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
@@ -154,9 +243,13 @@ func (m *MemoryCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	m.lock.Lock()
-	v, ok := m.l.Get(k)
-	m.lock.Unlock()
+	l, err := m.lru(ctx, r.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	v, ok := l.Get(k)
+	m.mu.Unlock()
 	if !ok {
 		return nil, status.NotFoundErrorf("Key %s not found", r.GetDigest())
 	}
@@ -185,9 +278,14 @@ func (m *MemoryCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte
 	if err != nil {
 		return err
 	}
-	m.lock.Lock()
-	m.l.Add(k, data)
-	m.lock.Unlock()
+	l, err := m.lru(ctx, r.GetInstanceName())
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	l.Add(k, data)
+	m.mu.Unlock()
 	return nil
 }
 
@@ -205,9 +303,13 @@ func (m *MemoryCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	if err != nil {
 		return err
 	}
-	m.lock.Lock()
-	removed := m.l.Remove(k)
-	m.lock.Unlock()
+	l, err := m.lru(ctx, r.GetInstanceName())
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	removed := l.Remove(k)
+	m.mu.Unlock()
 	if !removed {
 		d := r.GetDigest()
 		return status.NotFoundErrorf("digest %s/%d not found in memory cache", d.GetHash(), d.GetSizeBytes())
@@ -253,7 +355,29 @@ func (m *MemoryCache) Stop() error {
 }
 
 func (m *MemoryCache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
-	return "", nil
+	if len(m.partitionMappings) == 0 {
+		return DefaultPartitionID, nil
+	}
+
+	groupID := getGroupID(ctx, m.authenticator)
+	return m.lookupPartitionID(groupID, remoteInstanceName), nil
+}
+
+func getGroupID(ctx context.Context, authenticator interfaces.Authenticator) string {
+	user, err := authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser
+	}
+	return user.GetGroupID()
+}
+
+func (m *MemoryCache) lookupPartitionID(groupID, remoteInstanceName string) string {
+	for _, pm := range m.partitionMappings {
+		if (pm.GroupID == "" || pm.GroupID == groupID) && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
+			return pm.PartitionID
+		}
+	}
+	return DefaultPartitionID
 }
 
 func (m *MemoryCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
