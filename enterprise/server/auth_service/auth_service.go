@@ -41,14 +41,14 @@ func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateR
 
 	// TODO(iain): this is inefficient because it's minting JWTs twice (an
 	// HMAC-SHA256-signed one in AuthenticatedGRPCContext() above, and an
-	// RSA-256-signed one here). Fix this by cleaning up the authentication
+	// ES-256-signed one here). Fix this by cleaning up the authentication
 	// logic a bit and exposing the right way to get just the JWT we need.
-	if req.GetJwtSigningMethod() == authpb.JWTSigningMethod_RS256 {
+	if req.GetJwtSigningMethod() == authpb.JWTSigningMethod_ES256 {
 		userInfo, err := claims.ClaimsFromContext(ctx)
 		if err != nil {
 			return nil, err
 		}
-		jwt, err := claims.AssembleJWT(userInfo, jwt.SigningMethodRS256)
+		jwt, err := claims.AssembleJWT(userInfo, jwt.SigningMethodES256)
 		if err != nil {
 			return nil, err
 		}
@@ -63,7 +63,7 @@ func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateR
 }
 
 func (a AuthService) GetPublicKeys(ctx context.Context, req *authpb.GetPublicKeysRequest) (*authpb.GetPublicKeysResponse, error) {
-	keys := claims.GetRSAPublicKeys()
+	keys := claims.GetES256PublicKeys()
 	publicKeys := make([]*authpb.PublicKey, len(keys))
 	for i, key := range keys {
 		publicKeys[i] = &authpb.PublicKey{Key: &key}

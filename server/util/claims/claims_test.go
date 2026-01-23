@@ -300,38 +300,38 @@ func TestGroupStatusPropagation(t *testing.T) {
 	}
 }
 
-func TestAssembleJWT_RS256(t *testing.T) {
-	keyPair := testkeys.GenerateRSAKeyPair(t)
-	flags.Set(t, "auth.jwt_rsa_private_key", keyPair.PrivateKeyPEM)
+func TestAssembleJWT_ES256(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
 	require.NoError(t, claims.Init())
 
 	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
-	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodRS256)
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
 	require.NoError(t, err)
 	require.NotEmpty(t, tokenString)
 
-	// Verify it's actually an RS256 token by parsing the header
+	// Verify it's actually an ES256 token by parsing the header
 	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, &claims.Claims{})
 	require.NoError(t, err)
-	require.Equal(t, "RS256", token.Method.Alg())
+	require.Equal(t, "ES256", token.Method.Alg())
 }
 
-func TestAssembleJWT_RS256_UsesNewKeyWhenSet(t *testing.T) {
-	keyPair1 := testkeys.GenerateRSAKeyPair(t)
-	keyPair2 := testkeys.GenerateRSAKeyPair(t)
+func TestAssembleJWT_ES256_UsesNewKeyWhenSet(t *testing.T) {
+	keyPair1 := testkeys.GenerateES256KeyPair(t)
+	keyPair2 := testkeys.GenerateES256KeyPair(t)
 
-	flags.Set(t, "auth.jwt_rsa_private_key", keyPair1.PrivateKeyPEM)
-	flags.Set(t, "auth.new_jwt_rsa_private_key", keyPair2.PrivateKeyPEM)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair1.PrivateKeyPEM)
+	flags.Set(t, "auth.new_jwt_es256_private_key", keyPair2.PrivateKeyPEM)
 	flags.Set(t, "auth.sign_using_new_jwt_key", true)
 	require.NoError(t, claims.Init())
 
 	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
-	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodRS256)
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
 	require.NoError(t, err)
 	require.NotEmpty(t, tokenString)
 
 	// Verify the JWT was indeed signed with keyPair2
-	pubKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(keyPair2.PublicKeyPEM))
+	pubKey, err := jwt.ParseECPublicKeyFromPEM([]byte(keyPair2.PublicKeyPEM))
 	require.NoError(t, err)
 
 	parsedClaims := &claims.Claims{}
@@ -342,59 +342,59 @@ func TestAssembleJWT_RS256_UsesNewKeyWhenSet(t *testing.T) {
 	require.Equal(t, "US123", parsedClaims.UserID)
 }
 
-func TestAssembleJWT_RS256_NoPrivateKey(t *testing.T) {
-	flags.Set(t, "auth.jwt_rsa_private_key", "")
-	flags.Set(t, "auth.new_jwt_rsa_private_key", "")
+func TestAssembleJWT_ES256_NoPrivateKey(t *testing.T) {
+	flags.Set(t, "auth.jwt_es256_private_key", "")
+	flags.Set(t, "auth.new_jwt_es256_private_key", "")
 	require.NoError(t, claims.Init())
 
 	c := &claims.Claims{UserID: "US123"}
-	_, err := claims.AssembleJWT(c, jwt.SigningMethodRS256)
+	_, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
 	require.Error(t, err)
 }
 
 func TestAssembleJWT_UnsupportedSigningMethod(t *testing.T) {
 	c := &claims.Claims{UserID: "US123"}
-	_, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
+	_, err := claims.AssembleJWT(c, jwt.SigningMethodRS256)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Unsupported JWT signing method")
 }
 
-func TestGetRSAPublicKeys_NoKeys(t *testing.T) {
-	flags.Set(t, "auth.jwt_rsa_private_key", "")
-	flags.Set(t, "auth.new_jwt_rsa_private_key", "")
+func TestGetES256PublicKeys_NoKeys(t *testing.T) {
+	flags.Set(t, "auth.jwt_es256_private_key", "")
+	flags.Set(t, "auth.new_jwt_es256_private_key", "")
 	require.NoError(t, claims.Init())
 
-	keys := claims.GetRSAPublicKeys()
+	keys := claims.GetES256PublicKeys()
 	require.Empty(t, keys)
 }
 
-func TestGetRSAPublicKeys_OnlyOldKey(t *testing.T) {
-	keyPair := testkeys.GenerateRSAKeyPair(t)
-	flags.Set(t, "auth.jwt_rsa_private_key", keyPair.PrivateKeyPEM)
-	flags.Set(t, "auth.new_jwt_rsa_private_key", "")
+func TestGetES256PublicKeys_OnlyOldKey(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	flags.Set(t, "auth.new_jwt_es256_private_key", "")
 	require.NoError(t, claims.Init())
 
-	keys := claims.GetRSAPublicKeys()
+	keys := claims.GetES256PublicKeys()
 	require.Len(t, keys, 1)
 }
 
-func TestGetRSAPublicKeys_OnlyNewKey(t *testing.T) {
-	keyPair := testkeys.GenerateRSAKeyPair(t)
-	flags.Set(t, "auth.jwt_rsa_private_key", "")
-	flags.Set(t, "auth.new_jwt_rsa_private_key", keyPair.PrivateKeyPEM)
+func TestGetES256PublicKeys_OnlyNewKey(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", "")
+	flags.Set(t, "auth.new_jwt_es256_private_key", keyPair.PrivateKeyPEM)
 	require.NoError(t, claims.Init())
 
-	keys := claims.GetRSAPublicKeys()
+	keys := claims.GetES256PublicKeys()
 	require.Len(t, keys, 1)
 }
 
-func TestGetRSAPublicKeys_BothKeys(t *testing.T) {
-	keyPair1 := testkeys.GenerateRSAKeyPair(t)
-	keyPair2 := testkeys.GenerateRSAKeyPair(t)
-	flags.Set(t, "auth.jwt_rsa_private_key", keyPair1.PrivateKeyPEM)
-	flags.Set(t, "auth.new_jwt_rsa_private_key", keyPair2.PrivateKeyPEM)
+func TestGetES256PublicKeys_BothKeys(t *testing.T) {
+	keyPair1 := testkeys.GenerateES256KeyPair(t)
+	keyPair2 := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair1.PrivateKeyPEM)
+	flags.Set(t, "auth.new_jwt_es256_private_key", keyPair2.PrivateKeyPEM)
 	require.NoError(t, claims.Init())
 
-	keys := claims.GetRSAPublicKeys()
+	keys := claims.GetES256PublicKeys()
 	require.Len(t, keys, 2)
 }
