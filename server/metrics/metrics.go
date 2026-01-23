@@ -1866,8 +1866,8 @@ var (
 	EventLogBytesWritten = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
-		Name:      "event_log_bytes_written",
-		Help:      "Number of event log bytes written.",
+		Name:      "log_bytes_written",
+		Help:      "Number of invocation log bytes uploaded, either via the build event stream or the WriteEventLog API (stdout+stderr).",
 	}, []string{
 		EventName,
 		GroupID,
