@@ -81,7 +81,7 @@ type TestAuthenticator struct {
 }
 
 func NewTestAuthenticator(t testing.TB, testUsers map[string]interfaces.UserInfo) *TestAuthenticator {
-	claimsParser, err := claims.NewClaimsParser()
+	claimsParser, err := claims.NewClaimsParser(claims.DefaultKeyProvider)
 	require.NoError(t, err)
 	return &TestAuthenticator{
 		NullAuthenticator: &nullauth.NullAuthenticator{},
@@ -135,7 +135,7 @@ func (a *TestAuthenticator) authenticateGRPCRequest(ctx context.Context) (interf
 		return u, nil
 	}
 	for _, jwt := range grpcMD[authutil.ContextTokenStringKey] {
-		u, err := a.claimsParser.Parse(jwt)
+		u, err := a.claimsParser.Parse(ctx, jwt)
 		if err != nil {
 			log.Errorf("Failed to authenticate incoming JWT: %s", err)
 			continue

@@ -990,7 +990,7 @@ func (r *Env) AddCacheProxy() *CacheProxy {
 		},
 	}
 
-	authenticator, err := remoteauth.NewWithTarget(appConn)
+	authenticator, err := remoteauth.NewWithTarget(proxyEnv, appConn)
 	require.NoError(r.t, err)
 	proxyEnv.SetAuthenticator(authenticator)
 
