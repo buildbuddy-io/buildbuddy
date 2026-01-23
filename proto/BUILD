@@ -753,9 +753,9 @@ proto_library(
     srcs = ["trace.proto"],
 )
 
-proto_library(
+alias(
     name = "worker_proto",
-    srcs = ["worker.proto"],
+    actual = "@bazel_worker_api//:worker_protocol_proto",
 )
 
 proto_library(
