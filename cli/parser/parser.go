@@ -10,7 +10,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -49,36 +48,26 @@ var (
 		watchoptdef.WatcherFlags.Name(): watchoptdef.WatcherFlags,
 	}
 
-	flagShortNamePattern = regexp.MustCompile(`^[a-z]$`)
-
 	// make this a var so the test can replace it.
 	bazelHelp = runBazelHelpWithCache
 
-	generateParserOnce = sync.OnceValue(
-		func() *struct {
-			p *Parser
-			error
-		} {
-			type Return = struct {
-				p *Parser
-				error
-			}
-			protoHelp, err := bazelHelp()
+	generateParserOnce = sync.OnceValues(
+		func() (*Parser, error) {
+			flagCollection, err := bazelHelp()
 			if err != nil {
-				return &Return{nil, err}
-			}
-			flagCollection, err := DecodeHelpFlagsAsProto(protoHelp)
-			if err != nil {
-				return &Return{nil, err}
+				return nil, err
 			}
 			parser, err := GenerateParser(flagCollection)
+			if err != nil {
+				return nil, err
+			}
 			for name, d := range nativeDefinitions {
 				if err := parser.AddOptionDefinition(d); err != nil {
 					log.Warnf("Error initializing command-line parser when adding bb-specific definition for '%s': %s", name, err)
 				}
 			}
 			parser.StartupOptionParser.Aliases = shortcuts.Shortcuts
-			return &Return{parser, err}
+			return parser, nil
 		},
 	)
 )
@@ -86,8 +75,8 @@ var (
 // Set the help text that encodes the bazel flags collection proto to the given
 // string. Intended to be used only for testing purposes.
 func SetBazelHelpForTesting(encodedProto string) {
-	bazelHelp = func() (string, error) {
-		return encodedProto, nil
+	bazelHelp = func() (*bfpb.FlagCollection, error) {
+		return DecodeHelpFlagsAsProto(encodedProto)
 	}
 }
 
@@ -602,8 +591,7 @@ func GenerateParser(flagCollection *bfpb.FlagCollection, commandsToPartition ...
 }
 
 func GetParser() (*Parser, error) {
-	once := generateParserOnce()
-	return once.p, once.error
+	return generateParserOnce()
 }
 
 func CanonicalizeArgs(args []string) ([]string, error) {
@@ -639,10 +627,10 @@ func (p *Parser) canonicalizeArgs(args []string) ([]string, error) {
 // runBazelHelpWithCache returns the `bazel help <topic>` output for the version
 // of bazel that will be chosen by bazelisk. The output is cached in
 // ~/.cache/buildbuddy/bazel_metadata/$VERSION/help/$TOPIC.txt
-func runBazelHelpWithCache() (string, error) {
+func runBazelHelpWithCache() (*bfpb.FlagCollection, error) {
 	resolvedVersion, err := bazelisk.ResolveVersion()
 	if err != nil {
-		return "", fmt.Errorf("could not resolve effective bazel version: %s", err)
+		return nil, fmt.Errorf("could not resolve effective bazel version: %s", err)
 	}
 	versionKey := resolvedVersion
 	if filepath.IsAbs(versionKey) {
@@ -650,41 +638,55 @@ func runBazelHelpWithCache() (string, error) {
 		// version key.
 		f, err := os.Open(versionKey)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		defer f.Close()
 		d, err := digest.Compute(f, repb.DigestFunction_SHA256)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		versionKey = d.GetHash()
 	}
 	bbCacheDir, err := storage.CacheDir()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	helpCacheDir := filepath.Join(bbCacheDir, "bazel_metadata", versionKey, "help")
 	if err := os.MkdirAll(helpCacheDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to initialize bazel metadata cache: %s", err)
+		return nil, fmt.Errorf("failed to initialize bazel metadata cache: %s", err)
 	}
 	topic := "flags-as-proto"
 	helpCacheFilePath := filepath.Join(helpCacheDir, fmt.Sprintf("%s.txt", topic))
 	b, err := os.ReadFile(helpCacheFilePath)
 	if err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("failed to read from bazel metadata cache: %s", err)
+		return nil, fmt.Errorf("failed to read from bazel metadata cache: %s", err)
 	}
 	if err == nil {
-		return string(b), nil
+		cachedProto := strings.TrimSpace(string(b))
+		if flags, err := DecodeHelpFlagsAsProto(cachedProto); err == nil {
+			return flags, err
+		}
+		// If decode failed, attempt to decode the last line of the file instead
+		// This is because it's possible that an old file was corrupted with other stdout messages.
+		lines := strings.Split(cachedProto, "\n")
+		flags, err := DecodeHelpFlagsAsProto(lines[len(lines)-1])
+		if err == nil {
+			return flags, err
+		}
+		log.Warnf("Invalid cached flags-as-proto file at %s: %s; deleting and regenerating", helpCacheFilePath, err)
+		if err := os.Remove(helpCacheFilePath); err != nil {
+			log.Warnf("Failed to delete cached flags-as-proto file at %s: %s", helpCacheFilePath, err)
+		}
 	}
 
 	tmp, err := os.CreateTemp("", "bazel-*")
 	if err != nil {
-		return "", fmt.Errorf("failed to create temp file: %s", err)
+		return nil, fmt.Errorf("failed to create temp file: %s", err)
 	}
 	defer tmp.Close()
 	tmpDir, err := os.MkdirTemp("", "")
 	if err != nil {
-		return "", fmt.Errorf("failed to create temp dir: %s", err)
+		return nil, fmt.Errorf("failed to create temp dir: %s", err)
 	}
 	defer os.RemoveAll(tmpDir)
 	buf := &bytes.Buffer{}
@@ -708,18 +710,35 @@ func runBazelHelpWithCache() (string, error) {
 		exitCode, err = bazelisk.Run(args, opts)
 	}
 	if err != nil {
-		return "", fmt.Errorf("failed to run bazel: %s", err)
+		return nil, fmt.Errorf("failed to run bazel: %s", err)
 	}
 	if exitCode != 0 {
-		return "", fmt.Errorf("unknown error from `bazel help %s`: exit code %d", topic, exitCode)
+		return nil, fmt.Errorf("unknown error from `bazel help %s`: exit code %d", topic, exitCode)
 	}
 	if err := tmp.Close(); err != nil {
-		return "", fmt.Errorf("failed to close temp file: %s", err)
+		return nil, fmt.Errorf("failed to close temp file: %s", err)
 	}
-	if err := disk.MoveFile(tmp.Name(), helpCacheFilePath); err != nil {
-		return "", fmt.Errorf("failed to write to bazel metadata cache: %s", err)
+	// Typically 'bazel help flags-as-proto' output the protobuf in 1 single base64 encoded line
+	// Use the last line to avoid problems where bazel may preface this line with
+	// other stdout messages
+	out := strings.TrimSpace(buf.String())
+	flags, err := DecodeHelpFlagsAsProto(out)
+	if err == nil {
+		if err := disk.MoveFile(tmp.Name(), helpCacheFilePath); err != nil {
+			return nil, fmt.Errorf("failed to write to bazel metadata cache: %s", err)
+		}
+		return flags, err
 	}
-	return buf.String(), nil
+	// retry by parsing only the last line
+	lines := strings.Split(out, "/n")
+	lastLine := lines[len(lines)-1]
+	flags, err = DecodeHelpFlagsAsProto(lastLine)
+	if err == nil {
+		if err := os.WriteFile(helpCacheFilePath, []byte(lastLine), 0o600); err != nil {
+			return nil, fmt.Errorf("failed to write to bazel metadata cache: %s", err)
+		}
+	}
+	return flags, err
 }
 
 // ResolveArgs removes all rc-file options from the args, appends an
