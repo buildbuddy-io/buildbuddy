@@ -199,7 +199,16 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 		logWriter:                   nil,
 		onClose:                     onClose,
 		attempt:                     1,
+		groupIDForMetrics:           b.getGroupIDForMetrics(ctx),
 	}, nil
+}
+
+func (b *BuildEventHandler) getGroupIDForMetrics(ctx context.Context) string {
+	userInfo, err := b.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser
+	}
+	return userInfo.GetGroupID()
 }
 
 func (b *BuildEventHandler) Stop() {
@@ -831,9 +840,9 @@ type EventChannel struct {
 	requestedTerminalColumns         int
 	requestedTerminalLines           int
 	logWriter                        *eventlog.EventLogWriter
-	logBytesWritten                  int64
 	onClose                          func()
 	attempt                          uint64
+	groupIDForMetrics                string
 
 	// isVoid determines whether all EventChannel operations are NOPs. This is set
 	// when we're retrying an invocation that is already complete, or is
@@ -938,17 +947,8 @@ func invocationStatusLabel(ti *tables.Invocation) string {
 	return "unknown"
 }
 
-func (e *EventChannel) getGroupIDForMetrics() string {
-	userInfo, err := e.env.GetAuthenticator().AuthenticatedUser(e.ctx)
-	if err != nil {
-		return interfaces.AuthAnonymousUser
-	}
-	return userInfo.GetGroupID()
-}
-
 func (e *EventChannel) recordInvocationMetrics(ti *tables.Invocation) {
 	statusLabel := invocationStatusLabel(ti)
-	groupID := e.getGroupIDForMetrics()
 	metrics.InvocationCount.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,
 		metrics.BazelExitCode:         ti.BazelExitCode,
@@ -960,14 +960,8 @@ func (e *EventChannel) recordInvocationMetrics(ti *tables.Invocation) {
 	}).Observe(float64(ti.DurationUsec))
 	metrics.InvocationDurationUsExported.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,
-		metrics.GroupID:               groupID,
+		metrics.GroupID:               e.groupIDForMetrics,
 	}).Observe(float64(ti.DurationUsec))
-	if e.logBytesWritten > 0 {
-		metrics.EventLogBytesWritten.With(map[string]string{
-			metrics.EventName: "build_log",
-			metrics.GroupID:   groupID,
-		}).Add(float64(e.logBytesWritten))
-	}
 }
 
 func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
@@ -1243,7 +1237,12 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 			}
 			n, err := e.logWriter.Write(e.ctx, append([]byte(p.Progress.GetStderr()), []byte(p.Progress.GetStdout())...))
 			if err == nil {
-				e.logBytesWritten += int64(n)
+				if n > 0 {
+					metrics.EventLogBytesWritten.With(map[string]string{
+						metrics.EventName: "build_log",
+						metrics.GroupID:   e.groupIDForMetrics,
+					}).Add(float64(n))
+				}
 			} else if err != context.Canceled {
 				log.CtxWarningf(e.ctx, "Failed to write build logs for event: %s", err)
 			}

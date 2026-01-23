@@ -1550,16 +1550,7 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 	if err != nil {
 		return err
 	}
-
-	var logBytesWritten int64
-	defer func() {
-		if logBytesWritten > 0 {
-			metrics.EventLogBytesWritten.With(map[string]string{
-				metrics.EventName: "run_log",
-				metrics.GroupID:   authenticatedUser.GetGroupID(),
-			}).Add(float64(logBytesWritten))
-		}
-	}()
+	gid := authenticatedUser.GetGroupID()
 
 	var eventLogWriter *eventlog.EventLogWriter
 	for {
@@ -1596,7 +1587,12 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 		if err != nil {
 			return err
 		}
-		logBytesWritten += int64(n)
+		if n > 0 {
+			metrics.EventLogBytesWritten.With(map[string]string{
+				metrics.EventName: "run_log",
+				metrics.GroupID:   gid,
+			}).Add(float64(n))
+		}
 	}
 }
 
