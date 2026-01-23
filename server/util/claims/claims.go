@@ -2,7 +2,7 @@ package claims
 
 import (
 	"context"
-	"crypto/rsa"
+	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -47,8 +47,8 @@ var (
 	claimsCacheTTL     = flag.Duration("auth.jwt_claims_cache_ttl", 15*time.Second, "TTL for JWT string to parsed claims caching. Set to '0' to disable cache.")
 	jwtDuration        = flag.Duration("auth.jwt_duration", 6*time.Hour, "Maximum lifetime of the generated JWT.")
 
-	jwtRSAPrivateKey    = flag.String("auth.jwt_rsa_private_key", "", "PEM-encoded private key used to sign RSA-signed JWTs.", flag.Secret)
-	newJWTRSAPrivateKey = flag.String("auth.new_jwt_rsa_private_key", "", "PEM-encoded private key used to sign new RSA-signed JWTs during key rotation.", flag.Secret)
+	jwtES256PrivateKey    = flag.String("auth.jwt_es256_private_key", "", "PEM-encoded private key used to sign ES256-signed JWTs.", flag.Secret)
+	newJWTES256PrivateKey = flag.String("auth.new_jwt_es256_private_key", "", "PEM-encoded private key used to sign new ES256-signed JWTs during key rotation.", flag.Secret)
 
 	serverAdminGroupID = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
 
@@ -59,60 +59,60 @@ var (
 	// Generic permission denied error.
 	errPermissionDenied = status.PermissionDeniedError("permission denied")
 
-	rsaPrivateKey *rsa.PrivateKey
-	rsaPublicKeys []string = []string{}
+	es256PrivateKey *ecdsa.PrivateKey
+	es256PublicKeys []string = []string{}
 )
 
 func Init() error {
-	rsaPrivateKey = nil
-	rsaPublicKeys = []string{}
+	es256PrivateKey = nil
+	es256PublicKeys = []string{}
 
-	if *newJWTRSAPrivateKey == "" && *jwtRSAPrivateKey == "" {
+	if *newJWTES256PrivateKey == "" && *jwtES256PrivateKey == "" {
 		return nil
 	}
 
-	var newPrivateKey *rsa.PrivateKey
-	var oldPrivateKey *rsa.PrivateKey
+	var newPrivateKey *ecdsa.PrivateKey
+	var oldPrivateKey *ecdsa.PrivateKey
 	var newPublicKey string
 	var oldPublicKey string
 	var err error
 
 	// Make both public keys available so that clients can verify JWTs during
 	// app rollouts.
-	if *newJWTRSAPrivateKey != "" {
-		newPrivateKey, newPublicKey, err = getRSAKeyPair(*newJWTRSAPrivateKey)
+	if *newJWTES256PrivateKey != "" {
+		newPrivateKey, newPublicKey, err = getES256KeyPair(*newJWTES256PrivateKey)
 		if err != nil {
 			return err
 		}
 	}
 
-	if *jwtRSAPrivateKey != "" {
-		oldPrivateKey, oldPublicKey, err = getRSAKeyPair(*jwtRSAPrivateKey)
+	if *jwtES256PrivateKey != "" {
+		oldPrivateKey, oldPublicKey, err = getES256KeyPair(*jwtES256PrivateKey)
 		if err != nil {
 			return err
 		}
 	}
 
-	rsaPrivateKey = oldPrivateKey
+	es256PrivateKey = oldPrivateKey
 	if *signUsingNewJwtKey {
 		if newPrivateKey == nil {
-			return status.InvalidArgumentError("Requested signing with new RSA private key, but no new private key was specified.")
+			return status.InvalidArgumentError("Requested signing with new ES256 private key, but no new private key was specified.")
 		}
-		rsaPrivateKey = newPrivateKey
+		es256PrivateKey = newPrivateKey
 	}
 
 	if newPublicKey != "" {
-		rsaPublicKeys = append(rsaPublicKeys, newPublicKey)
+		es256PublicKeys = append(es256PublicKeys, newPublicKey)
 	}
 	if oldPublicKey != "" {
-		rsaPublicKeys = append(rsaPublicKeys, oldPublicKey)
+		es256PublicKeys = append(es256PublicKeys, oldPublicKey)
 	}
 
 	return nil
 }
 
-func getRSAKeyPair(key string) (*rsa.PrivateKey, string, error) {
-	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(key))
+func getES256KeyPair(key string) (*ecdsa.PrivateKey, string, error) {
+	privateKey, err := jwt.ParseECPrivateKeyFromPEM([]byte(key))
 	if err != nil {
 		return nil, "", err
 	}
@@ -414,8 +414,8 @@ func AssembleJWT(c *Claims, method jwt.SigningMethod) (string, error) {
 	token := jwt.NewWithClaims(method, c)
 	if method == jwt.SigningMethodHS256 {
 		return assembleHS256JWT(token)
-	} else if method == jwt.SigningMethodRS256 {
-		return assembleRS256JWT(token)
+	} else if method == jwt.SigningMethodES256 {
+		return assembleES256JWT(token)
 	}
 	return "", status.InternalError("Unsupported JWT signing method")
 }
@@ -428,11 +428,11 @@ func assembleHS256JWT(token *jwt.Token) (string, error) {
 	return token.SignedString([]byte(key))
 }
 
-func assembleRS256JWT(token *jwt.Token) (string, error) {
-	if rsaPrivateKey == nil {
-		return "", status.UnimplementedError("RSA-signed JWTs are unsupported")
+func assembleES256JWT(token *jwt.Token) (string, error) {
+	if es256PrivateKey == nil {
+		return "", status.UnimplementedError("ES256-signed JWTs are unsupported")
 	}
-	return token.SignedString(rsaPrivateKey)
+	return token.SignedString(es256PrivateKey)
 }
 
 // Returns a context containing auth state for the provided Claims and auth
@@ -602,6 +602,6 @@ func (c *ClaimsParser) Parse(token string) (*Claims, error) {
 	return claims, nil
 }
 
-func GetRSAPublicKeys() []string {
-	return rsaPublicKeys
+func GetES256PublicKeys() []string {
+	return es256PublicKeys
 }

@@ -54,16 +54,16 @@ func TestAuthenticate_HS256SigningMethod(t *testing.T) {
 	assert.Equal(t, expectedJwt, resp.Jwt)
 }
 
-func TestAuthenticate_RS256SigningMethod(t *testing.T) {
-	keyPair := testkeys.GenerateRSAKeyPair(t)
-	flags.Set(t, "auth.jwt_rsa_private_key", keyPair.PrivateKeyPEM)
+func TestAuthenticate_ES256SigningMethod(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
 	require.NoError(t, claims.Init())
 
 	service := AuthService{authenticator: testauth.NewTestAuthenticator(t, testauth.TestUsers("foo", "bar"))}
 
 	authResp, err := service.Authenticate(contextWithApiKey(t, "foo"),
 		&authpb.AuthenticateRequest{
-			JwtSigningMethod: authpb.JWTSigningMethod_RS256.Enum(),
+			JwtSigningMethod: authpb.JWTSigningMethod_ES256.Enum(),
 		})
 	require.NoError(t, err)
 	require.NotEmpty(t, authResp.GetJwt())
@@ -72,13 +72,13 @@ func TestAuthenticate_RS256SigningMethod(t *testing.T) {
 	keysResp, err := service.GetPublicKeys(t.Context(), &authpb.GetPublicKeysRequest{})
 	require.NoError(t, err)
 	require.Len(t, keysResp.PublicKeys, 1)
-	rsaPublicKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(keysResp.PublicKeys[0].GetKey()))
+	es256PublicKey, err := jwt.ParseECPublicKeyFromPEM([]byte(keysResp.PublicKeys[0].GetKey()))
 	require.NoError(t, err)
 	token, err := jwt.Parse(authResp.GetJwt(), func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+		if _, ok := token.Method.(*jwt.SigningMethodECDSA); !ok {
 			t.Fatalf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return rsaPublicKey, nil
+		return es256PublicKey, nil
 	})
 	require.NoError(t, err)
 	assert.True(t, token.Valid)
@@ -99,8 +99,8 @@ func TestGetPublicKeys_NoKeys(t *testing.T) {
 }
 
 func TestGetPublicKeys_OnlyOldKey(t *testing.T) {
-	keys := testkeys.GenerateRSAKeyPair(t)
-	flags.Set(t, "auth.jwt_rsa_private_key", keys.PrivateKeyPEM)
+	keys := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keys.PrivateKeyPEM)
 	require.NoError(t, claims.Init())
 	service := AuthService{}
 	resp, err := service.GetPublicKeys(t.Context(), &authpb.GetPublicKeysRequest{})
@@ -110,8 +110,8 @@ func TestGetPublicKeys_OnlyOldKey(t *testing.T) {
 }
 
 func TestGetPublicKeys_OnlyNewKey(t *testing.T) {
-	keys := testkeys.GenerateRSAKeyPair(t)
-	flags.Set(t, "auth.new_jwt_rsa_private_key", keys.PrivateKeyPEM)
+	keys := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.new_jwt_es256_private_key", keys.PrivateKeyPEM)
 	require.NoError(t, claims.Init())
 	service := AuthService{}
 	resp, err := service.GetPublicKeys(t.Context(), &authpb.GetPublicKeysRequest{})
@@ -121,10 +121,10 @@ func TestGetPublicKeys_OnlyNewKey(t *testing.T) {
 }
 
 func TestGetPublicKeys_BothKeys(t *testing.T) {
-	newKeys := testkeys.GenerateRSAKeyPair(t)
-	oldKeys := testkeys.GenerateRSAKeyPair(t)
-	flags.Set(t, "auth.jwt_rsa_private_key", oldKeys.PrivateKeyPEM)
-	flags.Set(t, "auth.new_jwt_rsa_private_key", newKeys.PrivateKeyPEM)
+	newKeys := testkeys.GenerateES256KeyPair(t)
+	oldKeys := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", oldKeys.PrivateKeyPEM)
+	flags.Set(t, "auth.new_jwt_es256_private_key", newKeys.PrivateKeyPEM)
 	require.NoError(t, claims.Init())
 	service := AuthService{}
 	resp, err := service.GetPublicKeys(t.Context(), &authpb.GetPublicKeysRequest{})
