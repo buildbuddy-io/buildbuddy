@@ -712,6 +712,7 @@ message GetRangeDebugInfoResponse {
   RaftLeaderInfo leader = 3;
   bool has_lease = 4;
   RaftMembership membership = 5;
+  uint64 last_replica_id = 7;
 }
 
 message RangeDescriptorChange {
