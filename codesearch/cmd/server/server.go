@@ -65,12 +65,9 @@ func main() {
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := real_environment.NewRealEnv(healthChecker)
 
-	authenticator, err := remoteauth.New()
-	if err != nil {
+	if err := remoteauth.Register(env); err != nil {
 		log.Fatal(err.Error())
 	}
-	env.SetAuthenticator(authenticator)
-
 	monitoring.StartMonitoringHandler(env, *monitoringAddr)
 
 	css, err := server.New(env, *csIndexDir, *csScratchDir)

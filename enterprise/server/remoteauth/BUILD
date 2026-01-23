@@ -16,6 +16,7 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/lru",
+        "//server/util/real_environment",
         "//server/util/status",
         "//server/util/subdomain",
         "@org_golang_google_grpc//:grpc",
