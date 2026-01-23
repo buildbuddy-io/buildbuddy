@@ -526,13 +526,10 @@ func (s *Store) queryForMetarange(ctx context.Context) {
 func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugInfoRequest) (*rfpb.GetRangeDebugInfoResponse, error) {
 	leaderID, term, valid, _ := s.nodeHost.GetLeaderID(req.GetRangeId())
 	lastReplicaIDKey := keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", req.GetRangeId())))
-	lastReplicaIDBuf, err := s.sender.DirectRead(ctx, lastReplicaIDKey)
-	var lastReplicaID uint64
+	lastReplicaID, err := s.sender.Increment(ctx, lastReplicaIDKey, 0)
 	if err != nil {
 		// log.Warningf("Failed to read last replica ID for range %d: %s", req.GetRangeId(), err)
-		return nil, status.WrapErrorf(err, "failed to read last replica ID for range %d", req.GetRangeId())
-	} else {
-		lastReplicaID = binary.LittleEndian.Uint64(lastReplicaIDBuf)
+		return nil, status.WrapErrorf(err, "failed to read last replica ID for range %d with key %q", req.GetRangeId(), lastReplicaIDKey)
 	}
 	rsp := &rfpb.GetRangeDebugInfoResponse{
 		Nhid:            s.NHID(),
