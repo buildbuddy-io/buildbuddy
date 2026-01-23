@@ -719,7 +719,8 @@ func runBazelHelpWithCache() (*bfpb.FlagCollection, error) {
 		return nil, fmt.Errorf("failed to close temp file: %s", err)
 	}
 	// Typically 'bazel help flags-as-proto' output the protobuf in 1 single base64 encoded line
-	// Use the last line to avoid
+	// Use the last line to avoid problems where bazel may preface this line with
+	// other stdout messages
 	out := strings.TrimSpace(buf.String())
 	flags, err := DecodeHelpFlagsAsProto(out)
 	if err == nil {
