@@ -237,7 +237,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 
 	copyManifestToLocal := false
 	manifest, err := chunked_manifest.Load(ctx, s.localCache, rn.GetDigest(), instanceName, digestFunction)
-	if status.IsNotFoundError(err) {
+	if status.IsNotFoundError(err) || status.IsUnimplementedError(err) {
 		splitReq := &repb.SplitBlobRequest{
 			BlobDigest:     rn.GetDigest(),
 			InstanceName:   instanceName,

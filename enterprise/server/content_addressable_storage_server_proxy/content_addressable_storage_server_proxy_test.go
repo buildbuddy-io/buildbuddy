@@ -22,6 +22,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/cas"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
@@ -33,6 +35,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -744,6 +747,113 @@ func TestSplitBlobRemoteFallback(t *testing.T) {
 	require.Equal(t, chunk1Digest.Hash, splitResp.ChunkDigests[0].Hash)
 	require.Equal(t, chunk2Digest.Hash, splitResp.ChunkDigests[1].Hash)
 	require.Equal(t, requestCount.Load(), int32(1))
+}
+
+func TestSplitBlobRemoteFallbackWhenBlobExistsLocally(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants:       map[string]any{"true": true, "false": false},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	remoteEnv.SetExperimentFlagProvider(fp)
+	conn, _, _ := runRemoteCASS(ctx, remoteEnv, t)
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetExperimentFlagProvider(fp)
+	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
+	proxy := repb.NewContentAddressableStorageClient(proxyConn)
+	remote := repb.NewContentAddressableStorageClient(conn)
+
+	chunk1 := []byte("localchunk1data")
+	chunk2 := []byte("localchunk2data")
+	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	update(ctx, proxy, map[*repb.Digest]string{
+		chunk1Digest: string(chunk1),
+		chunk2Digest: string(chunk2),
+	}, t)
+
+	blobData := append(chunk1, chunk2...)
+	blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	_, err = remote.SpliceBlob(ctx, &repb.SpliceBlobRequest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1Digest, chunk2Digest},
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.NoError(t, err)
+
+	cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_SHA256)
+	require.NoError(t, proxyEnv.GetCache().Set(cacheCtx, blobRN.ToProto(), blobData))
+
+	splitResp, err := proxy.SplitBlob(ctx, &repb.SplitBlobRequest{
+		BlobDigest:     blobDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, len(splitResp.ChunkDigests))
+	require.Equal(t, chunk1Digest.Hash, splitResp.ChunkDigests[0].Hash)
+	require.Equal(t, chunk2Digest.Hash, splitResp.ChunkDigests[1].Hash)
+}
+
+func TestSplitBlobFailsOnLocalInternalError(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants:       map[string]any{"true": true, "false": false},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	remoteEnv.SetExperimentFlagProvider(fp)
+	conn, _, _ := runRemoteCASS(ctx, remoteEnv, t)
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetExperimentFlagProvider(fp)
+	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
+	proxy := repb.NewContentAddressableStorageClient(proxyConn)
+
+	blobData := []byte("blob-for-internal-error-test")
+	blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_SHA256)
+	require.NoError(t, proxyEnv.GetCache().Set(cacheCtx, blobRN.ToProto(), blobData))
+
+	manifestRN := &rspb.ResourceName{
+		Digest:         blobDigest,
+		InstanceName:   "_bb_chunked_manifest_v2_/",
+		DigestFunction: repb.DigestFunction_SHA256,
+		CacheType:      rspb.CacheType_AC,
+	}
+	require.NoError(t, proxyEnv.GetCache().Set(cacheCtx, manifestRN, []byte("corrupt-proto-data")))
+
+	_, err = proxy.SplitBlob(ctx, &repb.SplitBlobRequest{
+		BlobDigest:     blobDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.Error(t, err)
+	require.True(t, status.IsInternalError(err), "expected InternalError, got: %v", err)
 }
 
 func BenchmarkGetTree(b *testing.B) {
