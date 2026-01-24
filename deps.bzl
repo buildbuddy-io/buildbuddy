@@ -41,9 +41,9 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'package(default_visibility = ["//visibility:public"])',
             'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
             'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
-        ]).format(release = "v1.11.0-aarch64"),
-        sha256 = "4b98f7cd669a772716fd1bef59c75188ba05a683bc0759ee4169eb351274fcb0",
-        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.11.0/firecracker-v1.11.0-aarch64.tgz"],
+        ]).format(release = "v1.14.0-aarch64"),
+        sha256 = "aa942421588108dced1de57639c4f6ddd063c3063c2f0bba9cd01be1ca8ba3bf",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.14.0/firecracker-v1.14.0-aarch64.tgz"],
     )
 
     http_file(
