@@ -1760,9 +1760,9 @@ func (s *Store) checkMembershipStatus(ctx context.Context, shardInfo dragonboat.
 }
 
 type replicaMembership struct {
-	replicaID   uint64
-	isNonVoting bool
-	removed     set.Set[uint64]
+	replicaID      uint64
+	isNonVoting    bool
+	usedReplicaIDs set.Set[uint64]
 }
 
 func (s *Store) checkReplicaMembership(ctx context.Context, rangeID uint64, nhid string) (*replicaMembership, error) {
@@ -1770,8 +1770,12 @@ func (s *Store) checkReplicaMembership(ctx context.Context, rangeID uint64, nhid
 	if err != nil {
 		return nil, err
 	}
+	usedReplicaIDs := set.FromSeq(maps.Keys(membership.Removed))
+	usedReplicaIDs.AddSeq(maps.Keys(membership.NonVotings))
+	usedReplicaIDs.AddSeq(maps.Keys(membership.Nodes))
+	usedReplicaIDs.AddSeq(maps.Keys(membership.Witnesses))
 	res := &replicaMembership{
-		removed: set.FromSeq(maps.Keys(membership.Removed)),
+		usedReplicaIDs: usedReplicaIDs,
 	}
 	for replicaID, addr := range membership.NonVotings {
 		if addr == nhid {
@@ -3136,26 +3140,6 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 	return nil
 }
 
-// sanity check newReplicaID is larger than existing ReplicaID.
-func verifyNewReplicaID(rd *rfpb.RangeDescriptor, newReplicaID uint64) bool {
-	for _, repl := range rd.GetReplicas() {
-		if repl.GetReplicaId() >= newReplicaID {
-			return false
-		}
-	}
-	for _, repl := range rd.GetStaging() {
-		if repl.GetReplicaId() >= newReplicaID {
-			return false
-		}
-	}
-	for _, repl := range rd.GetRemoved() {
-		if repl.GetReplicaId() >= newReplicaID {
-			return false
-		}
-	}
-	return true
-}
-
 type addReplicaState int
 
 const (
@@ -3216,7 +3200,7 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 
 	if existingStaging != nil {
 		newReplicaID = existingStaging.GetReplicaId()
-		if replicaMembership.removed.Contains(newReplicaID) {
+		if replicaMembership.usedReplicaIDs.Contains(newReplicaID) {
 			s.log.CtxWarningf(ctx, "staging replica c%dn%d is a replica previously removed on raft", rangeID, newReplicaID)
 			_, err = s.removeStagingReplicaFromRangeDescriptor(ctx, rangeID, newReplicaID, rd)
 			if err != nil {
@@ -3243,12 +3227,8 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 			return nil, status.WrapErrorf(err, "AddReplica failed to add range(%d) to node %q: failed to reserve replica IDs", rangeID, node.GetNhid())
 		}
 		newReplicaID = replicaIDs[0]
-		ok := verifyNewReplicaID(rd, newReplicaID)
-		if !ok {
-			return nil, status.WrapErrorf(err, "AddReplica failed to add range(%d) to node %q: the reserved ID %d is less than existing replica IDs: %+v", rangeID, node.GetNhid(), newReplicaID, rd)
-		}
-		if replicaMembership.removed.Contains(newReplicaID) {
-			return nil, status.WrapErrorf(err, "AddReplica failed to add range(%d) to node %q: the reserved ID %d is in the removed list", rangeID, node.GetNhid(), newReplicaID)
+		if replicaMembership.usedReplicaIDs.Contains(newReplicaID) {
+			return nil, status.WrapErrorf(err, "AddReplica failed to add range(%d) to node %q: the reserved ID %d is previously used", rangeID, node.GetNhid(), newReplicaID)
 		}
 		rd, err = s.addStagingReplicaToRangeDescriptor(ctx, rangeID, newReplicaID, node.GetNhid(), rd)
 		if err != nil {
