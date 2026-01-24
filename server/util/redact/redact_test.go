@@ -244,6 +244,26 @@ func TestRedactEnvVar(t *testing.T) {
 			input:    "--host_action_env",
 			expected: "--host_action_env",
 		},
+		{
+			name:     "empty var value",
+			input:    "--action_env=FOO=",
+			expected: "--action_env=FOO=",
+		},
+		{
+			name:     "clear var assignment",
+			input:    "--repo_env=FOO==",
+			expected: "--repo_env=FOO==",
+		},
+		{
+			name:     "boolean value",
+			input:    "--repo_env=REPIN=TRUE",
+			expected: "--repo_env=REPIN=TRUE",
+		},
+		{
+			name:     "boolean-like value",
+			input:    "--repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1",
+			expected: "--repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.expected, redact.RedactEnvVar(tc.input))

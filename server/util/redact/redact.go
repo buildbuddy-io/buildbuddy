@@ -53,6 +53,17 @@ var (
 	envVarUnquotedPattern     = regexp.MustCompile(`^(--[^=]+=)(\S+)$`)
 	envVarAnyPattern          = regexp.MustCompile(`(?s)^(--[^=]+=)(.*)$`)
 	envVarAssignmentRegex     = regexp.MustCompile(`^([^=]+)=`)
+	// Values that are safe and useful to keep unredacted.
+	envVarPermittedValues = map[string]bool{
+		// Both the empty string and "=" have special meaning in Bazel's env var
+		// handling (inherit and clear, respectively).
+		"":      true,
+		"=":     true,
+		"0":     true,
+		"1":     true,
+		"true":  true,
+		"false": true,
+	}
 
 	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
@@ -327,6 +338,10 @@ func redactEnvVarPayload(payload string) string {
 func redactEnvVarAssignment(value string) string {
 	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
 		varName := assignment[1]
+		varValue := value[len(varName)+1:]
+		if envVarPermittedValues[strings.ToLower(varValue)] {
+			return varName + "=" + varValue
+		}
 		return varName + "=" + redactedPlaceholder
 	}
 	return redactedPlaceholder
@@ -341,30 +356,26 @@ func redactEnvVarAssignment(value string) string {
 // `--action_env='FOO=bar baz'` to `--action_env='FOO=<REDACTED>'`.
 func RedactEnvVar(flag string) string {
 	if matches := envVarDoubleQuotedPattern.FindStringSubmatch(flag); matches != nil {
-		return redactEnvVarValue(matches[1], matches[2])
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
 	}
 	if matches := envVarSingleQuotedPattern.FindStringSubmatch(flag); matches != nil {
-		return redactEnvVarValue(matches[1], matches[2])
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
 	}
 	if matches := envVarUnquotedPattern.FindStringSubmatch(flag); matches != nil {
-		return redactEnvVarValue(matches[1], matches[2])
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
 	}
 	if matches := envVarAnyPattern.FindStringSubmatch(flag); matches != nil {
-		return redactEnvVarValue(matches[1], matches[2])
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
 	}
 	return flag
 }
 
-// redactEnvVarValue rewrites an env var flag prefix plus payload so the payload
+// redactEnvVarFlagAndAssignment rewrites an env var flag prefix plus payload so the payload
 // becomes VAR=<REDACTED> when a VAR= is detected and otherwise collapses to the
 // placeholder. Example input: "--client_env=" as the prefix with
 // `FOO=bar baz` becomes "--client_env=FOO=<REDACTED>".
-func redactEnvVarValue(flagName, value string) string {
-	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
-		varName := assignment[1]
-		return flagName + varName + "=" + redactedPlaceholder
-	}
-	return flagName + redactedPlaceholder
+func redactEnvVarFlagAndAssignment(flagName, value string) string {
+	return flagName + redactEnvVarAssignment(value)
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
