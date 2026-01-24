@@ -3200,7 +3200,7 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 
 	if existingStaging != nil {
 		newReplicaID = existingStaging.GetReplicaId()
-		if replicaMembership.usedReplicaIDs.Contains(newReplicaID) {
+		if replicaMembership.replicaID == 0 && replicaMembership.usedReplicaIDs.Contains(newReplicaID) {
 			s.log.CtxWarningf(ctx, "staging replica c%dn%d is a replica previously removed on raft", rangeID, newReplicaID)
 			_, err = s.removeStagingReplicaFromRangeDescriptor(ctx, rangeID, newReplicaID, rd)
 			if err != nil {
