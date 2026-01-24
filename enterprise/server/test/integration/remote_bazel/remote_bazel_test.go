@@ -251,7 +251,7 @@ func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envMod
 	})
 	t.Cleanup(bbServer.Shutdown)
 
-	executors := env.AddExecutors(t, 1)
+	executors := env.AddInProcessExecutors(t, 1)
 	require.Equal(t, 1, len(executors))
 	flags.Set(t, "executor.enable_bare_runner", true)
 	flags.Set(t, "github.app.enabled", true)
