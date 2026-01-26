@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
@@ -1545,6 +1546,12 @@ func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream
 func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEventLogServer) error {
 	ctx := stream.Context()
 
+	authenticatedUser, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	gid := authenticatedUser.GetGroupID()
+
 	var eventLogWriter *eventlog.EventLogWriter
 	for {
 		req, err := stream.Recv()
@@ -1576,9 +1583,15 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 			defer eventLogWriter.Close(ctx)
 		}
 
-		_, err = eventLogWriter.Write(ctx, req.GetData())
+		n, err := eventLogWriter.Write(ctx, req.GetData())
 		if err != nil {
 			return err
+		}
+		if n > 0 {
+			metrics.EventLogBytesWritten.With(map[string]string{
+				metrics.EventName: "run_log",
+				metrics.GroupID:   gid,
+			}).Add(float64(n))
 		}
 	}
 }

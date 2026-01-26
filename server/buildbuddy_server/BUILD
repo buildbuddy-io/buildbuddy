@@ -50,6 +50,7 @@ go_library(
         "//server/eventlog",
         "//server/http/interceptors",
         "//server/interfaces",
+        "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/directory_size",
         "//server/remote_cache/scorecard",
