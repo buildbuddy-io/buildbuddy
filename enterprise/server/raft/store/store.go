@@ -3201,12 +3201,12 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 	if existingStaging != nil {
 		newReplicaID = existingStaging.GetReplicaId()
 		if replicaMembership.replicaID == 0 && replicaMembership.usedReplicaIDs.Contains(newReplicaID) {
-			s.log.CtxWarningf(ctx, "staging replica c%dn%d is a replica previously removed on raft", rangeID, newReplicaID)
+			s.log.CtxWarningf(ctx, "staging replica c%dn%d is a replica previously used on raft", rangeID, newReplicaID)
 			_, err = s.removeStagingReplicaFromRangeDescriptor(ctx, rangeID, newReplicaID, rd)
 			if err != nil {
-				return nil, status.WrapErrorf(err, "AddReplica failed to add staging replica c%dn%d on %q, staging replica id is previously used and removed on raft, failed to clean up staging replica", rangeID, newReplicaID, node.GetNhid())
+				return nil, status.WrapErrorf(err, "AddReplica failed to add staging replica c%dn%d on %q, staging replica id is previously used on raft, failed to clean up staging replica", rangeID, newReplicaID, node.GetNhid())
 			}
-			return nil, status.InternalErrorf("AddReplica failed to add staging replica c%dn%d on %q, staging replica id is previously used and removed on raft. ", rangeID, newReplicaID, node.GetNhid())
+			return nil, status.InternalErrorf("AddReplica failed to add staging replica c%dn%d on %q, staging replica id is previously used on raft. (staging replica is successfully removed)", rangeID, newReplicaID, node.GetNhid())
 		}
 		if replicaMembership.replicaID != 0 {
 			if newReplicaID != replicaMembership.replicaID {
