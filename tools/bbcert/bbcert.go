@@ -180,6 +180,18 @@ func fetchCert(ctx context.Context, server, homeDir, keyFile string, pub []byte,
 			return fmt.Errorf("could not write certificate to %q: %s", certPath, err)
 		}
 		log.Infof("Wrote certificate to %q.", certPath)
+
+		// Add the key to the SSH agent. Since the key has a non-standard name,
+		// SSH won't automatically find it.
+		// See "identity_file" arg documentation in `man ssh`
+		// TODO: maybe use an SSH config file with ProxyCommand instead?
+		addCmd := exec.CommandContext(ctx, "ssh-add", dstKey)
+		addCmd.Stderr = os.Stderr
+		if err := addCmd.Run(); err != nil {
+			log.Warningf("Could not add key to SSH agent: %s", err)
+		} else {
+			log.Infof("Added %q to SSH agent.", dstKey)
+		}
 	}
 
 	for _, kc := range resp.KubernetesCredentials {
