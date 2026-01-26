@@ -53,17 +53,6 @@ var (
 	envVarUnquotedPattern     = regexp.MustCompile(`^(--[^=]+=)(\S+)$`)
 	envVarAnyPattern          = regexp.MustCompile(`(?s)^(--[^=]+=)(.*)$`)
 	envVarAssignmentRegex     = regexp.MustCompile(`^([^=]+)=`)
-	// Values that are safe and useful to keep unredacted.
-	envVarPermittedValues = map[string]bool{
-		// Both the empty string and "=" have special meaning in Bazel's env var
-		// handling (inherit and clear, respectively).
-		"":      true,
-		"=":     true,
-		"0":     true,
-		"1":     true,
-		"true":  true,
-		"false": true,
-	}
 
 	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
@@ -339,12 +328,18 @@ func redactEnvVarAssignment(value string) string {
 	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
 		varName := assignment[1]
 		varValue := value[len(varName)+1:]
-		if envVarPermittedValues[strings.ToLower(varValue)] {
+		// Keep values unredacted that are clearly safe and potentially useful
+		// for debugging.
+		if varValue == "" ||
+			varValue == "0" || varValue == "1" ||
+			strings.EqualFold(varValue, "true") || strings.EqualFold(varValue, "false") {
 			return varName + "=" + varValue
 		}
 		return varName + "=" + redactedPlaceholder
 	}
-	return redactedPlaceholder
+	// Don't redact --action_env=FOO (inherit FOO) and --action_env==FOO (unset
+	// FOO). Environment variable names are not expected to be sensitive.
+	return value
 }
 
 // RedactEnvVar replaces the value portion of a Bazel environment variable flag

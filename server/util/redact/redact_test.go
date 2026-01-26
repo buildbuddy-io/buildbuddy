@@ -230,11 +230,6 @@ func TestRedactEnvVar(t *testing.T) {
 			expected: "--repo_env=FOO=<REDACTED>",
 		},
 		{
-			name:     "fallback when missing VAR portion",
-			input:    "--test_env=foobar",
-			expected: "--test_env=<REDACTED>",
-		},
-		{
 			name:     "multiline quoted var assignment",
 			input:    "--client_env=\"FOO=bar\nbaz\"",
 			expected: "--client_env=FOO=<REDACTED>",
@@ -250,9 +245,14 @@ func TestRedactEnvVar(t *testing.T) {
 			expected: "--action_env=FOO=",
 		},
 		{
-			name:     "clear var assignment",
-			input:    "--repo_env=FOO==",
-			expected: "--repo_env=FOO==",
+			name:     "inherit var",
+			input:    "--action_env=FOO",
+			expected: "--action_env=FOO",
+		},
+		{
+			name:     "clear var",
+			input:    "--repo_env==FOO",
+			expected: "--repo_env==FOO",
 		},
 		{
 			name:     "boolean value",
