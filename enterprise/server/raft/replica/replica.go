@@ -1837,6 +1837,9 @@ func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		}
 		if inLocalRangeSection {
 			if isLocalKey(kv.Key) {
+				// When we save the snapshot, we removed the replica local prefix.
+				// Therefore, we can use the Equal directly here and also we need
+				// add the replicaPrefix before we write it to the db.
 				if bytes.Equal(kv.Key, constants.LocalRangeKey) {
 					rangeDescriptor := &rfpb.RangeDescriptor{}
 					if err := proto.Unmarshal(kv.Value, rangeDescriptor); err != nil {
