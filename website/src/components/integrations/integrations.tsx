@@ -16,7 +16,7 @@ function Component() {
           <Image
             alt="Github Integration Octocat"
             className={styles.logo}
-            style={{ marginRight: "-22px", padding: "20px 0" }}
+            style={{ marginRight: "-32px", padding: "20px 0" }}
             img={require("../../../static/img/github-image.png")}
             shouldAutoDownload={() => true}
             threshold={10000}
