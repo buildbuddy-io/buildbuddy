@@ -2201,6 +2201,19 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 			log.Warningf("Error serving invocation-%s.log: %s", iid, err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
+	case "runlog":
+		c := chunkstore.New(
+			s.env.GetBlobstore(),
+			&chunkstore.ChunkstoreOptions{},
+		)
+		// Stream the file back to our client
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=invocation-%s-run.log", iid))
+		w.Header().Set("Content-Type", "application/octet-stream")
+		path := eventlog.GetRunLogPathFromInvocationId(iid)
+		if _, err := io.Copy(w, c.Reader(ctx, path)); err != nil {
+			log.Warningf("Error serving invocation-%s-run.log: %s", iid, err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
 	case "execution_profile":
 		executionID := params.Get("execution_id")
 		executionService := s.env.GetExecutionService()
