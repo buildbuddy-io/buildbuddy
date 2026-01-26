@@ -435,7 +435,7 @@ func (s *CASServerProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobReque
 	if localErr == nil {
 		return localResp, nil
 	}
-	if !status.IsNotFoundError(localErr) {
+	if !status.IsNotFoundError(localErr) && !status.IsUnimplementedError(localErr) {
 		return nil, status.WrapError(localErr, "local SplitBlob")
 	}
 
