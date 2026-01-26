@@ -59,6 +59,7 @@ jobs:
           git add shared.bazelrc
           git add buildpatches
           git add deps
+          git add MODULE.bazel.lock
           cat <<EOF > message.txt
           🔄 $COMMIT_MESSAGE
           Update buildbuddy-io/buildbuddy commit SHA
