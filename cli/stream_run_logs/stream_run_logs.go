@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/creack/pty"
@@ -23,9 +24,6 @@ import (
 )
 
 const (
-	// Default BB server to stream logs to.
-	defaultServer = "grpcs://remote.buildbuddy.io"
-
 	// Even if not enough data has been written to flush a chunk, flush at least once every interval to ensure
 	// the UI is relatively up-to-date.
 	flushChunkTimeout = 15 * time.Second
@@ -44,11 +42,17 @@ type Opts struct {
 
 // If streaming run logs is requested with --stream_run_logs, parse required args.
 func Configure(args []string) ([]string, *Opts, error) {
-	if arg.GetCommand(args) != "run" || !arg.Has(args, "stream_run_logs") {
+	cmd, cmdIndex := arg.GetCommandAndIndex(args)
+
+	// Parse and remove the --stream_run_logs flag.
+	if !arg.Has(args[:cmdIndex], "stream_run_logs") {
 		return args, nil, nil
 	}
-
 	_, args = arg.Pop(args, "stream_run_logs")
+
+	if cmd != "run" {
+		return args, nil, nil
+	}
 
 	apiKey := arg.Get(args, "remote_header=x-buildbuddy-api-key")
 	if apiKey == "" {
@@ -59,7 +63,7 @@ func Configure(args []string) ([]string, *Opts, error) {
 
 	besBackend := arg.Get(args, "bes_backend")
 	if besBackend == "" {
-		besBackend = defaultServer
+		return args, nil, status.FailedPreconditionError("bes_backend is required for streaming run logs")
 	}
 
 	// In order to stream run logs to the same invocation URL as the build, we must pre-generate the
@@ -93,7 +97,7 @@ func Execute(runScriptPath string, opts Opts) (int, error) {
 
 	conn, err := grpc_client.DialSimple(opts.BesBackend)
 	if err != nil {
-		log.Warnf("Failed to dial BuildBuddy for run log streaming: %s", err)
+		log.Warnf("Failed to dial %s for streaming `run` executable logs: %s", opts.BesBackend, err)
 		return runScriptDirectly(runScriptPath)
 	}
 	defer conn.Close()
@@ -152,19 +156,40 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 	}()
 
 	cmd := exec.Command(scriptPath)
-	ptmx, err := pty.Start(cmd)
-	if err != nil {
-		log.Warnf("Failed to start command with PTY: %s", err)
-		return runScriptDirectly(scriptPath)
-	}
-	defer ptmx.Close()
 
+	var outputReader io.Reader
+	var cleanup func()
+
+	if terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr) {
+		ptmx, err := pty.Start(cmd)
+		if err != nil {
+			log.Warnf("Failed to start command with PTY: %s", err)
+			return runScriptDirectly(scriptPath)
+		}
+		outputReader = ptmx
+		cleanup = func() { ptmx.Close() }
+	} else {
+		pr, pw := io.Pipe()
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = pw
+		cmd.Stderr = pw
+		outputReader = pr
+		cleanup = func() { pw.Close() }
+
+		if err := cmd.Start(); err != nil {
+			pr.Close()
+			pw.Close()
+			log.Warnf("Failed to start command: %s", err)
+			return runScriptDirectly(scriptPath)
+		}
+	}
 	copyOutputDone := make(chan error)
 	go func() {
-		copyOutputDone <- streamOutput(ctx, bbClient, invocationID, ptmx, stream)
+		copyOutputDone <- streamOutput(ctx, bbClient, invocationID, outputReader, stream)
 	}()
 
 	cmdErr := cmd.Wait()
+	cleanup() // Close PTY/pipe to signal EOF to streamOutput
 	copyErr := <-copyOutputDone
 	if copyErr != nil {
 		log.Warnf("Failed to stream output: %s", copyErr)
@@ -180,7 +205,7 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 }
 
 // streamOutput streams output to both stdout and uploads them to the BuildBuddy server.
-func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string, r io.Reader, stream bbspb.BuildBuddyService_WriteEventLogClient) error {
+func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string, outputReader io.Reader, writeStream bbspb.BuildBuddyService_WriteEventLogClient) error {
 	uploadRunLogs := true
 	flushTimer := time.NewTimer(flushChunkTimeout)
 	defer flushTimer.Stop()
@@ -188,11 +213,11 @@ func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, i
 	writeBuf := make([]byte, 0, UploadBufferSize)
 	readBuf := make([]byte, UploadBufferSize)
 	for {
-		n, err := r.Read(readBuf)
-		// When the PTY is closed, it returns EIO.
+		n, err := outputReader.Read(readBuf)
+		// When a PTY is closed, it returns EIO.
 		if err == io.EOF || errors.Is(err, syscall.EIO) {
 			if len(writeBuf) > 0 {
-				_ = uploadLogs(ctx, bbClient, invocationID, stream, writeBuf)
+				_ = uploadLogs(ctx, bbClient, invocationID, writeStream, writeBuf)
 			}
 			return nil
 		}
@@ -215,7 +240,7 @@ func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, i
 
 		// Flush writes to the server once we've accumulated enough data.
 		if len(writeBuf) > 0 && (len(writeBuf)+n > UploadBufferSize || forceFlush) {
-			if err := uploadLogs(ctx, bbClient, invocationID, stream, writeBuf); err != nil {
+			if err := uploadLogs(ctx, bbClient, invocationID, writeStream, writeBuf); err != nil {
 				uploadRunLogs = false
 				continue
 			}

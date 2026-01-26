@@ -13,6 +13,7 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/log",
+        "//cli/terminal",
         "//proto:buildbuddy_service_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:invocation_status_go_proto",

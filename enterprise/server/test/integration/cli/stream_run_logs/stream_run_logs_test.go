@@ -37,7 +37,7 @@ echo "goodbye world"
 
 	_, webClient, setupOpts := setup(t)
 
-	cmd := append([]string{"run", ":echo", "--invocation_id=" + setupOpts.InvocationID}, getFlags(setupOpts)...)
+	cmd := append([]string{"--stream_run_logs=1", "run", ":echo", "--invocation_id=" + setupOpts.InvocationID}, getFlags(setupOpts)...)
 	out := runWithCLI(t, ws, cmd)
 
 	// Verify that the script ran as expected.
@@ -160,7 +160,6 @@ func getFlags(opts *stream_run_logs.Opts) []string {
 	return []string{
 		"--bes_backend=" + opts.BesBackend,
 		"--remote_header=x-buildbuddy-api-key=" + opts.ApiKey,
-		"--stream_run_logs=1",
 	}
 }
 
