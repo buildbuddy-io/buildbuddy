@@ -18,9 +18,7 @@ We’ve made it easy to get started with ARM builds by adding support to the [`b
 
 ## Getting Started
 
-Configuring your Bazel build to use BuildBuddy's arm64 executors is straightforward. Add the BuildBuddy toolchain to your WORKSPACE file:
-
-`WORKSPACE`:
+Configuring your Bazel build to use BuildBuddy's arm64 executors is straightforward. Add the BuildBuddy toolchain to your `MODULE.bazel` file:
 
 ```python
 bazel_dep(name = "toolchains_buildbuddy", version = "0.0.4")
