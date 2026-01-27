@@ -6,11 +6,15 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
+	"github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs/option_definitions"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -47,36 +51,64 @@ func Enable(e bool) {
 }
 
 // If streaming run logs is requested with --stream_run_logs, parse required args.
-func Configure(args []string) ([]string, *Opts, error) {
-	if !enabled || arg.GetCommand(args) != "run" {
-		return args, nil, nil
+func Configure(parsedArgs parsed.Args) (*Opts, error) {
+	streamRunLogs, err := options.AccumulateValues[*parsed.IndexedOption](
+		false,
+		parsedArgs.RemoveCommandOptions(option_definitions.StreamRunLogs.Name()),
+	)
+	if err != nil {
+		log.Warnf("Error encountered reading '%s' flag: %s", option_definitions.StreamRunLogs.Name(), err)
+	}
+	if !streamRunLogs {
+		return nil, err
 	}
 
-	apiKey := arg.Get(args, "remote_header=x-buildbuddy-api-key")
+	apiKey := ""
+	for _, opt := range parsedArgs.GetCommandOptionsByName("remote_header") {
+		if cut, ok := strings.CutPrefix(opt.GetValue(), "x-buildbuddy-api-key="); ok {
+			apiKey = cut
+		}
+	}
 	if apiKey == "" {
 		log.Warnf("To stream run logs, authenticate your request with `bb login` or add an API key to your run with " +
 			"`--remote_header=x-buildbuddy-api-key=XXX`")
-		return args, nil, status.UnauthenticatedError("unauthenticated request")
+		return nil, status.UnauthenticatedError("unauthenticated request")
 	}
 
-	besBackend := arg.Get(args, "bes_backend")
+	besBackend, err := options.AccumulateValues[*parsed.IndexedOption](
+		"",
+		parsedArgs.GetCommandOptionsByName("bes_backend"),
+	)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to accumulate 'bes_backend' option: %s", err)
+	}
 	if besBackend == "" {
-		return args, nil, status.FailedPreconditionError("bes_backend is required for streaming run logs")
+		return nil, status.FailedPreconditionError("bes_backend is required for streaming run logs")
 	}
 
 	// In order to stream run logs to the same invocation URL as the build, we must pre-generate the
 	// invocation ID to pass it to `Execute`.
-	iid := arg.Get(args, "invocation_id")
+	iid, err := options.AccumulateValues[*parsed.IndexedOption](
+		"",
+		parsedArgs.GetCommandOptionsByName("invocation_id"),
+	)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to accumulate 'invocation_id' option: %s", err)
+	}
 	if iid == "" {
 		invocationUUID, err := guuid.NewRandom()
 		if err != nil {
-			return args, nil, status.InternalErrorf("failed to generate invocation ID: %s", err)
+			return nil, status.InternalErrorf("failed to generate invocation ID: %s", err)
 		}
 		iid = invocationUUID.String()
-		args = arg.Append(args, "--invocation_id="+iid)
+		opt, err := parser.MakeCommandOption("--invocation_id", &iid)
+		if err != nil {
+			return nil, status.InternalErrorf("failed to append invocation ID: %s", err)
+		}
+		parsedArgs.Append(opt)
 	}
 
-	return args, &Opts{
+	return &Opts{
 		BesBackend:   besBackend,
 		InvocationID: iid,
 		ApiKey:       apiKey,

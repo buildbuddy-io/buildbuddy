@@ -109,15 +109,6 @@ func Configure[T options.Option](bbOpts []T) {
 		}
 		watcher.Configure(true, watcherFlags)
 	}
-
-	streamRunLogs, err := options.AccumulateValues[T](
-		false,
-		seq.Filter(bbOpts, options.NameFilter[T](streamoptdef.StreamRunLogs.Name())),
-	)
-	if err != nil {
-		log.Warnf("Error encountered reading '%s' flag: %s", streamoptdef.StreamRunLogs.Name(), err)
-	}
-	stream_run_logs.Enable(streamRunLogs)
 }
 
 func run() (exitCode int, err error) {
@@ -160,8 +151,9 @@ func run() (exitCode int, err error) {
 		return -1, err
 	} else if helpArgs.GetCommand() == "help" {
 		// Handle help command if applicable.
-		Configure(helpArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name(), streamoptdef.StreamRunLogs.Name()))
+		Configure(helpArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name()))
 		StartupDebug(start)
+		helpArgs.RemoveCommandOptions(streamoptdef.StreamRunLogs.Name())
 		return runHelp(helpArgs)
 	}
 
@@ -175,7 +167,7 @@ func run() (exitCode int, err error) {
 	if err != nil {
 		return -1, err
 	}
-	Configure(parsedArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name(), streamoptdef.StreamRunLogs.Name()))
+	Configure(parsedArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name()))
 	StartupDebug(start)
 	parsedArgs, err = parser.ResolveArgs(parsedArgs)
 	if err != nil {
@@ -346,11 +338,18 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 		bazelArgs = picker.HandlePicker(bazelArgs)
 	}
 
-	bazelArgs, streamRunLogsOpts, err = stream_run_logs.Configure(bazelArgs)
+	parsedArgs, err := parser.ParseArgs(bazelArgs)
+	if err != nil {
+		return 1, err
+	}
+	streamRunLogsOpts, err = stream_run_logs.Configure(parsedArgs)
 	if err != nil {
 		// Fallback to running the script without streaming logs.
 		log.Warnf("Error configuring run log streaming: %s", err)
 	}
+	// stream_run_logs.Configure can add an invocation id to the passed args, so
+	// make sure to update the bazelArgs with the parsedArgs.
+	bazelArgs = parsedArgs.Format()
 
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.

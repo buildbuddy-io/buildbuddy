@@ -38,7 +38,7 @@ echo "goodbye world"
 
 	_, webClient, setupOpts := setup(t)
 
-	cmd := append([]string{"--stream_run_logs", "run", ":echo", "--invocation_id=" + setupOpts.InvocationID}, getFlags(setupOpts)...)
+	cmd := append([]string{"run", ":echo", "--stream_run_logs", "--invocation_id=" + setupOpts.InvocationID}, getFlags(setupOpts)...)
 	out := runWithCLI(t, ws, cmd)
 
 	// Verify that the script ran as expected.
