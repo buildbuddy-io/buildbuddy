@@ -314,6 +314,9 @@ const (
 	// 'clean' if the runner is not recycled or 'recycled')
 	RecycledRunnerStatus = "recycled_runner_status"
 
+	// Name of a custom resource configured on an executor.
+	CustomResourceNameLabel = "resource_name"
+
 	// Name of a file.
 	FileName = "file_name"
 
@@ -1331,6 +1334,24 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "assignable_milli_cpu",
 		Help:      "Maximum total CPU time on the executor that can be allocated for task execution, in **milliCPU** (CPU-milliseconds per second).",
+	})
+
+	RemoteExecutionAssignedCustomResources = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assigned_custom_resources",
+		Help:      "Custom resources on the executor currently allocated for task execution. Custom resources are dimensionless values configured via executor.custom_resources.",
+	}, []string{
+		CustomResourceNameLabel,
+	})
+
+	RemoteExecutionAssignableCustomResources = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assignable_custom_resources",
+		Help:      "Maximum custom resources that can be allocated for task execution. Custom resources are dimensionless values configured via executor.custom_resources.",
+	}, []string{
+		CustomResourceNameLabel,
 	})
 
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
