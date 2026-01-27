@@ -9,10 +9,12 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/flaghistory",
+        "//cli/log",
         "//cli/login",
         "//cli/parser",
         "//cli/plugin",
         "//cli/sidecar",
+        "//cli/stream_run_logs",
         "//cli/tooltag",
     ],
 )
