@@ -1127,6 +1127,19 @@ func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *r
 		return nil, err
 	}
 
+	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE)
+	if err != nil {
+		return nil, err
+	}
+	if !canWrite {
+		// For read-only API keys, behave like a no-op success to be consistent with
+		// other write methods (e.g. UpdateActionResult, BatchUpdateBlobs) and avoid
+		// breaking builds that rely on read-only credentials.
+		return &repb.SpliceBlobResponse{
+			BlobDigest: req.GetBlobDigest(),
+		}, nil
+	}
+
 	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, experimentFlagChunkingEnabled, false) {
 		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently enabled")
 	}
