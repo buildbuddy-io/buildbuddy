@@ -4,7 +4,11 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "bare",
-    srcs = ["bare.go"],
+    srcs = [
+        "bare.go",
+        "bare_unix.go",
+        "bare_windows.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare",
     deps = [
         "//enterprise/server/remote_execution/commandutil",
