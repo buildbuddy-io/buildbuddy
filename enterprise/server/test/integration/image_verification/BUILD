@@ -6,7 +6,7 @@ go_test(
     name = "image_verification_test",
     srcs = ["image_verification_test.go"],
     data = [
-        "@busybox",
+        "//enterprise/server/cmd/executor:executor_image",
     ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
@@ -14,7 +14,7 @@ go_test(
         "test.recycle-runner": "true",
     },
     x_defs = {
-        "busyboxImageRlocationpath": "$(rlocationpath @busybox)",
+        "executorImageRlocationpath": "$(rlocationpath //enterprise/server/cmd/executor:executor_image)",
     },
     deps = [
         "//enterprise/server/remote_execution/containers/firecracker",
