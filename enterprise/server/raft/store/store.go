@@ -651,6 +651,49 @@ func (s *Store) AdminUpdateDescriptor(ctx context.Context, req *rfpb.AdminUpdate
 	return &rfpb.AdminUpdateDescriptorResponse{}, err
 }
 
+// getLocalSystemKeysInMetaRangeForDebug returns a map of key, value pair of
+// system keys in the pebble db except for partition descriptors.
+func (s *Store) getLastUsedIDsInMetaRangeForDebug() (map[string]uint64, error) {
+	db, err := s.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	start, end := keys.Range(keys.MakeKey(constants.LocalPrefix, []byte("c1n")))
+
+	iter, err := db.NewIter(&pebble.IterOptions{
+		LowerBound: start,
+		UpperBound: end,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	res := make(map[string]uint64)
+	for iter.First(); iter.Valid(); iter.Next() {
+		if bytes.Contains(iter.Key(), constants.LastReplicaIDKeyPrefix) || bytes.Contains(iter.Key(), constants.LastRangeIDKey) {
+			res[string(iter.Key())] = binary.LittleEndian.Uint64(iter.Value())
+		}
+	}
+
+	// TODO: remove this once the LastReplicaIDKey and LastRangeIDKey are migrated
+	// https: //github.com/buildbuddy-io/buildbuddy-internal/issues/6563
+	start, end = keys.Range(constants.SystemPrefix)
+	iter, err = db.NewIter(&pebble.IterOptions{
+		LowerBound: start,
+		UpperBound: end,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for iter.First(); iter.Valid(); iter.Next() {
+		if bytes.Contains(iter.Key(), constants.LastReplicaIDKeyPrefix) || bytes.Contains(iter.Key(), constants.LastRangeIDKey) {
+			res[string(iter.Key())] = binary.LittleEndian.Uint64(iter.Value())
+		}
+	}
+	return res, nil
+}
+
 func (s *Store) Statusz(ctx context.Context) string {
 	buf := "<pre>"
 	buf += s.liveness.String() + "\n"
@@ -718,7 +761,19 @@ func (s *Store) Statusz(ctx context.Context) string {
 			buf += fmt.Sprintf("\t%s: %s\n", p.GetId(), p.GetState())
 		}
 	}
+	buf += "System Keys\n"
+	sysKeys, err := s.getLastUsedIDsInMetaRangeForDebug()
+	if err != nil {
+		buf += fmt.Sprintf("failed to fetch system keys: %s\n", err)
+	} else if len(sysKeys) == 0 {
+		buf += "no system keys found\n"
+	} else {
+		for key, value := range sysKeys {
+			buf += fmt.Sprintf("\t%q: %d\n", key, value)
+		}
+	}
 	buf += "</pre>"
+
 	return buf
 }
 
