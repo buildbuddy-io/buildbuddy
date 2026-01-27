@@ -3,7 +3,6 @@ package image_verification_test
 import (
 	"context"
 	"flag"
-	"log"
 	"os"
 	"path/filepath"
 	"testing"

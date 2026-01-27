@@ -5,6 +5,17 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_test(
     name = "image_verification_test",
     srcs = ["image_verification_test.go"],
+    data = [
+        "@busybox",
+    ],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+    },
+    x_defs = {
+        "busyboxImageRlocationpath": "$(rlocationpath @busybox)",
+    },
     deps = [
         "//enterprise/server/remote_execution/containers/firecracker",
         "//enterprise/server/test/integration/remote_execution/rbetest",
