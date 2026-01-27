@@ -643,14 +643,17 @@ func BenchmarkBatchUpdateBlobs(b *testing.B) {
 
 func TestSpliceBlob(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
+		"cache.split_splice_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
-			Variants:       map[string]any{"true": true, "false": false},
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
 		},
 	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
 
 	ctx := testContext()
@@ -692,14 +695,17 @@ func TestSpliceBlob(t *testing.T) {
 
 func TestSplitBlobRemoteFallback(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
+		"cache.split_splice_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
-			Variants:       map[string]any{"true": true, "false": false},
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
 		},
 	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
 
 	ctx := testContext()
@@ -751,14 +757,17 @@ func TestSplitBlobRemoteFallback(t *testing.T) {
 
 func TestSplitBlobRemoteFallbackWhenBlobExistsLocally(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
+		"cache.split_splice_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
-			Variants:       map[string]any{"true": true, "false": false},
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
 		},
 	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
 
 	ctx := testContext()
@@ -811,14 +820,17 @@ func TestSplitBlobRemoteFallbackWhenBlobExistsLocally(t *testing.T) {
 
 func TestSplitBlobFailsOnLocalInternalError(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
+		"cache.split_splice_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
-			Variants:       map[string]any{"true": true, "false": false},
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
 		},
 	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
 
 	ctx := testContext()

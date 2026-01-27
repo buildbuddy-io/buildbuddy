@@ -718,7 +718,9 @@ func (s *replayableWriteStream) Recv() (*bspb.WriteRequest, error) {
 }
 
 func (s *ByteStreamServerProxy) chunkingEnabled(ctx context.Context) bool {
-	return s.localCache != nil && s.remoteCAS != nil && s.efp != nil && s.efp.Boolean(ctx, "cache.chunking_enabled", false)
+	return s.localCache != nil && s.remoteCAS != nil && s.efp != nil &&
+		s.efp.Boolean(ctx, "cache.chunking_enabled", false) &&
+		s.efp.Boolean(ctx, "cache.split_splice_enabled", false)
 }
 
 type writeChunkedResult struct {

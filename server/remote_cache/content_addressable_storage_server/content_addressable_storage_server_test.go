@@ -842,11 +842,8 @@ func TestGetTreeMissingRoot(t *testing.T) {
 }
 
 func TestSpliceAndSplitBlob(t *testing.T) {
-	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
-
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
+		"cache.split_splice_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -855,10 +852,13 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 			},
 		},
 	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 
-	fp, err := experiments.NewFlagProvider("test")
+	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
 	te.SetExperimentFlagProvider(fp)
 
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
@@ -954,11 +954,8 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 }
 
 func TestSplitBlobNotFound(t *testing.T) {
-	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
-
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
+		"cache.split_splice_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -967,10 +964,13 @@ func TestSplitBlobNotFound(t *testing.T) {
 			},
 		},
 	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 
-	fp, err := experiments.NewFlagProvider("test")
+	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
 	te.SetExperimentFlagProvider(fp)
 
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
@@ -996,11 +996,8 @@ func TestSplitBlobNotFound(t *testing.T) {
 }
 
 func TestSpliceBlobSingleChunk(t *testing.T) {
-	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
-
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
+		"cache.split_splice_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -1009,10 +1006,13 @@ func TestSpliceBlobSingleChunk(t *testing.T) {
 			},
 		},
 	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 
-	fp, err := experiments.NewFlagProvider("test")
+	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
 	te.SetExperimentFlagProvider(fp)
 
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())

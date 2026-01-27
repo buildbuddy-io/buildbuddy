@@ -47,10 +47,6 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const (
-	experimentFlagChunkingEnabled = "cache.chunking_enabled"
-)
-
 var (
 	enableTreeCaching         = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
 	treeCacheSeed             = flag.String("cache.tree_cache_seed", "treecache-09032024", "If set, hash this with digests before caching / reading from tree cache")
@@ -1140,7 +1136,7 @@ func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *r
 		}, nil
 	}
 
-	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, experimentFlagChunkingEnabled, false) {
+	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, "cache.split_splice_enabled", false) {
 		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently enabled")
 	}
 
@@ -1177,7 +1173,7 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 		return nil, err
 	}
 
-	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, experimentFlagChunkingEnabled, false) {
+	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, "cache.split_splice_enabled", false) {
 		return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently enabled")
 	}
 
