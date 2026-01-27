@@ -220,11 +220,11 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 	}
 	nhid, err := hostid.GetHostID(configDir)
 	if err != nil {
-		return nil, fmt.Errorf("fail to get host id from %s", configDir)
+		return nil, fmt.Errorf("fail to get host id from %s: %s", configDir, err)
 	}
 	gossipManager, err := gossip.New(nhid)
 	if err != nil {
-		return nil, fmt.Errorf("fail to create gossip manager with name %q", nhid)
+		return nil, fmt.Errorf("fail to create gossip manager with name %q: %s", nhid, err)
 	}
 	rcConfig.NHID = nhid
 	rcConfig.GossipManager = gossipManager
