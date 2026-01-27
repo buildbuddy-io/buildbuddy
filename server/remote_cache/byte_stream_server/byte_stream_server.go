@@ -610,14 +610,24 @@ func (s *Checksum) Write(p []byte) (int, error) {
 
 func (s *Checksum) Check(r *digest.CASResourceName) error {
 	d := r.GetDigest()
-	computedDigest := hex.EncodeToString(s.hash.Sum(nil))
+	computedHash := hex.EncodeToString(s.hash.Sum(nil))
 	// Use an INVALID_ARGUMENT status error to match the spec.
 	// https://github.com/bazelbuild/bazel/blob/ec36eacc31678ecf4b5c25f9ab7ab166330aff28/third_party/remoteapis/build/bazel/remote/execution/v2/remote_execution.proto#L283-L286
-	if computedDigest != d.GetHash() {
-		return status.InvalidArgumentErrorf("Hash of uploaded bytes %q [%s] did not match provided digest: %q [%s].", computedDigest, s.digestFunction, d.GetHash(), r.GetDigestFunction())
-	}
-	if s.BytesWritten() != d.GetSizeBytes() {
-		return status.InvalidArgumentErrorf("Uploaded bytes length (%d bytes) did not match digest (%d).", s.BytesWritten(), d.GetSizeBytes())
+	//
+	// It's hard to see the hashes matched but file sizes did not,
+	// but we are still supporting SHA1 so this could shield off potential collision attacks.
+	if computedHash != d.GetHash() || s.BytesWritten() != d.GetSizeBytes() {
+		computed := &repb.Digest{
+			Hash:      computedHash,
+			SizeBytes: s.BytesWritten(),
+		}
+		return status.InvalidArgumentErrorf(
+			"Digest of uploaded bytes %q [%s] did not match provided digest: %q [%s].",
+			digest.String(computed),
+			s.digestFunction,
+			digest.String(d),
+			r.GetDigestFunction(),
+		)
 	}
 	return nil
 }
