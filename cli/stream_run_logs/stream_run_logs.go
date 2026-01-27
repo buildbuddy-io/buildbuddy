@@ -52,6 +52,12 @@ func Configure(args []string) ([]string, *Opts, error) {
 		return args, nil, nil
 	}
 
+	// If output is being written to a pipe or file, it likely doesn't need to be streamed to the server and displayed in the UI.
+	// TODO: Handle the case where one of either stderr or stdout is connected to a terminal and the other is not.
+	if !terminal.IsTTY(os.Stdout) || !terminal.IsTTY(os.Stderr) {
+		return args, nil, status.FailedPreconditionError("streaming run logs is only supported when both stdout and stderr are connected to a terminal")
+	}
+
 	apiKey := arg.Get(args, "remote_header=x-buildbuddy-api-key")
 	if apiKey == "" {
 		log.Warnf("To stream run logs, authenticate your request with `bb login` or add an API key to your run with " +
@@ -155,39 +161,19 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 
 	cmd := exec.Command(scriptPath)
 
-	var outputReader io.Reader
-	var cleanup func()
-
-	if terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr) {
-		ptmx, err := pty.Start(cmd)
-		if err != nil {
-			log.Warnf("Failed to start command with PTY: %s", err)
-			return runScriptDirectly(scriptPath)
-		}
-		outputReader = ptmx
-		cleanup = func() { ptmx.Close() }
-	} else {
-		pr, pw := io.Pipe()
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = pw
-		cmd.Stderr = pw
-		outputReader = pr
-		cleanup = func() { pw.Close() }
-
-		if err := cmd.Start(); err != nil {
-			pr.Close()
-			pw.Close()
-			log.Warnf("Failed to start command: %s", err)
-			return runScriptDirectly(scriptPath)
-		}
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		log.Warnf("Failed to start command with PTY: %s", err)
+		return runScriptDirectly(scriptPath)
 	}
+	defer ptmx.Close()
+
 	copyOutputDone := make(chan error)
 	go func() {
-		copyOutputDone <- streamOutput(ctx, bbClient, invocationID, outputReader, stream)
+		copyOutputDone <- streamOutput(ctx, bbClient, invocationID, ptmx, stream)
 	}()
 
 	cmdErr := cmd.Wait()
-	cleanup() // Close PTY/pipe to signal EOF to streamOutput
 	copyErr := <-copyOutputDone
 	if copyErr != nil {
 		log.Warnf("Failed to stream output: %s", copyErr)
