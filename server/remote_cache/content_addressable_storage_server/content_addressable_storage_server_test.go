@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/cas"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -38,6 +39,7 @@ import (
 	"google.golang.org/grpc"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -1047,4 +1049,47 @@ func TestSpliceBlobSingleChunk(t *testing.T) {
 	_, err = casClient.SpliceBlob(ctx, spliceReq)
 	require.Error(t, err)
 	require.True(t, status.IsUnimplementedError(err), "expected UnimplementedError, got: %v", err)
+}
+
+func TestSpliceBlobReadOnlyKey(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	te.SetExperimentFlagProvider(fp)
+
+	readOnlyUser := &testauth.TestUser{
+		UserID:       "US1",
+		GroupID:      "GR1",
+		Capabilities: []cappb.Capability{},
+	}
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{readOnlyUser.UserID: readOnlyUser})
+	te.SetAuthenticator(ta)
+
+	ctx = testauth.WithAuthenticatedUserInfo(ctx, readOnlyUser)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	spliceReq := &repb.SpliceBlobRequest{
+		BlobDigest:     &repb.Digest{Hash: "abc123", SizeBytes: 100},
+		ChunkDigests:   []*repb.Digest{{Hash: "chunk1", SizeBytes: 50}, {Hash: "chunk2", SizeBytes: 50}},
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+
+	_, err = casClient.SpliceBlob(ctx, spliceReq)
+	require.NoError(t, err)
 }
