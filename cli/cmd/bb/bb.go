@@ -31,6 +31,7 @@ import (
 	sidecarmain "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar"
 	helpoptdef "github.com/buildbuddy-io/buildbuddy/cli/help/option_definitions"
 	logoptdef "github.com/buildbuddy-io/buildbuddy/cli/log/option_definitions"
+	streamoptdef "github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs/option_definitions"
 	watchoptdef "github.com/buildbuddy-io/buildbuddy/cli/watcher/option_definitions"
 )
 
@@ -108,6 +109,15 @@ func Configure[T options.Option](bbOpts []T) {
 		}
 		watcher.Configure(true, watcherFlags)
 	}
+
+	streamRunLogs, err := options.AccumulateValues[T](
+		false,
+		seq.Filter(bbOpts, options.NameFilter[T](streamoptdef.StreamRunLogs.Name())),
+	)
+	if err != nil {
+		log.Warnf("Error encountered reading '%s' flag: %s", streamoptdef.StreamRunLogs.Name(), err)
+	}
+	stream_run_logs.Enable(streamRunLogs)
 }
 
 func run() (exitCode int, err error) {
@@ -150,7 +160,7 @@ func run() (exitCode int, err error) {
 		return -1, err
 	} else if helpArgs.GetCommand() == "help" {
 		// Handle help command if applicable.
-		Configure(helpArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name()))
+		Configure(helpArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name(), streamoptdef.StreamRunLogs.Name()))
 		StartupDebug(start)
 		return runHelp(helpArgs)
 	}
@@ -165,7 +175,7 @@ func run() (exitCode int, err error) {
 	if err != nil {
 		return -1, err
 	}
-	Configure(parsedArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name()))
+	Configure(parsedArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name(), streamoptdef.StreamRunLogs.Name()))
 	StartupDebug(start)
 	parsedArgs, err = parser.ResolveArgs(parsedArgs)
 	if err != nil {

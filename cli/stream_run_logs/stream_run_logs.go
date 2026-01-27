@@ -32,6 +32,8 @@ const (
 var (
 	// Size of the buffer to use for streaming logs.
 	UploadBufferSize = 1 << 20 // 1MB
+
+	enabled = false
 )
 
 type Opts struct {
@@ -40,17 +42,13 @@ type Opts struct {
 	ApiKey       string
 }
 
+func Enable(e bool) {
+	enabled = e
+}
+
 // If streaming run logs is requested with --stream_run_logs, parse required args.
 func Configure(args []string) ([]string, *Opts, error) {
-	cmd, cmdIndex := arg.GetCommandAndIndex(args)
-
-	// Parse and remove the --stream_run_logs flag.
-	if !arg.Has(args[:cmdIndex], "stream_run_logs") {
-		return args, nil, nil
-	}
-	_, args = arg.Pop(args, "stream_run_logs")
-
-	if cmd != "run" {
+	if !enabled || arg.GetCommand(args) != "run" {
 		return args, nil, nil
 	}
 
