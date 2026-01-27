@@ -2,6 +2,7 @@ package stream_run_logs_test
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -37,7 +38,7 @@ echo "goodbye world"
 
 	_, webClient, setupOpts := setup(t)
 
-	cmd := append([]string{"--stream_run_logs=1", "run", ":echo", "--invocation_id=" + setupOpts.InvocationID}, getFlags(setupOpts)...)
+	cmd := append([]string{"--stream_run_logs", "run", ":echo", "--invocation_id=" + setupOpts.InvocationID}, getFlags(setupOpts)...)
 	out := runWithCLI(t, ws, cmd)
 
 	// Verify that the script ran as expected.
@@ -165,6 +166,9 @@ func getFlags(opts *stream_run_logs.Opts) []string {
 
 func runWithCLI(t *testing.T, ws string, cmdArgs []string) string {
 	cmd := testcli.BazeliskCommand(t, ws, cmdArgs...)
+	// Sidecar is not configured anyway. Don't try to connect to it (which will eventually timeout),
+	// which will make the test a bit faster.
+	cmd.Env = append(os.Environ(), "BB_DISABLE_SIDECAR=1")
 	b, err := testcli.CombinedOutput(cmd)
 	require.NoErrorf(t, err, "output: %s", string(b))
 	fmt.Print(string(b))
