@@ -36,6 +36,11 @@
   border-radius: 8px;
 }
 
+.terminal.light-terminal .terminal-search-input {
+  background: var(--color-white);
+  color: var(--color-black);
+}
+
 .terminal .terminal-text {
   height: 400px;
   overflow: visible;
