@@ -340,6 +340,7 @@
   padding: 12px;
   border-radius: 8px;
   background-color: var(--color-settings-internal-bg);
+  color: var(--color-text-on-light-bg);
 }
 
 .settings-button-group {

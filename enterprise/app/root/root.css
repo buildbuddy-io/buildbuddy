@@ -13,7 +13,8 @@ body {
 }
 
 .impersonation-toolbar {
-  background-color: #ffc107;
+  background-color: var(--color-banner-impersonation-bg);
+  color: var(--color-text-on-light-bg);
   padding: 4px 32px;
   display: flex;
   flex-wrap: wrap;
@@ -35,6 +36,7 @@ body {
 .impersonation-toolbar .icon {
   width: 16px;
   height: 16px;
+  stroke: var(--color-text-on-light-bg);
 }
 
 .impersonation-toolbar .spacer {
@@ -46,6 +48,11 @@ body {
   padding: 2px 16px;
   gap: 8px;
   flex-shrink: 0;
+  color: var(--color-text-on-light-bg);
+}
+
+.impersonation-toolbar button .icon {
+  stroke: var(--color-text-on-light-bg);
 }
 
 .root {
