@@ -289,6 +289,7 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 	sm.rangeMu.RUnlock()
 
 	if containsKey {
+		sm.log.Infof("write key %q: %q", key, val)
 		return wb.Set(key, val, nil /*ignored write options*/)
 	}
 	return status.OutOfRangeErrorf("%s: [%s] range %s does not contain key %q", constants.RangeNotCurrentMsg, sm.name(), sm.mappedRange, string(key))
@@ -688,6 +689,7 @@ func (sm *Replica) directRead(db ReplicaReader, req *rfpb.DirectReadRequest) (*r
 	if err != nil {
 		return nil, err
 	}
+	sm.log.Infof("direct read rsp: %q", string(buf))
 	rsp := &rfpb.DirectReadResponse{
 		Kv: &rfpb.KV{
 			Key:   req.GetKey(),
@@ -701,7 +703,8 @@ func (sm *Replica) increment(wb pebble.Batch, req *rfpb.IncrementRequest) (*rfpb
 	if len(req.GetKey()) == 0 {
 		return nil, status.InvalidArgumentError("Increment requires a valid key.")
 	}
-	buf, err := pebble.GetCopy(wb, req.GetKey())
+	key := sm.replicaLocalKey(req.GetKey())
+	buf, err := pebble.GetCopy(wb, key)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			return nil, err
@@ -715,7 +718,7 @@ func (sm *Replica) increment(wb pebble.Batch, req *rfpb.IncrementRequest) (*rfpb
 	}
 	val += req.GetDelta()
 
-	if err := wb.Set(req.GetKey(), uint64ToBytes(val), nil /*ignored write options*/); err != nil {
+	if err := wb.Set(key, uint64ToBytes(val), nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
 	return &rfpb.IncrementResponse{
