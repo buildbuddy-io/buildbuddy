@@ -398,3 +398,25 @@ func TestGetES256PublicKeys_BothKeys(t *testing.T) {
 	keys := claims.GetES256PublicKeys()
 	require.Len(t, keys, 2)
 }
+
+func TestParseClaims_ES256(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
+	require.NoError(t, err)
+	require.NotEmpty(t, tokenString)
+
+	keyProvider := func(ctx context.Context) ([]string, error) {
+		return []string{keyPair.PublicKeyPEM}, nil
+	}
+	parser, err := claims.NewClaimsParser(keyProvider)
+	require.NoError(t, err)
+
+	parsedClaims, err := parser.Parse(t.Context(), tokenString)
+	require.NoError(t, err)
+	require.Equal(t, "US123", parsedClaims.UserID)
+	require.Equal(t, "GR456", parsedClaims.GroupID)
+}

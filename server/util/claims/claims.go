@@ -232,7 +232,14 @@ func parseClaims(ctx context.Context, token string, keyProvider KeyProvider) (*C
 	claims := &Claims{}
 	for _, key := range keys {
 		_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
-			return []byte(key), nil
+			switch token.Method {
+			case jwt.SigningMethodHS256:
+				return []byte(key), nil
+			case jwt.SigningMethodES256:
+				return jwt.ParseECPublicKeyFromPEM([]byte(key))
+			default:
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Method.Alg())
+			}
 		})
 		if err == nil {
 			return claims, nil
