@@ -182,7 +182,8 @@
 }
 
 .api-keys .no-api-keys-message {
-  background: #e1f5fe;
+  background: var(--color-banner-info-bg);
+  color: var(--color-banner-info-text);
   padding: 16px;
   border-radius: 8px;
 }
