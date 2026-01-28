@@ -301,7 +301,10 @@ func TestAuthenticateRequestsES256WhenEnabled(t *testing.T) {
 	fooJwt := validJwt(t, "foo")
 	fakeAuth.Reset().setNextJwt(t, "", fooJwt)
 	ctx := contextWithApiKey(t, "foo")
-	authenticator.AuthenticatedGRPCContext(ctx)
+	ctx = authenticator.AuthenticatedGRPCContext(ctx)
+	user, err := authenticator.AuthenticatedUser(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo", user.GetUserID())
 
 	// Verify the request included ES256 signing method
 	req := fakeAuth.getLastAuthRequest()
