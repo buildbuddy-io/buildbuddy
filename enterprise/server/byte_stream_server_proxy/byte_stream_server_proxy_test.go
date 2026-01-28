@@ -15,12 +15,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
@@ -28,11 +30,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
@@ -41,8 +45,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -159,6 +165,22 @@ func waitContains(ctx context.Context, env *testenv.TestEnv, rn *rspb.ResourceNa
 
 func testContext() context.Context {
 	return metadata.NewOutgoingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, "fakeheader"))
+}
+
+func TestContextWithLocalUsageTrackingDisabled(t *testing.T) {
+	flags.Set(t, "grpc_client_origin_header", interfaces.ClientIdentityInternalOrigin)
+	prevServerName := usageutil.ServerName()
+	usageutil.SetServerName(interfaces.ClientIdentityCacheProxy)
+	t.Cleanup(func() {
+		usageutil.SetServerName(prevServerName)
+	})
+
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("existing-header", "existing-value"))
+	updatedCtx := contextWithLocalUsageTrackingDisabled(ctx)
+
+	skipVals := metadata.ValueFromIncomingContext(updatedCtx, usageutil.SkipUsageTrackingHeaderName)
+	require.Equal(t, []string{usageutil.SkipUsageTrackingEnabledValue}, skipVals)
+	require.Equal(t, []string{"existing-value"}, metadata.ValueFromIncomingContext(updatedCtx, "existing-header"))
 }
 
 func TestRead(t *testing.T) {
@@ -790,10 +812,14 @@ func TestReadChunked(t *testing.T) {
 		},
 	})
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	flags.Set(t, "cache.detailed_stats_enabled", true)
 
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	require.NoError(t, err)
+	proxyEnv.SetMetricsCollector(mc)
 
 	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
@@ -829,6 +855,14 @@ func TestReadChunked(t *testing.T) {
 	t.Cleanup(func() { proxyConn.Close() })
 	proxy := bspb.NewByteStreamClient(proxyConn)
 
+	iid := "ab5e4e31-7e6f-427a-b968-b188945469cf"
+	ctx, err = bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: iid,
+		ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
+		ActionMnemonic:   "GoCompile",
+		TargetId:         "//foo:bar",
+	})
+	require.NoError(t, err)
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	require.NoError(t, err)
 
@@ -899,6 +933,48 @@ func TestReadChunked(t *testing.T) {
 	require.Equal(t, float64(len(chunkDigests)), readChunksTotalAfter-readChunksTotalBefore, "total chunks = number of chunks in manifest")
 	require.Equal(t, float64(0), readChunksLocalAfter-readChunksLocalBefore, "first read: no chunks in local cache yet")
 	require.Equal(t, float64(len(chunkDigests)), readChunksRemoteAfter-readChunksRemoteBefore, "first read: all chunks fetched from remote")
+
+	downloadStream, err = proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadCASRN.DownloadString()})
+	require.NoError(t, err)
+
+	reconstructedData = reconstructedData[:0]
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		reconstructedData = append(reconstructedData, res.Data...)
+	}
+
+	require.Equal(t, originalData, reconstructedData)
+
+	readRequestsFinal := testutil.ToFloat64(metrics.ByteStreamChunkedReadRequests.With(readLabels))
+	readBlobBytesFinal := testutil.ToFloat64(metrics.ByteStreamChunkedReadBlobBytes.With(readLabels))
+	readChunksTotalFinal := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksTotal.With(readLabels))
+	readChunksLocalFinal := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksLocal.With(readLabels))
+	readChunksRemoteFinal := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksRemote.With(readLabels))
+
+	require.Equal(t, float64(2), readRequestsFinal-readRequestsBefore, "two chunked reads should be recorded")
+	require.Equal(t, float64(2*len(originalData)), readBlobBytesFinal-readBlobBytesBefore, "blob bytes should reflect both reads")
+	require.Equal(t, float64(2*len(chunkDigests)), readChunksTotalFinal-readChunksTotalBefore, "all chunks should be read on each request")
+	require.Equal(t, float64(len(chunkDigests)), readChunksLocalFinal-readChunksLocalAfter, "second read: all chunks served from local cache")
+	require.Equal(t, float64(0), readChunksRemoteFinal-readChunksRemoteAfter, "second read: no chunks fetched from remote")
+
+	sc := hit_tracker.ScoreCard(ctx, proxyEnv, iid)
+	var localChunkResults []*capb.ScoreCard_Result
+	for _, result := range sc.GetResults() {
+		if result.GetParentDigest().GetHash() == blobDigest.GetHash() {
+			localChunkResults = append(localChunkResults, result)
+		}
+	}
+	require.Len(t, localChunkResults, len(chunkDigests))
+	for _, result := range localChunkResults {
+		require.Equal(t, rspb.CacheType_CAS, result.GetCacheType())
+		require.Equal(t, capb.RequestType_READ, result.GetRequestType())
+		require.Equal(t, int32(codes.OK), result.GetStatus().GetCode())
+		require.Equal(t, int32(len(chunkDigests)), result.GetChunkCount())
+	}
 }
 
 func TestWriteChunked(t *testing.T) {

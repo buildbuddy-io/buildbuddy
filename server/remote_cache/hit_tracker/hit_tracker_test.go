@@ -22,11 +22,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 )
 
 func TestHitTracker_RecordsDetailedStats(t *testing.T) {
@@ -74,6 +76,65 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 	assert.Equal(t, int64(0), stats.GetCasCacheUploads())
 	assert.Equal(t, int64(0), stats.GetTotalUploadSizeBytes())
 	assert.Equal(t, int64(0), stats.GetTotalUploadTransferredSizeBytes())
+}
+
+func TestChunkInfo_AnnotatesScoreCardResult(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	flags.Set(t, "cache.detailed_stats_enabled", true)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	require.NoError(t, err)
+	env.SetMetricsCollector(mc)
+	ut := testusage.NewTracker()
+	env.SetUsageTracker(ut)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+
+	ctx := claims.AuthContext(context.Background(), testauth.User("US1", "GR1"))
+	iid := "1268870f-9cc8-4fef-a62e-f04638014f4a"
+	rmd := &repb.RequestMetadata{
+		ToolInvocationId: iid,
+		ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
+		ActionMnemonic:   "GoCompile",
+		TargetId:         "//foo:bar",
+	}
+	parentDigest := &repb.Digest{
+		Hash:      "c9c111006b30ffe6ce309fd64c44da651bffa068d530c7b1898698186b4afe2b",
+		SizeBytes: 1234,
+	}
+	chunkDigest := &repb.Digest{
+		Hash:      "1111111111111111111111111111111111111111111111111111111111111111",
+		SizeBytes: 700,
+	}
+
+	chunkCtx := hit_tracker.ContextWithChunkInfo(ctx, hit_tracker.ChunkInfo{
+		ParentDigest: parentDigest,
+		ChunkIndex:   1,
+		ChunkCount:   3,
+	})
+	ht := env.GetHitTrackerFactory().NewCASHitTracker(chunkCtx, rmd)
+	timer := ht.TrackDownload(chunkDigest)
+	require.NoError(t, timer.CloseWithBytesTransferred(chunkDigest.GetSizeBytes(), chunkDigest.GetSizeBytes(), repb.Compressor_IDENTITY, "test"))
+
+	assert.ElementsMatch(t, []testusage.Total{
+		{
+			GroupID: "GR1",
+			Labels:  tables.UsageLabels{},
+			Counts: tables.UsageCounts{
+				CASCacheHits:           1,
+				TotalDownloadSizeBytes: chunkDigest.GetSizeBytes(),
+			},
+		},
+	}, ut.Totals())
+
+	sc := hit_tracker.ScoreCard(ctx, env, iid)
+	require.Len(t, sc.GetResults(), 1)
+	result := sc.GetResults()[0]
+	assert.Equal(t, rspb.CacheType_CAS, result.GetCacheType())
+	assert.Equal(t, capb.RequestType_READ, result.GetRequestType())
+	assert.Equal(t, int32(codes.OK), result.GetStatus().GetCode())
+	assert.Equal(t, chunkDigest.GetHash(), result.GetDigest().GetHash())
+	assert.Equal(t, parentDigest.GetHash(), result.GetParentDigest().GetHash())
+	assert.Equal(t, int32(1), result.GetChunkIndex())
+	assert.Equal(t, int32(3), result.GetChunkCount())
 }
 
 func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {

@@ -161,6 +161,23 @@ type hitTracker struct {
 	executedActionMetadata *repb.ExecutedActionMetadata
 }
 
+// ChunkInfo holds metadata about a CAS entry that is a chunk of a larger blob.
+// Set on the context via ContextWithChunkInfo when tracking per-chunk reads or
+// writes from the cache proxy.
+type ChunkInfo struct {
+	ParentDigest *repb.Digest
+	ChunkIndex   int32
+	ChunkCount   int32
+}
+
+type chunkInfoKey struct{}
+
+// ContextWithChunkInfo returns a context that causes hit tracker scorecard
+// entries to be annotated with the given chunk metadata.
+func ContextWithChunkInfo(ctx context.Context, info ChunkInfo) context.Context {
+	return context.WithValue(ctx, chunkInfoKey{}, info)
+}
+
 func isTryingToDisableTracking(ctx context.Context) bool {
 	vals := metadata.ValueFromIncomingContext(ctx, usageutil.SkipUsageTrackingHeaderName)
 	if len(vals) == 0 {
@@ -472,6 +489,11 @@ func (h *hitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		if originInvocationID := extractOriginInvocationID(h.executedActionMetadata); originInvocationID != "" {
 			result.OriginInvocationId = originInvocationID
 		}
+	}
+	if info, ok := h.ctx.Value(chunkInfoKey{}).(ChunkInfo); ok {
+		result.ParentDigest = info.ParentDigest
+		result.ChunkIndex = info.ChunkIndex
+		result.ChunkCount = info.ChunkCount
 	}
 	// ScoreCard_Result.MarshalVT is slower, so we use MarshalOld for now.
 	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3018

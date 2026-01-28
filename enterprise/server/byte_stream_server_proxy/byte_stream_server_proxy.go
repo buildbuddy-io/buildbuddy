@@ -17,7 +17,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
@@ -25,8 +27,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -45,6 +49,7 @@ type ByteStreamServerProxy struct {
 	localCache         interfaces.Cache
 	remoteCAS          repb.ContentAddressableStorageClient
 	compressBufPool    *bytebufferpool.VariableSizePool
+	hitTrackerFactory  interfaces.HitTrackerFactory
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -78,6 +83,7 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		localCache:         env.GetCache(),
 		remoteCAS:          env.GetContentAddressableStorageClient(),
 		compressBufPool:    bytebufferpool.VariableSize(int(chunking.MaxChunkSizeBytes())),
+		hitTrackerFactory:  env.GetHitTrackerFactory(),
 	}, nil
 }
 
@@ -177,8 +183,12 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 		if s.shouldReadChunked(ctx, req, rn) {
 			chunkMetrics, chunkedErr := s.readChunked(ctx, req, stream, rn)
 			if chunkedErr == nil {
+				cacheStatus := metrics.MissStatusLabel
+				if chunkMetrics.chunksRemote == 0 {
+					cacheStatus = metrics.HitStatusLabel
+				}
 				return readMetrics{
-					cacheStatus:  metrics.MissStatusLabel,
+					cacheStatus:  cacheStatus,
 					compressor:   rn.GetCompressor().String(),
 					chunked:      true,
 					blobBytes:    rn.GetDigest().GetSizeBytes(),
@@ -217,6 +227,9 @@ type chunkedReadMetrics struct {
 	chunksRemote int
 }
 
+// readChunked reads chunks from local cache and fills misses from remote.
+// Per-chunk local reads have usage tracking disabled at the ByteStream server
+// level; the proxy tracks them explicitly with chunk metadata via trackLocalChunk.
 func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream, rn *digest.CASResourceName) (chunkedReadMetrics, error) {
 	var m chunkedReadMetrics
 	if s.localCache == nil || s.remoteCAS == nil {
@@ -231,20 +244,24 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 
 	instanceName := rn.GetInstanceName()
 	digestFunction := rn.GetDigestFunction()
+	chunkReadCtx := contextWithLocalUsageTrackingDisabled(ctx)
 
 	splitReq := &repb.SplitBlobRequest{
 		BlobDigest:     rn.GetDigest(),
 		InstanceName:   instanceName,
 		DigestFunction: digestFunction,
 	}
+
 	splitResp, err := s.remoteCAS.SplitBlob(ctx, splitReq)
 	if err != nil {
 		return m, err
 	}
-	for _, chunkDigest := range splitResp.GetChunkDigests() {
+	chunkDigests := splitResp.GetChunkDigests()
+	chunkCount := int32(len(chunkDigests))
+	for i, chunkDigest := range chunkDigests {
 		chunkRN := digest.NewCASResourceName(chunkDigest, instanceName, digestFunction)
 		chunkRN.SetCompressor(rn.GetCompressor())
-		if err := s.local.ReadCASResource(ctx, chunkRN, 0, 0, stream); status.IsNotFoundError(err) {
+		if err := s.local.ReadCASResource(chunkReadCtx, chunkRN, 0, 0, stream); status.IsNotFoundError(err) {
 			if err := s.readRemoteWriteLocal(&bspb.ReadRequest{ResourceName: chunkRN.DownloadString()}, stream); err != nil {
 				return m, err
 			}
@@ -253,9 +270,74 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 			return m, err
 		} else {
 			m.chunksLocal++
+			// Track each locally-served chunk with parent blob metadata.
+			// Remote chunks are tracked by the remote server.
+			s.trackLocalChunk(ctx, chunkDigest, rn.GetDigest(), int32(i), chunkCount)
 		}
 	}
 	return m, nil
+}
+
+// contextWithLocalUsageTrackingDisabled returns a context with usage tracking
+// disabled for local cache reads. This prevents the ByteStream server from
+// emitting per-chunk scorecard entries; instead the proxy calls trackLocalChunk
+// directly so it can annotate each entry with parent blob metadata.
+//
+// DisableUsageTracking sets the skip header on outgoing gRPC metadata. We also
+// copy it to incoming metadata so that direct (non-gRPC) local cache calls
+// respect it. DisableUsageTracking is a no-op if this server is not configured
+// as a cache proxy; in that case we return ctx unchanged.
+func contextWithLocalUsageTrackingDisabled(ctx context.Context) context.Context {
+	ctx = usageutil.DisableUsageTracking(ctx)
+	// Check whether DisableUsageTracking actually set the header (it's a no-op
+	// when not running as a cache proxy).
+	outgoing, ok := metadata.FromOutgoingContext(ctx)
+	if !ok || len(outgoing.Get(usageutil.SkipUsageTrackingHeaderName)) == 0 {
+		return ctx
+	}
+	incoming, _ := metadata.FromIncomingContext(ctx)
+	incoming = incoming.Copy()
+	incoming.Set(usageutil.SkipUsageTrackingHeaderName, usageutil.SkipUsageTrackingEnabledValue)
+	return metadata.NewIncomingContext(ctx, incoming)
+}
+
+// trackLocalChunk records a CAS hit for a single chunk that was served from
+// local cache. The scorecard entry is annotated with the parent blob digest and
+// chunk position so the UI can group chunks by their parent blob.
+//
+// Per-chunk local reads have usage tracking disabled at the ByteStream server
+// level (via contextWithLocalUsageTrackingDisabled), so the proxy calls this
+// explicitly for each locally-served chunk. Remote chunk reads are tracked by
+// the remote server without parent metadata.
+func (s *ByteStreamServerProxy) trackLocalChunk(ctx context.Context, chunkDigest, blobDigest *repb.Digest, chunkIndex, chunkCount int32) {
+	if s.hitTrackerFactory == nil {
+		return
+	}
+	rmd := bazel_request.GetRequestMetadata(ctx)
+	chunkCtx := hit_tracker.ContextWithChunkInfo(ctx, hit_tracker.ChunkInfo{
+		ParentDigest: blobDigest,
+		ChunkIndex:   chunkIndex,
+		ChunkCount:   chunkCount,
+	})
+	ht := s.hitTrackerFactory.NewCASHitTracker(chunkCtx, rmd)
+	timer := ht.TrackDownload(chunkDigest)
+	if err := timer.CloseWithBytesTransferred(chunkDigest.GetSizeBytes(), chunkDigest.GetSizeBytes(), repb.Compressor_IDENTITY, "byte_stream_server_proxy"); err != nil {
+		log.CtxWarningf(ctx, "Failed to track local chunk read: %s", err)
+	}
+}
+
+// trackChunkedBlobWrite records a CAS upload for a blob that was written via
+// the chunked write path.
+func (s *ByteStreamServerProxy) trackChunkedBlobWrite(ctx context.Context, blobDigest *repb.Digest) {
+	if s.hitTrackerFactory == nil {
+		return
+	}
+	rmd := bazel_request.GetRequestMetadata(ctx)
+	ht := s.hitTrackerFactory.NewCASHitTracker(ctx, rmd)
+	timer := ht.TrackUpload(blobDigest)
+	if err := timer.CloseWithBytesTransferred(blobDigest.GetSizeBytes(), blobDigest.GetSizeBytes(), repb.Compressor_IDENTITY, "byte_stream_server_proxy"); err != nil {
+		log.CtxWarningf(ctx, "Failed to track chunked blob write: %s", err)
+	}
 }
 
 func (s *ByteStreamServerProxy) readRemoteOnly(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
@@ -859,6 +941,8 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	if _, err := s.remoteCAS.SpliceBlob(ctx, manifest.ToSpliceBlobRequest()); err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("splice blob on remote: %s", err)
 	}
+
+	s.trackChunkedBlobWrite(ctx, rn.GetDigest())
 
 	return result, stream.SendAndClose(&bspb.WriteResponse{CommittedSize: bytesReceived})
 }

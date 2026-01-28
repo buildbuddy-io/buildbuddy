@@ -225,6 +225,18 @@ message ScoreCard {
 
     // The invocation that originally uploaded this result to the action cache.
     string origin_invocation_id = 17;
+
+    // If this result is for a chunk of a larger chunked blob, the digest of
+    // the parent blob that this chunk belongs to.
+    build.bazel.remote.execution.v2.Digest parent_digest = 18;
+
+    // If this result is for a chunk, the 0-indexed position of this chunk
+    // within the parent blob's chunk list.
+    int32 chunk_index = 19;
+
+    // If this result is for a chunk, the total number of chunks in the parent
+    // blob's chunk list.
+    int32 chunk_count = 20;
   }
 
   // In the interest of saving space, we only show cache misses.

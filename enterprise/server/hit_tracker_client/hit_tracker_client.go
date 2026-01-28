@@ -71,6 +71,7 @@ func (h *NoOpHitTrackerFactory) NewRemoteCASHitTracker(ctx context.Context, requ
 	return &NoOpHitTracker{}
 }
 
+
 func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, conn grpc.ClientConnInterface) *HitTrackerFactory {
 	factory := HitTrackerFactory{
 		authenticator:        env.GetAuthenticator(),
