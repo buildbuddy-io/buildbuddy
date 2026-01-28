@@ -31,7 +31,7 @@ import (
 
 var (
 	checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
-	recordOrigin                   = flag.Bool("cache.record_action_result_origin", false, "If true, the origin of the action result will be added to it's auxiliary metadata.")
+	recordOrigin                   = flag.Bool("cache.record_action_result_origin", true, "If true, the origin of the action result will be added to it's auxiliary metadata.")
 
 	restrictedPrefixes = []string{interfaces.OCIImageInstanceNamePrefix}
 )
