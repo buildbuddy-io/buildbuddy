@@ -518,11 +518,10 @@ func (s *ByteStreamServer) supportsCompressor(compression repb.Compressor_Value)
 // non-decreasing.
 func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
 	// If the data has not been committed to the cache, then just tell the
-	//client that we don't have anything and let them retry it.
-	return &bspb.QueryWriteStatusResponse{
-		CommittedSize: 0,
-		Complete:      false,
-	}, nil
+	// client to retry from the beginning in a way that avoids future calls
+	// to this method in the case of Bazel.
+	// https://github.com/bazelbuild/bazel/pull/28235
+	return nil, status.UnimplementedError("not implemented")
 }
 
 func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interfaces.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
