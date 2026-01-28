@@ -6,6 +6,7 @@ go_test(
     deps = ["@com_github_stretchr_testify//require"],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
-        "Pool": "firecracker-arm64-test",
+        "Pool": "firecracker-arm64-test-gcp",
+        "dockerNetwork": "bridge",
     },
 )
