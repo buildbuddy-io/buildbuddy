@@ -136,6 +136,11 @@ body {
     width: 100%;
   }
 
+  .dark .sidebar.sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--color-shelf-border);
+  }
+
   .sidebar .sidebar-body {
     flex-wrap: wrap;
     flex-direction: row;

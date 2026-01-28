@@ -21,7 +21,7 @@
 .trend-chart {
   margin-bottom: 32px;
   padding-top: 32px;
-  border-top: 1px solid var(--color-gray-200);
+  border-top: 1px solid var(--color-trends-divider);
 }
 
 .trend-chart.zoomable {

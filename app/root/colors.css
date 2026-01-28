@@ -423,6 +423,7 @@
   --color-trace-scrollbar-thumb: var(--color-gray-400);
   --color-trace-zoom-factor-bg: var(--color-yellow-highlight);
   --color-tree-node-size-text: var(--color-black);
+  --color-trends-divider: var(--color-gray-200);
   --color-trends-hovercard-bg: var(--color-overlay-light-solid);
   --color-heatmap-axis: var(--color-gray-700-alt);
   --color-chart-axis: var(--color-gray-700-alt);
@@ -632,7 +633,7 @@
   --color-settings-tab-subtitle: var(--color-text-tertiary);
   --color-shadow-lg: var(--color-shadow-50);
   --color-shadow-sm: var(--color-shadow-30);
-  --color-shelf-bg: var(--color-gray-900-alt4);
+  --color-shelf-bg: var(--color-bg-primary);
   --color-shelf-border: var(--color-gray-900-alt);
   --color-shelf-details: var(--color-text-secondary);
   --color-shelf-subtitle: var(--color-text-primary);
@@ -675,6 +676,7 @@
   --color-trace-scrollbar-thumb: var(--color-gray-800);
   --color-trace-zoom-factor-bg: var(--color-amber-800-alt);
   --color-tree-node-size-text: var(--color-gray-200);
+  --color-trends-divider: var(--color-gray-900-alt);
   --color-trends-hovercard-bg: var(--color-gray-800);
   --color-heatmap-axis: var(--color-gray-400);
   --color-chart-axis: var(--color-gray-400);
