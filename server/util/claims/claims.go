@@ -227,6 +227,9 @@ func parseClaims(ctx context.Context, token string, keyProvider KeyProvider) (*C
 	if err != nil {
 		return nil, err
 	}
+	if len(keys) == 0 {
+		return nil, status.InternalError("no keys available for parsing claims")
+	}
 
 	var lastErr error
 	claims := &Claims{}
