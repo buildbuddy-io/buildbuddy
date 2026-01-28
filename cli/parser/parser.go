@@ -28,9 +28,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	helpoptdef "github.com/buildbuddy-io/buildbuddy/cli/help/option_definitions"
 	logoptdef "github.com/buildbuddy-io/buildbuddy/cli/log/option_definitions"
+	streamrunlogsoptdef "github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs/option_definitions"
 	watchoptdef "github.com/buildbuddy-io/buildbuddy/cli/watcher/option_definitions"
 
 	bfpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_flags"
@@ -46,6 +48,8 @@ var (
 		// Allow specifying --watcher_flags to forward args to the watcher.
 		// Mostly useful for debugging, e.g. --watcher_flags='--verbose'
 		watchoptdef.WatcherFlags.Name(): watchoptdef.WatcherFlags,
+		// Set to stream run logs to the server.
+		streamrunlogsoptdef.StreamRunLogs.Name(): streamrunlogsoptdef.StreamRunLogs,
 	}
 
 	// make this a var so the test can replace it.
@@ -981,6 +985,49 @@ func GetFirstTargetPattern(args []string) string {
 		}
 		if !strings.HasPrefix(s, "-") {
 			return s
+		}
+	}
+	return ""
+}
+
+// Returns whether the passed CLI command option is set.
+// These options are expected *after* the Bazel subcommand:
+// Ex. `bazel run --stream_run_logs ...`
+//
+// Also removes the option from the parsed args, so CLI-specific options aren't passed to Bazel.
+func IsCLICommandOptionSet(parsedArgs *parsed.OrderedArgs, optionName string) (bool, error) {
+	isSet, err := options.AccumulateValues[*parsed.IndexedOption](
+		false,
+		parsedArgs.RemoveCommandOptions(optionName),
+	)
+	if err != nil {
+		return false, status.WrapErrorf(err, "failed to accumulate option %s", optionName)
+	}
+	return isSet, nil
+}
+
+// GetBazelCommandOptionVal returns the value of the requested Bazel command option.
+// These options are expected *after* the Bazel subcommand:
+// Ex. `bazel run --bes_backend=XXX ...`
+func GetBazelCommandOptionVal(parsedArgs *parsed.OrderedArgs, optionName string) (string, error) {
+	val, err := options.AccumulateValues[*parsed.IndexedOption](
+		"",
+		parsedArgs.GetCommandOptionsByName(optionName),
+	)
+	if err != nil {
+		return "", status.WrapErrorf(err, "failed to accumulate %s option", optionName)
+	}
+	return val, nil
+}
+
+// GetRemoteHeaderVal returns the value of the remote header with the given key.
+// For example, `GetRemoteHeaderVal(parsedArgs, "x-buildbuddy-api-key")` will return the
+// value of `--remote_header=x-buildbuddy-api-key=XXX`.
+// Returns an empty string if the header is not set.
+func GetRemoteHeaderVal(parsedArgs *parsed.OrderedArgs, headerKey string) string {
+	for _, opt := range parsedArgs.GetCommandOptionsByName("remote_header") {
+		if val, ok := strings.CutPrefix(opt.GetValue(), headerKey+"="); ok {
+			return val
 		}
 	}
 	return ""
