@@ -27,7 +27,7 @@ import (
 const (
 	// Even if not enough data has been written to flush a chunk, flush at least once every interval to ensure
 	// the UI is relatively up-to-date.
-	flushChunkTimeout = 15 * time.Second
+	flushChunkTimeout = 3 * time.Second
 )
 
 var (
