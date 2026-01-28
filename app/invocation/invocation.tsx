@@ -582,7 +582,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
     const isRemoteRunnerInvocation =
       this.state.model.isWorkflowInvocation() || this.state.model.isHostedBazelInvocation();
     const fetchBuildLogs = () => {
-      rpcService.downloadLog(this.props.invocationId, Number(this.state.model?.invocation.attempt ?? 0));
+      rpcService.downloadBuildLog(this.props.invocationId, Number(this.state.model?.invocation.attempt ?? 0));
+    };
+    const fetchRunLogs = () => {
+      rpcService.downloadRunLog(this.props.invocationId);
     };
 
     const suggestions = getSuggestions({
@@ -681,8 +684,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
                 value={this.getRunLogs()}
                 loading={this.areRunLogsLoading()}
                 expanded={activeTab === "log"}
-                // TODO: Implement full logs fetcher for run logs.
-                fullLogsFetcher={() => {}}
+                fullLogsFetcher={fetchRunLogs}
               />
             )}
 
