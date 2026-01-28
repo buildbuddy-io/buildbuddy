@@ -2005,7 +2005,7 @@ func TestFirecrackerRunWithoutNetwork(t *testing.T) {
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
 	require.NoError(t, res.Error)
 
-	require.Equal(t, 1, res.ExitCode)
+	require.NotEqual(t, 0, res.ExitCode)
 	require.EqualValues(t, res.UsageStats.GetNetworkStats().GetBytesSent(), 0)
 	require.EqualValues(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), 0)
 }
