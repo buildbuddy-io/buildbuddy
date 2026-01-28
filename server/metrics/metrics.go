@@ -537,6 +537,13 @@ var (
 		Help:      "How long it took to lookup an invocation before posting to the webhook, in **microseconds**.",
 	})
 
+	WebhookInvocationPayloadSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "webhook_invocation_payload_size_bytes",
+		Help:      "Size in bytes of the payload posted to invocation webhook endpoints.",
+	})
+
 	WebhookNotifyWorkers = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
