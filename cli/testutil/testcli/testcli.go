@@ -190,7 +190,7 @@ func (t *Terminal) Run(cmd *exec.Cmd) {
 	cmd.Stdout = t.File
 	cmd.Stderr = t.File
 	err := cmd.Run()
-	require.NoError(t.t, err)
+	require.NoError(t.t, err, t.Render())
 }
 
 // Raw returns the raw terminal content.

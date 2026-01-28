@@ -9,8 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs/option_definitions"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -48,8 +49,14 @@ func Enable(e bool) {
 
 // If streaming run logs is requested with --stream_run_logs, parse required args.
 func Configure(args []string) ([]string, *Opts, error) {
-	if !enabled || arg.GetCommand(args) != "run" {
-		return args, nil, nil
+	parsedArgs, err := parser.ParseArgs(args)
+	if err != nil {
+		return args, nil, status.WrapErrorf(err, "failed to parse args")
+	}
+
+	enabled, err := parser.IsCLICommandOptionSet(parsedArgs, option_definitions.StreamRunLogs.Name())
+	if err != nil || !enabled {
+		return args, nil, err
 	}
 
 	// If output is being written to a pipe or file, it likely doesn't need to be streamed to the server and displayed in the UI.
@@ -58,31 +65,39 @@ func Configure(args []string) ([]string, *Opts, error) {
 		return args, nil, status.FailedPreconditionError("streaming run logs is only supported when both stdout and stderr are connected to a terminal")
 	}
 
-	apiKey := arg.Get(args, "remote_header=x-buildbuddy-api-key")
+	apiKey := parser.GetRemoteHeaderVal(parsedArgs, "x-buildbuddy-api-key")
 	if apiKey == "" {
 		log.Warnf("To stream run logs, authenticate your request with `bb login` or add an API key to your run with " +
 			"`--remote_header=x-buildbuddy-api-key=XXX`")
 		return args, nil, status.UnauthenticatedError("unauthenticated request")
 	}
 
-	besBackend := arg.Get(args, "bes_backend")
-	if besBackend == "" {
+	besBackend, err := parser.GetBazelCommandOptionVal(parsedArgs, "bes_backend")
+	if err != nil {
+		return args, nil, status.WrapErrorf(err, "failed to get bes_backend option")
+	} else if besBackend == "" {
 		return args, nil, status.FailedPreconditionError("bes_backend is required for streaming run logs")
 	}
 
 	// In order to stream run logs to the same invocation URL as the build, we must pre-generate the
 	// invocation ID to pass it to `Execute`.
-	iid := arg.Get(args, "invocation_id")
+	iid, _ := parser.GetBazelCommandOptionVal(parsedArgs, "invocation_id")
 	if iid == "" {
 		invocationUUID, err := guuid.NewRandom()
 		if err != nil {
 			return args, nil, status.InternalErrorf("failed to generate invocation ID: %s", err)
 		}
 		iid = invocationUUID.String()
-		args = arg.Append(args, "--invocation_id="+iid)
+		opt, err := parser.MakeCommandOption("invocation_id", &iid)
+		if err != nil {
+			return args, nil, status.WrapErrorf(err, "failed to make invocation ID option")
+		}
+		parsedArgs.Append(opt)
 	}
 
-	return args, &Opts{
+	updatedArgs := parsedArgs.Format()
+
+	return updatedArgs, &Opts{
 		BesBackend:   besBackend,
 		InvocationID: iid,
 		ApiKey:       apiKey,
@@ -134,6 +149,7 @@ func Execute(runScriptPath string, opts Opts) (int, error) {
 
 // runScriptDirectly runs the script without streaming logs. It's used as a fallback if streaming fails.
 func runScriptDirectly(scriptPath string) (int, error) {
+	log.Warnf("Falling back to running script without run log streaming")
 	cmd := exec.Command(scriptPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

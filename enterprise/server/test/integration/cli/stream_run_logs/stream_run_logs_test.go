@@ -3,7 +3,6 @@ package stream_run_logs_test
 import (
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs"
@@ -38,7 +37,7 @@ echo "goodbye world"
 
 	_, webClient, setupOpts := setup(t)
 
-	cmd := append([]string{"--stream_run_logs", "run", ":echo", "--invocation_id=" + setupOpts.InvocationID}, getFlags(setupOpts)...)
+	cmd := append([]string{"run", ":echo", "--stream_run_logs", "--invocation_id=" + setupOpts.InvocationID}, getFlags(setupOpts)...)
 	out := runWithCLI(t, ws, cmd)
 
 	// Verify that the script ran as expected.
@@ -169,11 +168,10 @@ func runWithCLI(t *testing.T, ws string, cmdArgs []string) string {
 	// Sidecar is not configured anyway. Don't try to connect to it (which will eventually timeout),
 	// which will make the test a bit faster.
 	cmd.Env = append(os.Environ(), "BB_DISABLE_SIDECAR=1")
-	b, err := testcli.CombinedOutput(cmd)
-	require.NoErrorf(t, err, "output: %s", string(b))
-	fmt.Print(string(b))
-	output := strings.ReplaceAll(string(b), "\r\n", "\n")
-	return output
+	term := testcli.PTY(t)
+	term.Run(cmd)
+	fmt.Print(term.Render())
+	return term.Render()
 }
 
 // Rather than running a full build, mock the build by creating an invocation to make the test faster.
