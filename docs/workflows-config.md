@@ -170,13 +170,14 @@ branch, as described in [Triggering merge group checks with third-party CI provi
 Example `buildbuddy.yaml` file:
 
 ```yaml title="buildbuddy.yaml"
-- action: Test
-  triggers:
-    push:
-      # Run when a merge queue branch is pushed or the main branch is
-      # pushed.
-      branches: ["main", "gh-readonly-queue/*"]
-  # ...
+actions:
+  - name: Test
+    triggers:
+      push:
+        # Run when a merge queue branch is pushed or the main branch is
+        # pushed.
+        branches: ["main", "gh-readonly-queue/*"]
+    # ...
 ```
 
 ## Branch pattern matching
@@ -228,6 +229,38 @@ The supported values for `container_image` are:
 - `"ubuntu-20.04"`
 - `"ubuntu-22.04"`
 - `"ubuntu-24.04"`
+
+These images are aliases for BuildBuddy's official Ubuntu-based CI images.
+
+### Installing custom software
+
+If BuildBuddy's official Ubuntu images do not contain the software that
+you need, you can install custom software using `apt-get` at runtime.
+
+Because workflow VMs are snapshotted and reused between runs, you can
+speed up workflows by skipping `apt-get install` if the package is already
+installed.
+
+Example:
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: Test
+    steps:
+      # Ensure apt packages are installed ("libexample0" in this example)
+      # Note: workflow VMs are snapshotted and reused, so normally,
+      # the apt-get install step only needs to run once.
+      - run: |
+          if ! [ -e /usr/lib/libexample.so.0 ] ; do
+            # libexample0 is not installed; install it:
+            sudo apt-get update && sudo apt-get install -y libexample0
+          fi
+      - run: |
+          bazel test //some/target/that/needs:libexample
+```
+
+If you have requirements that prevent you from using one of the official
+Ubuntu images, please [contact us](https://buildbuddy.io/contact).
 
 ## Linux resource configuration
 
