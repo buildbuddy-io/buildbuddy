@@ -54,7 +54,8 @@ echo "goodbye world"
 	require.NoError(t, err)
 
 	runLogs := string(logRsp.Buffer)
-	require.Equal(t, "hello world\ngoodbye world\n", runLogs)
+	require.Contains(t, runLogs, "hello world\ngoodbye world\n")
+	require.Contains(t, runLogs, "command exited with code 0")
 
 	invRsp := &inpb.GetInvocationResponse{}
 	err = webClient.RPC("GetInvocation", &inpb.GetInvocationRequest{
@@ -66,6 +67,48 @@ echo "goodbye world"
 	require.NoError(t, err)
 	require.Equal(t, 1, len(invRsp.Invocation))
 	require.Equal(t, inspb.OverallStatus_SUCCESS, invRsp.Invocation[0].GetRunStatus())
+}
+
+func TestFailingCommand(t *testing.T) {
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"echo.sh": `#!/bin/bash
+echo "bad script!"
+exit 5
+`,
+	})
+
+	app, webClient, setupOpts := setup(t)
+	mockBuild(t, app, webClient.RequestContext.GetGroupId(), setupOpts.InvocationID)
+
+	script := ws + "/echo.sh"
+	exitCode, err := stream_run_logs.Execute(script, *setupOpts)
+	require.NoError(t, err)
+	require.Equal(t, 5, exitCode)
+
+	// Verify that the run logs look as expected.
+	logRsp := &elpb.GetEventLogChunkResponse{}
+	err = webClient.RPC("GetEventLogChunk", &elpb.GetEventLogChunkRequest{
+		RequestContext: webClient.RequestContext,
+		InvocationId:   setupOpts.InvocationID,
+		Type:           elpb.LogType_RUN_LOG,
+	}, logRsp)
+	require.NoError(t, err)
+
+	runLogs := string(logRsp.Buffer)
+	require.Contains(t, runLogs, "bad script!")
+	require.Contains(t, runLogs, "command exited with code 5")
+
+	invRsp := &inpb.GetInvocationResponse{}
+	err = webClient.RPC("GetInvocation", &inpb.GetInvocationRequest{
+		RequestContext: webClient.RequestContext,
+		Lookup: &inpb.InvocationLookup{
+			InvocationId: setupOpts.InvocationID,
+		},
+	}, invRsp)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(invRsp.Invocation))
+	require.Equal(t, inspb.OverallStatus_FAILURE, invRsp.Invocation[0].GetRunStatus())
 }
 
 func TestFlushingMultipleChunks(t *testing.T) {
@@ -102,7 +145,8 @@ echo "hello world"
 	require.NoError(t, err)
 
 	runLogs := string(logRsp.Buffer)
-	require.Equal(t, "hello world\n", runLogs)
+	require.Contains(t, runLogs, "hello world")
+	require.Contains(t, runLogs, "command exited with code 0")
 
 	invRsp := &inpb.GetInvocationResponse{}
 	err = webClient.RPC("GetInvocation", &inpb.GetInvocationRequest{
