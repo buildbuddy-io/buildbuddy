@@ -6,8 +6,7 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-
-	fastcdc "github.com/jotfs/fastcdc-go/v2020"
+	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
 )
 
 type WriteFunc func([]byte) error
@@ -48,20 +47,15 @@ func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker
 		pw:   pw,
 		done: make(chan struct{}),
 	}
-	cdcOpts := fastcdc.Options{
-		AverageSize: averageSize,
 
-		// Use the library default for MinSize and MaxSize. We explictly specified
-		// the default here to avoid accident change of the values by the library.
-		MinSize: averageSize / 4,
-		MaxSize: averageSize * 4,
-
-		// We want to keep the rolling hash the same to ensure that given the same
-		// file, the library will chunk the file in the same way.
-		Seed: 0,
-	}
-
-	chunker, err := fastcdc.NewChunker(pr, cdcOpts)
+	chunker, err := fastcdc.NewChunker(
+		pr,
+		averageSize,
+		fastcdc.WithMinSize(averageSize/4),
+		fastcdc.WithMaxSize(averageSize*4),
+		fastcdc.WithSeed(0),
+		fastcdc.WithNormalization(2),
+	)
 	if err != nil {
 		return nil, err
 	}

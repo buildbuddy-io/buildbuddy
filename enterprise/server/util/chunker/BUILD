@@ -8,7 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/chunker",
     deps = [
         "//server/util/status",
-        "@com_github_jotfs_fastcdc_go//v2020:fastcdc-go",
+        "@com_github_buildbuddy_io_fastcdc2020//fastcdc",
     ],
 )
 
