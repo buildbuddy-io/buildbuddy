@@ -821,6 +821,9 @@ func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, erro
 	return d, buf, nil
 }
 
+// lowerFunctionName returns the name for the digest function as a lower case
+// string. It exists just for performance reasons, to avoid the map lookup in
+// df.String() and the call to strings.ToLower.
 func lowerFunctionName(df repb.DigestFunction_Value) string {
 	switch df {
 	case repb.DigestFunction_BLAKE3:
