@@ -354,3 +354,32 @@ func PreserveNewlinesSplitFunc(data []byte, atEOF bool) (advance int, token []by
 	// Request more data
 	return 0, nil, nil
 }
+
+type MultiReadCloser struct {
+	io.Reader
+	closers []io.Closer
+}
+
+// NewMultiReadCloser returns a new io.ReadCloser that reads from the
+// readers in order. It closes all of the readers in order when
+// Close is called.
+func NewMultiReadCloser(rcs ...io.ReadCloser) io.ReadCloser {
+	rs := make([]io.Reader, len(rcs))
+	cs := make([]io.Closer, len(rcs))
+	for i, rc := range rcs {
+		rs[i] = rc
+		cs[i] = rc
+	}
+	return &MultiReadCloser{
+		Reader:  io.MultiReader(rs...),
+		closers: cs,
+	}
+}
+
+func (m *MultiReadCloser) Close() error {
+	errs := make([]error, len(m.closers))
+	for i, c := range m.closers {
+		errs[i] = c.Close()
+	}
+	return errors.Join(errs...)
+}

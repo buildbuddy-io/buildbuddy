@@ -8,8 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream"
@@ -22,6 +24,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -581,4 +585,78 @@ func newUUID(t *testing.T) string {
 	uuid, err := guuid.NewRandom()
 	require.NoError(t, err)
 	return uuid.String()
+}
+
+func TestReadChunked(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+		"cache.split_splice_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	flags.Set(t, "cache.max_chunk_size_bytes", 100)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runByteStreamServer(ctx, t, te)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	chunk1 := []byte("This is the first chunk of data. ")
+	chunk2 := []byte("This is the second chunk of data. ")
+	chunk3 := []byte("This is the third and final chunk.")
+	fullBlob := append(append(chunk1, chunk2...), chunk3...)
+
+	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	chunk3Digest, err := digest.Compute(bytes.NewReader(chunk3), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	chunk1RN := digest.NewCASResourceName(chunk1Digest, "", repb.DigestFunction_SHA256)
+	chunk2RN := digest.NewCASResourceName(chunk2Digest, "", repb.DigestFunction_SHA256)
+	chunk3RN := digest.NewCASResourceName(chunk3Digest, "", repb.DigestFunction_SHA256)
+
+	require.NoError(t, te.GetCache().Set(ctx, chunk1RN.ToProto(), chunk1))
+	require.NoError(t, te.GetCache().Set(ctx, chunk2RN.ToProto(), chunk2))
+	require.NoError(t, te.GetCache().Set(ctx, chunk3RN.ToProto(), chunk3))
+
+	manifest := &chunked_manifest.ChunkedManifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1Digest, chunk2Digest, chunk3Digest},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, manifest.Store(ctx, te.GetCache()))
+
+	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_SHA256)
+	var buf bytes.Buffer
+	err = cachetools.GetBlob(ctx, bsClient, blobRN, &buf)
+	require.NoError(t, err)
+	require.Equal(t, fullBlob, buf.Bytes())
 }

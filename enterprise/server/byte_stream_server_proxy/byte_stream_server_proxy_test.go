@@ -930,7 +930,7 @@ func TestWriteChunked(t *testing.T) {
 	})
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 
-	flags.Set(t, "cache_proxy.max_chunk_size_bytes", 1024*1024)
+	flags.Set(t, "cache.max_chunk_size_bytes", 1024*1024)
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
@@ -1097,7 +1097,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 
 	// Set threshold higher than our test blob size to trigger fallback
-	flags.Set(t, "cache_proxy.max_chunk_size_bytes", 10*1024*1024)
+	flags.Set(t, "cache.max_chunk_size_bytes", 10*1024*1024)
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
@@ -1233,7 +1233,7 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 	})
 	require.NoError(b, openfeature.SetNamedProviderAndWait(b.Name(), testProvider))
 
-	flags.Set(b, "cache_proxy.max_chunk_size_bytes", 1024*1024)
+	flags.Set(b, "cache.max_chunk_size_bytes", 1024*1024)
 	flags.Set(b, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
@@ -1427,7 +1427,7 @@ func BenchmarkReadChunkedFromRemote(b *testing.B) {
 	})
 	require.NoError(b, openfeature.SetNamedProviderAndWait(b.Name(), testProvider))
 
-	flags.Set(b, "cache_proxy.max_chunk_size_bytes", 1024*1024)
+	flags.Set(b, "cache.max_chunk_size_bytes", 1024*1024)
 	flags.Set(b, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()

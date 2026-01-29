@@ -69,6 +69,14 @@ func (cm *ChunkedManifest) ToSpliceBlobRequest() *repb.SpliceBlobRequest {
 	}
 }
 
+func (cm *ChunkedManifest) ChunkResourceNames() []*rspb.ResourceName {
+	rns := make([]*rspb.ResourceName, 0, len(cm.ChunkDigests))
+	for _, chunkDigest := range cm.ChunkDigests {
+		rns = append(rns, digest.NewCASResourceName(chunkDigest, cm.InstanceName, cm.DigestFunction).ToProto())
+	}
+	return rns
+}
+
 // Store saves the chunked manifest to the cache as an AC entry, keyed by the
 // blob digest. It validates that all chunks exist and their combined hash
 // matches the blob digest.
@@ -81,12 +89,7 @@ func (cm *ChunkedManifest) Store(ctx context.Context, cache interfaces.Cache) er
 	// avoiding the cost of reading all chunk data for verification.
 	g, goCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		rns := make([]*rspb.ResourceName, 0, len(cm.ChunkDigests))
-		for _, chunkDigest := range cm.ChunkDigests {
-			rns = append(rns, digest.NewCASResourceName(chunkDigest, cm.InstanceName, cm.DigestFunction).ToProto())
-		}
-
-		missing, err := cache.FindMissing(goCtx, rns)
+		missing, err := cache.FindMissing(goCtx, cm.ChunkResourceNames())
 		if err != nil {
 			return err
 		}
