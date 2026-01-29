@@ -398,3 +398,59 @@ func TestGetES256PublicKeys_BothKeys(t *testing.T) {
 	keys := claims.GetES256PublicKeys()
 	require.Len(t, keys, 2)
 }
+
+func TestParseClaims_ES256(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
+	require.NoError(t, err)
+	require.NotEmpty(t, tokenString)
+
+	keyProvider := func(ctx context.Context) ([]string, error) {
+		return []string{keyPair.PublicKeyPEM}, nil
+	}
+	parser, err := claims.NewClaimsParser(keyProvider)
+	require.NoError(t, err)
+
+	parsedClaims, err := parser.Parse(t.Context(), tokenString)
+	require.NoError(t, err)
+	require.Equal(t, "US123", parsedClaims.UserID)
+	require.Equal(t, "GR456", parsedClaims.GroupID)
+}
+
+func TestParseClaims_ES256_InvalidJWT(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	keyProvider := func(ctx context.Context) ([]string, error) {
+		return []string{keyPair.PublicKeyPEM}, nil
+	}
+	parser, err := claims.NewClaimsParser(keyProvider)
+	require.NoError(t, err)
+
+	_, err = parser.Parse(t.Context(), "not-a-valid-jwt")
+	require.Error(t, err)
+
+	_, err = parser.Parse(t.Context(), "header.payload")
+	require.Error(t, err)
+}
+
+func TestParseClaims_ES256_RejectsHS256(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	keyProvider := func(ctx context.Context) ([]string, error) {
+		return []string{keyPair.PublicKeyPEM}, nil
+	}
+	parser, err := claims.NewClaimsParser(keyProvider)
+	require.NoError(t, err)
+
+	// Create an HS256-signed JWT
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
+	hs256Token, err := token.SignedString([]byte("some-secret-key"))
+	require.NoError(t, err)
+
+	// Parsing should fail because the parser is configured with ES256 public keys
+	_, err = parser.Parse(t.Context(), hs256Token)
+	require.Error(t, err)
+}
