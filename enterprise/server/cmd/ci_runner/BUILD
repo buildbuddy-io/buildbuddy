@@ -27,6 +27,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/bazel",
         "//server/util/bazelisk",
+        "//server/util/bb",
         "//server/util/disk",
         "//server/util/flag",
         "//server/util/git",
