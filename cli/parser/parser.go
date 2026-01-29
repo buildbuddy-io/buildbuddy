@@ -1027,8 +1027,8 @@ func GetBazelCommandOptionVal(parsedArgs *parsed.OrderedArgs, optionName string)
 func GetRemoteHeaderVal(parsedArgs *parsed.OrderedArgs, headerKey string) string {
 	remoteHeaders := parsedArgs.GetCommandOptionsByName("remote_header")
 	// Iterate in reverse to get the last value set.
-	for i := len(remoteHeaders) - 1; i >= 0; i-- {
-		if val, ok := strings.CutPrefix(remoteHeaders[i].GetValue(), headerKey+"="); ok {
+	for _, remoteHeaderOpt := range slices.Backward(remoteHeaders) {
+		if val, ok := strings.CutPrefix(remoteHeaderOpt.GetValue(), headerKey+"="); ok {
 			return val
 		}
 	}
