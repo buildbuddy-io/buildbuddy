@@ -20,7 +20,6 @@ go_test(
         "//proto:invocation_status_go_proto",
         "//server/tables",
         "//server/testutil/app",
-        "//server/testutil/testbazel",
         "//server/testutil/testfs",
         "//server/util/perms",
         "@com_github_google_uuid//:uuid",
