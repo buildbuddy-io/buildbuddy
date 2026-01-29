@@ -12,7 +12,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/proto",
         "//server/util/status",
-        "@com_github_jotfs_fastcdc_go//v2020:fastcdc-go",
+        "@com_github_buildbuddy_io_fastcdc2020//fastcdc",
         "@org_golang_x_sync//errgroup",
     ],
 )

@@ -30,8 +30,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
 	"github.com/google/uuid"
-	"github.com/jotfs/fastcdc-go"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
@@ -874,14 +874,7 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 	require.Greater(t, len(fileData), 0)
 
 	avgChunkSize := 64 << 10 // 64KB
-	cdcOpts := fastcdc.Options{
-		AverageSize: avgChunkSize,
-		MinSize:     avgChunkSize / 4,
-		MaxSize:     avgChunkSize * 4,
-		Seed:        0,
-	}
-
-	chunker, err := fastcdc.NewChunker(bytes.NewReader(fileData), cdcOpts)
+	chunker, err := fastcdc.NewChunker(bytes.NewReader(fileData), avgChunkSize)
 	require.NoError(t, err)
 
 	var chunks [][]byte
@@ -903,7 +896,7 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 		chunkDigests = append(chunkDigests, chunkDigest)
 	}
 
-	require.Equal(t, len(chunks), 11)
+	require.Equal(t, len(chunks), 10)
 	batchReq := &repb.BatchUpdateBlobsRequest{
 		Requests:       make([]*repb.BatchUpdateBlobsRequest_Request, len(chunks)),
 		DigestFunction: repb.DigestFunction_BLAKE3,
