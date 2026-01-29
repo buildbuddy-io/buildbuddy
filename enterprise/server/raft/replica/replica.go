@@ -701,7 +701,8 @@ func (sm *Replica) increment(wb pebble.Batch, req *rfpb.IncrementRequest) (*rfpb
 	if len(req.GetKey()) == 0 {
 		return nil, status.InvalidArgumentError("Increment requires a valid key.")
 	}
-	buf, err := pebble.GetCopy(wb, req.GetKey())
+	key := sm.replicaLocalKey(req.GetKey())
+	buf, err := pebble.GetCopy(wb, key)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			return nil, err
@@ -715,7 +716,7 @@ func (sm *Replica) increment(wb pebble.Batch, req *rfpb.IncrementRequest) (*rfpb
 	}
 	val += req.GetDelta()
 
-	if err := wb.Set(req.GetKey(), uint64ToBytes(val), nil /*ignored write options*/); err != nil {
+	if err := wb.Set(key, uint64ToBytes(val), nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
 	return &rfpb.IncrementResponse{
