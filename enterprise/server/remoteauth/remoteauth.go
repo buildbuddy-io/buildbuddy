@@ -92,7 +92,7 @@ func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
 	if useES256SignedJWTs(ctx, kp.env.GetExperimentFlagProvider()) {
 		es256Keys, err := kp.getES256PublicKeys(ctx)
 		if err != nil {
-			log.Warningf("Error fetching ES256 public keys: %v", err)
+			log.CtxWarningf(ctx, "Error fetching ES256 public keys: %v", err)
 			return []string{}, status.WrapError(err, "Error fetching JWT keys")
 		}
 		keys = append(keys, es256Keys...)
