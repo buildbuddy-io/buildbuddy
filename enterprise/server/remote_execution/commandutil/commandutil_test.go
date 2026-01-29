@@ -87,6 +87,14 @@ func TestLimitStdOutErrWriter(t *testing.T) {
 			wantOut: "hello world ext",
 		},
 		{
+			name:    "zero-length write",
+			limit:   5,
+			writes:  []string{"hello", ""},
+			wantN:   []int{5, 0},
+			wantErr: []bool{false, false},
+			wantOut: "hello",
+		},
+		{
 			name:    "at limit",
 			limit:   5,
 			writes:  []string{"hello", " world"},

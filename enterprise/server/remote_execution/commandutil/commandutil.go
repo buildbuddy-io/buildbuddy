@@ -64,7 +64,7 @@ type limitWriter struct {
 }
 
 func (lw *limitWriter) Write(p []byte) (int, error) {
-	if lw.limit == 0 {
+	if len(p) == 0 || lw.limit == 0 {
 		return lw.w.Write(p)
 	}
 	pSize := uint64(len(p))
