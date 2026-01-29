@@ -228,15 +228,25 @@ type CASResourceName struct {
 	ResourceName
 }
 
+// CASDownloadString is like UploadString, but without forcing the caller to
+// clone the ResourceName proto by calling ResourceNameFromProto first. Call it
+// carefully, since it panics if the cache type is not CAS.
+func CASDownloadString(r *rspb.ResourceName) string {
+	if r.GetCacheType() != rspb.CacheType_CAS {
+		panic(fmt.Errorf("CASDownloadString called for resource name with the wrong cache type: %v", r))
+	}
+	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
+	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
+	if isOldStyleDigestFunction(r.GetDigestFunction()) {
+		return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+	}
+	return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/" + lowerFunctionName(r.GetDigestFunction()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+}
+
 // DownloadString returns a string representing the resource name for download
 // purposes.
 func (r *CASResourceName) DownloadString() string {
-	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
-	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
-	if isOldStyleDigestFunction(r.rn.DigestFunction) {
-		return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
-	}
-	return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/" + strings.ToLower(r.rn.DigestFunction.String()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+	return CASDownloadString(r.rn)
 }
 
 // NewUploadString returns a new string representing the resource name for
@@ -248,22 +258,33 @@ func (r *CASResourceName) NewUploadString() string {
 	if isOldStyleDigestFunction(r.rn.DigestFunction) {
 		return instanceName + "/uploads/" + u + "/" + blobTypeSegment(r.GetCompressor()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
 	}
-	return instanceName + "/uploads/" + u + "/" + blobTypeSegment(r.GetCompressor()) + "/" + strings.ToLower(r.rn.DigestFunction.String()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+	return instanceName + "/uploads/" + u + "/" + blobTypeSegment(r.GetCompressor()) + "/" + lowerFunctionName(r.rn.DigestFunction) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
 }
 
 type ACResourceName struct {
 	ResourceName
 }
 
+// ActionCacheString is like ACResourceName.ActionCacheString, but without
+// forcing the caller to clone the ResourceName proto by calling
+// ResourceNameFromProto first. Call it carefully, since it panics if the cache
+// type is not AC.
+func ActionCacheString(r *rspb.ResourceName) string {
+	if r.GetCacheType() != rspb.CacheType_AC {
+		panic(fmt.Errorf("ActionCacheString called for resource name with the wrong cache type: %v", r))
+	}
+	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
+	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
+	if isOldStyleDigestFunction(r.GetDigestFunction()) {
+		return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+	}
+	return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + lowerFunctionName(r.GetDigestFunction()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+}
+
 // ActionCacheString returns a string representing the resource name for in
 // the action cache. This is BuildBuddy specific.
 func (r *ACResourceName) ActionCacheString() string {
-	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
-	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
-	if isOldStyleDigestFunction(r.rn.DigestFunction) {
-		return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
-	}
-	return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + strings.ToLower(r.rn.DigestFunction.String()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+	return ActionCacheString(r.rn)
 }
 
 func CacheTypeToPrefix(cacheType rspb.CacheType) string {
@@ -798,6 +819,23 @@ func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, erro
 		return nil, nil, err
 	}
 	return d, buf, nil
+}
+
+func lowerFunctionName(df repb.DigestFunction_Value) string {
+	switch df {
+	case repb.DigestFunction_BLAKE3:
+		return "blake3"
+	case repb.DigestFunction_SHA1:
+		return "sha1"
+	case repb.DigestFunction_SHA256:
+		return "sha256"
+	case repb.DigestFunction_SHA384:
+		return "sha384"
+	case repb.DigestFunction_SHA512:
+		return "sha512"
+	default:
+		return strings.ToLower(df.String())
+	}
 }
 
 // ParseFunction parses a digest function name to a proto.

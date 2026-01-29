@@ -384,21 +384,17 @@ func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key str
 		// These are OK to put in the lookaside cache because even
 		// though they are technically AC entries, they are based on CAS
 		// content that does not change.
-		if rn, err := digest.ACResourceNameFromProto(r); err == nil {
-			partition, err := c.local.Partition(ctx, rn.GetInstanceName())
-			if err != nil {
-				return "", false
-			}
-			return partition + "/" + rn.ActionCacheString(), true
+		partition, err := c.local.Partition(ctx, r.GetInstanceName())
+		if err != nil {
+			return "", false
 		}
+		return partition + "/" + digest.ActionCacheString(r), true
 	} else if r.GetCacheType() == rspb.CacheType_CAS {
-		if rn, err := digest.CASResourceNameFromProto(r); err == nil {
-			partition, err := c.local.Partition(ctx, rn.GetInstanceName())
-			if err != nil {
-				return "", false
-			}
-			return partition + "/" + rn.DownloadString(), true
+		partition, err := c.local.Partition(ctx, r.GetInstanceName())
+		if err != nil {
+			return "", false
 		}
+		return partition + "/" + digest.CASDownloadString(r), true
 	}
 	return "", false
 }
