@@ -164,7 +164,7 @@ func getFlags(opts *stream_run_logs.Opts) []string {
 }
 
 func runWithCLI(t *testing.T, ws string, cmdArgs []string) string {
-	cmd := testcli.BazeliskCommand(t, ws, cmdArgs...)
+	cmd := testcli.BazelCommand(t, ws, cmdArgs...)
 	// Sidecar is not configured anyway. Don't try to connect to it (which will eventually timeout),
 	// which will make the test a bit faster.
 	cmd.Env = append(os.Environ(), "BB_DISABLE_SIDECAR=1")
