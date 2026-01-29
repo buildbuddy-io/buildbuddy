@@ -3,6 +3,7 @@ package stream_run_logs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -195,13 +196,22 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 		log.Warnf("Failed to stream output: %s", copyErr)
 	}
 
+	exitCode := 0
 	if cmdErr != nil {
 		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
-			return exitErr.ExitCode(), nil
+			exitCode = exitErr.ExitCode()
+		} else {
+			return 1, status.InternalErrorf("failed to run %s: %s", scriptPath, cmdErr)
 		}
-		return 1, status.InternalErrorf("failed to run %s: %s", scriptPath, cmdErr)
 	}
-	return 0, nil
+
+	// Send a final log message with timestamp and exit code.
+	exitMsg := fmt.Sprintf("\n%s (command exited with code %d)\n", time.Now().UTC().Format("2006-01-02 15:04:05.000 MST"), exitCode)
+	if err := uploadLogs(ctx, bbClient, invocationID, stream, []byte(exitMsg)); err != nil {
+		log.Warnf("Failed to upload exit code log: %s", err)
+	}
+
+	return exitCode, nil
 }
 
 // streamOutput streams output to both stdout and uploads them to the BuildBuddy server.
