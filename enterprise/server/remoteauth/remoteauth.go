@@ -93,7 +93,7 @@ func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
 		es256Keys, err := kp.getES256PublicKeys(ctx)
 		if err != nil {
 			log.CtxWarningf(ctx, "Error fetching ES256 public keys: %v", err)
-			return []string{}, status.WrapError(err, "Error fetching JWT keys")
+			return nil, status.WrapError(err, "Error fetching JWT keys")
 		}
 		keys = append(keys, es256Keys...)
 	}
