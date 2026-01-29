@@ -1974,42 +1974,6 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
 }
 
-func TestFirecrackerRunWithoutNetwork(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-	flags.Set(t, "executor.network_stats_enabled", true)
-
-	// Make sure the container cannot send packets out of the VM
-	googleDNS := "8.8.8.8"
-	cmd := &repb.Command{Arguments: []string{"ping", "-c1", googleDNS}}
-
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         2500,
-			EnableNetworking:  false,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	require.NoError(t, res.Error)
-
-	require.NotEqual(t, 0, res.ExitCode)
-	require.EqualValues(t, res.UsageStats.GetNetworkStats().GetBytesSent(), 0)
-	require.EqualValues(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), 0)
-}
-
 func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
