@@ -289,7 +289,6 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 	sm.rangeMu.RUnlock()
 
 	if containsKey {
-		sm.log.Infof("write key %q: %q", key, val)
 		return wb.Set(key, val, nil /*ignored write options*/)
 	}
 	return status.OutOfRangeErrorf("%s: [%s] range %s does not contain key %q", constants.RangeNotCurrentMsg, sm.name(), sm.mappedRange, string(key))
@@ -689,7 +688,6 @@ func (sm *Replica) directRead(db ReplicaReader, req *rfpb.DirectReadRequest) (*r
 	if err != nil {
 		return nil, err
 	}
-	sm.log.Infof("direct read rsp: %q", string(buf))
 	rsp := &rfpb.DirectReadResponse{
 		Kv: &rfpb.KV{
 			Key:   req.GetKey(),
