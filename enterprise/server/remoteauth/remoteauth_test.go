@@ -10,12 +10,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/pkg/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
@@ -143,6 +145,14 @@ func validJwt(t *testing.T, uid string) string {
 	require.True(t, ok)
 	require.NotEqual(t, "", jwt)
 	return jwt
+}
+
+func validES256Jwt(t *testing.T, uid string) string {
+	c := &claims.Claims{UserID: uid}
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
+	require.NoError(t, err)
+	require.NotEqual(t, "", tokenString)
+	return tokenString
 }
 
 func TestAuthenticatedGRPCContext(t *testing.T) {
@@ -294,19 +304,22 @@ func TestUseES256SignedJWTs(t *testing.T) {
 }
 
 func TestAuthenticateRequestsES256WhenEnabled(t *testing.T) {
-	// Enable ES256 flag
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
 	flags.Set(t, "auth.remote.use_es256_jwts", true)
 	authenticator, fakeAuth := setup(t)
 
-	fooJwt := validJwt(t, "foo")
-	fakeAuth.Reset().setNextJwt(t, "", fooJwt)
+	fooJwt := validES256Jwt(t, "foo")
+	fakeAuth.setPublicKeys([]string{keyPair.PublicKeyPEM})
+	fakeAuth.setNextJwt(t, "", fooJwt)
 	ctx := contextWithApiKey(t, "foo")
 	ctx = authenticator.AuthenticatedGRPCContext(ctx)
 	user, err := authenticator.AuthenticatedUser(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "foo", user.GetUserID())
 
-	// Verify the request included ES256 signing method
 	req := fakeAuth.getLastAuthRequest()
 	require.NotNil(t, req)
 	require.Equal(t, authpb.JWTSigningMethod_ES256, req.GetJwtSigningMethod())
