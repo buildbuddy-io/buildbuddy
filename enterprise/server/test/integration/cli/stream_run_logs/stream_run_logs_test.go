@@ -213,7 +213,8 @@ echo "Should never get here"
 	}, 60*time.Second, 100*time.Millisecond, "timed out waiting for script to start")
 
 	// Send SIGTERM to the bb CLI process, which should forward it to the child.
-	cmd.Process.Signal(syscall.SIGTERM)
+	err = cmd.Process.Signal(syscall.SIGTERM)
+	require.NoError(t, err)
 	cmd.Wait()
 	require.NotContains(t, term.Raw(), "Should never get here")
 

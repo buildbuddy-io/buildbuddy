@@ -216,7 +216,6 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 
 	signalReceived := false
 	stopSignalHandler := make(chan struct{})
-	defer close(stopSignalHandler)
 	go func() {
 		for {
 			select {
@@ -239,6 +238,7 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 	}()
 
 	cmdErr := cmd.Wait()
+	close(stopSignalHandler)
 	copyErr := <-copyOutputDone
 	if copyErr != nil {
 		log.Warnf("Failed to stream output: %s", copyErr)
