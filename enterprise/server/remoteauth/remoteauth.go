@@ -88,21 +88,20 @@ type keyProvider struct {
 }
 
 func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
-	keys := []string{}
 	if useES256SignedJWTs(ctx, kp.env.GetExperimentFlagProvider()) {
 		es256Keys, err := kp.getES256PublicKeys(ctx)
 		if err != nil {
 			log.CtxWarningf(ctx, "Error fetching ES256 public keys: %v", err)
 			return nil, status.WrapError(err, "Error fetching JWT keys")
 		}
-		keys = append(keys, es256Keys...)
+		return es256Keys, nil
 	}
 	defaultKeys, err := claims.DefaultKeyProvider(ctx)
 	if err != nil {
+		log.CtxWarningf(ctx, "Error fetching default JWT keys: %v", err)
 		return nil, status.WrapError(err, "Error fetching JWT keys")
 	}
-	keys = append(keys, defaultKeys...)
-	return keys, nil
+	return defaultKeys, nil
 }
 
 // TODO(iain): cache these keys (w support for invalidating).
@@ -121,7 +120,7 @@ func (kp *keyProvider) fetchES256PublicKeys(ctx context.Context) ([]string, erro
 		keys[i] = key.GetKey()
 	}
 	if len(keys) == 0 {
-		log.Warning("GetPublicKeys returned OK with no keys")
+		log.CtxWarningf(ctx, "GetPublicKeys returned OK with no keys")
 	}
 	return keys, nil
 }

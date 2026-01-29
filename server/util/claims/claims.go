@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -228,6 +229,7 @@ func parseClaims(ctx context.Context, token string, keyProvider KeyProvider) (*C
 		return nil, err
 	}
 	if len(keys) == 0 {
+		alert.CtxUnexpectedEvent(ctx, "No JWT keys", "No keys available for parsing claims")
 		return nil, status.InternalError("no keys available for parsing claims")
 	}
 
