@@ -874,16 +874,11 @@ func TestReadChunked(t *testing.T) {
 		metrics.StatusLabel:     "OK",
 		metrics.CompressionType: "IDENTITY",
 	}
-	manifestLabels := prometheus.Labels{
-		metrics.StatusLabel:                "OK",
-		metrics.ChunkedManifestSourceLabel: "remote_hit",
-	}
 	readRequestsBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadRequests.With(readLabels))
 	readBlobBytesBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadBlobBytes.With(readLabels))
 	readChunksTotalBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksTotal.With(readLabels))
 	readChunksLocalBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksLocal.With(readLabels))
 	readChunksRemoteBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksRemote.With(readLabels))
-	manifestLookupsBefore := testutil.ToFloat64(metrics.ByteStreamChunkedManifestLookups.With(manifestLabels))
 
 	downloadCASRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
 	downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadCASRN.DownloadString()})
@@ -906,14 +901,12 @@ func TestReadChunked(t *testing.T) {
 	readChunksTotalAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksTotal.With(readLabels))
 	readChunksLocalAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksLocal.With(readLabels))
 	readChunksRemoteAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksRemote.With(readLabels))
-	manifestLookupsAfter := testutil.ToFloat64(metrics.ByteStreamChunkedManifestLookups.With(manifestLabels))
 
 	require.Equal(t, float64(1), readRequestsAfter-readRequestsBefore, "one chunked read request for the blob")
 	require.Equal(t, float64(len(originalData)), readBlobBytesAfter-readBlobBytesBefore, "blob bytes = original uncompressed size")
 	require.Equal(t, float64(len(chunkDigests)), readChunksTotalAfter-readChunksTotalBefore, "total chunks = number of chunks in manifest")
 	require.Equal(t, float64(0), readChunksLocalAfter-readChunksLocalBefore, "first read: no chunks in local cache yet")
 	require.Equal(t, float64(len(chunkDigests)), readChunksRemoteAfter-readChunksRemoteBefore, "first read: all chunks fetched from remote")
-	require.Equal(t, float64(1), manifestLookupsAfter-manifestLookupsBefore, "manifest fetched from remote (not in local cache)")
 }
 
 func TestWriteChunked(t *testing.T) {

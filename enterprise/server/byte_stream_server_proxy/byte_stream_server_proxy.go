@@ -235,29 +235,16 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 	instanceName := rn.GetInstanceName()
 	digestFunction := rn.GetDigestFunction()
 
-	copyManifestToLocal := false
-	manifest, err := chunked_manifest.Load(ctx, s.localCache, rn.GetDigest(), instanceName, digestFunction)
-	if status.IsNotFoundError(err) || status.IsUnimplementedError(err) {
-		splitReq := &repb.SplitBlobRequest{
-			BlobDigest:     rn.GetDigest(),
-			InstanceName:   instanceName,
-			DigestFunction: digestFunction,
-		}
-		splitResp, splitErr := s.remoteCAS.SplitBlob(ctx, splitReq)
-		if splitErr != nil {
-			s.recordManifestLookup(splitErr, "remote_error")
-			return m, splitErr
-		}
-		s.recordManifestLookup(nil, "remote_hit")
-		copyManifestToLocal = true
-		manifest = chunked_manifest.FromSplitResponse(splitReq, splitResp)
-	} else if err != nil {
-		return m, err
-	} else {
-		s.recordManifestLookup(nil, "local_hit")
+	splitReq := &repb.SplitBlobRequest{
+		BlobDigest:     rn.GetDigest(),
+		InstanceName:   instanceName,
+		DigestFunction: digestFunction,
 	}
-
-	for _, chunkDigest := range manifest.ChunkDigests {
+	splitResp, err := s.remoteCAS.SplitBlob(ctx, splitReq)
+	if err != nil {
+		return m, err
+	}
+	for _, chunkDigest := range splitResp.GetChunkDigests() {
 		chunkRN := digest.NewCASResourceName(chunkDigest, instanceName, digestFunction)
 		chunkRN.SetCompressor(rn.GetCompressor())
 		if err := s.local.ReadCASResource(ctx, chunkRN, 0, 0, stream); status.IsNotFoundError(err) {
@@ -271,22 +258,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 			m.chunksLocal++
 		}
 	}
-
-	if copyManifestToLocal {
-		// Skip validation since the manifest was already validated by the remote.
-		// The origin is always the source of truth, and should ALWAYS validate.
-		if err := manifest.StoreWithoutValidation(ctx, s.localCache); err != nil {
-			return m, err
-		}
-	}
 	return m, nil
-}
-
-func (s *ByteStreamServerProxy) recordManifestLookup(err error, source string) {
-	metrics.ByteStreamChunkedManifestLookups.With(prometheus.Labels{
-		metrics.StatusLabel:                status.MetricsLabel(err),
-		metrics.ChunkedManifestSourceLabel: source,
-	}).Inc()
 }
 
 func (s *ByteStreamServerProxy) readRemoteOnly(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
