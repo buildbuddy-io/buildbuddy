@@ -1025,8 +1025,10 @@ func GetBazelCommandOptionVal(parsedArgs *parsed.OrderedArgs, optionName string)
 // value of `--remote_header=x-buildbuddy-api-key=XXX`.
 // Returns an empty string if the header is not set.
 func GetRemoteHeaderVal(parsedArgs *parsed.OrderedArgs, headerKey string) string {
-	for _, opt := range parsedArgs.GetCommandOptionsByName("remote_header") {
-		if val, ok := strings.CutPrefix(opt.GetValue(), headerKey+"="); ok {
+	remoteHeaders := parsedArgs.GetCommandOptionsByName("remote_header")
+	// Iterate in reverse to get the last value set.
+	for _, remoteHeaderOpt := range slices.Backward(remoteHeaders) {
+		if val, ok := strings.CutPrefix(remoteHeaderOpt.GetValue(), headerKey+"="); ok {
 			return val
 		}
 	}
