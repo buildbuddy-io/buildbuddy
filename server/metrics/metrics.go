@@ -179,9 +179,6 @@ const (
 	// Whether the request was handled using chunking
 	ChunkedLabel = "chunked"
 
-	// Source of chunked manifest lookup (local_hit, remote_hit, remote_error)
-	ChunkedManifestSourceLabel = "manifest_source"
-
 	// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
@@ -3622,15 +3619,6 @@ var (
 	}, []string{
 		StatusLabel,
 		CompressionType,
-	})
-	ByteStreamChunkedManifestLookups = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "proxy",
-		Name:      "byte_stream_chunked_manifest_lookups",
-		Help:      "Manifest lookup outcomes (source: local_hit, remote_hit, remote_error).",
-	}, []string{
-		StatusLabel,
-		ChunkedManifestSourceLabel,
 	})
 
 	CapabilitiesProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{

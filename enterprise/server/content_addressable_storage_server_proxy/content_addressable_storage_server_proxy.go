@@ -13,11 +13,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -418,8 +416,6 @@ func (s *CASServerProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobReq
 		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not supported for skipping remote")
 	}
 
-	// The local proxy might not have all chunks available,
-	// so call SpliceBlob on remote only.
 	return s.remote.SpliceBlob(ctx, req)
 }
 
@@ -431,30 +427,5 @@ func (s *CASServerProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobReque
 		return nil, status.UnimplementedErrorf("SplitBlob RPC is not supported for skipping remote")
 	}
 
-	localResp, localErr := s.local.SplitBlob(ctx, req)
-	if localErr == nil {
-		return localResp, nil
-	}
-	if !status.IsNotFoundError(localErr) && !status.IsUnimplementedError(localErr) {
-		return nil, status.WrapError(localErr, "local SplitBlob")
-	}
-
-	remoteResp, remoteErr := s.remote.SplitBlob(ctx, req)
-	if remoteErr != nil {
-		return nil, status.WrapError(remoteErr, "remote SplitBlob")
-	}
-
-	// Store the manifest locally, skipping validation since it was already
-	// validated by the remote.
-	if s.localCache != nil {
-		ctx, err := prefix.AttachUserPrefixToContext(ctx, s.authenticator)
-		if err != nil {
-			return nil, err
-		}
-		manifest := chunked_manifest.FromSplitResponse(req, remoteResp)
-		if err := manifest.StoreWithoutValidation(ctx, s.localCache); err != nil {
-			return nil, status.WrapError(err, "SplitBlob store remote manifest to local")
-		}
-	}
-	return remoteResp, nil
+	return s.remote.SplitBlob(ctx, req)
 }

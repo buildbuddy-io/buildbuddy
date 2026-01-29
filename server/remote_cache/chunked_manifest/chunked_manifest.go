@@ -91,7 +91,7 @@ func (cm *ChunkedManifest) Store(ctx context.Context, cache interfaces.Cache) er
 			return err
 		}
 		if len(missing) > 0 {
-			return status.InvalidArgumentErrorf("required chunks not found in CAS: %+v", toString(missing))
+			return status.InvalidArgumentErrorf("required chunks not found in CAS: %+v", DigestsSummary(missing))
 		}
 		return nil
 	})
@@ -105,21 +105,6 @@ func (cm *ChunkedManifest) Store(ctx context.Context, cache interfaces.Cache) er
 		return err
 	}
 
-	return cm.store(ctx, cache)
-}
-
-// StoreWithoutValidation saves the chunked manifest to the cache without
-// validating that chunks exist or verifying the blob digest. This should only
-// be used when the manifest is known to be valid, such as when copying a
-// manifest from a trusted remote cache that has already validated it.
-func (cm *ChunkedManifest) StoreWithoutValidation(ctx context.Context, cache interfaces.Cache) error {
-	if len(cm.ChunkDigests) == 0 {
-		return status.InvalidArgumentError("chunked manifest must have at least one chunk")
-	}
-	return cm.store(ctx, cache)
-}
-
-func (cm *ChunkedManifest) store(ctx context.Context, cache interfaces.Cache) error {
 	ar := &repb.ActionResult{
 		OutputFiles: make([]*repb.OutputFile, 0, len(cm.ChunkDigests)),
 	}
@@ -143,7 +128,7 @@ func (cm *ChunkedManifest) store(ctx context.Context, cache interfaces.Cache) er
 	return cache.Set(ctx, acRNProto, arBytes)
 }
 
-// Load retrieves a chunked manifest from the cache, and verifies all chunks exist in the CAS.
+// Load retrieves a chunked manifest from the cache. It does NOT validate existence of the chunks.
 func Load(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*ChunkedManifest, error) {
 	acRNProto, err := acResourceName(blobDigest, instanceName, digestFunction)
 	if err != nil {
@@ -174,23 +159,10 @@ func Load(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, 
 	}
 
 	chunkDigests := make([]*repb.Digest, 0, len(ar.GetOutputFiles()))
-	rns := make([]*rspb.ResourceName, 0, len(ar.GetOutputFiles()))
 	for _, outputFile := range ar.GetOutputFiles() {
-		outputDigest := outputFile.GetDigest()
-		chunkDigests = append(chunkDigests, outputDigest)
-		rns = append(rns, digest.NewCASResourceName(outputDigest, instanceName, digestFunction).ToProto())
+		chunkDigests = append(chunkDigests, outputFile.GetDigest())
 	}
 
-	// TODO(buildbuddy-internal#6426): We could eventually return the missing chunks, and have the client
-	// check other places for those, before failing. This adds complexity, and
-	// will be avoided in the MVP.
-	missing, err := cache.FindMissing(ctx, rns)
-	if err != nil {
-		return nil, err
-	}
-	if len(missing) > 0 {
-		return nil, status.NotFoundErrorf("required chunks not found in CAS: %+v", toString(missing))
-	}
 	return &ChunkedManifest{
 		BlobDigest:     blobDigest,
 		ChunkDigests:   chunkDigests,
@@ -268,11 +240,16 @@ func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction
 	return acRN.ToProto(), nil
 }
 
-func toString(digests []*repb.Digest) string {
-	return strings.Join(digestStrings(digests...), ", ")
+func DigestsSummary(digests []*repb.Digest) string {
+	const maxShown = 3
+	strs := digestsStrings(digests...)
+	if len(strs) <= maxShown {
+		return strings.Join(strs, ", ")
+	}
+	return strings.Join(strs[:maxShown], ", ") + " (" + strconv.Itoa(len(strs)) + " total)"
 }
 
-func digestStrings(digests ...*repb.Digest) []string {
+func digestsStrings(digests ...*repb.Digest) []string {
 	strings := make([]string, 0, len(digests))
 	for _, d := range digests {
 		strings = append(strings, digest.String(d))
