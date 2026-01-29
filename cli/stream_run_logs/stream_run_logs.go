@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"syscall"
 	"time"
 
@@ -114,11 +115,14 @@ func Execute(runScriptPath string, opts Opts) (int, error) {
 	if err := os.Chmod(runScriptPath, 0o755); err != nil {
 		return 1, status.InternalErrorf("failed to chmod script %s: %s", runScriptPath, err)
 	}
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigChan)
 
 	conn, err := grpc_client.DialSimple(opts.BesBackend)
 	if err != nil {
 		log.Warnf("Failed to dial %s for streaming `run` executable logs: %s", opts.BesBackend, err)
-		return runScriptDirectly(runScriptPath)
+		return runScriptDirectly(runScriptPath, sigChan)
 	}
 	defer conn.Close()
 	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
@@ -128,14 +132,15 @@ func Execute(runScriptPath string, opts Opts) (int, error) {
 		Status:       inspb.OverallStatus_IN_PROGRESS,
 	}); err != nil {
 		log.Warnf("Failed to update run status: %s", err)
-		return runScriptDirectly(runScriptPath)
+		return runScriptDirectly(runScriptPath, sigChan)
 	}
 
-	exitCode, err := runScriptWithStreaming(ctx, bbClient, opts.InvocationID, runScriptPath)
+	exitCode, interrupted, err := runScriptWithStreaming(ctx, bbClient, opts.InvocationID, runScriptPath, sigChan)
 
-	// TODO(Maggie): Forward signals to the child process and set status=DISCONNECTED if the command is interrupted.
 	invStatus := inspb.OverallStatus_SUCCESS
-	if exitCode != 0 {
+	if interrupted {
+		invStatus = inspb.OverallStatus_DISCONNECTED
+	} else if exitCode != 0 {
 		invStatus = inspb.OverallStatus_FAILURE
 	}
 	if _, err := bbClient.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
@@ -149,13 +154,35 @@ func Execute(runScriptPath string, opts Opts) (int, error) {
 }
 
 // runScriptDirectly runs the script without streaming logs. It's used as a fallback if streaming fails.
-func runScriptDirectly(scriptPath string) (int, error) {
+func runScriptDirectly(scriptPath string, sigChan <-chan os.Signal) (int, error) {
 	log.Warnf("Falling back to running script without run log streaming")
 	cmd := exec.Command(scriptPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-	if err := cmd.Run(); err != nil {
+
+	if err := cmd.Start(); err != nil {
+		return 1, status.WrapErrorf(err, "failed to start script")
+	}
+
+	stopSignalHandler := make(chan struct{})
+	defer close(stopSignalHandler)
+	go func() {
+		for {
+			select {
+			case sig := <-sigChan:
+				if cmd.Process != nil {
+					if err := cmd.Process.Signal(sig); err != nil {
+						log.Warnf("Failed to forward signal %v to child process: %s", sig, err)
+					}
+				}
+			case <-stopSignalHandler:
+				return
+			}
+		}
+	}()
+
+	if err := cmd.Wait(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return exitErr.ExitCode(), nil
 		}
@@ -164,11 +191,12 @@ func runScriptDirectly(scriptPath string) (int, error) {
 	return 0, nil
 }
 
-func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID, scriptPath string) (int, error) {
+func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID, scriptPath string, sigChan <-chan os.Signal) (exitCode int, interrupted bool, err error) {
 	stream, err := bbClient.WriteEventLog(ctx)
 	if err != nil {
 		log.Warnf("Failed to create log stream: %s", err)
-		return runScriptDirectly(scriptPath)
+		exitCode, err := runScriptDirectly(scriptPath, sigChan)
+		return exitCode, true, err
 	}
 	defer func() {
 		if _, err := stream.CloseAndRecv(); err != nil {
@@ -181,9 +209,29 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		log.Warnf("Failed to start command with PTY: %s", err)
-		return runScriptDirectly(scriptPath)
+		exitCode, err := runScriptDirectly(scriptPath, sigChan)
+		return exitCode, true, err
 	}
 	defer ptmx.Close()
+
+	signalReceived := false
+	stopSignalHandler := make(chan struct{})
+	defer close(stopSignalHandler)
+	go func() {
+		for {
+			select {
+			case sig := <-sigChan:
+				signalReceived = true
+				if cmd.Process != nil {
+					if err := cmd.Process.Signal(sig); err != nil {
+						log.Warnf("Failed to forward signal %v to child process: %s", sig, err)
+					}
+				}
+			case <-stopSignalHandler:
+				return
+			}
+		}
+	}()
 
 	copyOutputDone := make(chan error)
 	go func() {
@@ -196,12 +244,12 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 		log.Warnf("Failed to stream output: %s", copyErr)
 	}
 
-	exitCode := 0
+	exitCode = 0
 	if cmdErr != nil {
 		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
-			return 1, status.InternalErrorf("failed to run %s: %s", scriptPath, cmdErr)
+			return 1, signalReceived, status.InternalErrorf("failed to run %s: %s", scriptPath, cmdErr)
 		}
 	}
 
@@ -211,7 +259,7 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 		log.Warnf("Failed to upload exit code log: %s", err)
 	}
 
-	return exitCode, nil
+	return exitCode, signalReceived, nil
 }
 
 // streamOutput streams output to both stdout and uploads them to the BuildBuddy server.

@@ -3,7 +3,10 @@ package stream_run_logs_test
 import (
 	"fmt"
 	"os"
+	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs"
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
@@ -37,7 +40,7 @@ echo "goodbye world"
 
 	_, webClient, setupOpts := setup(t)
 
-	cmd := append([]string{"run", ":echo", "--stream_run_logs", "--invocation_id=" + setupOpts.InvocationID}, getFlags(setupOpts)...)
+	cmd := append([]string{"run", ":echo"}, getFlags(setupOpts)...)
 	out := runWithCLI(t, ws, cmd)
 
 	// Verify that the script ran as expected.
@@ -180,6 +183,53 @@ echo "hello world"
 	require.Equal(t, 0, exitCode)
 }
 
+func TestSignalForwarding(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"BUILD": `sh_binary(name = "sleeper", srcs = ["sleeper.sh"])`,
+		"sleeper.sh": `#!/bin/bash
+echo "script started!"
+sleep 99999
+echo "Should never get here"
+`,
+	})
+
+	_, webClient, setupOpts := setup(t)
+
+	args := append([]string{"run", ":sleeper"}, getFlags(setupOpts)...)
+	cmd := testcli.BazelCommand(t, ws, args...)
+	cmd.Env = append(os.Environ(), "BB_DISABLE_SIDECAR=1")
+
+	term := testcli.PTY(t)
+	cmd.Stdout = term.File
+	cmd.Stderr = term.File
+	cmd.Stdin = term.File
+	err := cmd.Start()
+	require.NoError(t, err)
+
+	// Wait for the script to start before sending signal.
+	require.Eventually(t, func() bool {
+		return strings.Contains(term.Raw(), "script started!")
+	}, 60*time.Second, 100*time.Millisecond, "timed out waiting for script to start")
+
+	// Send SIGTERM to the bb CLI process, which should forward it to the child.
+	cmd.Process.Signal(syscall.SIGTERM)
+	cmd.Wait()
+	require.NotContains(t, term.Raw(), "Should never get here")
+
+	// Verify that the run status is set to DISCONNECTED.
+	invRsp := &inpb.GetInvocationResponse{}
+	err = webClient.RPC("GetInvocation", &inpb.GetInvocationRequest{
+		RequestContext: webClient.RequestContext,
+		Lookup: &inpb.InvocationLookup{
+			InvocationId: setupOpts.InvocationID,
+		},
+	}, invRsp)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(invRsp.Invocation))
+	require.Equal(t, inspb.OverallStatus_DISCONNECTED, invRsp.Invocation[0].GetRunStatus())
+}
+
 func setup(t *testing.T) (*app.App, *buildbuddy_enterprise.WebClient, *stream_run_logs.Opts) {
 	app := buildbuddy_enterprise.Run(t)
 	webClient := buildbuddy_enterprise.LoginAsDefaultSelfAuthUser(t, app)
@@ -204,6 +254,8 @@ func getFlags(opts *stream_run_logs.Opts) []string {
 	return []string{
 		"--bes_backend=" + opts.BesBackend,
 		"--remote_header=x-buildbuddy-api-key=" + opts.ApiKey,
+		"--invocation_id=" + opts.InvocationID,
+		"--stream_run_logs",
 	}
 }
 
