@@ -99,7 +99,7 @@ func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
 	}
 	defaultKeys, err := claims.DefaultKeyProvider(ctx)
 	if err != nil {
-		return []string{}, status.WrapError(err, "Error fetching JWT keys")
+		return nil, status.WrapError(err, "Error fetching JWT keys")
 	}
 	keys = append(keys, defaultKeys...)
 	return keys, nil
