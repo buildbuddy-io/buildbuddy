@@ -50,6 +50,8 @@ var (
 		watchoptdef.WatcherFlags.Name(): watchoptdef.WatcherFlags,
 		// Set to stream run logs to the server.
 		streamrunlogsoptdef.StreamRunLogs.Name(): streamrunlogsoptdef.StreamRunLogs,
+		// Set the failure mode for streaming run logs.
+		streamrunlogsoptdef.OnStreamRunLogsFailure.Name(): streamrunlogsoptdef.OnStreamRunLogsFailure,
 	}
 
 	// make this a var so the test can replace it.
@@ -1004,6 +1006,20 @@ func IsCLICommandOptionSet(parsedArgs *parsed.OrderedArgs, optionName string) (b
 		return false, status.WrapErrorf(err, "failed to accumulate option %s", optionName)
 	}
 	return isSet, nil
+}
+
+// GetCLICommandOptionVal returns the value of the requested CLI command option.
+//
+// Also removes the option from the parsed args, so CLI-specific options aren't passed to Bazel.
+func GetCLICommandOptionVal(parsedArgs *parsed.OrderedArgs, optionName string) (string, error) {
+	val, err := options.AccumulateValues[*parsed.IndexedOption](
+		"",
+		parsedArgs.RemoveCommandOptions(optionName),
+	)
+	if err != nil {
+		return "", status.WrapErrorf(err, "failed to accumulate %s option", optionName)
+	}
+	return val, nil
 }
 
 // GetBazelCommandOptionVal returns the value of the requested Bazel command option.

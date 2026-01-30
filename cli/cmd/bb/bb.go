@@ -153,7 +153,7 @@ func run() (exitCode int, err error) {
 		// Handle help command if applicable.
 		Configure(helpArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name()))
 		StartupDebug(start)
-		helpArgs.RemoveCommandOptions(streamoptdef.StreamRunLogs.Name())
+		helpArgs.RemoveCommandOptions(streamoptdef.StreamRunLogs.Name(), streamoptdef.OnStreamRunLogsFailure.Name())
 		return runHelp(helpArgs)
 	}
 
@@ -340,8 +340,7 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 
 	bazelArgs, streamRunLogsOpts, err = stream_run_logs.Configure(bazelArgs)
 	if err != nil {
-		// Fallback to running the script without streaming logs.
-		log.Warnf("Error configuring run log streaming: %s", err)
+		return 1, status.WrapErrorf(err, "error configuring run log streaming")
 	}
 
 	// If this is a `bazel run` command, add a --run_script arg so that

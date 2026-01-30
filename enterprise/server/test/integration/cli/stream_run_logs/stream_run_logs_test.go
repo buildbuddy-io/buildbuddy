@@ -164,23 +164,33 @@ echo "hello world"
 }
 
 func TestUploadFailure(t *testing.T) {
-	ws := testfs.MakeTempDir(t)
-	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"echo.sh": `#!/bin/bash
+	for _, failureMode := range []stream_run_logs.FailureMode{stream_run_logs.FailureModeWarn, stream_run_logs.FailureModeFail} {
+		t.Run(fmt.Sprintf("failure_mode=%s", failureMode), func(t *testing.T) {
+			ws := testfs.MakeTempDir(t)
+			testfs.WriteAllFileContents(t, ws, map[string]string{
+				"echo.sh": `#!/bin/bash
 echo "hello world"
 `,
-	})
+			})
 
-	// Point to an invalid server to simulate log upload failure.
-	invalidOpts := stream_run_logs.Opts{
-		BesBackend:   "grpc://invalid.buildbuddy.io",
-		ApiKey:       "",
-		InvocationID: "",
+			// Point to an invalid server to simulate log upload failure.
+			invalidOpts := stream_run_logs.Opts{
+				BesBackend:   "grpc://invalid.buildbuddy.io",
+				ApiKey:       "",
+				InvocationID: "",
+				OnFailure:    failureMode,
+			}
+
+			exitCode, err := stream_run_logs.Execute(ws+"/echo.sh", invalidOpts)
+			if failureMode == stream_run_logs.FailureModeFail {
+				require.Error(t, err)
+				require.Equal(t, 1, exitCode)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, 0, exitCode)
+			}
+		})
 	}
-
-	exitCode, err := stream_run_logs.Execute(ws+"/echo.sh", invalidOpts)
-	require.NoError(t, err)
-	require.Equal(t, 0, exitCode)
 }
 
 func TestSignalForwarding(t *testing.T) {
@@ -248,6 +258,7 @@ func setup(t *testing.T) (*app.App, *buildbuddy_enterprise.WebClient, *stream_ru
 		BesBackend:   app.GRPCAddress(),
 		ApiKey:       rsp.ApiKey.Value,
 		InvocationID: iid,
+		OnFailure:    stream_run_logs.FailureModeWarn,
 	}
 }
 
