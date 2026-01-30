@@ -1949,3 +1949,169 @@ actions:
 	checkRunnerResult(t, result)
 	require.Contains(t, result.Output, "fake-cli-command: OK")
 }
+
+func TestBuildBuddyEnv_SingleLineEnvVars(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	workspaceContents := map[string]string{
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    triggers:
+      push: { branches: [ master ] }
+    steps:
+      - run: |
+          echo "MY_VAR=hello_world" >> "$BUILDBUDDY_ENV"
+          echo "ANOTHER_VAR=foo_bar" >> "$BUILDBUDDY_ENV"
+      - run: |
+          echo "MY_VAR=$MY_VAR"
+          echo "ANOTHER_VAR=$ANOTHER_VAR"
+`,
+	}
+
+	repoPath, headCommitSHA := testgit.MakeTempRepo(t, workspaceContents)
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	checkRunnerResult(t, result)
+	runnerInvocation := getRunnerInvocation(t, app, result)
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "MY_VAR=hello_world")
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "ANOTHER_VAR=foo_bar")
+}
+
+func TestBuildBuddyEnv_MultiLineEnvVars(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	workspaceContents := map[string]string{
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    triggers:
+      push: { branches: [ master ] }
+    steps:
+      - run: |
+          echo 'MULTILINE_VAR<<ENDOFVAR' >> "$BUILDBUDDY_ENV"
+          echo 'line one' >> "$BUILDBUDDY_ENV"
+          echo 'line two' >> "$BUILDBUDDY_ENV"
+          echo 'line three' >> "$BUILDBUDDY_ENV"
+          echo 'ENDOFVAR' >> "$BUILDBUDDY_ENV"
+      - run: echo "MULTILINE_VAR=$MULTILINE_VAR"
+`,
+	}
+
+	repoPath, headCommitSHA := testgit.MakeTempRepo(t, workspaceContents)
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	checkRunnerResult(t, result)
+	runnerInvocation := getRunnerInvocation(t, app, result)
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "MULTILINE_VAR=line one\nline two\nline three")
+}
+
+func TestBuildBuddyEnv_ResetBetweenWorkflowRuns(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	workspaceContents := map[string]string{
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    triggers:
+      push: { branches: [ master ] }
+    steps:
+      - run: |
+          echo "PREVIOUS_RUN_VAR=$PREVIOUS_RUN_VAR"
+          echo "PREVIOUS_RUN_VAR=from_previous_run" >> "$BUILDBUDDY_ENV"
+`,
+	}
+
+	repoPath, headCommitSHA := testgit.MakeTempRepo(t, workspaceContents)
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+		// Disable clean checkout fallback for this test since we expect to sync
+		// without errors.
+		"--fallback_to_clean_checkout=false",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	// First run - sets PREVIOUS_RUN_VAR
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+	checkRunnerResult(t, result)
+	runnerInvocation := getRunnerInvocation(t, app, result)
+	// Var should be empty on first run
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "PREVIOUS_RUN_VAR=\n")
+
+	// Second run - PREVIOUS_RUN_VAR should NOT be set (env file is reset)
+	result = invokeRunner(t, runnerFlags, []string{}, wsPath)
+	checkRunnerResult(t, result)
+	runnerInvocation = getRunnerInvocation(t, app, result)
+	// Var should still be empty on second run (not carried over)
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "PREVIOUS_RUN_VAR=\n")
+}
+
+func TestBuildBuddyEnv_InvalidLine(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	workspaceContents := map[string]string{
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    triggers:
+      push: { branches: [ master ] }
+    steps:
+      - run: |
+          echo "INVALID_LINE_WITHOUT_EQUALS" >> "$BUILDBUDDY_ENV"
+      - run: echo "This should not run"
+`,
+	}
+
+	repoPath, headCommitSHA := testgit.MakeTempRepo(t, workspaceContents)
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	require.NotEqual(t, 0, result.ExitCode, "runner should fail when env file contains invalid line")
+	assert.Contains(t, result.Output, `parse $BUILDBUDDY_ENV: line 1: missing '='`)
+}
