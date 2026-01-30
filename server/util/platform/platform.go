@@ -122,6 +122,12 @@ const (
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L156
 	dockerNetworkPropertyName = "dockerNetwork"
 
+	// Whether the Firecracker VM should have external network access. This is
+	// independent of 'dockerNetwork' to avoid breaking users who depend on
+	// historical behavior of 'dockerNetwork' in Firecracker, which always
+	// permitted network access. When false, host/MMDS connectivity remains enabled.
+	firecrackerNetworkPropertyName = "firecrackerNetwork"
+
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
 
@@ -216,6 +222,7 @@ type Properties struct {
 	DockerInit                bool
 	DockerUser                string
 	DockerNetwork             string
+	FirecrackerNetwork        bool
 	RecycleRunner             bool
 	RunnerRecyclingMaxWait    time.Duration
 
@@ -484,6 +491,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DockerInit:                boolProp(m, DockerInitPropertyName, false),
 		DockerUser:                stringProp(m, DockerUserPropertyName, ""),
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
+		FirecrackerNetwork:        boolProp(m, firecrackerNetworkPropertyName, true),
 		RecycleRunner:             recycleRunner,
 		DefaultTimeout:            timeout,
 		TerminationGracePeriod:    terminationGracePeriod,
