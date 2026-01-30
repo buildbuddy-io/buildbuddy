@@ -73,6 +73,36 @@ the username must be `_dcgcloud_token` and the token can be generated with
 --remote_exec_header=x-buildbuddy-platform.container-registry-password="$(gcloud auth print-access-token)"
 ```
 
+For Artifact Registry (registries like `LOCATION-docker.pkg.dev`), the username must be
+`oauth2accesstoken` and the token can be generated with `gcloud auth print-access-token`:
+
+```bash
+--remote_exec_header=x-buildbuddy-platform.container-registry-username=oauth2accesstoken
+--remote_exec_header=x-buildbuddy-platform.container-registry-password="$(gcloud auth print-access-token)"
+```
+
+If you need to use a specific service account, generate the token via impersonation, e.g.
+`gcloud auth print-access-token --impersonate-service-account ACCOUNT`.
+The impersonating identity must have `roles/iam.serviceAccountTokenCreator`, and the service
+account must have Artifact Registry read access. See
+[Configure authentication to Artifact Registry for Docker](https://cloud.google.com/artifact-registry/docs/docker/authentication).
+
+If you already have Docker configured with a credential helper, you can reuse its output.
+The helper prints a `Username` and `Secret` (token), which can be passed directly to
+the remote exec headers:
+
+```bash
+# gcloud credential helper (docker-credential-gcloud)
+echo "https://LOCATION-docker.pkg.dev" | docker-credential-gcloud get
+
+# standalone helper (docker-credential-gcr)
+echo "https://LOCATION-docker.pkg.dev" | docker-credential-gcr get
+```
+
+The username is helper-specific (for example `_dcgcloud_token` from `docker-credential-gcloud`
+and `_dcgcr_2_0_0_token` from `docker-credential-gcr`), so prefer the helper output rather
+than hard-coding values.
+
 For Amazon ECR (Elastic Container Registry), the username must be `AWS`
 and a short-lived token can be generated with `aws ecr get-login-password --region REGION`
 (replace `REGION` with the region matching the ECR image URL):
