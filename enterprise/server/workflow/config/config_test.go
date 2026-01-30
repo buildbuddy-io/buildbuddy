@@ -115,7 +115,7 @@ func TestMatchesAnyTrigger_SupportsBasicWildcard(t *testing.T) {
 		}
 		event := "push"
 
-		match := config.MatchesAnyTrigger(action, event, testCase.branchName)
+		match := config.MatchesAnyTrigger(action, event, testCase.branchName, "")
 
 		assert.Equal(t, testCase.shouldMatch, match, "expected match(%q, %q) => %v", testCase.branchName, testCase.pattern, testCase.shouldMatch)
 	}
@@ -156,15 +156,70 @@ func TestMatchesAndTrigger_NegationPatterns(t *testing.T) {
 			}
 			event := "push"
 			for _, branch := range tc.shouldMatch {
-				m := config.MatchesAnyTrigger(action, event, branch)
+				m := config.MatchesAnyTrigger(action, event, branch, "")
 				assert.True(t, m, "MatchesAnyTrigger(%v, %q) should be true", branch, tc.patterns)
 			}
 			for _, branch := range tc.shouldNotMatch {
-				m := config.MatchesAnyTrigger(action, event, branch)
+				m := config.MatchesAnyTrigger(action, event, branch, "")
 				assert.False(t, m, "MatchesAnyTrigger(%v, %q) should be false", branch, tc.patterns)
 			}
 		})
 	}
+}
+
+func TestMatchesAnyTrigger_TagPushMatchesTagPattern(t *testing.T) {
+	for _, tc := range []struct {
+		pattern, tag string
+		shouldMatch  bool
+	}{
+		{"v*", "v1.0.0", true},
+		{"v*", "v2.0", true},
+		{"v*", "release-1.0", false},
+		{"*", "v1.0.0", true},
+		{"*", "anything", true},
+		{"v1.0.0", "v1.0.0", true},
+		{"v1.0.0", "v1.0.1", false},
+		{"release-*", "release-2024", true},
+		{"release-*", "v1.0.0", false},
+	} {
+		action := &config.Action{
+			Triggers: &config.Triggers{
+				Push: &config.PushTrigger{Tags: []string{tc.pattern}},
+			},
+		}
+		match := config.MatchesAnyTrigger(action, "push", "", tc.tag)
+		assert.Equal(t, tc.shouldMatch, match, "expected match(tag=%q, pattern=%q) => %v", tc.tag, tc.pattern, tc.shouldMatch)
+	}
+}
+
+func TestMatchesAnyTrigger_TagPushDoesNotMatchBranchOnlyTrigger(t *testing.T) {
+	action := &config.Action{
+		Triggers: &config.Triggers{
+			Push: &config.PushTrigger{Branches: []string{"*"}},
+		},
+	}
+	match := config.MatchesAnyTrigger(action, "push", "", "v1.0.0")
+	assert.False(t, match, "tag push should not match branch-only trigger")
+}
+
+func TestMatchesAnyTrigger_BranchPushDoesNotMatchTagOnlyTrigger(t *testing.T) {
+	action := &config.Action{
+		Triggers: &config.Triggers{
+			Push: &config.PushTrigger{Tags: []string{"v*"}},
+		},
+	}
+	match := config.MatchesAnyTrigger(action, "push", "main", "")
+	assert.False(t, match, "branch push should not match tag-only trigger")
+}
+
+func TestMatchesAnyTrigger_TagNegationPatterns(t *testing.T) {
+	action := &config.Action{
+		Triggers: &config.Triggers{
+			Push: &config.PushTrigger{Tags: []string{"v*", "!v0.9.0"}},
+		},
+	}
+	assert.True(t, config.MatchesAnyTrigger(action, "push", "", "v1.0.0"))
+	assert.False(t, config.MatchesAnyTrigger(action, "push", "", "v0.9.0"))
 }
 
 func TestGetGitFetchFilters(t *testing.T) {
