@@ -49,7 +49,7 @@ func Enable(e bool) {
 }
 
 // If streaming run logs is requested with --stream_run_logs, parse required args.
-func Configure(args []string) ([]string, *Opts, error) {
+func Configure(args []string, besBackend string) ([]string, *Opts, error) {
 	parsedArgs, err := parser.ParseArgs(args)
 	if err != nil {
 		return args, nil, status.WrapErrorf(err, "failed to parse args")
@@ -73,10 +73,7 @@ func Configure(args []string) ([]string, *Opts, error) {
 		return args, nil, status.UnauthenticatedError("unauthenticated request")
 	}
 
-	besBackend, err := parser.GetBazelCommandOptionVal(parsedArgs, "bes_backend")
-	if err != nil {
-		return args, nil, status.WrapErrorf(err, "failed to get bes_backend option")
-	} else if besBackend == "" {
+	if besBackend == "" {
 		return args, nil, status.FailedPreconditionError("bes_backend is required for streaming run logs")
 	}
 
