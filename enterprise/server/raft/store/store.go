@@ -527,6 +527,12 @@ func (s *Store) queryForMetarange(ctx context.Context) {
 }
 func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugInfoRequest) (*rfpb.GetRangeDebugInfoResponse, error) {
 	leaderID, term, valid, _ := s.nodeHost.GetLeaderID(req.GetRangeId())
+	lastReplicaIDKey := keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", req.GetRangeId())))
+	lastReplicaID, err := s.sender.Increment(ctx, lastReplicaIDKey, 0)
+	if err != nil {
+		// log.Warningf("Failed to read last replica ID for range %d: %s", req.GetRangeId(), err)
+		return nil, status.WrapErrorf(err, "failed to read last replica ID for range %d with key %q", req.GetRangeId(), lastReplicaIDKey)
+	}
 	rsp := &rfpb.GetRangeDebugInfoResponse{
 		Nhid:            s.NHID(),
 		RangeDescriptor: s.lookupRange(req.GetRangeId()),
@@ -536,6 +542,7 @@ func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugIn
 			Term:     term,
 			Valid:    valid,
 		},
+		LastReplicaId: lastReplicaID,
 	}
 	// Fetch the range descriptor from meta range to make sure it's the most-up-to-date.
 	ranges, err := s.sender.LookupRangeDescriptorsByIDs(ctx, []uint64{req.GetRangeId()})
