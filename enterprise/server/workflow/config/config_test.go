@@ -115,7 +115,7 @@ func TestMatchesAnyTrigger_SupportsBasicWildcard(t *testing.T) {
 		}
 		event := "push"
 
-		match := config.MatchesAnyTrigger(action, event, testCase.branchName, "")
+		match := config.MatchesAnyTrigger(action, event, testCase.branchName, "" /*=tag*/)
 
 		assert.Equal(t, testCase.shouldMatch, match, "expected match(%q, %q) => %v", testCase.branchName, testCase.pattern, testCase.shouldMatch)
 	}
