@@ -415,10 +415,10 @@ func matchesRestrictedGlob(pattern, text string) (isMatched, isNegation bool) {
 	return strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix), isNegation
 }
 
-func matchesAnyPattern(branchPatterns []string, branch string) bool {
+func matchesAnyPattern(haystack []string, needle string) bool {
 	matched := false
-	for _, branchPattern := range branchPatterns {
-		if m, isNegation := matchesRestrictedGlob(branchPattern, branch); m {
+	for _, pattern := range haystack {
+		if m, isNegation := matchesRestrictedGlob(pattern, needle); m {
 			matched = !isNegation
 			// Keep going - last pattern wins.
 		}
