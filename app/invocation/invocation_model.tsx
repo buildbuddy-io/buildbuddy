@@ -747,6 +747,10 @@ export default class InvocationModel {
     return this.invocation.invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
   }
 
+  isRunInProgress() {
+    return this.invocation.runStatus === invocation_status.OverallStatus.IN_PROGRESS;
+  }
+
   /**
    * Returns whether basic invocation metadata has been received yet, such as
    * user, bazel command, target pattern etc.
