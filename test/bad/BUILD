@@ -7,6 +7,6 @@ go_test(
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
         "Pool": "firecracker-arm64-test-gcp",
-        "dockerNetwork": "off",
+        "firecrackerNetwork": "off",
     },
 )
