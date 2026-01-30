@@ -847,7 +847,7 @@ type WebhookData struct {
 	// Ex: "v1.0.0"
 	PushedTag string
 
-	// SHA is the commit SHA of the branch that was pushed.
+	// SHA is the commit SHA of the branch or tag that was pushed.
 	SHA string
 
 	// TargetRepoURL is the canonical URL of the repo containing the TargetBranch.

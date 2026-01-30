@@ -35,6 +35,11 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 		if err := unmarshalBody(r, payload); err != nil {
 			return nil, status.InvalidArgumentErrorf("failed to unmarshal push event payload: %s", err)
 		}
+		// Ignore deletion events. When a branch or tag is deleted,
+		// New is nil in the payload.
+		if payload.Push == nil || len(payload.Push.Changes) == 0 || payload.Push.Changes[0].New == nil {
+			return nil, nil
+		}
 		v, err := fieldgetter.ExtractValues(
 			payload,
 			"Push.Changes.0.New.Name",

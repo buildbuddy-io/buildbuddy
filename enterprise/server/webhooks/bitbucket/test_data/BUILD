@@ -9,6 +9,7 @@ go_library(
     name = "test_data",
     srcs = ["test_data.go"],
     embedsrcs = [
+        "delete_branch_event.json",
         "pull_request_event.json",
         "push_event.json",
         "push_tag_event.json",

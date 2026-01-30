@@ -53,6 +53,15 @@ func TestParseRequest_ValidTagPushEvent_Success(t *testing.T) {
 	}, data)
 }
 
+func TestParseRequest_DeletionEvent_ReturnsNil(t *testing.T) {
+	req := webhookRequest(t, "repo:push", test_data.DeleteBranchEvent)
+
+	data, err := bitbucket.NewProvider().ParseWebhookData(req)
+
+	assert.NoError(t, err)
+	assert.Nil(t, data)
+}
+
 func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 	req := webhookRequest(t, "pullrequest:updated", test_data.PullRequestEvent)
 
