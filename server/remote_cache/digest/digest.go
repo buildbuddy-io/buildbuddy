@@ -793,7 +793,7 @@ func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, erro
 	g.fill(buf)
 
 	// Compute a digest for the random bytes.
-	d, err := Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
+	d, err := Compute(bytes.NewReader(buf), repb.DigestFunction_BLAKE3)
 	if err != nil {
 		return nil, nil, err
 	}
