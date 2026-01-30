@@ -1552,46 +1552,73 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 	}
 	gid := authenticatedUser.GetGroupID()
 
+	type recvResult struct {
+		req *elpb.WriteEventLogRequest
+		err error
+	}
+	recvCh := make(chan recvResult)
+	go func() {
+		defer close(recvCh)
+		for {
+			req, err := stream.Recv()
+			recvCh <- recvResult{req, err}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	timeout := time.NewTimer(1 * time.Hour)
+	defer timeout.Stop()
+
 	var eventLogWriter *eventlog.EventLogWriter
 	for {
-		req, err := stream.Recv()
-		if err == io.EOF {
-			return stream.SendAndClose(&elpb.WriteEventLogResponse{})
-		} else if err != nil {
-			return err
-		}
-
-		if eventLogWriter == nil {
-			var pubsubChannel string
-			var eventLogPath string
-
-			switch req.GetType() {
-			case elpb.LogType_RUN_LOG:
-				if req.GetMetadata().GetInvocationId() == "" {
-					return status.InvalidArgumentErrorf("missing invocation ID")
-				}
-
-				pubsubChannel = eventlog.GetRunLogPubSubChannel(req.GetMetadata().GetInvocationId())
-				eventLogPath = eventlog.GetRunLogPathFromInvocationId(req.GetMetadata().GetInvocationId())
-			default:
-				return status.InvalidArgumentErrorf("Unsupported log type %s", req.GetType())
+		select {
+		case <-timeout.C:
+			return status.DeadlineExceededErrorf("stream timeout after 1 hour")
+		case result, ok := <-recvCh:
+			if !ok {
+				return status.InternalErrorf("unexpected channel close")
 			}
-			eventLogWriter, err = eventlog.NewEventLogWriter(ctx, s.env.GetBlobstore(), s.env.GetKeyValStore(), s.env.GetPubSub(), pubsubChannel, eventLogPath, eventlog.DefaultTerminalLineLength, eventlog.DefaultTerminalLinesBuffered)
+			if result.err == io.EOF {
+				return stream.SendAndClose(&elpb.WriteEventLogResponse{})
+			} else if result.err != nil {
+				return result.err
+			}
+
+			req := result.req
+			if eventLogWriter == nil {
+				var pubsubChannel string
+				var eventLogPath string
+
+				switch req.GetType() {
+				case elpb.LogType_RUN_LOG:
+					if req.GetMetadata().GetInvocationId() == "" {
+						return status.InvalidArgumentErrorf("missing invocation ID")
+					}
+
+					pubsubChannel = eventlog.GetRunLogPubSubChannel(req.GetMetadata().GetInvocationId())
+					eventLogPath = eventlog.GetRunLogPathFromInvocationId(req.GetMetadata().GetInvocationId())
+				default:
+					return status.InvalidArgumentErrorf("Unsupported log type %s", req.GetType())
+				}
+				eventLogWriter, err = eventlog.NewEventLogWriter(ctx, s.env.GetBlobstore(), s.env.GetKeyValStore(), s.env.GetPubSub(), pubsubChannel, eventLogPath, eventlog.DefaultTerminalLineLength, eventlog.DefaultTerminalLinesBuffered)
+				if err != nil {
+					return err
+				}
+				defer eventLogWriter.Close(ctx)
+			}
+
+			n, err := eventLogWriter.Write(ctx, req.GetData())
 			if err != nil {
 				return err
 			}
-			defer eventLogWriter.Close(ctx)
-		}
-
-		n, err := eventLogWriter.Write(ctx, req.GetData())
-		if err != nil {
-			return err
-		}
-		if n > 0 {
-			metrics.EventLogBytesWritten.With(map[string]string{
-				metrics.EventName: "run_log",
-				metrics.GroupID:   gid,
-			}).Add(float64(n))
+			if n > 0 {
+				metrics.EventLogBytesWritten.With(map[string]string{
+					metrics.EventName: "run_log",
+					metrics.GroupID:   gid,
+				}).Add(float64(n))
+			}
 		}
 	}
 }
