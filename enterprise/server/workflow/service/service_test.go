@@ -63,6 +63,13 @@ actions:
     bazel_commands: [ "test //..." ]
     visibility: "PRIVATE"
 `
+
+	configWithTagWorkflow = `
+actions:
+  - name: "Release (linux_amd64)"
+    triggers: { push: { tags: [ "v*" ] } }
+    bazel_commands: [ "test //..." ]
+`
 )
 
 func newTestEnv(t *testing.T) *testenv.TestEnv {
@@ -610,6 +617,43 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
+}
+
+func TestWebhook_TrustedTagPush_StartsTrustedWorkflow(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:          "push",
+		TargetRepoURL:      "https://github.com/acme-inc/acme",
+		PushedRepoURL:      "https://github.com/acme-inc/acme",
+		PushedTag:          "v1.0.0",
+		SHA:                "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic: true,
+	}
+	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithTagWorkflow}
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
+	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+	env := envVars(exec.Command)
+	assert.Equal(t, "v1.0.0", env["GIT_TAG"])
+	assert.Equal(t, "", env["GIT_BRANCH"])
 }
 
 func TestWebhook_RespectsVisibility(t *testing.T) {

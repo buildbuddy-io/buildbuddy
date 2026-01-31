@@ -119,11 +119,24 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 	switch event := event.(type) {
 	case *gh.PushEvent:
-		// Ignore branch deletion events.
+		// Ignore deletion events (both branch and tag deletions).
 		if event.GetDeleted() {
 			return nil, nil
 		}
-		branch := strings.TrimPrefix(event.GetRef(), "refs/heads/")
+		ref := event.GetRef()
+		if strings.HasPrefix(ref, "refs/tags/") {
+			tag := strings.TrimPrefix(ref, "refs/tags/")
+			return &interfaces.WebhookData{
+				EventName:               webhook_data.EventName.Push,
+				PushedRepoURL:           event.GetRepo().GetCloneURL(),
+				PushedTag:               tag,
+				SHA:                     event.GetAfter(),
+				TargetRepoURL:           event.GetRepo().GetCloneURL(),
+				TargetRepoDefaultBranch: event.GetRepo().GetDefaultBranch(),
+				IsTargetRepoPublic:      !event.GetRepo().GetPrivate(),
+			}, nil
+		}
+		branch := strings.TrimPrefix(ref, "refs/heads/")
 		return &interfaces.WebhookData{
 			EventName:               webhook_data.EventName.Push,
 			PushedRepoURL:           event.GetRepo().GetCloneURL(),

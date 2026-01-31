@@ -422,6 +422,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	wd := &interfaces.WebhookData{
 		PushedRepoURL:     req.GetPushedRepoUrl(),
 		PushedBranch:      req.GetPushedBranch(),
+		PushedTag:         req.GetPushedTag(),
 		TargetRepoURL:     req.GetTargetRepoUrl(),
 		TargetBranch:      req.GetTargetBranch(),
 		SHA:               req.GetCommitSha(),
@@ -525,7 +526,7 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 	var actions []*config.Action
 	for _, a := range cfg.Actions {
 		matchesActionName := len(actionFilter) == 0 || config.MatchesAnyActionName(a, actionFilter)
-		matchesTrigger := config.MatchesAnyTrigger(a, wd.EventName, wd.TargetBranch)
+		matchesTrigger := config.MatchesAnyTrigger(a, wd.EventName, wd.TargetBranch, wd.PushedTag)
 		if matchesActionName && matchesTrigger {
 			actions = append(actions, a)
 		}
@@ -1007,6 +1008,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		{Name: "CI", Value: "true"},
 		{Name: "GIT_COMMIT", Value: wd.SHA},
 		{Name: "GIT_BRANCH", Value: wd.PushedBranch},
+		{Name: "GIT_TAG", Value: wd.PushedTag},
 		{Name: "GIT_BASE_BRANCH", Value: wd.TargetBranch},
 		{Name: "GIT_REPO_DEFAULT_BRANCH", Value: wd.TargetRepoDefaultBranch},
 		{Name: "GIT_PR_NUMBER", Value: fmt.Sprintf("%d", wd.PullRequestNumber)},
@@ -1307,7 +1309,11 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider interfaces.GitProvider, workflow *tables.Workflow, webhookData *interfaces.WebhookData) (*config.BuildBuddyConfig, error) {
 	workflowRef := webhookData.SHA
 	if workflowRef == "" {
-		workflowRef = webhookData.PushedBranch
+		if webhookData.PushedBranch != "" {
+			workflowRef = webhookData.PushedBranch
+		} else if webhookData.PushedTag != "" {
+			workflowRef = webhookData.PushedTag
+		}
 	}
 
 	var c *config.BuildBuddyConfig
