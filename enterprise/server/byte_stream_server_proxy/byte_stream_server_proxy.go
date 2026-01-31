@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
+	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
@@ -34,7 +35,6 @@ import (
 )
 
 var (
-	maxChunkSizeBytes      = flag.Int64("cache_proxy.max_chunk_size_bytes", 2<<20, "Only blobs larger (non-inclusive) than this threshold will be chunked (default 2MB). This is also the maximum size of a chunk. The average chunk size will be 1/4 of this value, and the minimum will be 1/16 of this value.")
 	chunkUploadConcurrency = flag.Int("cache_proxy.chunk_upload_concurrency", 8, "Maximum number of concurrent chunk uploads when uploading missing chunks to remote cache.")
 )
 
@@ -79,7 +79,7 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		efp:                env.GetExperimentFlagProvider(),
 		localCache:         env.GetCache(),
 		remoteCAS:          env.GetContentAddressableStorageClient(),
-		compressBufPool:    bytebufferpool.VariableSize(int(*maxChunkSizeBytes)),
+		compressBufPool:    bytebufferpool.VariableSize(int(remote_cache_config.MaxChunkSizeBytes())),
 	}, nil
 }
 
@@ -211,7 +211,7 @@ func (s *ByteStreamServerProxy) shouldReadChunked(ctx context.Context, req *bspb
 		return false
 	}
 	return s.chunkingEnabled(ctx) &&
-		rn.GetDigest().GetSizeBytes() > *maxChunkSizeBytes &&
+		rn.GetDigest().GetSizeBytes() > remote_cache_config.MaxChunkSizeBytes() &&
 		req.GetReadOffset() == 0 && req.GetReadLimit() == 0
 }
 
@@ -690,9 +690,8 @@ func (s *replayableWriteStream) Recv() (*bspb.WriteRequest, error) {
 }
 
 func (s *ByteStreamServerProxy) chunkingEnabled(ctx context.Context) bool {
-	return s.localCache != nil && s.remoteCAS != nil && s.efp != nil &&
-		s.efp.Boolean(ctx, "cache.chunking_enabled", false) &&
-		s.efp.Boolean(ctx, "cache.split_splice_enabled", false)
+	return s.localCache != nil && s.remoteCAS != nil &&
+		remote_cache_config.ChunkingEnabled(ctx, s.efp)
 }
 
 type writeChunkedResult struct {
@@ -716,7 +715,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	}
 
 	blobSize := rn.GetDigest().GetSizeBytes()
-	if blobSize <= *maxChunkSizeBytes {
+	if blobSize <= remote_cache_config.MaxChunkSizeBytes() {
 		return writeChunkedResult{firstReq: firstReq}, status.UnimplementedError("blob too small for chunking")
 	}
 
@@ -733,7 +732,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 
 	// Get a buffer from the pool for compression. We reuse this buffer across
 	// all chunk compressions to avoid allocating for each chunk.
-	compressBuf := s.compressBufPool.Get(*maxChunkSizeBytes)
+	compressBuf := s.compressBufPool.Get(remote_cache_config.MaxChunkSizeBytes())
 	defer s.compressBufPool.Put(compressBuf)
 
 	// chunkWriteFn is called on each new chunk once it's available through the chunker's pipe.
@@ -760,7 +759,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		return nil
 	}
 
-	chunker, err := chunker.New(ctx, int(*maxChunkSizeBytes/4), chunkWriteFn)
+	chunker, err := chunker.New(ctx, int(remote_cache_config.MaxChunkSizeBytes()/4), chunkWriteFn)
 	if err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("creating chunker: %s", err)
 	}

@@ -121,8 +121,73 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	rsp.MissingBlobDigests = append(rsp.MissingBlobDigests, missing...)
+
+	if len(missing) > 0 && remote_cache_config.ChunkingEnabled(ctx, s.env.GetExperimentFlagProvider()) {
+
+		checker := &missingChunkChecker{
+			cache:        s.cache,
+			chunkPresent: make(map[string]bool),
+		}
+
+		// https://go.dev/wiki/SliceTricks#filtering-without-allocating
+		stillMissing := missing[:0]
+		for _, d := range missing {
+			if d.GetSizeBytes() <= remote_cache_config.MaxChunkSizeBytes() {
+				stillMissing = append(stillMissing, d)
+				continue
+			}
+			manifest, err := chunked_manifest.Load(ctx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction())
+			if err != nil {
+				stillMissing = append(stillMissing, d)
+				continue
+			}
+			anyMissing, err := checker.anyChunkMissing(ctx, manifest)
+			if err != nil || anyMissing {
+				stillMissing = append(stillMissing, d)
+			}
+		}
+		missing = stillMissing
+	}
+
+	rsp.MissingBlobDigests = missing
 	return rsp, nil
+}
+
+
+type missingChunkChecker struct {
+	cache          interfaces.Cache
+	chunkPresent   map[string]bool
+}
+
+func (c *missingChunkChecker) anyChunkMissing(ctx context.Context, manifest *chunked_manifest.ChunkedManifest) (bool, error) {
+	var unknownChunks []*rspb.ResourceName
+	for _, rn := range manifest.ToRNs() {
+		if present, known := c.chunkPresent[rn.GetDigest().GetHash()]; known {
+			if !present {
+				return true, nil
+			}
+			continue
+		}
+		unknownChunks = append(unknownChunks, rn)
+	}
+
+	if len(unknownChunks) == 0 {
+		return false, nil
+	}
+
+	missingDigests, err := c.cache.FindMissing(ctx, unknownChunks)
+	if err != nil {
+		return false, err
+	}
+
+	for _, rn := range unknownChunks {
+		c.chunkPresent[rn.GetDigest().GetHash()] = true
+	}
+	for _, d := range missingDigests {
+		c.chunkPresent[d.GetHash()] = false
+	}
+
+	return len(missingDigests) > 0, nil
 }
 
 // Upload many blobs at once.

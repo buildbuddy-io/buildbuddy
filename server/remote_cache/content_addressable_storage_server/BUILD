@@ -57,6 +57,7 @@ go_test(
         "//server/interfaces",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/cachetools",
+        "//server/remote_cache/chunked_manifest",
         "//server/remote_cache/digest",
         "//server/remote_cache/hit_tracker",
         "//server/testutil/cas",
