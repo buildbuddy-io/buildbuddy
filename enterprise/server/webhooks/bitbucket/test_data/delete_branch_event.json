@@ -1,0 +1,32 @@
+{
+  "push": {
+    "changes": [
+      {
+        "forced": false,
+        "old": {
+          "name": "feature-branch",
+          "type": "branch",
+          "target": {
+            "hash": "f3307f36e35d1820c78b642cc8dfec6bf28a6230"
+          }
+        },
+        "new": null,
+        "created": false,
+        "closed": true,
+        "truncated": false
+      }
+    ]
+  },
+  "repository": {
+    "scm": "git",
+    "uuid": "{c3dd6cc9-c8e3-47ce-9471-86065058ee1f}",
+    "links": {
+      "self": { "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground" },
+      "html": { "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground" }
+    },
+    "full_name": "buildbuddy/buildbuddy-ci-playground",
+    "type": "repository",
+    "is_private": true,
+    "name": "buildbuddy-ci-playground"
+  }
+}
