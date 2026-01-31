@@ -60,6 +60,7 @@ go_test(
         "//server/testutil/testmetrics",
         "//server/testutil/testport",
         "//server/util/compression",
+        "//server/util/disk",
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/prefix",

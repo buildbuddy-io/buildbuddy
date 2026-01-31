@@ -752,9 +752,9 @@ func TestCopyDataInBackground_RateLimitMin(t *testing.T) {
 	ctx := getAnonContext(t, te)
 	maxSizeBytes := int64(defaultExt4BlockSize * 100)
 
-	srcCache, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	srcCache, err := memory_cache.NewMemoryCache(te.GetAuthenticator(), maxSizeBytes)
 	require.NoError(t, err)
-	destCache, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	destCache, err := memory_cache.NewMemoryCache(te.GetAuthenticator(), maxSizeBytes)
 	require.NoError(t, err)
 
 	const writeCount = 10
