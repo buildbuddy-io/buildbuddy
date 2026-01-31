@@ -435,6 +435,11 @@ Defines whether an action should execute when a branch is pushed.
   matched using the rules described in
   [Branch pattern matching](#branch-pattern-matching)
 
+- **`tags`** (`string` list): The tag patterns that determine
+  whether a push to the tag will trigger the workflow. Patterns are
+  matched using the rules described in
+  [Branch pattern matching](#branch-pattern-matching)
+
 ### `PullRequestTrigger`
 
 Defines whether an action should execute when a pull request (PR) branch is
@@ -449,6 +454,10 @@ pushed.
   associated action is only run when a PR wants to merge a branch _into_
   the `v1` branch or the `v2` branch. Branch patterns are matched using
   the rules described in [Branch pattern matching](#branch-pattern-matching)
+- **`tags`** (`string` list): The tag patterns that determine
+  whether a push to the tag will trigger the workflow. Patterns are
+  matched using the rules described in
+  [Branch pattern matching](#branch-pattern-matching)
 - **`merge_with_base`** (`boolean`, default: `true`): Whether to merge the
   base branch into the PR branch before running the workflow action. This
   can help ensure that the changes in the PR branch do not conflict with

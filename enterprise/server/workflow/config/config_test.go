@@ -222,6 +222,30 @@ func TestMatchesAnyTrigger_TagNegationPatterns(t *testing.T) {
 	assert.False(t, config.MatchesAnyTrigger(action, "push", "", "v0.9.0"))
 }
 
+func TestMatchesAnyTrigger_BothBranchAndTagTriggers(t *testing.T) {
+	action := &config.Action{
+		Triggers: &config.Triggers{
+			Push: &config.PushTrigger{
+				Branches: []string{"main", "release-*"},
+				Tags:     []string{"v*"},
+			},
+		},
+	}
+
+	// Tag push matches tag pattern, not branch pattern.
+	assert.True(t, config.MatchesAnyTrigger(action, "push", "", "v1.0.0"))
+	assert.False(t, config.MatchesAnyTrigger(action, "push", "", "nightly-2024"))
+
+	// Branch push matches branch pattern, not tag pattern.
+	assert.True(t, config.MatchesAnyTrigger(action, "push", "main", ""))
+	assert.True(t, config.MatchesAnyTrigger(action, "push", "release-2024", ""))
+	assert.False(t, config.MatchesAnyTrigger(action, "push", "feature-x", ""))
+
+	// Tag named "main" matches tag patterns (not branch patterns),
+	// so it should not match since "main" doesn't match "v*".
+	assert.False(t, config.MatchesAnyTrigger(action, "push", "", "main"))
+}
+
 func TestGetGitFetchFilters(t *testing.T) {
 	for _, test := range []struct {
 		Name    string
