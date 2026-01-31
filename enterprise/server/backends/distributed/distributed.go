@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -388,13 +389,23 @@ func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key str
 		if err != nil {
 			return "", false
 		}
-		return partition + "/" + digest.ActionCacheString(r), true
+		s, err := digest.ActionCacheString(r)
+		if err != nil {
+			alert.CtxUnexpectedEvent(ctx, "ActionCacheString_failed_in_lookasideKey", "ActionCacheString failed: %v", err)
+			return "", false
+		}
+		return partition + "/" + s, true
 	} else if r.GetCacheType() == rspb.CacheType_CAS {
 		partition, err := c.local.Partition(ctx, r.GetInstanceName())
 		if err != nil {
 			return "", false
 		}
-		return partition + "/" + digest.CASDownloadString(r), true
+		s, err := digest.CASDownloadString(r)
+		if err != nil {
+			alert.CtxUnexpectedEvent(ctx, "CASDownloadString_failed_in_lookasideKey", "CASDownloadString failed: %v", err)
+			return "", false
+		}
+		return partition + "/" + s, true
 	}
 	return "", false
 }

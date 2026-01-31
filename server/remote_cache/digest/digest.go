@@ -229,12 +229,16 @@ type CASResourceName struct {
 }
 
 // CASDownloadString is like UploadString, but without forcing the caller to
-// clone the ResourceName proto by calling ResourceNameFromProto first. Call it
-// carefully, since it panics if the cache type is not CAS.
-func CASDownloadString(r *rspb.ResourceName) string {
+// clone the ResourceName proto by calling ResourceNameFromProto first. Returns
+// an error if the cache type is not CAS.
+func CASDownloadString(r *rspb.ResourceName) (string, error) {
 	if r.GetCacheType() != rspb.CacheType_CAS {
-		panic(fmt.Errorf("CASDownloadString called for resource name with the wrong cache type: %v", r))
+		return "", fmt.Errorf("CASDownloadString called for resource name with the wrong cache type: %v", r)
 	}
+	return casDownloadString(r), nil
+}
+
+func casDownloadString(r *rspb.ResourceName) string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	if isOldStyleDigestFunction(r.GetDigestFunction()) {
@@ -246,7 +250,7 @@ func CASDownloadString(r *rspb.ResourceName) string {
 // DownloadString returns a string representing the resource name for download
 // purposes.
 func (r *CASResourceName) DownloadString() string {
-	return CASDownloadString(r.rn)
+	return casDownloadString(r.rn)
 }
 
 // NewUploadString returns a new string representing the resource name for
@@ -267,12 +271,15 @@ type ACResourceName struct {
 
 // ActionCacheString is like ACResourceName.ActionCacheString, but without
 // forcing the caller to clone the ResourceName proto by calling
-// ResourceNameFromProto first. Call it carefully, since it panics if the cache
-// type is not AC.
-func ActionCacheString(r *rspb.ResourceName) string {
+// ResourceNameFromProto first. Returns an error if the cache type is not AC.
+func ActionCacheString(r *rspb.ResourceName) (string, error) {
 	if r.GetCacheType() != rspb.CacheType_AC {
-		panic(fmt.Errorf("ActionCacheString called for resource name with the wrong cache type: %v", r))
+		return "", fmt.Errorf("ActionCacheString called for resource name with the wrong cache type: %v", r)
 	}
+	return actionCacheString(r), nil
+}
+
+func actionCacheString(r *rspb.ResourceName) string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	if isOldStyleDigestFunction(r.GetDigestFunction()) {
@@ -284,7 +291,7 @@ func ActionCacheString(r *rspb.ResourceName) string {
 // ActionCacheString returns a string representing the resource name for in
 // the action cache. This is BuildBuddy specific.
 func (r *ACResourceName) ActionCacheString() string {
-	return ActionCacheString(r.rn)
+	return actionCacheString(r.rn)
 }
 
 func CacheTypeToPrefix(cacheType rspb.CacheType) string {
