@@ -11,6 +11,7 @@ go_library(
         "//enterprise/server/backends/cache_config",
         "//enterprise/server/filestore",
         "//enterprise/server/raft/bringup",
+        "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/logger",
         "//enterprise/server/raft/rbuilder",
@@ -53,8 +54,8 @@ go_test(
     deps = [
         ":metadata",
         "//enterprise/server/filestore",
+        "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
-        "//enterprise/server/raft/store",
         "//enterprise/server/raft/usagetracker",
         "//proto:metadata_go_proto",
         "//proto:storage_go_proto",

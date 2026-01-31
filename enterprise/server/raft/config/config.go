@@ -4,7 +4,18 @@ import (
 	"flag"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	dbConfig "github.com/lni/dragonboat/v4/config"
+)
+
+type LogDBConfigType int
+
+const (
+	SmallMemLogDBConfigType LogDBConfigType = iota
+	LargeMemLogDBConfigType
 )
 
 var (
@@ -28,6 +39,18 @@ func SingleRaftOpTimeout() time.Duration {
 	return *singleRaftOpTimeout
 }
 
+func GetLogDBConfig(t LogDBConfigType) dbConfig.LogDBConfig {
+	switch t {
+	case SmallMemLogDBConfigType:
+		return dbConfig.GetSmallMemLogDBConfig()
+	case LargeMemLogDBConfigType:
+		return dbConfig.GetLargeMemLogDBConfig()
+	default:
+		alert.UnexpectedEvent("unknown-raft-log-db-config-type", "unknown type: %d", t)
+	}
+	return dbConfig.GetDefaultLogDBConfig()
+}
+
 func GetRaftConfig(rangeID, replicaID uint64) dbConfig.Config {
 	rc := dbConfig.Config{
 		ReplicaID:               replicaID,
@@ -44,4 +67,16 @@ func GetRaftConfig(rangeID, replicaID uint64) dbConfig.Config {
 		EntryCompressionType:    dbConfig.Snappy,
 	}
 	return rc
+}
+
+type ServerConfig struct {
+	RootDir           string
+	RaftAddr          string
+	GRPCAddr          string
+	GRPCListeningAddr string
+	NHID              string
+	Partitions        []disk.Partition
+	LogDBConfigType   LogDBConfigType
+	FileStorer        filestore.Store
+	GossipManager     interfaces.GossipService
 }
