@@ -20,6 +20,7 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/digest",
         "//server/resources",
+        "//server/util/alert",
         "//server/util/authutil",
         "//server/util/background",
         "//server/util/claims",
