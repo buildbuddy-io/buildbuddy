@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"io"
-	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -11,6 +10,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"gopkg.in/yaml.v2"
 
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -274,33 +275,17 @@ fi
 	return buf
 }
 
-func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
-	var pushTriggerBranches []string
-	if targetRepoDefaultBranch != "" {
-		pushTriggerBranches = append(pushTriggerBranches, targetRepoDefaultBranch)
-	}
+func KytheIndexingAction(_ *tables.Workflow) []*rnpb.Step {
 	kytheDirName := filepath.Base(strings.TrimSuffix(kytheDownloadURL, ".tar.gz"))
-	return &Action{
-		Name: KytheActionName,
-		Triggers: &Triggers{
-			Push: &PushTrigger{Branches: pushTriggerBranches},
+	return []*rnpb.Step{
+		{
+			Run: checkoutKythe(kytheDirName, kytheDownloadURL),
 		},
-		ContainerImage: `ubuntu-20.04`,
-		ResourceRequests: ResourceRequests{
-			CPU:    "24",   // 24 BCU
-			Memory: "60GB", // 24 BCU
-			Disk:   "100GB",
+		{
+			Run: buildWithKythe(kytheDirName),
 		},
-		Steps: []*rnpb.Step{
-			{
-				Run: checkoutKythe(kytheDirName, kytheDownloadURL),
-			},
-			{
-				Run: buildWithKythe(kytheDirName),
-			},
-			{
-				Run: prepareKytheOutputs(kytheDirName),
-			},
+		{
+			Run: prepareKytheOutputs(kytheDirName),
 		},
 	}
 }
@@ -314,26 +299,10 @@ bb index --target %s --repo-url %s`, apiTarget, repoURL)
 	return buf
 }
 
-func CodesearchIncrementalUpdateAction(apiTarget *url.URL, repoURL, targetRepoDefaultBranch string) *Action {
-	var pushTriggerBranches []string
-	if targetRepoDefaultBranch != "" {
-		pushTriggerBranches = append(pushTriggerBranches, targetRepoDefaultBranch)
-	}
-	return &Action{
-		Name: CSIncrementalUpdateName,
-		Triggers: &Triggers{
-			Push: &PushTrigger{Branches: pushTriggerBranches},
-		},
-		ContainerImage: `ubuntu-22.04`,
-		ResourceRequests: ResourceRequests{
-			CPU:    "2",
-			Memory: "4GB",
-			Disk:   "10GB",
-		},
-		Steps: []*rnpb.Step{
-			{
-				Run: sendIncrementalUpdate(apiTarget.String(), repoURL),
-			},
+func CodesearchIncrementalUpdateAction(workflow *tables.Workflow) []*rnpb.Step {
+	return []*rnpb.Step{
+		{
+			Run: sendIncrementalUpdate(cache_api_url.WithPath("").String(), workflow.RepoURL),
 		},
 	}
 }

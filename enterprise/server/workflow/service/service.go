@@ -59,6 +59,7 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
@@ -155,12 +156,15 @@ type startWorkflowTask struct {
 	workflow    *tables.Workflow
 }
 
+type StepMaker func(workflow *tables.Workflow) []*rnpb.Step
+
 type workflowService struct {
 	env environment.Env
 
-	wg    sync.WaitGroup
-	tasks chan *startWorkflowTask
-	bbUrl *url.URL
+	wg           sync.WaitGroup
+	tasks        chan *startWorkflowTask
+	bbUrl        *url.URL
+	builtInSteps map[string]StepMaker // Actions that are built-in to the workflow service.
 }
 
 func NewWorkflowService(env environment.Env) *workflowService {
@@ -168,6 +172,10 @@ func NewWorkflowService(env environment.Env) *workflowService {
 		env:   env,
 		tasks: make(chan *startWorkflowTask, webhookWorkerTaskQueueSize),
 		bbUrl: build_buddy_url.WithPath(""),
+		builtInSteps: map[string]StepMaker{
+			"@kythe":            config.KytheIndexingAction,
+			"@codesearch_index": config.CodesearchIncrementalUpdateAction,
+		},
 	}
 	ws.startBackgroundWorkers()
 	return ws
@@ -602,20 +610,6 @@ func (ws *workflowService) InvalidateAllSnapshotsForRepo(ctx context.Context, re
 	).Exec().Error
 
 	return err
-}
-
-func (ws *workflowService) addCodesearchActionsIfEnabled(ctx context.Context, c *config.BuildBuddyConfig, workflow *tables.Workflow, wd *interfaces.WebhookData) error {
-
-	enableCS, err := ws.isCodesearchIndexingEnabled(ctx, workflow.GroupID)
-	if err != nil {
-		return err
-	}
-	if enableCS {
-		// TODO(jdelfino): Using the cache API URL here is hacky, long term we might want a codesearch_api_url
-		c.Actions = append(c.Actions, config.CodesearchIncrementalUpdateAction(cache_api_url.WithPath(""), workflow.RepoURL, wd.TargetRepoDefaultBranch))
-		c.Actions = append(c.Actions, config.KytheIndexingAction(wd.TargetRepoDefaultBranch))
-	}
-	return nil
 }
 
 func (ws *workflowService) isCodesearchIndexingEnabled(ctx context.Context, groupID string) (bool, error) {
@@ -1329,9 +1323,20 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 		}
 	}
 
-	if err := ws.addCodesearchActionsIfEnabled(ctx, c, workflow, webhookData); err != nil {
-		return nil, err
+	for _, action := range c.Actions {
+		newSteps := make([]*rnpb.Step, 0, len(action.Steps))
+		for _, step := range action.Steps {
+			if len(step.Uses) > 0 {
+				if builtIn, ok := ws.builtInSteps[step.Uses]; ok {
+					newSteps = append(newSteps, builtIn(workflow)...)
+				} else {
+					newSteps = append(newSteps, step)
+				}
+			}
+		}
+		action.Steps = newSteps
 	}
+
 	return c, nil
 }
 

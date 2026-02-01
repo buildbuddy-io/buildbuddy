@@ -93,6 +93,7 @@ message RunRequest {
 
 message Step {
   string run = 1;
+  string uses = 2;
 }
 
 enum WaitCondition {

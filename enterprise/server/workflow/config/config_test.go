@@ -2,12 +2,13 @@ package config_test
 
 import (
 	"bytes"
-	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config/test_data"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -199,19 +200,14 @@ func TestGetGitFetchFilters(t *testing.T) {
 }
 
 func TestCodeSearchAction(t *testing.T) {
-	apiURL, err := url.Parse("grpcs://example.com")
-	require.NoError(t, err)
 	ghURL := "https://github.com/buildbuddy-io/buildbuddy"
 
-	action := config.CodesearchIncrementalUpdateAction(apiURL, ghURL, "master")
+	fakeWorkflow := &tables.Workflow{
+		RepoURL: "github.com/buildbuddy-io/buildbuddy",
+	}
+	steps := config.CodesearchIncrementalUpdateAction(fakeWorkflow)
 
-	require.NotNil(t, action)
-	assert.Equal(t, config.CSIncrementalUpdateName, action.Name)
-	require.NotNil(t, action.Triggers)
-	require.NotNil(t, action.Triggers.Push)
-	assert.Equal(t, []string{"master"}, action.Triggers.Push.Branches)
-	require.NotNil(t, action.Steps)
-	assert.Len(t, action.Steps, 1)
-	assert.Contains(t, action.Steps[0].Run, apiURL.String())
-	assert.Contains(t, action.Steps[0].Run, ghURL)
+	assert.Equal(t, 1, len(steps))
+	assert.Contains(t, steps[0].Run, ghURL)
+	assert.Contains(t, steps[0].Run, cache_api_url.WithPath("").String())
 }
