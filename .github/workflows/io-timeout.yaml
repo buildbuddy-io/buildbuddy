@@ -1,0 +1,29 @@
+name: repro
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  repro:
+    runs-on: ubuntu-24.04-32cpu
+    steps:
+      - name: Repro
+        run: |
+          echo >MODULE.bazel ''
+          echo >BUILD.bazel '
+          sh_test(name = "test", srcs = ["test.sh"])
+          '
+          echo >test.sh 'cat -v /dev/random | head -c 1000'
+          chmod +x test.sh
+
+          bazelisk test //:test \
+            --remote_executor=buildbuddy.buildbuddy.io \
+            --bes_backend=buildbuddy.buildbuddy.io \
+            --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/ \
+            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+            --test_output=errors \
+            --runs_per_test=50000 \
+            --jobs=500 \
+            --remote_max_connections=384
