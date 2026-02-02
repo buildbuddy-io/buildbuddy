@@ -965,7 +965,7 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	testcache.Setup(t, te, localGRPClis)
 
 	// Set up OCI fetcher server and client
-	ociFetcherServer, err := ocifetcher.NewServer(te.GetByteStreamClient(), te.GetActionCacheClient())
+	ociFetcherServer, err := ocifetcher.NewServer(te)
 	require.NoError(t, err)
 	ofpb.RegisterOCIFetcherServer(grpcServer, ociFetcherServer)
 

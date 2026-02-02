@@ -60,8 +60,8 @@ func TestHappyPath(t *testing.T) {
 			expectedManifest, err := img.RawManifest()
 			require.NoError(t, err)
 
-			_, bsClient, acClient := setupCacheEnv(t)
-			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+			te, _, _ := setupCacheEnv(t)
+			ociFetcherClient := runOCIFetcherServer(ctx, t, te)
 			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
 
 			resp, err := proxyClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
@@ -90,8 +90,8 @@ func TestHappyPath(t *testing.T) {
 			imageName, img := reg.PushNamedImage(t, "test-image", creds)
 			expectedDigest, expectedSize, expectedMediaType := imageMetadata(t, img)
 
-			_, bsClient, acClient := setupCacheEnv(t)
-			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+			te, _, _ := setupCacheEnv(t)
+			ociFetcherClient := runOCIFetcherServer(ctx, t, te)
 			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
 
 			resp, err := proxyClient.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
@@ -126,8 +126,8 @@ func TestHappyPath(t *testing.T) {
 			require.NoError(t, err)
 			expectedSize, expectedMediaType := layerMetadata(t, layer)
 
-			_, bsClient, acClient := setupCacheEnv(t)
-			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+			te, _, _ := setupCacheEnv(t)
+			ociFetcherClient := runOCIFetcherServer(ctx, t, te)
 			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
 
 			resp, err := proxyClient.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
@@ -161,8 +161,8 @@ func TestHappyPath(t *testing.T) {
 			require.NoError(t, err)
 			expectedData := layerData(t, layer)
 
-			_, bsClient, acClient := setupCacheEnv(t)
-			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+			te, _, _ := setupCacheEnv(t)
+			ociFetcherClient := runOCIFetcherServer(ctx, t, te)
 			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
 
 			stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
@@ -237,8 +237,8 @@ func TestBypassRegistry(t *testing.T) {
 			reg := setupTestRegistry(t, nil)
 			imageName, img := reg.PushNamedImage(t, "test-image", nil)
 
-			_, bsClient, acClient := setupCacheEnv(t)
-			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+			te, _, _ := setupCacheEnv(t)
+			ociFetcherClient := runOCIFetcherServer(ctx, t, te)
 			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
 
 			resp, err := proxyClient.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
@@ -278,8 +278,8 @@ func TestBypassRegistry(t *testing.T) {
 			reg := setupTestRegistry(t, nil)
 			imageName, img := reg.PushNamedImage(t, "test-image", nil)
 
-			_, bsClient, acClient := setupCacheEnv(t)
-			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+			te, _, _ := setupCacheEnv(t)
+			ociFetcherClient := runOCIFetcherServer(ctx, t, te)
 			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
 
 			resp, err := proxyClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
@@ -321,8 +321,8 @@ func TestBypassRegistry(t *testing.T) {
 			digest, err := layer.Digest()
 			require.NoError(t, err)
 
-			_, bsClient, acClient := setupCacheEnv(t)
-			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+			te, _, _ := setupCacheEnv(t)
+			ociFetcherClient := runOCIFetcherServer(ctx, t, te)
 			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
 
 			resp, err := proxyClient.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
@@ -360,8 +360,8 @@ func TestBypassRegistry(t *testing.T) {
 			digest, err := layer.Digest()
 			require.NoError(t, err)
 
-			_, bsClient, acClient := setupCacheEnv(t)
-			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+			te, _, _ := setupCacheEnv(t)
+			ociFetcherClient := runOCIFetcherServer(ctx, t, te)
 			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
 
 			stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
@@ -407,8 +407,8 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 			reg := setupTestRegistry(t, registryCreds)
 			imageName, _ := reg.PushNamedImage(t, "test-image", registryCreds)
 
-			_, bsClient, acClient := setupCacheEnv(t)
-			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+			te, _, _ := setupCacheEnv(t)
+			ociFetcherClient := runOCIFetcherServer(ctx, t, te)
 			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
 
 			_, err := proxyClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
@@ -428,8 +428,8 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 			reg := setupTestRegistry(t, registryCreds)
 			imageName, _ := reg.PushNamedImage(t, "test-image", registryCreds)
 
-			_, bsClient, acClient := setupCacheEnv(t)
-			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+			te, _, _ := setupCacheEnv(t)
+			ociFetcherClient := runOCIFetcherServer(ctx, t, te)
 			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
 
 			_, err := proxyClient.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
@@ -456,8 +456,8 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 			digest, err := layer.Digest()
 			require.NoError(t, err)
 
-			_, bsClient, acClient := setupCacheEnv(t)
-			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+			te, _, _ := setupCacheEnv(t)
+			ociFetcherClient := runOCIFetcherServer(ctx, t, te)
 			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
 
 			_, err = proxyClient.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
@@ -484,8 +484,8 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 			digest, err := layer.Digest()
 			require.NoError(t, err)
 
-			_, bsClient, acClient := setupCacheEnv(t)
-			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+			te, _, _ := setupCacheEnv(t)
+			ociFetcherClient := runOCIFetcherServer(ctx, t, te)
 			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
 
 			stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
@@ -539,9 +539,9 @@ func setupCacheEnv(t *testing.T) (*testenv.TestEnv, bspb.ByteStreamClient, repb.
 }
 
 // runOCIFetcherServer creates an OCIFetcher server and returns a client connected to it.
-func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) ofpb.OCIFetcherClient {
+func runOCIFetcherServer(ctx context.Context, t *testing.T, cacheEnv *testenv.TestEnv) ofpb.OCIFetcherClient {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
-	server, err := ocifetcher.NewServer(bsClient, acClient)
+	server, err := ocifetcher.NewServer(cacheEnv)
 	require.NoError(t, err)
 
 	env := testenv.GetTestEnv(t)

@@ -70,13 +70,13 @@ func setupRegistry(t *testing.T, creds *testregistry.BasicAuthCreds, interceptor
 }
 
 func newTestServer(t *testing.T) ofpb.OCIFetcherServer {
-	_, bsClient, acClient := setupCacheEnv(t)
-	return newTestServerWithCache(t, bsClient, acClient)
+	te, _, _ := setupCacheEnv(t)
+	return newTestServerWithEnv(t, te)
 }
 
-func newTestServerWithCache(t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) ofpb.OCIFetcherServer {
+func newTestServerWithEnv(t *testing.T, env *testenv.TestEnv) ofpb.OCIFetcherServer {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
-	server, err := ocifetcher.NewServer(bsClient, acClient)
+	server, err := ocifetcher.NewServer(env)
 	require.NoError(t, err)
 	return server
 }
@@ -379,8 +379,8 @@ func TestServerHappyPath(t *testing.T) {
 			require.NoError(t, err)
 			expectedData := layerData(t, layer)
 
-			_, bsClient, acClient := setupCacheEnv(t)
-			server := newTestServerWithCache(t, bsClient, acClient)
+			te, _, _ := setupCacheEnv(t)
+			server := newTestServerWithEnv(t, te)
 
 			// First fetch - cache miss, should hit registry
 			counter.Reset()
@@ -808,8 +808,8 @@ func TestServerBypassRegistry(t *testing.T) {
 		require.NoError(t, err)
 		expectedData := layerData(t, layer)
 
-		_, bsClient, acClient := setupCacheEnv(t)
-		server := newTestServerWithCache(t, bsClient, acClient)
+		te, _, _ := setupCacheEnv(t)
+		server := newTestServerWithEnv(t, te)
 
 		// First fetch - populate cache
 		stream := &mockFetchBlobServer{ctx: context.Background()}
@@ -885,8 +885,8 @@ func TestServerBypassRegistry(t *testing.T) {
 		require.NoError(t, err)
 		expectedSize, expectedMediaType := layerMetadata(t, layer)
 
-		_, bsClient, acClient := setupCacheEnv(t)
-		server := newTestServerWithCache(t, bsClient, acClient)
+		te, _, _ := setupCacheEnv(t)
+		server := newTestServerWithEnv(t, te)
 
 		// First, fetch the blob to populate the cache (FetchBlob writes metadata to AC)
 		stream := &mockFetchBlobServer{ctx: context.Background()}
@@ -924,8 +924,8 @@ func TestServerBypassRegistry(t *testing.T) {
 		require.NoError(t, err)
 		expectedSize, expectedMediaType := layerMetadata(t, layer)
 
-		_, bsClient, acClient := setupCacheEnv(t)
-		server := newTestServerWithCache(t, bsClient, acClient)
+		te, _, _ := setupCacheEnv(t)
+		server := newTestServerWithEnv(t, te)
 
 		// First fetch - populate cache via FetchBlob
 		stream := &mockFetchBlobServer{ctx: context.Background()}
@@ -993,8 +993,8 @@ func TestServerBypassRegistry(t *testing.T) {
 		expectedManifest, err := img.RawManifest()
 		require.NoError(t, err)
 
-		_, bsClient, acClient := setupCacheEnv(t)
-		server := newTestServerWithCache(t, bsClient, acClient)
+		te, _, _ := setupCacheEnv(t)
+		server := newTestServerWithEnv(t, te)
 
 		// First fetch by digest - cache miss, should fetch from registry and cache
 		counter.Reset()
@@ -1027,8 +1027,8 @@ func TestServerBypassRegistry(t *testing.T) {
 		expectedManifest, err := img.RawManifest()
 		require.NoError(t, err)
 
-		_, bsClient, acClient := setupCacheEnv(t)
-		server := newTestServerWithCache(t, bsClient, acClient)
+		te, _, _ := setupCacheEnv(t)
+		server := newTestServerWithEnv(t, te)
 
 		// First fetch by tag - cache miss, should HEAD then GET from registry
 		counter.Reset()
@@ -1066,8 +1066,8 @@ func TestServerBypassRegistry(t *testing.T) {
 		expectedManifest, err := img.RawManifest()
 		require.NoError(t, err)
 
-		_, bsClient, acClient := setupCacheEnv(t)
-		server := newTestServerWithCache(t, bsClient, acClient)
+		te, _, _ := setupCacheEnv(t)
+		server := newTestServerWithEnv(t, te)
 
 		// First fetch - populate cache
 		resp, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
@@ -1190,8 +1190,8 @@ func TestFetchBlobSingleflightHappyPath(t *testing.T) {
 	require.NoError(t, err)
 	expectedData := layerData(t, layer)
 
-	_, bsClient, acClient := setupCacheEnv(t)
-	server := newTestServerWithCache(t, bsClient, acClient)
+	te, _, _ := setupCacheEnv(t)
+	server := newTestServerWithEnv(t, te)
 
 	req := &ofpb.FetchBlobRequest{
 		Ref: imageName + "@" + digest.String(),
@@ -1238,8 +1238,8 @@ func TestFetchBlobSingleflightCacheHit(t *testing.T) {
 	require.NoError(t, err)
 	expectedData := layerData(t, layer)
 
-	_, bsClient, acClient := setupCacheEnv(t)
-	server := newTestServerWithCache(t, bsClient, acClient)
+	te, _, _ := setupCacheEnv(t)
+	server := newTestServerWithEnv(t, te)
 
 	req := &ofpb.FetchBlobRequest{
 		Ref: imageName + "@" + digest.String(),
@@ -1330,8 +1330,8 @@ func TestFetchBlobSingleflightLeaderSendFails(t *testing.T) {
 	require.NoError(t, err)
 	expectedData := layerData(t, layer)
 
-	_, bsClient, acClient := setupCacheEnv(t)
-	server := newTestServerWithCache(t, bsClient, acClient)
+	te, _, _ := setupCacheEnv(t)
+	server := newTestServerWithEnv(t, te)
 
 	req := &ofpb.FetchBlobRequest{
 		Ref: imageName + "@" + digest.String(),
@@ -1391,9 +1391,10 @@ func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 	require.NoError(t, err)
 	expectedData := layerData(t, layer)
 
-	bsClient := failingByteStreamClient{}
-	acClient := notFoundActionCacheClient{}
-	server := newTestServerWithCache(t, bsClient, acClient)
+	te := testenv.GetTestEnv(t)
+	te.SetByteStreamClient(failingByteStreamClient{})
+	te.SetActionCacheClient(notFoundActionCacheClient{})
+	server := newTestServerWithEnv(t, te)
 
 	req := &ofpb.FetchBlobRequest{
 		Ref: imageName + "@" + digest.String(),

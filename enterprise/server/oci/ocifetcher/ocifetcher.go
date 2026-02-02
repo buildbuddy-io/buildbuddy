@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -31,10 +32,8 @@ import (
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -75,11 +74,9 @@ func makeBlobFetchKey(repo gcrname.Repository, h gcr.Hash, creds *rgpb.Credentia
 }
 
 type ociFetcherServer struct {
+	env               environment.Env
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
-
-	bsClient bspb.ByteStreamClient
-	acClient repb.ActionCacheClient
 
 	mu        sync.Mutex
 	pullerLRU *lru.LRU[*pullerLRUEntry]
@@ -93,17 +90,12 @@ type ociFetcherServer struct {
 // NewServer constructs an OCIFetcherServer that
 // fetches OCI blobs and manifests from remote registries.
 //
-// bsClient and acClient are required for blob caching.
+// The byte stream client and action cache client are resolved from env
+// at request time, so they do not need to be set on env at construction time.
 //
 // It is preferred to construct only one server, so that there is only
 // one Puller cache per process.
-func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) (ofpb.OCIFetcherServer, error) {
-	if bsClient == nil {
-		return nil, status.FailedPreconditionError("OCIFetcherServer requires a non-nil byte stream client")
-	}
-	if acClient == nil {
-		return nil, status.FailedPreconditionError("OCIFetcherServer requires a non-nil action cache client")
-	}
+func NewServer(env environment.Env) (ofpb.OCIFetcherServer, error) {
 	allowedPrivateIPs, err := ParseAllowedPrivateIPs()
 	if err != nil {
 		return nil, err
@@ -116,10 +108,9 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 		return nil, status.InternalErrorf("error initializing puller cache: %s", err)
 	}
 	return &ociFetcherServer{
+		env:               env,
 		allowedPrivateIPs: allowedPrivateIPs,
 		mirrors:           Mirrors(),
-		bsClient:          bsClient,
-		acClient:          acClient,
 		pullerLRU:         pullerLRU,
 	}, nil
 }
@@ -128,7 +119,7 @@ func RegisterServer(env *real_environment.RealEnv) error {
 	if !*enabled {
 		return nil
 	}
-	server, err := NewServer(env.GetByteStreamClient(), env.GetActionCacheClient())
+	server, err := NewServer(env)
 	if err != nil {
 		return err
 	}
@@ -150,6 +141,11 @@ func RegisterServer(env *real_environment.RealEnv) error {
 // server if present, and FetchBlob will not fall back to the remote registry.
 func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
+
+	if s.env.GetByteStreamClient() == nil {
+		log.CtxErrorf(ctx, "FetchBlob called but byte stream client is nil")
+		return status.FailedPreconditionError("byte stream client is not configured")
+	}
 
 	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return err
@@ -229,6 +225,15 @@ func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
 // Server admins can bypass the registry: the metadata will be served from the action cache
 // if present. If not present, FetchBlobMetadata will not fall back to the remote registry.
 func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
+	if s.env.GetByteStreamClient() == nil {
+		log.CtxErrorf(ctx, "FetchBlobMetadata called but byte stream client is nil")
+		return nil, status.FailedPreconditionError("byte stream client is not configured")
+	}
+	if s.env.GetActionCacheClient() == nil {
+		log.CtxErrorf(ctx, "FetchBlobMetadata called but action cache client is nil")
+		return nil, status.FailedPreconditionError("action cache client is not configured")
+	}
+
 	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return nil, err
 	}
@@ -249,7 +254,7 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		return nil, status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
 	}
 
-	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.env.GetByteStreamClient(), s.env.GetActionCacheClient(), repo, hash)
 	if err == nil {
 		return &ofpb.FetchBlobMetadataResponse{
 			Size:      metadata.GetContentLength(),
@@ -294,6 +299,11 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 // Server admins can bypass the registry: the manifest will be served from the action cache
 // if present. If not present, FetchManifest will not fall back to the remote registry.
 func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
+	if s.env.GetActionCacheClient() == nil {
+		log.CtxErrorf(ctx, "FetchManifest called but action cache client is nil")
+		return nil, status.FailedPreconditionError("action cache client is not configured")
+	}
+
 	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return nil, err
 	}
@@ -327,7 +337,7 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 	}
 
 	repo := imageRef.Context()
-	cached, err := ocicache.FetchManifestFromAC(ctx, s.acClient, repo, hash, imageRef)
+	cached, err := ocicache.FetchManifestFromAC(ctx, s.env.GetActionCacheClient(), repo, hash, imageRef)
 	if err == nil {
 		return &ofpb.FetchManifestResponse{
 			Digest:    hash.String(),
@@ -351,7 +361,7 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 		return nil, err
 	}
 
-	if err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, s.acClient, repo, hash, string(remoteDesc.MediaType), imageRef); err != nil {
+	if err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, s.env.GetActionCacheClient(), repo, hash, string(remoteDesc.MediaType), imageRef); err != nil {
 		log.CtxWarningf(ctx, "Error writing manifest to cache: %s", err)
 	}
 
@@ -446,12 +456,12 @@ func (s *ociFetcherServer) evictPuller(imageRef gcrname.Reference, creds *rgpb.C
 // fetchBlobFromCache attempts to fetch a blob from the cache and streams it directly to the gRPC response.
 // Returns nil if successful, NotFoundError if not in cache, or another error on failure.
 func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, repo gcrname.Repository, hash gcr.Hash) error {
-	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.env.GetByteStreamClient(), s.env.GetActionCacheClient(), repo, hash)
 	if err != nil {
 		return err
 	}
 	w := &grpcStreamWriter{stream: stream}
-	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, metadata.GetContentLength())
+	return ocicache.FetchBlobFromCache(ctx, w, s.env.GetByteStreamClient(), hash, metadata.GetContentLength())
 }
 
 // fetchBlobFromRemoteWriteToCacheAndResponse fetches a blob from the upstream registry, streams it to the
@@ -485,7 +495,7 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		return s.streamBlob(rc, stream)
 	}
 
-	cachedRC, err := ocicache.NewBlobReadThroughCacher(ctx, rc, s.bsClient, s.acClient, repo, hash, string(mediaType), size)
+	cachedRC, err := ocicache.NewBlobReadThroughCacher(ctx, rc, s.env.GetByteStreamClient(), s.env.GetActionCacheClient(), repo, hash, string(mediaType), size)
 	if err != nil {
 		defer rc.Close()
 		log.CtxWarningf(ctx, "Error creating read-through cacher: %s", err)
