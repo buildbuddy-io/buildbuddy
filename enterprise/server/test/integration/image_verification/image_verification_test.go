@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -35,15 +37,21 @@ func TestExecutor(t *testing.T) {
 	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
 	ctx := context.Background()
 	cmd := &repb.Command{
-		Arguments: []string{"/tini", "--", "/app/enterprise/server/cmd/executor/executor"},
+		Arguments: []string{"/tini", "--", "/app/enterprise/server/cmd/executor/executor", "--executor.app_target=grpc://bb-server:1985"},
 	}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
-	c := docker.NewDockerContainer(env, dc, serveExecutorImage(), rootDir, cfg)
-	result := make(chan *interfaces.CommandResult)
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
-	
+	c := docker.NewDockerContainer(env, dc, serveExecutorImage(t), rootDir, cfg)
+	resultChannel := make(chan *interfaces.CommandResult)
+	go func() {
+		resultChannel <- c.Run(ctx, cmd, rootDir, oci.Credentials{})
+	}()
+	time.Sleep(time.Second * 10)
+	c.Remove(ctx)
+	result := <-resultChannel
+	t.Logf("result:\nstdout:%s\nstderr:%s\n", result.Stdout, result.Stderr)
+	t.FailNow()
 }
 
 func serveExecutorImage(t *testing.T) string {
