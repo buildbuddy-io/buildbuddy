@@ -1188,5 +1188,11 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 		// the blob as a single chunk to better comply with the RE API contract.
 		return nil, err
 	}
+
+	if resp, err := s.FindMissingBlobs(ctx, manifest.ToFindMissingBlobsRequest()); err != nil {
+		return nil, err
+	} else if len(resp.GetMissingBlobDigests()) > 0 {
+		return nil, status.NotFoundErrorf("required chunks not found in CAS: %s", chunked_manifest.DigestsSummary(resp.GetMissingBlobDigests()))
+	}
 	return manifest.ToSplitBlobResponse(), nil
 }
