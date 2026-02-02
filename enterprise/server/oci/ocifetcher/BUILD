@@ -10,7 +10,7 @@ go_library(
         "//enterprise/server/util/ocicache",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
-        "//server/environment",
+        "//proto:remote_execution_go_proto",
         "//server/http/httpclient",
         "//server/interfaces",
         "//server/metrics",
@@ -28,6 +28,7 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
 

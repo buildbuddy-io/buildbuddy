@@ -302,6 +302,10 @@ func main() {
 	if err := ociregistry.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+	// Register core services + local gRPC clients before ocifetcher,
+	// which depends on ByteStreamClient and ActionCacheClient.
+	libmain.RegisterCoreServices(realEnv)
+
 	if err := ocifetcher.RegisterServer(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
