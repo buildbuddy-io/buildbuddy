@@ -96,13 +96,6 @@ const (
 	listenerID = "replicaStatusWaiter"
 )
 
-type LogDBConfigType int
-
-const (
-	SmallMemLogDBConfigType LogDBConfigType = iota
-	LargeMemLogDBConfigType
-)
-
 type Store struct {
 	env                      environment.Env
 	rootDir                  string
@@ -176,8 +169,6 @@ type Store struct {
 	maxSingleOpTimeout time.Duration
 }
 
-// registryHolder implements NodeRegistryFactory. When nodeHost is created, it
-// will call this method to create the registry and use it until nodehost close.
 type registryHolder struct {
 	raftAddr string
 	grpcAddr string
@@ -185,6 +176,8 @@ type registryHolder struct {
 	r        registry.NodeRegistry
 }
 
+// registryHolder implements NodeRegistryFactory. When nodeHost is created, it
+// will call this method to create the registry and use it until nodehost close.
 func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
 	nhLog := log.NamedSubLogger(nhid)
 	r := registry.NewDynamicNodeRegistry(rc.g, streamConnections, v, nhLog)
@@ -193,47 +186,36 @@ func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConf
 	return r, nil
 }
 
-func getLogDbConfig(t LogDBConfigType) dbConfig.LogDBConfig {
-	switch t {
-	case SmallMemLogDBConfigType:
-		return dbConfig.GetSmallMemLogDBConfig()
-	case LargeMemLogDBConfigType:
-		return dbConfig.GetLargeMemLogDBConfig()
-	default:
-		alert.UnexpectedEvent("unknown-raft-log-db-config-type", "unknown type: %d", t)
-	}
-	return dbConfig.GetDefaultLogDBConfig()
-}
-
-func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr, nhid string, partitions []disk.Partition, logDBConfigType LogDBConfigType, filestorer filestore.Store, gossipManager interfaces.GossipService) (*Store, error) {
-	rangeCache := rangecache.New()
-	raftListener := listener.NewRaftListener()
-	regHolder := &registryHolder{raftAddr, grpcAddr, gossipManager, nil}
-	logDBConfig := getLogDbConfig(logDBConfigType)
+func getNodehostConfig(cfg *raftConfig.ServerConfig, raftListener *listener.RaftListener, nrf dbConfig.NodeRegistryFactory) dbConfig.NodeHostConfig {
+	logDBConfig := raftConfig.GetLogDBConfig(cfg.LogDBConfigType)
 	logDBConfig.KVLRUCacheSize = *dragonboatBlockCacheSizeBytes
 	nhc := dbConfig.NodeHostConfig{
-		NodeHostID:     nhid,
-		WALDir:         filepath.Join(rootDir, "wal"),
-		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
+		NodeHostID:     cfg.NHID,
+		WALDir:         filepath.Join(cfg.RootDir, "wal"),
+		NodeHostDir:    filepath.Join(cfg.RootDir, "nodehost"),
 		RTTMillisecond: constants.RTTMillisecond,
-		RaftAddress:    raftAddr,
+		RaftAddress:    cfg.RaftAddr,
 		Expert: dbConfig.ExpertConfig{
-			NodeRegistryFactory: regHolder,
+			NodeRegistryFactory: nrf,
 			LogDB:               logDBConfig,
 		},
 		RaftEventListener:   raftListener,
 		SystemEventListener: raftListener,
 		EnableMetrics:       true,
 	}
-	nodeHost, err := dragonboat.NewNodeHost(nhc)
-	if err != nil {
-		return nil, err
-	}
-	registry := regHolder.r
-	apiClient := client.NewAPIClient(env, nodeHost.ID(), registry)
-	sender := sender.New(rangeCache, apiClient)
-	mc := &pebble.MetricsCollector{}
+	return nhc
+}
 
+func getNodehostConfigForTest(cfg *raftConfig.ServerConfig, raftListener *listener.RaftListener, nrf dbConfig.NodeRegistryFactory) dbConfig.NodeHostConfig {
+	nhc := getNodehostConfig(cfg, raftListener, nrf)
+
+	nhc.RTTMillisecond = 1
+	nhc.Expert.LogDB = dbConfig.GetSmallMemLogDBConfig()
+	nhc.EnableMetrics = false
+	return nhc
+}
+
+func getPebbleOptions(mc *pebble.MetricsCollector) *pebble.Options {
 	pebbleOpts := &pebble.Options{
 		MemTableSize: 64 << 20, // 64 MB
 		MaxOpenFiles: 2000,     // double the default
@@ -246,19 +228,83 @@ func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr, nh
 	}
 	if *blockCacheSizeBytes > 0 {
 		c := pebble.NewCache(*blockCacheSizeBytes)
-		defer c.Unref()
 		pebbleOpts.Cache = c
 	}
+	return pebbleOpts
+}
 
-	db, err := pebble.Open(rootDir, "raft_store", pebbleOpts)
+type options struct {
+	nodeRegistryFactory dbConfig.NodeRegistryFactory
+	getNodehostConfigFn func(cfg *raftConfig.ServerConfig, raftListener *listener.RaftListener, nrf dbConfig.NodeRegistryFactory) dbConfig.NodeHostConfig
+	getPebbleOptsFn     func(mc *pebble.MetricsCollector) *pebble.Options
+	getRegistryFn       func() registry.NodeRegistry
+}
+
+type Option func(*options)
+
+func WithTestNodeHostConfig() Option {
+	return func(o *options) {
+		o.getNodehostConfigFn = getNodehostConfigForTest
+	}
+}
+
+func WithPebbleOptsGetter(getter func(mc *pebble.MetricsCollector) *pebble.Options) Option {
+	return func(o *options) {
+		o.getPebbleOptsFn = getter
+	}
+}
+
+func WithNodeRegistryFactory(nrf dbConfig.NodeRegistryFactory) Option {
+	return func(o *options) {
+		o.nodeRegistryFactory = nrf
+	}
+}
+
+func WithRegistryGetter(getter func() registry.NodeRegistry) Option {
+	return func(o *options) {
+		o.getRegistryFn = getter
+	}
+}
+
+func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*Store, error) {
+	regHolder := &registryHolder{cfg.RaftAddr, cfg.GRPCAddr, cfg.GossipManager, nil}
+	o := &options{
+		nodeRegistryFactory: regHolder,
+		getPebbleOptsFn:     getPebbleOptions,
+		getNodehostConfigFn: getNodehostConfig,
+	}
+	o.getRegistryFn = func() registry.NodeRegistry {
+		return regHolder.r
+	}
+
+	for _, opt := range opts {
+		opt(o)
+	}
+
+	raftListener := listener.NewRaftListener()
+
+	nhc := o.getNodehostConfigFn(cfg, raftListener, o.nodeRegistryFactory)
+
+	nodeHost, err := dragonboat.NewNodeHost(nhc)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeRegistry := o.getRegistryFn()
+	apiClient := client.NewAPIClient(env, nodeHost.ID(), nodeRegistry)
+	rangeCache := rangecache.New()
+	sender := sender.New(rangeCache, apiClient)
+	mc := &pebble.MetricsCollector{}
+	pebbleOpts := o.getPebbleOptsFn(mc)
+	if pebbleOpts.Cache != nil {
+		defer pebbleOpts.Cache.Unref()
+	}
+	db, err := pebble.Open(cfg.RootDir, "raft_store", pebbleOpts)
 	if err != nil {
 		return nil, err
 	}
 	leaser := pebble.NewDBLeaser(db)
-	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, grpcListeningAddr, partitions, db, leaser, mc, filestorer)
-}
 
-func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress, grpcListeningAddr string, partitions []disk.Partition, db pebble.IPebbleDB, leaser pebble.Leaser, mc *pebble.MetricsCollector, filestorer filestore.Store) (*Store, error) {
 	nodeLiveness := nodeliveness.New(env.GetServerContext(), nodeHost.ID(), sender)
 
 	nhLog := log.NamedSubLogger(nodeHost.ID())
@@ -273,13 +319,13 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	s := &Store{
 		env:                 env,
-		rootDir:             rootDir,
-		grpcAddr:            grpcAddress,
+		rootDir:             cfg.RootDir,
+		grpcAddr:            cfg.GRPCAddr,
 		nodeHost:            nodeHost,
-		partitions:          partitions,
-		gossipManager:       gossipManager,
+		partitions:          cfg.Partitions,
+		gossipManager:       cfg.GossipManager,
 		sender:              sender,
-		registry:            registry,
+		registry:            nodeRegistry,
 		apiClient:           apiClient,
 		liveness:            nodeLiveness,
 		session:             session,
@@ -292,7 +338,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
 		rangeMap:   rangemap.New[*rfpb.RangeDescriptor](),
 
-		leaseKeeper: leasekeeper.New(nodeHost, nhLog, nodeLiveness, listener, eventsChan, lkSession),
+		leaseKeeper: leasekeeper.New(nodeHost, nhLog, nodeLiveness, raftListener, eventsChan, lkSession),
 		replicas:    sync.Map{},
 
 		eventsMu:       sync.Mutex{},
@@ -309,7 +355,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		maxSingleOpTimeout: raftConfig.SingleRaftOpTimeout(),
 	}
 
-	s.replicaInitStatusWaiter = newReplicaStatusWaiter(listener, nhLog)
+	s.replicaInitStatusWaiter = newReplicaStatusWaiter(raftListener, nhLog)
 
 	updateTagsWorker := &updateTagsWorker{
 		store:          s,
@@ -322,10 +368,10 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	txnCoordinator := txn.NewCoordinator(s, apiClient, clock)
 	s.txnCoordinator = txnCoordinator
 
-	usages, err := usagetracker.New(s.sender, s.leaser, gossipManager, s.NodeDescriptor(), partitions, clock, filestorer)
+	usages, err := usagetracker.New(s.sender, s.leaser, cfg.GossipManager, s.NodeDescriptor(), cfg.Partitions, clock, cfg.FileStorer)
 
 	if *enableDriver {
-		s.driverQueue = driver.NewQueue(s, s.sender, gossipManager, nhLog, apiClient, clock)
+		s.driverQueue = driver.NewQueue(s, s.sender, cfg.GossipManager, nhLog, apiClient, clock)
 	}
 	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s, *clientSessionTTL)
 	s.replicaJanitor = newReplicaJanitor(clock, s, *zombieNodeScanInterval)
@@ -341,7 +387,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	grpc_server.Metrics().InitializeMetrics(s.grpcServer)
 	rfspb.RegisterApiServer(s.grpcServer, s)
 
-	lis, err := net.Listen("tcp", grpcListeningAddr)
+	lis, err := net.Listen("tcp", cfg.GRPCListeningAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +460,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		return nil, err
 	}
 
-	gossipManager.AddListener(s)
+	s.gossipManager.AddListener(s)
 	statusz.AddSection("raft_store", "Store", s)
 
 	// Whenever we bring up a brand new store with no ranges, we need to inform
@@ -1298,6 +1344,10 @@ func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
 		RaftAddress: s.nodeHost.RaftAddress(),
 		GrpcAddress: s.grpcAddr,
 	}
+}
+
+func (s *Store) LeaserForTest() pebble.Leaser {
+	return s.leaser
 }
 
 func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
