@@ -176,6 +176,8 @@ type registryHolder struct {
 	r        registry.NodeRegistry
 }
 
+// registryHolder implements NodeRegistryFactory. When nodeHost is created, it
+// will call this method to create the registry and use it until nodehost close.
 func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
 	nhLog := log.NamedSubLogger(nhid)
 	r := registry.NewDynamicNodeRegistry(rc.g, streamConnections, v, nhLog)

@@ -70,9 +70,16 @@ func GetRaftConfig(rangeID, replicaID uint64) dbConfig.Config {
 }
 
 type ServerConfig struct {
-	RootDir           string
-	RaftAddr          string
-	GRPCAddr          string
+	// The directory where we store the NHID, raft WAL and NodeHost directories
+	// and pebble directories.
+	RootDir string
+	// The address raft library uses to exchange Raft messages, snapshots and
+	// metadata between nodehosts.
+	RaftAddr string
+	// The GRPC address for each metadata server to make grpc calls to each other.
+	GRPCAddr string
+	// The GRPC listening address is the interface we listen for grpc calls. It's
+	// typically set to "0:0:0:0:<port>" for port-forwarding to work.
 	GRPCListeningAddr string
 	NHID              string
 	Partitions        []disk.Partition
