@@ -1230,6 +1230,82 @@ func TestRunAction_PushedRepoOnly(t *testing.T) {
 	}
 }
 
+func TestRunAction_PushedTag(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
+
+	// Create a tag pointing at the initial commit
+	testshell.Run(t, repoPath, `git tag v1.0.0`)
+
+	testCases := []struct {
+		name                    string
+		repoFlags               []string
+		expectedReportingValues map[string]string
+	}{
+		{
+			name: "Pushed tag and commit sha",
+			repoFlags: []string{
+				"--pushed_tag=v1.0.0",
+				"--commit_sha=" + initialCommitSHA,
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "",
+				"tag":    "v1.0.0",
+				"commit": initialCommitSHA,
+			},
+		},
+		{
+			name: "Just pushed tag",
+			repoFlags: []string{
+				"--pushed_tag=v1.0.0",
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "",
+				"tag":    "v1.0.0",
+				"commit": initialCommitSHA,
+			},
+		},
+	}
+	baselineRunnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Print args",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			runnerFlags := append(baselineRunnerFlags, tc.repoFlags...)
+			result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+			checkRunnerResult(t, result)
+			assert.Contains(t, result.Output, "args: {{ Hello world }}", tc.name)
+
+			// Check that metadata was reported correctly
+			runnerInvocation := getRunnerInvocation(t, app, result)
+			var workspaceStatusEvent *bespb.WorkspaceStatus
+			for _, e := range runnerInvocation.Event {
+				if e.BuildEvent.GetWorkspaceStatus() != nil {
+					workspaceStatusEvent = e.BuildEvent.GetWorkspaceStatus()
+					break
+				}
+			}
+			require.NotNil(t, workspaceStatusEvent, tc.name)
+
+			workspaceStatusMap := make(map[string]string, len(workspaceStatusEvent.Item))
+			for _, i := range workspaceStatusEvent.Item {
+				workspaceStatusMap[i.GetKey()] = i.GetValue()
+			}
+
+			require.Equal(t, tc.expectedReportingValues["branch"], workspaceStatusMap["GIT_BRANCH"], tc.name)
+			require.Equal(t, tc.expectedReportingValues["tag"], workspaceStatusMap["GIT_TAG"], tc.name)
+			require.Equal(t, tc.expectedReportingValues["commit"], workspaceStatusMap["COMMIT_SHA"], tc.name)
+		})
+	}
+}
+
 func TestRunAction_PushedAndTargetBranchAreEqual(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
