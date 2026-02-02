@@ -12,6 +12,7 @@ go_library(
         "//proto/api/v1:common_go_proto",
         "//server/api/common",
         "//server/build_event_protocol/accumulator",
+        "//server/util/flag",
         "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )
