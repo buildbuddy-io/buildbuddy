@@ -222,14 +222,6 @@ func Realpath(path string) (string, error) {
 	return filepath.Abs(directPath)
 }
 
-func stripCommentsAndWhitespace(line string) string {
-	index := strings.Index(line, " #")
-	if index >= 0 {
-		line = line[:index]
-	}
-	return strings.TrimSpace(line)
-}
-
 func parseRcRule(line string) (*RcRule, error) {
 	tokens, err := shlex.Split(line)
 	if err != nil {
