@@ -1306,6 +1306,49 @@ func TestRunAction_PushedTag(t *testing.T) {
 	}
 }
 
+func TestRunAction_PushedTagWithoutCommitSHA(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
+
+	// Create a tag pointing at the initial commit
+	testshell.Run(t, repoPath, `git tag v1.0.0`)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Print args",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_tag=v1.0.0",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+	checkRunnerResult(t, result)
+	assert.Contains(t, result.Output, "args: {{ Hello world }}")
+
+	// Check that metadata was reported correctly
+	runnerInvocation := getRunnerInvocation(t, app, result)
+	var workspaceStatusEvent *bespb.WorkspaceStatus
+	for _, e := range runnerInvocation.Event {
+		if e.BuildEvent.GetWorkspaceStatus() != nil {
+			workspaceStatusEvent = e.BuildEvent.GetWorkspaceStatus()
+			break
+		}
+	}
+	require.NotNil(t, workspaceStatusEvent)
+
+	workspaceStatusMap := make(map[string]string, len(workspaceStatusEvent.Item))
+	for _, i := range workspaceStatusEvent.Item {
+		workspaceStatusMap[i.GetKey()] = i.GetValue()
+	}
+
+	require.Equal(t, "", workspaceStatusMap["GIT_BRANCH"])
+	require.Equal(t, "v1.0.0", workspaceStatusMap["GIT_TAG"])
+	require.Equal(t, initialCommitSHA, workspaceStatusMap["COMMIT_SHA"])
+}
+
 func TestRunAction_PushedAndTargetBranchAreEqual(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)

@@ -395,8 +395,8 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if req.GetPushedRepoUrl() == "" {
 		return nil, status.InvalidArgumentError("Missing pushed_repo_url")
 	}
-	if req.GetPushedBranch() == "" && req.GetCommitSha() == "" {
-		return nil, status.InvalidArgumentError("At least one of pushed_branch or commit_sha must be set.")
+	if req.GetPushedBranch() == "" && req.GetPushedTag() == "" && req.GetCommitSha() == "" {
+		return nil, status.InvalidArgumentError("At least one of pushed_branch, pushed_tag or commit_sha must be set.")
 	}
 
 	// Authenticate
