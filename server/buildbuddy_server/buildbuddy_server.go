@@ -1552,8 +1552,17 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 	}
 	gid := authenticatedUser.GetGroupID()
 
+	timeout := time.NewTimer(1 * time.Hour)
+	defer timeout.Stop()
+
 	var eventLogWriter *eventlog.EventLogWriter
 	for {
+		select {
+		case <-timeout.C:
+			return status.DeadlineExceededErrorf("event log streaming only supported for up to 1 hour")
+		default:
+		}
+
 		req, err := stream.Recv()
 		if err == io.EOF {
 			return stream.SendAndClose(&elpb.WriteEventLogResponse{})
