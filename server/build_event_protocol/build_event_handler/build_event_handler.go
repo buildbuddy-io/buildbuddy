@@ -477,7 +477,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		log.CtxErrorf(ctx, "Failed to write cache stats to primaryDB: %s", err)
 	}
 
-	if task.invocationStatus == inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS {
+	if task.invocationStatus == inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS || task.invocationStatus == inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS {
 		// only flush complete invocation to clickhouse.
 		err = r.flushInvocationStatsToOLAPDB(ctx, task.invocationInfo)
 		if err != nil {
