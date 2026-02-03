@@ -464,7 +464,8 @@ pushed.
   the main branch. However, the action will not be continuously re-run as
   changes are pushed to the base branch. For stronger protection against
   breaking the main branch, you may wish to use [merge
-  queues](#merge-queue-support).
+  queues](#merge-queue-support). This is not supported if the build trigger
+  is a tag.
 
 ### `ResourceRequests`
 

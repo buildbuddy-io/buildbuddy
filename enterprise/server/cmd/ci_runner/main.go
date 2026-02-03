@@ -1858,6 +1858,11 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	if *pushedTag != "" && ws.shouldMergeBranches(action.GetTriggers()) {
+		return status.InvalidArgumentError("tags cannot be merged with base")
+	}
+
 	// If enabled, merge the target branch (if different from the
 	// pushed branch) so that the workflow can pick up any changes not yet
 	// incorporated into the pushed branch.
