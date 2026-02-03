@@ -339,6 +339,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
+	if err := libmain.RegisterRemoteAssetServices(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := libmain.RegisterCapabilitiesService(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}

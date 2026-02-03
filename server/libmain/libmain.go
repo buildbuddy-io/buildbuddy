@@ -256,6 +256,10 @@ func RegisterEnvServices(env *real_environment.RealEnv) error {
 	if err := cache_server.Register(env); err != nil {
 		return err
 	}
+	return nil
+}
+
+func RegisterRemoteAssetServices(env *real_environment.RealEnv) error {
 	if err := fetch_server.Register(env); err != nil {
 		return err
 	}
@@ -594,6 +598,9 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	}
 	if err := RegisterLocalGRPCClients(env); err != nil {
 		log.Fatal(err.Error())
+	}
+	if err := RegisterRemoteAssetServices(env); err != nil {
+		log.Fatalf("%v", err)
 	}
 	if err := RegisterCapabilitiesService(env); err != nil {
 		log.Fatalf("%v", err)
