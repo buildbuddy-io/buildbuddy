@@ -34,7 +34,6 @@ go_library(
         "//server/util/background",
         "//server/util/disk",
         "//server/util/flag",
-        "//server/util/flagutil/types",
         "//server/util/lib/set",
         "//server/util/log",
         "//server/util/status",

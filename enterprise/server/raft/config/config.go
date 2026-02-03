@@ -81,9 +81,15 @@ type ServerConfig struct {
 	// The GRPC listening address is the interface we listen for grpc calls. It's
 	// typically set to "0:0:0:0:<port>" for port-forwarding to work.
 	GRPCListeningAddr string
-	NHID              string
-	Partitions        []disk.Partition
-	LogDBConfigType   LogDBConfigType
-	FileStorer        filestore.Store
-	GossipManager     interfaces.GossipService
+
+	// DeploymentID is used to determine whether two raft NodeHost instances
+	// belong to the same deployment and thus allowed to communicate with each
+	// other. Also, data with different deployment ID will be in different
+	// directories.
+	DeploymentID    uint64
+	NHID            string
+	Partitions      []disk.Partition
+	LogDBConfigType LogDBConfigType
+	FileStorer      filestore.Store
+	GossipManager   interfaces.GossipService
 }

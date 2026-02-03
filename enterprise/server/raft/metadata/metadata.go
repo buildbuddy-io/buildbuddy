@@ -28,15 +28,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
-
-	stdFlag "flag"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
@@ -60,13 +57,8 @@ var (
 	atimeBufferSize         = flag.Int("cache.raft.atime_buffer_size", 100000, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	atimeWriteBatchSize     = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
 
-	// TODO(tylerw): remove after dev.
-	// Store raft content in a subdirectory with the same name as the gossip
-	// key, so that we can easily start fresh in dev by just changing the
-	// gossip key.
-	subdir = types.Alias[string](stdFlag.CommandLine, "gossip.secret_key")
-
-	gcsConfig = flag.Struct("cache.raft.gcs", cache_config.GCSConfig{}, "Config to specify gcs")
+	deploymentID = flag.Uint64("cache.raft.deployment_id", 0, "Deployment ID is used to determine whether to raft node hosts belong to the same deployment and thus allowed to communicate with each other. Note: when you change deploymentID and has --cache.raft.clear_prev_cache_on_startup = true, the data from non-current deployments will be wiped out.")
+	gcsConfig    = flag.Struct("cache.raft.gcs", cache_config.GCSConfig{}, "Config to specify gcs")
 )
 
 const (
@@ -168,13 +160,15 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		}
 	}
 
+	subdir := fmt.Sprint(*deploymentID)
+
 	if *clearPrevCacheOnStartup {
-		if err := clearPrevCache(*rootDirectory, *subdir); err != nil {
+		if err := clearPrevCache(*rootDirectory, subdir); err != nil {
 			return nil, status.InternalErrorf("failed to delete cache from previous run: %w", err)
 		}
 	}
 
-	rootDir := filepath.Join(*rootDirectory, *subdir)
+	rootDir := filepath.Join(*rootDirectory, subdir)
 	configDir := filepath.Join(rootDir, configDirName)
 	if err := disk.EnsureDirectoryExists(configDir); err != nil {
 		return nil, err
