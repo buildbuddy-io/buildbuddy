@@ -1,6 +1,7 @@
 package action_cache_server_test
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -12,12 +13,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -602,6 +606,47 @@ func TestRecordOrigin(t *testing.T) {
 	err = am[0].UnmarshalTo(om2)
 	require.NoError(t, err)
 	require.Equal(t, om2.GetInvocationId(), invocationID)
+}
+
+func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
+	flags.Set(t, "cache.max_chunk_size_bytes", 10)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 100)
+	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
+	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
+
+	allData := append(chunk1Data, chunk2Data...)
+	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	cm := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest()},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, cm.Store(ctx, cache))
+
+	ar := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{Path: "output.bin", Digest: blobDigest},
+		},
+	}
+
+	chunkingEnabled := true
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, chunkingEnabled, ar))
+
+	chunkingDisabled := false
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, chunkingDisabled, ar)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err))
 }
 
 func TestRecordOriginScorecard(t *testing.T) {
