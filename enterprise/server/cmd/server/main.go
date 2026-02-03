@@ -176,10 +176,19 @@ func main() {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
 
+	libmain.ConfigureRuntime()
+
 	// Setup the prod fanciness in our environment
 	convertToProdOrDie(rootContext, realEnv)
 
 	libmain.StartMonitoringHandler(realEnv)
+
+	if err := libmain.RegisterEnvServices(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.RegisterLocalGRPCClients(realEnv); err != nil {
+		log.Fatal(err.Error())
+	}
 
 	if err := experiments.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
@@ -330,5 +339,17 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
+	if err := libmain.RegisterCapabilitiesService(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.StartGRPCServers(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.ConfigureHTTPMuxes(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.StartHTTPServers(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	libmain.WaitForGracefulShutdown(realEnv)
 }
