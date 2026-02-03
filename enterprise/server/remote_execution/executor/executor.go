@@ -356,6 +356,14 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		if status.IsDeadlineExceededError(err) {
 			err = status.UnavailableError(status.Message(err))
 		}
+		// Also coerce Internal errors to Unavailable. gRPC RST_STREAM errors
+		// sometimes manifest as Internal errors, and these should be retryable.
+		//
+		// TODO: figure out where these errors are coming from and make sure we
+		// are retrying internally before the error bubbles up to this point.
+		if status.IsInternalError(err) {
+			err = status.UnavailableError(status.Message(err))
+		}
 
 		// Bazel will attempt to reupload inputs if it sees a
 		// FailedPreconditionError with a particular format:
