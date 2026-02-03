@@ -1986,17 +1986,16 @@ func TestFirecrackerRunWithoutNetwork(t *testing.T) {
 	googleDNS := "8.8.8.8"
 	cmd := &repb.Command{Arguments: []string{"ping", "-c1", "-W1", googleDNS}}
 
+	enableExternalNetworking := false
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:          1,
-			MemSizeMb:        2500,
-			EnableNetworking: true,
-			NetworkConfiguration: &fcpb.NetworkConfiguration{
-				EnableExternalNetworking: false,
-			},
-			ScratchDiskSizeMb: 100,
+			NumCpus:                  1,
+			MemSizeMb:                2500,
+			EnableNetworking:         true,
+			EnableExternalNetworking: &enableExternalNetworking,
+			ScratchDiskSizeMb:        100,
 		},
 		ExecutorConfig: getExecutorConfig(t),
 	}

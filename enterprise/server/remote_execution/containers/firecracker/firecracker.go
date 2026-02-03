@@ -547,23 +547,18 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	if numCPUs > firecrackerMaxCPU {
 		numCPUs = firecrackerMaxCPU
 	}
-	var networkConfig *fcpb.NetworkConfiguration
-	if args.Props.Network == "external" {
-		networkConfig = &fcpb.NetworkConfiguration{
-			EnableExternalNetworking: true,
-		}
-	}
+	enableExternalNetworking := args.Props.Network == "external"
 	vmConfig = &fcpb.VMConfiguration{
-		NumCpus:              numCPUs,
-		MemSizeMb:            int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
-		ScratchDiskSizeMb:    int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
-		EnableLogging:        platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
-		EnableNetworking:     true,
-		NetworkConfiguration: networkConfig,
-		InitDockerd:          args.Props.InitDockerd,
-		EnableDockerdTcp:     args.Props.EnableDockerdTCP,
-		HostCpuid:            getCPUID(),
-		EnableVfs:            args.Props.EnableVFS,
+		NumCpus:                  numCPUs,
+		MemSizeMb:                int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
+		ScratchDiskSizeMb:        int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
+		EnableLogging:            platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
+		EnableNetworking:         true,
+		EnableExternalNetworking: &enableExternalNetworking,
+		InitDockerd:              args.Props.InitDockerd,
+		EnableDockerdTcp:         args.Props.EnableDockerdTCP,
+		HostCpuid:                getCPUID(),
+		EnableVfs:                args.Props.EnableVFS,
 	}
 	vmConfig.BootArgs = getBootArgs(vmConfig)
 	opts := ContainerOpts{
@@ -1831,9 +1826,9 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	enableExternalNetworking := false
-	if c.vmConfig.NetworkConfiguration != nil {
-		enableExternalNetworking = c.vmConfig.NetworkConfiguration.EnableExternalNetworking
+	enableExternalNetworking := true
+	if c.vmConfig.EnableExternalNetworking != nil {
+		enableExternalNetworking = *c.vmConfig.EnableExternalNetworking
 	}
 
 	// Pooled networks have external network access enabled. Only use them if
