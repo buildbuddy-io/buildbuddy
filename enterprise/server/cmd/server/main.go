@@ -65,6 +65,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
 	"github.com/buildbuddy-io/buildbuddy/server/libmain"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
@@ -339,10 +341,10 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	if err := libmain.RegisterRemoteAssetServices(realEnv); err != nil {
+	if err := fetch_server.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := libmain.RegisterCapabilitiesService(realEnv); err != nil {
+	if err := capabilities_server.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := libmain.StartGRPCServers(realEnv); err != nil {

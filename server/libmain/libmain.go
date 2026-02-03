@@ -259,20 +259,6 @@ func RegisterEnvServices(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func RegisterRemoteAssetServices(env *real_environment.RealEnv) error {
-	if err := fetch_server.Register(env); err != nil {
-		return err
-	}
-	return nil
-}
-
-func RegisterCapabilitiesService(env *real_environment.RealEnv) error {
-	if err := capabilities_server.Register(env); err != nil {
-		return err
-	}
-	return nil
-}
-
 func StartInternalGRPCServers(env *real_environment.RealEnv) error {
 	b, err := grpc_server.New(env, grpc_server.InternalGRPCPort(), false /*=ssl*/, grpc_server.GRPCServerConfig{})
 	if err != nil {
@@ -599,10 +585,10 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if err := RegisterLocalGRPCClients(env); err != nil {
 		log.Fatal(err.Error())
 	}
-	if err := RegisterRemoteAssetServices(env); err != nil {
+	if err := fetch_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := RegisterCapabilitiesService(env); err != nil {
+	if err := capabilities_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := StartGRPCServers(env); err != nil {
