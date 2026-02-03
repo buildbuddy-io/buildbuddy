@@ -188,10 +188,10 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker, app
 
 	// If configured, enable the cache.
 	if err := memory_cache.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 	if err := disk_cache.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 	if realEnv.GetCache() != nil {
 		log.Printf("Cache: BuildBuddy cache API enabled!")
@@ -259,7 +259,7 @@ func RegisterEnvServices(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func StartInternalGRPCServers(env *real_environment.RealEnv) error {
+func startInternalGRPCServers(env *real_environment.RealEnv) error {
 	b, err := grpc_server.New(env, grpc_server.InternalGRPCPort(), false /*=ssl*/, grpc_server.GRPCServerConfig{})
 	if err != nil {
 		return err
@@ -288,7 +288,7 @@ func registerInternalServices(env *real_environment.RealEnv, grpcServer *grpc.Se
 	channelzservice.RegisterChannelzServiceToServer(grpcServer)
 }
 
-func StartExternalGRPCServers(env *real_environment.RealEnv) error {
+func startExternalGRPCServers(env *real_environment.RealEnv) error {
 	b, err := grpc_server.New(env, grpc_server.GRPCPort(), false /*=ssl*/, grpc_server.GRPCServerConfig{})
 	if err != nil {
 		return err
@@ -394,10 +394,10 @@ func RegisterLocalGRPCClients(env *real_environment.RealEnv) error {
 }
 
 func StartGRPCServers(env *real_environment.RealEnv) error {
-	if err := StartInternalGRPCServers(env); err != nil {
+	if err := startInternalGRPCServers(env); err != nil {
 		return err
 	}
-	return StartExternalGRPCServers(env)
+	return startExternalGRPCServers(env)
 }
 
 func StartMonitoringHandler(env *real_environment.RealEnv) {
@@ -583,7 +583,7 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		log.Fatalf("%v", err)
 	}
 	if err := RegisterLocalGRPCClients(env); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 	if err := fetch_server.Register(env); err != nil {
 		log.Fatalf("%v", err)

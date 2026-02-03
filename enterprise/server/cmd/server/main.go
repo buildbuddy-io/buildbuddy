@@ -189,23 +189,23 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := libmain.RegisterLocalGRPCClients(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 
 	if err := experiments.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := gcs_cache.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 	if err := s3_cache.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 	if err := pebble_cache.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 	if err := migration_cache.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 	if err := redis_client.RegisterDefault(realEnv); err != nil {
 		log.Fatalf("%v", err)
@@ -240,7 +240,7 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := tasksize.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 
 	if err := remote_execution_redis_client.RegisterRemoteExecutionClient(realEnv); err != nil {
@@ -254,14 +254,14 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := distributed.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 
 	if err := memcache.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 	if err := redis_cache.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 
 	if err := execution_server.Register(realEnv); err != nil {
