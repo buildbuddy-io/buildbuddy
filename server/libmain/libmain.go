@@ -218,6 +218,60 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker, app
 	return realEnv
 }
 
+func ConfigureRuntime() {
+	if *maxThreads > 0 {
+		debug.SetMaxThreads(*maxThreads)
+	}
+
+	if err := rlimit.MaxRLimit(); err != nil {
+		log.Printf("Error raising open files limit: %s", err)
+	}
+}
+
+func RegisterEnvServices(env *real_environment.RealEnv) error {
+	if err := ssl.Register(env); err != nil {
+		return err
+	}
+
+	// Register to handle BuildBuddy API messages (over gRPC)
+	if err := buildbuddy_server.Register(env); err != nil {
+		return err
+	}
+
+	if err := build_event_server.Register(env); err != nil {
+		return err
+	}
+	if err := content_addressable_storage_server.Register(env); err != nil {
+		return err
+	}
+	if err := byte_stream_server.Register(env); err != nil {
+		return err
+	}
+	if err := action_cache_server.Register(env); err != nil {
+		return err
+	}
+	if err := push_server.Register(env); err != nil {
+		return err
+	}
+	return nil
+}
+
+// RegisterCacheServices registers services that require a configured cache.
+// This must be called after all cache backends (disk, pebble, gcs, etc.) have
+// been registered.
+func RegisterCacheServices(env *real_environment.RealEnv) error {
+	if err := cache_server.Register(env); err != nil {
+		return err
+	}
+	if err := fetch_server.Register(env); err != nil {
+		return err
+	}
+	if err := capabilities_server.Register(env); err != nil {
+		return err
+	}
+	return nil
+}
+
 func startInternalGRPCServers(env *real_environment.RealEnv) error {
 	b, err := grpc_server.New(env, grpc_server.InternalGRPCPort(), false /*=ssl*/, grpc_server.GRPCServerConfig{})
 	if err != nil {
@@ -324,7 +378,7 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 }
 
 // TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/6187): Reduce gRPC overhead from self-RPCs.
-func registerLocalGRPCClients(env *real_environment.RealEnv) error {
+func RegisterLocalGRPCClients(env *real_environment.RealEnv) error {
 	// Identify ourselves as an app client in gRPC requests to other apps.
 	usageutil.SetServerName("app")
 	byte_stream_client.RegisterPooledBytestreamClient(env)
@@ -352,85 +406,39 @@ func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 	return nil
 }
 
+func StartGRPCServers(env *real_environment.RealEnv) error {
+	if err := startInternalGRPCServers(env); err != nil {
+		return err
+	}
+	return startGRPCServers(env)
+}
+
 func StartMonitoringHandler(env *real_environment.RealEnv) {
 	env.SetListenAddr(*listen)
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 }
 
-func StartAndRunServices(env *real_environment.RealEnv) {
-	if *maxThreads > 0 {
-		debug.SetMaxThreads(*maxThreads)
-	}
-
-	if err := rlimit.MaxRLimit(); err != nil {
-		log.Printf("Error raising open files limit: %s", err)
-	}
-
+func ConfigureHTTPMuxes(env *real_environment.RealEnv) error {
 	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
 	if err != nil {
-		log.Fatalf("Error reading app bundle hash: %s", err)
+		return status.InternalErrorf("Error reading app bundle hash: %s", err)
 	}
 
 	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
 	if err != nil {
-		log.Fatalf("Error initializing static file server: %s", err)
+		return status.InternalErrorf("Error initializing static file server: %s", err)
 	}
 
 	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
 	if err != nil {
-		log.Fatalf("Error initializing app server: %s", err)
-	}
-
-	if err := ssl.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-
-	// Register to handle BuildBuddy API messages (over gRPC)
-	if err := buildbuddy_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-
-	if err := build_event_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := content_addressable_storage_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := byte_stream_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := action_cache_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := push_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := cache_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := registerLocalGRPCClients(env); err != nil {
-		log.Fatal(err.Error())
-	}
-	if err := fetch_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := capabilities_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-
-	if err := startInternalGRPCServers(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-
-	if err := startGRPCServers(env); err != nil {
-		log.Fatalf("%v", err)
+		return status.InternalErrorf("Error initializing app server: %s", err)
 	}
 
 	// Generate HTTP (protolet) handlers for the BuildBuddy API, so it
 	// can be called over HTTP(s).
 	protoletHandler, err := protolet.GenerateHTTPHandlers("/rpc/BuildBuddyService/", "buildbuddy.service.BuildBuddyService", env.GetBuildBuddyServer(), env.GetGRPCServer())
 	if err != nil {
-		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
+		return status.InternalErrorf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
 	}
 
 	mux := env.GetMux()
@@ -453,14 +461,14 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	mux.Handle("/logout/", interceptors.SetSecurityHeaders(interceptors.DefaultRedirect(interceptors.RedirectOnError(auth.Logout), "/")))
 
 	if err := github.Register(env); err != nil {
-		log.Fatalf("%v", err)
+		return err
 	}
 
 	// Register API as an HTTP service.
 	if api := env.GetAPIService(); api != nil {
 		apiProtoHandlers, err := protolet.GenerateHTTPHandlers("/api/v1/", "api.v1", api, env.GetGRPCServer())
 		if err != nil {
-			log.Fatalf("Error initializing RPC over HTTP handlers for API: %s", err)
+			return status.InternalErrorf("Error initializing RPC over HTTP handlers for API: %s", err)
 		}
 		mux.Handle("/api/v1/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/api/v1/", apiProtoHandlers))
 		// Protolet doesn't currently support streaming RPCs, so we'll register a regular old http handler.
@@ -503,7 +511,10 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	}
 
 	mux.Handle(csp.ReportingEndpoint, csp.ReportingHandler)
+	return nil
+}
 
+func StartHTTPServers(env *real_environment.RealEnv) error {
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
 		Handler: env.GetMux(),
@@ -519,7 +530,7 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if *internalHTTPPort != 0 {
 		lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *listen, *internalHTTPPort))
 		if err != nil {
-			log.Fatalf("could not listen on internal HTTP port: %s", err)
+			return status.InternalErrorf("could not listen on internal HTTP port: %s", err)
 		}
 
 		internalHTTPServer := &http.Server{
@@ -545,14 +556,14 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		}
 		sslListener, err := net.Listen("tcp", sslServer.Addr)
 		if err != nil {
-			log.Fatalf("Failed to listen on SSL port %d: %s", *sslPort, err)
+			return status.InternalErrorf("Failed to listen on SSL port %d: %s", *sslPort, err)
 		}
 		go func() {
 			_ = sslServer.ServeTLS(sslListener, "", "")
 		}()
 		httpListener, err := net.Listen("tcp", server.Addr)
 		if err != nil {
-			log.Fatalf("Failed to listen on port %d: %s", *port, err)
+			return status.InternalErrorf("Failed to listen on port %d: %s", *port, err)
 		}
 		go func() {
 			_ = http.Serve(httpListener, interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
@@ -561,16 +572,43 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		// If no SSL is enabled, we'll just serve things as-is.
 		lis, err := net.Listen("tcp", server.Addr)
 		if err != nil {
-			log.Fatalf("Failed to listen on port %d: %s", *port, err)
+			return status.InternalErrorf("Failed to listen on port %d: %s", *port, err)
 		}
 		go func() {
 			_ = server.Serve(lis)
 		}()
 	}
+	return nil
+}
 
+func WaitForGracefulShutdown(env *real_environment.RealEnv) {
 	if *exitWhenReady {
 		env.GetHealthChecker().Shutdown()
 		os.Exit(0)
 	}
 	env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
+func StartAndRunServices(env *real_environment.RealEnv) {
+	ConfigureRuntime()
+
+	if err := RegisterEnvServices(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := RegisterLocalGRPCClients(env); err != nil {
+		log.Fatal(err.Error())
+	}
+	if err := RegisterCacheServices(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := StartGRPCServers(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := ConfigureHTTPMuxes(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := StartHTTPServers(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	WaitForGracefulShutdown(env)
 }
