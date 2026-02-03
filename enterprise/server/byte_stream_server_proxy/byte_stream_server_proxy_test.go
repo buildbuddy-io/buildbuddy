@@ -14,11 +14,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/chunker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream"
@@ -856,7 +856,7 @@ func TestReadChunked(t *testing.T) {
 		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
 		return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), chunkDataCopy)
 	}
-	cdcChunker, err := chunker.New(ctx, 64*1024, writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
 	require.NoError(t, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(t, err)
@@ -1510,7 +1510,7 @@ func BenchmarkReadChunkedFromRemote(b *testing.B) {
 					compressedData := compression.CompressZstd(nil, chunkData)
 					return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), compressedData)
 				}
-				cdcChunker, err := chunker.New(ctx, 64*1024, writeChunkFn)
+				cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
 				require.NoError(b, err)
 				_, err = cdcChunker.Write(originalData)
 				require.NoError(b, err)

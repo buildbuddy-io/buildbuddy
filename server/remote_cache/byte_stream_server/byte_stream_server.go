@@ -9,7 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_deprecation"
@@ -141,7 +141,7 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	}
 	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
 	if err != nil {
-		if status.IsNotFoundError(err) && s.shouldReadChunked(ctx, cacheRN, offset, limit) {
+		if status.IsNotFoundError(err) && chunking.ShouldReadChunked(ctx, s.env.GetExperimentFlagProvider(), cacheRN.GetDigest().GetSizeBytes(), offset, limit) {
 			reader, err = s.attemptReadChunked(ctx, cacheRN)
 		}
 		if err != nil {
@@ -199,17 +199,8 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	return err
 }
 
-func (s *ByteStreamServer) shouldReadChunked(ctx context.Context, rn *digest.CASResourceName, offset, limit int64) bool {
-	// Check digest first since it's faster than reading efp flag
-	// and very likely to be false.
-	return rn.GetDigest().GetSizeBytes() > remote_cache_config.MaxChunkSizeBytes() &&
-		offset == 0 &&
-		limit == 0 &&
-		remote_cache_config.ChunkingEnabled(ctx, s.env.GetExperimentFlagProvider())
-}
-
 func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CASResourceName) (io.ReadCloser, error) {
-	manifest, err := chunked_manifest.Load(ctx, s.cache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+	manifest, err := chunking.LoadManifest(ctx, s.cache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +209,7 @@ func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CA
 	if missing, err := s.cache.FindMissing(ctx, rns); err != nil {
 		return nil, err
 	} else if len(missing) > 0 {
-		return nil, status.NotFoundErrorf("chunks missing from manifest for %q: %q", rn.DownloadString(), chunked_manifest.DigestsSummary(missing))
+		return nil, status.NotFoundErrorf("chunks missing from manifest for %q: %q", rn.DownloadString(), chunking.DigestsSummary(missing))
 	}
 
 	rcs := make([]io.ReadCloser, 0, len(rns))

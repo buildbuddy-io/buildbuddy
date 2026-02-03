@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//enterprise/server/filestore",
         "//enterprise/server/raft/keys",
-        "//enterprise/server/util/chunker",
         "//enterprise/server/util/gcsutil",
         "//enterprise/server/util/pebble",
         "//proto:remote_execution_go_proto",
@@ -21,6 +20,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
+        "//server/remote_cache/chunking",
         "//server/remote_cache/digest",
         "//server/util/alert",
         "//server/util/approxlru",

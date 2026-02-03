@@ -16,7 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
@@ -1111,7 +1111,7 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 	require.NoError(t, cache.Set(ctx, chunk2RN.ToProto(), chunk2))
 	require.NoError(t, cache.Set(ctx, chunk3RN.ToProto(), chunk3))
 
-	manifest := &chunked_manifest.ChunkedManifest{
+	manifest := &chunking.Manifest{
 		BlobDigest:     blobDigest,
 		ChunkDigests:   []*repb.Digest{chunk1Digest, chunk2Digest, chunk3Digest},
 		InstanceName:   "",

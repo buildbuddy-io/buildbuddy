@@ -17,7 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
@@ -122,26 +122,22 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		return nil, err
 	}
 
-	if len(missing) > 0 && remote_cache_config.ChunkingEnabled(ctx, s.env.GetExperimentFlagProvider()) {
-
-		checker := &missingChunkChecker{
-			cache:        s.cache,
-			chunkPresent: make(map[string]bool),
-		}
+	if len(missing) > 0 && chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
+		checker := chunking.NewMissingChunkChecker(s.cache)
 
 		// https://go.dev/wiki/SliceTricks#filtering-without-allocating
 		stillMissing := missing[:0]
 		for _, d := range missing {
-			if d.GetSizeBytes() <= remote_cache_config.MaxChunkSizeBytes() {
+			if d.GetSizeBytes() <= chunking.MaxChunkSizeBytes() {
 				stillMissing = append(stillMissing, d)
 				continue
 			}
-			manifest, err := chunked_manifest.Load(ctx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction())
+			manifest, err := chunking.LoadManifest(ctx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction())
 			if err != nil {
 				stillMissing = append(stillMissing, d)
 				continue
 			}
-			anyMissing, err := checker.anyChunkMissing(ctx, manifest)
+			anyMissing, err := checker.AnyChunkMissing(ctx, manifest)
 			if err != nil {
 				return nil, status.WrapErrorf(err, "missing chunks for %s", d.GetHash())
 			}
@@ -154,57 +150,6 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 
 	rsp.MissingBlobDigests = missing
 	return rsp, nil
-}
-
-// missingChunkChecker is used to check to make sure all of the chunks that make up a blob
-// are present in the cache, and to de-duplicate excess calls to FindMissing.
-type missingChunkChecker struct {
-	cache        interfaces.Cache
-	chunkPresent map[string]bool
-}
-
-// anyChunkMissing checks to make sure all of the chunks that make up a blob
-// are present in the cache. To de-duplicate excess calls to FindMissing,
-// it keeps a map of chunks that have already been checked.
-//
-// When a new manifest is checked, we mark all of its chunks as present, and then
-// update them as missing if they're returned from FindMissing.
-func (c *missingChunkChecker) anyChunkMissing(ctx context.Context, manifest *chunked_manifest.ChunkedManifest) (bool, error) {
-	var unknownChunks []*rspb.ResourceName
-	for _, rn := range manifest.ChunkResourceNames() {
-		if present, known := c.chunkPresent[rn.GetDigest().GetHash()]; known {
-			if !present {
-				return true, nil
-			}
-			continue
-		}
-		unknownChunks = append(unknownChunks, rn)
-	}
-
-	if len(unknownChunks) == 0 {
-		return false, nil
-	}
-
-	missingDigests, err := c.cache.FindMissing(ctx, unknownChunks)
-	if err != nil {
-		return false, err
-	}
-
-	// To prevent unbounded growth, just clear the chunk
-	// cache if its >1000 entries. Checking the len(map)
-	// is O(1) since Go stores the map length in the map
-	// header
-	if len(c.chunkPresent) >= 1000 {
-		clear(c.chunkPresent)
-	}
-	for _, rn := range unknownChunks {
-		c.chunkPresent[rn.GetDigest().GetHash()] = true
-	}
-	for _, d := range missingDigests {
-		c.chunkPresent[d.GetHash()] = false
-	}
-
-	return len(missingDigests) > 0, nil
 }
 
 // Upload many blobs at once.
@@ -1231,7 +1176,7 @@ func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *r
 		return nil, status.UnimplementedError("SpliceBlob with only one chunk is not supported")
 	}
 
-	manifest := &chunked_manifest.ChunkedManifest{
+	manifest := &chunking.Manifest{
 		BlobDigest:     req.GetBlobDigest(),
 		ChunkDigests:   req.GetChunkDigests(),
 		InstanceName:   req.GetInstanceName(),
@@ -1263,7 +1208,7 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 		return nil, status.InvalidArgumentError("blob_digest is required")
 	}
 
-	manifest, err := chunked_manifest.Load(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
+	manifest, err := chunking.LoadManifest(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
 	if err != nil {
 		// TODO(buildbuddy-internal#6426): Unimplemented is returned when the blob
 		// exists but wasn't stored with chunking. In the future, we could return
@@ -1274,7 +1219,7 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 	if resp, err := s.FindMissingBlobs(ctx, manifest.ToFindMissingBlobsRequest()); err != nil {
 		return nil, err
 	} else if len(resp.GetMissingBlobDigests()) > 0 {
-		return nil, status.NotFoundErrorf("required chunks not found in CAS: %s", chunked_manifest.DigestsSummary(resp.GetMissingBlobDigests()))
+		return nil, status.NotFoundErrorf("required chunks not found in CAS: %s", chunking.DigestsSummary(resp.GetMissingBlobDigests()))
 	}
 	return manifest.ToSplitBlobResponse(), nil
 }
