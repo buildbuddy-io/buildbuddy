@@ -35,6 +35,11 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 		if err := unmarshalBody(r, payload); err != nil {
 			return nil, status.InvalidArgumentErrorf("failed to unmarshal push event payload: %s", err)
 		}
+		// Ignore deletion events. When a branch or tag is deleted,
+		// New is nil in the payload.
+		if payload.Push == nil || len(payload.Push.Changes) == 0 || payload.Push.Changes[0].New == nil {
+			return nil, nil
+		}
 		v, err := fieldgetter.ExtractValues(
 			payload,
 			"Push.Changes.0.New.Name",
@@ -45,19 +50,31 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 		if err != nil {
 			return nil, err
 		}
-		if t := v["Push.Changes.0.New.Type"]; t != "branch" {
-			log.Printf("Ignoring non-branch push event (type %q)", t)
+		name := v["Push.Changes.0.New.Name"]
+		sha := v["Push.Changes.0.New.Target.Hash"]
+		repoURL := v["Repository.Links.HTML.Href"]
+		switch t := v["Push.Changes.0.New.Type"]; t {
+		case "branch":
+			return &interfaces.WebhookData{
+				EventName:     webhook_data.EventName.Push,
+				PushedRepoURL: repoURL,
+				PushedBranch:  name,
+				TargetRepoURL: repoURL,
+				TargetBranch:  name,
+				SHA:           sha,
+			}, nil
+		case "tag":
+			return &interfaces.WebhookData{
+				EventName:     webhook_data.EventName.Push,
+				PushedRepoURL: repoURL,
+				PushedTag:     name,
+				TargetRepoURL: repoURL,
+				SHA:           sha,
+			}, nil
+		default:
+			log.Printf("Ignoring push event with unsupported type %q", t)
 			return nil, nil
 		}
-		branch := v["Push.Changes.0.New.Name"]
-		return &interfaces.WebhookData{
-			EventName:     webhook_data.EventName.Push,
-			PushedRepoURL: v["Repository.Links.HTML.Href"],
-			PushedBranch:  branch,
-			TargetRepoURL: v["Repository.Links.HTML.Href"],
-			TargetBranch:  branch,
-			SHA:           v["Push.Changes.0.New.Target.Hash"],
-		}, nil
 	case "pullrequest:created", "pullrequest:updated":
 		payload := &PullRequestEventPayload{}
 		if err := unmarshalBody(r, payload); err != nil {
@@ -141,8 +158,7 @@ type PushedChange struct {
 type RefState struct {
 	// Target contains the details of the most recent commit after the push.
 	Target *CommitDetails `json:"target"`
-	// Type contains the type of change.
-	// NOTE: We're only interested in "branch".
+	// Type contains the type of change (e.g. "branch" or "tag").
 	Type string `json:"type"`
 	Name string `json:"name"`
 }

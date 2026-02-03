@@ -98,6 +98,7 @@ func (t *Triggers) GetPullRequestTrigger() *PullRequestTrigger {
 
 type PushTrigger struct {
 	Branches []string `yaml:"branches"`
+	Tags     []string `yaml:"tags"`
 }
 
 type PullRequestTrigger struct {
@@ -362,8 +363,8 @@ func GetDefault(targetRepoDefaultBranch string) *BuildBuddyConfig {
 }
 
 // MatchesAnyTrigger returns whether the action is triggered by the event
-// published to the given branch.
-func MatchesAnyTrigger(action *Action, event, branch string) bool {
+// published to the given branch or tag.
+func MatchesAnyTrigger(action *Action, event, branch, tag string) bool {
 	// If user has manually requested action dispatch, always run it
 	if event == webhook_data.EventName.ManualDispatch {
 		return true
@@ -374,11 +375,14 @@ func MatchesAnyTrigger(action *Action, event, branch string) bool {
 	}
 
 	if pushCfg := action.Triggers.Push; pushCfg != nil && event == webhook_data.EventName.Push {
-		return matchesBranchPatterns(pushCfg.Branches, branch)
+		if tag != "" {
+			return matchesAnyPattern(pushCfg.Tags, tag)
+		}
+		return matchesAnyPattern(pushCfg.Branches, branch)
 	}
 
 	if prCfg := action.Triggers.PullRequest; prCfg != nil && event == webhook_data.EventName.PullRequest {
-		return matchesBranchPatterns(prCfg.Branches, branch)
+		return matchesAnyPattern(prCfg.Branches, branch)
 	}
 	return false
 }
@@ -411,10 +415,10 @@ func matchesRestrictedGlob(pattern, text string) (isMatched, isNegation bool) {
 	return strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix), isNegation
 }
 
-func matchesBranchPatterns(branchPatterns []string, branch string) bool {
+func matchesAnyPattern(haystack []string, needle string) bool {
 	matched := false
-	for _, branchPattern := range branchPatterns {
-		if m, isNegation := matchesRestrictedGlob(branchPattern, branch); m {
+	for _, pattern := range haystack {
+		if m, isNegation := matchesRestrictedGlob(pattern, needle); m {
 			matched = !isNegation
 			// Keep going - last pattern wins.
 		}
