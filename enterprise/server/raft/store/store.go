@@ -190,6 +190,7 @@ func getNodehostConfig(cfg *raftConfig.ServerConfig, raftListener *listener.Raft
 	logDBConfig := raftConfig.GetLogDBConfig(cfg.LogDBConfigType)
 	logDBConfig.KVLRUCacheSize = *dragonboatBlockCacheSizeBytes
 	nhc := dbConfig.NodeHostConfig{
+		DeploymentID:   cfg.DeploymentID,
 		NodeHostID:     cfg.NHID,
 		WALDir:         filepath.Join(cfg.RootDir, "wal"),
 		NodeHostDir:    filepath.Join(cfg.RootDir, "nodehost"),
