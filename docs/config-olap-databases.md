@@ -45,14 +45,16 @@ olap_database:
 
 2 cpu and 50 GiB mem are able to handle ~150 insert qps (normal) / 600 qps (peak).
 Disk usage can be estimated as follows:
+
 |table | avg_bytes_per_row|
 |---|---|
 |Executions | 260|
 |Invocations | 107|
 |TestTargetStatuses| 23.0|
+
 Note: `TestTargetStatuses` corresponds to `Targets` and `TargetStatuses` in
 MysqlDB.
-An addition 20% disk is recommended to be reserved to handle addition disk usage
+An additional 20% disk is recommended to be reserved to handle addition disk usage
 during merging.
 
 ## Feature Configuration
