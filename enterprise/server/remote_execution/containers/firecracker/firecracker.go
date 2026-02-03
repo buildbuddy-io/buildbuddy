@@ -1832,8 +1832,8 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	defer span.End()
 
 	enableExternalNetworking := false
-	if c.vmConfig.NetworkConfig != nil {
-		enableExternalNetworking = c.vmConfig.NetworkConfig.EnableExternalNetworking
+	if c.vmConfig.NetworkConfiguration != nil {
+		enableExternalNetworking = c.vmConfig.NetworkConfiguration.EnableExternalNetworking
 	}
 
 	// Pooled networks have external network access enabled. Only use them if

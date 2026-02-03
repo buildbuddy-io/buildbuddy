@@ -1993,7 +1993,7 @@ func TestFirecrackerRunWithoutNetwork(t *testing.T) {
 			NumCpus:          1,
 			MemSizeMb:        2500,
 			EnableNetworking: true,
-			NetworkConfig: &fcpb.NetworkConfiguration{
+			NetworkConfiguration: &fcpb.NetworkConfiguration{
 				EnableExternalNetworking: false,
 			},
 			ScratchDiskSizeMb: 100,
