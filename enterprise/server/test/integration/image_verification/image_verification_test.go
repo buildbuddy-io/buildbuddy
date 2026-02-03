@@ -42,7 +42,7 @@ func TestExecutor(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
-	c := docker.NewDockerContainer(env, dc, serveExecutorImage(t), rootDir, cfg)
+	c := docker.NewDockerContainer(env, dc, "bazel/enterprise/server/cmd/executor:executor_image", rootDir, cfg)
 	resultChannel := make(chan *interfaces.CommandResult)
 	go func() {
 		resultChannel <- c.Run(ctx, cmd, rootDir, oci.Credentials{})
@@ -50,6 +50,7 @@ func TestExecutor(t *testing.T) {
 	time.Sleep(time.Second * 10)
 	c.Remove(ctx)
 	result := <-resultChannel
+	t.Logf("command:\n%s\n", result.CommandDebugString)
 	t.Logf("result:\nstdout:%s\nstderr:%s\n", result.Stdout, result.Stderr)
 	t.FailNow()
 }
