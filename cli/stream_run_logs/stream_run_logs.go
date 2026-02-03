@@ -256,19 +256,21 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 	}
 	defer ptmx.Close()
 
-	signalReceived := false
-	stopSignalHandler := make(chan struct{})
+	signalReceived := make(chan bool)
 	go func() {
+		gotSig := false
 		for {
 			select {
 			case sig := <-sigChan:
-				signalReceived = true
 				if cmd.Process != nil {
 					if err := cmd.Process.Signal(sig); err != nil {
 						log.Warnf("Failed to forward signal %v to child process: %s", sig, err)
+					} else {
+						gotSig = true
 					}
 				}
-			case <-stopSignalHandler:
+			case signalReceived <- gotSig:
+				close(signalReceived)
 				return
 			}
 		}
@@ -280,7 +282,6 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 	}()
 
 	cmdErr := cmd.Wait()
-	close(stopSignalHandler)
 	copyErr := <-copyOutputDone
 	if copyErr != nil {
 		log.Warnf("Failed to stream output: %s", copyErr)
@@ -291,7 +292,7 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
-			return 1, signalReceived, status.InternalErrorf("failed to run %s: %s", scriptPath, cmdErr)
+			return 1, <-signalReceived, status.InternalErrorf("failed to run %s: %s", scriptPath, cmdErr)
 		}
 	}
 
@@ -301,7 +302,7 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 		log.Warnf("Failed to upload exit code log: %s", err)
 	}
 
-	return exitCode, signalReceived, nil
+	return exitCode, <-signalReceived, nil
 }
 
 // streamOutput streams output to both stdout and uploads them to the BuildBuddy server.
