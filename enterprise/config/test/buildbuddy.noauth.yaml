@@ -17,3 +17,5 @@ cache:
   #in_memory: true
   disk:
     root_directory: /tmp/buildbuddy-enterprise-cache
+ocifetcher:
+  enabled: true

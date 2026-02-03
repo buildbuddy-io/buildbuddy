@@ -66,6 +66,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
 	"github.com/buildbuddy-io/buildbuddy/server/libmain"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -176,25 +178,34 @@ func main() {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
 
+	libmain.ConfigureRuntime()
+
 	// Setup the prod fanciness in our environment
 	convertToProdOrDie(rootContext, realEnv)
 
 	libmain.StartMonitoringHandler(realEnv)
 
+	if err := libmain.RegisterEnvServices(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.RegisterLocalGRPCClients(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+
 	if err := experiments.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := gcs_cache.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 	if err := s3_cache.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 	if err := pebble_cache.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 	if err := migration_cache.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 	if err := redis_client.RegisterDefault(realEnv); err != nil {
 		log.Fatalf("%v", err)
@@ -229,7 +240,7 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := tasksize.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 
 	if err := remote_execution_redis_client.RegisterRemoteExecutionClient(realEnv); err != nil {
@@ -243,14 +254,14 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := distributed.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 
 	if err := memcache.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 	if err := redis_cache.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("%v", err)
 	}
 
 	if err := execution_server.Register(realEnv); err != nil {
@@ -330,5 +341,20 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
+	if err := fetch_server.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := capabilities_server.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.StartGRPCServers(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.ConfigureHTTPMuxes(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.StartHTTPServers(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	libmain.WaitForGracefulShutdown(realEnv)
 }

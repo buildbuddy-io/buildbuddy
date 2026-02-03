@@ -25,3 +25,5 @@ api:
 github:
   client_id: "asdasdasdasdasd"
   client_secret: "1231231asdasdasdasd123"
+ocifetcher:
+  enabled: true
