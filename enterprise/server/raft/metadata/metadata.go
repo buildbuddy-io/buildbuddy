@@ -160,7 +160,7 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		}
 	}
 
-	subdir := string(*deploymentID)
+	subdir := fmt.Sprint(*deploymentID)
 
 	if *clearPrevCacheOnStartup {
 		if err := clearPrevCache(*rootDirectory, subdir); err != nil {
