@@ -161,7 +161,7 @@ func meanAndStdDev(values []int64) (mean, stdDev float64) {
 		diff := float64(v) - mean
 		variance += diff * diff
 	}
-	variance /= float64(len(values))
+	variance /= float64(len(values) - 1)
 	stdDev = math.Sqrt(variance)
 	return mean, stdDev
 }
