@@ -1,13 +1,14 @@
-package chunked_manifest_test
+package chunking_test
 
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -21,6 +22,110 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
+
+func TestChunker_ReassemblesOriginalData(t *testing.T) {
+	ctx := context.Background()
+
+	const dataSize = 1 << 20
+	originalData := make([]byte, dataSize)
+	_, err := rand.Read(originalData)
+	require.NoError(t, err)
+
+	var chunks [][]byte
+	writeChunkFn := func(data []byte) error {
+		// Copy since the underlying buffer may be reused.
+		chunk := make([]byte, len(data))
+		copy(chunk, data)
+		chunks = append(chunks, chunk)
+		return nil
+	}
+
+	const averageSize = 64 * 1024
+	c, err := chunking.NewChunker(ctx, averageSize, writeChunkFn)
+	require.NoError(t, err)
+
+	_, err = c.Write(originalData)
+	require.NoError(t, err)
+
+	err = c.Close()
+	require.NoError(t, err)
+
+	require.Greater(t, len(chunks), 1, "expected multiple chunks for 1MB of data")
+
+	minSize := averageSize / 4
+	maxSize := averageSize * 4
+	for i, chunk := range chunks {
+		if i < len(chunks)-1 {
+			require.GreaterOrEqual(t, len(chunk), minSize, "chunk %d is smaller than min size", i)
+		}
+		require.LessOrEqual(t, len(chunk), maxSize, "chunk %d is larger than max size", i)
+	}
+
+	var reassembled bytes.Buffer
+	for _, chunk := range chunks {
+		reassembled.Write(chunk)
+	}
+	require.Equal(t, originalData, reassembled.Bytes(), "reassembled data should match original")
+}
+
+func TestChunker_DeterministicChunking(t *testing.T) {
+	ctx := context.Background()
+
+	const dataSize = 256 * 1024
+	originalData := make([]byte, dataSize)
+	_, err := rand.Read(originalData)
+	require.NoError(t, err)
+
+	const averageSize = 16 * 1024
+
+	var runs [2][][]byte
+	for run := 0; run < 2; run++ {
+		var chunks [][]byte
+		writeChunkFn := func(data []byte) error {
+			chunk := make([]byte, len(data))
+			copy(chunk, data)
+			chunks = append(chunks, chunk)
+			return nil
+		}
+
+		c, err := chunking.NewChunker(ctx, averageSize, writeChunkFn)
+		require.NoError(t, err)
+
+		_, err = c.Write(originalData)
+		require.NoError(t, err)
+
+		err = c.Close()
+		require.NoError(t, err)
+
+		runs[run] = chunks
+	}
+
+	require.Equal(t, len(runs[0]), len(runs[1]), "should produce the same number of chunks")
+	for i := range runs[0] {
+		require.Equal(t, runs[0][i], runs[1][i], "chunk %d should be identical across runs", i)
+	}
+}
+
+func TestChunker_ContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	writeChunkFn := func(data []byte) error {
+		return nil
+	}
+
+	const averageSize = 16 * 1024
+	c, err := chunking.NewChunker(ctx, averageSize, writeChunkFn)
+	require.NoError(t, err)
+
+	cancel()
+
+	largeData := make([]byte, 1<<20)
+	_, err = c.Write(largeData)
+	require.ErrorIs(t, err, context.Canceled)
+
+	err = c.Close()
+	require.ErrorIs(t, err, context.Canceled)
+}
 
 func TestStoreAndLoad(t *testing.T) {
 	for _, salt := range []string{"", "test-salt"} {
@@ -47,7 +152,7 @@ func TestStoreAndLoad(t *testing.T) {
 			blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
 			require.NoError(t, err)
 
-			cm := &chunked_manifest.ChunkedManifest{
+			cm := &chunking.Manifest{
 				BlobDigest:     blobDigest,
 				ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
 				InstanceName:   "test-instance",
@@ -62,7 +167,7 @@ func TestStoreAndLoad(t *testing.T) {
 			cm.BlobDigest = blobDigest
 			require.NoError(t, cm.Store(ctx, cache))
 
-			loadedCM, err := chunked_manifest.Load(ctx, cache, blobDigest, "test-instance", repb.DigestFunction_SHA256)
+			loadedCM, err := chunking.LoadManifest(ctx, cache, blobDigest, "test-instance", repb.DigestFunction_SHA256)
 			require.NoError(t, err)
 
 			assert.Equal(t, cm.BlobDigest.GetHash(), loadedCM.BlobDigest.GetHash())
@@ -88,8 +193,7 @@ func TestLoadWithoutManifest_BlobExists(t *testing.T) {
 	blobRN, blobData := testdigest.RandomCASResourceBuf(t, 500)
 	require.NoError(t, cache.Set(ctx, blobRN, blobData))
 
-	// Load should return Unimplemented since the blob exists but wasn't stored with chunking.
-	_, err = chunked_manifest.Load(ctx, cache, blobRN.GetDigest(), "", repb.DigestFunction_SHA256)
+	_, err = chunking.LoadManifest(ctx, cache, blobRN.GetDigest(), "", repb.DigestFunction_SHA256)
 	require.Error(t, err)
 	require.True(t, status.IsUnimplementedError(err))
 	assert.Contains(t, err.Error(), "exists but was not stored with chunking")
@@ -104,7 +208,7 @@ func TestLoadWithoutManifest_BlobMissing(t *testing.T) {
 
 	blobRN, _ := testdigest.RandomCASResourceBuf(t, 500)
 
-	_, err = chunked_manifest.Load(ctx, cache, blobRN.GetDigest(), "", repb.DigestFunction_SHA256)
+	_, err = chunking.LoadManifest(ctx, cache, blobRN.GetDigest(), "", repb.DigestFunction_SHA256)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
 }
@@ -130,7 +234,7 @@ func TestStore_ErrGroupContextCancellation(t *testing.T) {
 	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
-	cm := &chunked_manifest.ChunkedManifest{
+	cm := &chunking.Manifest{
 		BlobDigest:     blobDigest,
 		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest()},
 		InstanceName:   "test-instance",
@@ -177,10 +281,75 @@ func TestDigestsSummary(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := chunked_manifest.DigestsSummary(tc.digests)
+			got := chunking.DigestsSummary(tc.digests)
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestMissingChunkChecker(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	trackingCache := &findMissingTrackingCache{Cache: te.GetCache()}
+
+	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 100)
+	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 150)
+	chunk3RN, chunk3Data := testdigest.RandomCASResourceBuf(t, 200)
+
+	require.NoError(t, trackingCache.Set(ctx, chunk1RN, chunk1Data))
+	require.NoError(t, trackingCache.Set(ctx, chunk2RN, chunk2Data))
+
+	allData := append(append(chunk1Data, chunk2Data...), chunk3Data...)
+	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	manifestAllPresent := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest()},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	manifestWithMissing := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk3RN.GetDigest()},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	checker := chunking.NewMissingChunkChecker(trackingCache)
+
+	missing, err := checker.AnyChunkMissing(ctx, manifestAllPresent)
+	require.NoError(t, err)
+	assert.False(t, missing, "expected no missing chunks")
+	assert.Equal(t, 1, trackingCache.findMissingCalls, "expected one FindMissing call")
+
+	missing, err = checker.AnyChunkMissing(ctx, manifestAllPresent)
+	require.NoError(t, err)
+	assert.False(t, missing, "expected no missing chunks (cached)")
+	assert.Equal(t, 1, trackingCache.findMissingCalls, "expected no additional FindMissing call")
+
+	missing, err = checker.AnyChunkMissing(ctx, manifestWithMissing)
+	require.NoError(t, err)
+	assert.True(t, missing, "expected missing chunk")
+	assert.Equal(t, 2, trackingCache.findMissingCalls, "expected one more FindMissing call for unknown chunk")
+
+	missing, err = checker.AnyChunkMissing(ctx, manifestWithMissing)
+	require.NoError(t, err)
+	assert.True(t, missing, "expected missing chunk (cached)")
+	assert.Equal(t, 2, trackingCache.findMissingCalls, "expected no additional FindMissing call")
+}
+
+type findMissingTrackingCache struct {
+	interfaces.Cache
+	findMissingCalls int
+}
+
+func (c *findMissingTrackingCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+	c.findMissingCalls++
+	return c.Cache.FindMissing(ctx, resources)
 }
 
 func BenchmarkStore(b *testing.B) {
@@ -214,7 +383,7 @@ func BenchmarkStore(b *testing.B) {
 				require.NoError(b, cache.Set(ctx, rn.ToProto(), chunk))
 			}
 
-			cm := &chunked_manifest.ChunkedManifest{
+			cm := &chunking.Manifest{
 				BlobDigest:     blobRN.GetDigest(),
 				ChunkDigests:   chunkDigests,
 				InstanceName:   "bench",

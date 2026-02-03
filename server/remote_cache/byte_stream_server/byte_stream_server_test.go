@@ -11,7 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream"
@@ -646,7 +646,7 @@ func TestReadChunked(t *testing.T) {
 	require.NoError(t, te.GetCache().Set(ctx, chunk2RN.ToProto(), chunk2))
 	require.NoError(t, te.GetCache().Set(ctx, chunk3RN.ToProto(), chunk3))
 
-	manifest := &chunked_manifest.ChunkedManifest{
+	manifest := &chunking.Manifest{
 		BlobDigest:     blobDigest,
 		ChunkDigests:   []*repb.Digest{chunk1Digest, chunk2Digest, chunk3Digest},
 		InstanceName:   "",
