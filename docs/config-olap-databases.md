@@ -46,11 +46,11 @@ olap_database:
 2 CPUs and 50 GiB memory can handle ~150 insert QPS (normal) / 600 QPS (peak).
 Disk usage can be estimated as follows:
 
-| Table | avg_bytes_per_row |
-|---|---|
-| Executions | 260 |
-| Invocations | 107 |
-| TestTargetStatuses | 23.0 |
+| Table              | avg_bytes_per_row |
+| ------------------ | ----------------- |
+| Executions         | 260               |
+| Invocations        | 107               |
+| TestTargetStatuses | 23.0              |
 
 Note: `TestTargetStatuses` corresponds to `Targets` and `TargetStatuses` in MySQL.
 An additional 20% disk is recommended to be reserved to handle additional disk usage during merging.
