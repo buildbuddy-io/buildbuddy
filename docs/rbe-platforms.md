@@ -136,7 +136,7 @@ For instructions on how to deploy custom executor pools, see the [RBE Executor P
 
 ## Target level execution properties
 
-If you want different targets to run in different RBE environments, you can specify `exec_properties` at the target level. For example if you want to run one set of tests in a high-memory pool, or another set of targets on executors with GPUs.
+If you want different targets to run in different RBE environments, you can specify `exec_properties` at the target level. For example if you want to run one set of tests in a high-memory pool, or another set of targets on executors with GPUs. In this case, you should set the properties for only a subset of the rule's actions. The most common use case is setting properties for just tests by adding a `test.` prefix.
 
 ```python title="BUILD"
 go_test(
@@ -144,7 +144,7 @@ go_test(
     srcs = ["memory_hogging_test.go"],
     embed = [":go_default_library"],
     exec_properties = {
-        "Pool": "high-memory-pool",
+        "test.Pool": "high-memory-pool",
     },
 )
 ```
