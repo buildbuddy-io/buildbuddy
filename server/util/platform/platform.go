@@ -122,6 +122,18 @@ const (
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L156
 	dockerNetworkPropertyName = "dockerNetwork"
 
+	// Whether external network access should be enabled. Valid values are:
+	// - "off": no network access
+	// - "external": network access via a network namespace routed thru the host
+	// - "host": access to the internet sharing the host's network configuration
+	//
+	// By default, this property is not set. If it is set, its value always
+	// applies (even if "dockerNetwork" is set). If this property is not set,
+	// the isolated action's network settings will applied from the
+	// "dockerNetwork" platform property EXCEPT for Firecracker actions which
+	// will have "external" network access (for backwards compatibility).
+	networkPropertyName = "network"
+
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
 
@@ -216,6 +228,7 @@ type Properties struct {
 	DockerInit                bool
 	DockerUser                string
 	DockerNetwork             string
+	Network                   string
 	RecycleRunner             bool
 	RunnerRecyclingMaxWait    time.Duration
 
@@ -484,6 +497,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DockerInit:                boolProp(m, DockerInitPropertyName, false),
 		DockerUser:                stringProp(m, DockerUserPropertyName, ""),
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
+		Network:                   stringProp(m, networkPropertyName, ""),
 		RecycleRunner:             recycleRunner,
 		DefaultTimeout:            timeout,
 		TerminationGracePeriod:    terminationGracePeriod,

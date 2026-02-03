@@ -117,11 +117,15 @@ func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
 }
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	network := args.Props.Network
+	if network == "" {
+		network = args.Props.DockerNetwork
+	}
 	opts := &DockerOptions{
 		ForceRoot:               args.Props.DockerForceRoot,
 		DockerInit:              args.Props.DockerInit,
 		DockerUser:              args.Props.DockerUser,
-		DockerNetwork:           args.Props.DockerNetwork,
+		DockerNetwork:           network,
 		Socket:                  executorplatform.DockerSocket(),
 		EnableSiblingContainers: *dockerSiblingContainers,
 		UseHostNetwork:          *dockerNetHost,

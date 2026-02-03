@@ -265,8 +265,12 @@ type Options struct {
 type Provider struct{}
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	network := args.Props.Network
+	if network == "" {
+		network = args.Props.DockerNetwork
+	}
 	opts := &Options{
-		Network: args.Props.DockerNetwork,
+		Network: network,
 	}
 	return New(opts), nil
 }

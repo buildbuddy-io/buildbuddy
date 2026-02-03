@@ -547,16 +547,23 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	if numCPUs > firecrackerMaxCPU {
 		numCPUs = firecrackerMaxCPU
 	}
+	var networkConfig *fcpb.NetworkConfiguration
+	if args.Props.Network == "external" {
+		networkConfig = &fcpb.NetworkConfiguration{
+			EnableExternalNetworking: true,
+		}
+	}
 	vmConfig = &fcpb.VMConfiguration{
-		NumCpus:           numCPUs,
-		MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
-		ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
-		EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
-		EnableNetworking:  true,
-		InitDockerd:       args.Props.InitDockerd,
-		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
-		HostCpuid:         getCPUID(),
-		EnableVfs:         args.Props.EnableVFS,
+		NumCpus:              numCPUs,
+		MemSizeMb:            int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
+		ScratchDiskSizeMb:    int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
+		EnableLogging:        platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
+		EnableNetworking:     true,
+		NetworkConfiguration: networkConfig,
+		InitDockerd:          args.Props.InitDockerd,
+		EnableDockerdTcp:     args.Props.EnableDockerdTCP,
+		HostCpuid:            getCPUID(),
+		EnableVfs:            args.Props.EnableVFS,
 	}
 	vmConfig.BootArgs = getBootArgs(vmConfig)
 	opts := ContainerOpts{
@@ -1824,14 +1831,22 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if c.networkPool != nil {
+	enableExternalNetworking := false
+	if c.vmConfig.NetworkConfig != nil {
+		enableExternalNetworking = c.vmConfig.NetworkConfig.EnableExternalNetworking
+	}
+
+	// Pooled networks have external network access enabled. Only use them if
+	// that's the VM's configured state.
+	// TODO: add a pool for 'network=false' (if this bottlenecks).
+	if c.networkPool != nil && enableExternalNetworking {
 		if network := c.networkPool.Get(ctx); network != nil {
 			c.network = network
 			return nil
 		}
 	}
 
-	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP)
+	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP, enableExternalNetworking)
 	if err != nil {
 		return status.UnavailableErrorf("create VM network: %s", err)
 	}

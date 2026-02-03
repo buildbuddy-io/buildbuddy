@@ -1974,6 +1974,50 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
 }
 
+func TestFirecrackerRunWithoutNetwork(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	flags.Set(t, "executor.network_stats_enabled", true)
+
+	// Make sure the container can't send packets to the internet when
+	// EnableExternalNetworking is false.
+	googleDNS := "8.8.8.8"
+	cmd := &repb.Command{Arguments: []string{"ping", "-c1", "-W1", googleDNS}}
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:          1,
+			MemSizeMb:        2500,
+			EnableNetworking: true,
+			NetworkConfig: &fcpb.NetworkConfiguration{
+				EnableExternalNetworking: false,
+			},
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Run will handle the full lifecycle: no need to call Remove() here.
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+
+	// Ping should fail because external network is disabled.
+	assert.NotEqual(t, 0, res.ExitCode)
+	// Note: some bytes are sent (the ping request) and received (ICMP reject).
+	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
+}
+
 func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})

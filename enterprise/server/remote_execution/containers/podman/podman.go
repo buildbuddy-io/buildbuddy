@@ -194,6 +194,13 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		return nil, status.UnavailableErrorf("failed to generate podman container name: %s", err)
 	}
 
+	network := args.Props.Network
+	if network == "" {
+		network = args.Props.DockerNetwork
+	} else if network == "external" {
+		network = "bridge"
+	}
+
 	return &podmanCommandContainer{
 		env:               p.env,
 		name:              containerName,
@@ -208,7 +215,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 			ForceRoot:          args.Props.DockerForceRoot,
 			Init:               args.Props.DockerInit,
 			User:               args.Props.DockerUser,
-			Network:            args.Props.DockerNetwork,
+			Network:            network,
 			DefaultNetworkMode: networkMode,
 			CapAdd:             capAdd,
 			Devices:            devices,
