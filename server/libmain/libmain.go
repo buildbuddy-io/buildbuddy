@@ -595,11 +595,11 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if err := RegisterEnvServices(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := RegisterLocalGRPCClients(env); err != nil {
-		log.Fatal(err.Error())
-	}
 	if err := RegisterCacheServices(env); err != nil {
 		log.Fatalf("%v", err)
+	}
+	if err := RegisterLocalGRPCClients(env); err != nil {
+		log.Fatal(err.Error())
 	}
 	if err := StartGRPCServers(env); err != nil {
 		log.Fatalf("%v", err)

@@ -183,13 +183,6 @@ func main() {
 
 	libmain.StartMonitoringHandler(realEnv)
 
-	if err := libmain.RegisterEnvServices(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := libmain.RegisterLocalGRPCClients(realEnv); err != nil {
-		log.Fatal(err.Error())
-	}
-
 	if err := experiments.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -311,9 +304,6 @@ func main() {
 	if err := ociregistry.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := ocifetcher.RegisterServer(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
 
 	executionService := execution_service.NewExecutionService(realEnv)
 	realEnv.SetExecutionService(executionService)
@@ -339,7 +329,16 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
+	if err := libmain.RegisterEnvServices(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := libmain.RegisterCacheServices(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.RegisterLocalGRPCClients(realEnv); err != nil {
+		log.Fatal(err.Error())
+	}
+	if err := ocifetcher.RegisterServer(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := libmain.StartGRPCServers(realEnv); err != nil {
