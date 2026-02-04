@@ -27,5 +27,6 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "@com_github_docker_docker//client",
+        "@com_github_stretchr_testify//require",
     ],
 )
