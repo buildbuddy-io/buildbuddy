@@ -2803,7 +2803,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (resource_name) (buildbuddy_remote_execution_assigned_custom_resources{region=\"${region}\",job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}/buildbuddy_remote_execution_assignable_custom_resources{region=\"${region}\",job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum by (resource_name) (buildbuddy_remote_execution_assigned_custom_resources{region=\"${region}\",job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}) / sum by (resource_name) (buildbuddy_remote_execution_assignable_custom_resources{region=\"${region}\",job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "{{resource_name}}",
