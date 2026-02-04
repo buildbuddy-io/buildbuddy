@@ -14,6 +14,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	dockerclient "github.com/docker/docker/client"
@@ -44,12 +46,15 @@ func TestExecutor(t *testing.T) {
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	c := docker.NewDockerContainer(env, dc, "bazel/enterprise/server/cmd/executor:executor_image", rootDir, cfg)
 	resultChannel := make(chan *interfaces.CommandResult)
+	flags.Set(t, "debug_use_local_images_only", true)
 	go func() {
 		resultChannel <- c.Run(ctx, cmd, rootDir, oci.Credentials{})
 	}()
 	time.Sleep(time.Second * 10)
 	c.Remove(ctx)
 	result := <-resultChannel
+	require.NoError(t, result.Error)
+	t.Logf("command:\n%s\n", result.CommandDebugString)
 	t.Logf("command:\n%s\n", result.CommandDebugString)
 	t.Logf("result:\nstdout:%s\nstderr:%s\n", result.Stdout, result.Stderr)
 	t.FailNow()
