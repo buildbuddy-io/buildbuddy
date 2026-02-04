@@ -232,7 +232,7 @@ else
 fi
 
 # These arguments make the extractors run on java generated code
-KYTHE_ARGS="$KYTHE_ARGS --experimental_extra_action_top_level_only=false --experimental_extra_action_filter='^//'"
+KYTHE_ARGS="$KYTHE_ARGS --experimental_extra_action_top_level_only=false --experimental_extra_action_filter=^//"
 
 echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"
 bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...`, dirName, bazelConfigFlags)
