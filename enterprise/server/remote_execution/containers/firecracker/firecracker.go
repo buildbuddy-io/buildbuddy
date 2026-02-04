@@ -547,6 +547,13 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	if numCPUs > firecrackerMaxCPU {
 		numCPUs = firecrackerMaxCPU
 	}
+
+	switch args.Props.Network {
+	case "", "off", "external":
+	default:
+		return nil, status.InvalidArgumentErrorf("unsupported network option %q", args.Props.Network)
+	}
+
 	enableExternalNetworking := args.Props.Network == "external"
 	vmConfig = &fcpb.VMConfiguration{
 		NumCpus:                  numCPUs,
