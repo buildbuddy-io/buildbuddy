@@ -39,6 +39,7 @@ var (
 	target                   = flag.String("auth.remote.target", "", "The gRPC target of the remote authentication API.")
 	jwtExpirationBuffer      = flag.Duration("auth.remote.jwt_expiration_buffer", time.Minute, "Discard remote-auth minted JWTs if they're within this time buffer of their expiration time.")
 	alwaysUseES256SignedJWTs = flag.Bool("auth.remote.use_es256_jwts", false, "Always request and use ES-256 signed JWTs from the remote auth service, regardless of the experiment configuration.")
+	es256KeyCacheTTL         = flag.Duration("auth.remote.es256_key_cache_ttl", 5*time.Minute, "How long to cache ES256 public keys before re-fetching from the remote auth service.")
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -64,9 +65,10 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 		return nil, err
 	}
 	client := authpb.NewAuthServiceClient(conn)
-	provider := keyProvider{
+	provider := &keyProvider{
 		env:    env,
 		client: client,
+		ttl:    *es256KeyCacheTTL,
 	}
 	claimsParser, err := claims.NewClaimsParser(provider.provide)
 	if err != nil {
@@ -78,13 +80,22 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 		jwtExpirationBuffer: *jwtExpirationBuffer,
 		claimsParser:        claimsParser,
 		env:                 env,
+		keyProvider:         provider,
 	}, nil
+}
+
+type cachedKeys struct {
+	keys      []string
+	fetchedAt time.Time
 }
 
 // This struct manages JWT-signing keys.
 type keyProvider struct {
 	env    environment.Env
 	client authpb.AuthServiceClient
+	mu     sync.RWMutex
+	cached *cachedKeys
+	ttl    time.Duration
 }
 
 func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
@@ -104,9 +115,27 @@ func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
 	return defaultKeys, nil
 }
 
-// TODO(iain): cache these keys (w support for invalidating).
 func (kp *keyProvider) getES256PublicKeys(ctx context.Context) ([]string, error) {
-	return kp.fetchES256PublicKeys(ctx)
+	kp.mu.RLock()
+	cached := kp.cached
+	kp.mu.RUnlock()
+	if cached != nil && time.Since(cached.fetchedAt) < kp.ttl {
+		return cached.keys, nil
+	}
+	keys, err := kp.fetchES256PublicKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	kp.mu.Lock()
+	kp.cached = &cachedKeys{keys: keys, fetchedAt: time.Now()}
+	kp.mu.Unlock()
+	return keys, nil
+}
+
+func (kp *keyProvider) invalidateES256Keys() {
+	kp.mu.Lock()
+	kp.cached = nil
+	kp.mu.Unlock()
 }
 
 func (kp *keyProvider) fetchES256PublicKeys(ctx context.Context) ([]string, error) {
@@ -154,6 +183,7 @@ type RemoteAuthenticator struct {
 	mu                  sync.RWMutex // protects cache
 	claimsParser        *claims.ClaimsParser
 	env                 environment.Env
+	keyProvider         *keyProvider
 }
 
 // Unsupported in the remote authenticator.
@@ -193,7 +223,7 @@ func (a *RemoteAuthenticator) SSOEnabled() bool {
 
 func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
 	// If a JWT was provided, check if it's valid and use it if so.
-	jwt, c, err := getValidJwtFromContext(ctx, a.claimsParser, a.jwtExpirationBuffer)
+	jwt, c, err := a.getValidJwtFromContext(ctx)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
@@ -211,7 +241,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	jwt, found := a.cache.Get(key)
 	a.mu.RUnlock()
 	if found {
-		if c, err := jwtIsValid(ctx, jwt, a.claimsParser, a.jwtExpirationBuffer); err == nil {
+		if c, err := a.jwtIsValidWithKeyRefresh(ctx, jwt); err == nil {
 			return authContext(ctx, jwt, c)
 		}
 		a.mu.Lock()
@@ -228,7 +258,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	a.mu.Lock()
 	a.cache.Add(key, jwt)
 	a.mu.Unlock()
-	c, err = jwtIsValid(ctx, jwt, a.claimsParser, a.jwtExpirationBuffer)
+	c, err = a.jwtIsValidWithKeyRefresh(ctx, jwt)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
@@ -291,16 +321,31 @@ func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) 
 	return *resp.Jwt, nil
 }
 
-// Returns:
+// jwtIsValidWithKeyRefresh validates a JWT. If validation fails and ES256 is
+// enabled, it invalidates the cached ES256 keys and retries once, in case the
+// keys were rotated.
+func (a *RemoteAuthenticator) jwtIsValidWithKeyRefresh(ctx context.Context, jwt string) (*claims.Claims, error) {
+	c, err := jwtIsValid(ctx, jwt, a.claimsParser, a.jwtExpirationBuffer)
+	if err == nil {
+		return c, nil
+	}
+	if !useES256SignedJWTs(ctx, a.env.GetExperimentFlagProvider()) {
+		return nil, err
+	}
+	a.keyProvider.invalidateES256Keys()
+	return jwtIsValid(ctx, jwt, a.claimsParser, a.jwtExpirationBuffer)
+}
+
+// getValidJwtFromContext returns:
 // - A valid JWT from the incoming RPC metadata or
 // - An error if an invalid JWT is present or
 // - An empty string and no error if no JWT is present
-func getValidJwtFromContext(ctx context.Context, claimsParser *claims.ClaimsParser, jwtExpirationTimeBuffer time.Duration) (string, *claims.Claims, error) {
+func (a *RemoteAuthenticator) getValidJwtFromContext(ctx context.Context) (string, *claims.Claims, error) {
 	jwt := getLastMetadataValue(ctx, authutil.ContextTokenStringKey)
 	if jwt == "" {
 		return "", nil, nil
 	}
-	claims, err := jwtIsValid(ctx, jwt, claimsParser, jwtExpirationTimeBuffer)
+	claims, err := a.jwtIsValidWithKeyRefresh(ctx, jwt)
 	if err != nil {
 		return "", nil, err
 	}
