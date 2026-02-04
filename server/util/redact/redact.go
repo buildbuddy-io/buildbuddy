@@ -104,6 +104,7 @@ var (
 		"remote_downloader_header",
 		"bes_header",
 	}
+	headerOptionRegexes = make(map[string]*regexp.Regexp, len(headerOptionNames))
 )
 
 func init() {
@@ -120,6 +121,10 @@ func init() {
 	// Note: The quotes wrap the entire VAR_NAME=value part, not just the value
 	// Capture group 1: --flag_name= (without the env var name)
 	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(escaped, "|") + `)=)(?:'[^']*'|"[^"]*"|\S+)`)
+
+	for _, header := range headerOptionNames {
+		headerOptionRegexes[header] = regexp.MustCompile(fmt.Sprintf("--%s=[^\\s]+", header))
+	}
 }
 
 func stripURLSecrets(input string) string {
@@ -265,8 +270,7 @@ func redactBuildBuddyAPIKeys(txt string) string {
 }
 
 func redactRemoteHeaders(txt string) string {
-	for _, header := range headerOptionNames {
-		regex := regexp.MustCompile(fmt.Sprintf("--%s=[^\\s]+", header))
+	for header, regex := range headerOptionRegexes {
 		txt = regex.ReplaceAllLiteralString(txt, fmt.Sprintf("--%s=<REDACTED>", header))
 	}
 	return txt
