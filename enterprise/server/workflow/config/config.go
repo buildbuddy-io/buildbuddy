@@ -275,6 +275,16 @@ fi
 	return buf
 }
 
+func skipIfNotBazelRepo() string {
+	return `
+# If this is not a Bazel repo, skip Kythe indexing.
+if [ ! -f "WORKSPACE" ] && [ ! -f "WORKSPACE.bazel" ] && [ ! -f "MODULE.bazel" ]; then
+  echo "No WORKSPACE, WORKSPACE.bazel, or MODULE.bazel file found. Skipping Kythe indexing."
+  exit 0
+fi
+`
+}
+
 func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 	var pushTriggerBranches []string
 	if targetRepoDefaultBranch != "" {
@@ -294,13 +304,13 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 		},
 		Steps: []*rnpb.Step{
 			{
-				Run: checkoutKythe(kytheDirName, kytheDownloadURL),
+				Run: skipIfNotBazelRepo() + checkoutKythe(kytheDirName, kytheDownloadURL),
 			},
 			{
-				Run: buildWithKythe(kytheDirName),
+				Run: skipIfNotBazelRepo() + buildWithKythe(kytheDirName),
 			},
 			{
-				Run: prepareKytheOutputs(kytheDirName),
+				Run: skipIfNotBazelRepo() + prepareKytheOutputs(kytheDirName),
 			},
 		},
 	}
