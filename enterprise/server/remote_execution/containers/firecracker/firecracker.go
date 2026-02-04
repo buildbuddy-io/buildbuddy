@@ -554,7 +554,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		return nil, status.InvalidArgumentErrorf("unsupported network option %q", args.Props.Network)
 	}
 
-	enableExternalNetworking := args.Props.Network == "external"
+	enableExternalNetworking := args.Props.Network == "" || args.Props.Network == "external"
 	vmConfig = &fcpb.VMConfiguration{
 		NumCpus:                  numCPUs,
 		MemSizeMb:                int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
