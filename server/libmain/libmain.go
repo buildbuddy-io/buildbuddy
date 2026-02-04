@@ -263,6 +263,13 @@ func RegisterCacheServices(env *real_environment.RealEnv) error {
 	if err := cache_server.Register(env); err != nil {
 		return err
 	}
+	return nil
+}
+
+// RegisterPostClientServices registers services that depend on local gRPC
+// clients (e.g. ByteStreamClient, CASClient). This must be called after
+// RegisterLocalGRPCClients.
+func RegisterPostClientServices(env *real_environment.RealEnv) error {
 	if err := fetch_server.Register(env); err != nil {
 		return err
 	}
@@ -600,6 +607,9 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	}
 	if err := RegisterLocalGRPCClients(env); err != nil {
 		log.Fatal(err.Error())
+	}
+	if err := RegisterPostClientServices(env); err != nil {
+		log.Fatalf("%v", err)
 	}
 	if err := StartGRPCServers(env); err != nil {
 		log.Fatalf("%v", err)

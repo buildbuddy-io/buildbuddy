@@ -341,6 +341,9 @@ func main() {
 	if err := ocifetcher.RegisterServer(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+	if err := libmain.RegisterPostClientServices(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := libmain.StartGRPCServers(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
