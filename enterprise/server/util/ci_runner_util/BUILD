@@ -12,6 +12,7 @@ go_library(
         "//server/interfaces",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/bb",
         "//server/util/platform",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
