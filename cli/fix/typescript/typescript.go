@@ -1,3 +1,6 @@
+//go:build !pure
+// +build !pure
+
 package typescript
 
 import (

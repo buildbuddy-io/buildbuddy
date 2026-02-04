@@ -13,6 +13,7 @@ genrule(
     visibility = ["//visibility:public"],
 )
 
+
 go_library(
     name = "bb",
     srcs = ["bb.go"],

@@ -7,7 +7,10 @@ package(default_visibility = [
 
 go_library(
     name = "typescript",
-    srcs = ["typescript.go"],
+    srcs = [
+        "typescript.go",
+        "typescript_pure.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/fix/typescript",
     deps = [
         "@bazel_gazelle//config",
@@ -16,7 +19,10 @@ go_library(
         "@bazel_gazelle//repo",
         "@bazel_gazelle//resolve",
         "@bazel_gazelle//rule",
-        "@com_github_smacker_go_tree_sitter//:go-tree-sitter",
-        "@com_github_smacker_go_tree_sitter//typescript/tsx",
-    ],
+    ] + select({
+        "//conditions:default": [
+            "@com_github_smacker_go_tree_sitter//:go-tree-sitter",
+            "@com_github_smacker_go_tree_sitter//typescript/tsx",
+        ],
+    }),
 )

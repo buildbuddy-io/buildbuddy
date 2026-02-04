@@ -18,6 +18,7 @@ go_library(
         "@bazel_gazelle//cmd/gazelle:update-repos.go",
         # Taken from @bazel_gazelle//cmd/gazelle/BUILD.bazel gazelle_lib
         "langs.go",
+        "langs_pure.go",
     ],
     importpath = "github.com/bazelbuild/bazel-gazelle/cmd/gazelle",
     tags = ["manual"],
