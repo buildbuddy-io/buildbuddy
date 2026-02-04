@@ -120,7 +120,10 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	network := args.Props.Network
 	if network == "" {
 		network = args.Props.DockerNetwork
+	} else if network == "external" {
+		network = "bridge"
 	}
+
 	opts := &DockerOptions{
 		ForceRoot:               args.Props.DockerForceRoot,
 		DockerInit:              args.Props.DockerInit,
