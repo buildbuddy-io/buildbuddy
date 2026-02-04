@@ -2702,7 +2702,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_execution_assignable_milli_cpu{region=\"${region}\",job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\")/1000",
+              "expr": "sum(buildbuddy_remote_execution_assignable_milli_cpu{region=\"${region}\",job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})/1000",
               "hide": false,
               "interval": "",
               "legendFormat": "Max assignable CPU",
