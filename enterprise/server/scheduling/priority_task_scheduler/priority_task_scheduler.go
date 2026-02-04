@@ -3,7 +3,6 @@ package priority_task_scheduler
 import (
 	"container/list"
 	"context"
-	"flag"
 	"fmt"
 	"maps"
 	"math"
@@ -22,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -46,6 +46,7 @@ var (
 	excessCapacityThreshold = flag.Float64("executor.excess_capacity_threshold", .40, "A percentage (of RAM and CPU) utilization below which this executor may request additional work")
 	region                  = flag.String("executor.region", "", "Region metadata associated with executions.")
 	roundTaskCpuSize        = flag.Bool("executor.round_task_cpu_size", false, "If true, round tasks' CPU sizes up to the nearest whole number.")
+	taskClaimDelay          = flag.Duration("debug_executor_task_claim_delay", 0, "Test-only: delay before claiming a task from the scheduler.", flag.Internal)
 )
 
 var shuttingDownLogOnce sync.Once
@@ -904,6 +905,9 @@ func (q *PriorityTaskScheduler) handleTask() {
 			q.checkQueueSignal <- struct{}{}
 		}()
 
+		if *taskClaimDelay > 0 {
+			time.Sleep(*taskClaimDelay)
+		}
 		lease, err := q.taskLeaser.Lease(ctx, reservation.GetTaskId())
 		if err != nil {
 			// NotFound means the task is already claimed.
