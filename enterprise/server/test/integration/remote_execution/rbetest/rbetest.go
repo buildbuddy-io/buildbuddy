@@ -1071,8 +1071,15 @@ func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionR
 type Command struct {
 	env *Env
 	*rbeclient.Command
-	rbeClient *rbeclient.Client
-	apiKey    string
+	rbeClient   *rbeclient.Client
+	apiKey      string
+	waitTimeout time.Duration
+}
+
+// SetWaitTimeout sets a custom timeout for waiting for the command to complete.
+// If not set, defaultWaitTimeout is used.
+func (c *Command) SetWaitTimeout(d time.Duration) {
+	c.waitTimeout = d
 }
 
 type CommandResult struct {
@@ -1085,7 +1092,11 @@ type CommandResult struct {
 // an execution error. It fails the test immediately if an error occurs that
 // is not a remote execution error.
 func (c *Command) getResult() *CommandResult {
-	timeout := time.NewTimer(defaultWaitTimeout)
+	waitTimeout := c.waitTimeout
+	if waitTimeout == 0 {
+		waitTimeout = defaultWaitTimeout
+	}
+	timeout := time.NewTimer(waitTimeout)
 	for {
 		select {
 		case result, ok := <-c.StatusChannel():
@@ -1280,7 +1291,7 @@ func (r *Env) ExecuteControlledCommand(name string, opts *ExecuteControlledOpts)
 	}
 	return &ControlledCommand{
 		t:          r.t,
-		Command:    &Command{r, cmd, r.rbeClient, "" /*=apiKey*/},
+		Command:    &Command{env: r, Command: cmd, rbeClient: r.rbeClient},
 		controller: r.testCommandController,
 	}
 }
@@ -1357,7 +1368,7 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 	if err != nil {
 		assert.FailNow(r.t, fmt.Sprintf("Could not execute command %q", name), err.Error())
 	}
-	return &Command{r, cmd, r.rbeClient, opts.APIKey}
+	return &Command{env: r, Command: cmd, rbeClient: r.rbeClient, apiKey: opts.APIKey}
 }
 
 // RunFunc is the function signature for runner.Runner.Run().

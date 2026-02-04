@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -36,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -53,6 +55,8 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	instatuspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
@@ -2157,6 +2161,106 @@ func TestActionMerging_DisabledWithDoNotCache(t *testing.T) {
 		opsSet[op] = struct{}{}
 	}
 	require.Len(t, opsSet, numOps, "expected all ops to be unique")
+}
+
+func TestActionMerging_CancelAfterTTLExpiry(t *testing.T) {
+	// This test reproduces a bug where cancelling a merged execution after the
+	// action-merging TTL expires causes all merged invocations to fail.
+	//
+	// Scenario:
+	// 1. Set queuedExecutionTTL to 1s (redis minimum) and taskClaimDelay to 3s
+	// 2. Create invocation records in DB (needed for CancelExecutions API)
+	// 3. Submit 2 executions for the same action (they merge)
+	// 4. Wait for TTL to expire (action-merging data deleted from redis)
+	// 5. Cancel invocation 1
+	// 6. Invocation 2 should still complete successfully (but currently fails)
+	//
+	// The bug: After the TTL expires, CheckMerged() returns false, so the
+	// cancellation bypasses the merge protection and deletes the task for all
+	// merged invocations.
+
+	const (
+		queuedTTL      = 1 * time.Second // Redis minimum TTL
+		claimDelay     = 3 * time.Second
+		commandTimeout = 10 * time.Second
+	)
+
+	// Set short TTL and claim delay to reproduce the race condition.
+	flags.Set(t, "remote_execution.action_merging_queued_ttl", queuedTTL)
+	flags.Set(t, "debug_executor_task_claim_delay", claimDelay)
+
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	ctx := rbe.WithAPIKey(t.Context(), rbe.APIKey1)
+
+	// Create invocation records in the DB (required for CancelExecutions API).
+	invocationID1 := uuid.New().String()
+	invocationID2 := uuid.New().String()
+	invDB := rbe.GetDBHandle()
+	for _, invID := range []string{invocationID1, invocationID2} {
+		err := invDB.NewQuery(ctx, "create_invocation").Create(&tables.Invocation{
+			InvocationID:     invID,
+			GroupID:          rbe.GroupID1,
+			Perms:            perms.GROUP_READ | perms.GROUP_WRITE,
+			InvocationStatus: int64(instatuspb.InvocationStatus_PARTIAL_INVOCATION_STATUS),
+		})
+		require.NoError(t, err, "failed to create invocation record")
+	}
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+
+	// Create a command that both invocations will execute (same action digest).
+	cmd := &repb.Command{
+		Arguments: []string{"echo", "hello"},
+		Platform:  platform,
+	}
+
+	// Submit invocation 1 (with API key for auth).
+	exec1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{
+		CheckCache:   true,
+		InvocationID: invocationID1,
+		APIKey:       rbe.APIKey1,
+	})
+	exec1.SetWaitTimeout(commandTimeout)
+
+	// Submit invocation 2 for the same action (should merge).
+	exec2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{
+		CheckCache:   true,
+		InvocationID: invocationID2,
+		APIKey:       rbe.APIKey1,
+	})
+	exec2.SetWaitTimeout(commandTimeout)
+
+	// Wait for the action-merging TTL to expire, but before the executor claims
+	// the task (claimDelay > queuedTTL).
+	time.Sleep(queuedTTL + 500*time.Millisecond)
+
+	// Cancel invocation 1. Since the action-merging data has expired,
+	// CheckMerged() will return false and the cancellation will proceed,
+	// deleting the task from the scheduler.
+	_, err := rbe.GetBuildBuddyServiceClient().CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
+		InvocationId: invocationID1,
+	})
+	require.NoError(t, err, "failed to cancel invocation 1")
+
+	// Wait for invocation 2. If the bug exists, this will fail because the
+	// task was deleted when invocation 1 was cancelled.
+	result2 := exec2.Wait()
+
+	// The test passes if invocation 2 completes successfully.
+	// If it fails with an error (e.g., "task does not exist" or cancelled),
+	// the bug is confirmed.
+	require.NoError(t, result2.Err, "invocation 2 should complete successfully, but failed (likely due to the TTL expiry bug)")
+	require.Equal(t, 0, result2.ExitCode, "invocation 2 should have exit code 0")
+
+	t.Logf("Invocation 2 completed successfully - bug is fixed!")
 }
 
 func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
