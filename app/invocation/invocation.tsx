@@ -101,6 +101,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
   private seenChildInvocationConfiguredIds = new Set<string>();
   private seenChildInvocationCompletedIds = new Set<string>();
+  private didFetchAfterRunLogsComplete = false;
 
   componentWillMount() {
     document.title = `Invocation ${this.props.invocationId} | BuildBuddy`;
@@ -190,6 +191,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
     // If a run status was set on the invocation, start fetching run logs.
     if (this.state.model?.hasRunStatus() && !prevState.model?.hasRunStatus()) {
       this.runLogsModel?.startFetching();
+    }
+    // If the run log stream just completed while run is still in progress,
+    // fetch the invocation once more to get the final run status.
+    if (this.state.model?.isRunInProgress() && this.runLogsModel?.isComplete() && !this.didFetchAfterRunLogsComplete) {
+      this.didFetchAfterRunLogsComplete = true;
+      this.fetchInvocation();
     }
     // If we have an invocation, or we failed to fetch an invocation and the CI
     // runner failed, we're no longer queued.
