@@ -31,7 +31,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazelisk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/bb"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -1722,27 +1721,37 @@ func extractBazelisk(path string) error {
 	return copyFileToPath(path, f)
 }
 
-// extractBB copies the embedded bb CLI binary to the given path if it does
-// not already exist.
+// extractBB copies the bb CLI binary from the input root to the given path if it does not already exist.
+// The bb binary should be provided in the input root by the app server via UploadInputRoot.
 func extractBB(path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
-	f, err := bb.Open()
+	// Check if bb was provided in the input root (workspace root)
+	workspaceRoot, err := os.Getwd()
 	if err != nil {
-		return err
+		return status.WrapError(err, "get workspace root")
 	}
-	defer f.Close()
-	return copyFileToPath(path, f)
+	inputRootBbPath := filepath.Join(workspaceRoot, bbBinaryName)
+	if _, err := os.Stat(inputRootBbPath); err != nil {
+		return status.NotFoundErrorf("bb binary not found in input root at %s", inputRootBbPath)
+	}
+	// Copy from input root to the target location
+	src, err := os.Open(inputRootBbPath)
+	if err != nil {
+		return status.WrapError(err, "open bb from input root")
+	}
+	defer src.Close()
+	return copyFileToPath(path, src)
 }
 
-func copyFileToPath(path string, f fs.File) error {
+func copyFileToPath(path string, src io.Reader) error {
 	dst, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0555)
 	if err != nil {
 		return err
 	}
 	defer dst.Close()
-	if _, err := io.Copy(dst, f); err != nil {
+	if _, err := io.Copy(dst, src); err != nil {
 		return err
 	}
 	return nil

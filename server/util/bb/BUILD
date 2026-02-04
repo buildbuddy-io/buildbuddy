@@ -13,14 +13,17 @@ genrule(
     visibility = ["//visibility:public"],
 )
 
-
 go_library(
     name = "bb",
-    srcs = ["bb.go"],
+    srcs = [
+        "bb.go",
+        "bundle.go",
+    ],
     embedsrcs = [
         "BUILD",
         "bb-bin",
         "bb.go",
+        "bundle.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/bb",
     visibility = ["//visibility:public"],
