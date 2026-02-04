@@ -129,7 +129,7 @@ const (
 	//
 	// By default, this property is not set. If it is set, its value always
 	// applies (even if "dockerNetwork" is set). If this property is not set,
-	// the isolated action's network settings will applied from the
+	// the isolated action's network settings will be applied from the
 	// "dockerNetwork" platform property EXCEPT for Firecracker actions which
 	// will have "external" network access (for backwards compatibility).
 	networkPropertyName = "network"
