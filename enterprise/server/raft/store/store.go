@@ -526,10 +526,11 @@ func (s *Store) queryForMetarange(ctx context.Context) {
 func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugInfoRequest) (*rfpb.GetRangeDebugInfoResponse, error) {
 	leaderID, term, valid, _ := s.nodeHost.GetLeaderID(req.GetRangeId())
 	lastReplicaIDKey := keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", req.GetRangeId())))
-	lastReplicaID, err := s.sender.Increment(ctx, lastReplicaIDKey, 0)
+	lastReplicaIDBytes, err := s.sender.DirectRead(ctx, lastReplicaIDKey)
 	if err != nil {
-		// log.Warningf("Failed to read last replica ID for range %d: %s", req.GetRangeId(), err)
 		return nil, status.WrapErrorf(err, "failed to read last replica ID for range %d with key %q", req.GetRangeId(), lastReplicaIDKey)
+	} else if len(lastReplicaIDBytes) != 8 {
+		return nil, status.InternalErrorf("failed to read last replica ID for range %d with key %q: expected 8 bytes, got %d", req.GetRangeId(), lastReplicaIDKey, len(lastReplicaIDBytes))
 	}
 	rsp := &rfpb.GetRangeDebugInfoResponse{
 		Nhid:            s.NHID(),
@@ -540,7 +541,7 @@ func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugIn
 			Term:     term,
 			Valid:    valid,
 		},
-		LastReplicaId: lastReplicaID,
+		LastReplicaId: bytesToUint64(lastReplicaIDBytes),
 	}
 	// Fetch the range descriptor from meta range to make sure it's the most-up-to-date.
 	ranges, err := s.sender.LookupRangeDescriptorsByIDs(ctx, []uint64{req.GetRangeId()})
