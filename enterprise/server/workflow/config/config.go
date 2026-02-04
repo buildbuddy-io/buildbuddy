@@ -246,7 +246,7 @@ export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
 ulimit -n 10240
 
 find -L bazel-out/ -name "*.go.kzip" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/go_indexer -continue | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-find -L bazel-out/ -name "*.proto.kzip" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+find -L bazel-out/ -name "*.proto.kzip" | xargs -P $(nproc) -I {} $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
 find -L bazel-out -name '*.java.kzip' | xargs -P $(nproc) -n 1 java -jar $KYTHE_DIR/indexers/java_indexer.jar | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
 
 # cxx indexing needs a cache to complete in a "reasonable" amount of time. It still takes a long time
