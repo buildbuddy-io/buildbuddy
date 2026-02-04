@@ -305,7 +305,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 283
+            "y": 403
           },
           "id": 6281,
           "options": {
@@ -406,7 +406,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 283
+            "y": 403
           },
           "id": 5492,
           "options": {
@@ -811,7 +811,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 260
+            "y": 380
           },
           "id": 6274,
           "options": {
@@ -908,7 +908,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 260
+            "y": 380
           },
           "id": 6275,
           "options": {
@@ -1034,7 +1034,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 268
+            "y": 388
           },
           "id": 6276,
           "options": {
@@ -1158,7 +1158,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 268
+            "y": 388
           },
           "id": 6277,
           "options": {
@@ -1560,7 +1560,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 237
+            "y": 357
           },
           "id": 290,
           "options": {
@@ -1677,7 +1677,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 237
+            "y": 357
           },
           "id": 292,
           "options": {
@@ -1794,7 +1794,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 245
+            "y": 365
           },
           "id": 278,
           "options": {
@@ -1911,7 +1911,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 245
+            "y": 365
           },
           "id": 280,
           "options": {
@@ -2770,7 +2770,7 @@
                   }
                 ]
               },
-              "unit": "binBps"
+              "unit": "percent"
             },
             "overrides": []
           },
@@ -2780,14 +2780,13 @@
             "x": 0,
             "y": 28
           },
-          "id": 33,
+          "id": 6305,
           "options": {
-            "alertThreshold": true,
             "legend": {
               "calcs": [],
               "displayMode": "list",
               "placement": "bottom",
-              "showLegend": false
+              "showLegend": true
             },
             "tooltip": {
               "hideZeros": false,
@@ -2803,15 +2802,16 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
+              "exemplar": true,
+              "expr": "sum by (resource_name) (buildbuddy_remote_execution_assigned_custom_resources{region=\"${region}\",job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}/buildbuddy_remote_execution_assignable_custom_resources{region=\"${region}\",job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "hide": false,
               "interval": "",
-              "legendFormat": "",
-              "queryType": "randomWalk",
+              "legendFormat": "{{resource_name}}",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Total downloaded bytes per second",
+          "title": "Task Custom Resource usage (Percentage)",
           "type": "timeseries"
         },
         {
@@ -3476,7 +3476,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 52
+            "y": 60
           },
           "id": 1196,
           "options": {
@@ -3593,7 +3593,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 368
+            "y": 1164
           },
           "id": 85,
           "options": {
@@ -3695,7 +3695,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 368
+            "y": 1164
           },
           "id": 87,
           "options": {
@@ -3798,7 +3798,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 417
+            "y": 1213
           },
           "id": 93,
           "options": {
@@ -3916,7 +3916,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 676
+            "y": 3350
           },
           "id": 1127,
           "options": {
@@ -4017,7 +4017,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 676
+            "y": 3350
           },
           "id": 1166,
           "options": {
@@ -4131,7 +4131,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 692
+            "y": 3366
           },
           "id": 1168,
           "options": {
@@ -4291,7 +4291,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 677
+            "y": 3351
           },
           "id": 992,
           "maxPerRow": 2,
@@ -4446,7 +4446,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 1545
+            "y": 4219
           },
           "id": 6304,
           "maxPerRow": 2,
@@ -4647,7 +4647,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 1578
+            "y": 4252
           },
           "id": 1257,
           "maxPerRow": 2,
@@ -4817,7 +4817,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 1611
+            "y": 4285
           },
           "id": 1991,
           "maxPerRow": 2,
