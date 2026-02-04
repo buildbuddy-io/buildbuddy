@@ -70,6 +70,16 @@ app:
   trends_summary_enabled: true # Show summary section at the top of trends UI (optional, default: false)
 ```
 
+### Tags Filtering
+
+Tags allow you to categorize and filter invocations. While tags can be used without ClickHouse, it is highly recommended to use them with ClickHouse for better performance.
+
+```yaml
+app:
+  tags_enabled: true # Enable setting tags on invocations via build_metadata (default: false)
+  tags_ui_enabled: true # Expose tags data and filtering in the UI (default: false)
+```
+
 ### Test Grid
 
 The Test Grid provides a comprehensive view of test results over time.
