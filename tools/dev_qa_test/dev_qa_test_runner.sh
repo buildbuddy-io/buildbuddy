@@ -114,7 +114,7 @@ build:dev_qa_test --build_metadata=TAGS=qa-integration-test
 build:dev_qa_test --test_tag_filters=-performance,-webdriver,-docker,-bare
 build:dev_qa_test --nocache_test_results
 build:dev_qa_test --remote_cache_compression
-build:dev_qa_Test --remote_download_minimal
+build:dev_qa_test --remote_download_minimal
 EOF
 
 cat >> .bazelrc <<EOF
