@@ -62,7 +62,7 @@ After configuring the ClickHouse connection, you'll need to enable specific feat
 ### Trends and Drilldown
 
 The Trends page provides historical analysis of build performance and patterns. An example of how to use Trends and Drilldown can be found at [this blog post](https://www.buildbuddy.io/blog/debugging-slow-bazel-builds/#5-was-there-a-change-in-my-project-that-could-explain-increasing-build-times).
-Most of the features are enabled by default, once you set up the OLAP
+Most of the features are enabled by default once you set up the OLAP
 database.
 
 ```yaml
