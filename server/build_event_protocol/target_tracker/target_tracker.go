@@ -28,7 +28,7 @@ import (
 )
 
 var (
-	enableTargetTracking                   = flag.Bool("app.enable_target_tracking", false, "If enabled, track the test targets. Note: highly recommend to set up OLAP database when you turn on this flag.")
+	enableTargetTracking                   = flag.Bool("app.enable_target_tracking", false, "If enabled, store test target statuses in the database. Note: it's highly recommended to also configure an OLAP database when using this flag.")
 	writeTestTargetStatusesToOLAPDBEnabled = flag.Bool("app.enable_write_test_target_statuses_to_olap_db", false, "If enabled, test target statuses will be flushed to OLAP DB")
 )
 
