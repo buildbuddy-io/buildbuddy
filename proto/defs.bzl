@@ -2,27 +2,35 @@ load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@com_github_buildbuddy_io_protoc_gen_protobufjs//:rules.bzl", "protoc_gen_protobufjs")
 load("@io_bazel_rules_go//proto:def.bzl", _go_proto_library = "go_proto_library")
 
-def go_proto_library(name, compilers = [], **kwargs):
+GO_PROTO_MODES = ["messages_only", "services_only", "messages_and_services"]
+
+def go_proto_library(name, mode = "messages_only", **kwargs):
     """Wrapper for go_proto_library that ensures vtprotobuf support.
-
-    This wrapper automatically includes the required compilers:
-    - @io_bazel_rules_go//proto:go_proto
-    - //proto:vtprotobuf_compiler
-
-    Any additional compilers specified (e.g., go_grpc_v2) are added on top.
 
     Args:
         name: name of the go_proto_library target
-        compilers: list of additional compilers to include (e.g., ["@io_bazel_rules_go//proto:go_grpc_v2"])
+        mode: one of:
+            - "messages_only": go_proto + vtprotobuf (default, for protos with only messages)
+            - "services_only": go_grpc_v2 only (for protos with only services, no messages)
+            - "messages_and_services": go_proto + vtprotobuf + go_grpc_v2 (for protos with both)
         **kwargs: passed through to go_proto_library
     """
-    default_compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "//proto:vtprotobuf_compiler",
-    ]
+    if mode not in GO_PROTO_MODES:
+        fail("Invalid mode '%s'. Must be one of: %s" % (mode, GO_PROTO_MODES))
 
-    # Combine default compilers with any additional ones
-    all_compilers = default_compilers + compilers
+    if mode == "services_only":
+        all_compilers = ["@io_bazel_rules_go//proto:go_grpc_v2"]
+    elif mode == "messages_and_services":
+        all_compilers = [
+            "@io_bazel_rules_go//proto:go_proto",
+            "//proto:vtprotobuf_compiler",
+            "@io_bazel_rules_go//proto:go_grpc_v2",
+        ]
+    else:  # messages_only
+        all_compilers = [
+            "@io_bazel_rules_go//proto:go_proto",
+            "//proto:vtprotobuf_compiler",
+        ]
 
     _go_proto_library(
         name = name,

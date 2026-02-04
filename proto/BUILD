@@ -954,10 +954,8 @@ go_proto_library(
 
 go_proto_library(
     name = "auth_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/auth",
+    mode = "messages_and_services",
     proto = ":auth_proto",
 )
 
@@ -1081,10 +1079,8 @@ go_proto_library(
 
 go_proto_library(
     name = "publish_build_event_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event",
+    mode = "messages_and_services",
     proto = ":publish_build_event_proto",
     deps = [
         ":build_events_go_proto",
@@ -1202,10 +1198,8 @@ go_proto_library(
 
 go_proto_library(
     name = "vmexec_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/vmexec",
+    mode = "messages_and_services",
     proto = ":vmexec_proto",
     deps = [
         ":remote_execution_go_proto",
@@ -1215,10 +1209,8 @@ go_proto_library(
 
 go_proto_library(
     name = "vmvfs_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/vmvfs",
+    mode = "messages_and_services",
     proto = ":vmvfs_proto",
     deps = [
         ":remote_execution_go_proto",
@@ -1227,10 +1219,8 @@ go_proto_library(
 
 go_proto_library(
     name = "vfs_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/vfs",
+    mode = "messages_and_services",
     proto = ":vfs_proto",
 )
 
@@ -1376,10 +1366,8 @@ go_proto_library(
 
 go_proto_library(
     name = "raft_service_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/raft_service",
+    mode = "services_only",
     proto = ":raft_service_proto",
     deps = [
         ":raft_go_proto",
@@ -1388,10 +1376,8 @@ go_proto_library(
 
 go_proto_library(
     name = "metadata_service_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/metadata_service",
+    mode = "services_only",
     proto = ":metadata_service_proto",
     deps = [
         ":metadata_go_proto",
@@ -1400,19 +1386,15 @@ go_proto_library(
 
 go_proto_library(
     name = "ping_service_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/ping_service",
+    mode = "messages_and_services",
     proto = ":ping_service_proto",
 )
 
 go_proto_library(
     name = "buildbuddy_service_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service",
+    mode = "services_only",
     proto = ":buildbuddy_service_proto",
     deps = [
         ":api_key_go_proto",
@@ -1455,19 +1437,15 @@ go_proto_library(
 
 go_proto_library(
     name = "sidecar_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/sidecar",
+    mode = "messages_and_services",
     proto = ":sidecar_proto",
 )
 
 go_proto_library(
     name = "registry_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/registry",
+    mode = "messages_and_services",
     proto = ":registry_proto",
     deps = [":remote_execution_go_proto"],
 )
@@ -1532,10 +1510,8 @@ go_proto_library(
 
 go_proto_library(
     name = "certgenerator_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/certgenerator",
+    mode = "messages_and_services",
     proto = ":certgenerator_proto",
     deps = [
     ],
@@ -1562,10 +1538,8 @@ go_proto_library(
 
 go_proto_library(
     name = "distributed_cache_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache",
+    mode = "messages_and_services",
     proto = ":distributed_cache_proto",
     deps = [
         ":resource_go_proto",
@@ -1575,10 +1549,8 @@ go_proto_library(
 
 go_proto_library(
     name = "remote_asset_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_asset",
+    mode = "messages_and_services",
     proto = ":remote_asset_proto",
     deps = [
         ":remote_execution_go_proto",
@@ -1604,10 +1576,8 @@ go_proto_library(
 
 go_proto_library(
     name = "remote_execution_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_execution",
+    mode = "messages_and_services",
     proto = ":remote_execution_proto",
     deps = [
         ":scheduler_go_proto",
@@ -1629,10 +1599,8 @@ go_proto_library(
 
 go_proto_library(
     name = "telemetry_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/telemetry",
+    mode = "messages_and_services",
     proto = ":telemetry_proto",
     deps = [
         "@org_golang_google_genproto_googleapis_rpc//status",
@@ -1641,10 +1609,8 @@ go_proto_library(
 
 go_proto_library(
     name = "scheduler_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/scheduler",
+    mode = "messages_and_services",
     proto = ":scheduler_proto",
     deps = [
         ":acl_go_proto",
@@ -1656,10 +1622,8 @@ go_proto_library(
 
 go_proto_library(
     name = "suggestion_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/suggestion",
+    mode = "messages_and_services",
     proto = ":suggestion_proto",
     deps = [
         ":context_go_proto",
@@ -1668,19 +1632,15 @@ go_proto_library(
 
 go_proto_library(
     name = "trace_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/trace",
+    mode = "messages_and_services",
     proto = ":trace_proto",
 )
 
 go_proto_library(
     name = "worker_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/worker",
+    mode = "messages_and_services",
     proto = ":worker_proto",
 )
 
@@ -1703,10 +1663,8 @@ go_proto_library(
 
 go_proto_library(
     name = "encryption_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/encryption",
+    mode = "messages_and_services",
     proto = ":encryption_proto",
     deps = [
         ":context_go_proto",
@@ -1758,10 +1716,8 @@ go_proto_library(
 
 go_proto_library(
     name = "cache_service_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/cache_service",
+    mode = "services_only",
     proto = ":cache_service_proto",
     deps = [
         ":cache_go_proto",
@@ -1770,10 +1726,8 @@ go_proto_library(
 
 go_proto_library(
     name = "codesearch_service_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service",
+    mode = "services_only",
     proto = ":codesearch_service_proto",
     deps = [
         ":index_go_proto",
@@ -1783,10 +1737,8 @@ go_proto_library(
 
 go_proto_library(
     name = "kythe_service_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/kythe_service",
+    mode = "services_only",
     proto = ":kythe_service_proto",
     deps = [
         "@io_kythe//kythe/proto:analysis_go_proto",
@@ -1809,20 +1761,16 @@ go_proto_library(
 
 go_proto_library(
     name = "oci_fetcher_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher",
+    mode = "messages_and_services",
     proto = ":oci_fetcher_proto",
     deps = [":registry_go_proto"],
 )
 
 go_proto_library(
     name = "hit_tracker_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker",
+    mode = "messages_and_services",
     proto = ":hit_tracker_proto",
     deps = [
         ":cache_go_proto",
