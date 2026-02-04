@@ -125,7 +125,6 @@ const (
 	// Whether external network access should be enabled. Valid values are:
 	// - "off": no network access
 	// - "external": network access via a network namespace routed thru the host
-	// - "host": access to the internet sharing the host's network configuration
 	//
 	// By default, this property is not set. If it is set, its value always
 	// applies (even if "dockerNetwork" is set). If this property is not set,
