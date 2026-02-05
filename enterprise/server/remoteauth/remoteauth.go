@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -94,11 +95,12 @@ type cachedKeys struct {
 
 // This struct manages JWT-signing keys.
 type keyProvider struct {
-	env    environment.Env
-	client authpb.AuthServiceClient
-	mu     sync.RWMutex
-	cached *cachedKeys
-	ttl    time.Duration
+	env        environment.Env
+	client     authpb.AuthServiceClient
+	mu         sync.RWMutex
+	cached     *cachedKeys
+	ttl        time.Duration
+	fetchGroup singleflight.Group[struct{}, []string]
 }
 
 func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
@@ -125,14 +127,25 @@ func (kp *keyProvider) getES256PublicKeys(ctx context.Context) ([]string, error)
 	if cached != nil && time.Since(cached.fetchedAt) < kp.ttl {
 		return cached.keys, nil
 	}
-	keys, err := kp.fetchES256PublicKeys(ctx)
-	if err != nil {
-		return nil, err
-	}
-	kp.mu.Lock()
-	kp.cached = &cachedKeys{keys: keys, fetchedAt: time.Now()}
-	kp.mu.Unlock()
-	return keys, nil
+	keys, _, err := kp.fetchGroup.Do(ctx, struct{}{}, func(ctx context.Context) ([]string, error) {
+		// Re-check the cache inside the singleflight in case another
+		// goroutine populated it while we were waiting.
+		kp.mu.RLock()
+		cached := kp.cached
+		kp.mu.RUnlock()
+		if cached != nil && time.Since(cached.fetchedAt) < kp.ttl {
+			return cached.keys, nil
+		}
+		keys, err := kp.fetchES256PublicKeys(ctx)
+		if err != nil {
+			return nil, err
+		}
+		kp.mu.Lock()
+		kp.cached = &cachedKeys{keys: keys, fetchedAt: time.Now()}
+		kp.mu.Unlock()
+		return keys, nil
+	})
+	return keys, err
 }
 
 func (kp *keyProvider) invalidateES256Keys() {
