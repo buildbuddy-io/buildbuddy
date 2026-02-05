@@ -291,9 +291,9 @@ func (lk *LeaseKeeper) watchLeases() {
 				metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
 			})
 			if leader {
-				rlGauge.Inc()
+				rlGauge.Set(1.0)
 			} else {
-				rlGauge.Dec()
+				rlGauge.Set(0.0)
 			}
 
 			lk.mu.Lock()
