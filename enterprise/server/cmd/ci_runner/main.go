@@ -771,8 +771,9 @@ func run() error {
 			return status.WrapError(err, "failed to extract bazelisk")
 		}
 		*bazelCommand = bazeliskPath
-
-		// (TODO): Once bb CLI is stable, stop extracting bazelisk and use bb by default.
+	}
+	// (TODO): Once bb CLI is stable, stop extracting bazelisk and use bb by default.
+	if *bazelCommand == bbBinaryName {
 		bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
 		if _, err := os.Stat(bbPath); err != nil {
 			backendLog.Warningf("bb binary not found in workspace: %s", err)
@@ -780,6 +781,7 @@ func run() error {
 			if err := os.Setenv("BB_DISABLE_SIDECAR", "1"); err != nil {
 				backendLog.Warningf("could not set BB_DISABLE_SIDECAR: %s", err)
 			}
+			*bazelCommand = bbPath
 		}
 	}
 
@@ -2138,7 +2140,9 @@ func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 	wrapperBinaries := map[string]string{
 		bazelBinaryName:    *bazelCommand,
 		bazeliskBinaryName: *bazelCommand,
-		bbBinaryName:       bbPath,
+	}
+	if _, err := os.Stat(bbPath); err == nil {
+		wrapperBinaries[bbBinaryName] = bbPath
 	}
 	for wrapperName, binaryPath := range wrapperBinaries {
 		wrapperPath := filepath.Join(wrapperDir, wrapperName)

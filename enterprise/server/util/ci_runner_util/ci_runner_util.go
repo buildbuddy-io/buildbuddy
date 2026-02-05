@@ -54,6 +54,13 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 			return nil, status.UnavailableError("no cache configured")
 		}
 
+		if len(bundle.CiRunnerBytes) == 0 {
+			return nil, status.InternalError("CI runner binary not embedded")
+		}
+		if len(cli_bundle.CLIBytes) == 0 {
+			return nil, status.InternalError("CLI binary not embedded")
+		}
+
 		runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, bsClient, instanceName, repb.DigestFunction_BLAKE3, bundle.CiRunnerBytes)
 		if err != nil {
 			return nil, status.WrapError(err, "upload runner bin")

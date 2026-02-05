@@ -384,9 +384,13 @@ func (ws *Workspace) AddRemoteRunnerBinaries(ctx context.Context) error {
 
 // AddCLI adds the bb CLI to the workspace root if it doesn't already exist.
 func (ws *Workspace) AddCLI(ctx context.Context) error {
+	// The CLI binary is not embedded on Windows due to a CGo dependency that isn't supported.
+	if len(cli_bundle.CLIBytes) == 0 {
+		return status.UnimplementedErrorf("CLI binary not embedded")
+	}
 	// Don't add CLI if the workspace is backed by FUSE.
 	if ws.vfs != nil {
-		return status.UnimplementedErrorf("AddCLI not support on VFS")
+		return status.UnimplementedErrorf("AddCLI not supported on VFS")
 	}
 	destPath := path.Join(ws.Path(), ci_runner_util.CLIBinaryName)
 	exists, err := disk.FileExists(ctx, destPath)
@@ -405,7 +409,7 @@ func (ws *Workspace) AddCLI(ctx context.Context) error {
 func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	// Don't add CI runner if the workspace is backed by FUSE.
 	if ws.vfs != nil {
-		return status.UnimplementedErrorf("AddCIRunner not support on VFS")
+		return status.UnimplementedErrorf("AddCIRunner not supported on VFS")
 	}
 	destPath := path.Join(ws.Path(), ci_runner_util.ExecutableName)
 	exists, err := disk.FileExists(ctx, destPath)
