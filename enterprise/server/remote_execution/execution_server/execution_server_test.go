@@ -1003,6 +1003,44 @@ func TestInvocationLink_EmptyInvocationID(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestNilDBHandlePanicWhenFlagChanges(t *testing.T) {
+	// Construct execution server with writeExecutionsToPrimaryDB=false,
+	// which allows dbHandle to be nil.
+	flags.Set(t, "remote_execution.write_executions_to_primary_db", false)
+
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	r := testredis.Start(t)
+	rdb := redis.NewClient(redisutil.TargetToOptions(r.Target))
+	env.SetDefaultRedisClient(r.Client())
+	err := redis_execution_collector.Register(env)
+	require.NoError(t, err)
+	env.SetRemoteExecutionRedisClient(rdb)
+	env.SetRemoteExecutionRedisPubSubClient(rdb)
+	env.SetSchedulerService(&schedulerServerMock{})
+	tasksize.Register(env)
+
+	// Nil out the DB handle. The constructor allows this since
+	// writeExecutionsToPrimaryDB is false.
+	env.SetDBHandle(nil)
+
+	s, err := execution_server.NewExecutionServer(env)
+	require.NoError(t, err)
+
+	// Flip the flag to true, simulating a runtime flag change.
+	flags.Set(t, "remote_execution.write_executions_to_primary_db", true)
+
+	// Cancel calls getInProgressExecutionIDsForInvocation, which
+	// dereferences s.dbHandle when writeExecutionsToPrimaryDB is true.
+	// This panics because dbHandle is nil.
+	ctx := context.Background()
+	ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	assert.Panics(t, func() {
+		s.Cancel(ctx, "fake-invocation-id")
+	})
+}
+
 func uploadAction(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value, action *repb.Action) *digest.CASResourceName {
 	cmd := &repb.Command{
 		Arguments:   []string{"test"},
