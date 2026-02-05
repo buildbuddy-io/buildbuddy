@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -26,6 +27,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -70,9 +72,10 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 	}
 	client := authpb.NewAuthServiceClient(conn)
 	provider := &keyProvider{
-		env:    env,
-		client: client,
-		ttl:    *es256KeyCacheTTL,
+		env:           env,
+		client:        client,
+		ttl:           *es256KeyCacheTTL,
+		refreshReason: "missing",
 	}
 	claimsParser, err := claims.NewClaimsParser(provider.provide)
 	if err != nil {
@@ -101,6 +104,8 @@ type keyProvider struct {
 	cached     *cachedKeys
 	ttl        time.Duration
 	fetchGroup singleflight.Group[struct{}, []string]
+
+	refreshReason string
 }
 
 func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
@@ -127,6 +132,9 @@ func (kp *keyProvider) getES256PublicKeys(ctx context.Context) ([]string, error)
 	if cached != nil && time.Since(cached.fetchedAt) < kp.ttl {
 		return cached.keys, nil
 	}
+	kp.mu.Lock()
+	kp.refreshReason = "expired"
+	kp.mu.Unlock()
 	keys, _, err := kp.fetchGroup.Do(ctx, struct{}{}, func(ctx context.Context) ([]string, error) {
 		// Re-check the cache inside the singleflight in case another
 		// goroutine populated it while we were waiting.
@@ -151,12 +159,17 @@ func (kp *keyProvider) getES256PublicKeys(ctx context.Context) ([]string, error)
 func (kp *keyProvider) invalidateES256Keys() {
 	kp.mu.Lock()
 	kp.cached = nil
+	kp.refreshReason = "invalidated"
 	kp.mu.Unlock()
 }
 
 func (kp *keyProvider) fetchES256PublicKeys(ctx context.Context) ([]string, error) {
 	req := authpb.GetPublicKeysRequest{}
 	resp, err := kp.client.GetPublicKeys(ctx, &req)
+	kp.mu.Lock()
+	metrics.RemoteAuthES256KeyRefreshes.WithLabelValues(kp.refreshReason, gstatus.Code(err).String()).Inc()
+	kp.refreshReason = "unknown"
+	kp.mu.Unlock()
 	if err != nil {
 		return []string{}, err
 	}

@@ -11,6 +11,7 @@ go_library(
         "//proto:auth_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/metrics",
         "//server/real_environment",
         "//server/tables",
         "//server/util/authutil",
@@ -24,6 +25,7 @@ go_library(
         "@com_github_golang_jwt_jwt_v4//:jwt",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
     ],
 )
 
