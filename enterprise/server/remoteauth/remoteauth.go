@@ -2,6 +2,7 @@ package remoteauth
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"net/http"
 	"sync"
@@ -20,6 +21,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/golang-jwt/jwt/v4"
 
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 )
@@ -321,9 +324,9 @@ func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) 
 	return *resp.Jwt, nil
 }
 
-// jwtIsValidWithKeyRefresh validates a JWT. If validation fails and ES256 is
-// enabled, it invalidates the cached ES256 keys and retries once, in case the
-// keys were rotated.
+// jwtIsValidWithKeyRefresh validates a JWT. If validation fails with a
+// signature error and ES256 is enabled, it invalidates the cached ES256 keys
+// and retries once, in case the keys were rotated.
 func (a *RemoteAuthenticator) jwtIsValidWithKeyRefresh(ctx context.Context, jwt string) (*claims.Claims, error) {
 	c, err := jwtIsValid(ctx, jwt, a.claimsParser, a.jwtExpirationBuffer)
 	if err == nil {
@@ -332,8 +335,16 @@ func (a *RemoteAuthenticator) jwtIsValidWithKeyRefresh(ctx context.Context, jwt 
 	if !useES256SignedJWTs(ctx, a.env.GetExperimentFlagProvider()) {
 		return nil, err
 	}
+	if !isJWTSignatureError(err) {
+		return nil, err
+	}
 	a.keyProvider.invalidateES256Keys()
 	return jwtIsValid(ctx, jwt, a.claimsParser, a.jwtExpirationBuffer)
+}
+
+func isJWTSignatureError(err error) bool {
+	var validationErr *jwt.ValidationError
+	return errors.As(err, &validationErr) && validationErr.Errors&jwt.ValidationErrorSignatureInvalid != 0
 }
 
 // getValidJwtFromContext returns:

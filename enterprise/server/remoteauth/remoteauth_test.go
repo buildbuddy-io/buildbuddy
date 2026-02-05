@@ -442,3 +442,35 @@ func TestES256KeyCacheInvalidationOnKeyRotation(t *testing.T) {
 	// Should have fetched keys a second time due to invalidation.
 	require.Equal(t, 2, fakeAuth.getPublicKeysCalls())
 }
+
+func TestES256KeyCacheNotInvalidatedOnNonSignatureError(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	flags.Set(t, "auth.remote.use_es256_jwts", true)
+	// Use a very large expiration buffer so that the JWT is considered
+	// "expiring too soon", which is a non-signature validation error.
+	flags.Set(t, "auth.remote.jwt_expiration_buffer", 24*time.Hour)
+	authenticator, fakeAuth := setup(t)
+
+	fakeAuth.setPublicKeys([]string{keyPair.PublicKeyPEM})
+
+	// First auth to populate the key cache.
+	fakeAuth.setNextJwt(t, "", validES256Jwt(t, "foo"))
+	authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
+	// Auth should fail because the JWT expires too soon, but this is
+	// expected — we only care about key fetch counts.
+	require.Equal(t, 1, fakeAuth.getPublicKeysCalls())
+
+	// Pass an ES256 JWT directly via metadata. The signature is valid but
+	// the JWT will be rejected because it expires within the buffer. This
+	// non-signature error should NOT trigger key invalidation.
+	jwtStr := validES256Jwt(t, "bar")
+	ctx := authenticator.AuthenticatedGRPCContext(contextWithJwt(t, jwtStr))
+	_, err := authenticator.AuthenticatedUser(ctx)
+	require.Error(t, err)
+	// Keys should NOT have been re-fetched because the error was not a
+	// signature error.
+	require.Equal(t, 1, fakeAuth.getPublicKeysCalls())
+}
