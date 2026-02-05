@@ -350,6 +350,7 @@ Permitted values are:
 For `oci`, `podman`, and `docker` isolation, if the `network` property is not
 specified, the runner falls back to the `dockerNetwork` setting. If
 `dockerNetwork` is also not specified, its default of `bridge` is used.
+
 ### Runner secrets
 
 Please consult [RBE secrets](secrets) for more information on the related properties.
