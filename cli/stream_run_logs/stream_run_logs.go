@@ -36,8 +36,6 @@ const (
 var (
 	// Size of the buffer to use for streaming logs.
 	UploadBufferSize = 1 << 20 // 1MB
-
-	enabled = false
 )
 
 type FailureMode string

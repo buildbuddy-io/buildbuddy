@@ -98,6 +98,10 @@ const (
 	actioncacheProtocolPrefix = "actioncache://"
 )
 
+var (
+	WriteEventLogTimeout = 1 * time.Hour
+)
+
 type BuildBuddyServer struct {
 	env        environment.Env
 	sslService interfaces.SSLService
@@ -1552,8 +1556,8 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 	}
 	gid := authenticatedUser.GetGroupID()
 
-	timeout := time.NewTimer(1 * time.Hour)
-	defer timeout.Stop()
+	ctx, cancel := context.WithTimeout(ctx, WriteEventLogTimeout)
+	defer cancel()
 
 	// Stream requests from the client in the background to ensure we don't block if the client stops sending requests.
 	type recvResult struct {
@@ -1565,7 +1569,11 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 		defer close(recvCh)
 		for {
 			req, err := stream.Recv()
-			recvCh <- recvResult{req, err}
+			select {
+			case recvCh <- recvResult{req, err}:
+			case <-ctx.Done():
+				return
+			}
 			if err != nil {
 				return
 			}
@@ -1576,7 +1584,7 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 	for {
 		var req *elpb.WriteEventLogRequest
 		select {
-		case <-timeout.C:
+		case <-ctx.Done():
 			return status.DeadlineExceededErrorf("event log streaming only supported for up to 1 hour")
 		case result, ok := <-recvCh:
 			if !ok {
