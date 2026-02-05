@@ -857,7 +857,8 @@ code .comment {
 }
 
 .setup .no-api-keys {
-  background: var(--color-light-blue-50);
+  background: var(--color-banner-info-bg);
+  color: var(--color-banner-info-text);
   padding: 16px;
   border-radius: 8px;
 }
@@ -1901,7 +1902,7 @@ code .comment {
   width: 32px;
   height: 32px;
   opacity: 0.8;
-  background-image: url("/image/loader.svg");
+  background-image: var(--spinner-image);
   background-size: cover;
 }
 

@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
@@ -1545,6 +1546,12 @@ func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream
 func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEventLogServer) error {
 	ctx := stream.Context()
 
+	authenticatedUser, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	gid := authenticatedUser.GetGroupID()
+
 	var eventLogWriter *eventlog.EventLogWriter
 	for {
 		req, err := stream.Recv()
@@ -1576,9 +1583,15 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 			defer eventLogWriter.Close(ctx)
 		}
 
-		_, err = eventLogWriter.Write(ctx, req.GetData())
+		n, err := eventLogWriter.Write(ctx, req.GetData())
 		if err != nil {
 			return err
+		}
+		if n > 0 {
+			metrics.EventLogBytesWritten.With(map[string]string{
+				metrics.EventName: "run_log",
+				metrics.GroupID:   gid,
+			}).Add(float64(n))
 		}
 	}
 }
@@ -2186,6 +2199,19 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		path := eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, attempt)
 		if _, err = io.Copy(w, c.Reader(ctx, path)); err != nil {
 			log.Warningf("Error serving invocation-%s.log: %s", iid, err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
+	case "runlog":
+		c := chunkstore.New(
+			s.env.GetBlobstore(),
+			&chunkstore.ChunkstoreOptions{},
+		)
+		// Stream the file back to our client
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=invocation-%s-run.log", iid))
+		w.Header().Set("Content-Type", "application/octet-stream")
+		path := eventlog.GetRunLogPathFromInvocationId(iid)
+		if _, err := io.Copy(w, c.Reader(ctx, path)); err != nil {
+			log.Warningf("Error serving invocation-%s-run.log: %s", iid, err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
 	case "execution_profile":

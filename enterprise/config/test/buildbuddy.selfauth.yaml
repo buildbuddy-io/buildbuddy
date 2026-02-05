@@ -14,9 +14,10 @@ storage:
     root_directory: /tmp/buildbuddy_enterprise
 cache:
   max_size_bytes: 1000000000 # 1 GB
-  #in_memory: true
-  disk:
-    root_directory: /tmp/buildbuddy-enterprise-cache
+  pebble:
+    name: "pebble_cache"
+    active_key_version: 5
+    root_directory: /tmp/buildbuddy-enterprise-pebble-cache
 auth:
   enable_anonymous_usage: true
   enable_self_auth: true

@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
@@ -13,10 +14,10 @@ import (
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
 )
 
-const (
+var (
 	// Only index up to this many non-important events as a safeguard against
 	// excessive memory / CPU consumption.
-	maxEventCount = 2_000_000
+	maxEventCount = flag.Int("app.max_indexed_event_count", 2_000_000, "Maximum number of non-important build events to index. Events beyond this limit are dropped to prevent excessive memory/CPU consumption.")
 )
 
 // Index holds a few data structures to make it easier to aggregate data from
@@ -56,7 +57,7 @@ func New() *Index {
 // Add adds a single event to the index.
 // Don't forget to call Finalize once all events are added.
 func (idx *Index) Add(event *inpb.InvocationEvent) {
-	if idx.eventCount >= maxEventCount && !accumulator.IsImportantEvent(event.GetBuildEvent()) {
+	if idx.eventCount >= *maxEventCount && !accumulator.IsImportantEvent(event.GetBuildEvent()) {
 		return
 	}
 	idx.eventCount++

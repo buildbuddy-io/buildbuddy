@@ -910,7 +910,7 @@
 
 .invocation-share-dialog .visibility-explanation {
   margin-top: 8px;
-  color: var(--color-gray-900-alt);
+  color: var(--color-form-help-text);
 }
 
 .invocation-share-dialog select {

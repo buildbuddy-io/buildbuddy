@@ -19,7 +19,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/chunker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/gcsutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
@@ -27,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
@@ -2028,7 +2028,7 @@ type cdcWriter struct {
 	shouldCompress bool
 	isCompressed   bool
 
-	chunker         *chunker.Chunker
+	chunker         *chunking.Chunker
 	isChunkerClosed bool
 
 	mu            sync.Mutex // protects writtenChunks, numChunks, firstChunk, fileType
@@ -2071,7 +2071,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		wc = decompressor
 	}
 
-	chunker, err := chunker.New(ctx, p.averageChunkSizeBytes, cdcw.writeChunk)
+	chunker, err := chunking.NewChunker(ctx, p.averageChunkSizeBytes, cdcw.writeChunk)
 	if err != nil {
 		db.Close()
 		return nil, err

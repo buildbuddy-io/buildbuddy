@@ -3,6 +3,7 @@ slug: fast-runners-at-scale
 title: "Snapshot, Chunk, Clone: Fast Runners at Scale"
 authors: maggie
 date: 2026-01-26 12:00:00
+image: /img/fast-runners-at-scale.png
 tags: [performance, infrastructure]
 ---
 

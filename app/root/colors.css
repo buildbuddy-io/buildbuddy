@@ -92,6 +92,7 @@
   --color-green-700: #388e3c;
   --color-green-900: #1b5e20;
   --color-indigo-500: #3f51b5;
+  --color-indigo-900: #1a237e;
   --color-light-blue-400: #29b6f6;
   --color-light-blue-50: #e1f5fe;
   --color-light-blue-500: #03a9f4;
@@ -176,6 +177,7 @@
   --color-banner-info-text: var(--color-black);
   --color-banner-success-bg: var(--color-green-100);
   --color-banner-success-text: var(--color-black);
+  --color-banner-impersonation-bg: var(--color-amber-500);
   --color-banner-warning-bg: var(--color-orange-50);
   --color-banner-warning-icon: var(--color-amber-900);
   --color-banner-warning-text: var(--color-black);
@@ -361,7 +363,7 @@
   --color-settings-button-selected-text: var(--color-white);
   --color-settings-hovercard-bg: var(--color-overlay-light-full);
   --color-settings-input-description: var(--color-gray-800);
-  --color-settings-internal-bg: var(--color-amber-500);
+  --color-settings-internal-bg: var(--color-banner-impersonation-bg);
   --color-settings-tab-active-bg: var(--color-teal-50);
   --color-settings-tab-active-text: var(--color-teal-900);
   --color-settings-tab-group-border: var(--color-gray-500);
@@ -423,6 +425,7 @@
   --color-trace-scrollbar-thumb: var(--color-gray-400);
   --color-trace-zoom-factor-bg: var(--color-yellow-highlight);
   --color-tree-node-size-text: var(--color-black);
+  --color-trends-divider: var(--color-gray-200);
   --color-trends-hovercard-bg: var(--color-overlay-light-solid);
   --color-heatmap-axis: var(--color-gray-700-alt);
   --color-chart-axis: var(--color-gray-700-alt);
@@ -449,10 +452,11 @@
   --color-badge-workflow-text: var(--color-black);
   --color-banner-error-bg: var(--color-red-900);
   --color-banner-error-text: var(--color-white);
-  --color-banner-info-bg: var(--color-blue-900);
+  --color-banner-info-bg: var(--color-indigo-900);
   --color-banner-info-text: var(--color-white);
   --color-banner-success-bg: var(--color-green-900);
   --color-banner-success-text: var(--color-white);
+  --color-banner-impersonation-bg: var(--color-yellow-800);
   --color-banner-warning-bg: var(--color-brown-800);
   --color-banner-warning-icon: var(--color-amber-200);
   --color-banner-warning-text: var(--color-white);
@@ -632,7 +636,7 @@
   --color-settings-tab-subtitle: var(--color-text-tertiary);
   --color-shadow-lg: var(--color-shadow-50);
   --color-shadow-sm: var(--color-shadow-30);
-  --color-shelf-bg: var(--color-gray-900-alt4);
+  --color-shelf-bg: var(--color-bg-primary);
   --color-shelf-border: var(--color-gray-900-alt);
   --color-shelf-details: var(--color-text-secondary);
   --color-shelf-subtitle: var(--color-text-primary);
@@ -675,6 +679,7 @@
   --color-trace-scrollbar-thumb: var(--color-gray-800);
   --color-trace-zoom-factor-bg: var(--color-amber-800-alt);
   --color-tree-node-size-text: var(--color-gray-200);
+  --color-trends-divider: var(--color-gray-900-alt);
   --color-trends-hovercard-bg: var(--color-gray-800);
   --color-heatmap-axis: var(--color-gray-400);
   --color-chart-axis: var(--color-gray-400);

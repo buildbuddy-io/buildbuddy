@@ -98,6 +98,7 @@ func (t *Triggers) GetPullRequestTrigger() *PullRequestTrigger {
 
 type PushTrigger struct {
 	Branches []string `yaml:"branches"`
+	Tags     []string `yaml:"tags"`
 }
 
 type PullRequestTrigger struct {
@@ -232,7 +233,7 @@ else
 fi
 
 # These arguments make the extractors run on java generated code
-KYTHE_ARGS="$KYTHE_ARGS --experimental_extra_action_top_level_only=false --experimental_extra_action_filter='^//'"
+KYTHE_ARGS="$KYTHE_ARGS --experimental_extra_action_top_level_only=false --experimental_extra_action_filter=^//"
 
 echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"
 bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...`, dirName, bazelConfigFlags)
@@ -245,7 +246,7 @@ export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
 ulimit -n 10240
 
 find -L bazel-out/ -name "*.go.kzip" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/go_indexer -continue | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-find -L bazel-out/ -name "*.proto.kzip" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+find -L bazel-out/ -name "*.proto.kzip" | xargs -P $(nproc) -I {} $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
 find -L bazel-out -name '*.java.kzip' | xargs -P $(nproc) -n 1 java -jar $KYTHE_DIR/indexers/java_indexer.jar | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
 
 # cxx indexing needs a cache to complete in a "reasonable" amount of time. It still takes a long time
@@ -274,6 +275,16 @@ fi
 	return buf
 }
 
+func skipIfNotBazelRepo() string {
+	return `
+# If this is not a Bazel repo, skip Kythe indexing.
+if [ ! -f "WORKSPACE" ] && [ ! -f "WORKSPACE.bazel" ] && [ ! -f "MODULE.bazel" ]; then
+  echo "No WORKSPACE, WORKSPACE.bazel, or MODULE.bazel file found. Skipping Kythe indexing."
+  exit 0
+fi
+`
+}
+
 func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 	var pushTriggerBranches []string
 	if targetRepoDefaultBranch != "" {
@@ -293,13 +304,13 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 		},
 		Steps: []*rnpb.Step{
 			{
-				Run: checkoutKythe(kytheDirName, kytheDownloadURL),
+				Run: skipIfNotBazelRepo() + checkoutKythe(kytheDirName, kytheDownloadURL),
 			},
 			{
-				Run: buildWithKythe(kytheDirName),
+				Run: skipIfNotBazelRepo() + buildWithKythe(kytheDirName),
 			},
 			{
-				Run: prepareKytheOutputs(kytheDirName),
+				Run: skipIfNotBazelRepo() + prepareKytheOutputs(kytheDirName),
 			},
 		},
 	}
@@ -362,8 +373,8 @@ func GetDefault(targetRepoDefaultBranch string) *BuildBuddyConfig {
 }
 
 // MatchesAnyTrigger returns whether the action is triggered by the event
-// published to the given branch.
-func MatchesAnyTrigger(action *Action, event, branch string) bool {
+// published to the given branch or tag.
+func MatchesAnyTrigger(action *Action, event, branch, tag string) bool {
 	// If user has manually requested action dispatch, always run it
 	if event == webhook_data.EventName.ManualDispatch {
 		return true
@@ -374,11 +385,14 @@ func MatchesAnyTrigger(action *Action, event, branch string) bool {
 	}
 
 	if pushCfg := action.Triggers.Push; pushCfg != nil && event == webhook_data.EventName.Push {
-		return matchesBranchPatterns(pushCfg.Branches, branch)
+		if tag != "" {
+			return matchesAnyPattern(pushCfg.Tags, tag)
+		}
+		return matchesAnyPattern(pushCfg.Branches, branch)
 	}
 
 	if prCfg := action.Triggers.PullRequest; prCfg != nil && event == webhook_data.EventName.PullRequest {
-		return matchesBranchPatterns(prCfg.Branches, branch)
+		return matchesAnyPattern(prCfg.Branches, branch)
 	}
 	return false
 }
@@ -411,10 +425,10 @@ func matchesRestrictedGlob(pattern, text string) (isMatched, isNegation bool) {
 	return strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix), isNegation
 }
 
-func matchesBranchPatterns(branchPatterns []string, branch string) bool {
+func matchesAnyPattern(haystack []string, needle string) bool {
 	matched := false
-	for _, branchPattern := range branchPatterns {
-		if m, isNegation := matchesRestrictedGlob(branchPattern, branch); m {
+	for _, pattern := range haystack {
+		if m, isNegation := matchesRestrictedGlob(pattern, needle); m {
 			matched = !isNegation
 			// Keep going - last pattern wins.
 		}

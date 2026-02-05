@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "chunked_manifest",
-    srcs = ["chunked_manifest.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest",
+    name = "chunking",
+    srcs = ["chunking.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
@@ -12,15 +12,16 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/proto",
         "//server/util/status",
+        "@com_github_jotfs_fastcdc_go//v2020:fastcdc-go",
         "@org_golang_x_sync//errgroup",
     ],
 )
 
 go_test(
-    name = "chunked_manifest_test",
-    srcs = ["chunked_manifest_test.go"],
+    name = "chunking_test",
+    srcs = ["chunking_test.go"],
     deps = [
-        ":chunked_manifest",
+        ":chunking",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/interfaces",

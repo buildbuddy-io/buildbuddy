@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -222,18 +223,28 @@ func (c *Claims) IsCustomerSSO() bool {
 	return c.SAML || c.CustomerSSO
 }
 
-func parseClaims(token string) (*Claims, error) {
-	keys := []string{*jwtKey}
-	if *newJwtKey != "" {
-		// Try the new key first.
-		keys = []string{*newJwtKey, *jwtKey}
+func parseClaims(ctx context.Context, token string, keyProvider KeyProvider) (*Claims, error) {
+	keys, err := keyProvider(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(keys) == 0 {
+		alert.CtxUnexpectedEvent(ctx, "No JWT keys", "No keys available for parsing claims")
+		return nil, status.InternalError("no keys available for parsing claims")
 	}
 
 	var lastErr error
 	claims := &Claims{}
 	for _, key := range keys {
 		_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
-			return []byte(key), nil
+			switch token.Method {
+			case jwt.SigningMethodHS256:
+				return []byte(key), nil
+			case jwt.SigningMethodES256:
+				return jwt.ParseECPublicKeyFromPEM([]byte(key))
+			default:
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Method.Alg())
+			}
 		})
 		if err == nil {
 			return claims, nil
@@ -478,7 +489,7 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 			caller = fmt.Sprintf("%s:%d", file, line)
 		}
 		log.Debugf("Reparsing JWT (caller: %s)", caller)
-		claims, err := parseClaims(tokenString)
+		claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
 		if err != nil {
 			return nil, err
 		}
@@ -546,6 +557,18 @@ func ServerAdminGroupID() string {
 	return *serverAdminGroupID
 }
 
+// A lazily-evaluated provider of JWT signing keys that may be used to retrieve
+// keys for verifying JWTs.
+type KeyProvider func(ctx context.Context) ([]string, error)
+
+func DefaultKeyProvider(ctx context.Context) ([]string, error) {
+	if *newJwtKey != "" {
+		// Try the new key first.
+		return []string{*newJwtKey, *jwtKey}, nil
+	}
+	return []string{*jwtKey}, nil
+}
+
 // ClaimsParser parses and verifies encoded JWTs. It also caches the parsed
 // claims, if configured to do so, to reduce overhead due to redundant parsing.
 //
@@ -557,11 +580,13 @@ type ClaimsParser struct {
 
 	mu  sync.Mutex
 	lru interfaces.LRU[*Claims]
+
+	keyProvider KeyProvider
 }
 
-func NewClaimsParser() (*ClaimsParser, error) {
+func NewClaimsParser(keyProvider KeyProvider) (*ClaimsParser, error) {
 	if *claimsCacheTTL <= 0 {
-		return &ClaimsParser{ttl: 0, lru: nil}, nil
+		return &ClaimsParser{ttl: 0, keyProvider: keyProvider, lru: nil}, nil
 	}
 
 	config := &lru.Config[*Claims]{
@@ -572,12 +597,12 @@ func NewClaimsParser() (*ClaimsParser, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ClaimsParser{ttl: *claimsCacheTTL, lru: lru}, nil
+	return &ClaimsParser{ttl: *claimsCacheTTL, keyProvider: keyProvider, lru: lru}, nil
 }
 
-func (c *ClaimsParser) Parse(token string) (*Claims, error) {
+func (c *ClaimsParser) Parse(ctx context.Context, token string) (*Claims, error) {
 	if c.ttl <= 0 {
-		return parseClaims(token)
+		return parseClaims(ctx, token, c.keyProvider)
 	}
 
 	c.mu.Lock()
@@ -590,7 +615,7 @@ func (c *ClaimsParser) Parse(token string) (*Claims, error) {
 		}
 	}
 
-	claims, err := parseClaims(token)
+	claims, err := parseClaims(ctx, token, c.keyProvider)
 	if err != nil {
 		return nil, err
 	}

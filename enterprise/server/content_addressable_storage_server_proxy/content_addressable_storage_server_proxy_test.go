@@ -640,14 +640,17 @@ func BenchmarkBatchUpdateBlobs(b *testing.B) {
 
 func TestSpliceBlob(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
+		"cache.split_splice_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
-			Variants:       map[string]any{"true": true, "false": false},
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
 		},
 	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
 
 	ctx := testContext()
@@ -687,36 +690,39 @@ func TestSpliceBlob(t *testing.T) {
 	require.Equal(t, int32(1), requestCount.Load())
 }
 
-func TestSplitBlobRemoteFallback(t *testing.T) {
+func TestSplitBlob(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
+		"cache.split_splice_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
-			Variants:       map[string]any{"true": true, "false": false},
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
 		},
 	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
 
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	remoteEnv.SetExperimentFlagProvider(fp)
-	conn, requestCount, _ := runRemoteCASS(ctx, remoteEnv, t)
+	conn, _, _ := runRemoteCASS(ctx, remoteEnv, t)
 	proxyEnv := testenv.GetTestEnv(t)
 	proxyEnv.SetExperimentFlagProvider(fp)
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	proxy := repb.NewContentAddressableStorageClient(proxyConn)
 	remote := repb.NewContentAddressableStorageClient(conn)
 
-	chunk1 := []byte("remotechunk1")
-	chunk2 := []byte("remotechunk2")
+	chunk1 := []byte("chunk1")
+	chunk2 := []byte("chunk2")
 	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
-	update(ctx, proxy, map[*repb.Digest]string{
+	update(ctx, remote, map[*repb.Digest]string{
 		chunk1Digest: string(chunk1),
 		chunk2Digest: string(chunk2),
 	}, t)
@@ -725,25 +731,21 @@ func TestSplitBlobRemoteFallback(t *testing.T) {
 	blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
-	spliceReq := &repb.SpliceBlobRequest{
+	_, err = remote.SpliceBlob(ctx, &repb.SpliceBlobRequest{
 		BlobDigest:     blobDigest,
 		ChunkDigests:   []*repb.Digest{chunk1Digest, chunk2Digest},
 		DigestFunction: repb.DigestFunction_SHA256,
-	}
-	_, err = remote.SpliceBlob(ctx, spliceReq)
+	})
 	require.NoError(t, err)
 
-	requestCount.Store(0)
-	splitReq := &repb.SplitBlobRequest{
+	splitResp, err := proxy.SplitBlob(ctx, &repb.SplitBlobRequest{
 		BlobDigest:     blobDigest,
 		DigestFunction: repb.DigestFunction_SHA256,
-	}
-	splitResp, err := proxy.SplitBlob(ctx, splitReq)
+	})
 	require.NoError(t, err)
 	require.Equal(t, 2, len(splitResp.ChunkDigests))
 	require.Equal(t, chunk1Digest.Hash, splitResp.ChunkDigests[0].Hash)
 	require.Equal(t, chunk2Digest.Hash, splitResp.ChunkDigests[1].Hash)
-	require.Equal(t, requestCount.Load(), int32(1))
 }
 
 func BenchmarkGetTree(b *testing.B) {

@@ -17,7 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
@@ -45,10 +45,6 @@ import (
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
-)
-
-const (
-	experimentFlagChunkingEnabled = "cache.chunking_enabled"
 )
 
 var (
@@ -125,7 +121,34 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	rsp.MissingBlobDigests = append(rsp.MissingBlobDigests, missing...)
+
+	if len(missing) > 0 && chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
+		checker := chunking.NewMissingChunkChecker(s.cache)
+
+		// https://go.dev/wiki/SliceTricks#filtering-without-allocating
+		stillMissing := missing[:0]
+		for _, d := range missing {
+			if d.GetSizeBytes() <= chunking.MaxChunkSizeBytes() {
+				stillMissing = append(stillMissing, d)
+				continue
+			}
+			manifest, err := chunking.LoadManifest(ctx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction())
+			if err != nil {
+				stillMissing = append(stillMissing, d)
+				continue
+			}
+			anyMissing, err := checker.AnyChunkMissing(ctx, manifest)
+			if err != nil {
+				return nil, status.WrapErrorf(err, "missing chunks for %s", d.GetHash())
+			}
+			if anyMissing {
+				stillMissing = append(stillMissing, d)
+			}
+		}
+		missing = stillMissing
+	}
+
+	rsp.MissingBlobDigests = missing
 	return rsp, nil
 }
 
@@ -1127,7 +1150,20 @@ func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *r
 		return nil, err
 	}
 
-	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, experimentFlagChunkingEnabled, false) {
+	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE)
+	if err != nil {
+		return nil, err
+	}
+	if !canWrite {
+		// For read-only API keys, behave like a no-op success to be consistent with
+		// other write methods (e.g. UpdateActionResult, BatchUpdateBlobs) and avoid
+		// breaking builds that rely on read-only credentials.
+		return &repb.SpliceBlobResponse{
+			BlobDigest: req.GetBlobDigest(),
+		}, nil
+	}
+
+	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, "cache.split_splice_enabled", false) {
 		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently enabled")
 	}
 
@@ -1140,7 +1176,7 @@ func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *r
 		return nil, status.UnimplementedError("SpliceBlob with only one chunk is not supported")
 	}
 
-	manifest := &chunked_manifest.ChunkedManifest{
+	manifest := &chunking.Manifest{
 		BlobDigest:     req.GetBlobDigest(),
 		ChunkDigests:   req.GetChunkDigests(),
 		InstanceName:   req.GetInstanceName(),
@@ -1164,7 +1200,7 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 		return nil, err
 	}
 
-	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, experimentFlagChunkingEnabled, false) {
+	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, "cache.split_splice_enabled", false) {
 		return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently enabled")
 	}
 
@@ -1172,12 +1208,18 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 		return nil, status.InvalidArgumentError("blob_digest is required")
 	}
 
-	manifest, err := chunked_manifest.Load(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
+	manifest, err := chunking.LoadManifest(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
 	if err != nil {
 		// TODO(buildbuddy-internal#6426): Unimplemented is returned when the blob
 		// exists but wasn't stored with chunking. In the future, we could return
 		// the blob as a single chunk to better comply with the RE API contract.
 		return nil, err
+	}
+
+	if resp, err := s.FindMissingBlobs(ctx, manifest.ToFindMissingBlobsRequest()); err != nil {
+		return nil, err
+	} else if len(resp.GetMissingBlobDigests()) > 0 {
+		return nil, status.NotFoundErrorf("required chunks not found in CAS: %s", chunking.DigestsSummary(resp.GetMissingBlobDigests()))
 	}
 	return manifest.ToSplitBlobResponse(), nil
 }

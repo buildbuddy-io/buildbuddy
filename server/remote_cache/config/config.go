@@ -1,6 +1,8 @@
 package config
 
-import "github.com/buildbuddy-io/buildbuddy/server/util/flag"
+import (
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+)
 
 var zstdTranscodingEnabled = flag.Bool("cache.zstd_transcoding_enabled", true, "Whether to accept requests to read/write zstd-compressed blobs, compressing/decompressing outgoing/incoming blobs on the fly.")
 

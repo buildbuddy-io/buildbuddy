@@ -684,6 +684,19 @@ export default class InvocationModel {
   }
 
   getStatus() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return "Succeeded";
+        case invocation_status.OverallStatus.FAILURE:
+          return "Run failed";
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return "Run in progress...";
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return "Run disconnected";
+        default:
+      }
+    }
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
         return this.invocation.success ? "Succeeded" : exitCode(this.invocation.bazelExitCode);
@@ -697,6 +710,20 @@ export default class InvocationModel {
   }
 
   getStatusClass() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return "success";
+        case invocation_status.OverallStatus.FAILURE:
+          return "failure";
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return "in-progress";
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return "disconnected";
+        default:
+      }
+    }
+
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
         if (this.invocation.bazelExitCode == "NO_TESTS_FOUND") {
@@ -720,6 +747,10 @@ export default class InvocationModel {
     return this.invocation.invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
   }
 
+  isRunInProgress() {
+    return this.invocation.runStatus === invocation_status.OverallStatus.IN_PROGRESS;
+  }
+
   /**
    * Returns whether basic invocation metadata has been received yet, such as
    * user, bazel command, target pattern etc.
@@ -732,6 +763,20 @@ export default class InvocationModel {
   }
 
   getFaviconType() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return IconType.Success;
+        case invocation_status.OverallStatus.FAILURE:
+          return IconType.Failure;
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return IconType.InProgress;
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return IconType.Unknown;
+        default:
+      }
+    }
+
     let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return IconType.Unknown;
@@ -749,6 +794,20 @@ export default class InvocationModel {
   }
 
   getStatusIcon() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return <CheckCircle className="icon green" />;
+        case invocation_status.OverallStatus.FAILURE:
+          return <XCircle className="icon red" />;
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return <PlayCircle className="icon blue" />;
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return <HelpCircle className="icon" />;
+        default:
+      }
+    }
+
     let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return <HelpCircle className="icon" />;
@@ -1068,6 +1127,18 @@ export default class InvocationModel {
       rpcService.downloadBytestreamFile("execution_log.binpb.zst", profileFileUri, this.getInvocationId());
     } catch {
       console.error("Error downloading execution log");
+    }
+  }
+
+  hasRunStatus(): boolean {
+    switch (this.invocation.runStatus) {
+      case invocation_status.OverallStatus.SUCCESS:
+      case invocation_status.OverallStatus.FAILURE:
+      case invocation_status.OverallStatus.IN_PROGRESS:
+      case invocation_status.OverallStatus.DISCONNECTED:
+        return true;
+      default:
+        return false;
     }
   }
 }

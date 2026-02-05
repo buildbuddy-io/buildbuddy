@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	enableStats    = flag.Bool("executor.bare.enable_stats", false, "Whether to enable stats for bare command execution.")
+	enableStats    = flag.Bool("executor.bare.enable_stats", true, "Whether to enable stats for bare command execution.")
 	enableLogFiles = flag.Bool("executor.bare.enable_log_files", false, "Whether to send bare runner output to log files for debugging. These files are stored adjacent to the task directory and are deleted when the task is complete.")
 	enableTmpdir   = flag.Bool("executor.bare.enable_tmpdir", false, "If provided, set a default TMPDIR in each command's environment variables to a temporary directory provisioned for each task.")
 )

@@ -63,9 +63,9 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 		compressors = []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD}
 	}
 	if s.supportCAS {
-		chunkingEnabled := false
+		splitSpliceEnabled := false
 		if efp := s.env.GetExperimentFlagProvider(); efp != nil {
-			chunkingEnabled = efp.Boolean(ctx, "cache.chunking_enabled", false)
+			splitSpliceEnabled = efp.Boolean(ctx, "cache.split_splice_enabled", false)
 		}
 
 		c.CacheCapabilities = &repb.CacheCapabilities{
@@ -85,8 +85,8 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 			SymlinkAbsolutePathStrategy:     repb.SymlinkAbsolutePathStrategy_ALLOWED,
 			SupportedCompressors:            compressors,
 			SupportedBatchUpdateCompressors: compressors,
-			BlobSplitSupport:                chunkingEnabled,
-			BlobSpliceSupport:               chunkingEnabled,
+			BlobSplitSupport:                splitSpliceEnabled,
+			BlobSpliceSupport:               splitSpliceEnabled,
 		}
 	}
 	if s.supportRemoteExec {

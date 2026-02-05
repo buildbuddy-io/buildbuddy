@@ -29,6 +29,8 @@ go_library(
         "//cli/plugin",
         "//cli/runscript",
         "//cli/setup",
+        "//cli/stream_run_logs",
+        "//cli/stream_run_logs/option_definitions",
         "//cli/watcher",
         "//cli/watcher/option_definitions",
         "//server/util/lib/seq",

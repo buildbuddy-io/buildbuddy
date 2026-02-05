@@ -179,9 +179,6 @@ const (
 	// Whether the request was handled using chunking
 	ChunkedLabel = "chunked"
 
-	// Source of chunked manifest lookup (local_hit, remote_hit, remote_error)
-	ChunkedManifestSourceLabel = "manifest_source"
-
 	// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
@@ -313,6 +310,9 @@ const (
 	// For remote execution runners, describes the recycling status (Ex.
 	// 'clean' if the runner is not recycled or 'recycled')
 	RecycledRunnerStatus = "recycled_runner_status"
+
+	// Name of a custom resource configured on an executor.
+	CustomResourceNameLabel = "resource_name"
 
 	// Name of a file.
 	FileName = "file_name"
@@ -532,6 +532,13 @@ var (
 		Name:      "webhook_invocation_lookup_duration_usec",
 		Buckets:   coarseMicrosecondToHour,
 		Help:      "How long it took to lookup an invocation before posting to the webhook, in **microseconds**.",
+	})
+
+	WebhookInvocationPayloadSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "webhook_invocation_payload_size_bytes",
+		Help:      "Size in bytes of the payload posted to invocation webhook endpoints.",
 	})
 
 	WebhookNotifyWorkers = promauto.NewGauge(prometheus.GaugeOpts{
@@ -1333,6 +1340,24 @@ var (
 		Help:      "Maximum total CPU time on the executor that can be allocated for task execution, in **milliCPU** (CPU-milliseconds per second).",
 	})
 
+	RemoteExecutionAssignedCustomResources = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assigned_custom_resources",
+		Help:      "Custom resources on the executor currently allocated for task execution. Custom resources are dimensionless values configured via executor.custom_resources.",
+	}, []string{
+		CustomResourceNameLabel,
+	})
+
+	RemoteExecutionAssignableCustomResources = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assignable_custom_resources",
+		Help:      "Maximum custom resources that can be allocated for task execution. Custom resources are dimensionless values configured via executor.custom_resources.",
+	}, []string{
+		CustomResourceNameLabel,
+	})
+
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
@@ -1861,6 +1886,16 @@ var (
 		Help:      "CheckExists duration, in **microseconds**.",
 	}, []string{
 		BlobstoreTypeLabel,
+	})
+
+	EventLogBytesWritten = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "log_bytes_written",
+		Help:      "Number of invocation log bytes uploaded, either via the build event stream or the WriteEventLog API (stdout+stderr).",
+	}, []string{
+		EventName,
+		GroupID,
 	})
 
 	// # SQL metrics
@@ -3584,15 +3619,6 @@ var (
 	}, []string{
 		StatusLabel,
 		CompressionType,
-	})
-	ByteStreamChunkedManifestLookups = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "proxy",
-		Name:      "byte_stream_chunked_manifest_lookups",
-		Help:      "Manifest lookup outcomes (source: local_hit, remote_hit, remote_error).",
-	}, []string{
-		StatusLabel,
-		ChunkedManifestSourceLabel,
 	})
 
 	CapabilitiesProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{

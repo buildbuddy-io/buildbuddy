@@ -53,6 +53,7 @@ ts_library(
         "//app/target",
         "//app/target:target_v2",
         "//app/util:errors",
+        "//proto:eventlog_ts_proto",
         "//proto:execution_stats_ts_proto",
         "//proto:grpc_code_ts_proto",
         "//proto:grpc_status_ts_proto",

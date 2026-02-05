@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
@@ -27,15 +28,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
-
-	stdFlag "flag"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
@@ -59,13 +57,8 @@ var (
 	atimeBufferSize         = flag.Int("cache.raft.atime_buffer_size", 100000, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	atimeWriteBatchSize     = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
 
-	// TODO(tylerw): remove after dev.
-	// Store raft content in a subdirectory with the same name as the gossip
-	// key, so that we can easily start fresh in dev by just changing the
-	// gossip key.
-	subdir = types.Alias[string](stdFlag.CommandLine, "gossip.secret_key")
-
-	gcsConfig = flag.Struct("cache.raft.gcs", cache_config.GCSConfig{}, "Config to specify gcs")
+	deploymentID = flag.Uint64("cache.raft.deployment_id", 0, "Deployment ID is used to determine whether to raft node hosts belong to the same deployment and thus allowed to communicate with each other. Note: when you change deploymentID and has --cache.raft.clear_prev_cache_on_startup = true, the data from non-current deployments will be wiped out.")
+	gcsConfig    = flag.Struct("cache.raft.gcs", cache_config.GCSConfig{}, "Config to specify gcs")
 )
 
 const (
@@ -77,32 +70,6 @@ const (
 	configDirName = "config"
 )
 
-type Config struct {
-	// Required fields.
-	RootDir string
-
-	Hostname string
-
-	ListenAddr string
-
-	HTTPPort int
-	GRPCPort int
-
-	Partitions        []disk.Partition
-	PartitionMappings []disk.PartitionMapping
-
-	LogDBConfigType store.LogDBConfigType
-
-	FileStorer filestore.Store
-
-	GCS cache_config.GCSConfig
-
-	// The nodehost ID
-	NHID string
-
-	GossipManager interfaces.GossipService
-}
-
 // data needed to update last access time.
 type accessTimeUpdate struct {
 	key         []byte
@@ -111,10 +78,7 @@ type accessTimeUpdate struct {
 
 type Server struct {
 	env  environment.Env
-	conf *Config
-
-	raftAddr string
-	grpcAddr string
+	conf *config.ServerConfig
 
 	registry registry.NodeRegistry
 
@@ -196,42 +160,77 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		}
 	}
 
+	subdir := fmt.Sprint(*deploymentID)
+
 	if *clearPrevCacheOnStartup {
-		if err := clearPrevCache(*rootDirectory, *subdir); err != nil {
+		if err := clearPrevCache(*rootDirectory, subdir); err != nil {
 			return nil, status.InternalErrorf("failed to delete cache from previous run: %w", err)
 		}
 	}
 
-	rcConfig := &Config{
-		RootDir:           filepath.Join(*rootDirectory, *subdir),
-		Hostname:          *hostName,
-		ListenAddr:        *listen,
-		HTTPPort:          *httpPort,
-		GRPCPort:          *gRPCPort,
-		Partitions:        ps,
-		PartitionMappings: *partitionMappings,
-		LogDBConfigType:   store.LargeMemLogDBConfigType,
-		GCS:               *gcsConfig,
-	}
-
-	configDir := filepath.Join(rcConfig.RootDir, configDirName)
+	rootDir := filepath.Join(*rootDirectory, subdir)
+	configDir := filepath.Join(rootDir, configDirName)
 	if err := disk.EnsureDirectoryExists(configDir); err != nil {
 		return nil, err
 	}
 	nhid, err := hostid.GetHostID(configDir)
 	if err != nil {
-		return nil, fmt.Errorf("fail to get host id from %s", configDir)
+		return nil, fmt.Errorf("fail to get host id from %s: %s", configDir, err)
 	}
 	gossipManager, err := gossip.New(nhid)
 	if err != nil {
-		return nil, fmt.Errorf("fail to create gossip manager with name %q", nhid)
+		return nil, fmt.Errorf("fail to create gossip manager with name %q: %s", nhid, err)
 	}
-	rcConfig.NHID = nhid
-	rcConfig.GossipManager = gossipManager
-	return New(env, rcConfig)
+
+	// Create fileStorer from GCS config if needed
+	var fileStorer filestore.Store
+	filestoreOpts := make([]filestore.Option, 0)
+	if gcsConfig.Bucket != "" {
+		// Create a new GCS Client with compression disabled. This cache
+		// will already compress blobs before storing them, so we don't
+		// want the gcs lib to attempt to compress them too.
+		gcsBlobstore, err := gcs.NewGCSBlobStore(env.GetServerContext(), gcsConfig.Bucket, "", gcsConfig.Credentials, gcsConfig.ProjectID, false /*=enableCompression*/)
+		if err != nil {
+			return nil, err
+		}
+		// Not going to  set custom time ttl here since meta cache should take care of this.
+		filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, gcsConfig.AppName))
+	}
+	fileStorer = filestore.New(filestoreOpts...)
+
+	var opts []Option
+	if gcsConfig.TTLDays != nil {
+		opts = append(opts, WithGCSTTLDays(*gcsConfig.TTLDays))
+	}
+
+	raftAddr := fmt.Sprintf("%s:%d", *hostName, *httpPort)
+	grpcAddr := fmt.Sprintf("%s:%d", *hostName, *gRPCPort)
+	grpcListeningAddr := fmt.Sprintf("%s:%d", *listen, *gRPCPort)
+
+	serverConfig := &config.ServerConfig{
+		RootDir:           rootDir,
+		RaftAddr:          raftAddr,
+		GRPCAddr:          grpcAddr,
+		GRPCListeningAddr: grpcListeningAddr,
+		NHID:              nhid,
+		Partitions:        ps,
+		LogDBConfigType:   config.LargeMemLogDBConfigType,
+		FileStorer:        fileStorer,
+		GossipManager:     gossipManager,
+	}
+
+	return New(env, serverConfig, opts...)
 }
 
-func New(env environment.Env, conf *Config) (*Server, error) {
+type Option func(*Server)
+
+func WithGCSTTLDays(days int64) Option {
+	return func(s *Server) {
+		s.gcsTTLDays = days
+	}
+}
+
+func New(env environment.Env, conf *config.ServerConfig, opts ...Option) (*Server, error) {
 	rc := &Server{
 		env:          env,
 		conf:         conf,
@@ -239,6 +238,11 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 		shutdownOnce: &sync.Once{},
 		accesses:     make(chan *accessTimeUpdate, *atimeBufferSize),
 		clock:        env.GetClock(),
+		fileStorer:   conf.FileStorer,
+	}
+
+	for _, opt := range opts {
+		opt(rc)
 	}
 
 	if err := disk.EnsureDirectoryExists(conf.RootDir); err != nil {
@@ -249,33 +253,7 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 		return nil, status.FailedPreconditionError("raft cache requires gossip be enabled")
 	}
 
-	fileStorer := conf.FileStorer
-	filestoreOpts := make([]filestore.Option, 0)
-	if fileStorer == nil {
-		if conf.GCS.Bucket != "" {
-			// Create a new GCS Client with compression disabled. This cache
-			// will already compress blobs before storing them, so we don't
-			// want the gcs lib to attempt to compress them too.
-			gcsBlobstore, err := gcs.NewGCSBlobStore(env.GetServerContext(), conf.GCS.Bucket, "", conf.GCS.Credentials, conf.GCS.ProjectID, false /*=enableCompression*/)
-			if err != nil {
-				return nil, err
-			}
-			// Not going to  set custom time ttl here since meta cache should take care of this.
-			filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, conf.GCS.AppName))
-		}
-		fileStorer = filestore.New(filestoreOpts...)
-	}
-	rc.fileStorer = fileStorer
-
-	if conf.GCS.TTLDays != nil {
-		rc.gcsTTLDays = *conf.GCS.TTLDays
-	}
-
-	rc.raftAddr = fmt.Sprintf("%s:%d", conf.Hostname, conf.HTTPPort)
-	rc.grpcAddr = fmt.Sprintf("%s:%d", conf.Hostname, conf.GRPCPort)
-	grpcListeningAddr := fmt.Sprintf("%s:%d", conf.ListenAddr, conf.GRPCPort)
-
-	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, rc.conf.NHID, rc.conf.Partitions, rc.conf.LogDBConfigType, rc.fileStorer, rc.conf.GossipManager)
+	store, err := store.New(env, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +264,7 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
-	clusterStarter, err := bringup.New(rc.grpcAddr, rc.conf.GossipManager, rc.store, rc.conf.Partitions)
+	clusterStarter, err := bringup.New(rc.conf.GRPCAddr, conf.GossipManager, rc.store, conf.Partitions)
 	if err != nil {
 		return nil, err
 	}
@@ -321,8 +299,8 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 func (rc *Server) Statusz(ctx context.Context) string {
 	buf := "<pre>"
 	buf += fmt.Sprintf("Root directory: %q\n", rc.conf.RootDir)
-	buf += fmt.Sprintf("Raft (HTTP) addr: %s\n", rc.raftAddr)
-	buf += fmt.Sprintf("GRPC addr: %s\n", rc.grpcAddr)
+	buf += fmt.Sprintf("Raft (HTTP) addr: %s\n", rc.conf.RaftAddr)
+	buf += fmt.Sprintf("GRPC addr: %s\n", rc.conf.GRPCAddr)
 	buf += fmt.Sprintf("ClusterStarter complete: %t\n", rc.clusterStarter.Done())
 	buf += "</pre>"
 	return buf

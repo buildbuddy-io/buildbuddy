@@ -54,6 +54,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
@@ -198,6 +199,15 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 	// scheduler_server.go
 	metrics.RemoteExecutionAssignableMilliCPU.Set(math.Floor(float64(resources.GetAllocatedCPUMillis()) * tasksize.MaxResourceCapacityRatio))
 	metrics.RemoteExecutionAssignableRAMBytes.Set(math.Floor(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio))
+	customResources, err := resources.GetAllocatedCustomResources()
+	if err != nil {
+		log.Fatalf("Error getting allocated custom resources: %v", err)
+	}
+	for _, r := range customResources {
+		metrics.RemoteExecutionAssignableCustomResources.With(prometheus.Labels{
+			metrics.CustomResourceNameLabel: r.GetName(),
+		}).Set(float64(r.GetValue()))
+	}
 
 	if err := auth.Register(context.Background(), realEnv); err != nil {
 		if err := auth.RegisterNullAuth(realEnv); err != nil {
