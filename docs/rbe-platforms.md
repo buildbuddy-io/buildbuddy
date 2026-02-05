@@ -338,8 +338,8 @@ just a historical artifact.)
 Networking can be controlled for all isolation types (including Firecracker)
 using the `network` platform property. When set, this property takes precedence
 over the `dockerNetwork` property. For `oci`, `podman`, and `docker` isolation,
-the runner falles back to the value specified by `dockerNetwork` if no `network`
-propert is set. Permitted values for `network` are:
+the runner falls back to the value specified by `dockerNetwork` if no `network`
+property is set. Permitted values for `network` are:
 
 - `off`: The container/VM has no network access, not even to the host.
 - `local`: The container/VM can communicate with the host but nothing else.
