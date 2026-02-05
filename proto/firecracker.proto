@@ -5,6 +5,22 @@ package firecracker;
 import "google/protobuf/timestamp.proto";
 import "proto/remote_execution.proto";
 
+// Network mode for a VM.
+enum NetworkMode {
+  // Defaults to NETWORK_MODE_EXTERNAL for backward compatibility.
+  NETWORK_MODE_UNSPECIFIED = 0;
+
+  // VM has no network interface.
+  NETWORK_MODE_OFF = 1;
+
+  // VM can communicate with the host (MMDS works for init-dockerd) but the
+  // host rejects packets routed through it.
+  NETWORK_MODE_LOCAL = 2;
+
+  // VM has full network access.
+  NETWORK_MODE_EXTERNAL = 3;
+}
+
 // VM properties which cannot be changed across snapshot/resume cycles.
 //
 // Things like the container used to create the image, the numCPUs / RAM, etc.
@@ -17,14 +33,11 @@ message VMConfiguration {
   int64 mem_size_mb = 2;
   int64 scratch_disk_size_mb = 3;
 
-  // Whether any network access (including to the host) is enabled for this VM.
-  // If this is false, the VM will not have a network interface available.
-  bool enable_networking = 4;
+  reserved 4, 17;
+  reserved "enable_networking", "enable_external_networking";
 
-  // Whether external network access is enabled for the VM. If this is false,
-  // but enable_networking is true, the VM can communicate with the host (MMDS
-  // works for init-dockerd) but the host rejects packets routed through it.
-  optional bool enable_external_networking = 17;
+  // Network mode for this VM.
+  NetworkMode network_mode = 18;
 
   bool init_dockerd = 5;
   bool debug_mode = 6;

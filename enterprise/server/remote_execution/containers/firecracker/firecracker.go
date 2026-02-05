@@ -120,7 +120,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "16"
+	GuestAPIVersion = "17"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -242,6 +242,33 @@ var (
 	fatalErrPattern             = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
 	slowInterruptWarningPattern = regexp.MustCompile(`hrtimer: interrupt took \d+ ns`)
 )
+
+// networkModeFromString converts a network property string to a NetworkMode enum.
+// Valid values are: "" (defaults to external), "off", "local", "external".
+func networkModeFromString(network string) (fcpb.NetworkMode, error) {
+	switch network {
+	case "", "external":
+		return fcpb.NetworkMode_NETWORK_MODE_EXTERNAL, nil
+	case "local":
+		return fcpb.NetworkMode_NETWORK_MODE_LOCAL, nil
+	case "off":
+		return fcpb.NetworkMode_NETWORK_MODE_OFF, nil
+	default:
+		return fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED, status.InvalidArgumentErrorf("unsupported network option %q", network)
+	}
+}
+
+// networkingEnabled returns true if the VM has any networking capability.
+func networkingEnabled(mode fcpb.NetworkMode) bool {
+	// UNSPECIFIED defaults to EXTERNAL for backward compatibility.
+	return mode != fcpb.NetworkMode_NETWORK_MODE_OFF
+}
+
+// externalNetworkingEnabled returns true if the VM can access external networks.
+func externalNetworkingEnabled(mode fcpb.NetworkMode) bool {
+	// UNSPECIFIED defaults to EXTERNAL for backward compatibility.
+	return mode == fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED || mode == fcpb.NetworkMode_NETWORK_MODE_EXTERNAL
+}
 
 func init() {
 	// Configure firecracker request timeout (default: 500ms).
@@ -548,23 +575,20 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		numCPUs = firecrackerMaxCPU
 	}
 
-	// dockerNetwork does not apply to Firecracker for backwards compatibility
-	if args.Props.Network != "" && args.Props.Network != "off" && args.Props.Network != "external" {
-		return nil, status.InvalidArgumentErrorf("Unsupported network option %q", args.Props.Network)
+	networkMode, err := networkModeFromString(args.Props.Network)
+	if err != nil {
+		return nil, err
 	}
-
-	enableExternalNetworking := args.Props.Network == "" || args.Props.Network == "external"
 	vmConfig = &fcpb.VMConfiguration{
-		NumCpus:                  numCPUs,
-		MemSizeMb:                int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
-		ScratchDiskSizeMb:        int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
-		EnableLogging:            platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
-		EnableNetworking:         true,
-		EnableExternalNetworking: &enableExternalNetworking,
-		InitDockerd:              args.Props.InitDockerd,
-		EnableDockerdTcp:         args.Props.EnableDockerdTCP,
-		HostCpuid:                getCPUID(),
-		EnableVfs:                args.Props.EnableVFS,
+		NumCpus:           numCPUs,
+		MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
+		ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
+		EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
+		NetworkMode:       networkMode,
+		InitDockerd:       args.Props.InitDockerd,
+		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
+		HostCpuid:         getCPUID(),
+		EnableVfs:         args.Props.EnableVFS,
 	}
 	vmConfig.BootArgs = getBootArgs(vmConfig)
 	opts := ContainerOpts{
@@ -703,8 +727,8 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	if opts.VMConfiguration == nil {
 		return nil, status.InvalidArgumentError("missing VMConfiguration")
 	}
-	if opts.VMConfiguration.InitDockerd && !opts.VMConfiguration.EnableNetworking {
-		return nil, status.FailedPreconditionError("InitDockerd set to true but EnableNetworking set to false. EnableNetworking must also be set to true to pass dockerd configuration over MMDS.")
+	if opts.VMConfiguration.InitDockerd && !networkingEnabled(opts.VMConfiguration.NetworkMode) {
+		return nil, status.FailedPreconditionError("InitDockerd set to true but NetworkMode set to OFF. Networking must be enabled to pass dockerd configuration over MMDS.")
 	}
 
 	vmLog, err := NewVMLog(vmLogTailBufSize)
@@ -1599,7 +1623,7 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 		"tsc=reliable",
 		"ipv6.disable=1",
 	}
-	if vmConfig.EnableNetworking {
+	if networkingEnabled(vmConfig.NetworkMode) {
 		kernelArgs = append(kernelArgs, machineIPBootArgs)
 	}
 
@@ -1614,7 +1638,7 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	if vmConfig.EnableLogging {
 		initArgs = append(initArgs, "-enable_logging")
 	}
-	if vmConfig.EnableNetworking {
+	if networkingEnabled(vmConfig.NetworkMode) {
 		initArgs = append(initArgs, "-set_default_route")
 	}
 	if vmConfig.InitDockerd {
@@ -1704,7 +1728,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		},
 	}...)
 
-	if c.vmConfig.EnableNetworking {
+	if networkingEnabled(c.vmConfig.NetworkMode) {
 		cfg.NetworkInterfaces = []fcclient.NetworkInterface{
 			{
 				StaticConfiguration: &fcclient.StaticNetworkConfiguration{
@@ -1826,28 +1850,25 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 }
 
 func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
-	if !c.vmConfig.EnableNetworking {
+	if !networkingEnabled(c.vmConfig.NetworkMode) {
 		return nil
 	}
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	enableExternalNetworking := true
-	if c.vmConfig.EnableExternalNetworking != nil {
-		enableExternalNetworking = *c.vmConfig.EnableExternalNetworking
-	}
+	externalNetworking := externalNetworkingEnabled(c.vmConfig.NetworkMode)
 
 	// Pooled networks have external network access enabled. Only use them if
 	// that's the VM's configured state.
 	// TODO: add a pool for 'network=false' (if this bottlenecks).
-	if c.networkPool != nil && enableExternalNetworking {
+	if c.networkPool != nil && externalNetworking {
 		if network := c.networkPool.Get(ctx); network != nil {
 			c.network = network
 			return nil
 		}
 	}
 
-	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP, enableExternalNetworking)
+	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP, externalNetworking)
 	if err != nil {
 		return status.UnavailableErrorf("create VM network: %s", err)
 	}
@@ -2140,7 +2161,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	// enabled and will fail if it isn't set, so make sure to always set it,
 	// even if it's empty.
 	metadata := map[string]string{}
-	if c.vmConfig.EnableNetworking {
+	if networkingEnabled(c.vmConfig.NetworkMode) {
 		metadata["dns_overrides"] = c.marshalledDNSOverrides
 	}
 	if c.vmConfig.InitDockerd {
