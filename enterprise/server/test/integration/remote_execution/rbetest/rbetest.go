@@ -413,7 +413,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 
 	scheduler, err := scheduler_server.NewSchedulerServerWithOptions(env, &opts.SchedulerServerOptions)
 	require.NoError(t, err, "could not set up SchedulerServer")
-	env.SetSchedulerService(scheduler)
+	// env.SetSchedulerService(scheduler)
 
 	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env, false)
 	require.NoError(t, err, "could not set up BuildEventProtocolServer")
