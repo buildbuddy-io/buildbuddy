@@ -166,6 +166,7 @@ type ExecutionServer struct {
 	rdb                               redis.UniversalClient
 	streamPubSub                      *pubsub.StreamPubSub
 	enableRedisAvailabilityMonitoring bool
+	writeExecutionsToPrimaryDB        bool
 	authenticator                     interfaces.Authenticator
 	dbHandle                          interfaces.DBHandle
 	executionCollector                interfaces.ExecutionCollector
@@ -202,8 +203,9 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 	if authenticator == nil {
 		return nil, status.FailedPreconditionErrorf("An authenticator is required for remote execution")
 	}
+	writeExecutionsToPrimaryDB := *writeExecutionsToPrimaryDB
 	dbHandle := env.GetDBHandle()
-	if dbHandle == nil && *writeExecutionsToPrimaryDB {
+	if dbHandle == nil && writeExecutionsToPrimaryDB {
 		return nil, status.FailedPreconditionErrorf("A database is required for remote execution")
 	}
 	executionCollector := env.GetExecutionCollector()
@@ -224,6 +226,7 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 		rdb:                               env.GetRemoteExecutionRedisClient(),
 		streamPubSub:                      pubsub.NewStreamPubSub(env.GetRemoteExecutionRedisPubSubClient()),
 		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && *enableRedisAvailabilityMonitoring,
+		writeExecutionsToPrimaryDB:        writeExecutionsToPrimaryDB,
 		authenticator:                     authenticator,
 		dbHandle:                          dbHandle,
 		executionCollector:                executionCollector,
@@ -287,7 +290,7 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 		}
 	}
 
-	if *writeExecutionsToPrimaryDB {
+	if s.writeExecutionsToPrimaryDB {
 		return s.dbHandle.NewQuery(ctx, "execution_server_create_execution").Create(execution)
 	}
 
@@ -313,7 +316,7 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 		log.CtxWarningf(ctx, "Failed to add invocation link (invocation_id: %q, link_type: %d) in redis", invocationID, linkType)
 	}
 
-	if !*writeExecutionsToPrimaryDB {
+	if !s.writeExecutionsToPrimaryDB {
 		return nil
 	}
 
@@ -467,7 +470,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		}
 	}
 
-	if !*writeExecutionsToPrimaryDB {
+	if !s.writeExecutionsToPrimaryDB {
 		return nil
 	}
 	result := s.dbHandle.GORM(ctx, "execution_server_update_execution").Where(
@@ -1765,7 +1768,7 @@ func (s *ExecutionServer) getInProgressExecutionIDsForInvocation(ctx context.Con
 		}
 	}
 
-	if !*writeExecutionsToPrimaryDB {
+	if !s.writeExecutionsToPrimaryDB {
 		if *writeExecutionProgressStateToRedis {
 			return ids, nil
 		}
