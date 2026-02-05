@@ -324,6 +324,7 @@ The following execution properties provide more customization.
     is the default setting for `oci`, `podman`, `docker`, and `sandbox`
     containers.
   - `local`: The container/VM can communicate with the host but nothing else.
+    Only supported by `firecracker` VMs.
   - `external`: The container/VM can communicate with the internet via the host.
     This is the default setting for `firecracker` VMs.
 
