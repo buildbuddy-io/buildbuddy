@@ -118,7 +118,7 @@ func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
 }
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
-	network, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetworok)
+	network, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetwork)
 	if err != nil {
 		return nil, err
 	}
