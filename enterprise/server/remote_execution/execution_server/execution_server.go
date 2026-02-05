@@ -203,7 +203,7 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 		return nil, status.FailedPreconditionErrorf("An authenticator is required for remote execution")
 	}
 	dbHandle := env.GetDBHandle()
-	if dbHandle == nil {
+	if dbHandle == nil && *writeExecutionsToPrimaryDB {
 		return nil, status.FailedPreconditionErrorf("A database is required for remote execution")
 	}
 	executionCollector := env.GetExecutionCollector()
@@ -723,6 +723,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	tracing.AddStringAttributeToCurrentSpan(ctx, "task_id", executionID)
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
 
+	scheduler := s.env.GetSchedulerService()
+	if scheduler == nil {
+		return nil, status.FailedPreconditionErrorf("No scheduler service configured")
+	}
+
 	rmd := bazel_request.GetRequestMetadata(ctx)
 	invocationID := rmd.GetToolInvocationId()
 	if invocationID == "" {
@@ -871,7 +876,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
-	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.OriginalPool, props.WorkflowID, props.PoolType)
+	pool, err := scheduler.GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.OriginalPool, props.WorkflowID, props.PoolType)
 	if err != nil {
 		return nil, status.WrapError(err, "get executor pool info")
 	}
@@ -925,7 +930,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		Metadata:       schedulingMetadata,
 		SerializedTask: serializedTask,
 	}
-	if _, err := s.env.GetSchedulerService().ScheduleTask(ctx, scheduleReq); err != nil {
+	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, deletePendingExecutionExtraTimeout)
 		defer cancel()
 		if opts.recordActionMergingState {
