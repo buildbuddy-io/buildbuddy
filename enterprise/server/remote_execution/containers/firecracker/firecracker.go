@@ -548,10 +548,9 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		numCPUs = firecrackerMaxCPU
 	}
 
-	switch args.Props.Network {
-	case "", "off", "external":
-	default:
-		return nil, status.InvalidArgumentErrorf("unsupported network option %q", args.Props.Network)
+	// dockerNetwork does not apply to Firecracker for backwards compatibility
+	if args.Props.Network != "" && args.Props.Network != "off" && args.Props.Network != "external" {
+		return nil, status.InvalidArgumentErrorf("Unsupported network option %q", args.Props.Network)
 	}
 
 	enableExternalNetworking := args.Props.Network == "" || args.Props.Network == "external"

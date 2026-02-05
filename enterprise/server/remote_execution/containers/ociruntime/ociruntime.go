@@ -365,11 +365,9 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 }
 
 func (p *provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
-	networkMode := args.Props.Network
-	if networkMode == "" {
-		networkMode = args.Props.DockerNetwork
-	} else if networkMode == "external" {
-		networkMode = "bridge"
+	networkMode, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetwork)
+	if err != nil {
+		return nil, err
 	}
 	if networkMode == "" {
 		networkMode = *defaultNetworkMode

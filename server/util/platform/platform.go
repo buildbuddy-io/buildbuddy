@@ -786,3 +786,23 @@ func Retryable(task *repb.ExecutionTask) bool {
 	v := FindEffectiveValue(task, RetryPropertyName)
 	return v == "true" || v == ""
 }
+
+func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
+	// The network platform property takes precedence and values are renamed
+	// for backwards compatibility.
+	if network == "off" {
+		return "none", nil
+	} else if network == "external" {
+		return "bridge", nil
+	} else if network != "" {
+		return "", status.InvalidArgumentErrorf(
+			"Unsupported network property value: %s", network)
+	}
+
+	if dockerNetwork == "none" || dockerNetwork == "bridge" || dockerNetwork == "host" {
+		return dockerNetwork, nil
+	}
+
+	return "", status.InvalidArgumentErrorf(
+		"Unsupported dockerNetwork property value: %s", dockerNetwork)
+}

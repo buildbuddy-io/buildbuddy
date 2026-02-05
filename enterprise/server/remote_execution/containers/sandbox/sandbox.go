@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -265,9 +266,9 @@ type Options struct {
 type Provider struct{}
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
-	network := args.Props.Network
-	if network == "" {
-		network = args.Props.DockerNetwork
+	network, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.ExternalNetwork)
+	if err != nil {
+		return nil, err
 	}
 	opts := &Options{
 		Network: network,
