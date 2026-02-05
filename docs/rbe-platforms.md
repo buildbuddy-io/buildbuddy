@@ -360,7 +360,7 @@ The following `exec_properties` are supported:
 
 - `init-dockerd`: whether to start the `dockerd` process inside the VM
   before execution. Available options are `true` and `false`. Defaults to
-  `false`. Note: `local` or `external` network are required for `init-dockerd`.
+  `false`. Note: `local` or `external` network is required for `init-dockerd`.
 - `enable-dockerd-tcp`: whether `dockerd` should listen on TCP port 2375
   in addition to the default Unix domain socket. Available options are
   `true` and `false`. Defaults to `false`.
