@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/docker/api/types/registry"
@@ -117,11 +118,16 @@ func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
 }
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	network, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetwork)
+	if err != nil {
+		return nil, err
+	}
+
 	opts := &DockerOptions{
 		ForceRoot:               args.Props.DockerForceRoot,
 		DockerInit:              args.Props.DockerInit,
 		DockerUser:              args.Props.DockerUser,
-		DockerNetwork:           args.Props.DockerNetwork,
+		DockerNetwork:           network,
 		Socket:                  executorplatform.DockerSocket(),
 		EnableSiblingContainers: *dockerSiblingContainers,
 		UseHostNetwork:          *dockerNetHost,
