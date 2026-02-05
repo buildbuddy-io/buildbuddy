@@ -20,9 +20,9 @@ def go_proto_library(name, mode = "messages_only", **kwargs):
 
     if mode == "services_only":
         all_compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-		"@io_bazel_rules_go//proto:go_grpc_v2",
-		]
+            "@io_bazel_rules_go//proto:go_proto",
+            "@io_bazel_rules_go//proto:go_grpc_v2",
+        ]
     elif mode == "messages_and_services":
         all_compilers = [
             "@io_bazel_rules_go//proto:go_proto",
