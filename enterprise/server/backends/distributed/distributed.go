@@ -917,7 +917,17 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 	if exists, err := c.remoteContains(ctx, dest, rn); err == nil && exists {
 		return nil
 	}
-	r, err := c.remoteReader(ctx, source, rn, 0, 0)
+	if rn.GetDigest().GetSizeBytes() > 100 && c.SupportsCompressor(repb.Compressor_ZSTD) {
+		// If the file is large enough and we support ZSTD, then the source will
+		// have it compressed, and we want to store it compressed. 100 is the
+		// default value of --cache.pebble.min_bytes_auto_zstd_compression.
+		rn.Compressor = repb.Compressor_ZSTD
+	}
+	// Don't use remoteReader here, because we don't want to check the lookaside
+	// or local caches when backfilling. If they had this digest, we wouldn't
+	// be backfilling it. Also, we don't want to write to those caches during
+	// a backfill.
+	r, err := c.distributedProxy.RemoteReader(ctx, source, rn, 0, 0)
 	if err != nil {
 		return err
 	}
