@@ -1555,19 +1555,39 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 	timeout := time.NewTimer(1 * time.Hour)
 	defer timeout.Stop()
 
+	// Stream requests from the client in the background to ensure we don't block if the client stops sending requests.
+	type recvResult struct {
+		req *elpb.WriteEventLogRequest
+		err error
+	}
+	recvCh := make(chan recvResult)
+	go func() {
+		defer close(recvCh)
+		for {
+			req, err := stream.Recv()
+			recvCh <- recvResult{req, err}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
 	var eventLogWriter *eventlog.EventLogWriter
 	for {
+		var req *elpb.WriteEventLogRequest
 		select {
 		case <-timeout.C:
 			return status.DeadlineExceededErrorf("event log streaming only supported for up to 1 hour")
-		default:
-		}
-
-		req, err := stream.Recv()
-		if err == io.EOF {
-			return stream.SendAndClose(&elpb.WriteEventLogResponse{})
-		} else if err != nil {
-			return err
+		case result, ok := <-recvCh:
+			if !ok {
+				return status.InternalErrorf("unexpected channel close")
+			}
+			if result.err == io.EOF {
+				return stream.SendAndClose(&elpb.WriteEventLogResponse{})
+			} else if result.err != nil {
+				return result.err
+			}
+			req = result.req
 		}
 
 		if eventLogWriter == nil {
