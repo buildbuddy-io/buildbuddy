@@ -799,7 +799,8 @@ func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
 			"Unsupported network property value: %s", network)
 	}
 
-	if dockerNetwork == "none" || dockerNetwork == "bridge" || dockerNetwork == "host" {
+	if dockerNetwork == "" || dockerNetwork == "none" ||
+		dockerNetwork == "bridge" || dockerNetwork == "host" {
 		return dockerNetwork, nil
 	}
 
