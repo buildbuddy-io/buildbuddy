@@ -923,10 +923,17 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 		// default value of --cache.pebble.min_bytes_auto_zstd_compression.
 		rn.Compressor = repb.Compressor_ZSTD
 	}
-	// Don't use remoteReader here, because we don't want to check the lookaside
-	// or local caches when backfilling. If they had this digest, we wouldn't
-	// be backfilling it. Also, we don't want to write to those caches during
-	// a backfill.
+	// Don't use [Cache.remoteReader] here, because we don't want to check the
+	// lookaside or local caches when backfilling. If they had this digest, we
+	// wouldn't be backfilling it, because we wouldn't have even attempted to
+	// read from a remote peer.
+	//
+	// Also, we don't want to write to those caches during a backfill, because
+	// the backfill was triggered by either:
+	// 1) A FindMissing/Contains call, which doesn't write to those caches, so
+	//	  we shouldn't either, since the blob might never be read from this node.
+	// 2) A Get/Read call, which would have already written to those caches if
+	//    appropriate.
 	r, err := c.distributedProxy.RemoteReader(ctx, source, rn, 0, 0)
 	if err != nil {
 		return err
