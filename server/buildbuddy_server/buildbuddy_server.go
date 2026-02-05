@@ -1571,6 +1571,16 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 					return status.InvalidArgumentErrorf("missing invocation ID")
 				}
 
+				inv, err := s.env.GetInvocationDB().LookupInvocation(ctx, req.GetMetadata().GetInvocationId())
+				if err != nil {
+					return status.NotFoundError("invocation not found")
+				}
+
+				acl := perms.ToACLProto(&uidpb.UserId{Id: inv.UserID}, inv.GroupID, inv.Perms)
+				if err := perms.AuthorizeWrite(&authenticatedUser, acl); err != nil {
+					return err
+				}
+
 				pubsubChannel = eventlog.GetRunLogPubSubChannel(req.GetMetadata().GetInvocationId())
 				eventLogPath = eventlog.GetRunLogPathFromInvocationId(req.GetMetadata().GetInvocationId())
 			default:
