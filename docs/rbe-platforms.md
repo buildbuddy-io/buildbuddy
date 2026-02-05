@@ -345,18 +345,6 @@ just a historical artifact.)
     is the default setting.
     Recent versions of the BuildBuddy toolchain default `dockerNetwork` to `off`.
 
-Networking can be controlled for all isolation types (including Firecracker)
-using the `network` platform property. When set, this property takes precedence
-over the `dockerNetwork` property. For `oci`, `podman`, and `docker` isolation,
-the runner falls back to the value specified by `dockerNetwork` if no `network`
-property is set. Permitted values for `network` are:
-
-- `off`: The container/VM has no network access, not even to the host.
-- `local`: The container/VM can communicate with the host but nothing else.
-- `external`: The container/VM can communicate with the internet via the host.
-  This has the same effect as `dockerNetwork=bridge`. This is the default
-  setting for Firecracker VMs when `network` is not specified.
-
 ### Runner secrets
 
 Please consult [RBE secrets](secrets) for more information on the related properties.
