@@ -168,7 +168,6 @@ type ExecutionServer struct {
 	enableRedisAvailabilityMonitoring bool
 	authenticator                     interfaces.Authenticator
 	dbHandle                          interfaces.DBHandle
-	actionCacheClient                 repb.ActionCacheClient
 	executionCollector                interfaces.ExecutionCollector
 	invocationDB                      interfaces.InvocationDB
 	taskSizer                         interfaces.TaskSizer
