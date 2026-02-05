@@ -343,7 +343,7 @@ just a historical artifact.)
   - `off`: The container has no network access, not even to the host.
   - `bridge`: The container can communicate with the internet via the host. This
     is the default setting.
-  Recent versions of the BuildBuddy toolchain default `dockerNetwork` to `off`.
+    Recent versions of the BuildBuddy toolchain default `dockerNetwork` to `off`.
 
 Networking can be controlled for all isolation types (including Firecracker)
 using the `network` platform property. When set, this property takes precedence
