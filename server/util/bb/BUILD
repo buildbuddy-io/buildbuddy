@@ -2,9 +2,15 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 genrule(
     name = "bb-crossplatform",
-    srcs = ["//cli/cmd/bb"],
+    srcs = select({
+        "//platforms/configs:linux_x86_64": ["//cli/cmd/bb"],
+        "//platforms/configs:linux_arm64": ["//cli/cmd/bb"],
+        "@bazel_tools//src/conditions:darwin_x86_64": ["//cli/cmd/bb"],
+        "@bazel_tools//src/conditions:darwin_arm64": ["//cli/cmd/bb"],
+        "//conditions:default": [],
+    }),
     outs = ["bb-bin"],
-    cmd_bash = "cp $(SRCS) $@",
+    cmd_bash = "if [ -n '$(SRCS)' ]; then cp $(SRCS) $@; else touch $@; fi",
     visibility = ["//visibility:public"],
 )
 
