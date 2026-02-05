@@ -380,9 +380,6 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	env.SetTaskRouter(router)
 	err = tasksize.Register(env.TestEnv)
 	require.NoError(t, err, "could not set up TaskSizer")
-	executionServer, err := execution_server.NewExecutionServer(env)
-	require.NoError(t, err, "could not set up ExecutionServer")
-	env.SetRemoteExecutionService(executionServer)
 
 	olapDBHandle := testolapdb.NewHandle()
 	env.SetOLAPDBHandle(olapDBHandle)
@@ -409,8 +406,17 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 		opts.EnvModifier(env.TestEnv)
 	}
 
+	err = redis_execution_collector.Register(env.TestEnv)
+	require.NoError(t, err, "could not set up ExecutionCollector")
+
 	scheduler, err := scheduler_server.NewSchedulerServerWithOptions(env, &opts.SchedulerServerOptions)
 	require.NoError(t, err, "could not set up SchedulerServer")
+	env.SetSchedulerService(scheduler)
+
+	// Execution server needs scheduler service to be set first.
+	executionServer, err := execution_server.NewExecutionServer(env)
+	require.NoError(t, err, "could not set up ExecutionServer")
+	env.SetRemoteExecutionService(executionServer)
 	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env, false)
 	require.NoError(t, err, "could not set up BuildEventProtocolServer")
 	buildBuddyServiceServer, err := buildbuddy_server.NewBuildBuddyServer(env, nil /*=sslService*/)
@@ -421,9 +427,6 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 		/*remoteExec=*/ true,
 		/*zstd=*/ true,
 	)
-
-	err = redis_execution_collector.Register(env.TestEnv)
-	require.NoError(t, err, "could not set up ExecutionCollector")
 
 	server := &BuildBuddyServer{
 		t:                       t,

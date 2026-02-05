@@ -167,7 +167,6 @@ type ExecutionServer struct {
 	streamPubSub                      *pubsub.StreamPubSub
 	enableRedisAvailabilityMonitoring bool
 	authenticator                     interfaces.Authenticator
-	scheduler                         interfaces.SchedulerService
 	dbHandle                          interfaces.DBHandle
 	actionCacheClient                 repb.ActionCacheClient
 	executionCollector                interfaces.ExecutionCollector
@@ -204,17 +203,9 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 	if authenticator == nil {
 		return nil, status.FailedPreconditionErrorf("An authenticator is required for remote execution")
 	}
-	scheduler := env.GetSchedulerService()
-	if scheduler == nil {
-		return nil, status.FailedPreconditionErrorf("A scheduler service is required for remote execution")
-	}
-	dbh := env.GetDBHandle()
-	if dbh == nil {
+	dbHandle := env.GetDBHandle()
+	if dbHandle == nil {
 		return nil, status.FailedPreconditionErrorf("A database is required for remote execution")
-	}
-	actionCacheClient := env.GetActionCacheClient()
-	if actionCacheClient == nil {
-		return nil, status.FailedPreconditionErrorf("An action cache client is required for remote execution")
 	}
 	executionCollector := env.GetExecutionCollector()
 	if executionCollector == nil {
@@ -235,9 +226,7 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 		streamPubSub:                      pubsub.NewStreamPubSub(env.GetRemoteExecutionRedisPubSubClient()),
 		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && *enableRedisAvailabilityMonitoring,
 		authenticator:                     authenticator,
-		scheduler:                         scheduler,
-		dbHandle:                          dbh,
-		actionCacheClient:                 actionCacheClient,
+		dbHandle:                          dbHandle,
 		executionCollector:                executionCollector,
 		invocationDB:                      invocationDB,
 		taskSizer:                         taskSizer,
@@ -452,7 +441,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
 			executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
 			executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
-			executionProto.SelfHosted = schedulingMeta == nil || (schedulingMeta.GetExecutorGroupId() != s.scheduler.GetSharedExecutorPoolGroupID())
+			executionProto.SelfHosted = schedulingMeta == nil || (schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID())
 			if schedulingMeta != nil {
 				executionProto.EffectivePool = schedulingMeta.GetPool()
 			}
@@ -883,7 +872,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
-	pool, err := s.scheduler.GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.OriginalPool, props.WorkflowID, props.PoolType)
+	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.OriginalPool, props.WorkflowID, props.PoolType)
 	if err != nil {
 		return nil, status.WrapError(err, "get executor pool info")
 	}
@@ -937,7 +926,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		Metadata:       schedulingMetadata,
 		SerializedTask: serializedTask,
 	}
-	if _, err := s.scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
+	if _, err := s.env.GetSchedulerService().ScheduleTask(ctx, scheduleReq); err != nil {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, deletePendingExecutionExtraTimeout)
 		defer cancel()
 		if opts.recordActionMergingState {
@@ -984,7 +973,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	}
 
 	// Check if there's already an identical action pending execution that this request can be merged into.
-	executionID, op := action_merger.GetOrCreateExecutionID(ctx, s.rdb, s.scheduler, adInstanceDigest, action.DoNotCache)
+	executionID, op := action_merger.GetOrCreateExecutionID(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest, action.DoNotCache)
 	if op == action_merger.New {
 		log.CtxInfof(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
 
@@ -1477,14 +1466,14 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 	}
 	ar := &repb.ActionResult{StdoutRaw: b}
 
-	return cachetools.UploadActionResult(ctx, s.actionCacheClient, arn, ar)
+	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), arn, ar)
 }
 
 func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceName *digest.ACResourceName, response *repb.ExecuteResponse, action *repb.Action) error {
 	if response.GetCachedResult() || action.GetDoNotCache() || response.GetStatus().GetCode() != 0 || response.GetResult().GetExitCode() != 0 {
 		return nil
 	}
-	return cachetools.UploadActionResult(ctx, s.actionCacheClient, actionResourceName, response.GetResult())
+	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), actionResourceName, response.GetResult())
 }
 
 // markTaskComplete contains logic to be run when the task is complete but
@@ -1541,7 +1530,7 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 		return err
 	}
 
-	pool, err := s.scheduler.GetPoolInfo(ctx, plat.OS, plat.Arch, plat.Pool, plat.OriginalPool, plat.WorkflowID, plat.PoolType)
+	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, plat.OS, plat.Arch, plat.Pool, plat.OriginalPool, plat.WorkflowID, plat.PoolType)
 	if err != nil {
 		return status.InternalErrorf("failed to determine executor pool: %s", err)
 	}
@@ -1700,7 +1689,7 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 		}
 
 		log.CtxInfof(ctx, "Cancelling execution %q due to user request for invocation %q", id, invocationID)
-		cancelled, err := s.scheduler.CancelTask(ctx, id)
+		cancelled, err := s.env.GetSchedulerService().CancelTask(ctx, id)
 		if cancelled {
 			numCancelled++
 		}
