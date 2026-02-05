@@ -35,6 +35,8 @@ const (
 	// the jwt cache will result in fewer evictions (if the cache fills up) at
 	// the cost of more memory use.
 	jwtCacheSize = 10_000
+
+	singleflightKey = "remoteauth_key_refresh"
 )
 
 var (
@@ -100,7 +102,7 @@ type keyProvider struct {
 	mu         sync.RWMutex
 	cached     *cachedKeys
 	ttl        time.Duration
-	fetchGroup singleflight.Group[struct{}, []string]
+	fetchGroup singleflight.Group[string, []string]
 }
 
 func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
@@ -127,7 +129,7 @@ func (kp *keyProvider) getES256PublicKeys(ctx context.Context) ([]string, error)
 	if cached != nil && time.Since(cached.fetchedAt) < kp.ttl {
 		return cached.keys, nil
 	}
-	keys, _, err := kp.fetchGroup.Do(ctx, struct{}{}, func(ctx context.Context) ([]string, error) {
+	keys, _, err := kp.fetchGroup.Do(ctx, singleflightKey, func(ctx context.Context) ([]string, error) {
 		// Re-check the cache inside the singleflight in case another
 		// goroutine populated it while we were waiting.
 		kp.mu.RLock()
