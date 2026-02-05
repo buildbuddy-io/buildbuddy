@@ -375,9 +375,6 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		log.Fatalf("%v", err)
 	}
 
-	if err := build_event_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
 	if err := content_addressable_storage_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -387,14 +384,18 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if err := action_cache_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := push_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
 	if err := cache_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := registerLocalGRPCClients(env); err != nil {
 		log.Fatal(err.Error())
+	}
+
+	if err := push_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := build_event_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
 	}
 	if err := fetch_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
