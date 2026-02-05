@@ -54,6 +54,7 @@ go_test(
     srcs = ["scheduler_server_test.go"],
     embed = [":scheduler_server"],
     deps = [
+        "//enterprise/server/backends/redis_execution_collector",
         "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/tasksize",
