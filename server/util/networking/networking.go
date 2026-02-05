@@ -658,9 +658,14 @@ type vethPair struct {
 // setupVethPair creates a new veth pair with one end in the given network
 // namespace and the other end in the root namespace.
 //
+// If enableExternalNetworking is false, the veth pair will not have forwarding
+// rules added to allow traffic to external networks. This is useful for
+// Firecracker VMs that need internal networking (MMDS) but should not have
+// external network access.
+//
 // The Cleanup method must be called on the returned struct to clean up all
 // resources associated with it.
-func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err error) {
+func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworking bool) (_ *vethPair, err error) {
 	// Keep a list of cleanup work to be done.
 	var cleanupStack cleanupStack
 	// If we return an error from this func then we need to clean up any
@@ -758,14 +763,24 @@ func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err erro
 		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
 		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
 	}
-	iptablesRules = append(iptablesRules, [][]string{
+	if enableExternalNetworking {
 		// Allow forwarding traffic between the host side of the veth pair and
 		// the device associated with the configured route prefix (usually the
 		// default route). This is necessary on hosts with default-deny policies
 		// in place.
-		{"FORWARD", "-i", vp.hostDevice, "-o", device, "-j", "ACCEPT"},
-		{"FORWARD", "-i", device, "-o", vp.hostDevice, "-j", "ACCEPT"},
-	}...)
+		iptablesRules = append(iptablesRules, [][]string{
+			{"FORWARD", "-i", vp.hostDevice, "-o", device, "-j", "ACCEPT"},
+			{"FORWARD", "-i", device, "-o", vp.hostDevice, "-j", "ACCEPT"},
+		}...)
+	} else {
+		// Block external network access by rejecting all forwarded traffic
+		// from/to this veth pair. This is needed because hosts may not have
+		// default-deny policies in iptables.
+		iptablesRules = append(iptablesRules, [][]string{
+			{"FORWARD", "-i", vp.hostDevice, "-j", "REJECT"},
+			{"FORWARD", "-o", vp.hostDevice, "-j", "REJECT"},
+		}...)
+	}
 
 	// IP rules are evaluated in order, so insert restrictions at the top of the
 	// table so they are evaluated before any more permissive default rules.
@@ -881,7 +896,11 @@ type VMNetwork struct {
 
 // CreateVMNetwork initializes a network namespace, networking
 // interfaces, and host configuration required for VM networking.
-func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string) (_ *VMNetwork, err error) {
+//
+// If enableExternalNetworking is false, the VM will not be able to reach
+// external networks, but internal networking (including MMDS for init-dockerd)
+// will still work.
+func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string, enableExternalNetworking bool) (_ *VMNetwork, err error) {
 	var cleanupStack cleanupStack
 	defer func() {
 		// If we failed to fully set up the network, make sure to clean up any
@@ -901,7 +920,7 @@ func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string) (
 	})
 
 	// Create a veth pair with one end in the namespace.
-	vethPair, err := setupVethPair(ctx, netns)
+	vethPair, err := setupVethPair(ctx, netns, enableExternalNetworking)
 	if err != nil {
 		return nil, status.WrapError(err, "setup veth pair")
 	}
@@ -1075,7 +1094,7 @@ func CreateContainerNetwork(ctx context.Context, loopbackOnly bool) (_ *Containe
 	var vethPair *vethPair
 	if !loopbackOnly {
 		// Create a veth pair with one end in the namespace.
-		vp, err := setupVethPair(ctx, netns)
+		vp, err := setupVethPair(ctx, netns, true /*enableExternalNetworking*/)
 		if err != nil {
 			return nil, status.WrapError(err, "setup veth pair")
 		}

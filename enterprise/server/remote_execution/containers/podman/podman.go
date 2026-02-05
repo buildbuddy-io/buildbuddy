@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -194,6 +195,11 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		return nil, status.UnavailableErrorf("failed to generate podman container name: %s", err)
 	}
 
+	network, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetwork)
+	if err != nil {
+		return nil, err
+	}
+
 	return &podmanCommandContainer{
 		env:               p.env,
 		name:              containerName,
@@ -208,7 +214,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 			ForceRoot:          args.Props.DockerForceRoot,
 			Init:               args.Props.DockerInit,
 			User:               args.Props.DockerUser,
-			Network:            args.Props.DockerNetwork,
+			Network:            network,
 			DefaultNetworkMode: networkMode,
 			CapAdd:             capAdd,
 			Devices:            devices,

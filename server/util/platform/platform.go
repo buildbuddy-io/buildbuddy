@@ -122,6 +122,17 @@ const (
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L156
 	dockerNetworkPropertyName = "dockerNetwork"
 
+	// Whether external network access should be enabled. Valid values are:
+	// - "off": no network access
+	// - "external": network access via a network namespace routed thru the host
+	//
+	// By default, this property is not set. If it is set, its value always
+	// applies (even if "dockerNetwork" is set). If this property is not set,
+	// the isolated action's network settings will be applied from the
+	// "dockerNetwork" platform property EXCEPT for Firecracker actions which
+	// will have "external" network access (for backwards compatibility).
+	networkPropertyName = "network"
+
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
 
@@ -216,6 +227,7 @@ type Properties struct {
 	DockerInit                bool
 	DockerUser                string
 	DockerNetwork             string
+	Network                   string
 	RecycleRunner             bool
 	RunnerRecyclingMaxWait    time.Duration
 
@@ -484,6 +496,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DockerInit:                boolProp(m, DockerInitPropertyName, false),
 		DockerUser:                stringProp(m, DockerUserPropertyName, ""),
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
+		Network:                   stringProp(m, networkPropertyName, ""),
 		RecycleRunner:             recycleRunner,
 		DefaultTimeout:            timeout,
 		TerminationGracePeriod:    terminationGracePeriod,
@@ -772,4 +785,26 @@ func IsCICommand(cmd *repb.Command, platform *repb.Platform) bool {
 func Retryable(task *repb.ExecutionTask) bool {
 	v := FindEffectiveValue(task, RetryPropertyName)
 	return v == "true" || v == ""
+}
+
+func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
+	// The network platform property takes precedence and values are renamed
+	// for backwards compatibility.
+	if network == "off" {
+		return "none", nil
+	} else if network == "external" {
+		return "bridge", nil
+	} else if network != "" {
+		return "", status.InvalidArgumentErrorf(
+			"Unsupported network property value: %s", network)
+	}
+
+	if dockerNetwork == "" || dockerNetwork == "off" ||
+		dockerNetwork == "none" || dockerNetwork == "bridge" ||
+		dockerNetwork == "host" {
+		return dockerNetwork, nil
+	}
+
+	return "", status.InvalidArgumentErrorf(
+		"Unsupported dockerNetwork property value: %s", dockerNetwork)
 }
