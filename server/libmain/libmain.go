@@ -366,21 +366,6 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		log.Printf("Error raising open files limit: %s", err)
 	}
 
-	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
-	if err != nil {
-		log.Fatalf("Error reading app bundle hash: %s", err)
-	}
-
-	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
-	if err != nil {
-		log.Fatalf("Error initializing static file server: %s", err)
-	}
-
-	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
-	if err != nil {
-		log.Fatalf("Error initializing app server: %s", err)
-	}
-
 	if err := ssl.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -431,6 +416,21 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	protoletHandler, err := protolet.GenerateHTTPHandlers("/rpc/BuildBuddyService/", "buildbuddy.service.BuildBuddyService", env.GetBuildBuddyServer(), env.GetGRPCServer())
 	if err != nil {
 		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
+	}
+
+	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
+	if err != nil {
+		log.Fatalf("Error reading app bundle hash: %s", err)
+	}
+
+	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
+	if err != nil {
+		log.Fatalf("Error initializing static file server: %s", err)
+	}
+
+	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
+	if err != nil {
+		log.Fatalf("Error initializing app server: %s", err)
 	}
 
 	mux := env.GetMux()
