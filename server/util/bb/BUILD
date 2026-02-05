@@ -1,12 +1,15 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+# Embeds the bb CLI binary for Linux and mac. On Windows, we create an empty
+# file instead because the CLI depends on tree-sitter which requires CGo, and
+# our Windows build environment doesn't have a C compiler available.
 genrule(
     name = "bb-crossplatform",
     srcs = select({
         "//platforms/configs:linux_x86_64": ["//cli/cmd/bb"],
         "//platforms/configs:linux_arm64": ["//cli/cmd/bb"],
-        "@bazel_tools//src/conditions:darwin_x86_64": ["//cli/cmd/bb"],
-        "@bazel_tools//src/conditions:darwin_arm64": ["//cli/cmd/bb"],
+        "//platforms/configs:macos_x86_64": ["//cli/cmd/bb"],
+        "//platforms/configs:macos_arm64": ["//cli/cmd/bb"],
         "//conditions:default": [],
     }),
     outs = ["bb-bin"],

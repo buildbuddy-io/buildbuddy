@@ -2117,7 +2117,9 @@ func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 	wrapperBinaries := map[string]string{
 		bazelBinaryName:    *bazelCommand,
 		bazeliskBinaryName: *bazelCommand,
-		bbBinaryName:       bbPath,
+	}
+	if _, err := os.Stat(bbPath); err == nil {
+		wrapperBinaries[bbBinaryName] = bbPath
 	}
 	for wrapperName, binaryPath := range wrapperBinaries {
 		wrapperPath := filepath.Join(wrapperDir, wrapperName)
