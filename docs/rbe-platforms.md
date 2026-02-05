@@ -335,21 +335,17 @@ just a historical artifact.)
   startup time. The latest version of the BuildBuddy toolchain does this
   for you automatically.
 
-Networking can be controlled for all isolation types (`firecracker`, `oci`,
-`podman`, and `docker`) using the `network` platform property. This property
-works with all isolation types including Firecracker, and takes precedence
-over the `dockerNetwork` property for `oci`, `podman`, and `docker` isolation.
-Permitted values are:
+Networking can be controlled for all isolation types (including Firecracker)
+using the `network` platform property. This property takes precedence over the
+`dockerNetwork` property when set. For `oci`, `podman`, and `docker` isolation,
+if the `network` property is unspecified, the runner falls back to the value
+specified by `dockerNetwork`. Permitted values for `network` are:
 
 - `off`: The container/VM has no network access, not even to the host.
 - `local`: The container/VM can communicate with the host but nothing else.
 - `external`: The container/VM can communicate with the internet via the host.
   This has the same effect as `dockerNetwork=bridge`. This is the default
   setting for Firecracker VMs when `network` is not specified.
-
-For `oci`, `podman`, and `docker` isolation, if the `network` property is not
-specified, the runner falls back to the `dockerNetwork` setting. If
-`dockerNetwork` is also not specified, its default of `bridge` is used.
 
 ### Runner secrets
 
