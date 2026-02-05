@@ -57,7 +57,7 @@ type Opts struct {
 }
 
 // If streaming run logs is requested with --stream_run_logs, parse required args.
-func Configure(args []string) ([]string, *Opts, error) {
+func Configure(args []string, besBackend string) ([]string, *Opts, error) {
 	parsedArgs, err := parser.ParseArgs(args)
 	if err != nil {
 		return args, nil, status.WrapErrorf(err, "failed to parse args")
@@ -83,11 +83,8 @@ func Configure(args []string) ([]string, *Opts, error) {
 		return parsedArgs.Format(), nil, handleErr("unauthenticated request", onFailure)
 	}
 
-	besBackend, err := parser.GetBazelCommandOptionVal(parsedArgs, "bes_backend")
-	if err != nil {
-		return parsedArgs.Format(), nil, handleErr(fmt.Sprintf("failed to get bes_backend option: %s", err), onFailure)
-	} else if besBackend == "" {
-		return parsedArgs.Format(), nil, handleErr("bes_backend is required for streaming run logs", onFailure)
+	if besBackend == "" {
+		return args, nil, status.FailedPreconditionError("bes_backend is required for streaming run logs")
 	}
 
 	// In order to stream run logs to the same invocation URL as the build, we must pre-generate the
@@ -236,6 +233,7 @@ func runScriptDirectly(scriptPath string, sigChan <-chan os.Signal) (int, error)
 }
 
 func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, opts Opts, scriptPath string, sigChan <-chan os.Signal) (exitCode int, interrupted bool, err error) {
+	// TODO(#6629): Proxy run logs through the sidecar.
 	stream, err := bbClient.WriteEventLog(ctx)
 	if err != nil {
 		exitCode, err = handleStreamingFailure(scriptPath, sigChan, opts.OnFailure, fmt.Sprintf("failed to create log stream: %s", err))
