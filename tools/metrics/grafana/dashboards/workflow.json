@@ -31,6 +31,126 @@
         "type": "prometheus",
         "uid": "vm"
       },
+      "description": "The number of snapshot bytes read from each source. These are uncompressed values, even if the data was compressed in the cache.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": [
+          {
+            "__systemRef": "hideSeriesFrom",
+            "matcher": {
+              "id": "byNames",
+              "options": {
+                "mode": "exclude",
+                "names": [
+                  "{chunk_source=\"local_filecache\", file_name=\"memory\"}",
+                  "{chunk_source=\"local_file\", file_name=\"memory\"}"
+                ],
+                "prefix": "All except:",
+                "readOnly": true
+              }
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": true
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 26,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (file_name, chunk_source) (rate(buildbuddy_firecracker_cow_snapshot_bytes_read{region=~\"$region\"}[10m]))",
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Snapshot bytes read per source",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -603,6 +723,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
+      "description": "The number of snapshot bytes read from each source. These are uncompressed values, even if the data was compressed in the cache.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -656,7 +777,32 @@
           },
           "unit": "bytes"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "__systemRef": "hideSeriesFrom",
+            "matcher": {
+              "id": "byNames",
+              "options": {
+                "mode": "exclude",
+                "names": [
+                  "{chunk_source=\"local_filecache\", file_name=\"memory\"}"
+                ],
+                "prefix": "All except:",
+                "readOnly": true
+              }
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": true
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -664,7 +810,7 @@
         "x": 0,
         "y": 24
       },
-      "id": 18,
+      "id": 25,
       "options": {
         "legend": {
           "calcs": [],
@@ -674,26 +820,21 @@
         },
         "tooltip": {
           "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
+          "mode": "single",
+          "sort": "none"
         }
       },
       "pluginVersion": "11.6.2",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
           "editorMode": "code",
-          "expr": "sum by (pod_name) (buildbuddy_firecracker_cow_snapshot_memory_mapped_bytes{region=~\"$region\", job=\"executor-workflows\"})",
-          "instant": false,
+          "expr": "sum by (file_name, chunk_source) (rate(buildbuddy_firecracker_cow_snapshot_bytes_read{region=~\"$region\"}[10m]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Memory-mapped bytes (current)",
+      "title": "Snapshot bytes read per source",
       "type": "timeseries"
     },
     {
@@ -752,7 +893,7 @@
               }
             ]
           },
-          "unit": "µs"
+          "unit": "bytes"
         },
         "overrides": []
       },
@@ -762,7 +903,7 @@
         "x": 12,
         "y": 24
       },
-      "id": 23,
+      "id": 18,
       "options": {
         "legend": {
           "calcs": [],
@@ -772,21 +913,26 @@
         },
         "tooltip": {
           "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
+          "mode": "multi",
+          "sort": "desc"
         }
       },
       "pluginVersion": "11.6.2",
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "editorMode": "code",
-          "expr": " histogram_quantile(0.95, \n    sum by(le, op) (\n      rate(buildbuddy_remote_execution_file_cache_op_latency_usec_bucket{region=~\"$region\", job=\"executor-workflows\"}[5m])\n    )\n  )",
+          "expr": "sum by (pod_name) (buildbuddy_firecracker_cow_snapshot_memory_mapped_bytes{region=~\"$region\", job=\"executor-workflows\"})",
+          "instant": false,
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "File cache operation latency",
+      "title": "Memory-mapped bytes (current)",
       "type": "timeseries"
     },
     {
@@ -925,7 +1071,8 @@
                 "value": 80
               }
             ]
-          }
+          },
+          "unit": "µs"
         },
         "overrides": []
       },
@@ -935,7 +1082,7 @@
         "x": 12,
         "y": 32
       },
-      "id": 19,
+      "id": 23,
       "options": {
         "legend": {
           "calcs": [],
@@ -952,19 +1099,14 @@
       "pluginVersion": "11.6.2",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
           "editorMode": "code",
-          "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le) (\n\t     rate(buildbuddy_firecracker_exec_dial_duration_usec_bucket{region=~\"$region\"}[3m])\n\t    )\n) / 1e6",
-          "instant": false,
+          "expr": " histogram_quantile(0.95, \n    sum by(le, op) (\n      rate(buildbuddy_remote_execution_file_cache_op_latency_usec_bucket{region=~\"$region\", job=\"executor-workflows\"}[5m])\n    )\n  )",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Dial VM Exec Server Duration (Sec) ",
+      "title": "File cache operation latency",
       "type": "timeseries"
     },
     {
@@ -1096,18 +1238,56 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "The count represents the number of workflows where X% of snapshot chunks were fetched from the remote cache. Filter by `file_name` for more granularity between `memory` and `rootfs` snapshots.",
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
             }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
           }
         },
         "overrides": []
@@ -1118,40 +1298,18 @@
         "x": 12,
         "y": 40
       },
-      "id": 16,
+      "id": 19,
       "options": {
-        "calculate": false,
-        "cellGap": 1,
-        "color": {
-          "exponent": 0.5,
-          "fill": "dark-orange",
-          "mode": "scheme",
-          "reverse": false,
-          "scale": "exponential",
-          "scheme": "Oranges",
-          "steps": 64
-        },
-        "exemplars": {
-          "color": "rgba(255,0,255,0.7)"
-        },
-        "filterValues": {
-          "le": 1e-09
-        },
         "legend": {
-          "show": true
-        },
-        "rowsFrame": {
-          "layout": "auto"
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
-          "showColorScale": false,
-          "yHistogram": false
-        },
-        "yAxis": {
-          "axisPlacement": "left",
-          "decimals": 2,
-          "reverse": false
+          "sort": "none"
         }
       },
       "pluginVersion": "11.6.2",
@@ -1162,15 +1320,15 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\", job=\"executor-workflows\", chunk_source=\"remote_cache\"}[5m])) by (le)",
-          "format": "heatmap",
-          "legendFormat": "{{le}}",
+          "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le) (\n\t     rate(buildbuddy_firecracker_exec_dial_duration_usec_bucket{region=~\"$region\"}[3m])\n\t    )\n) / 1e6",
+          "instant": false,
+          "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "% of Chunks Fetched from Remote Cache",
-      "type": "heatmap"
+      "title": "Dial VM Exec Server Duration (Sec) ",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -1270,7 +1428,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "The count represents the number of workflows where X% of snapshot chunks were fetched from the local filecache. Filter by `file_name` for more granularity between `memory` and `rootfs` snapshots.",
+      "description": "The count represents the number of workflows where X% of snapshot chunks were fetched from the remote cache. Filter by `file_name` for more granularity between `memory` and `rootfs` snapshots.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1291,6 +1449,87 @@
         "w": 12,
         "x": 12,
         "y": 48
+      },
+      "id": 16,
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": {
+          "exponent": 0.5,
+          "fill": "dark-orange",
+          "mode": "scheme",
+          "reverse": false,
+          "scale": "exponential",
+          "scheme": "Oranges",
+          "steps": 64
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "filterValues": {
+          "le": 1e-09
+        },
+        "legend": {
+          "show": true
+        },
+        "rowsFrame": {
+          "layout": "auto"
+        },
+        "tooltip": {
+          "mode": "single",
+          "showColorScale": false,
+          "yHistogram": false
+        },
+        "yAxis": {
+          "axisPlacement": "left",
+          "decimals": 2,
+          "reverse": false
+        }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\", job=\"executor-workflows\", chunk_source=\"remote_cache\"}[5m])) by (le)",
+          "format": "heatmap",
+          "legendFormat": "{{le}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "% of Chunks Fetched from Remote Cache",
+      "type": "heatmap"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "The count represents the number of workflows where X% of snapshot chunks were fetched from the local filecache. Filter by `file_name` for more granularity between `memory` and `rootfs` snapshots.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 56
       },
       "id": 15,
       "options": {
