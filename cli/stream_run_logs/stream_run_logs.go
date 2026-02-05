@@ -36,8 +36,6 @@ const (
 var (
 	// Size of the buffer to use for streaming logs.
 	UploadBufferSize = 1 << 20 // 1MB
-
-	enabled = false
 )
 
 type FailureMode string
@@ -233,6 +231,9 @@ func runScriptDirectly(scriptPath string, sigChan <-chan os.Signal) (int, error)
 }
 
 func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, opts Opts, scriptPath string, sigChan <-chan os.Signal) (exitCode int, interrupted bool, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Hour)
+	defer cancel()
+
 	// TODO(#6629): Proxy run logs through the sidecar.
 	stream, err := bbClient.WriteEventLog(ctx)
 	if err != nil {
