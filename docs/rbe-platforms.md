@@ -26,7 +26,7 @@ platform(
     ],
     exec_properties = {
         "OSFamily": "Linux",
-        "dockerNetwork": "off",
+        "network": "off",
         "container-image": "docker://gcr.io/YOUR:IMAGE",
     },
 )
@@ -116,7 +116,7 @@ platform(
     ],
     exec_properties = {
         "OSFamily": "Linux",
-        "dockerNetwork": "off",
+        "network": "off",
         "Pool": "my-gpu-pool",
     },
 )
@@ -335,6 +335,17 @@ just a historical artifact.)
   startup time. The latest version of the BuildBuddy toolchain does this
   for you automatically.
 
+Networking can be controlled for all isolation types (`firecracker`, `oci`,
+`podman`, and `docker`) using the `network` platform property. This property
+works with Firecracker and takes precedence over the `dockerNetwork` property
+for `oci`, `podman`, and `docker` isolation. Permitted values are:
+
+- `off`: The container/VM has no network access, not even to the host.
+- `local`: The container/VM can communicate with the host but nothing else.
+- `external`: The container/VM can communicate with the internet via the host.
+  This has the same effect as `dockerNetwork=bridge`. This is the default
+  setting for Firecracker VMs.
+
 ### Runner secrets
 
 Please consult [RBE secrets](secrets) for more information on the related properties.
@@ -349,7 +360,7 @@ The following `exec_properties` are supported:
 
 - `init-dockerd`: whether to start the `dockerd` process inside the VM
   before execution. Available options are `true` and `false`. Defaults to
-  `false`.
+  `false`. Note: `local` or `external` network are required for `init-dockerd`.
 - `enable-dockerd-tcp`: whether `dockerd` should listen on TCP port 2375
   in addition to the default Unix domain socket. Available options are
   `true` and `false`. Defaults to `false`.
