@@ -345,8 +345,11 @@ Permitted values are:
 - `local`: The container/VM can communicate with the host but nothing else.
 - `external`: The container/VM can communicate with the internet via the host.
   This has the same effect as `dockerNetwork=bridge`. This is the default
-  setting for Firecracker VMs.
+  setting for Firecracker VMs when `network` is not specified.
 
+For `oci`, `podman`, and `docker` isolation, if the `network` property is not
+specified, the runner falls back to the `dockerNetwork` setting. If
+`dockerNetwork` is also not specified, its default of `bridge` is used.
 ### Runner secrets
 
 Please consult [RBE secrets](secrets) for more information on the related properties.
