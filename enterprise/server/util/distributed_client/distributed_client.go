@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -163,6 +164,7 @@ func (c *Proxy) readWriteContext(ctx context.Context) (context.Context, error) {
 	if err != nil {
 		return ctx, err
 	}
+	ctx = authutil.ContextWithCachedAuthHeaders(ctx, c.env.GetAuthenticator())
 	return ctx, err
 }
 
