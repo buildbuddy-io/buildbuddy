@@ -442,6 +442,70 @@ func TestPreserveWorkspace_WorkingDirectory_OutputPathsRelativeToWorkDir(t *test
 	assert.NotContains(t, remaining, filepath.Join("subdir", "foo.out"))
 }
 
+func TestPreserveWorkspace_WorkingDirectory_CleansInputIndex(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	root := testfs.MakeTempDir(t)
+	ws, err := workspace.New(te, root, &workspace.Opts{Preserve: true})
+	require.NoError(t, err)
+
+	// Upload file contents to CAS.
+	inputDigest, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("input"))
+	require.NoError(t, err)
+	outputDigest, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("output"))
+	require.NoError(t, err)
+
+	// Build an input tree: subdir/ contains both input.txt and out.txt.
+	subdir := &repb.Directory{
+		Files: []*repb.FileNode{
+			{Name: "input.txt", Digest: inputDigest},
+			{Name: "out.txt", Digest: outputDigest},
+		},
+	}
+	subdirDigest, err := cachetools.UploadProto(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, subdir)
+	require.NoError(t, err)
+
+	ws.SetTask(ctx, &repb.ExecutionTask{
+		Command: &repb.Command{
+			WorkingDirectory: "subdir",
+			OutputPaths:      []string{"out.txt"},
+		},
+	})
+	err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{
+			Root: &repb.Directory{
+				Directories: []*repb.DirectoryNode{
+					{Name: "subdir", Digest: subdirDigest},
+				},
+			},
+			Children: []*repb.Directory{subdir},
+		},
+	})
+	require.NoError(t, err)
+
+	// Both files should be tracked in the inputs index.
+	assert.Contains(t, ws.Inputs, fspath.NewKey("subdir/input.txt", false))
+	assert.Contains(t, ws.Inputs, fspath.NewKey("subdir/out.txt", false))
+
+	err = ws.Clean()
+	require.NoError(t, err)
+
+	// After cleanup, the output file should be removed from both the
+	// filesystem and the inputs index, while the input file remains.
+	remaining := actualFilePaths(t, ws)
+	assert.Contains(t, remaining, filepath.Join("subdir", "input.txt"))
+	assert.NotContains(t, remaining, filepath.Join("subdir", "out.txt"))
+
+	assert.Contains(t, ws.Inputs, fspath.NewKey("subdir/input.txt", false),
+		"non-output input should remain in inputs index")
+	assert.NotContains(t, ws.Inputs, fspath.NewKey("subdir/out.txt", false),
+		"output file should be removed from inputs index")
+}
+
 func TestDownloadInputs_WorkingDirectoryMissing(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)

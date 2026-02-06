@@ -629,19 +629,24 @@ func (ws *Workspace) Clean() error {
 		outputPaths := slices.Concat(cmd.GetOutputFiles(), cmd.GetOutputDirectories(), cmd.GetOutputPaths())
 		workingDir := cmd.GetWorkingDirectory()
 		for _, outputPath := range outputPaths {
-			if err := os.RemoveAll(filepath.Join(ws.Path(), workingDir, outputPath)); err != nil && !os.IsNotExist(err) {
+			// Resolve output path relative to working directory, since
+			// output paths in the command are relative to working_directory
+			// but ws.Inputs and the filesystem are relative to the
+			// workspace root.
+			fullOutputPath := filepath.Join(workingDir, outputPath)
+			if err := os.RemoveAll(filepath.Join(ws.Path(), fullOutputPath)); err != nil && !os.IsNotExist(err) {
 				return status.UnavailableErrorf("Failed to clean workspace: %s", err)
 			}
 			// If the output path was a directory, we need to delete any known
 			// input files which lived under that output directory.
 			for inputKey := range ws.Inputs {
-				if fspath.IsParent(outputPath, inputKey.NormalizedString(), ws.Opts.CaseInsensitive) {
+				if fspath.IsParent(fullOutputPath, inputKey.NormalizedString(), ws.Opts.CaseInsensitive) {
 					delete(ws.Inputs, inputKey)
 				}
 			}
 			// In case this output path previously pointed to an input file,
 			// delete it from the inputs index (this should be pretty uncommon).
-			delete(ws.Inputs, fspath.NewKey(outputPath, ws.Opts.CaseInsensitive))
+			delete(ws.Inputs, fspath.NewKey(fullOutputPath, ws.Opts.CaseInsensitive))
 		}
 		return nil
 	}
