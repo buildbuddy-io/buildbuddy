@@ -997,6 +997,9 @@ func (d *UserDB) GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID strin
 // processUserGroupMemberships updates the groupRoles map using the results
 // of the passed query which is expected contain user table, group table and
 // role columns.
+// The key of the groupRoles is the groupID and the value is the consolidated
+// membership information. If a user has multiple memberships in a single group,
+// the capabilities will be the union of all the membership capabilities.
 func processUserGroupMemberships(rq interfaces.DBRawQuery, groupRoles map[string]*tables.GroupRole) (*tables.User, error) {
 	ugj, err := db.ScanAll(rq, &userGroupMembership{})
 	if err != nil {
