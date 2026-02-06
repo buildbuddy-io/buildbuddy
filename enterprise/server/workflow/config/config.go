@@ -245,9 +245,12 @@ func prepareKytheOutputs(dirName string) string {
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
 ulimit -n 10240
 
-find -L bazel-out/ -name "*.go.kzip" | xargs -r -P $(nproc) -n 1 $KYTHE_DIR/indexers/go_indexer -continue | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-find -L bazel-out/ -name "*.proto.kzip" | xargs -r -P $(nproc) -I {} $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-find -L bazel-out -name '*.java.kzip' | xargs -r -P $(nproc) -n 1 java -jar $KYTHE_DIR/indexers/java_indexer.jar | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+# Note: intentionally not using xargs -P for parallel indexing, because
+# parallel processes writing binary protobuf entries to a shared pipe can
+# produce interleaved/corrupt output that write_tables cannot decode.
+find -L bazel-out/ -name "*.go.kzip" | xargs -r -n 1 $KYTHE_DIR/indexers/go_indexer -continue | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+find -L bazel-out/ -name "*.proto.kzip" | xargs -r -I {} $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+find -L bazel-out -name '*.java.kzip' | xargs -r -n 1 java -jar $KYTHE_DIR/indexers/java_indexer.jar | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
 
 # cxx indexing needs a cache to complete in a "reasonable" amount of time. It still takes a long time
 # and produces very large indices.
@@ -259,7 +262,7 @@ cxx_kzips=$(find -L bazel-out/*/extra_actions -name "*.cxx.kzip")
 if [ ! -z "$cxx_kzips" ]; then
   sudo apt update && sudo apt install -y memcached
   memcached -p 11211 --listen localhost -m 512 & memcached_pid=$!
-  echo "$cxx_kzips" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/cxx_indexer \
+  echo "$cxx_kzips" | xargs -n 1 $KYTHE_DIR/indexers/cxx_indexer \
     --experimental_alias_template_instantiations \
 	--experimental_dynamic_claim_cache="--SERVER=localhost:11211" \
 	-cache="--SERVER=localhost:11211" \
