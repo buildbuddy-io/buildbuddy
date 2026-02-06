@@ -18,3 +18,5 @@ cache:
     name: "pebble_cache"
     active_key_version: 5
     root_directory: /tmp/buildbuddy-enterprise-pebble-cache
+ocifetcher:
+  enabled: true

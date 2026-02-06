@@ -9,10 +9,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/prototext"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -20,6 +23,7 @@ import (
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 )
 
 var (
@@ -27,6 +31,22 @@ var (
 		"BUILD": `genrule(name = "hello_txt", outs = ["hello.txt"], cmd_bash = "echo 'Hello world' > $@")`,
 	}
 )
+
+func TestOCIFetcher_ServiceIsEnabledAndReachableOverGRPC(t *testing.T) {
+	app := buildbuddy_enterprise.Run(t)
+	conn, err := grpc_client.DialSimpleWithoutPooling(app.GRPCAddress())
+	require.NoError(t, err)
+	defer conn.Close()
+	client := ofpb.NewOCIFetcherClient(conn)
+
+	_, err = client.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
+		Ref: "not-a-valid-ref",
+	})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok, "expected gRPC status error, got: %v", err)
+	require.NotEqual(t, codes.Unimplemented, st.Code(), "expected OCIFetcher RPC to be served")
+}
 
 func TestBuild_RemoteCacheFlags_Anonymous_SecondBuildIsCached(t *testing.T) {
 	app := buildbuddy_enterprise.Run(t)

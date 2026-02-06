@@ -62,6 +62,7 @@ import (
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -318,13 +319,16 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	if ht := env.GetHitTrackerServiceServer(); ht != nil {
 		hitpb.RegisterHitTrackerServiceServer(grpcServer, ht)
 	}
+	if ociFetcher := env.GetOCIFetcherServer(); ociFetcher != nil {
+		ofpb.RegisterOCIFetcherServer(grpcServer, ociFetcher)
+	}
 	if crypter := env.GetCrypter(); crypter != nil {
 		enpb.RegisterEncryptionServiceServer(grpcServer, crypter)
 	}
 }
 
 // TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/6187): Reduce gRPC overhead from self-RPCs.
-func registerLocalGRPCClients(env *real_environment.RealEnv) error {
+func RegisterLocalGRPCClients(env *real_environment.RealEnv) error {
 	// Identify ourselves as an app client in gRPC requests to other apps.
 	usageutil.SetServerName("app")
 	byte_stream_client.RegisterPooledBytestreamClient(env)
@@ -349,6 +353,9 @@ func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 	if env.GetCacheServer() != nil {
 		env.SetCacheClient(cspb.NewCacheClient(conn))
 	}
+	if env.GetOCIFetcherServer() != nil {
+		env.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(conn))
+	}
 	return nil
 }
 
@@ -357,7 +364,48 @@ func StartMonitoringHandler(env *real_environment.RealEnv) {
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 }
 
-func StartAndRunServices(env *real_environment.RealEnv) {
+func RegisterCoreGRPCServices(env *real_environment.RealEnv) error {
+	if err := ssl.Register(env); err != nil {
+		return err
+	}
+
+	// Register to handle BuildBuddy API messages (over gRPC)
+	if err := buildbuddy_server.Register(env); err != nil {
+		return err
+	}
+
+	if err := build_event_server.Register(env); err != nil {
+		return err
+	}
+	if err := content_addressable_storage_server.Register(env); err != nil {
+		return err
+	}
+	if err := byte_stream_server.Register(env); err != nil {
+		return err
+	}
+	if err := action_cache_server.Register(env); err != nil {
+		return err
+	}
+	if err := push_server.Register(env); err != nil {
+		return err
+	}
+	if err := cache_server.Register(env); err != nil {
+		return err
+	}
+	return nil
+}
+
+func RegisterLocalAppServices(env *real_environment.RealEnv) error {
+	if err := fetch_server.Register(env); err != nil {
+		return err
+	}
+	if err := capabilities_server.Register(env); err != nil {
+		return err
+	}
+	return nil
+}
+
+func RunServices(env *real_environment.RealEnv) {
 	if *maxThreads > 0 {
 		debug.SetMaxThreads(*maxThreads)
 	}
@@ -379,43 +427,6 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
 	if err != nil {
 		log.Fatalf("Error initializing app server: %s", err)
-	}
-
-	if err := ssl.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-
-	// Register to handle BuildBuddy API messages (over gRPC)
-	if err := buildbuddy_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-
-	if err := build_event_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := content_addressable_storage_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := byte_stream_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := action_cache_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := push_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := cache_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := registerLocalGRPCClients(env); err != nil {
-		log.Fatal(err.Error())
-	}
-	if err := fetch_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := capabilities_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
 	}
 
 	if err := startInternalGRPCServers(env); err != nil {
@@ -573,4 +584,17 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		os.Exit(0)
 	}
 	env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
+func StartAndRunServices(env *real_environment.RealEnv) {
+	if err := RegisterCoreGRPCServices(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := RegisterLocalGRPCClients(env); err != nil {
+		log.Fatal(err.Error())
+	}
+	if err := RegisterLocalAppServices(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	RunServices(env)
 }

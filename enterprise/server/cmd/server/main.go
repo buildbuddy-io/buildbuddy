@@ -302,9 +302,6 @@ func main() {
 	if err := ociregistry.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := ocifetcher.RegisterServer(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
 
 	executionService := execution_service.NewExecutionService(realEnv)
 	realEnv.SetExecutionService(executionService)
@@ -330,5 +327,18 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
+	if err := libmain.RegisterCoreGRPCServices(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.RegisterLocalGRPCClients(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := ocifetcher.RegisterServer(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.RegisterLocalAppServices(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	libmain.RunServices(realEnv) // Returns after graceful shutdown
 }
