@@ -360,12 +360,9 @@ The following execution properties provide more customization.
   `nonroot-workspace` to `true`.
 - `network`: controls the network access available in the VM/container.
   Permitted values are:
-  - `off`: The container/VM has no network access, not even to the host. This
-    is the default setting for `oci`, `podman`, `docker`, and `sandbox`
-    containers.
-  - `local`: The container/VM can communicate with the host but nothing else.
-    Only supported by `firecracker` VMs.
-  - `external`: The container/VM can communicate with the internet via the host.
+  - `off`: The container/VM has no network access. This is the default setting
+    for `oci`, `podman`, `docker`, and `sandbox` containers.
+  - `on`: The container/VM can communicate with the internet via the host.
     This is the default setting for `firecracker` VMs.
 
 The following properties apply to `oci`, `podman` and `docker` isolation,
@@ -400,7 +397,7 @@ The following `exec_properties` are supported:
 
 - `init-dockerd`: whether to start the `dockerd` process inside the VM
   before execution. Available options are `true` and `false`. Defaults to
-  `false`. Note: `local` or `external` network is required for `init-dockerd`.
+  `false`.
 - `enable-dockerd-tcp`: whether `dockerd` should listen on TCP port 2375
   in addition to the default Unix domain socket. Available options are
   `true` and `false`. Defaults to `false`.

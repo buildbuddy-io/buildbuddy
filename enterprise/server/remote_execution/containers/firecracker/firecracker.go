@@ -243,19 +243,20 @@ var (
 	slowInterruptWarningPattern = regexp.MustCompile(`hrtimer: interrupt took \d+ ns`)
 )
 
-// networkModeFromString converts a network property string to a NetworkMode enum.
-// Valid values are: "" (defaults to external), "off", "local", "external".
-func networkModeFromString(network string) (fcpb.NetworkMode, error) {
-	switch network {
-	case "", "external":
+// Derives the desired Firecracker NetworkMode from the provided network and
+// init-dockerd platform properties.e enum.
+// Valid values are: "" (defaults to "on"), "off", "local", "external".
+func networkMode(network string, initDockerd bool) (fcpb.NetworkMode, error) {
+	if network == "on" {
 		return fcpb.NetworkMode_NETWORK_MODE_EXTERNAL, nil
-	case "local":
-		return fcpb.NetworkMode_NETWORK_MODE_LOCAL, nil
-	case "off":
-		return fcpb.NetworkMode_NETWORK_MODE_OFF, nil
-	default:
-		return fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED, status.InvalidArgumentErrorf("unsupported network option %q", network)
 	}
+	if network == "off" {
+		if initDockerd {
+			return fcpb.NetworkMode_NETWORK_MODE_LOCAL, nil
+		}
+		return fcpb.NetworkMode_NETWORK_MODE_OFF, nil
+	}
+	return fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED, status.InvalidArgumentErrorf("unsupported network option %q", network)
 }
 
 // networkingEnabled returns true if the VM has any networking capability.
@@ -575,7 +576,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		numCPUs = firecrackerMaxCPU
 	}
 
-	networkMode, err := networkModeFromString(args.Props.Network)
+	networkMode, err := networkMode(args.Props.Network, args.Props.InitDockerd)
 	if err != nil {
 		return nil, err
 	}
