@@ -691,14 +691,14 @@ type FirecrackerContainer struct {
 	uffdHandler *uffd.Handler
 	memoryStore *copy_on_write.COWStore
 
-	jailerRoot      string               // the root dir the jailer will work in
-	cgroupParent    string               // parent cgroup path (root-relative)
-	cgroupSettings  *scpb.CgroupSettings // jailer cgroup settings
-	blockDevice     *block_io.Device     // block device for cgroup IO settings
-	machine         *fcclient.Machine    // the firecracker machine object.
-	vmLog           *VMLog
-	env             environment.Env
-	resolver        *oci.Resolver
+	jailerRoot     string               // the root dir the jailer will work in
+	cgroupParent   string               // parent cgroup path (root-relative)
+	cgroupSettings *scpb.CgroupSettings // jailer cgroup settings
+	blockDevice    *block_io.Device     // block device for cgroup IO settings
+	machine        *fcclient.Machine    // the firecracker machine object.
+	vmLog          *VMLog
+	env            environment.Env
+	resolver       *oci.Resolver
 
 	vmCtx context.Context
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
