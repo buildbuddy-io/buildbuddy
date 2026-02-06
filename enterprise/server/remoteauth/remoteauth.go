@@ -152,19 +152,21 @@ func (kp *keyProvider) refreshLoop(refreshInterval time.Duration) {
 
 func (kp *keyProvider) getES256PublicKeys(ctx context.Context) ([]string, error) {
 	kp.mu.RLock()
-	if kp.keys != nil {
-		return kp.keys, nil
-	}
+	cached := kp.keys
 	kp.mu.RUnlock()
+	if cached != nil {
+		return cached, nil
+	}
 
 	keys, _, err := kp.fetchGroup.Do(ctx, singleflightKey, func(ctx context.Context) ([]string, error) {
 		// Re-check the cache inside the singleflight in case another
 		// goroutine populated it while we were waiting.
 		kp.mu.RLock()
-		if kp.keys != nil {
-			return kp.keys, nil
-		}
+		cached := kp.keys
 		kp.mu.RUnlock()
+		if cached != nil {
+			return cached, nil
+		}
 
 		keys, err := kp.fetchES256PublicKeys(ctx)
 		if err != nil {
