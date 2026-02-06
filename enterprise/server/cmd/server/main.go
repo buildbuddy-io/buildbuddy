@@ -302,6 +302,11 @@ func main() {
 	if err := ociregistry.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+
+	// RegisterCoreServersAndClients must be called before registering
+	// services that depend on gRPC clients (e.g., ocifetcher).
+	libmain.RegisterCoreServersAndClients(realEnv)
+
 	if err := ocifetcher.RegisterServer(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}

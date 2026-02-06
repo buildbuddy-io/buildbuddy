@@ -62,6 +62,7 @@ import (
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -321,6 +322,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	if crypter := env.GetCrypter(); crypter != nil {
 		enpb.RegisterEncryptionServiceServer(grpcServer, crypter)
 	}
+	if ociFetcher := env.GetOCIFetcherServer(); ociFetcher != nil {
+		ofpb.RegisterOCIFetcherServer(grpcServer, ociFetcher)
+	}
 }
 
 // TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/6187): Reduce gRPC overhead from self-RPCs.
@@ -357,30 +361,11 @@ func StartMonitoringHandler(env *real_environment.RealEnv) {
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 }
 
-func StartAndRunServices(env *real_environment.RealEnv) {
-	if *maxThreads > 0 {
-		debug.SetMaxThreads(*maxThreads)
-	}
-
-	if err := rlimit.MaxRLimit(); err != nil {
-		log.Printf("Error raising open files limit: %s", err)
-	}
-
-	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
-	if err != nil {
-		log.Fatalf("Error reading app bundle hash: %s", err)
-	}
-
-	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
-	if err != nil {
-		log.Fatalf("Error initializing static file server: %s", err)
-	}
-
-	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
-	if err != nil {
-		log.Fatalf("Error initializing app server: %s", err)
-	}
-
+// RegisterCoreServersAndClients registers the core gRPC servers (ByteStream,
+// ActionCache, CAS, etc.) and creates local gRPC clients for them. This must
+// be called before registering services that depend on these clients (e.g.,
+// ocifetcher).
+func RegisterCoreServersAndClients(env *real_environment.RealEnv) {
 	if err := ssl.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -416,6 +401,31 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	}
 	if err := capabilities_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
+	}
+}
+
+func StartAndRunServices(env *real_environment.RealEnv) {
+	if *maxThreads > 0 {
+		debug.SetMaxThreads(*maxThreads)
+	}
+
+	if err := rlimit.MaxRLimit(); err != nil {
+		log.Printf("Error raising open files limit: %s", err)
+	}
+
+	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
+	if err != nil {
+		log.Fatalf("Error reading app bundle hash: %s", err)
+	}
+
+	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
+	if err != nil {
+		log.Fatalf("Error initializing static file server: %s", err)
+	}
+
+	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
+	if err != nil {
+		log.Fatalf("Error initializing app server: %s", err)
 	}
 
 	if err := startInternalGRPCServers(env); err != nil {

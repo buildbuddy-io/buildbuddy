@@ -71,6 +71,8 @@ auth:
       client_id: 'test.buildbuddy.io'
       client_secret: 'buildbuddy'
   enable_anonymous_usage: true
+ocifetcher:
+  enabled: true
 remote_execution:
    enable_remote_exec: true
 http:
