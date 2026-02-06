@@ -2,7 +2,7 @@ container_pull = use_repo_rule("@io_bazel_rules_docker//container:pull.bzl", "co
 
 container_pull(
     name = "buildbuddy_go_image_base",
-    digest = "sha256:54a30fb33d77e2d981f37fb34cfd2bcc124bf029ed2d73764b5b68951acabf85",
+    digest = "sha256:d7ac2f9af248f31fe6270002755722afdf6875e0e49cd52b9150208e6a23875c",
     registry = "gcr.io",
     repository = "distroless/cc-debian13",
 )
