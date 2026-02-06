@@ -153,3 +153,43 @@ func TestTMPDIR(t *testing.T) {
 		})
 	}
 }
+
+func TestBareRun_WorkingDirectory(t *testing.T) {
+	ctx := context.Background()
+	workDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"subdir/greeting.txt": "hello",
+	})
+
+	cmd := &repb.Command{
+		Arguments:        []string{"sh", "-c", "cat greeting.txt"},
+		WorkingDirectory: "subdir",
+	}
+	ctr := bare.NewBareCommandContainer(&bare.Opts{})
+	result := ctr.Run(ctx, cmd, workDir, oci.Credentials{})
+
+	require.NoError(t, result.Error)
+	assert.Equal(t, 0, result.ExitCode)
+	assert.Equal(t, "hello", string(result.Stdout))
+}
+
+func TestBareExec_WorkingDirectory(t *testing.T) {
+	ctx := context.Background()
+	workDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"subdir/greeting.txt": "hello",
+	})
+
+	cmd := &repb.Command{
+		Arguments:        []string{"sh", "-c", "cat greeting.txt"},
+		WorkingDirectory: "subdir",
+	}
+	ctr := bare.NewBareCommandContainer(&bare.Opts{})
+	err := ctr.Create(ctx, workDir)
+	require.NoError(t, err)
+	result := ctr.Exec(ctx, cmd, nil)
+
+	require.NoError(t, result.Error)
+	assert.Equal(t, 0, result.ExitCode)
+	assert.Equal(t, "hello", string(result.Stdout))
+}

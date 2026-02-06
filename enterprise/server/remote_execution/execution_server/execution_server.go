@@ -742,6 +742,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if err != nil {
 		return nil, err
 	}
+	if wd := command.GetWorkingDirectory(); wd != "" {
+		if filepath.IsAbs(wd) || !filepath.IsLocal(wd) {
+			return nil, status.InvalidArgumentErrorf("working_directory %q must be a relative path within the input root", wd)
+		}
+	}
 	if action.GetPlatform() == nil && command.GetPlatform() != nil {
 		log.CtxInfof(ctx, "Execution %q has a platform in the command, but not the action. Request metadata: %v", executionID, rmd)
 	}

@@ -694,7 +694,7 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 }
 
 func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	args := []string{"exec", "--cwd=" + execrootPath}
+	args := []string{"exec", "--cwd=" + filepath.Join(execrootPath, cmd.GetWorkingDirectory())}
 	// Respect command env. Note, when setting any --env vars at all, it
 	// completely overrides the env from the bundle, rather than just adding
 	// to it. So we specify the complete env here, including the base env,
@@ -1086,7 +1086,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			Terminal: false,
 			User:     *user,
 			Args:     cmd.GetArguments(),
-			Cwd:      execrootPath,
+			Cwd:      filepath.Join(execrootPath, cmd.GetWorkingDirectory()),
 			Env:      env,
 			Rlimits: []specs.POSIXRlimit{
 				{Type: "RLIMIT_NPROC", Hard: 4194304, Soft: 4194304},
