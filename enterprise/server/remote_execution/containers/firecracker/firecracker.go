@@ -249,8 +249,8 @@ func networkModeFromString(network string) (fcpb.NetworkMode, error) {
 	switch network {
 	case "", "external":
 		return fcpb.NetworkMode_NETWORK_MODE_EXTERNAL, nil
-	case "local":
-		return fcpb.NetworkMode_NETWORK_MODE_LOCAL, nil
+	case "host":
+		return fcpb.NetworkMode_NETWORK_MODE_HOST, nil
 	case "off":
 		return fcpb.NetworkMode_NETWORK_MODE_OFF, nil
 	default:

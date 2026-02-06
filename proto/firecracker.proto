@@ -15,7 +15,7 @@ enum NetworkMode {
 
   // VM can communicate with the host (MMDS works for init-dockerd) but the
   // host rejects packets routed through it.
-  NETWORK_MODE_LOCAL = 2;
+  NETWORK_MODE_HOST = 2;
 
   // VM has full network access.
   NETWORK_MODE_EXTERNAL = 3;

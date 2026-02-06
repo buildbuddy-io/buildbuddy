@@ -1992,7 +1992,7 @@ func TestFirecrackerRunWithoutNetwork(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         2500,
-			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_LOCAL,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_HOST,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: getExecutorConfig(t),
