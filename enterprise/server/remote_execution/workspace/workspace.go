@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 
 	_ "embed"
@@ -23,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
@@ -261,6 +263,39 @@ func (ws *Workspace) prepareVFS(ctx context.Context, layout *container.FileSyste
 	return nil
 }
 
+// validateWorkingDirectoryInTree checks that the given working directory path
+// exists as a directory in the input tree. This enforces the REAPI spec
+// requirement that working_directory "must be a directory which exists in the
+// input tree."
+func validateWorkingDirectoryInTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value, workingDir string) error {
+	_, dirMap, err := dirtools.DirMapFromTree(tree, digestFunction)
+	if err != nil {
+		return status.WrapError(err, "failed to build directory map from input tree")
+	}
+
+	// Walk the tree path segment by segment starting from root.
+	current := tree.GetRoot()
+	segments := strings.Split(workingDir, "/")
+	for _, seg := range segments {
+		found := false
+		for _, dirNode := range current.GetDirectories() {
+			if dirNode.GetName() == seg {
+				next, ok := dirMap[digest.NewKey(dirNode.GetDigest())]
+				if !ok {
+					return status.FailedPreconditionErrorf("working_directory %q not found in input tree", workingDir)
+				}
+				current = next
+				found = true
+				break
+			}
+		}
+		if !found {
+			return status.FailedPreconditionErrorf("working_directory %q does not exist in the input tree", workingDir)
+		}
+	}
+	return nil
+}
+
 // DownloadInputs downloads any missing inputs for the current action.
 func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileSystemLayout) error {
 	ws.mu.Lock()
@@ -272,6 +307,16 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	execReq := ws.task.GetExecuteRequest()
+
+	// The REAPI spec requires working_directory to be a directory that
+	// already exists in the input tree. Validate this against the tree.
+	if wd := ws.task.GetCommand().GetWorkingDirectory(); wd != "" {
+		if err := validateWorkingDirectoryInTree(layout.Inputs, execReq.GetDigestFunction(), wd); err != nil {
+			return err
+		}
+	}
+
 	opts := &dirtools.DownloadTreeOpts{CaseInsensitive: ws.Opts.CaseInsensitive}
 	if ws.vfs == nil {
 		opts.RootDir = ws.inputRoot()
@@ -280,7 +325,6 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
-	execReq := ws.task.GetExecuteRequest()
 	tf, err := dirtools.NewTreeFetcher(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, opts)
 	if err != nil {
 		return status.WrapErrorf(err, "could not create tree fetcher")

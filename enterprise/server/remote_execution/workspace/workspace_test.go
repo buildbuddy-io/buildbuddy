@@ -20,6 +20,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -438,4 +440,103 @@ func TestPreserveWorkspace_WorkingDirectory_OutputPathsRelativeToWorkDir(t *test
 	assert.Contains(t, remaining, filepath.Join("subdir", "input.in"))
 	assert.Contains(t, remaining, "other.txt")
 	assert.NotContains(t, remaining, filepath.Join("subdir", "foo.out"))
+}
+
+func TestDownloadInputs_WorkingDirectoryMissing(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	root := testfs.MakeTempDir(t)
+	ws, err := workspace.New(te, root, &workspace.Opts{})
+	require.NoError(t, err)
+	ws.SetTask(ctx, &repb.ExecutionTask{
+		Command: &repb.Command{
+			WorkingDirectory: "nonexistent",
+		},
+	})
+
+	err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{
+			Root: &repb.Directory{},
+		},
+	})
+
+	require.Error(t, err)
+	assert.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
+	assert.Contains(t, err.Error(), "nonexistent")
+}
+
+func TestDownloadInputs_WorkingDirectoryExists(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	root := testfs.MakeTempDir(t)
+	ws, err := workspace.New(te, root, &workspace.Opts{})
+	require.NoError(t, err)
+
+	// Build an input tree with "subdir" as a directory.
+	subdir := &repb.Directory{}
+	subdirDigest, err := cachetools.UploadProto(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, subdir)
+	require.NoError(t, err)
+	ws.SetTask(ctx, &repb.ExecutionTask{
+		Command: &repb.Command{
+			WorkingDirectory: "subdir",
+		},
+	})
+
+	err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{
+			Root: &repb.Directory{
+				Directories: []*repb.DirectoryNode{
+					{Name: "subdir", Digest: subdirDigest},
+				},
+			},
+			Children: []*repb.Directory{subdir},
+		},
+	})
+
+	require.NoError(t, err)
+}
+
+func TestDownloadInputs_WorkingDirectoryNestedMissing(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	root := testfs.MakeTempDir(t)
+	ws, err := workspace.New(te, root, &workspace.Opts{})
+	require.NoError(t, err)
+
+	// Build an input tree with "a" but not "a/b".
+	dirA := &repb.Directory{}
+	dirADigest, err := cachetools.UploadProto(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, dirA)
+	require.NoError(t, err)
+	ws.SetTask(ctx, &repb.ExecutionTask{
+		Command: &repb.Command{
+			WorkingDirectory: "a/b",
+		},
+	})
+
+	err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{
+			Root: &repb.Directory{
+				Directories: []*repb.DirectoryNode{
+					{Name: "a", Digest: dirADigest},
+				},
+			},
+			Children: []*repb.Directory{dirA},
+		},
+	})
+
+	require.Error(t, err)
+	assert.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
+	assert.Contains(t, err.Error(), "a/b")
 }
