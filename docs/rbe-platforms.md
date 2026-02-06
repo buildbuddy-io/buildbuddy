@@ -236,26 +236,43 @@ The following properties allow customizing the behavior of the runner:
 
 ### Runner resource allocation
 
-BuildBuddy's scheduler intelligently allocates resources to actions,
-so it's generally not needed to manually configure resources for actions.
-However, some `exec_properties` are provided as manual overrides:
+BuildBuddy's scheduler intelligently allocates resources to actions, so manual
+resource settings are usually unnecessary.
 
-- `EstimatedCPU`: the CPU time allocated for the action. Example values:
+If you're using **BuildBuddy Cloud**, we recommend leaving CPU and memory
+unset in most cases and relying on automatic action sizing. BuildBuddy Cloud
+automatically estimates action size using previously measured usage when
+available, or model-based prediction otherwise.
+
+The following `exec_properties` are available as manual overrides:
+
+- `EstimatedComputeUnits`: convenience property that sets both CPU and memory.
+  One compute unit is 1 CPU + 2.5GB memory. Accepts numeric values such as
+  `1`, `2.5`, or `9`.
+- `EstimatedCPU`: CPU allocated for the action. Example values:
   - `2`: 2 CPU cores
-  - `0.5`: 500 MilliCPU
-  - `4000m`: 4000 MilliCPU
-- `EstimatedMemory`: the memory allocated to the action. Example values:
-  - `1M`: 1 MB
-  - `2GB`: 2 GB
-  - `4.5GB`: 4.5 GB
-- `EstimatedComputeUnits`: a convenience unit that specifies both CPU
-  and memory. One compute unit is defined as 1 CPU and 2.5GB of
-  memory. Accepts numerical values, e.g. `1` or `9`.
-- `EstimatedFreeDiskBytes`: the amount of disk space allocated to the action.
-  Example values:
-  - `1M`: 1 MB
-  - `2GB`: 2 GB
-  - `4.5GB`: 4.5 GB
+  - `0.5`: 500 milliCPU
+  - `4000m`: 4000 milliCPU
+- `EstimatedMemory`: memory allocated for the action. Example values:
+  - `1M`
+  - `2GB`
+  - `4.5GB`
+- `EstimatedFreeDiskBytes`: free disk space allocated for the action. Example
+  values:
+  - `1M`
+  - `2GB`
+  - `4.5GB`
+
+When these properties are combined, BuildBuddy resolves CPU and memory in this
+order:
+
+1. `EstimatedComputeUnits` sets a baseline for both CPU and memory.
+2. `EstimatedCPU` overrides only CPU.
+3. `EstimatedMemory` overrides only memory.
+
+If only one dimension is set (for example, CPU only), that dimension is pinned
+to the requested value while the other dimension can still be automatically
+sized.
 
 ### Execution timeout properties
 

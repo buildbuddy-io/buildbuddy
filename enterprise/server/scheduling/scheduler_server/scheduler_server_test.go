@@ -717,6 +717,173 @@ func enqueueTaskReservation(ctx context.Context, t *testing.T, env environment.E
 	return taskID
 }
 
+func TestGetMostAccurateTaskSize_RequestedCPUOverridesMeasuredCPUOnly(t *testing.T) {
+	h := &executorHandle{}
+	h.setRegistration(&scpb.ExecutionNode{
+		AssignableMilliCpu:    32_000,
+		AssignableMemoryBytes: 32 * 1e9,
+	})
+	req := &scpb.EnqueueTaskReservationRequest{
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			// Naive size is ignored when measured size is available.
+			TaskSize: &scpb.TaskSize{
+				EstimatedMilliCpu:      600,
+				EstimatedMemoryBytes:   400 * 1e6,
+				EstimatedFreeDiskBytes: 100 * 1e6,
+			},
+			MeasuredTaskSize: &scpb.TaskSize{
+				EstimatedMilliCpu:      9_000,
+				EstimatedMemoryBytes:   9 * 1e9,
+				EstimatedFreeDiskBytes: 7 * 1e9,
+			},
+			RequestedTaskSize: &scpb.TaskSize{
+				EstimatedMilliCpu:      1_500, // only CPU explicitly requested
+				EstimatedFreeDiskBytes: 123,
+				CustomResources: []*scpb.CustomResource{
+					{Name: "gpu", Value: 1},
+				},
+			},
+		},
+	}
+
+	got := h.getMostAccurateTaskSize(req)
+	want := &scpb.TaskSize{
+		EstimatedMilliCpu:      1_500,
+		EstimatedMemoryBytes:   9 * 1e9,
+		EstimatedFreeDiskBytes: 123,
+		CustomResources: []*scpb.CustomResource{
+			{Name: "gpu", Value: 1},
+		},
+	}
+	require.Empty(t, cmp.Diff(want, got, protocmp.Transform()))
+}
+
+func TestGetMostAccurateTaskSize_RequestedMemoryOverridesPredictedMemoryOnly(t *testing.T) {
+	h := &executorHandle{}
+	h.setRegistration(&scpb.ExecutionNode{
+		AssignableMilliCpu:    2_000,
+		AssignableMemoryBytes: 32 * 1e9,
+	})
+	req := &scpb.EnqueueTaskReservationRequest{
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			// Naive size is ignored when predicted size is available.
+			TaskSize: &scpb.TaskSize{
+				EstimatedMilliCpu:      600,
+				EstimatedMemoryBytes:   400 * 1e6,
+				EstimatedFreeDiskBytes: 100 * 1e6,
+			},
+			PredictedTaskSize: &scpb.TaskSize{
+				EstimatedMilliCpu:      10_000, // should be clamped by node capacity
+				EstimatedMemoryBytes:   11 * 1e9,
+				EstimatedFreeDiskBytes: 8 * 1e9,
+			},
+			RequestedTaskSize: &scpb.TaskSize{
+				EstimatedMemoryBytes:   2 * 1e9, // only memory explicitly requested
+				EstimatedFreeDiskBytes: 456,
+				CustomResources: []*scpb.CustomResource{
+					{Name: "ssd", Value: 2.5},
+				},
+			},
+		},
+	}
+
+	got := h.getMostAccurateTaskSize(req)
+	want := &scpb.TaskSize{
+		EstimatedMilliCpu:      2_000,
+		EstimatedMemoryBytes:   2 * 1e9,
+		EstimatedFreeDiskBytes: 456,
+		CustomResources: []*scpb.CustomResource{
+			{Name: "ssd", Value: 2.5},
+		},
+	}
+	require.Empty(t, cmp.Diff(want, got, protocmp.Transform()))
+}
+
+func TestGetMostAccurateTaskSize_RequestedCPUMemoryOverridesAreClampedToGlobalMinimums(t *testing.T) {
+	h := &executorHandle{}
+	h.setRegistration(&scpb.ExecutionNode{
+		AssignableMilliCpu:    32_000,
+		AssignableMemoryBytes: 32 * 1e9,
+	})
+	req := &scpb.EnqueueTaskReservationRequest{
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			// Naive size already reflects the global minimum floor.
+			TaskSize: &scpb.TaskSize{
+				EstimatedMilliCpu:      tasksize.MinimumMilliCPU,
+				EstimatedMemoryBytes:   tasksize.MinimumMemoryBytes,
+				EstimatedFreeDiskBytes: 100 * 1e6,
+			},
+			MeasuredTaskSize: &scpb.TaskSize{
+				EstimatedMilliCpu:      9_000,
+				EstimatedMemoryBytes:   9 * 1e9,
+				EstimatedFreeDiskBytes: 7 * 1e9,
+			},
+			RequestedTaskSize: &scpb.TaskSize{
+				EstimatedMilliCpu:      1,
+				EstimatedMemoryBytes:   1,
+				EstimatedFreeDiskBytes: 123,
+				CustomResources: []*scpb.CustomResource{
+					{Name: "gpu", Value: 1},
+				},
+			},
+		},
+	}
+
+	got := h.getMostAccurateTaskSize(req)
+	want := &scpb.TaskSize{
+		EstimatedMilliCpu:      tasksize.MinimumMilliCPU,
+		EstimatedMemoryBytes:   tasksize.MinimumMemoryBytes,
+		EstimatedFreeDiskBytes: 123,
+		CustomResources: []*scpb.CustomResource{
+			{Name: "gpu", Value: 1},
+		},
+	}
+	require.Empty(t, cmp.Diff(want, got, protocmp.Transform()))
+}
+
+func TestGetMostAccurateTaskSize_RequestedCPUMemoryOverridesPreserveNaiveFloor(t *testing.T) {
+	h := &executorHandle{}
+	h.setRegistration(&scpb.ExecutionNode{
+		AssignableMilliCpu:    32_000,
+		AssignableMemoryBytes: 32 * 1e9,
+	})
+	req := &scpb.EnqueueTaskReservationRequest{
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			// Simulate a higher minimum from naive task sizing (for example,
+			// TEST_SIZE minimums applied by tasksize.ApplyLimits).
+			TaskSize: &scpb.TaskSize{
+				EstimatedMilliCpu:      1_000,
+				EstimatedMemoryBytes:   300 * 1e6,
+				EstimatedFreeDiskBytes: 100 * 1e6,
+			},
+			MeasuredTaskSize: &scpb.TaskSize{
+				EstimatedMilliCpu:      9_000,
+				EstimatedMemoryBytes:   9 * 1e9,
+				EstimatedFreeDiskBytes: 7 * 1e9,
+			},
+			RequestedTaskSize: &scpb.TaskSize{
+				EstimatedMilliCpu:      1,
+				EstimatedMemoryBytes:   1,
+				EstimatedFreeDiskBytes: 123,
+				CustomResources: []*scpb.CustomResource{
+					{Name: "gpu", Value: 1},
+				},
+			},
+		},
+	}
+
+	got := h.getMostAccurateTaskSize(req)
+	want := &scpb.TaskSize{
+		EstimatedMilliCpu:      1_000,
+		EstimatedMemoryBytes:   300 * 1e6,
+		EstimatedFreeDiskBytes: 123,
+		CustomResources: []*scpb.CustomResource{
+			{Name: "gpu", Value: 1},
+		},
+	}
+	require.Empty(t, cmp.Diff(want, got, protocmp.Transform()))
+}
+
 func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 
