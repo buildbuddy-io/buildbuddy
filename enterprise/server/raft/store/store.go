@@ -282,6 +282,10 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 		opt(o)
 	}
 
+	if !*enableDriver && raftConfig.TargetRangeSizeBytes() > 0 {
+		return nil, status.FailedPreconditionError("misconfigured: enable_driver is false but target_range_size_bytes is set; splitting requires the driver to be enabled")
+	}
+
 	raftListener := listener.NewRaftListener()
 
 	nhc := o.getNodehostConfigFn(cfg, raftListener, o.nodeRegistryFactory)
@@ -372,7 +376,7 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	usages, err := usagetracker.New(s.sender, s.leaser, cfg.GossipManager, s.NodeDescriptor(), cfg.Partitions, clock, cfg.FileStorer)
 
 	if *enableDriver {
-		s.driverQueue = driver.NewQueue(env.GetServerContext(), s, s.sender, cfg.GossipManager, nhLog, apiClient, clock, env.GetExperimentFlagProvider())
+		s.driverQueue = driver.NewQueue(s, s.sender, cfg.GossipManager, nhLog, apiClient, clock, env.GetExperimentFlagProvider())
 	}
 	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s, *clientSessionTTL)
 	s.replicaJanitor = newReplicaJanitor(clock, s, *zombieNodeScanInterval)

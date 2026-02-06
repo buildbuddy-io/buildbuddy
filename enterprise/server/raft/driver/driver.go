@@ -419,10 +419,9 @@ type Queue struct {
 	minMetaRangeReplicas int
 
 	efp interfaces.ExperimentFlagProvider
-	ctx context.Context
 }
 
-func NewQueue(ctx context.Context, store IStore, sender *sender.Sender, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock, efp interfaces.ExperimentFlagProvider) *Queue {
+func NewQueue(store IStore, sender *sender.Sender, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock, efp interfaces.ExperimentFlagProvider) *Queue {
 	storeMap := storemap.New(gossipManager, clock, nhlog, *minReplicasPerRange, *minMetaRangeReplicas, *missingLeaseCountThreshold)
 	q := &Queue{
 		storeMap:             storeMap,
@@ -432,7 +431,6 @@ func NewQueue(ctx context.Context, store IStore, sender *sender.Sender, gossipMa
 		minReplicasPerRange:  *minReplicasPerRange,
 		minMetaRangeReplicas: *minMetaRangeReplicas,
 		efp:                  efp,
-		ctx:                  ctx,
 	}
 	q.baseQueue = newBaseQueue(nhlog, clock, q)
 	return q
@@ -447,20 +445,20 @@ const splitEnabledFlag = "cache.raft.enable_split"
 
 // isDriverEnabled checks if the driver is enabled via the experiment flag.
 // By default, the driver is enabled (returns true).
-func (rq *Queue) isDriverEnabled() bool {
+func (rq *Queue) isDriverEnabled(ctx context.Context) bool {
 	if rq.efp == nil {
 		return true
 	}
-	return rq.efp.Boolean(rq.ctx, driverEnabledFlag, true)
+	return rq.efp.Boolean(ctx, driverEnabledFlag, true)
 }
 
 // isSplitEnabled checks if split is enabled via the experiment flag.
 // By default, split is enabled (returns true).
-func (rq *Queue) isSplitEnabled() bool {
+func (rq *Queue) isSplitEnabled(ctx context.Context) bool {
 	if rq.efp == nil {
 		return true
 	}
-	return rq.efp.Boolean(rq.ctx, splitEnabledFlag, true)
+	return rq.efp.Boolean(ctx, splitEnabledFlag, true)
 }
 
 // computeActionForRangeTask computes the drive action needed for range task and its priority.
@@ -580,7 +578,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 	// Do not split when there is a store that's unavailable and a replica is
 	// in the middle of a removal.
 	isClusterHealthy := rq.storeMap.AllStoresAvailableAndReady()
-	if isClusterHealthy && rq.isSplitEnabled() {
+	if isClusterHealthy && rq.isSplitEnabled(ctx) {
 		if targetRangeSizeBytes := config.TargetRangeSizeBytes(); targetRangeSizeBytes > 0 {
 			usage, err := repl.Usage()
 			if err != nil {
@@ -712,7 +710,7 @@ func (bq *baseQueue) maybeAddPartitionTask(ctx context.Context, pt *partitionTas
 }
 
 func (rq *Queue) MaybeAddPartitionTask(ctx context.Context, p disk.Partition, pd *rfpb.PartitionDescriptor) {
-	if !rq.isDriverEnabled() {
+	if !rq.isDriverEnabled(ctx) {
 		return
 	}
 	rq.log.Infof("maybe add partition task for %q", p.ID)
@@ -720,7 +718,7 @@ func (rq *Queue) MaybeAddPartitionTask(ctx context.Context, p disk.Partition, pd
 }
 
 func (rq *Queue) MaybeAddRangeTask(ctx context.Context, replica IReplica) {
-	if !rq.isDriverEnabled() {
+	if !rq.isDriverEnabled(ctx) {
 		return
 	}
 	rq.maybeAddRangeTask(ctx, &rangeTask{repl: replica}, attemptRecord{})
@@ -1480,7 +1478,7 @@ func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action 
 		return RequeueCheckOtherActions
 	}
 
-	if !rq.isDriverEnabled() {
+	if !rq.isDriverEnabled(ctx) {
 		rq.log.Debugf("driver is disabled via experiment flag, skipping action %s", action)
 		return RequeueNoop
 	}
@@ -1543,7 +1541,7 @@ func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action 
 }
 
 func (rq *Queue) processPartitionTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
-	if !rq.isDriverEnabled() {
+	if !rq.isDriverEnabled(ctx) {
 		rq.log.Debugf("driver is disabled via experiment flag, skipping action %s", action)
 		return RequeueNoop
 	}
