@@ -1080,7 +1080,7 @@ func (d *UserDB) getUserByID(ctx context.Context, h interfaces.DB, opts *getUser
 	} else if opts.subID != "" {
 		qb.AddWhereClause("u.sub_id = ?", opts.subID)
 	} else {
-		return nil, status.FailedPreconditionErrorf("query specifies neither sub_id or user_id")
+		return nil, status.FailedPreconditionErrorf("query specifies neither sub_id nor user_id")
 	}
 
 	q, qArgs := qb.Build()
