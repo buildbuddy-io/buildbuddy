@@ -599,7 +599,6 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		CgroupParent:           args.CgroupParent,
 		CgroupSettings:         args.Task.GetSchedulingMetadata().GetCgroupSettings(),
 		BlockDevice:            args.BlockDevice,
-		CPUWeightMillis:        sizeEstimate.GetEstimatedMilliCpu(),
 		OverrideSnapshotKey:    args.Props.OverrideSnapshotKey,
 		ExecutorConfig:         p.executorConfig,
 		NetworkPool:            p.networkPool,
@@ -692,15 +691,14 @@ type FirecrackerContainer struct {
 	uffdHandler *uffd.Handler
 	memoryStore *copy_on_write.COWStore
 
-	jailerRoot      string               // the root dir the jailer will work in
-	cpuWeightMillis int64                // milliCPU for cgroup CPU weight
-	cgroupParent    string               // parent cgroup path (root-relative)
-	cgroupSettings  *scpb.CgroupSettings // jailer cgroup settings
-	blockDevice     *block_io.Device     // block device for cgroup IO settings
-	machine         *fcclient.Machine    // the firecracker machine object.
-	vmLog           *VMLog
-	env             environment.Env
-	resolver        *oci.Resolver
+	jailerRoot     string               // the root dir the jailer will work in
+	cgroupParent   string               // parent cgroup path (root-relative)
+	cgroupSettings *scpb.CgroupSettings // jailer cgroup settings
+	blockDevice    *block_io.Device     // block device for cgroup IO settings
+	machine        *fcclient.Machine    // the firecracker machine object.
+	vmLog          *VMLog
+	env            environment.Env
+	resolver       *oci.Resolver
 
 	vmCtx context.Context
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
@@ -763,7 +761,6 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		containerImage:         opts.ContainerImage,
 		user:                   opts.User,
 		actionWorkingDir:       opts.ActionWorkingDirectory,
-		cpuWeightMillis:        opts.CPUWeightMillis,
 		cgroupParent:           opts.CgroupParent,
 		networkPool:            opts.NetworkPool,
 		cgroupSettings:         &scpb.CgroupSettings{},
