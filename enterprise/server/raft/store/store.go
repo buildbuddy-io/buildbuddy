@@ -372,7 +372,7 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	usages, err := usagetracker.New(s.sender, s.leaser, cfg.GossipManager, s.NodeDescriptor(), cfg.Partitions, clock, cfg.FileStorer)
 
 	if *enableDriver {
-		s.driverQueue = driver.NewQueue(s, s.sender, cfg.GossipManager, nhLog, apiClient, clock)
+		s.driverQueue = driver.NewQueue(env.GetServerContext(), s, s.sender, cfg.GossipManager, nhLog, apiClient, clock, env.GetExperimentFlagProvider())
 	}
 	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s, *clientSessionTTL)
 	s.replicaJanitor = newReplicaJanitor(clock, s, *zombieNodeScanInterval)
@@ -2345,6 +2345,9 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 }
 
 func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, targetRangeSizeBytes int64, jitterFactor float64) {
+	if s.driverQueue == nil {
+		return
+	}
 	eventsCh := s.AddEventListener("splitRanges")
 	for {
 		select {
