@@ -92,6 +92,28 @@ proto_library(
 )
 
 proto_library(
+    name = "buck_data_proto",
+    srcs = ["buck_data.proto"],
+    deps = [
+        ":buck_error_proto",
+        ":buck_host_sharing_proto",
+        "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+proto_library(
+    name = "buck_error_proto",
+    srcs = ["buck_error.proto"],
+)
+
+proto_library(
+    name = "buck_host_sharing_proto",
+    srcs = ["buck_host_sharing.proto"],
+)
+
+proto_library(
     name = "build_status_proto",
     srcs = [
         "build_status.proto",
@@ -978,6 +1000,28 @@ go_proto_library(
     deps = [
         ":stardoc_output_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "buck_data_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/buckdata",
+    proto = ":buck_data_proto",
+    deps = [
+        ":buck_error_go_proto",
+        ":buck_host_sharing_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "buck_error_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/buckerror",
+    proto = ":buck_error_proto",
+)
+
+go_proto_library(
+    name = "buck_host_sharing_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/buckhostsharing",
+    proto = ":buck_host_sharing_proto",
 )
 
 go_proto_library(
