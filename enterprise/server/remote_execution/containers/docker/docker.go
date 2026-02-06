@@ -221,10 +221,11 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
+	effectiveCwd := filepath.Join(workDir, command.GetWorkingDirectory())
 	containerCfg, err := r.containerConfig(
 		command.GetArguments(),
 		commandutil.EnvStringList(command),
-		workDir,
+		effectiveCwd,
 	)
 	if err != nil {
 		result.Error = err
@@ -614,7 +615,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 	cfg := dockercontainer.ExecOptions{
 		Cmd:          command.GetArguments(),
 		Env:          commandutil.EnvStringList(command),
-		WorkingDir:   r.workDir,
+		WorkingDir:   filepath.Join(r.workDir, command.GetWorkingDirectory()),
 		AttachStdout: true,
 		AttachStderr: true,
 		AttachStdin:  stdio.Stdin != nil,

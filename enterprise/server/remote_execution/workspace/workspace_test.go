@@ -415,3 +415,27 @@ func TestPreserveWorkspace_DoesNotPreserveOutputPaths(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, actualFilePaths(t, ws))
 }
+
+func TestPreserveWorkspace_WorkingDirectory_OutputPathsRelativeToWorkDir(t *testing.T) {
+	ctx := context.Background()
+	ws := newWorkspace(t, &workspace.Opts{Preserve: true})
+	ws.SetTask(ctx, &repb.ExecutionTask{
+		Command: &repb.Command{
+			WorkingDirectory: "subdir",
+			OutputPaths:      []string{"foo.out"},
+		},
+	})
+	testfs.WriteAllFileContents(t, ws.Path(), map[string]string{
+		"subdir/foo.out":  "output",
+		"subdir/input.in": "input",
+		"other.txt":       "other",
+	})
+
+	err := ws.Clean()
+	require.NoError(t, err)
+
+	remaining := actualFilePaths(t, ws)
+	assert.Contains(t, remaining, filepath.Join("subdir", "input.in"))
+	assert.Contains(t, remaining, "other.txt")
+	assert.NotContains(t, remaining, filepath.Join("subdir", "foo.out"))
+}

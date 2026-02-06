@@ -171,7 +171,7 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 	}
 
 	return commandutil.RunWithOpts(ctx, cmd, &commandutil.RunOpts{
-		Dir:           workDir,
+		Dir:           filepath.Join(workDir, cmd.GetWorkingDirectory()),
 		StatsListener: statsListener,
 		Stdio:         stdio,
 		Signal:        c.signal,

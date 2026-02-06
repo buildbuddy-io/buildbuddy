@@ -314,7 +314,7 @@ func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, wo
 
 	sandboxCmd := command.CloneVT()
 	sandboxCmd.Arguments = append([]string{sandboxExecBinary, "-f", sandboxConfigPath}, command.Arguments...)
-	result = commandutil.Run(ctx, sandboxCmd, workDir, nil /*=statsListener*/, stdio)
+	result = commandutil.Run(ctx, sandboxCmd, filepath.Join(workDir, command.GetWorkingDirectory()), nil /*=statsListener*/, stdio)
 	return result
 }
 

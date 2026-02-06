@@ -216,7 +216,7 @@ func (ws *Workspace) SetTask(ctx context.Context, task *repb.ExecutionTask) {
 	log.CtxDebugf(ctx, "Assigned task %s to workspace at %q", task.GetExecutionId(), ws.rootDir)
 	ws.task = task
 	cmd := task.GetCommand()
-	ws.dirHelper = dirtools.NewDirHelper(ws.inputRoot(), cmd, ws.dirPerms)
+	ws.dirHelper = dirtools.NewDirHelper(filepath.Join(ws.inputRoot(), cmd.GetWorkingDirectory()), cmd, ws.dirPerms)
 }
 
 // CommandWorkingDirectory returns the absolute path to the working directory
@@ -433,7 +433,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 		// cache and hard links across filesystems are not possible.
 		addToFileCache := ws.vfs == nil
 		var err error
-		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.inputRoot(), cmd, executeResponse.Result, addToFileCache)
+		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, filepath.Join(ws.inputRoot(), cmd.GetWorkingDirectory()), cmd, executeResponse.Result, addToFileCache)
 		return err
 	})
 	var logsMu sync.Mutex
@@ -583,8 +583,9 @@ func (ws *Workspace) Clean() error {
 	if ws.Opts.Preserve {
 		cmd := ws.task.GetCommand()
 		outputPaths := slices.Concat(cmd.GetOutputFiles(), cmd.GetOutputDirectories(), cmd.GetOutputPaths())
+		workingDir := cmd.GetWorkingDirectory()
 		for _, outputPath := range outputPaths {
-			if err := os.RemoveAll(filepath.Join(ws.Path(), outputPath)); err != nil && !os.IsNotExist(err) {
+			if err := os.RemoveAll(filepath.Join(ws.Path(), workingDir, outputPath)); err != nil && !os.IsNotExist(err) {
 				return status.UnavailableErrorf("Failed to clean workspace: %s", err)
 			}
 			// If the output path was a directory, we need to delete any known
