@@ -1810,7 +1810,7 @@ func TestStartupScan(t *testing.T) {
 				require.NoError(t, err)
 
 				// Compute a digest for the bytes returned.
-				d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+				d2, err := digest.Compute(bytes.NewReader(rbuf), r.GetDigestFunction())
 				require.NoError(t, err)
 				require.Equal(t, r.GetDigest().GetHash(), d2.GetHash())
 			}
