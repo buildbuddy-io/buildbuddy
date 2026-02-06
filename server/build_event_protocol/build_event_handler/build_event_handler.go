@@ -814,7 +814,7 @@ func readBazelEvent(obe *pepb.OrderedBuildEvent, out *build_event_stream.BuildEv
 	switch buildEvent := obe.GetEvent().GetEvent().(type) {
 	case *bepb.BuildEvent_BazelEvent:
 		return buildEvent.BazelEvent.UnmarshalTo(out)
-	case *bepb.BuildEvent_BuildToolEvent:
+	case *bepb.BuildEvent_ExperimentalBuildToolEvent:
 		// TODO(sluongng): implement support for generic build tool events (i.e. BuckEvent)
 	}
 	return fmt.Errorf("Not a bazel event %s", obe)

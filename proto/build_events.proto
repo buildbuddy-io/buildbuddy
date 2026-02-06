@@ -145,7 +145,7 @@ message BuildEvent {
     // BUILDBUDDY-SPECIFIC FIELD BELOW.
     // Generic build tool-specific event payload (e.g. Buck2) emitted alongside
     // the primary bazel_event stream.
-    google.protobuf.Any build_tool_event = 1000;
+    google.protobuf.Any experimental_build_tool_event = 1000;
   }
 }
 
