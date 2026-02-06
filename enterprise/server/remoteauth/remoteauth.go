@@ -45,7 +45,7 @@ var (
 	target                   = flag.String("auth.remote.target", "", "The gRPC target of the remote authentication API.")
 	jwtExpirationBuffer      = flag.Duration("auth.remote.jwt_expiration_buffer", time.Minute, "Discard remote-auth minted JWTs if they're within this time buffer of their expiration time.")
 	alwaysUseES256SignedJWTs = flag.Bool("auth.remote.use_es256_jwts", false, "Always request and use ES-256 signed JWTs from the remote auth service, regardless of the experiment configuration.")
-	es256KeyCacheTTL         = flag.Duration("auth.remote.es256_key_cache_ttl", 5*time.Minute, "How long to cache ES256 public keys before re-fetching from the remote auth service.")
+	keyRefreshInterval       = flag.Duration("auth.remote.key_refresh_interval", time.Minute, "How long to wait between asynchronous refreshes of cached ES256 public keys.")
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -74,12 +74,13 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 	provider := &keyProvider{
 		env:    env,
 		client: client,
-		ttl:    *es256KeyCacheTTL,
+		quit:   make(chan struct{}),
 	}
 	claimsParser, err := claims.NewClaimsParser(provider.provide)
 	if err != nil {
 		return nil, err
 	}
+	provider.startRefresher(*keyRefreshInterval)
 	return &RemoteAuthenticator{
 		authClient:          authpb.NewAuthServiceClient(conn),
 		cache:               cache,
@@ -90,19 +91,17 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 	}, nil
 }
 
-type cachedKeys struct {
-	keys      []string
-	fetchedAt time.Time
+func (a *RemoteAuthenticator) Stop() {
+	a.keyProvider.stop()
 }
 
-// This struct manages JWT-signing keys.
 type keyProvider struct {
 	env        environment.Env
 	client     authpb.AuthServiceClient
 	mu         sync.RWMutex
-	cached     *cachedKeys
-	ttl        time.Duration
+	keys       []string
 	fetchGroup singleflight.Group[string, []string]
+	quit       chan struct{}
 }
 
 func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
@@ -122,28 +121,57 @@ func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
 	return defaultKeys, nil
 }
 
+func (kp *keyProvider) startRefresher(refreshInterval time.Duration) {
+	go kp.refreshLoop(refreshInterval)
+}
+
+func (kp *keyProvider) stop() {
+	close(kp.quit)
+}
+
+// Periodically refreshes ES256 public keys in the background.
+func (kp *keyProvider) refreshLoop(refreshInterval time.Duration) {
+	ticker := time.NewTicker(refreshInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-kp.quit:
+			return
+		case <-ticker.C:
+			keys, err := kp.fetchES256PublicKeys(context.Background())
+			if err != nil {
+				log.Warningf("Error asynchronously refreshing ES256 public keys: %v", err)
+				continue
+			}
+			kp.mu.Lock()
+			kp.keys = keys
+			kp.mu.Unlock()
+		}
+	}
+}
+
 func (kp *keyProvider) getES256PublicKeys(ctx context.Context) ([]string, error) {
 	kp.mu.RLock()
-	cached := kp.cached
-	kp.mu.RUnlock()
-	if cached != nil && time.Since(cached.fetchedAt) < kp.ttl {
-		return cached.keys, nil
+	if kp.keys != nil {
+		return kp.keys, nil
 	}
+	kp.mu.RUnlock()
+
 	keys, _, err := kp.fetchGroup.Do(ctx, singleflightKey, func(ctx context.Context) ([]string, error) {
 		// Re-check the cache inside the singleflight in case another
 		// goroutine populated it while we were waiting.
 		kp.mu.RLock()
-		cached := kp.cached
-		kp.mu.RUnlock()
-		if cached != nil && time.Since(cached.fetchedAt) < kp.ttl {
-			return cached.keys, nil
+		if kp.keys != nil {
+			return kp.keys, nil
 		}
+		kp.mu.RUnlock()
+
 		keys, err := kp.fetchES256PublicKeys(ctx)
 		if err != nil {
 			return nil, err
 		}
 		kp.mu.Lock()
-		kp.cached = &cachedKeys{keys: keys, fetchedAt: time.Now()}
+		kp.keys = keys
 		kp.mu.Unlock()
 		return keys, nil
 	})
@@ -152,7 +180,7 @@ func (kp *keyProvider) getES256PublicKeys(ctx context.Context) ([]string, error)
 
 func (kp *keyProvider) invalidateES256Keys() {
 	kp.mu.Lock()
-	kp.cached = nil
+	kp.keys = nil
 	kp.mu.Unlock()
 }
 
@@ -160,6 +188,7 @@ func (kp *keyProvider) fetchES256PublicKeys(ctx context.Context) ([]string, erro
 	req := authpb.GetPublicKeysRequest{}
 	resp, err := kp.client.GetPublicKeys(ctx, &req)
 	if err != nil {
+		log.Warningf("Error fetching ES256 public keys: %v", err)
 		return []string{}, err
 	}
 	keys := make([]string, len(resp.GetPublicKeys()))

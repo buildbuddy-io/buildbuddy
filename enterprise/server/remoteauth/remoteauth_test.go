@@ -132,6 +132,7 @@ func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
 	require.NoError(t, err)
 	authenticator, err := NewWithTarget(te, conn)
 	require.NoError(t, err)
+	t.Cleanup(authenticator.Stop)
 	return authenticator, &fakeAuthService
 }
 
@@ -377,18 +378,18 @@ func TestES256KeysCached(t *testing.T) {
 	require.Equal(t, 1, fakeAuth.getPublicKeysCalls())
 }
 
-func TestES256KeyCacheExpiry(t *testing.T) {
+func TestES256KeysBackgroundRefresh(t *testing.T) {
 	keyPair := testkeys.GenerateES256KeyPair(t)
 	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
 	require.NoError(t, claims.Init())
 
 	flags.Set(t, "auth.remote.use_es256_jwts", true)
-	flags.Set(t, "auth.remote.es256_key_cache_ttl", time.Nanosecond)
+	flags.Set(t, "auth.remote.key_refresh_interval", 10*time.Millisecond)
 	authenticator, fakeAuth := setup(t)
 
 	fakeAuth.setPublicKeys([]string{keyPair.PublicKeyPEM})
 
-	// First authentication fetches keys.
+	// First authentication fetches keys synchronously.
 	fakeAuth.setNextJwt(t, "", validES256Jwt(t, "foo"))
 	ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
 	user, err := authenticator.AuthenticatedUser(ctx)
@@ -396,13 +397,47 @@ func TestES256KeyCacheExpiry(t *testing.T) {
 	require.Equal(t, "foo", user.GetUserID())
 	require.Equal(t, 1, fakeAuth.getPublicKeysCalls())
 
-	// Second authentication should re-fetch because the TTL has expired.
+	// Ensure a background refresh occurs.
+	require.Eventually(t, func() bool {
+		return fakeAuth.getPublicKeysCalls() > 1
+	}, time.Second, 5*time.Millisecond)
+}
+
+func TestES256KeysBackgroundRefreshError(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	flags.Set(t, "auth.remote.use_es256_jwts", true)
+	flags.Set(t, "auth.remote.key_refresh_interval", 10*time.Millisecond)
+	authenticator, fakeAuth := setup(t)
+
+	fakeAuth.setPublicKeys([]string{keyPair.PublicKeyPEM})
+
+	// First authentication fetches keys synchronously.
+	fakeAuth.setNextJwt(t, "", validES256Jwt(t, "foo"))
+	ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
+	user, err := authenticator.AuthenticatedUser(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo", user.GetUserID())
+	initialCalls := fakeAuth.getPublicKeysCalls()
+
+	// Make background refreshes fail.
+	fakeAuth.setPublicKeysErr(status.InternalError("server error"))
+	require.Eventually(t, func() bool {
+		return fakeAuth.getPublicKeysCalls() > initialCalls
+	}, time.Second, 5*time.Millisecond)
+
+	// Restore working keys so the fake service doesn't interfere further.
+	fakeAuth.setPublicKeys([]string{keyPair.PublicKeyPEM})
+
+	// Authentication should still work because the old cached keys are
+	// preserved on background refresh failure.
 	fakeAuth.setNextJwt(t, "", validES256Jwt(t, "bar"))
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "bar"))
 	user, err = authenticator.AuthenticatedUser(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "bar", user.GetUserID())
-	require.Greater(t, fakeAuth.getPublicKeysCalls(), 1)
 }
 
 func TestES256KeyCacheInvalidationOnKeyRotation(t *testing.T) {
