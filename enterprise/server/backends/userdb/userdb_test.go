@@ -120,6 +120,17 @@ func getGroupRole(t *testing.T, ctx context.Context, env environment.Env, groupI
 	return nil
 }
 
+func getGroupRoleByUserID(t *testing.T, ctx context.Context, env environment.Env, userID string, groupID string) *tables.GroupRole {
+	tu, err := env.GetUserDB().GetUserByIDWithoutAuthCheck(ctx, userID)
+	require.NoError(t, err)
+	for _, gr := range tu.Groups {
+		if gr.Group.GroupID == groupID {
+			return gr
+		}
+	}
+	return nil
+}
+
 func apiKeyValues(keys []*tables.APIKey) []string {
 	out := make([]string, 0, len(keys))
 	for _, k := range keys {
@@ -2116,8 +2127,8 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			Name:     "Admin",
 			UserRole: role.Admin,
 			ExpectedCapabilities: []cappb.Capability{
-				cappb.Capability_CAS_WRITE,
 				cappb.Capability_CACHE_WRITE,
+				cappb.Capability_CAS_WRITE,
 				cappb.Capability_ORG_ADMIN,
 			},
 		},
@@ -2125,8 +2136,8 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			Name:     "Writer",
 			UserRole: role.Writer,
 			ExpectedCapabilities: []cappb.Capability{
-				cappb.Capability_CAS_WRITE,
 				cappb.Capability_CACHE_WRITE,
+				cappb.Capability_CAS_WRITE,
 			},
 		},
 		{
@@ -2384,6 +2395,92 @@ func TestUserListOps(t *testing.T) {
 	err = removeUserFromUserList(group1AdminCtx, udb, group2List.UserListID, "US2")
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestUserListMembership(t *testing.T) {
+	flags.Set(t, "database.create_user_list_tables", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	createUser(t, ctx, env, "US1", "org1.io")
+	group1AdminCtx := authUserCtx(ctx, env, t, "US1")
+	group1ID := getGroup(t, group1AdminCtx, env).GroupID
+
+	createUser(t, ctx, env, "US2", "org2.io")
+	group2AdminCtx := authUserCtx(ctx, env, t, "US2")
+	group2ID := getGroup(t, group2AdminCtx, env).GroupID
+
+	// Create list.
+
+	group1List1 := &tables.UserList{GroupID: group1ID, Name: "foo"}
+	err := udb.CreateUserList(group1AdminCtx, group1List1)
+	require.NoError(t, err)
+	err = udb.CreateUserList(group1AdminCtx, &tables.UserList{GroupID: group2ID, Name: "bar"})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+	group2List := &tables.UserList{GroupID: group2ID, Name: "baz"}
+	err = udb.CreateUserList(group2AdminCtx, group2List)
+	require.NoError(t, err)
+
+	// Add US1 and US2 to user list.
+	// US1 is an admin in the group and US2 has no membership in the group.
+
+	err = addUserToUserList(group1AdminCtx, udb, group1List1.UserListID, "US1")
+	require.NoError(t, err)
+	err = addUserToUserList(group1AdminCtx, udb, group1List1.UserListID, "US2")
+	require.NoError(t, err)
+
+	// US2 should not be a member of the group.
+	gr := getGroupRoleByUserID(t, group1AdminCtx, env, "US2", group1ID)
+	require.Nil(t, gr)
+
+	// Add user list with US2 as member of the group.
+	err = udb.UpdateGroupUsers(group1AdminCtx, group1ID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       group1List1.UserListID,
+		Role:             grpb.Group_WRITER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// US2 should now be a member of the group with the Writer role/caps.
+	gr = getGroupRoleByUserID(t, group1AdminCtx, env, "US2", group1ID)
+	require.NotNil(t, gr)
+	require.NotNil(t, gr.Role)
+	require.EqualValues(t, grpb.Group_WRITER_ROLE, *gr.Role)
+	require.Equal(t, role.WriterCapabilities, gr.Capabilities)
+
+	// Now add US2 directly as a Developer.
+	err = udb.UpdateGroupUsers(group1AdminCtx, group1ID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserId:           &uidpb.UserId{Id: "US2"},
+		Role:             grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// US2 has a direct Developer membership and an indirect Writer membership.
+	// When looking up membership, the role should be unset and the caps
+	// should be that of a Writer.
+	gr = getGroupRoleByUserID(t, group1AdminCtx, env, "US2", group1ID)
+	require.NotNil(t, gr)
+	require.Nil(t, gr.Role)
+	require.Equal(t, role.WriterCapabilities, gr.Capabilities)
+
+	// Now remove US2 from the user list. US2 should now have Developer
+	// role (via direct membership).
+	err = udb.UpdateUserListMembers(group1AdminCtx, group1List1.UserListID, []*ulpb.UpdateUserListMembershipRequest_Update{
+		{
+			UserId: &uidpb.UserId{Id: "US2"},
+			Action: ulpb.UpdateUserListMembershipRequest_REMOVE,
+		},
+	})
+	require.NoError(t, err)
+	gr = getGroupRoleByUserID(t, group1AdminCtx, env, "US2", group1ID)
+	require.NotNil(t, gr)
+	require.NotNil(t, gr.Role)
+	require.EqualValues(t, grpb.Group_DEVELOPER_ROLE, *gr.Role)
+	require.Equal(t, role.DeveloperCapabilities, gr.Capabilities)
 }
 
 func TestGetUserBySubID(t *testing.T) {
