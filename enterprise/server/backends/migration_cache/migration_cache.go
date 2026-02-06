@@ -915,12 +915,12 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 	}
 	if conf.asyncDestWrites {
 		w := ioutil.NewCustomCommitWriteCloser(srcWriter)
-		w.CommitFn = func(int64) error {
+		w.SetCommitFn(func(int64) error {
 			// This is only called when the source writer is successfully committed.
 			// We will force a write to the destination cache in the background.
 			mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
 			return nil
-		}
+		})
 		return w, nil
 	}
 

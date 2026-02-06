@@ -502,10 +502,10 @@ func (c *Cache) getLookasideEntry(ctx context.Context, r *rspb.ResourceName) ([]
 func (c *Cache) lookasideWriter(r *rspb.ResourceName, lookasideKey string) (interfaces.CommittedWriteCloser, error) {
 	buffer := bytes.NewBuffer(make([]byte, 0, r.GetDigest().GetSizeBytes()))
 	wc := ioutil.NewCustomCommitWriteCloser(buffer)
-	wc.CommitFn = func(int64) error {
+	wc.SetCommitFn(func(int64) error {
 		c.setLookasideEntry(lookasideKey, buffer.Bytes())
 		return nil
-	}
+	})
 	return wc, nil
 }
 
@@ -527,13 +527,13 @@ func combineCommittedWriteClosers(a, b interfaces.CommittedWriteCloser) interfac
 
 	c := io.MultiWriter(a, b)
 	cwc := ioutil.NewCustomCommitWriteCloser(c)
-	cwc.CommitFn = func(n int64) error {
+	cwc.SetCommitFn(func(n int64) error {
 		if err := a.Commit(); err != nil {
 			return err
 		}
 		return b.Commit()
-	}
-	cwc.CloseFn = func() error {
+	})
+	cwc.SetCloseFn(func() error {
 		var firstErr error
 		if err := a.Close(); err != nil {
 			firstErr = err
@@ -542,7 +542,7 @@ func combineCommittedWriteClosers(a, b interfaces.CommittedWriteCloser) interfac
 			firstErr = err
 		}
 		return firstErr
-	}
+	})
 	return cwc
 }
 
