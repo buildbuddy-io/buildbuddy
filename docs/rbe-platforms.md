@@ -26,7 +26,7 @@ platform(
     ],
     exec_properties = {
         "OSFamily": "Linux",
-        "dockerNetwork": "off",
+        "network": "off",
         "container-image": "docker://gcr.io/YOUR:IMAGE",
     },
 )
@@ -156,7 +156,7 @@ platform(
     ],
     exec_properties = {
         "OSFamily": "Linux",
-        "dockerNetwork": "off",
+        "network": "off",
         "Pool": "my-gpu-pool",
     },
 )
@@ -358,6 +358,15 @@ The following execution properties provide more customization.
   the container. The default is the user set on the image.
   If setting to a non-root user, you may also need to set
   `nonroot-workspace` to `true`.
+- `network`: controls the network access available in the VM/container.
+  Permitted values are:
+  - `off`: The container/VM has no network access, not even to the host. This
+    is the default setting for `oci`, `podman`, `docker`, and `sandbox`
+    containers.
+  - `local`: The container/VM can communicate with the host but nothing else.
+    Only supported by `firecracker` VMs.
+  - `external`: The container/VM can communicate with the internet via the host.
+    This is the default setting for `firecracker` VMs.
 
 The following properties apply to `oci`, `podman` and `docker` isolation,
 and are currently unsupported by `firecracker`. (The `docker` prefix is
@@ -368,12 +377,14 @@ just a historical artifact.)
 - `dockerRunAsRoot`: when set to `true`, forces the container to run as
   root, even the image specification specifies a non-root `USER`.
   Available options are `true` and `false`. Defaults to `false`.
-- `dockerNetwork`: determines which network mode should be used. For
-  `sandbox` isolation, this determines whether the network is enabled or
-  not. Available options are `off` and `bridge`. The default is `bridge`,
-  but we strongly recommend setting this to `off` for faster runner
-  startup time. The latest version of the BuildBuddy toolchain does this
-  for you automatically.
+- `dockerNetwork`: Deprecated, please prefer `network`. Determines network
+  access for `oci`, `podman`, `docker`, and `sandbox` containers. This value has
+  no effect for `firecracker` VMs or if `network` is specified. Permitted values
+  are:
+  - `off`: The container has no network access, not even to the host.
+  - `bridge`: The container can communicate with the internet via the host. This
+    is the default setting.
+    Recent versions of the BuildBuddy toolchain default `dockerNetwork` to `off`.
 
 ### Runner secrets
 
@@ -389,7 +400,7 @@ The following `exec_properties` are supported:
 
 - `init-dockerd`: whether to start the `dockerd` process inside the VM
   before execution. Available options are `true` and `false`. Defaults to
-  `false`.
+  `false`. Note: `local` or `external` network is required for `init-dockerd`.
 - `enable-dockerd-tcp`: whether `dockerd` should listen on TCP port 2375
   in addition to the default Unix domain socket. Available options are
   `true` and `false`. Defaults to `false`.
