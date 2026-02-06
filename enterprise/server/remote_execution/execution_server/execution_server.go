@@ -522,19 +522,6 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 	if err != nil {
 		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
-
-	// Executions may not be tied to an invocation if called directly (e.g. via
-	// the Execute API without an associated bazel invocation). We still need to
-	// track these executions, so flush them directly to OLAP with empty
-	// invocation metadata.
-	if len(links) == 0 {
-		if s.env.GetOLAPDBHandle() != nil {
-			if err := s.env.GetOLAPDBHandle().FlushExecutionStats(ctx, &sipb.StoredInvocation{}, []*repb.StoredExecution{executionProto}); err != nil {
-				log.CtxErrorf(ctx, "failed to flush execution %q without invocation to clickhouse: %s", executionID, err)
-			}
-		}
-		return nil
-	}
 	for _, link := range links {
 		executionProto := executionProto.CloneVT()
 		executil.SetInvocationLink(executionProto, link)
