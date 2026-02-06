@@ -488,8 +488,10 @@ func TestPreserveWorkspace_WorkingDirectory_CleansInputIndex(t *testing.T) {
 	require.NoError(t, err)
 
 	// Both files should be tracked in the inputs index.
-	assert.Contains(t, ws.Inputs, fspath.NewKey("subdir/input.txt", false))
-	assert.Contains(t, ws.Inputs, fspath.NewKey("subdir/out.txt", false))
+	inputKey := fspath.NewKey(filepath.Join("subdir", "input.txt"), false)
+	outputKey := fspath.NewKey(filepath.Join("subdir", "out.txt"), false)
+	assert.Contains(t, ws.Inputs, inputKey)
+	assert.Contains(t, ws.Inputs, outputKey)
 
 	err = ws.Clean()
 	require.NoError(t, err)
@@ -500,9 +502,9 @@ func TestPreserveWorkspace_WorkingDirectory_CleansInputIndex(t *testing.T) {
 	assert.Contains(t, remaining, filepath.Join("subdir", "input.txt"))
 	assert.NotContains(t, remaining, filepath.Join("subdir", "out.txt"))
 
-	assert.Contains(t, ws.Inputs, fspath.NewKey("subdir/input.txt", false),
+	assert.Contains(t, ws.Inputs, inputKey,
 		"non-output input should remain in inputs index")
-	assert.NotContains(t, ws.Inputs, fspath.NewKey("subdir/out.txt", false),
+	assert.NotContains(t, ws.Inputs, outputKey,
 		"output file should be removed from inputs index")
 }
 
