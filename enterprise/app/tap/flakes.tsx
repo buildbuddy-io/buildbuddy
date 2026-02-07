@@ -6,7 +6,8 @@ import { FilterInput } from "../../../app/components/filter_input/filter_input";
 import Link from "../../../app/components/link/link";
 import Select, { Option } from "../../../app/components/select/select";
 import format, { count } from "../../../app/format/format";
-import router from "../../../app/router/router";
+import router, { Path } from "../../../app/router/router";
+import { PERSISTENT_URL_PARAMS } from "../../../app/router/router_params";
 import rpc_service from "../../../app/service/rpc_service";
 import TargetFlakyTestCardComponent from "../../../app/target/target_flaky_test_card";
 import { FlakyTargetSampleLogCardComponent } from "../../../app/target/target_test_log_card";
@@ -310,6 +311,18 @@ export default class FlakesComponent extends React.Component<Props, State> {
     this.setState({ tableSort });
   }
 
+  getTargetHref(label: string): string {
+    const params = new URLSearchParams();
+    for (const key of PERSISTENT_URL_PARAMS) {
+      const value = this.props.search.get(key);
+      if (value) {
+        params.set(key, value);
+      }
+    }
+    params.set("target", label);
+    return `${Path.tapPath}?${params.toString()}#flakes`;
+  }
+
   toggleShowAllTableEntries() {
     this.setState({ showAllTableEntries: !this.state.showAllTableEntries });
   }
@@ -579,7 +592,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
                 <div className="flake-table">
                   {filteredTableData.map((s, index) => {
                     return (
-                      <Link key={index} className="flake-table-row" href={`/tests/?target=${s.label}#flakes`}>
+                      <Link key={index} className="flake-table-row" href={this.getTargetHref(s.label)}>
                         <div className="flake-table-row-image">
                           <Target className="icon"></Target>
                         </div>
