@@ -176,6 +176,8 @@ func main() {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
 
+	libmain.ConfigureRuntime()
+
 	// Setup the prod fanciness in our environment
 	convertToProdOrDie(rootContext, realEnv)
 
@@ -302,9 +304,6 @@ func main() {
 	if err := ociregistry.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := ocifetcher.RegisterServer(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
 
 	executionService := execution_service.NewExecutionService(realEnv)
 	realEnv.SetExecutionService(executionService)
@@ -330,5 +329,29 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
+	if err := libmain.RegisterEnvServices(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.RegisterCacheServices(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.RegisterLocalGRPCClients(realEnv); err != nil {
+		log.Fatal(err.Error())
+	}
+	if err := ocifetcher.RegisterServer(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.RegisterPostClientServices(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.StartGRPCServers(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.ConfigureHTTPMuxes(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := libmain.StartHTTPServers(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	libmain.WaitForGracefulShutdown(realEnv)
 }
