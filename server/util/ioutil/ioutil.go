@@ -48,6 +48,13 @@ func LimitReadCloser(reader io.ReadCloser, limit int64) io.ReadCloser {
 type CloseFunc func() error
 type CommitFunc func(int64) error
 
+type customCommitWriteCloser interface {
+	interfaces.CommittedWriteCloser
+
+	SetCloseFn(CloseFunc)
+	SetCommitFn(CommitFunc)
+}
+
 type CustomCommitWriteCloser struct {
 	w            io.Writer
 	bytesWritten int64
@@ -110,14 +117,39 @@ func (c *CustomCommitWriteCloser) Close() error {
 	return firstErr
 }
 
+func (c *CustomCommitWriteCloser) SetCloseFn(fn CloseFunc) {
+	c.CloseFn = fn
+}
+
+func (c *CustomCommitWriteCloser) SetCommitFn(fn CommitFunc) {
+	c.CommitFn = fn
+}
+
+type seekableCustomCommitWriteCloser struct {
+	*CustomCommitWriteCloser
+	seeker io.Seeker
+}
+
+func (c *seekableCustomCommitWriteCloser) Seek(offset int64, whence int) (int64, error) {
+	return c.seeker.Seek(offset, whence)
+}
+
 // NewCustomCommitWriteCloser wraps an io.Writer/interfaces.CommittedWriteCloser
-// and returns a pointer to a CustomCommitWriteCloser, which implements
+// and returns a customCommitWriteCloser, which implements
 // interfaces.CommittedWriteCloser but allows adding on custom logic that will
-// be called when Commit or Close methods are called.
-func NewCustomCommitWriteCloser(w io.Writer) *CustomCommitWriteCloser {
-	return &CustomCommitWriteCloser{
+// be called when Commit or Close methods are called. If the wrapped writer
+// implements io.Seeker, the returned value will also implement io.Seeker.
+func NewCustomCommitWriteCloser(w io.Writer) customCommitWriteCloser {
+	cwc := &CustomCommitWriteCloser{
 		w: w,
 	}
+	if seeker, ok := w.(io.Seeker); ok {
+		return &seekableCustomCommitWriteCloser{
+			CustomCommitWriteCloser: cwc,
+			seeker:                  seeker,
+		}
+	}
+	return cwc
 }
 
 // Counter keeps a count of all bytes written, discarding any written bytes.

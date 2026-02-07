@@ -352,12 +352,12 @@ func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.Co
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	var buffer bytes.Buffer
 	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
-	wc.CommitFn = func(int64) error {
+	wc.SetCommitFn(func(int64) error {
 		err := c.rdbSet(ctx, k, buffer.Bytes())
 		timer.ObserveWrite(int64(buffer.Len()), err)
 		// Locking and key prefixing are handled in Set.
 		return err
-	}
+	})
 	return wc, nil
 }
 

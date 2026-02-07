@@ -196,7 +196,7 @@ func NewZstdCompressingWriteCommiter(wc interfaces.CommittedWriteCloser, bufferP
 		return nil, err
 	}
 	compressWC := ioutil.NewCustomCommitWriteCloser(compressor)
-	compressWC.CommitFn = func(inputBytes int64) error {
+	compressWC.SetCommitFn(func(inputBytes int64) error {
 		// Close the compressor to flush the buffer and return it to the pool.
 		if err := compressor.Close(); err != nil {
 			return err
@@ -205,8 +205,8 @@ func NewZstdCompressingWriteCommiter(wc interfaces.CommittedWriteCloser, bufferP
 			With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: cacheName}).
 			Observe(float64(compressor.CompressedBytesWritten) / float64(inputBytes))
 		return wc.Commit()
-	}
-	compressWC.CloseFn = wc.Close
+	})
+	compressWC.SetCloseFn(wc.Close)
 	return compressWC, nil
 }
 
