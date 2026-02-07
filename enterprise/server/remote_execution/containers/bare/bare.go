@@ -23,15 +23,7 @@ import (
 var (
 	enableStats    = flag.Bool("executor.bare.enable_stats", true, "Whether to enable stats for bare command execution.")
 	enableLogFiles = flag.Bool("executor.bare.enable_log_files", false, "Whether to send bare runner output to log files for debugging. These files are stored adjacent to the task directory and are deleted when the task is complete.")
-	enableTmpdir   = flag.Bool("executor.bare.enable_tmpdir", false, "If provided, set a default TMPDIR in each command's environment variables to a temporary directory provisioned for each task.")
-)
-
-const (
-	// TMPDIR environment variable used to specify a directory made available
-	// for programs that need a place to create temporary files. This name is
-	// standardized by POSIX and is widely supported:
-	// https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap08.html#tag_08_01
-	posixTmpdirEnvironmentVariableName = "TMPDIR"
+	enableTmpdir   = flag.Bool("executor.bare.enable_tmpdir", true, "If provided, set a default TMPDIR in each command's environment variables to a temporary directory provisioned for each task.")
 )
 
 type Opts struct {
@@ -161,10 +153,10 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 		if err != nil {
 			return commandutil.ErrorResult(status.UnavailableErrorf("make TMPDIR absolute: %s", err))
 		}
-		if _, ok := rexec.LookupEnv(cmd.EnvironmentVariables, posixTmpdirEnvironmentVariableName); !ok {
+		if _, ok := rexec.LookupEnv(cmd.EnvironmentVariables, tmpdirEnvironmentVariableName); !ok {
 			cmd = cmd.CloneVT()
 			cmd.EnvironmentVariables = append(cmd.EnvironmentVariables, &repb.Command_EnvironmentVariable{
-				Name:  posixTmpdirEnvironmentVariableName,
+				Name:  tmpdirEnvironmentVariableName,
 				Value: tmpDirAbsPath,
 			})
 		}
