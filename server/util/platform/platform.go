@@ -124,13 +124,13 @@ const (
 
 	// Whether external network access should be enabled. Valid values are:
 	// - "off": no network access
-	// - "on": network access via a network namespace routed thru the host
+	// - "external": network access via a network namespace routed thru the host
 	//
 	// By default, this property is not set. If it is set, its value always
 	// applies (even if "dockerNetwork" is set). If this property is not set,
 	// the isolated action's network settings will be applied from the
 	// "dockerNetwork" platform property EXCEPT for Firecracker actions which
-	// will have "on" network access (for backwards compatibility).
+	// will have "external" network access (for backwards compatibility).
 	networkPropertyName = "network"
 
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
