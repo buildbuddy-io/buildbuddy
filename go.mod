@@ -26,7 +26,6 @@ tool golang.org/x/telemetry/counter
 
 replace (
 	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.16.8-19
-	github.com/jotfs/fastcdc-go v0.2.0 => github.com/buildbuddy-io/fastcdc-go v0.2.0-rc3
 	github.com/lni/dragonboat/v4 => github.com/buildbuddy-io/dragonboat/v4 v4.0.1
 	github.com/lni/vfs => github.com/buildbuddy-io/vfs v0.2.3
 	github.com/throttled/throttled/v2 => github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2
@@ -66,6 +65,7 @@ require (
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
 	github.com/bojand/ghz v0.120.0
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
+	github.com/buildbuddy-io/fastcdc2020 v0.0.2
 	github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6
 	github.com/buildkite/terminal-to-html/v3 v3.0.0-00010101000000-000000000000
 	github.com/cavaliergopher/cpio v1.0.1
@@ -106,7 +106,6 @@ require (
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/jhump/protoreflect v1.15.1
 	github.com/jonboulle/clockwork v0.4.0
-	github.com/jotfs/fastcdc-go v0.2.0
 	github.com/jsimonetti/rtnetlink v1.3.3
 	github.com/klauspost/compress v1.18.0
 	github.com/klauspost/cpuid/v2 v2.2.7

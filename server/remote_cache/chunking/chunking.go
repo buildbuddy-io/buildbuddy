@@ -15,11 +15,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	fastcdc "github.com/jotfs/fastcdc-go/v2020"
 )
 
 var (
@@ -89,20 +89,33 @@ func NewChunker(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*
 		pw:   pw,
 		done: make(chan struct{}),
 	}
-	cdcOpts := fastcdc.Options{
-		AverageSize: averageSize,
+	chunker, err := fastcdc.NewChunker(
+		pr,
+		averageSize,
 
-		// Use the library default for MinSize and MaxSize. We explictly specified
-		// the default here to avoid accident change of the values by the library.
-		MinSize: averageSize / 4,
-		MaxSize: averageSize * 4,
+		// Min and Max size should always be 1/4x and 4x of the
+		// avg size respectively. Explicitly declare these to prevent
+		// the library modifying them unknowningly.
+		fastcdc.WithMinSize(averageSize/4),
+		fastcdc.WithMaxSize(averageSize*4),
 
 		// We want to keep the rolling hash the same to ensure that given the same
 		// file, the library will chunk the file in the same way.
-		Seed: 0,
-	}
+		fastcdc.WithSeed(0),
 
-	chunker, err := fastcdc.NewChunker(pr, cdcOpts)
+		// Normalization defaults to 2 from testing using Bazel build
+		// artifacts, since it provided the best balance of deduplication
+		// and chunk size consistency.
+		//
+		// Stats:
+		// Algorithm         │ Dedup%   │ Saved        │ Chunks/File avg
+		// ─────────────────────────────────────────────────────────────
+		// normalization-0  │   30.37% │     93.87 GB │     33.4 │
+		// normalization-1  │   31.30% │     96.73 GB │     34.4 │
+		// normalization-2  │   32.09% │     99.19 GB │     38.3 │
+		// normalization-3  │   32.07% │     99.10 GB │     41.4 │
+		fastcdc.WithNormalization(2),
+	)
 	if err != nil {
 		return nil, err
 	}
