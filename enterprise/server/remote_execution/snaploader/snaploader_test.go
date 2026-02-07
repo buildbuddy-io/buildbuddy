@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -41,9 +43,15 @@ func init() {
 	}
 }
 
-func setupEnv(t *testing.T) *testenv.TestEnv {
+func setupEnv(t *testing.T, auth interfaces.Authenticator, cache interfaces.Cache) *testenv.TestEnv {
 	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
 	env := testenv.GetTestEnv(t)
+	if auth != nil {
+		env.SetAuthenticator(auth)
+	}
+	if cache != nil {
+		env.SetCache(cache)
+	}
 	filecacheDir := testfs.MakeTempDir(t)
 	fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes, false)
 	require.NoError(t, err)
@@ -60,7 +68,7 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
 		ctx := context.Background()
-		env := setupEnv(t)
+		env := setupEnv(t, nil, nil)
 		loader, err := snaploader.New(env)
 		require.NoError(t, err)
 		workDir := testfs.MakeTempDir(t)
@@ -113,7 +121,7 @@ func TestUnpackFallbackKey(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
 	ctx := context.Background()
-	env := setupEnv(t)
+	env := setupEnv(t, nil, nil)
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
 	workDir := testfs.MakeTempDir(t)
@@ -174,7 +182,7 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
 		ctx := context.Background()
-		env := setupEnv(t)
+		env := setupEnv(t, nil, nil)
 		loader, err := snaploader.New(env)
 		require.NoError(t, err)
 		workDir := testfs.MakeTempDir(t)
@@ -234,7 +242,7 @@ func TestNonMasterSnapshotsWithSnapshotID(t *testing.T) {
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", remoteEnabled)
 
 		ctx := context.Background()
-		env := setupEnv(t)
+		env := setupEnv(t, nil, nil)
 		loader, err := snaploader.New(env)
 		require.NoError(t, err)
 		workDir := testfs.MakeTempDir(t)
@@ -292,7 +300,7 @@ func TestSnapshotVersioning(t *testing.T) {
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", remoteEnabled)
 
 		ctx := context.Background()
-		env := setupEnv(t)
+		env := setupEnv(t, nil, nil)
 		loader, err := snaploader.New(env)
 		require.NoError(t, err)
 		workDir := testfs.MakeTempDir(t)
@@ -388,7 +396,7 @@ func TestRemoteSnapshotFetching(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
 	ctx := context.Background()
-	env := setupEnv(t)
+	env := setupEnv(t, nil, nil)
 	fc := env.GetFileCache()
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
@@ -453,7 +461,7 @@ func TestRemoteSnapshotFetching(t *testing.T) {
 func TestRemoteSnapshotFetching_RemoteEviction(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
-	env := setupEnv(t)
+	env := setupEnv(t, nil, nil)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err)
 	loader, err := snaploader.New(env)
@@ -512,9 +520,25 @@ func TestGetSnapshot_CacheIsolation(t *testing.T) {
 	for _, enableRemote := range []bool{true, false} {
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
-		env := setupEnv(t)
-		auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
-		env.SetAuthenticator(auth)
+		auth := testauth.NewTestAuthenticator(t,
+			testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+		// Create the cache with partition mappings so that cache entries
+		// are isolated by group. This must be done before setupEnv so that
+		// the action cache server uses this cache.
+		c, err := memory_cache.NewMemoryCacheWithOptions(auth, &memory_cache.Options{
+			MaxSizeBytes: 1000 * 1000 * 1000,
+			Partitions: []disk.Partition{
+				{ID: "GR1", MaxSizeBytes: 500 * 1000 * 1000},
+				{ID: "GR2", MaxSizeBytes: 500 * 1000 * 1000},
+			},
+			PartitionMappings: []disk.PartitionMapping{
+				{GroupID: "GR1", Prefix: "", PartitionID: "GR1"},
+				{GroupID: "GR2", Prefix: "", PartitionID: "GR2"},
+			},
+		})
+		require.NoError(t, err)
+		env := setupEnv(t, auth, c)
+
 		ctx, err := auth.WithAuthenticatedUser(context.Background(), "US1")
 		require.NoError(t, err)
 		loader, err := snaploader.New(env)
@@ -563,7 +587,7 @@ func TestGetSnapshot_MixOfLocalAndRemoteChunks(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 	flags.Set(t, "executor.snaploader_max_eager_fetches_per_sec", 0)
 
-	env := setupEnv(t)
+	env := setupEnv(t, nil, nil)
 	ctx := context.Background()
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
@@ -643,7 +667,7 @@ func TestMergeQueueBranch(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
 	ctx := context.Background()
-	env := setupEnv(t)
+	env := setupEnv(t, nil, nil)
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
 	workDir := testfs.MakeTempDir(t)
