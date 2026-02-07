@@ -360,10 +360,14 @@ The following execution properties provide more customization.
   `nonroot-workspace` to `true`.
 - `network`: controls the network access available in the VM/container.
   Permitted values are:
-  - `off`: The container/VM has no network access. This is the default setting
-    for `oci`, `podman`, `docker`, and `sandbox` containers.
-  - `on`: The container/VM can communicate with the internet via the host.
-    This is the default setting for `firecracker` VMs.
+  - `off`: The container/VM has no external network access. It does have access
+    to the localhost network. This is the default setting for `oci`, `podman`,
+    `docker`, and `sandbox` containers.
+  - `on`: The container/VM is allocated its own network namespace through which
+    it can communicate with the internet via the host. This is the default
+    setting for `firecracker` VMs.
+  - `host`: The container uses the host's network setup. This setting is not
+    available in BuildBuddy cloud or for Firecracker VMs.
 
 The following properties apply to `oci`, `podman` and `docker` isolation,
 and are currently unsupported by `firecracker`. (The `docker` prefix is
