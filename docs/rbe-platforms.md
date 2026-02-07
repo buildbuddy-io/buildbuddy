@@ -363,8 +363,8 @@ The following execution properties provide more customization.
   - `off`: The container/VM has no external network access. It does have access
     to the localhost network. This is the default setting for `oci`, `podman`,
     `docker`, and `sandbox` containers.
-  - `on`: The container/VM is allocated its own network namespace through which
-    it can communicate with the internet via the host. This is the default
+  - `external`: The container/VM is allocated its own network namespace throug
+    which it can communicate with the internet via the host. This is the default
     setting for `firecracker` VMs.
   - `host`: The container uses the host's network setup. This setting is not
     available in BuildBuddy cloud or for Firecracker VMs.
