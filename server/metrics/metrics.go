@@ -359,6 +359,10 @@ const (
 	OCIFetcherMethodLabel = "method"
 	OCIFetcherRoleLabel   = "role"
 	OCIFetcherStatusLabel = "status"
+
+	// The reason for a remotely-managed JWT key refresh: "missing",
+	// "invalidated", or "expired"
+	JWTKeyRefreshReason = "reason"
 )
 
 // Label value constants
@@ -3783,6 +3787,17 @@ var (
 		GRPCPoolIDLabel,
 		GRPCMethodLabel,
 		ConnectionIndexLabel,
+	})
+
+	// Remote authenticator
+	RemoteAuthES256KeyRefreshes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remoteauth",
+		Name:      "es256_key_refreshes",
+		Help:      "Total number of ES256 key refresh attempts.",
+	}, []string{
+		JWTKeyRefreshReason,
+		StatusLabel,
 	})
 )
 
