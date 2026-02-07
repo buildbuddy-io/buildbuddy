@@ -418,7 +418,7 @@ func TestReadMaxOffset(t *testing.T) {
 		assert.FailNow(t, fmt.Sprintf("cache: %+v", distributedCaches[1]), err)
 	}
 	d1 := testdigest.ReadDigestAndClose(t, reader)
-	assert.Equal(t, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", d1.GetHash())
+	assert.Equal(t, "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262", d1.GetHash())
 }
 
 func TestReadOffsetLimit(t *testing.T) {
