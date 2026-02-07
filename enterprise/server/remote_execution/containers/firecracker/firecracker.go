@@ -245,7 +245,6 @@ var (
 
 // Derives the desired Firecracker NetworkMode from the provided network and
 // init-dockerd platform properties enum.
-// Valid values are: "" (defaults to "external"), "off", or "external".
 func networkMode(network string, initDockerd bool) (fcpb.NetworkMode, error) {
 	if network == "external" || network == "" {
 		return fcpb.NetworkMode_NETWORK_MODE_EXTERNAL, nil
