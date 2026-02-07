@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
@@ -580,7 +581,8 @@ func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *diges
 	if err != nil {
 		return nil, err
 	}
-	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), actionResult); err != nil {
+	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
+	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), chunkingEnabled, actionResult); err != nil {
 		return nil, err
 	}
 	return actionResult, nil
