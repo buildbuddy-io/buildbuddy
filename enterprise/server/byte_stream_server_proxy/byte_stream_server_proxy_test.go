@@ -33,7 +33,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/pkg/openfeature/memprovider"
@@ -277,8 +276,10 @@ func TestRead(t *testing.T) {
 }
 
 func TestRead_RemoteAtimeUpdated(t *testing.T) {
-	rn, blob := testdigest.RandomCompressibleCASResourceBuf(t, 5e4, "" /*instanceName*/)
-	d := rn.Digest
+	r, blob := testdigest.RandomCompressibleCASResourceBuf(t, 5e4, "" /*instanceName*/)
+
+	rn, err := digest.CASResourceNameFromProto(r.CloneVT())
+	require.NoError(t, err)
 
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
@@ -292,18 +293,16 @@ func TestRead_RemoteAtimeUpdated(t *testing.T) {
 	proxy := runBSProxy(ctx, bs, proxyEnv, t)
 
 	// Upload the test blob to the proxy
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	require.NoError(t, err)
-	uploadRn := fmt.Sprintf("uploads/%s/blobs/%s/%d", uuid.New(), d.Hash, d.SizeBytes)
 	bazelVersion := "5.0.0"
-	byte_stream.MustUploadChunked(t, ctx, proxy, bazelVersion, uploadRn, blob, true)
-	require.NoError(t, waitContains(ctx, proxyEnv, rn))
+	byte_stream.MustUploadChunked(t, ctx, proxy, bazelVersion, rn.NewUploadString(), blob, true)
+	require.NoError(t, waitContains(ctx, proxyEnv, rn.ToProto()))
 	streamRequestCounter.Store(0)
 
 	// Read the blob back from the proxy
 	downloadBuf := []byte{}
-	downloadRn := fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes)
-	downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadRn})
+	downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: rn.DownloadString()})
 	require.NoError(t, err)
 	for {
 		res, err := downloadStream.Recv()
@@ -526,21 +525,21 @@ func TestSkipRemote(t *testing.T) {
 	}
 
 	// Write blob big enough to require multiple chunks to upload.
-	rn, data := testdigest.NewRandomResourceAndBuf(t, 5e6, rspb.CacheType_CAS, "")
-	byte_stream.MustUploadChunked(t, ctx, proxy, "5.0.0", fmt.Sprintf("uploads/%s/blobs/%s/%d", uuid.New(), rn.Digest.Hash, rn.Digest.SizeBytes), data, true)
-	require.NoError(t, waitContains(ctx, proxyEnv, rn))
+	r, data := testdigest.NewRandomResourceAndBuf(t, 5e6, rspb.CacheType_CAS, "")
+	rn, err := digest.CASResourceNameFromProto(r.CloneVT())
+	require.NoError(t, err)
+	byte_stream.MustUploadChunked(t, ctx, proxy, "5.0.0", rn.NewUploadString(), data, true)
+	require.NoError(t, waitContains(ctx, proxyEnv, rn.ToProto()))
 
 	// Check that no data was written to the remote cache.
 	require.Equal(t, int32(0), requestCounter.Load())
 
 	// Test read.
 	var buf bytes.Buffer
-	r, err := digest.CASResourceNameFromProto(rn)
-	require.NoError(t, err)
-	err = byte_stream.ReadBlob(ctx, proxy, r, &buf, 0)
+	err = byte_stream.ReadBlob(ctx, proxy, rn, &buf, 0)
 	require.NoError(t, err)
 	require.Equal(t, data, buf.Bytes())
-	require.NoError(t, waitContains(ctx, proxyEnv, rn))
+	require.NoError(t, waitContains(ctx, proxyEnv, rn.ToProto()))
 	requestCounter.Store(0)
 }
 
