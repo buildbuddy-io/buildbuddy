@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -840,6 +841,26 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	assert.Equal(t, "group1", foundExecutorUsage.GroupID)
 	assert.Equal(t, test.expectedExecutionUsage.LinuxExecutionDurationUsec, foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
 	assert.Equal(t, test.expectedExecutionUsage.SelfHostedLinuxExecutionDurationUsec, foundExecutorUsage.Counts.SelfHostedLinuxExecutionDurationUsec)
+	// Also check OLAP totals are recorded. Look for the entry that has the
+	// execution duration SKU specifically, since there may be other OLAP
+	// entries from cache operations.
+	var foundOLAPExecutorUsage *testusage.OLAPTotal
+	for _, u := range ut.OLAPTotals() {
+		if _, ok := u.Counts[sku.RemoteExecutionExecuteWorkerDurationNanos]; ok {
+			foundOLAPExecutorUsage = &u
+			break
+		}
+	}
+	require.NotNil(t, foundOLAPExecutorUsage, "expected OLAP execution usage to be recorded")
+	assert.Equal(t, "group1", foundOLAPExecutorUsage.GroupID)
+	expectedOLAPLabels := sku.Labels{
+		sku.Client:     sku.ClientExecutor,
+		sku.OS:         sku.OSLinux,
+		sku.SelfHosted: sku.GetSelfHostedLabel(test.expectedSelfHosted),
+	}
+	assert.Equal(t, expectedOLAPLabels, foundOLAPExecutorUsage.Labels)
+	expectedDurationNanos := (5 * time.Second).Nanoseconds()
+	assert.Equal(t, expectedDurationNanos, foundOLAPExecutorUsage.Counts[sku.RemoteExecutionExecuteWorkerDurationNanos])
 
 	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
 	require.NoError(t, err)
