@@ -262,6 +262,18 @@ button {
   font-weight: 600;
 }
 
+/* In multi-line breadcrumbs, show the separator at the start of each line
+   (except the first) instead of at the end. */
+.breadcrumbs.breadcrumbs-multiline > :not(:last-child)::after {
+  content: none;
+}
+.breadcrumbs.breadcrumbs-multiline > :not(:first-child)::before {
+  content: "›";
+  padding-right: 8px;
+  color: #ccc;
+  font-weight: 600;
+}
+
 .shelf .details {
   font-size: 16px;
   line-height: 1.6em;
@@ -468,6 +480,10 @@ body {
   display: flex;
   align-items: flex-start;
   background-color: var(--color-bg-card);
+}
+/* Allow certain cards to show overflow (e.g., search dropdown) */
+.card.tbd-graph-card {
+  overflow: visible;
 }
 
 a.card:hover {
@@ -1386,6 +1402,28 @@ code .comment {
 .invocation-option-equal {
   color: var(--color-text-tertiary);
   margin-right: 4px;
+}
+
+/* Custom Command section (spawn details) */
+.invocation-command-section {
+  margin-top: 8px;
+}
+
+.invocation-command-section > .invocation-section-title {
+  width: 20%;
+  flex-grow: 0;
+  flex-shrink: 0;
+  text-align: right;
+  margin-right: 16px;
+  font-weight: 700;
+}
+
+.invocation-command-value {
+  /* Align start with the values column of standard sections */
+  margin-top: 6px;
+  margin-left: calc(20% + 16px);
+  width: calc(100% - (20% + 16px));
+  overflow-x: auto; /* enable horizontal scrolling for long commands */
 }
 
 .invocation-chunk {

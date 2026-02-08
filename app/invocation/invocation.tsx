@@ -45,6 +45,7 @@ import SpawnCardComponent from "./invocation_spawn_card";
 import SuggestionCardComponent, { getSuggestions } from "./invocation_suggestion_card";
 import InvocationTabsComponent, { getActiveTab } from "./invocation_tabs";
 import TargetsComponent from "./invocation_targets";
+import InvocationTbdGraphCardComponent from "./invocation_tbd_graph_card";
 import TimingCardComponent from "./invocation_timing_card";
 import ScorecardCardComponent from "./scorecard_card";
 
@@ -637,8 +638,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {(activeTab === "targets" ||
             activeTab === "artifacts" ||
             activeTab === "execution" ||
-            activeTab == "spawns" ||
-            activeTab == "files") && (
+            activeTab === "spawns" ||
+            activeTab === "files") && (
             <InvocationFilterComponent
               tab={`#${activeTab}`}
               search={this.props.search}
@@ -749,6 +750,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
               model={this.state.model}
               search={this.props.search}
               filter={this.props.search.get("spawnFilter") ?? ""}
+            />
+          )}
+
+          {activeTab === "tbd" && (
+            <InvocationTbdGraphCardComponent
+              model={this.state.model}
+              search={this.props.search}
+              filter={this.props.search.get("tbdFilter") ?? ""}
             />
           )}
 

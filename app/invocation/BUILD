@@ -43,6 +43,7 @@ ts_library(
         "//app/invocation:invocation_suggestion_card",
         "//app/invocation:invocation_tabs",
         "//app/invocation:invocation_targets",
+        "//app/invocation:invocation_tbd_graph_card",
         "//app/invocation:invocation_timing_card",
         "//app/invocation:scorecard_card",
         "//app/invocation/dense:dense_invocation_overview",
@@ -870,6 +871,31 @@ ts_library(
         "//app/invocation:invocation_model",
         "//proto:build_event_stream_ts_proto",
         "//proto:spawn_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "invocation_tbd_graph_card",
+    srcs = ["invocation_tbd_graph_card.tsx"],
+    deps = [
+        "//:node_modules/@antv/g6",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/varint",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//:node_modules/varint",
+        "//app/components/digest",
+        "//app/components/link",
+        "//app/components/search_bar",
+        "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
+        "//app/util:cache",
+        "//proto:build_event_stream_ts_proto",
+        "//proto:duration_ts_proto",
+        "//proto:remote_execution_ts_proto",
+        "//proto:spawn_ts_proto",
+        "//proto:timestamp_ts_proto",
     ],
 )
 
