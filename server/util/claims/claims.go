@@ -62,6 +62,8 @@ var (
 
 	es256PrivateKey *ecdsa.PrivateKey
 	es256PublicKeys []string = []string{}
+
+	reparseLog = log.NamedSubLogger("reparse-jwt").EveryDuration(time.Minute)
 )
 
 func Init() error {
@@ -488,7 +490,7 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 		if _, file, line, ok := runtime.Caller(1); ok {
 			caller = fmt.Sprintf("%s:%d", file, line)
 		}
-		log.Debugf("Reparsing JWT (caller: %s)", caller)
+		reparseLog.Debugf("Reparsing JWT (caller: %s)", caller)
 		claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
 		if err != nil {
 			return nil, err
