@@ -740,12 +740,16 @@ func (s *BuildBuddyServer) CreateUserList(ctx context.Context, request *ulpb.Cre
 		return nil, err
 	}
 
-	err = udb.CreateUserList(ctx, &tables.UserList{
+	ul := &tables.UserList{
 		GroupID: u.GetGroupID(),
 		Name:    request.GetName(),
-	})
+	}
+	err = udb.CreateUserList(ctx, ul)
 	if err != nil {
 		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForUserList(ctx, ul.UserListID, ul.Name, alpb.Action_CREATE, request)
 	}
 	return &ulpb.GetUserListsResponse{}, nil
 }
@@ -756,11 +760,19 @@ func (s *BuildBuddyServer) DeleteUserList(ctx context.Context, request *ulpb.Del
 		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
 	}
 
-	err := udb.DeleteUserList(ctx, request.GetUserListId())
+	// Look up the list before deleting so we can log its name.
+	ul, err := udb.GetUserList(ctx, request.GetUserListId())
 	if err != nil {
 		return nil, err
 	}
 
+	err = udb.DeleteUserList(ctx, request.GetUserListId())
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForUserList(ctx, ul.GetUserListId(), ul.GetName(), alpb.Action_DELETE, request)
+	}
 	return &ulpb.DeleteUserListResponse{}, nil
 }
 
@@ -782,6 +794,9 @@ func (s *BuildBuddyServer) UpdateUserList(ctx context.Context, request *ulpb.Upd
 	if err != nil {
 		return nil, err
 	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForUserList(ctx, request.GetUserList().GetUserListId(), request.GetUserList().GetName(), alpb.Action_UPDATE, request)
+	}
 	return &ulpb.UpdateUserListResponse{}, nil
 }
 
@@ -791,11 +806,20 @@ func (s *BuildBuddyServer) UpdateUserListMembership(ctx context.Context, request
 		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
 	}
 
-	err := udb.UpdateUserListMembers(ctx, request.GetUserListId(), request.GetUpdate())
+	// Look up the list to get the name for audit logging.
+	// This also serves as a permission check (GetUserList requires admin).
+	ul, err := udb.GetUserList(ctx, request.GetUserListId())
 	if err != nil {
 		return nil, err
 	}
 
+	err = udb.UpdateUserListMembers(ctx, request.GetUserListId(), request.GetUpdate())
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForUserList(ctx, ul.GetUserListId(), ul.GetName(), alpb.Action_UPDATE_MEMBERSHIP, request)
+	}
 	return &ulpb.UpdateUserListMembershipResponse{}, nil
 }
 

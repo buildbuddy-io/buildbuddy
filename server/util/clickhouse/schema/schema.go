@@ -590,13 +590,13 @@ func RunMigrations(gdb *gorm.DB) error {
 		}
 	}
 	// Add Projection/
-	projectionQuery := `select group_id, repo_url, commit_sha,
-	   max(invocation_start_time_usec) as latest_created_at_usec
-	   group by group_id, repo_url, commit_sha`
-	err := addProjectionIfNotExist(gdb, &TestTargetStatus{}, projectionCommits, projectionQuery)
-	if err != nil {
-		return status.InternalErrorf("failed to add projection %q: %s", projectionCommits, err)
-	}
+	//projectionQuery := `select group_id, repo_url, commit_sha,
+	//   max(invocation_start_time_usec) as latest_created_at_usec
+	//   group by group_id, repo_url, commit_sha`
+	//err := addProjectionIfNotExist(gdb, &TestTargetStatus{}, projectionCommits, projectionQuery)
+	//if err != nil {
+	//	return status.InternalErrorf("failed to add projection %q: %s", projectionCommits, err)
+	//}
 	return nil
 }
 

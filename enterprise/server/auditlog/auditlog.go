@@ -188,6 +188,15 @@ func (l *Logger) LogForSecret(ctx context.Context, secretName string, action alp
 	l.Log(ctx, r, action, request)
 }
 
+func (l *Logger) LogForUserList(ctx context.Context, userListID string, userListName string, action alpb.Action, request proto.Message) {
+	r := &alpb.ResourceID{
+		Type: alpb.ResourceType_USER_LIST,
+		Id:   userListID,
+		Name: userListName,
+	}
+	l.Log(ctx, r, action, request)
+}
+
 func filterEntry(entry *alpb.Entry, userEmail string) {
 	if strings.HasSuffix(userEmail, "@buildbuddy.io") {
 		entry.AuthenticationInfo.User = &alpb.AuthenticatedUser{
@@ -227,6 +236,11 @@ func (l *Logger) fillIDDescriptors(ctx context.Context, e *alpb.Entry_Request) e
 	userIDs := make(map[string]struct{})
 
 	if r := e.ApiRequest.UpdateGroupUsers; r != nil {
+		for _, u := range r.Update {
+			userIDs[u.GetUserId().GetId()] = struct{}{}
+		}
+	}
+	if r := e.ApiRequest.UpdateUserListMembership; r != nil {
 		for _, u := range r.Update {
 			userIDs[u.GetUserId().GetId()] = struct{}{}
 		}
