@@ -44,6 +44,8 @@ const (
 	// change!
 	MemoryFileName = "memory"
 
+	UniversalSnapshotRef = "BB_UNIVERSAL_SNAPSHOT"
+
 	DefaultMaxStaleFallbackSnapshotAge = 24 * time.Hour
 )
 
