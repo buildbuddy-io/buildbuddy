@@ -330,5 +330,7 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
+	libmain.RegisterLocalServersAndClients(realEnv)
+
 	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
 }
