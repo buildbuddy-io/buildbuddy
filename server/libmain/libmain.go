@@ -363,6 +363,10 @@ func StartMonitoringHandler(env *real_environment.RealEnv) {
 // register any additional services that affect local client wiring (e.g.
 // execution server, scheduler server) before calling this.
 func RegisterLocalServersAndClients(env *real_environment.RealEnv) {
+	if err := ssl.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+
 	// Register to handle BuildBuddy API messages (over gRPC)
 	if err := buildbuddy_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
@@ -419,10 +423,6 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
 	if err != nil {
 		log.Fatalf("Error initializing app server: %s", err)
-	}
-
-	if err := ssl.Register(env); err != nil {
-		log.Fatalf("%v", err)
 	}
 
 	if err := startInternalGRPCServers(env); err != nil {
