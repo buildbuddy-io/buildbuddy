@@ -366,7 +366,7 @@ The following execution properties provide more customization.
   - `external`: The container/VM is allocated its own network namespace through
     which it can communicate with the internet via the host. This is the default
     setting for `firecracker` VMs.
-  - `host`: The container uses the host's network setup. This setting is not
+  - `host`: The container has no network isolation and runs in the same networking environment as the host executor, as well as any other containers that are spawned by the executor which are also running with `"host"` network mode. This setting is not
     available in BuildBuddy cloud or for Firecracker VMs.
 
 The following properties apply to `oci`, `podman` and `docker` isolation,
