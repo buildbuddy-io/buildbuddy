@@ -694,14 +694,7 @@ func (d *UserDB) removeUserFromGroup(ctx context.Context, tx interfaces.DB, user
 		groupID).Exec().Error; err != nil {
 		return err
 	}
-	if err := tx.NewQuery(ctx, "userdb_delete_user_api_keys").Raw(`
-						DELETE FROM "APIKeys"
-						WHERE user_id = ? AND group_id = ?`,
-		userID,
-		groupID).Exec().Error; err != nil {
-		return err
-	}
-	return nil
+	return d.reconcileUserAPIKeysForGroup(ctx, tx, userID, groupID)
 }
 
 func (d *UserDB) updateUserRole(ctx context.Context, tx interfaces.DB, userID string, groupID string, newRole role.Role) error {
@@ -715,10 +708,6 @@ func (d *UserDB) updateUserRole(ctx context.Context, tx interfaces.DB, userID st
 	if role.Role(ug.Role) == newRole {
 		return nil
 	}
-	maxCapabilitiesForNewRole, err := role.ToCapabilities(newRole)
-	if err != nil {
-		return err
-	}
 	err = tx.NewQuery(ctx, "userdb_update_user_role").Raw(`
 		UPDATE "UserGroups"
 		SET role = ?
@@ -728,28 +717,11 @@ func (d *UserDB) updateUserRole(ctx context.Context, tx interfaces.DB, userID st
 	if err != nil {
 		return err
 	}
-	// Update capabilities to reflect the new role.
-	//
-	// In this query, there is an edge case to handle: we need to augment the
-	// existing capabilities with an explicit CAS_WRITE capability if it was
-	// previously implicitly allowed via CACHE_WRITE.
-	//
-	// More concretely, the expression `((capabilities & 1) << 2)` evaluates to
-	// CAS_WRITE if the user currently has CACHE_WRITE, otherwise 0. We then OR
-	// this with the user's current capabilities.
-	err = tx.NewQuery(ctx, "userdb_update_user_role_api_key_capabilities").Raw(`
-		UPDATE "APIKeys"
-		SET capabilities = (capabilities | ((capabilities & 1) << 2)) & ?
-		WHERE user_id = ? AND group_id = ?
-	`, capabilities.ToInt(maxCapabilitiesForNewRole), userID, groupID).Exec().Error
-	if err != nil {
-		return err
-	}
-	return nil
+	return d.reconcileUserAPIKeysForGroup(ctx, tx, userID, groupID)
 }
 
 func (d *UserDB) updateUserListRole(ctx context.Context, tx interfaces.DB, userListID string, groupID string, newRole role.Role) error {
-	err := tx.NewQuery(ctx, "userdb_update_user_role").Raw(`
+	err := tx.NewQuery(ctx, "userdb_update_user_list_role").Raw(`
 		UPDATE "UserListGroups"
 		SET role = ?
 		WHERE user_list_user_list_id = ? AND group_group_id = ?
@@ -758,10 +730,24 @@ func (d *UserDB) updateUserListRole(ctx context.Context, tx interfaces.DB, userL
 	if err != nil {
 		return err
 	}
+	userIDs, err := getUserIDsInUserList(ctx, tx, userListID)
+	if err != nil {
+		return err
+	}
+	for _, uid := range userIDs {
+		if err := d.reconcileUserAPIKeysForGroup(ctx, tx, uid, groupID); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func (d *UserDB) removeUserListFromGroup(ctx context.Context, tx interfaces.DB, userListID string, groupID string) error {
+	// Query affected users before deleting the user list assignment.
+	userIDs, err := getUserIDsInUserList(ctx, tx, userListID)
+	if err != nil {
+		return err
+	}
 	if err := tx.NewQuery(ctx, "userdb_remove_user_list_from_group").Raw(`
 						DELETE FROM "UserListGroups"
 						WHERE user_list_user_list_id = ? AND group_group_id = ?`,
@@ -769,7 +755,114 @@ func (d *UserDB) removeUserListFromGroup(ctx context.Context, tx interfaces.DB, 
 		groupID).Exec().Error; err != nil {
 		return err
 	}
+	for _, uid := range userIDs {
+		if err := d.reconcileUserAPIKeysForGroup(ctx, tx, uid, groupID); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// getUserIDsInUserList returns all user IDs that are members of the given user list.
+func getUserIDsInUserList(ctx context.Context, tx interfaces.DB, userListID string) ([]string, error) {
+	type row struct{ UserUserID string }
+	rq := tx.NewQuery(ctx, "userdb_get_user_ids_in_user_list").Raw(
+		`SELECT user_user_id FROM "UserUserLists" WHERE user_list_user_list_id = ?`, userListID)
+	rows, err := db.ScanAll(rq, &row{})
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, r := range rows {
+		ids = append(ids, r.UserUserID)
+	}
+	return ids, nil
+}
+
+// getGroupIDsForUserList returns all group IDs that the given user list is assigned to.
+func getGroupIDsForUserList(ctx context.Context, tx interfaces.DB, userListID string) ([]string, error) {
+	type row struct{ GroupGroupID string }
+	rq := tx.NewQuery(ctx, "userdb_get_group_ids_for_user_list").Raw(
+		`SELECT group_group_id FROM "UserListGroups" WHERE user_list_user_list_id = ?`, userListID)
+	rows, err := db.ScanAll(rq, &row{})
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, r := range rows {
+		ids = append(ids, r.GroupGroupID)
+	}
+	return ids, nil
+}
+
+// reconcileUserAPIKeysForGroup computes the effective max capabilities for a
+// user in a group (union of all membership paths — direct + indirect via user
+// lists) and constrains API keys accordingly. If no membership exists at all,
+// the user's API keys in the group are deleted.
+func (d *UserDB) reconcileUserAPIKeysForGroup(ctx context.Context, tx interfaces.DB, userID, groupID string) error {
+	hasAnyRole := false
+	var capBitmask int32
+
+	// Check direct role from UserGroups.
+	directRole := &MemberRole{}
+	err := tx.NewQuery(ctx, "userdb_reconcile_direct_role").Raw(
+		`SELECT role FROM "UserGroups" WHERE user_user_id = ? AND group_group_id = ? AND membership_status = ?`,
+		userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER),
+	).Take(directRole)
+	if err == nil {
+		caps, err := role.ToCapabilities(role.Role(directRole.Role))
+		if err != nil {
+			return err
+		}
+		capBitmask |= capabilities.ToInt(caps)
+		hasAnyRole = true
+	} else if !db.IsRecordNotFound(err) {
+		return err
+	}
+
+	// Check indirect roles via user lists.
+	if authutil.UserListsEnabled() {
+		rq := tx.NewQuery(ctx, "userdb_reconcile_indirect_roles").Raw(`
+			SELECT ulg.role
+			FROM "UserListGroups" AS ulg
+			JOIN "UserUserLists" AS uul ON uul.user_list_user_list_id = ulg.user_list_user_list_id
+			WHERE uul.user_user_id = ? AND ulg.group_group_id = ?
+		`, userID, groupID)
+		indirectRoles, err := db.ScanAll(rq, &MemberRole{})
+		if err != nil {
+			return err
+		}
+		for _, mr := range indirectRoles {
+			caps, err := role.ToCapabilities(role.Role(mr.Role))
+			if err != nil {
+				return err
+			}
+			capBitmask |= capabilities.ToInt(caps)
+			hasAnyRole = true
+		}
+	}
+
+	if !hasAnyRole {
+		return tx.NewQuery(ctx, "userdb_reconcile_delete_keys").Raw(
+			`DELETE FROM "APIKeys" WHERE user_id = ? AND group_id = ?`,
+			userID, groupID,
+		).Exec().Error
+	}
+
+	// Constrain existing API key capabilities to the effective max.
+	//
+	// In this query, there is an edge case to handle: we need to augment the
+	// existing capabilities with an explicit CAS_WRITE capability if it was
+	// previously implicitly allowed via CACHE_WRITE.
+	//
+	// More concretely, the expression `((capabilities & 1) << 2)` evaluates to
+	// CAS_WRITE if the user currently has CACHE_WRITE, otherwise 0. We then OR
+	// this with the user's current capabilities.
+	return tx.NewQuery(ctx, "userdb_reconcile_update_key_caps").Raw(`
+		UPDATE "APIKeys"
+		SET capabilities = (capabilities | ((capabilities & 1) << 2)) & ?
+		WHERE user_id = ? AND group_id = ?
+	`, capBitmask, userID, groupID).Exec().Error
 }
 
 func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error {
@@ -1389,8 +1482,23 @@ func (d *UserDB) DeleteUserList(ctx context.Context, userListID string) error {
 		return err
 	}
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		// Query affected entities before deleting anything.
+		userIDs, err := getUserIDsInUserList(ctx, tx, userListID)
+		if err != nil {
+			return err
+		}
+		groupIDs, err := getGroupIDsForUserList(ctx, tx, userListID)
+		if err != nil {
+			return err
+		}
+
 		rq := tx.NewQuery(ctx, "userdb_delete_user_list_members").Raw(`
 			DELETE FROM "UserUserLists" WHERE user_list_user_list_id = ?`, userListID)
+		if err := rq.Exec().Error; err != nil {
+			return err
+		}
+		rq = tx.NewQuery(ctx, "userdb_delete_user_list_groups").Raw(`
+			DELETE FROM "UserListGroups" WHERE user_list_user_list_id = ?`, userListID)
 		if err := rq.Exec().Error; err != nil {
 			return err
 		}
@@ -1398,6 +1506,15 @@ func (d *UserDB) DeleteUserList(ctx context.Context, userListID string) error {
 			DELETE FROM "UserLists" WHERE user_list_id = ?`, userListID)
 		if err := rq.Exec().Error; err != nil {
 			return status.NotFoundErrorf("user list %q not found", userListID)
+		}
+
+		// Reconcile API keys for all affected (user, group) pairs.
+		for _, uid := range userIDs {
+			for _, gid := range groupIDs {
+				if err := d.reconcileUserAPIKeysForGroup(ctx, tx, uid, gid); err != nil {
+					return err
+				}
+			}
 		}
 		return nil
 	})
@@ -1435,8 +1552,13 @@ func (d *UserDB) getUserListMembers(ctx context.Context, userListID string) ([]*
 }
 
 func (d *UserDB) removeUserFromUserList(ctx context.Context, tx interfaces.DB, userListID string, userID string) error {
-	rq := tx.NewQuery(ctx, "userdb_add_user_to_user_list").Raw(`
-		DELETE FROM "UserUserLists" 
+	// Query affected groups before deleting the user from the list.
+	groupIDs, err := getGroupIDsForUserList(ctx, tx, userListID)
+	if err != nil {
+		return err
+	}
+	rq := tx.NewQuery(ctx, "userdb_remove_user_from_user_list").Raw(`
+		DELETE FROM "UserUserLists"
 		WHERE user_list_user_list_id = ? AND user_user_id = ?`, userListID, userID)
 	rv := rq.Exec()
 	if rv.Error != nil {
@@ -1444,6 +1566,11 @@ func (d *UserDB) removeUserFromUserList(ctx context.Context, tx interfaces.DB, u
 	}
 	if rv.RowsAffected == 0 {
 		return status.NotFoundErrorf("User %q is not part of user list %q", userID, userListID)
+	}
+	for _, gid := range groupIDs {
+		if err := d.reconcileUserAPIKeysForGroup(ctx, tx, userID, gid); err != nil {
+			return err
+		}
 	}
 	return nil
 }
