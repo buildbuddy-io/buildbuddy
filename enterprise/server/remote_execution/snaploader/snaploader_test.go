@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -131,7 +132,8 @@ func TestUnpackFallbackKey(t *testing.T) {
 	keys, err := loader.SnapshotKeySet(ctx, task, "config-hash", "")
 	require.NoError(t, err)
 	require.Equal(t, "main", keys.GetBranchKey().GetRef())
-	require.Empty(t, keys.GetFallbackKeys())
+	require.Equal(t, 1, len(keys.GetFallbackKeys()))
+	require.Equal(t, snaputil.UniversalSnapshotRef, keys.GetFallbackKeys()[0].Ref)
 
 	opts := makeFakeSnapshot(t, workDir, true /*=enableRemote*/, nil, "")
 	err = loader.CacheSnapshot(ctx, keys.GetBranchKey(), opts)
@@ -152,9 +154,10 @@ func TestUnpackFallbackKey(t *testing.T) {
 	forkKeys, err := loader.SnapshotKeySet(ctx, forkTask, "config-hash", "")
 	require.NoError(t, err)
 	require.Equal(t, "my-cool-pr", forkKeys.GetBranchKey().GetRef())
-	require.Len(t, forkKeys.GetFallbackKeys(), 2)
+	require.Len(t, forkKeys.GetFallbackKeys(), 3)
 	require.Equal(t, "my-cool-stacked-pr-base-branch", forkKeys.FallbackKeys[0].Ref)
 	require.Equal(t, "main", forkKeys.FallbackKeys[1].Ref)
+	require.Equal(t, snaputil.UniversalSnapshotRef, forkKeys.FallbackKeys[2].Ref)
 
 	// Sanity check that the branch key is not found in cache, to make sure
 	// we're actually falling back.
