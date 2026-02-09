@@ -379,6 +379,59 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 
 }
 
+func TestCreateUser_GroupHasOnlyUserListMembers(t *testing.T) {
+	flags.Set(t, "database.create_user_list_tables", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+	flags.Set(t, "app.add_user_to_domain_group", true)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	// US1 creates a group and becomes admin (first user in domain group).
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	takeOwnershipOfDomain(t, ctx1, env, "US1")
+	group1 := getGroup(t, ctx1, env)
+	group1ID := group1.GroupID
+
+	// Create a user list, add US2 to it, and assign to the group.
+	createUser(t, ctx, env, "US2", "org2.io")
+	ul := &tables.UserList{GroupID: group1ID, Name: "list1"}
+	err := udb.CreateUserList(ctx1, ul)
+	require.NoError(t, err)
+	err = addUserToUserList(ctx1, udb, ul.UserListID, "US2")
+	require.NoError(t, err)
+	err = udb.UpdateGroupUsers(ctx1, group1ID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       ul.UserListID,
+		Role:             grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// Remove US1 from the group. Now the group has no direct members
+	// but has US2 via the user list.
+	err = udb.UpdateGroupUsers(ctx1, group1ID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+		UserId:           &uidpb.UserId{Id: "US1"},
+	}})
+	require.NoError(t, err)
+
+	// US3 has the same domain as US1, so InsertUser will auto-join
+	// them to the domain group. Because the group already has members
+	// (via user list), US3 should get the default role, not admin.
+	createUser(t, ctx, env, "US3", "org1.io")
+	ctx3 := authUserCtx(ctx, env, t, "US3")
+
+	gr := getGroupRole(t, ctx3, env, group1ID)
+	require.NotNil(t, gr)
+	require.NotNil(t, gr.Role)
+	require.EqualValues(t, grpb.Group_DEVELOPER_ROLE, *gr.Role,
+		"user created into a group with existing user-list members should get the default role, not admin")
+}
+
 func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.add_user_to_domain_group", false)
