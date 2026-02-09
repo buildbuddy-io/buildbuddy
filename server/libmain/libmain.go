@@ -359,9 +359,7 @@ func StartMonitoringHandler(env *real_environment.RealEnv) {
 
 // RegisterLocalServersAndClients registers core gRPC service implementations
 // (BuildBuddy server, build event server, remote cache servers, etc.) and then
-// sets up local gRPC clients that point back at them. Enterprise callers should
-// register any additional services that affect local client wiring (e.g.
-// execution server, scheduler server) before calling this.
+// sets up local gRPC clients that point back at them.
 func RegisterLocalServersAndClients(env *real_environment.RealEnv) {
 	if err := ssl.Register(env); err != nil {
 		log.Fatalf("%v", err)
