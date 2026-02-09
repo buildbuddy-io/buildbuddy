@@ -1588,6 +1588,7 @@ type AuditLogger interface {
 	LogForGroup(ctx context.Context, groupID string, action alpb.Action, request proto.Message)
 	LogForInvocation(ctx context.Context, invocationID string, action alpb.Action, request proto.Message)
 	LogForSecret(ctx context.Context, secretName string, action alpb.Action, request proto.Message)
+	LogForUserList(ctx context.Context, userListID string, userListName string, action alpb.Action, request proto.Message)
 	GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error)
 }
 
