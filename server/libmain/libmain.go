@@ -357,30 +357,10 @@ func StartMonitoringHandler(env *real_environment.RealEnv) {
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 }
 
-func StartAndRunServices(env *real_environment.RealEnv) {
-	if *maxThreads > 0 {
-		debug.SetMaxThreads(*maxThreads)
-	}
-
-	if err := rlimit.MaxRLimit(); err != nil {
-		log.Printf("Error raising open files limit: %s", err)
-	}
-
-	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
-	if err != nil {
-		log.Fatalf("Error reading app bundle hash: %s", err)
-	}
-
-	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
-	if err != nil {
-		log.Fatalf("Error initializing static file server: %s", err)
-	}
-
-	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
-	if err != nil {
-		log.Fatalf("Error initializing app server: %s", err)
-	}
-
+// RegisterLocalServersAndClients registers core gRPC service implementations
+// (BuildBuddy server, build event server, remote cache servers, etc.) and then
+// sets up local gRPC clients that point back at them.
+func RegisterLocalServersAndClients(env *real_environment.RealEnv) {
 	if err := ssl.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -416,6 +396,31 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	}
 	if err := capabilities_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
+	}
+}
+
+func StartAndRunServices(env *real_environment.RealEnv) {
+	if *maxThreads > 0 {
+		debug.SetMaxThreads(*maxThreads)
+	}
+
+	if err := rlimit.MaxRLimit(); err != nil {
+		log.Printf("Error raising open files limit: %s", err)
+	}
+
+	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
+	if err != nil {
+		log.Fatalf("Error reading app bundle hash: %s", err)
+	}
+
+	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
+	if err != nil {
+		log.Fatalf("Error initializing static file server: %s", err)
+	}
+
+	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
+	if err != nil {
+		log.Fatalf("Error initializing app server: %s", err)
 	}
 
 	if err := startInternalGRPCServers(env); err != nil {
