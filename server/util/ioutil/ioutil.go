@@ -48,14 +48,14 @@ func LimitReadCloser(reader io.ReadCloser, limit int64) io.ReadCloser {
 type CloseFunc func() error
 type CommitFunc func(int64) error
 
-type customCommitWriteCloser interface {
+type CustomCommitWriteCloser interface {
 	interfaces.CommittedWriteCloser
 
 	SetCloseFn(CloseFunc)
 	SetCommitFn(CommitFunc)
 }
 
-type CustomCommitWriteCloser struct {
+type customCommitWriteCloser struct {
 	w            io.Writer
 	bytesWritten int64
 	committed    bool
@@ -64,13 +64,13 @@ type CustomCommitWriteCloser struct {
 	CommitFn CommitFunc
 }
 
-func (c *CustomCommitWriteCloser) Write(buf []byte) (int, error) {
+func (c *customCommitWriteCloser) Write(buf []byte) (int, error) {
 	n, err := c.w.Write(buf)
 	c.bytesWritten += int64(n)
 	return n, err
 }
 
-func (c *CustomCommitWriteCloser) Commit() error {
+func (c *customCommitWriteCloser) Commit() error {
 	if c.committed {
 		return status.FailedPreconditionError("CommitWriteCloser already committed, cannot commit again")
 	}
@@ -98,7 +98,7 @@ func (c *CustomCommitWriteCloser) Commit() error {
 	return nil
 }
 
-func (c *CustomCommitWriteCloser) Close() error {
+func (c *customCommitWriteCloser) Close() error {
 	var firstErr error
 
 	// Close may free resources, so all Close functions should be called.
@@ -117,21 +117,17 @@ func (c *CustomCommitWriteCloser) Close() error {
 	return firstErr
 }
 
-func (c *CustomCommitWriteCloser) SetCloseFn(fn CloseFunc) {
+func (c *customCommitWriteCloser) SetCloseFn(fn CloseFunc) {
 	c.CloseFn = fn
 }
 
-func (c *CustomCommitWriteCloser) SetCommitFn(fn CommitFunc) {
+func (c *customCommitWriteCloser) SetCommitFn(fn CommitFunc) {
 	c.CommitFn = fn
 }
 
-type seekableCustomCommitWriteCloser struct {
-	*CustomCommitWriteCloser
-	seeker io.Seeker
-}
-
-func (c *seekableCustomCommitWriteCloser) Seek(offset int64, whence int) (int64, error) {
-	return c.seeker.Seek(offset, whence)
+type customCommitWriteSeekCloser struct {
+	*customCommitWriteCloser
+	io.Seeker
 }
 
 // NewCustomCommitWriteCloser wraps an io.Writer/interfaces.CommittedWriteCloser
@@ -139,14 +135,14 @@ func (c *seekableCustomCommitWriteCloser) Seek(offset int64, whence int) (int64,
 // interfaces.CommittedWriteCloser but allows adding on custom logic that will
 // be called when Commit or Close methods are called. If the wrapped writer
 // implements io.Seeker, the returned value will also implement io.Seeker.
-func NewCustomCommitWriteCloser(w io.Writer) customCommitWriteCloser {
-	cwc := &CustomCommitWriteCloser{
+func NewCustomCommitWriteCloser(w io.Writer) CustomCommitWriteCloser {
+	cwc := &customCommitWriteCloser{
 		w: w,
 	}
 	if seeker, ok := w.(io.Seeker); ok {
-		return &seekableCustomCommitWriteCloser{
-			CustomCommitWriteCloser: cwc,
-			seeker:                  seeker,
+		return &customCommitWriteSeekCloser{
+			customCommitWriteCloser: cwc,
+			Seeker:                  seeker,
 		}
 	}
 	return cwc
