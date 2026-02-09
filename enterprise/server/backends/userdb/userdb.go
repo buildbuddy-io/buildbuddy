@@ -436,20 +436,45 @@ func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) err
 	return d.h.NewQuery(ctx, "userdb_delete_group_github_token").Raw(q, args...).Exec().Error
 }
 
-func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, groupID string) (retErr error) {
-	// Count the number of users in the group.
-	// If there are no existing users, then user should join with admin role,
-	// otherwise they should join with default role.
+func (d *UserDB) isGroupEmpty(ctx context.Context, tx interfaces.DB, groupID string) (bool, error) {
 	row := &struct{ Count int64 }{}
 	err := tx.NewQuery(ctx, "userdb_check_group_size").Raw(`
 		SELECT COUNT(*) AS count FROM "UserGroups"
 		WHERE group_group_id = ? AND membership_status = ?
 	`, groupID, grpb.GroupMembershipStatus_MEMBER).Take(row)
 	if err != nil {
+		return false, err
+	}
+	if row.Count > 0 {
+		return false, nil
+	}
+	if authutil.UserListsEnabled() {
+		err := tx.NewQuery(ctx, "userdb_check_group_size_user_lists").Raw(`
+			SELECT COUNT(*) AS count
+			FROM "UserListGroups" AS ulg
+			JOIN "UserUserLists" AS ul
+				ON ul.user_list_user_list_id = ulg.user_list_user_list_id
+			WHERE ulg.group_group_id = ?
+		`, groupID).Take(row)
+		if err != nil {
+			return false, err
+		}
+		if row.Count > 0 {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, groupID string) (retErr error) {
+	// If there are no existing members, then user should join with admin role,
+	// otherwise they should join with default role.
+	emptyGroup, err := d.isGroupEmpty(ctx, tx, groupID)
+	if err != nil {
 		return err
 	}
 	r := role.Default
-	if row.Count == 0 {
+	if emptyGroup {
 		r = role.Admin
 	}
 
