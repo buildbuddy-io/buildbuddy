@@ -20,7 +20,6 @@ go_library(
         "//server/util/lru",
         "//server/util/status",
         "//server/util/subdomain",
-        "@com_github_golang_jwt_jwt_v4//:jwt",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
     ],

@@ -2,7 +2,6 @@ package remoteauth
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"net/http"
 	"sync"
@@ -21,8 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-
-	"github.com/golang-jwt/jwt/v4"
 
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 )
@@ -348,11 +345,6 @@ func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) 
 		return "", status.InternalError("Authenticate succeeded with nil jwt")
 	}
 	return *resp.Jwt, nil
-}
-
-func isJWTSignatureError(err error) bool {
-	var validationErr *jwt.ValidationError
-	return errors.As(err, &validationErr) && validationErr.Errors&jwt.ValidationErrorSignatureInvalid != 0
 }
 
 // getValidJwtFromContext returns:
