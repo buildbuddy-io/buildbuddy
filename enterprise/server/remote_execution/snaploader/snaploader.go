@@ -456,7 +456,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 				return manifest, snaputil.ChunkSourceLocalFilecache, nil
 			}
 		} else {
-			log.CtxWarningf(ctx, "Failed to get local manifest for key %s: %s", key, err)
+			log.CtxInfof(ctx, "Failed to get local manifest for key %s: %s", key, err)
 			if !opts.RemoteReadEnabled || !*snaputil.EnableRemoteSnapshotSharing {
 				return nil, snaputil.ChunkSourceUnmapped, err
 			}
