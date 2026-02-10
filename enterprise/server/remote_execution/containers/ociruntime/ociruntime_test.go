@@ -2794,6 +2794,34 @@ func TestExecrootPath(t *testing.T) {
 		assert.Equal(t, 0, res.ExitCode)
 		assert.Equal(t, "/custom-execroot\nhello\n", string(res.Stdout))
 	})
+
+	t.Run("Root", func(t *testing.T) {
+		buildRoot := testfs.MakeTempDir(t)
+		cacheRoot := testfs.MakeTempDir(t)
+
+		provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+		require.NoError(t, err)
+		wd := testfs.MakeDirAll(t, buildRoot, "work")
+		testfs.WriteAllFileContents(t, wd, map[string]string{
+			"input.txt": "hello",
+		})
+
+		c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+			ContainerImage: image,
+			ExecrootPath:   "/",
+		}})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			err := c.Remove(ctx)
+			require.NoError(t, err)
+		})
+
+		cmd := &repb.Command{Arguments: []string{"sh", "-c", "pwd && cat input.txt"}}
+		res := c.Run(ctx, cmd, wd, oci.Credentials{})
+		require.NoError(t, res.Error)
+		assert.Equal(t, 0, res.ExitCode)
+		assert.Equal(t, "/\nhello\n", string(res.Stdout))
+	})
 }
 
 func TestExecrootPath_Exec(t *testing.T) {
