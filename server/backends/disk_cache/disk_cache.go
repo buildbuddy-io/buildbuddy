@@ -1212,7 +1212,7 @@ func (p *partition) writer(ctx context.Context, r *rspb.ResourceName) (interface
 		return nil, err
 	}
 	cwc := ioutil.NewCustomCommitWriteCloser(fw)
-	cwc.CommitFn = func(totalBytesWritten int64) error {
+	cwc.SetCommitFn(func(totalBytesWritten int64) error {
 		record, err := makeRecordFromPath(k, k.FullPath())
 		if err != nil {
 			return err
@@ -1222,7 +1222,7 @@ func (p *partition) writer(ctx context.Context, r *rspb.ResourceName) (interface
 		p.lruAdd(record)
 		metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Observe(float64(totalBytesWritten))
 		return nil
-	}
+	})
 	return cwc, nil
 }
 

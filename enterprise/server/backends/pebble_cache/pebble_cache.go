@@ -2079,8 +2079,8 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 	cdcw.chunker = chunker
 
 	cwc := ioutil.NewCustomCommitWriteCloser(wc)
-	cwc.CloseFn = db.Close
-	cwc.CommitFn = func(bytesWritten int64) error {
+	cwc.SetCloseFn(db.Close)
+	cwc.SetCommitFn(func(bytesWritten int64) error {
 		if decompressor != nil {
 			if err := decompressor.Close(); err != nil {
 				return status.InternalErrorf("failed to close decompressor: %s", err)
@@ -2122,7 +2122,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 			return status.InternalErrorf("invalid number of chunks (%d)", numChunks)
 		}
 		return p.writeMetadata(ctx, db, key, md)
-	}
+	})
 	return cwc, nil
 }
 
@@ -2326,8 +2326,8 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 
 	var encryptionMetadata *sgpb.EncryptionMetadata
 	cwc := ioutil.NewCustomCommitWriteCloser(wcm)
-	cwc.CloseFn = db.Close
-	cwc.CommitFn = func(bytesWritten int64) error {
+	cwc.SetCloseFn(db.Close)
+	cwc.SetCommitFn(func(bytesWritten int64) error {
 		now := p.clock.Now().UnixMicro()
 		md := &sgpb.FileMetadata{
 			FileRecord:         fileRecord,
@@ -2344,7 +2344,7 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 		}
 
 		return p.writeMetadata(ctx, db, key, md)
-	}
+	})
 
 	wc := interfaces.CommittedWriteCloser(cwc)
 	shouldEncrypt, err := p.encryptionEnabled(ctx)
