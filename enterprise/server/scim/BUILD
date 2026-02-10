@@ -11,6 +11,7 @@ go_library(
         "//proto:capability_go_proto",
         "//proto:group_go_proto",
         "//proto:user_id_go_proto",
+        "//proto:user_list_go_proto",
         "//server/environment",
         "//server/http/interceptors",
         "//server/interfaces",
@@ -44,6 +45,7 @@ go_test(
         "//server/util/authutil",
         "//server/util/role",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )
