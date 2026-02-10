@@ -940,34 +940,20 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 	}
 
 	for groupID := range groupIDs {
-		err := tx.NewQuery(ctx, "userdb_new_user_create_groups").Raw(`
+		// Check if the group is empty before inserting, so that a
+		// user joining an empty gets promoted to admin.
+		emptyGroup, err := d.isGroupEmpty(ctx, tx, groupID)
+		if err != nil {
+			return err
+		}
+		r := role.Default
+		if emptyGroup {
+			r = role.Admin
+		}
+		err = tx.NewQuery(ctx, "userdb_new_user_create_groups").Raw(`
 			INSERT INTO "UserGroups" (user_user_id, group_group_id, membership_status, role)
 			VALUES (?, ?, ?, ?)
-			`, u.UserID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(role.Default),
-		).Exec().Error
-		if err != nil {
-			return err
-		}
-		// Promote from default role to admin if the user is the only one in the
-		// group after joining.
-		preExistingUsers := &struct{ Count int64 }{}
-		err = tx.GORM(ctx, "userdb_new_user_check_group_size").Raw(`
-			SELECT COUNT(*) AS count
-			FROM "UserGroups"
-			WHERE group_group_id = ? AND user_user_id != ?
-			`, groupID, u.UserID,
-		).Scan(preExistingUsers).Error
-		if err != nil {
-			return err
-		}
-		if preExistingUsers.Count > 0 {
-			continue
-		}
-		err = tx.NewQuery(ctx, "userdb_new_user_promote_admin").Raw(`
-			UPDATE "UserGroups"
-			SET role = ?
-			WHERE group_group_id = ?
-			`, uint32(role.Admin), groupID,
+			`, u.UserID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(r),
 		).Exec().Error
 		if err != nil {
 			return err
