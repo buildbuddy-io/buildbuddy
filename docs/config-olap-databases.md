@@ -11,7 +11,7 @@ To speed up the analysis of historical build event data, BuildBuddy can be confi
 Setting up ClickHouse is completely optional when using BuildBuddy.
 BuildBuddy does not require ClickHouse for its core features, including the build results UI, remote cache, and remote execution system.
 
-However, some UI features, such as Trends, Drilldown, Test Grid, Tags filtering, and Audit Logging, may require ClickHouse.
+However, some UI features, such as Trends, Drilldown, Test Grid, Flakes UI, Tags filtering, and Audit Logging, may require ClickHouse.
 Without a configured ClickHouse instance, these features will either be missing from the UI, or will be missing some features and may not scale to larger amounts of data.
 
 ## Options
@@ -89,6 +89,19 @@ app:
   enable_target_tracking: true # Enable target tracking (default: false)
   test_grid_v2_enabled: true # Enable Test Grid V2 (default: true)
   enable_write_test_target_statuses_to_olap_db: true # Write test target statuses to ClickHouse (default: false)
+```
+
+### Flakes
+
+The Flakes UI shows "Flaky" and "Likely Flaky" test targets. This requires
+the same configuration as Test Grid plus turning on a new flag.
+
+```yaml
+app:
+  enable_target_tracking: true # Enable target tracking (default: false)
+  test_grid_v2_enabled: true # Enable Test Grid V2 (default: true)
+  enable_write_test_target_statuses_to_olap_db: true # Write test target statuses to ClickHouse (default: false)
+  target_flakes_ui_enabled: true # Turns on the Flakes UI (default: false)
 ```
 
 ### Audit Logging
