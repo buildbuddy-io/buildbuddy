@@ -163,6 +163,10 @@ func gitRefs(task *repb.ExecutionTask) (branchRef string, fallbackRefs []string)
 			fallbackRefs = append(fallbackRefs, v)
 		}
 	}
+
+	// As a last resort, fallback to a snapshot from any branch.
+	fallbackRefs = append(fallbackRefs, snaputil.UniversalSnapshotRef)
+
 	return branchRef, fallbackRefs
 }
 
@@ -448,16 +452,13 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	// Note that if platform.SnapshotReadPolicy=newest, the master snapshot is
 	// never cached locally.
 	if *snaputil.EnableLocalSnapshotSharing {
-		supportsRemoteFallback := opts.RemoteReadEnabled && *snaputil.EnableRemoteSnapshotSharing
-		manifest, err := l.getLocalManifest(ctx, key, supportsRemoteFallback)
+		manifest, err := l.getLocalManifest(ctx, key, opts, isFallback)
 		foundLocalSnapshot := err == nil
 		if !foundLocalSnapshot && (!opts.RemoteReadEnabled || !*snaputil.EnableRemoteSnapshotSharing) {
 			return nil, snaputil.ChunkSourceUnmapped, err
 		} else if foundLocalSnapshot {
-			if validateLocalSnapshot(ctx, manifest, opts, isFallback) {
-				log.CtxInfof(ctx, "Using local manifest")
-				return manifest, snaputil.ChunkSourceLocalFilecache, nil
-			}
+			log.CtxInfof(ctx, "Using local manifest")
+			return manifest, snaputil.ChunkSourceLocalFilecache, nil
 		}
 		// If local snapshot is not valid or couldn't be found, fallback to
 		// fetching a remote snapshot.
@@ -471,7 +472,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 
 	// Fall back to fetching remote manifest.
 	log.CtxInfof(ctx, "Fetching remote manifest")
-	manifest, acResult, err := l.fetchRemoteManifest(ctx, key)
+	manifest, acResult, err := l.fetchRemoteManifest(ctx, key, opts, isFallback)
 	if err != nil {
 		return nil, snaputil.ChunkSourceUnmapped, status.WrapError(err, "fetch remote manifest")
 	}
@@ -489,17 +490,28 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	return manifest, snaputil.ChunkSourceRemoteCache, nil
 }
 
-func validateLocalSnapshot(ctx context.Context, manifest *fcpb.SnapshotManifest, opts *GetSnapshotOptions, isFallback bool) bool {
+func (l *FileCacheLoader) validateSnapshot(ctx context.Context, manifest *fcpb.SnapshotManifest, key *fcpb.SnapshotKey, opts *GetSnapshotOptions, isRemote bool, isFallback bool) bool {
 	if !isFallback {
 		return true
 	}
+
+	// For local snapshots, we check the staleness of the snapshot because we may be able to fallback to a fresher remote snapshot.
+	// For universal snapshots, we check for staleness to prevent environment drift from very old snapshots.
+	shouldCheckAge := !isRemote || key.GetRef() == snaputil.UniversalSnapshotRef
+	if !shouldCheckAge {
+		return true
+	}
+
 	snapshotLastSavedTime := manifest.GetVmMetadata().GetLastExecutedTask().GetCompletedTimestamp()
 	if snapshotLastSavedTime == nil {
 		log.CtxErrorf(ctx, "snapshot last saved timestamp for %+v is unexpectedly nil", manifest.GetVmMetadata().GetSnapshotKey())
 		return false
 	}
-	if time.Since(snapshotLastSavedTime.AsTime()) > opts.MaxStaleFallbackSnapshotAge {
-		log.CtxInfof(ctx, "local fallback snapshot was created %s ago, which is longer than the max age %s - not using", time.Since(snapshotLastSavedTime.AsTime()), opts.MaxStaleFallbackSnapshotAge)
+
+	now := l.env.GetClock().Now()
+	age := now.Sub(snapshotLastSavedTime.AsTime())
+	if age > opts.MaxStaleFallbackSnapshotAge {
+		log.CtxInfof(ctx, "Fallback snapshot was created %s ago, which is longer than the max age %s - not using", age, opts.MaxStaleFallbackSnapshotAge)
 		return false
 	}
 	return true
@@ -509,7 +521,7 @@ func validateLocalSnapshot(ctx context.Context, manifest *fcpb.SnapshotManifest,
 // cache.
 // The ActionResult fetch will automatically validate that all referenced
 // artifacts exist in the cache.
-func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, *repb.ActionResult, error) {
+func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey, opts *GetSnapshotOptions, isFallback bool) (*fcpb.SnapshotManifest, *repb.ActionResult, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	manifestKey, err := RemoteManifestKey(key)
@@ -530,6 +542,11 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 	if err != nil {
 		return nil, nil, err
 	}
+
+	if !l.validateSnapshot(ctx, manifest, key, opts, true /*isRemote*/, isFallback) {
+		return nil, nil, status.NotFoundErrorf("remote snapshot is stale")
+	}
+
 	return manifest, acResult, nil
 }
 
@@ -546,7 +563,7 @@ func (l *FileCacheLoader) GetLocalManifestACResult(ctx context.Context, manifest
 	return acResult, nil
 }
 
-func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.SnapshotKey, supportsRemoteFallback bool) (*fcpb.SnapshotManifest, error) {
+func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.SnapshotKey, opts *GetSnapshotOptions, isFallback bool) (*fcpb.SnapshotManifest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	gid, err := groupID(ctx, l.env)
@@ -568,11 +585,15 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 		return nil, status.WrapError(err, "parse local snapshot manifest")
 	}
 
+	if !l.validateSnapshot(ctx, manifest, key, opts, false /*isRemote*/, isFallback) {
+		return nil, status.NotFoundErrorf("local snapshot is stale")
+	}
+
 	// Check whether all artifacts in the manifest are available. This helps
 	// make sure that the snapshot we return can actually be loaded. This also
 	// updates the last access time of all the artifacts, which helps prevent
 	// the snapshot artifacts from expiring just after we've returned it.
-	if err := l.checkAllArtifactsExist(ctx, manifest, key.InstanceName, supportsRemoteFallback); err != nil {
+	if err := l.checkAllArtifactsExist(ctx, manifest, key.InstanceName, opts.RemoteReadEnabled); err != nil {
 		return nil, status.WrapError(err, "check all artifacts exist for local snapshot manifest")
 	}
 	return manifest, nil
@@ -835,6 +856,21 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 			}
 			log.CtxInfof(ctx, "Cached remote snapshot manifest %s", snapshotDebugString(ctx, l.env, snapshotSpecificKey, true /*remote*/, snapshotID))
 		}
+
+		// Cache a universal snapshot as a last-resort fallback if there are no other snapshots.
+		universalKey := key.CloneVT()
+		universalKey.Ref = snaputil.UniversalSnapshotRef
+		universalD, err := RemoteManifestKey(universalKey)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to generate universal remote manifest key: %s", err)
+			return nil
+		}
+		universalDigest := digest.NewACResourceName(universalD, universalKey.InstanceName, repb.DigestFunction_BLAKE3)
+		if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), universalDigest, ar); err != nil {
+			log.CtxWarningf(ctx, "Failed to cache remote universal snapshot manifest: %s", err)
+			return nil
+		}
+		log.CtxInfof(ctx, "Updated remote universal snapshot manifest %s", snapshotDebugString(ctx, l.env, universalKey, true /*remote*/, "" /*=snapshotID*/))
 	}
 
 	if !opts.WriteManifestLocally || !opts.CacheSnapshotLocally {
@@ -885,6 +921,22 @@ func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.Sn
 		log.CtxInfof(ctx, "Cached local snapshot manifest %s", snapshotDebugString(ctx, l.env, snapshotSpecificKey, false /*remote*/, snapshotID))
 	}
 
+	// Cache a universal snapshot as a last-resort fallback if there are no other snapshots.
+	universalKey := key.CloneVT()
+	universalKey.Ref = snaputil.UniversalSnapshotRef
+
+	universalD, err := LocalManifestKey(gid, universalKey)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to generate local universal manifest key: %s", err)
+		return nil
+	}
+	universalManifestNode := &repb.FileNode{Digest: universalD}
+	if _, err := l.env.GetFileCache().Write(ctx, universalManifestNode, b); err != nil {
+		log.CtxWarningf(ctx, "Failed to cache local universal snapshot manifest: %s", err)
+		return nil
+	}
+
+	log.CtxInfof(ctx, "Updated local universal snapshot manifest %s", snapshotDebugString(ctx, l.env, universalKey, false /*remote*/, "" /*=snapshotID*/))
 	return nil
 }
 
