@@ -450,13 +450,15 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	if *snaputil.EnableLocalSnapshotSharing {
 		supportsRemoteFallback := opts.RemoteReadEnabled && *snaputil.EnableRemoteSnapshotSharing
 		manifest, err := l.getLocalManifest(ctx, key, supportsRemoteFallback)
-		foundLocalSnapshot := err == nil
-		if !foundLocalSnapshot && (!opts.RemoteReadEnabled || !*snaputil.EnableRemoteSnapshotSharing) {
-			return nil, snaputil.ChunkSourceUnmapped, err
-		} else if foundLocalSnapshot {
+		if err == nil {
 			if validateLocalSnapshot(ctx, manifest, opts, isFallback) {
 				log.CtxInfof(ctx, "Using local manifest")
 				return manifest, snaputil.ChunkSourceLocalFilecache, nil
+			}
+		} else {
+			log.CtxInfof(ctx, "Failed to get local manifest for key %s: %s", key, err)
+			if !opts.RemoteReadEnabled || !*snaputil.EnableRemoteSnapshotSharing {
+				return nil, snaputil.ChunkSourceUnmapped, err
 			}
 		}
 		// If local snapshot is not valid or couldn't be found, fallback to
