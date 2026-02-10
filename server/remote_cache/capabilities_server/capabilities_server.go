@@ -85,8 +85,8 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 			SymlinkAbsolutePathStrategy:     repb.SymlinkAbsolutePathStrategy_ALLOWED,
 			SupportedCompressors:            compressors,
 			SupportedBatchUpdateCompressors: compressors,
-			BlobSplitSupport:                splitSpliceEnabled,
-			BlobSpliceSupport:               splitSpliceEnabled,
+			SplitBlobSupport:                splitSpliceEnabled,
+			SpliceBlobSupport:               splitSpliceEnabled,
 		}
 	}
 	if s.supportRemoteExec {
