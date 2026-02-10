@@ -1027,15 +1027,144 @@ func (s *Store) findTargetReplicaIDForLeadershipTransfer(ctx context.Context, rd
 	return targetReplicaID
 }
 
+// getNHIDToPodIndex builds a map from NHID to pod index using gossip members.
+func (s *Store) getNHIDToPodIndex() map[string]int {
+	members := s.gossipManager.Members()
+	m := make(map[string]int, len(members))
+	for _, member := range members {
+		usageTag := member.Tags[constants.StoreUsageTag]
+		if usageTag == "" {
+			continue
+		}
+		usageBuf, err := base64.StdEncoding.DecodeString(usageTag)
+		if err != nil {
+			continue
+		}
+		usage := &rfpb.StoreUsage{}
+		if err := proto.Unmarshal(usageBuf, usage); err != nil {
+			continue
+		}
+		nhid := usage.GetNode().GetNhid()
+		if nhid == "" {
+			continue
+		}
+		pidStr := member.Tags[constants.PodIndexTag]
+		if pidStr == "" {
+			continue
+		}
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil {
+			continue
+		}
+		m[nhid] = pid
+	}
+	return m
+}
+
+// pickLeaderTransferTarget picks exactly one replica to transfer leadership to
+// for a shard that is shutting down. When pod-index information is available it
+// prefers higher-index pods (already restarted and stable), then lower-index
+// pods sorted farthest-first (so the adjacent pod, which is about to restart
+// next, is tried last). Ready connections are preferred within each tier.
+// Previously-attempted replicas are deprioritized to the end so retries
+// cycle through the candidate list.
+func (s *Store) pickLeaderTransferTarget(ctx context.Context, rd *rfpb.RangeDescriptor, fromReplicaID uint64, nhidToPodIndex map[string]int, attempted []uint64) uint64 {
+	type candidate struct {
+		repl     *rfpb.ReplicaDescriptor
+		podIndex int
+		known    bool // whether we have a pod index for this replica
+	}
+
+	attemptedSet := set.From(attempted...)
+
+	myPodIndex, havePodIndex := 0, false
+	var candidates, deprioritized []candidate
+	for _, repl := range rd.GetReplicas() {
+		idx, known := nhidToPodIndex[repl.GetNhid()]
+		if repl.GetReplicaId() == fromReplicaID {
+			myPodIndex, havePodIndex = idx, known
+			continue
+		}
+		c := candidate{repl: repl, podIndex: idx, known: known}
+		if attemptedSet.Contains(repl.GetReplicaId()) {
+			deprioritized = append(deprioritized, c)
+			continue
+		}
+		candidates = append(candidates, c)
+	}
+
+	if !havePodIndex {
+		// No pod-index info: pick first with ready connection, else first overall.
+		all := append(candidates, deprioritized...)
+		var backupReplicaID uint64
+		for _, c := range all {
+			if ready, err := s.apiClient.HaveReadyConnections(ctx, c.repl); err == nil && ready {
+				return c.repl.GetReplicaId()
+			}
+			if backupReplicaID == 0 {
+				backupReplicaID = c.repl.GetReplicaId()
+			}
+		}
+		return backupReplicaID
+	}
+
+	// Partition candidates into tiers.
+	var higher, lower, unknown []candidate
+	for _, c := range candidates {
+		if !c.known {
+			unknown = append(unknown, c)
+			continue
+		}
+		if c.podIndex > myPodIndex {
+			higher = append(higher, c)
+		} else if c.podIndex < myPodIndex {
+			lower = append(lower, c)
+		}
+		// Skip replicas with the same pod index.
+	}
+
+	// Sort higher ascending (prefer the next-higher pod).
+	slices.SortFunc(higher, func(a, b candidate) int { return a.podIndex - b.podIndex })
+	// Sort lower ascending (prefer the farthest lower pod — it's least
+	// likely to restart soon, with adjacent pods naturally last).
+	slices.SortFunc(lower, func(a, b candidate) int { return a.podIndex - b.podIndex })
+
+	ordered := make([]candidate, 0, len(higher)+len(lower)+len(unknown)+len(deprioritized))
+	ordered = append(ordered, higher...)
+	ordered = append(ordered, lower...)
+	ordered = append(ordered, unknown...)
+	ordered = append(ordered, deprioritized...)
+
+	var backupReplicaID uint64
+	for _, c := range ordered {
+		if ready, err := s.apiClient.HaveReadyConnections(ctx, c.repl); err == nil && ready {
+			return c.repl.GetReplicaId()
+		}
+		if backupReplicaID == 0 {
+			backupReplicaID = c.repl.GetReplicaId()
+		}
+	}
+	return backupReplicaID
+}
+
 // tryDroppingLeadership tries to drop leadership, returns the number of
-// remaining leaderes and error.
-func (s *Store) tryDroppingLeadership(ctx context.Context) (int, error) {
+// remaining leaders and error. attempted tracks all previously-tried targets
+// per shard so retries cycle through candidates.
+func (s *Store) tryDroppingLeadership(ctx context.Context, nhidToPodIndex map[string]int, attempted map[uint64][]uint64) (int, error) {
 	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
 		SkipLogInfo: true,
 	})
 	if nodeHostInfo == nil {
 		return 0, errors.New("missing nodehost info")
 	}
+
+	type result struct {
+		shardID         uint64
+		targetReplicaID uint64
+	}
+	var mu sync.Mutex
+	var results []result
+
 	eg := errgroup.Group{}
 	remainingLeader := 0
 	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
@@ -1048,31 +1177,36 @@ func (s *Store) tryDroppingLeadership(ctx context.Context) (int, error) {
 		remainingLeader++
 		eg.Go(func() error {
 			rd := s.GetRange(clusterInfo.ShardID)
-			log.Debugf("Dropping leadership of shard %d from replica %d", clusterInfo.ShardID, clusterInfo.ReplicaID)
-			// Try to transfer leadership to other replicas. Dragonboat doesn't
-			// retry on a different target if it fail to transfer the leader.
-			for _, repl := range rd.GetReplicas() {
-				if repl.GetReplicaId() == clusterInfo.ReplicaID {
-					continue
-				}
-				if connReady, err := s.apiClient.HaveReadyConnections(ctx, repl); err != nil || !connReady {
-					log.Debugf("Drop leadership of shard %d: skipping replica id %d on NHID %q b/c connReady = %t, err = %s", clusterInfo.ShardID, repl.GetReplicaId(), repl.GetNhid(), connReady, err)
-					continue
-				}
-				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, repl.GetReplicaId()); err != nil {
-					s.log.Warningf("Error transferring leadership: %s", err)
-				}
-				log.Debugf("Dropping leadership of shard %d: attempt to transfer from c%dn%d to c%dn%d (nhid: %q)", clusterInfo.ShardID, clusterInfo.ShardID, clusterInfo.ReplicaID, clusterInfo.ShardID, repl.GetReplicaId(), repl.GetNhid())
+			targetReplicaID := s.pickLeaderTransferTarget(ctx, rd, clusterInfo.ReplicaID, nhidToPodIndex, attempted[clusterInfo.ShardID])
+			if targetReplicaID == 0 {
+				log.Debugf("Drop leadership of shard %d: no suitable target found", clusterInfo.ShardID)
+				return nil
+			}
+			mu.Lock()
+			results = append(results, result{shardID: clusterInfo.ShardID, targetReplicaID: targetReplicaID})
+			mu.Unlock()
+			log.Debugf("Dropping leadership of shard %d: transferring from c%dn%d to c%dn%d", clusterInfo.ShardID, clusterInfo.ShardID, clusterInfo.ReplicaID, clusterInfo.ShardID, targetReplicaID)
+			if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, targetReplicaID); err != nil {
+				s.log.Warningf("Error transferring leadership of shard %d to replica %d: %s", clusterInfo.ShardID, targetReplicaID, err)
 			}
 			return nil
 		})
 	}
-	return remainingLeader, eg.Wait()
+	err := eg.Wait()
+	for _, r := range results {
+		attempted[r.shardID] = append(attempted[r.shardID], r.targetReplicaID)
+	}
+	return remainingLeader, err
 }
 
 func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
+
+	nhidToPodIndex := s.getNHIDToPodIndex()
+	log.Debugf("Drop leadership: nhidToPodIndex=%v", nhidToPodIndex)
+
+	attempted := make(map[uint64][]uint64)
 	remainingLeaders := 0
 	var err error
 
@@ -1084,7 +1218,7 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 			log.Warningf("Timed out waiting for leadership transfer: %d leaders remaining", remainingLeaders)
 			return
 		case <-ticker.C:
-			remainingLeaders, err = s.tryDroppingLeadership(ctx)
+			remainingLeaders, err = s.tryDroppingLeadership(ctx, nhidToPodIndex, attempted)
 			if err != nil {
 				log.Warningf("failed to drop leadership: %s", err)
 				return
