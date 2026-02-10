@@ -363,10 +363,7 @@ func TestES256KeysCached(t *testing.T) {
 
 	fakeAuth.setPublicKeys([]string{keyPair.PublicKeyPEM})
 
-	// Capture the number of key fetches before any authentication.
-	publicKeysCallsBeforeFirstAuth := fakeAuth.getPublicKeysCalls()
-
-	// Perform the first authentication; keys must be available (whether prefetched or fetched on first use).
+	// Perform the first authentication; keys must be available.
 	fakeAuth.setNextJwt(t, "", validES256Jwt(t, "foo"))
 	ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
 	user, err := authenticator.AuthenticatedUser(ctx)
@@ -374,17 +371,13 @@ func TestES256KeysCached(t *testing.T) {
 	require.Equal(t, "foo", user.GetUserID())
 	publicKeysCallsAfterFirstAuth := fakeAuth.getPublicKeysCalls()
 
-	// Second authentication with a different API key should use cached keys and not trigger additional fetches.
+	// Second authentication with a different API key should use cached keys.
 	fakeAuth.setNextJwt(t, "", validES256Jwt(t, "bar"))
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "bar"))
 	user, err = authenticator.AuthenticatedUser(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "bar", user.GetUserID())
-	require.Equal(t, publicKeysCallsAfterFirstAuth, fakeAuth.getPublicKeysCalls(),
-		"expected no additional public key fetch between first and second authentication; initial fetch may occur before or during first auth (prefetch vs fetch-on-first-use)")
-
-	// Sanity check: at least one fetch should have happened by now relative to the initial count.
-	require.GreaterOrEqual(t, fakeAuth.getPublicKeysCalls(), publicKeysCallsBeforeFirstAuth)
+	require.Equal(t, publicKeysCallsAfterFirstAuth, fakeAuth.getPublicKeysCalls())
 }
 
 func TestES256KeysBackgroundRefresh(t *testing.T) {

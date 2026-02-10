@@ -70,6 +70,7 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 	}
 	client := authpb.NewAuthServiceClient(conn)
 	provider := &keyProvider{
+		ctx:    env.GetServerContext(),
 		env:    env,
 		client: client,
 		quit:   make(chan struct{}),
@@ -83,6 +84,9 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 	claimsParser, err := claims.NewClaimsParser(provider.provide)
 	if err != nil {
 		return nil, err
+	}
+	if *keyRefreshInterval <= 0 {
+		return nil, status.InvalidArgumentError("auth.remote.key_refresh_interval must be positive")
 	}
 	provider.startRefresher(*keyRefreshInterval)
 	return &RemoteAuthenticator{
@@ -100,6 +104,7 @@ func (a *RemoteAuthenticator) Stop() {
 }
 
 type keyProvider struct {
+	ctx    context.Context
 	env    environment.Env
 	client authpb.AuthServiceClient
 	mu     sync.RWMutex
@@ -160,7 +165,7 @@ func (kp *keyProvider) refreshES256PublicKeys() error {
 }
 
 func (kp *keyProvider) fetchES256PublicKeys() ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), *getKeysTimeout)
+	ctx, cancel := context.WithTimeout(kp.ctx, *getKeysTimeout)
 	defer cancel()
 	req := authpb.GetPublicKeysRequest{}
 	resp, err := kp.client.GetPublicKeys(ctx, &req)
