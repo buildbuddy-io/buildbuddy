@@ -145,9 +145,12 @@ func recordMetrics(op, status string, cm *cacheMetrics) {
 }
 
 func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
+	log.CtxDebugf(ctx, "Top of FindMissingBlobs")
 	if proxy_util.SkipRemote(ctx) {
+		log.CtxDebugf(ctx, "SkipRemote is true, calling local FindMissingBlobs")
 		return s.local.FindMissingBlobs(ctx, req)
 	}
+	log.CtxDebugf(ctx, "SkipRemote is false, calling remote FindMissingBlobs")
 
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()

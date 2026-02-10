@@ -67,6 +67,7 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 }
 
 func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, digests []*rspb.ResourceName) error {
+	log.CtxDebugf(ctx, "Validating AC result for digests: %v", digests)
 	missing, err := cache.FindMissing(ctx, digests)
 	if err != nil {
 		return err
@@ -98,6 +99,7 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 }
 
 func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, r *repb.ActionResult) error {
+	log.CtxDebugf(ctx, "Validating AC result %s", r)
 	outputFileDigests := make([]*rspb.ResourceName, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
 	appendDigest := func(d *repb.Digest) {
@@ -125,7 +127,9 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 			if err := proto.Unmarshal(blob, tree); err != nil {
 				return err
 			}
+			log.CtxDebugf(ctx, "Tree: %+v", tree)
 			for _, f := range tree.GetRoot().GetFiles() {
+				log.CtxDebugf(ctx, "Appending digest: %+v", f.GetDigest())
 				appendDigest(f.GetDigest())
 			}
 			for _, dir := range tree.GetChildren() {

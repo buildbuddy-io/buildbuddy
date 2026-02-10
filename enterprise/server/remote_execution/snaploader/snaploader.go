@@ -439,6 +439,7 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKe
 }
 
 func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *GetSnapshotOptions, isFallback bool) (*fcpb.SnapshotManifest, snaputil.ChunkSource, error) {
+	log.CtxInfof(ctx, "Getting snapshot for key %s", key)
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -472,7 +473,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	}
 
 	// Fall back to fetching remote manifest.
-	log.CtxInfof(ctx, "Fetching remote manifest")
+	log.CtxInfof(ctx, "Fetching remote manifest for key %s", key)
 	manifest, acResult, err := l.fetchRemoteManifest(ctx, key)
 	if err != nil {
 		return nil, snaputil.ChunkSourceUnmapped, status.WrapError(err, "fetch remote manifest")
@@ -532,6 +533,9 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 	if err != nil {
 		return nil, nil, err
 	}
+	log.CtxDebugf(ctx, "For Key: %s", key)
+	log.CtxDebugf(ctx, "Remote AC result: %+v", acResult)
+	log.CtxDebugf(ctx, "Remote manifest: %+v", manifest)
 	return manifest, acResult, nil
 }
 
@@ -565,10 +569,13 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 	}
 
 	tmpDir := l.env.GetFileCache().TempDir()
+	log.CtxDebugf(ctx, "For Key: %s", key.String())
+	log.CtxDebugf(ctx, "Local AC result: %+v", acResult)
 	manifest, err := l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir, false /*remoteEnabled*/)
 	if err != nil {
 		return nil, status.WrapError(err, "parse local snapshot manifest")
 	}
+	log.CtxDebugf(ctx, "Local manifest: %+v", manifest)
 
 	// Check whether all artifacts in the manifest are available. This helps
 	// make sure that the snapshot we return can actually be loaded. This also
@@ -630,6 +637,7 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 			return nil, err
 		}
 
+		log.CtxDebugf(ctx, "[%s] Tree: %+v", fileName, tree)
 		chunks := make([]*fcpb.Chunk, 0, len(tree.GetRoot().GetFiles()))
 		for _, chunk := range tree.GetRoot().GetFiles() {
 			offset, err := strconv.ParseInt(chunk.GetName(), 10, 64)
@@ -910,6 +918,7 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 				Digest: c.GetDigest(),
 			}
 			if !l.env.GetFileCache().ContainsFile(ctx, node) {
+				log.CtxDebugf(ctx, "Chunked file %q missing chunk at offset %v (digest %q)", cf.GetName(), c.GetOffset(), c.GetDigest())
 				if supportsRemoteFallback {
 					missingDigests = append(missingDigests, c.GetDigest())
 				} else {
@@ -923,6 +932,7 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 	// if all snapshot chunks don't exist locally. The snaploader can fallback
 	// to fetching chunks from the remote cache.
 	if supportsRemoteFallback && len(missingDigests) > 0 {
+		ctx = snaputil.GetSnapshotAccessContext(ctx)
 		rsp, err := l.env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
 			InstanceName:   instanceName,
 			BlobDigests:    missingDigests,
@@ -931,6 +941,7 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 		if err != nil {
 			return status.WrapError(err, "querying remote cache to check for snapshot artifacts")
 		} else if len(rsp.MissingBlobDigests) > 0 {
+			log.CtxDebugf(ctx, "Digests not found when querying remote cache to check for snapshot artifacts (in %s): %v", instanceName, rsp.MissingBlobDigests)
 			return status.NotFoundErrorf("digests not found when querying remote cache to check for snapshot artifacts")
 		}
 	}
