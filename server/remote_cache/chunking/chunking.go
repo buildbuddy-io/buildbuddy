@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -24,7 +25,7 @@ import (
 
 var (
 	chunkedManifestSalt = flag.String("cache.chunking.ac_key_salt", "", "If set, salt the AC key with this value.")
-	maxChunkSizeBytes   = flag.Int64("cache.max_chunk_size_bytes", 2<<20, "Only blobs larger (non-inclusive) than this threshold will be chunked (default 2MB). This is also the maximum size of a chunk. The average chunk size will be 1/4 of this value, and the minimum will be 1/16 of this value.")
+	avgChunkSizeBytes   = flag.Int64("cache.avg_chunk_size_bytes", 512*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 512KB).")
 )
 
 const (
@@ -32,8 +33,20 @@ const (
 	chunkOutputFilePrefix = "chunk_"
 )
 
+func AvgChunkSizeBytes() int64 {
+	return *avgChunkSizeBytes
+}
+
 func MaxChunkSizeBytes() int64 {
-	return *maxChunkSizeBytes
+	return *avgChunkSizeBytes * 4
+}
+
+func ValidateConfig() error {
+	v := *avgChunkSizeBytes
+	if v < 1024 || v > 1024*1024 {
+		return fmt.Errorf("cache.avg_chunk_size_bytes must be between 1024 and 1048576, got %d", v)
+	}
+	return nil
 }
 
 func Enabled(ctx context.Context, efp interfaces.ExperimentFlagProvider) bool {
@@ -176,7 +189,8 @@ type Manifest struct {
 
 func (cm *Manifest) ToSplitBlobResponse() *repb.SplitBlobResponse {
 	return &repb.SplitBlobResponse{
-		ChunkDigests: cm.ChunkDigests,
+		ChunkDigests:     cm.ChunkDigests,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
 	}
 }
 
@@ -190,10 +204,11 @@ func (cm *Manifest) ToFindMissingBlobsRequest() *repb.FindMissingBlobsRequest {
 
 func (cm *Manifest) ToSpliceBlobRequest() *repb.SpliceBlobRequest {
 	return &repb.SpliceBlobRequest{
-		BlobDigest:     cm.BlobDigest,
-		ChunkDigests:   cm.ChunkDigests,
-		InstanceName:   cm.InstanceName,
-		DigestFunction: cm.DigestFunction,
+		BlobDigest:       cm.BlobDigest,
+		ChunkDigests:     cm.ChunkDigests,
+		InstanceName:     cm.InstanceName,
+		DigestFunction:   cm.DigestFunction,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
 	}
 }
 

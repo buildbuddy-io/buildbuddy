@@ -756,7 +756,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		return nil
 	}
 
-	chunker, err := chunking.NewChunker(ctx, int(chunking.MaxChunkSizeBytes()/4), chunkWriteFn)
+	chunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), chunkWriteFn)
 	if err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("creating chunker: %s", err)
 	}
@@ -818,7 +818,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	// If there's only 1 chunk, the chunking threshold is misconfigured.
 	// It should be set higher than the max chunk size to avoid overlap.
 	if len(chunkDigests) == 1 {
-		return result, status.InternalErrorf("chunking produced only 1 chunk; only chunked blobs larger than max_chunk_size_bytes are supported")
+		return result, status.InternalErrorf("chunking produced only 1 chunk; only chunked blobs larger than 4x avg_chunk_size_bytes are supported")
 	}
 
 	manifest := &chunking.Manifest{

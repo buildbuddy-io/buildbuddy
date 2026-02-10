@@ -5,6 +5,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 
@@ -32,6 +33,9 @@ type CapabilitiesServer struct {
 }
 
 func Register(env *real_environment.RealEnv) error {
+	if err := chunking.ValidateConfig(); err != nil {
+		return err
+	}
 	// Register to handle GetCapabilities messages, which tell the client
 	// that this server supports CAS functionality.
 	env.SetCapabilitiesServer(NewCapabilitiesServer(
@@ -64,8 +68,10 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 	}
 	if s.supportCAS {
 		splitSpliceEnabled := false
+		chunkingEnabled := false
 		if efp := s.env.GetExperimentFlagProvider(); efp != nil {
 			splitSpliceEnabled = efp.Boolean(ctx, "cache.split_splice_enabled", false)
+			chunkingEnabled = chunking.Enabled(ctx, efp)
 		}
 
 		c.CacheCapabilities = &repb.CacheCapabilities{
@@ -87,6 +93,16 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 			SupportedBatchUpdateCompressors: compressors,
 			SplitBlobSupport:                splitSpliceEnabled,
 			SpliceBlobSupport:               splitSpliceEnabled,
+		}
+
+		if chunkingEnabled {
+			avgChunkSizeBytes := chunking.AvgChunkSizeBytes()
+			if avgChunkSizeBytes > 0 {
+				c.CacheCapabilities.FastCdc_2020Params = &repb.FastCdc2020Params{
+					AvgChunkSizeBytes: uint64(avgChunkSizeBytes),
+					Seed:              0,
+				}
+			}
 		}
 	}
 	if s.supportRemoteExec {
