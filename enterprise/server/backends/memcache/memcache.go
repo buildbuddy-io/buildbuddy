@@ -302,10 +302,10 @@ func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.Co
 	}
 	var buffer bytes.Buffer
 	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
-	wc.CommitFn = func(int64) error {
+	wc.SetCommitFn(func(int64) error {
 		// Locking and key prefixing are handled in Set.
 		return c.mcSet(k, buffer.Bytes())
-	}
+	})
 	return wc, nil
 
 }

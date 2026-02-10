@@ -237,10 +237,10 @@ func (m *MemoryCache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompr
 func (m *MemoryCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	var buffer bytes.Buffer
 	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
-	wc.CommitFn = func(int64) error {
+	wc.SetCommitFn(func(int64) error {
 		// Locking and key prefixing are handled in SetDeprecated.
 		return m.Set(ctx, r, buffer.Bytes())
-	}
+	})
 	return wc, nil
 }
 
