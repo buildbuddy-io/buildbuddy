@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -867,4 +868,548 @@ func TestUpdateUser(t *testing.T) {
 	err = json.Unmarshal(body, &updatedUser)
 	require.NoError(t, err)
 	verifyRole(t, updatedUser, role.Admin.String())
+}
+
+func TestCreateGroup(t *testing.T) {
+	flags.Set(t, "database.create_user_list_tables", true)
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create first user & group.
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey, _ := prepareGroup(t, userCtx, env)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// Create a group with no members.
+	{
+		reqBody := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":"test group","members":[]}`
+		code, body := tc.Post(baseURL+"/scim/Groups", []byte(reqBody))
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		gr := scim.GroupResource{}
+		err = json.Unmarshal(body, &gr)
+		require.NoError(t, err)
+		require.Len(t, gr.Schemas, 1)
+		require.Equal(t, scim.GroupResourceSchema, gr.Schemas[0])
+		require.NotEmpty(t, gr.ID)
+		require.Equal(t, "test group", gr.DisplayName)
+		require.Empty(t, gr.Members)
+		require.Equal(t, "Group", gr.Meta.ResourceType)
+
+		// Verify the group can be retrieved.
+		code, body = tc.Get(baseURL + "/scim/Groups/" + gr.ID)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		fetched := scim.GroupResource{}
+		err = json.Unmarshal(body, &fetched)
+		require.NoError(t, err)
+		require.Equal(t, gr.ID, fetched.ID)
+		require.Equal(t, "test group", fetched.DisplayName)
+		require.Empty(t, fetched.Members)
+		require.Equal(t, "Group", fetched.Meta.ResourceType)
+	}
+
+	// Create a group with members.
+	{
+		// Create a second user to add as a member.
+		err = udb.InsertUser(userCtx, &tables.User{
+			UserID: "US200",
+			SubID:  "SubID200",
+			Email:  "user200@org1.io",
+		})
+		require.NoError(t, err)
+
+		reqBody := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":"group with members","members":[{"value":"US100"},{"value":"US200"}]}`
+		code, body := tc.Post(baseURL+"/scim/Groups", []byte(reqBody))
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		gr := scim.GroupResource{}
+		err = json.Unmarshal(body, &gr)
+		require.NoError(t, err)
+		require.Equal(t, "group with members", gr.DisplayName)
+		require.Len(t, gr.Members, 2)
+		require.Equal(t, "Group", gr.Meta.ResourceType)
+
+		memberIDs := map[string]bool{}
+		for _, m := range gr.Members {
+			memberIDs[m.Value] = true
+		}
+		require.True(t, memberIDs["US100"])
+		require.True(t, memberIDs["US200"])
+
+		// Verify the group can be retrieved with members.
+		code, body = tc.Get(baseURL + "/scim/Groups/" + gr.ID)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		fetched := scim.GroupResource{}
+		err = json.Unmarshal(body, &fetched)
+		require.NoError(t, err)
+		require.Equal(t, gr.ID, fetched.ID)
+		require.Len(t, fetched.Members, 2)
+	}
+}
+
+func TestGetGroups(t *testing.T) {
+	flags.Set(t, "database.create_user_list_tables", true)
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create first user & group.
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey, _ := prepareGroup(t, userCtx, env)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// List groups when there are none.
+	{
+		code, body := tc.Get(baseURL + "/scim/Groups")
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		lr := scim.GroupListResponseResource{}
+		err = json.Unmarshal(body, &lr)
+		require.NoError(t, err)
+		require.Len(t, lr.Schemas, 1)
+		require.Equal(t, scim.ListResponseSchema, lr.Schemas[0])
+		require.Equal(t, 0, lr.TotalResults)
+		require.Empty(t, lr.Resources)
+	}
+
+	// Create several groups and list them.
+	for _, name := range []string{"group A", "group B", "group C", "group D"} {
+		reqBody := fmt.Sprintf(`{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":%q,"members":[]}`, name)
+		code, body := tc.Post(baseURL+"/scim/Groups", []byte(reqBody))
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+	}
+
+	// List all groups.
+	{
+		code, body := tc.Get(baseURL + "/scim/Groups")
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		lr := scim.GroupListResponseResource{}
+		err = json.Unmarshal(body, &lr)
+		require.NoError(t, err)
+		require.Equal(t, 4, lr.TotalResults)
+		require.Equal(t, 1, lr.StartIndex)
+		require.Equal(t, 4, lr.ItemsPerPage)
+		require.Len(t, lr.Resources, 4)
+
+		for _, g := range lr.Resources {
+			require.Equal(t, "Group", g.Meta.ResourceType)
+		}
+	}
+
+	// Test pagination.
+	{
+		code, body := tc.Get(baseURL + "/scim/Groups?startIndex=2&count=2")
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		lr := scim.GroupListResponseResource{}
+		err = json.Unmarshal(body, &lr)
+		require.NoError(t, err)
+		require.Equal(t, 4, lr.TotalResults)
+		require.Equal(t, 2, lr.StartIndex)
+		require.Equal(t, 2, lr.ItemsPerPage)
+		require.Len(t, lr.Resources, 2)
+	}
+
+	// Test filter by displayName.
+	{
+		code, body := tc.Get(baseURL + "/scim/Groups?filter=" + url.QueryEscape(`displayName eq "group C"`))
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		lr := scim.GroupListResponseResource{}
+		err = json.Unmarshal(body, &lr)
+		require.NoError(t, err)
+		require.Equal(t, 1, lr.TotalResults)
+		require.Equal(t, 1, lr.StartIndex)
+		require.Equal(t, 1, lr.ItemsPerPage)
+		require.Len(t, lr.Resources, 1)
+		require.Equal(t, "group C", lr.Resources[0].DisplayName)
+	}
+
+	// Test filter with no match.
+	{
+		code, body := tc.Get(baseURL + "/scim/Groups?filter=" + url.QueryEscape(`displayName eq "nonexistent"`))
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		lr := scim.GroupListResponseResource{}
+		err = json.Unmarshal(body, &lr)
+		require.NoError(t, err)
+		require.Equal(t, 0, lr.TotalResults)
+		require.Empty(t, lr.Resources)
+	}
+
+	// Get a non-existent group.
+	{
+		code, _ := tc.Get(baseURL + "/scim/Groups/nonexistent")
+		require.Equal(t, http.StatusNotFound, code)
+	}
+}
+
+func TestPatchGroup(t *testing.T) {
+	flags.Set(t, "database.create_user_list_tables", true)
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey, _ := prepareGroup(t, userCtx, env)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// Create a group first.
+	reqBody := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":"original name","members":[]}`
+	code, body := tc.Post(baseURL+"/scim/Groups", []byte(reqBody))
+	require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+	created := scim.GroupResource{}
+	err = json.Unmarshal(body, &created)
+	require.NoError(t, err)
+
+	// Patch displayName using value map (Okta style).
+	{
+		patchReq := &scim.PatchResource{
+			Schemas: []string{scim.PatchResourceSchema},
+			Operations: []scim.OperationResource{
+				{
+					Op: "replace",
+					Value: map[string]any{
+						"id":          created.ID,
+						"displayName": "updated name",
+					},
+				},
+			},
+		}
+		patchBody, err := json.Marshal(patchReq)
+		require.NoError(t, err)
+
+		code, body = tc.Patch(baseURL+"/scim/Groups/"+created.ID, patchBody)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		patched := scim.GroupResource{}
+		err = json.Unmarshal(body, &patched)
+		require.NoError(t, err)
+		require.Equal(t, created.ID, patched.ID)
+		require.Equal(t, "updated name", patched.DisplayName)
+		require.Equal(t, "Group", patched.Meta.ResourceType)
+
+		// Verify via GET.
+		code, body = tc.Get(baseURL + "/scim/Groups/" + created.ID)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		fetched := scim.GroupResource{}
+		err = json.Unmarshal(body, &fetched)
+		require.NoError(t, err)
+		require.Equal(t, "updated name", fetched.DisplayName)
+	}
+
+	// Patch displayName using path field.
+	{
+		patchReq := &scim.PatchResource{
+			Schemas: []string{scim.PatchResourceSchema},
+			Operations: []scim.OperationResource{
+				{
+					Op:    "replace",
+					Path:  "displayName",
+					Value: "final name",
+				},
+			},
+		}
+		patchBody, err := json.Marshal(patchReq)
+		require.NoError(t, err)
+
+		code, body = tc.Patch(baseURL+"/scim/Groups/"+created.ID, patchBody)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		patched := scim.GroupResource{}
+		err = json.Unmarshal(body, &patched)
+		require.NoError(t, err)
+		require.Equal(t, "final name", patched.DisplayName)
+
+		// Verify via GET.
+		code, body = tc.Get(baseURL + "/scim/Groups/" + created.ID)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		fetched := scim.GroupResource{}
+		err = json.Unmarshal(body, &fetched)
+		require.NoError(t, err)
+		require.Equal(t, "final name", fetched.DisplayName)
+	}
+}
+
+func TestPatchGroupMembers(t *testing.T) {
+	flags.Set(t, "database.create_user_list_tables", true)
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey, _ := prepareGroup(t, userCtx, env)
+
+	// Create additional users.
+	for _, u := range []struct {
+		id, email string
+	}{
+		{"US200", "user200@org1.io"},
+		{"US300", "user300@org1.io"},
+	} {
+		err = udb.InsertUser(userCtx, &tables.User{
+			UserID: u.id,
+			SubID:  "SubID" + u.id,
+			Email:  u.email,
+		})
+		require.NoError(t, err)
+	}
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// Create a group with no members.
+	reqBody := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":"test group","members":[]}`
+	code, body := tc.Post(baseURL+"/scim/Groups", []byte(reqBody))
+	require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+	created := scim.GroupResource{}
+	err = json.Unmarshal(body, &created)
+	require.NoError(t, err)
+	groupURL := baseURL + "/scim/Groups/" + created.ID
+
+	// Add members via PATCH.
+	{
+		patchReq := &scim.PatchResource{
+			Schemas: []string{scim.PatchResourceSchema},
+			Operations: []scim.OperationResource{
+				{
+					Op:   "add",
+					Path: "members",
+					Value: []any{
+						map[string]any{"value": "US100", "display": "user100@org1.io"},
+						map[string]any{"value": "US200", "display": "user200@org1.io"},
+					},
+				},
+			},
+		}
+		patchBody, err := json.Marshal(patchReq)
+		require.NoError(t, err)
+
+		code, body = tc.Patch(groupURL, patchBody)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		patched := scim.GroupResource{}
+		err = json.Unmarshal(body, &patched)
+		require.NoError(t, err)
+		require.Len(t, patched.Members, 2)
+
+		memberIDs := map[string]bool{}
+		for _, m := range patched.Members {
+			memberIDs[m.Value] = true
+		}
+		require.True(t, memberIDs["US100"])
+		require.True(t, memberIDs["US200"])
+	}
+
+	// Remove a member and add another in a single PATCH.
+	{
+		patchReq := &scim.PatchResource{
+			Schemas: []string{scim.PatchResourceSchema},
+			Operations: []scim.OperationResource{
+				{
+					Op:   "remove",
+					Path: `members[value eq "US100"]`,
+				},
+				{
+					Op:   "add",
+					Path: "members",
+					Value: []any{
+						map[string]any{"value": "US300", "display": "user300@org1.io"},
+					},
+				},
+			},
+		}
+		patchBody, err := json.Marshal(patchReq)
+		require.NoError(t, err)
+
+		code, body = tc.Patch(groupURL, patchBody)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		patched := scim.GroupResource{}
+		err = json.Unmarshal(body, &patched)
+		require.NoError(t, err)
+		require.Len(t, patched.Members, 2)
+
+		memberIDs := map[string]bool{}
+		for _, m := range patched.Members {
+			memberIDs[m.Value] = true
+		}
+		require.False(t, memberIDs["US100"], "US100 should have been removed")
+		require.True(t, memberIDs["US200"])
+		require.True(t, memberIDs["US300"])
+
+		// Verify via GET.
+		code, body = tc.Get(groupURL)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		fetched := scim.GroupResource{}
+		err = json.Unmarshal(body, &fetched)
+		require.NoError(t, err)
+		require.Len(t, fetched.Members, 2)
+	}
+
+	// Replace all members via PATCH. Current members are US200, US300.
+	// Replace with just US100.
+	{
+		patchReq := &scim.PatchResource{
+			Schemas: []string{scim.PatchResourceSchema},
+			Operations: []scim.OperationResource{
+				{
+					Op:   "replace",
+					Path: "members",
+					Value: []any{
+						map[string]any{"value": "US100", "display": "user100@org1.io"},
+					},
+				},
+			},
+		}
+		patchBody, err := json.Marshal(patchReq)
+		require.NoError(t, err)
+
+		code, body = tc.Patch(groupURL, patchBody)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		patched := scim.GroupResource{}
+		err = json.Unmarshal(body, &patched)
+		require.NoError(t, err)
+		require.Len(t, patched.Members, 1)
+		require.Equal(t, "US100", patched.Members[0].Value)
+
+		// Verify via GET.
+		code, body = tc.Get(groupURL)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		fetched := scim.GroupResource{}
+		err = json.Unmarshal(body, &fetched)
+		require.NoError(t, err)
+		require.Len(t, fetched.Members, 1)
+		require.Equal(t, "US100", fetched.Members[0].Value)
+	}
+
+	// Replace with empty list to clear all members.
+	{
+		patchReq := &scim.PatchResource{
+			Schemas: []string{scim.PatchResourceSchema},
+			Operations: []scim.OperationResource{
+				{
+					Op:    "replace",
+					Path:  "members",
+					Value: []any{},
+				},
+			},
+		}
+		patchBody, err := json.Marshal(patchReq)
+		require.NoError(t, err)
+
+		code, body = tc.Patch(groupURL, patchBody)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		patched := scim.GroupResource{}
+		err = json.Unmarshal(body, &patched)
+		require.NoError(t, err)
+		require.Empty(t, patched.Members)
+	}
+}
+
+func TestDeleteGroup(t *testing.T) {
+	flags.Set(t, "database.create_user_list_tables", true)
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey, _ := prepareGroup(t, userCtx, env)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// Create a group with a member.
+	reqBody := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":"to delete","members":[{"value":"US100"}]}`
+	code, body := tc.Post(baseURL+"/scim/Groups", []byte(reqBody))
+	require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+	created := scim.GroupResource{}
+	err = json.Unmarshal(body, &created)
+	require.NoError(t, err)
+
+	// Delete the group.
+	code, body = tc.Delete(baseURL + "/scim/Groups/" + created.ID)
+	require.Equal(t, http.StatusNoContent, code, "body: %s", string(body))
+
+	// Verify it's gone.
+	code, _ = tc.Get(baseURL + "/scim/Groups/" + created.ID)
+	require.Equal(t, http.StatusNotFound, code)
+
+	// Delete a non-existent group.
+	code, _ = tc.Delete(baseURL + "/scim/Groups/nonexistent")
+	require.Equal(t, http.StatusNotFound, code)
 }
