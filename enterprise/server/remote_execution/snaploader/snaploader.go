@@ -268,7 +268,7 @@ func KeysetDebugString(ctx context.Context, env environment.Env, s *fcpb.Snapsho
 }
 
 func SnapshotDebugString(ctx context.Context, env environment.Env, s *Snapshot) string {
-	return snapshotDebugString(ctx, env, s.GetKey(), s.remoteEnabled, s.GetVMMetadata().GetSnapshotId())
+	return snapshotDebugString(ctx, env, s.GetKey(), s.supportsRemoteChunks, s.GetVMMetadata().GetSnapshotId())
 }
 
 func fileDigest(filePath string) (*repb.Digest, error) {
@@ -282,10 +282,10 @@ func fileDigest(filePath string) (*repb.Digest, error) {
 
 // Snapshot holds a snapshot manifest along with the corresponding cache key.
 type Snapshot struct {
-	key                 *fcpb.SnapshotKey
-	manifest            *fcpb.SnapshotManifest
-	remoteEnabled       bool
-	manifestFetchSource snaputil.ChunkSource
+	key                  *fcpb.SnapshotKey
+	manifest             *fcpb.SnapshotManifest
+	supportsRemoteChunks bool
+	manifestFetchSource  snaputil.ChunkSource
 }
 
 func (s *Snapshot) GetKey() *fcpb.SnapshotKey {
@@ -317,7 +317,8 @@ func (s *Snapshot) GetManifestFetchSource() snaputil.ChunkSource {
 }
 
 type GetSnapshotOptions struct {
-	RemoteReadEnabled           bool
+	SupportsRemoteManifest      bool
+	SupportsRemoteChunks        bool
 	ReadPolicy                  string
 	MaxStaleFallbackSnapshotAge time.Duration
 }
@@ -429,10 +430,10 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKe
 			continue
 		}
 		return &Snapshot{
-			key:                 key,
-			manifest:            manifest,
-			remoteEnabled:       opts.RemoteReadEnabled,
-			manifestFetchSource: manifestFetchSource,
+			key:                  key,
+			manifest:             manifest,
+			supportsRemoteChunks: opts.SupportsRemoteChunks,
+			manifestFetchSource:  manifestFetchSource,
 		}, nil
 	}
 	return nil, lastErr
@@ -448,7 +449,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	// Note that if platform.SnapshotReadPolicy=newest, the master snapshot is
 	// never cached locally.
 	if *snaputil.EnableLocalSnapshotSharing {
-		supportsRemoteFallback := opts.RemoteReadEnabled && *snaputil.EnableRemoteSnapshotSharing
+		supportsRemoteFallback := opts.SupportsRemoteChunks && *snaputil.EnableRemoteSnapshotSharing
 		manifest, err := l.getLocalManifest(ctx, key, supportsRemoteFallback)
 		if err == nil {
 			if validateLocalSnapshot(ctx, manifest, opts, isFallback) {
@@ -457,14 +458,14 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 			}
 		} else {
 			log.CtxInfof(ctx, "Failed to get local manifest for key %s: %s", key, err)
-			if !opts.RemoteReadEnabled || !*snaputil.EnableRemoteSnapshotSharing {
+			if !opts.SupportsRemoteManifest || !*snaputil.EnableRemoteSnapshotSharing {
 				return nil, snaputil.ChunkSourceUnmapped, err
 			}
 		}
 		// If local snapshot is not valid or couldn't be found, fallback to
 		// fetching a remote snapshot.
-	} else if !opts.RemoteReadEnabled {
-		return nil, snaputil.ChunkSourceUnmapped, status.InternalErrorf("invalid state: EnableLocalSnapshotSharing=false and remoteEnabled=false")
+	} else if !opts.SupportsRemoteManifest {
+		return nil, snaputil.ChunkSourceUnmapped, status.InternalErrorf("invalid state: EnableLocalSnapshotSharing=false and SupportsRemoteManifest=false")
 	}
 
 	if opts.ReadPolicy == platform.ReadLocalSnapshotOnly {
@@ -684,7 +685,7 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 
 	for _, fileNode := range snapshot.manifest.Files {
 		outputPath := filepath.Join(outputDirectory, fileNode.GetName())
-		if _, err := snaputil.GetArtifact(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), snapshot.remoteEnabled, fileNode.GetDigest(), snapshot.key.InstanceName, outputPath); err != nil {
+		if _, err := snaputil.GetArtifact(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), snapshot.supportsRemoteChunks, fileNode.GetDigest(), snapshot.key.InstanceName, outputPath); err != nil {
 			return nil, err
 		}
 	}
@@ -694,7 +695,7 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 	}
 	// Construct COWs from chunks.
 	for _, cf := range snapshot.manifest.ChunkedFiles {
-		cow, err := l.unpackCOW(ctx, cf, snapshot.key.InstanceName, outputDirectory, snapshot.remoteEnabled)
+		cow, err := l.unpackCOW(ctx, cf, snapshot.key.InstanceName, outputDirectory, snapshot.supportsRemoteChunks)
 		if err != nil {
 			return nil, status.WrapError(err, "unpack COW")
 		}
@@ -1224,8 +1225,9 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	}}
 
 	snap, err := l.GetSnapshot(ctx, key, &GetSnapshotOptions{
-		RemoteReadEnabled: remoteEnabled,
-		ReadPolicy:        platform.AlwaysReadNewestSnapshot,
+		SupportsRemoteManifest: remoteEnabled,
+		SupportsRemoteChunks:   remoteEnabled,
+		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
 	})
 	if err != nil && !(status.IsNotFoundError(err) || status.IsUnavailableError(err)) {
 		return nil, err
