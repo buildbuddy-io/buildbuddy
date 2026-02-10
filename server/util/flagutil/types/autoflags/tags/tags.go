@@ -389,3 +389,52 @@ func (_ *yamlIgnoreTag) Tag(flagset *flag.FlagSet, name string, f Tagged) flag.V
 }
 
 var YAMLIgnoreTag = &yamlIgnoreTag{}
+
+// MetaTag allows tracking additional metadata about a flag. It's useful for
+// checking whether a flag was explicitly configured.
+//
+// Example: enforce mutually exclusive flag configuration in cases where
+// zero-value checks aren't possible (e.g. booleans):
+//
+//	var (
+//		compressMeta flag.Meta // Info about --compress flag configuration.
+//		compress = flag.Bool("compress", true, "Enable compression.", &compressMeta)
+//		resourceName = flag.String("resource_name", "", "Blob resource name.")
+//	)
+//
+//	// --resource_name and --compress flags should be mutually exclusive, since
+//	// the resource name specifies the compression level within the string.
+//	if *resourceName != "" && compressMeta.IsConfigured() {
+//		log.Fatalf("Cannot specify both 'compress' and 'resource_name' options.")
+//	}
+type MetaTag struct {
+	isSetInCommandLine    bool
+	isSetInYAML           bool
+	isSetProgrammatically bool
+}
+
+func (m *MetaTag) Tag(flagset *flag.FlagSet, name string, tagged Tagged) flag.Value {
+	tagged.DesignateSetFunc(func(value string) error {
+		m.isSetInCommandLine = true
+		return tagged.Value().Set(value)
+	})
+	tagged.DesignateYAMLSetValueHookFunc(func() {
+		m.isSetInYAML = true
+	})
+	tagged.DesignateSetValueForFlagNameHookFunc(func() {
+		m.isSetProgrammatically = true
+	})
+	return tagged
+}
+
+// IsConfigured returns true if the flag has been explicitly configured via the
+// flag API: either via the command line, via YAML, or via the
+// "SetValueForFlagName" API.
+//
+// Note: It does not return true if the flag was set via direct assignment (e.g.
+// *fooFlag = "bar").
+func (m *MetaTag) IsConfigured() bool {
+	// isSetProgrammatically is checked here because in tests we set flags
+	// programmatically to simulate flags being intentionally enabled by users.
+	return m.isSetInCommandLine || m.isSetInYAML || m.isSetProgrammatically
+}

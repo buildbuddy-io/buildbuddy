@@ -304,3 +304,52 @@ func TestYAMLIgnoreAndSecret(t *testing.T) {
 	assert.Equal(t, "default", *v1)
 	assert.Equal(t, "default2", *v2)
 }
+
+func TestMeta_SetProgrammatically(t *testing.T) {
+	flagset := replaceFlagsForTesting(t)
+
+	var meta MetaTag
+	v := flagset.String("testflag", "test-default-value", "Test flag help")
+	Tag[string, flag.Value](flagset, "testflag", &meta)
+
+	require.False(t, meta.IsConfigured(), "flag should not yet be configured")
+
+	require.NoError(t, common.SetValueForFlagName(flagset, "testflag", "test-value", nil, true))
+	require.Equal(t, "test-value", *v)
+
+	require.True(t, meta.IsConfigured(), "flag should now be configured")
+}
+
+func TestMeta_SetInCommandLine(t *testing.T) {
+	flagset := replaceFlagsForTesting(t)
+
+	var meta MetaTag
+	v := flagset.String("testflag", "test-default-value", "Test flag help")
+	Tag[string, flag.Value](flagset, "testflag", &meta)
+
+	require.False(t, meta.IsConfigured(), "flag should not yet be configured")
+
+	require.NoError(t, flagset.Parse([]string{"--testflag=test-value"}))
+	require.Equal(t, "test-value", *v)
+
+	require.True(t, meta.IsConfigured(), "flag should now be configured")
+}
+
+func TestMeta_SetInYAML(t *testing.T) {
+	flagset := replaceFlagsForTesting(t)
+	_ = replaceIgnoreSetForTesting(t)
+
+	var meta MetaTag
+	v := flagset.String("testflag", "test-default-value", "Test flag help")
+	Tag[string, flag.Value](flagset, "testflag", &meta)
+
+	require.False(t, meta.IsConfigured(), "flag should not yet be configured")
+
+	yamlData := `
+testflag: test-value
+`
+	require.NoError(t, flagyaml.PopulateFlagsFromData(yamlData))
+	require.Equal(t, "test-value", *v)
+
+	require.True(t, meta.IsConfigured(), "flag should now be configured")
+}

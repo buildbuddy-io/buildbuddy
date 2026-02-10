@@ -18,6 +18,8 @@ var Deprecated = flagtags.DeprecatedTag
 var YAMLIgnore = flagtags.YAMLIgnoreTag
 var Internal = flagtags.InternalTag
 
+type Meta = flagtags.MetaTag
+
 var NewFlagSet = flag.NewFlagSet
 var ContinueOnError = flag.ContinueOnError
 var ExitOnError = flag.ExitOnError
