@@ -297,6 +297,7 @@ func (s *Sender) tryReplica(ctx context.Context, rd *rfpb.RangeDescriptor, repli
 	spn.SetAttributes(
 		attribute.Int64("range_id", int64(replica.GetRangeId())),
 		attribute.Int64("replica_id", int64(replica.GetReplicaId())),
+		attribute.String("nhid", replica.GetNhid()),
 		attribute.String("consistency_mode", header.GetConsistencyMode().String()),
 	)
 
