@@ -21,6 +21,7 @@ go_library(
         "//server/util/db",
         "//server/util/log",
         "//server/util/platform",
+        "//server/util/region",
         "//server/util/status",
         "//server/util/usageutil",
         "@com_github_go_redis_redis_v8//:redis",

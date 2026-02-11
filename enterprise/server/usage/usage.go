@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/go-redis/redis/v8"
@@ -32,7 +33,6 @@ import (
 )
 
 var (
-	region      = flag.String("app.region", "", "The region in which the app is running.")
 	writeToOLAP = flag.Bool("app.write_usage_to_olap_db", false, "If true, write usage data to OLAP DB in addition to the primary DB write.")
 )
 
@@ -162,7 +162,8 @@ func RegisterTracker(env *real_environment.RealEnv) error {
 }
 
 func NewTracker(env environment.Env, clock clockwork.Clock, flushLock interfaces.DistributedLock) (*tracker, error) {
-	if *region == "" {
+	appRegion := region.ConfiguredAppRegion()
+	if appRegion == "" {
 		return nil, status.FailedPreconditionError("Usage tracking requires app.region to be configured.")
 	}
 	if env.GetDefaultRedisClient() == nil {
@@ -177,11 +178,11 @@ func NewTracker(env environment.Env, clock clockwork.Clock, flushLock interfaces
 	return &tracker{
 		env:       env,
 		rdb:       env.GetDefaultRedisClient(),
-		region:    *region,
+		region:    appRegion,
 		clock:     clock,
 		flushLock: flushLock,
 		stopFlush: make(chan struct{}),
-		bufferID:  fmt.Sprintf("%s:redis", *region),
+		bufferID:  fmt.Sprintf("%s:redis", appRegion),
 	}, nil
 }
 

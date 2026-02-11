@@ -5,14 +5,25 @@ import (
 	"regexp"
 	"strings"
 
-	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+
+	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
 )
 
 var (
+	region         = flag.String("app.region", "", "The region in which the app is running. This value is only used/configured by apps.")
 	regions        = flag.Slice("regions", []Region{}, "A list of regions that executors might be connected to.")
 	subdomainRegex = regexp.MustCompile("^[a-zA-Z0-9-]+$")
 )
+
+// ConfiguredAppRegion returns the explicitly configured region name for the
+// current app, e.g. "us-west1".
+//
+// Before using this function, make sure the relevant server has the
+// "app.region" flag configured.
+func ConfiguredAppRegion() string {
+	return *region
+}
 
 type Region struct {
 	Name       string `yaml:"name" json:"name" usage:"The user-friendly name of this region. Ex: Europe"`
