@@ -96,9 +96,14 @@ func genURI(scheme, user, password, addr, database string) string {
 
 	if strings.HasPrefix(scheme, "redis") {
 		if host, port, err := net.SplitHostPort(addr); err == nil {
-			hostport = host
 			if port != "" {
 				hostport = net.JoinHostPort(host, port)
+			} else if strings.Contains(host, ":") {
+				// Keep the trailing ":" so go-redis can default the port without
+				// double-bracketing IPv6 hosts.
+				hostport = net.JoinHostPort(host, port)
+			} else {
+				hostport = host
 			}
 		} else {
 			return ""

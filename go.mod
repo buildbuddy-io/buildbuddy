@@ -1,6 +1,6 @@
 module github.com/buildbuddy-io/buildbuddy
 
-go 1.25.6
+go 1.26.0
 
 // Device Manager
 tool gitlab.com/arm-research/smarter/smarter-device-manager
