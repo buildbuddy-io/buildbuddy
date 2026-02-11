@@ -402,6 +402,26 @@ BuildBuddy-managed Macs.
 
 ## Optimal usage of remote runners
 
+### Reducing snapshot size
+
+On Linux, snapshot upload and download is billed. Reducing snapshot size is important to keeping costs down.
+
+The disk and memory of remote runners is serialized and downloaded/uploaded to our cache, so decreasing the memory and disk usage of the runners will decrease snapshot-related cache transfer.
+
+Some recommendations to reduce snapshot size include:
+
+1. Only requesting the minimum amount of resources your runners need.
+
+- Remote runners can be configured with the platform properties `EstimatedFreeDiskBytes` and `EstimatedMemory`. Snapshot size directly scales with these values, so decreasing these requests will reduce snapshot-related costs.
+
+2. Set `--remote_download_outputs=minimal` on builds.
+
+- By default without this flag, all build outputs, including intermediary ones, will be downloaded to disk. Intermediary build outputs will then be serialized in the snapshot and billed, despite often being unnecessary on the runner.
+
+3. At the end of a sample workload, run `df -h` in the runner to get an indea of the disk contents. There may be rule-specific optimizations to reduce disk usage.
+
+### Remote execution
+
 While our remote runners support running arbitrary bash code, they were specifically
 designed and optimized to run the Bazel client server and power Bazel commands with
 remote execution (RBE).
