@@ -313,6 +313,7 @@ func envFilePath(ws *workspace) string {
 // start of an action, before any steps run.
 func provisionEnvFile(ws *workspace) error {
 	path := envFilePath(ws)
+    // N.B. os.WriteFile overwrites path by default if it already exists.
 	if err := os.WriteFile(path, nil, 0644); err != nil {
 		return fmt.Errorf("write %q: %w", path, err)
 	}
