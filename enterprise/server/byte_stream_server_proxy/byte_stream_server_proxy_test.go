@@ -930,7 +930,6 @@ func TestWriteChunked(t *testing.T) {
 	})
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 
-	flags.Set(t, "cache.max_chunk_size_bytes", 1024*1024)
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
@@ -1096,8 +1095,6 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	})
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 
-	// Set threshold higher than our test blob size to trigger fallback
-	flags.Set(t, "cache.max_chunk_size_bytes", 10*1024*1024)
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
@@ -1151,7 +1148,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	require.NoError(t, err)
 
-	// Create a blob smaller than the threshold (1MB vs 10MB threshold)
+	// Create a blob smaller than the threshold (1MB vs 2MB default max)
 	_, originalData := testdigest.RandomCASResourceBuf(t, 1*1024*1024)
 	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
@@ -1233,7 +1230,6 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 	})
 	require.NoError(b, openfeature.SetNamedProviderAndWait(b.Name(), testProvider))
 
-	flags.Set(b, "cache.max_chunk_size_bytes", 1024*1024)
 	flags.Set(b, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
@@ -1427,7 +1423,6 @@ func BenchmarkReadChunkedFromRemote(b *testing.B) {
 	})
 	require.NoError(b, openfeature.SetNamedProviderAndWait(b.Name(), testProvider))
 
-	flags.Set(b, "cache.max_chunk_size_bytes", 1024*1024)
 	flags.Set(b, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()

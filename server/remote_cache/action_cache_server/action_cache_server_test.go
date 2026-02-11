@@ -609,16 +609,14 @@ func TestRecordOrigin(t *testing.T) {
 }
 
 func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
-	flags.Set(t, "cache.max_chunk_size_bytes", 10)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 	cache := te.GetCache()
 
-	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 100)
-	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 100)
+	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
+	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
 	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
 	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
 

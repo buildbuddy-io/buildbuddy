@@ -1167,6 +1167,10 @@ func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *r
 		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently enabled")
 	}
 
+	if cf := req.GetChunkingFunction(); cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
+		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v", cf)
+	}
+
 	if req.GetBlobDigest() == nil {
 		return nil, status.UnimplementedError("SpliceBlob with no blob_digest is not supported")
 	}
@@ -1202,6 +1206,11 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 
 	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, "cache.split_splice_enabled", false) {
 		return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently enabled")
+	}
+
+	cf := req.GetChunkingFunction()
+	if cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
+		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v", cf)
 	}
 
 	if req.GetBlobDigest() == nil {

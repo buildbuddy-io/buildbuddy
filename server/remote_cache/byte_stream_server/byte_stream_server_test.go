@@ -611,8 +611,6 @@ func TestReadChunked(t *testing.T) {
 	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
 
-	flags.Set(t, "cache.max_chunk_size_bytes", 100)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
 	te.SetExperimentFlagProvider(fp)
@@ -623,32 +621,21 @@ func TestReadChunked(t *testing.T) {
 	clientConn := runByteStreamServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
-	chunk1 := []byte("This is the first chunk of data. ")
-	chunk2 := []byte("This is the second chunk of data. ")
-	chunk3 := []byte("This is the third and final chunk.")
+	chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	fullBlob := append(append(chunk1, chunk2...), chunk3...)
-
-	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_SHA256)
-	require.NoError(t, err)
-	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_SHA256)
-	require.NoError(t, err)
-	chunk3Digest, err := digest.Compute(bytes.NewReader(chunk3), repb.DigestFunction_SHA256)
-	require.NoError(t, err)
 
 	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
-	chunk1RN := digest.NewCASResourceName(chunk1Digest, "", repb.DigestFunction_SHA256)
-	chunk2RN := digest.NewCASResourceName(chunk2Digest, "", repb.DigestFunction_SHA256)
-	chunk3RN := digest.NewCASResourceName(chunk3Digest, "", repb.DigestFunction_SHA256)
-
-	require.NoError(t, te.GetCache().Set(ctx, chunk1RN.ToProto(), chunk1))
-	require.NoError(t, te.GetCache().Set(ctx, chunk2RN.ToProto(), chunk2))
-	require.NoError(t, te.GetCache().Set(ctx, chunk3RN.ToProto(), chunk3))
+	require.NoError(t, te.GetCache().Set(ctx, chunk1RN, chunk1))
+	require.NoError(t, te.GetCache().Set(ctx, chunk2RN, chunk2))
+	require.NoError(t, te.GetCache().Set(ctx, chunk3RN, chunk3))
 
 	manifest := &chunking.Manifest{
 		BlobDigest:     blobDigest,
-		ChunkDigests:   []*repb.Digest{chunk1Digest, chunk2Digest, chunk3Digest},
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
