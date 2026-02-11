@@ -484,6 +484,16 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	// If context already contains a JWT, just verify it and return the claims.
 	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
 		if !*reparseJWTs {
+			// Return an auth error if there is one.
+			err, ok := authutil.AuthErrorFromContext(ctx)
+			if ok && err != nil {
+				if status.IsUnauthenticatedError(err) ||
+					status.IsPermissionDeniedError(err) {
+					return nil, err
+				}
+				return nil, status.UnauthenticatedErrorf("%s: %s",
+					authutil.UserNotFoundMsg, err.Error())
+			}
 			return nil, status.InternalError("Unpermitted attempt to reparse JWT")
 		}
 		caller := "unknown"
