@@ -146,16 +146,16 @@ class OrgUserListsChildComponent extends React.Component<ChildProps, ChildState>
 
     return (
       <>
-        <div className="settings-option-title">IAM Groups</div>
+        <div className="settings-option-title">IAM groups</div>
         <div className="settings-option-description">
-          IAM Groups organize users into lists for easier role management.
+          IAM groups organize users into lists for easier role management.
         </div>
         <div className="org-user-lists">
           <div className="org-user-lists-list-controls">
             {this.props.user.selectedGroup.externalUserManagement && (
               <div>
                 <Banner type="warning" className="user-management-warning">
-                  IAM Groups are being managed via an external system. All changes must be made there.
+                  IAM groups are being managed via an external system. All changes must be made there.
                 </Banner>
               </div>
             )}
@@ -181,7 +181,7 @@ class OrgUserListsChildComponent extends React.Component<ChildProps, ChildState>
                       maxRows={10}
                     />
                   )}
-                  {userList.user.length == 0 && <div className="org-user-list-empty">no members</div>}
+                  {userList.user.length == 0 && <div className="org-user-list-empty">No members</div>}
                 </div>
                 <div className="org-user-list-buttons">
                   <OutlinedButton onClick={this.onClickEditUserList.bind(this, userList)}>Edit</OutlinedButton>
