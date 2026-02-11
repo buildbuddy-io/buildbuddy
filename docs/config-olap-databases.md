@@ -89,6 +89,7 @@ app:
   enable_target_tracking: true # Enable target tracking (default: false)
   test_grid_v2_enabled: true # Enable Test Grid V2 (default: true)
   enable_write_test_target_statuses_to_olap_db: true # Write test target statuses to ClickHouse (default: false)
+  enable_read_target_statuses_from_olap_db: true # Read test target statuses from ClickHouse(default: true)
 ```
 
 ### Flakes
@@ -101,6 +102,7 @@ app:
   enable_target_tracking: true # Enable target tracking (default: false)
   test_grid_v2_enabled: true # Enable Test Grid V2 (default: true)
   enable_write_test_target_statuses_to_olap_db: true # Write test target statuses to ClickHouse (default: false)
+  enable_read_target_statuses_from_olap_db: true # Read test target statuses from ClickHouse(default: true)
   target_flakes_ui_enabled: true # Turns on the Flakes UI (default: false)
 ```
 
