@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ci_runner/envfile"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -96,17 +97,6 @@ const (
 	// files can be written to have them associated with the workflow BES
 	// stream.
 	artifactsDirEnvVarName = "BUILDBUDDY_ARTIFACTS_DIRECTORY"
-
-	// Name of the file where env vars can be written to have them applied to
-	// subsequent steps. The format is:
-	// - Simple values: NAME=value
-	// - Multiline values:
-	//   NAME<<DELIMITER
-	//   line1
-	//   line2
-	//   DELIMITER
-	envFileName       = "buildbuddy.env"
-	envFileEnvVarName = "BUILDBUDDY_ENV"
 
 	defaultGitRemoteName = "origin"
 	forkGitRemoteName    = "fork"
@@ -305,102 +295,7 @@ func provisionArtifactsDir(ws *workspace, bazelCommandIndex int) error {
 }
 
 func envFilePath(ws *workspace) string {
-	return filepath.Join(ws.rootDir, envFileName)
-}
-
-// provisionEnvFile creates an empty env file and sets the BUILDBUDDY_ENV
-// environment variable to point to it. This should be called once at the
-// start of an action, before any steps run.
-func provisionEnvFile(ws *workspace) error {
-	path := envFilePath(ws)
-	if err := os.WriteFile(path, nil, 0644); err != nil {
-		return fmt.Errorf("write %q: %w", path, err)
-	}
-	return os.Setenv(envFileEnvVarName, path)
-}
-
-// parseEnvFile parses the env file and returns a map of environment variables.
-// The format supports:
-// - Simple values: NAME=value
-// - Multiline values:
-//
-//	NAME<<DELIMITER
-//	line1
-//	line2
-//	DELIMITER
-//
-// After parsing, the file is truncated to prepare for the next step.
-func parseEnvFile(ws *workspace) (map[string]string, error) {
-	path := envFilePath(ws)
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	envVars, err := parseEnvFileContent(string(content))
-	if err != nil {
-		return nil, fmt.Errorf("parse $BUILDBUDDY_ENV: %w", err)
-	}
-	// Truncate the file for the next step
-	if err := os.Truncate(path, 0); err != nil {
-		return nil, err
-	}
-	return envVars, nil
-}
-
-// parseEnvFileContent parses the content of an env file and returns a map of
-// environment variables.
-func parseEnvFileContent(content string) (map[string]string, error) {
-	envVars := make(map[string]string)
-	lines := strings.Split(content, "\n")
-
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		// Skip empty lines
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-
-		// Check for multiline format: NAME<<DELIMITER
-		if idx := strings.Index(line, "<<"); idx != -1 {
-			name := strings.TrimSpace(line[:idx])
-			delimiter := strings.TrimSpace(line[idx+2:])
-			if name == "" || delimiter == "" {
-				return nil, fmt.Errorf("line %d: invalid multiline format", i+1)
-			}
-
-			// Collect lines until we find the delimiter
-			var valueLines []string
-			startLine := i + 1 // 1-indexed
-			i++
-			found := false
-			for ; i < len(lines); i++ {
-				if lines[i] == delimiter {
-					found = true
-					break
-				}
-				valueLines = append(valueLines, lines[i])
-			}
-			if !found {
-				return nil, fmt.Errorf("line %d: missing closing delimiter for %q", startLine, name)
-			}
-			envVars[name] = strings.Join(valueLines, "\n")
-			continue
-		}
-
-		// Simple format: NAME=value
-		idx := strings.Index(line, "=")
-		if idx == -1 {
-			return nil, fmt.Errorf("line %d: missing '='", i+1)
-		}
-		name := line[:idx]
-		value := line[idx+1:]
-		if name == "" {
-			return nil, fmt.Errorf("line %d: empty name", i+1)
-		}
-		envVars[name] = value
-	}
-
-	return envVars, nil
+	return filepath.Join(ws.rootDir, envfile.FileName)
 }
 
 type buildEventReporter struct {
@@ -1224,7 +1119,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 	// Provision the env file before any steps run. This file allows steps to
 	// set environment variables that persist to subsequent steps.
-	if err := provisionEnvFile(ws); err != nil {
+	if err := envfile.Provision(envFilePath(ws)); err != nil {
 		return err
 	}
 
@@ -1385,7 +1280,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 
 		// Parse env file and apply env vars to subsequent steps.
-		envVars, err := parseEnvFile(ws)
+		envVars, err := envfile.ParseAndReset(envFilePath(ws))
 		if err != nil {
 			return status.WrapError(err, "parse env file")
 		}
