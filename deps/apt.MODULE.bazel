@@ -1,0 +1,22 @@
+bazel_dep(name = "rules_img", version = "0.3.4")
+
+bazel_dep(name = "rules_img_tool", version = "0.3.4")
+register_toolchains("@rules_img_tool//toolchain:all")
+
+bazel_dep(name = "rules_distroless", version = "0.6.2")
+single_version_override(
+    module_name = "rules_distroless",
+    patch_strip = 1,
+    patches = ["//buildpatches:rules_distroless.patch"],
+)
+
+# Configure apt for Debian packages
+apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
+
+# Configure Debian trixie packages
+apt.install(
+    name = "trixie",
+    lock = "//images:apt.lock.json",
+    manifest = "//images:apt.yaml",
+)
+use_repo(apt, "trixie")
