@@ -923,6 +923,7 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 	// if all snapshot chunks don't exist locally. The snaploader can fallback
 	// to fetching chunks from the remote cache.
 	if supportsRemoteFallback && len(missingDigests) > 0 {
+		ctx = snaputil.GetSnapshotAccessContext(ctx)
 		rsp, err := l.env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
 			InstanceName:   instanceName,
 			BlobDigests:    missingDigests,
