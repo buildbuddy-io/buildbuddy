@@ -25,7 +25,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
+	bdpb "github.com/buildbuddy-io/buildbuddy/proto/buckdata"
 	bspb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
@@ -43,6 +45,25 @@ func streamRequest(anyEvent *anypb.Any, iid string, sequenceNumer int64) *pepb.P
 			Event: &bepb.BuildEvent{
 				Event: &bepb.BuildEvent_BazelEvent{
 					BazelEvent: anyEvent,
+				},
+			},
+		},
+	}
+}
+
+func experimentalStreamRequest(event *bdpb.BuckEvent, iid string, sequenceNumer int64) *pepb.PublishBuildToolEventStreamRequest {
+	anyEvent := &anypb.Any{}
+	err := anyEvent.MarshalFrom(event)
+	if err != nil {
+		panic(err)
+	}
+	return &pepb.PublishBuildToolEventStreamRequest{
+		OrderedBuildEvent: &pepb.OrderedBuildEvent{
+			SequenceNumber: sequenceNumer,
+			StreamId:       &bepb.StreamId{InvocationId: iid},
+			Event: &bepb.BuildEvent{
+				Event: &bepb.BuildEvent_ExperimentalBuildToolEvent{
+					ExperimentalBuildToolEvent: anyEvent,
 				},
 			},
 		},
@@ -305,6 +326,235 @@ func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	invocation, err := build_event_handler.LookupInvocation(te, ctx, testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_PUBLIC, invocation.ReadPermission)
+}
+
+func TestHandleExperimentalBuildToolEventStream(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	start := &bdpb.BuckEvent{
+		Timestamp: timestamppb.Now(),
+		TraceId:   testInvocationID,
+		Data: &bdpb.BuckEvent_SpanStart{
+			SpanStart: &bdpb.SpanStartEvent{
+				Data: &bdpb.SpanStartEvent_Command{
+					Command: &bdpb.CommandStart{
+						CliArgs: []string{"buck2", "build", "//:target"},
+						Data:    &bdpb.CommandStart_Build{Build: &bdpb.BuildCommandStart{}},
+					},
+				},
+			},
+		},
+	}
+	end := &bdpb.BuckEvent{
+		Timestamp: timestamppb.Now(),
+		TraceId:   testInvocationID,
+		Data: &bdpb.BuckEvent_SpanEnd{
+			SpanEnd: &bdpb.SpanEndEvent{
+				Data: &bdpb.SpanEndEvent_Command{
+					Command: &bdpb.CommandEnd{
+						IsSuccess: true,
+						Data:      &bdpb.CommandEnd_Build{Build: &bdpb.BuildCommandEnd{}},
+					},
+				},
+			},
+		},
+	}
+
+	err = channel.HandleEvent(experimentalStreamRequest(start, testInvocationID, 1))
+	require.NoError(t, err)
+	err = channel.HandleEvent(experimentalStreamRequest(end, testInvocationID, 2))
+	require.NoError(t, err)
+	err = channel.FinalizeInvocation(testInvocationID)
+	require.NoError(t, err)
+
+	invocation, err := build_event_handler.LookupInvocation(te, ctx, testInvocationID)
+	require.NoError(t, err)
+	require.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.GetInvocationStatus())
+	require.True(t, invocation.GetSuccess())
+}
+
+func TestHandleExperimentalBuildToolEventStreamSynthesizesStructuredCommandLine(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	start := &bdpb.BuckEvent{
+		Timestamp: timestamppb.Now(),
+		TraceId:   testInvocationID,
+		Data: &bdpb.BuckEvent_SpanStart{
+			SpanStart: &bdpb.SpanStartEvent{
+				Data: &bdpb.SpanStartEvent_Command{
+					Command: &bdpb.CommandStart{
+						CliArgs: []string{"buck2", "build", "--config=dev", "//:target"},
+					},
+				},
+			},
+		},
+	}
+	end := &bdpb.BuckEvent{
+		Timestamp: timestamppb.Now(),
+		TraceId:   testInvocationID,
+		Data: &bdpb.BuckEvent_SpanEnd{
+			SpanEnd: &bdpb.SpanEndEvent{
+				Data: &bdpb.SpanEndEvent_Command{
+					Command: &bdpb.CommandEnd{
+						IsSuccess: true,
+						Data:      &bdpb.CommandEnd_Build{Build: &bdpb.BuildCommandEnd{}},
+					},
+				},
+			},
+		},
+	}
+
+	err = channel.HandleEvent(experimentalStreamRequest(start, testInvocationID, 1))
+	require.NoError(t, err)
+	err = channel.HandleEvent(experimentalStreamRequest(end, testInvocationID, 2))
+	require.NoError(t, err)
+	err = channel.FinalizeInvocation(testInvocationID)
+	require.NoError(t, err)
+
+	invocation, err := build_event_handler.LookupInvocation(te, ctx, testInvocationID)
+	require.NoError(t, err)
+	require.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.GetInvocationStatus())
+
+	var original, canonical *clpb.CommandLine
+	for _, commandLine := range invocation.GetStructuredCommandLine() {
+		switch commandLine.GetCommandLineLabel() {
+		case "original":
+			original = commandLine
+		case "canonical":
+			canonical = commandLine
+		}
+	}
+	require.NotNil(t, original)
+	require.NotNil(t, canonical)
+
+	findSection := func(cl *clpb.CommandLine, label string) *clpb.CommandLineSection {
+		for _, section := range cl.GetSections() {
+			if section.GetSectionLabel() == label {
+				return section
+			}
+		}
+		return nil
+	}
+
+	executableSection := findSection(original, "executable")
+	require.NotNil(t, executableSection)
+	require.NotEmpty(t, executableSection.GetChunkList().GetChunk())
+	require.NotEmpty(t, canonical.GetSections())
+}
+
+func TestHandleExperimentalBuildToolEventStreamDoesNotSynthesizeFromRedactedStartedOptions(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	startedEvent := &bspb.BuildEvent{
+		Id: &bspb.BuildEventId{
+			Id: &bspb.BuildEventId_Started{
+				Started: &bspb.BuildEventId_BuildStartedId{},
+			},
+		},
+		Payload: &bspb.BuildEvent_Started{
+			Started: &bspb.BuildStarted{
+				BuildToolVersion:   "buck2",
+				Command:            "build",
+				OptionsDescription: "<REDACTED>",
+			},
+		},
+	}
+	finishedEvent := &bspb.BuildEvent{
+		Id: &bspb.BuildEventId{
+			Id: &bspb.BuildEventId_BuildFinished{
+				BuildFinished: &bspb.BuildEventId_BuildFinishedId{},
+			},
+		},
+		Payload: &bspb.BuildEvent_Finished{
+			Finished: &bspb.BuildFinished{
+				ExitCode: &bspb.BuildFinished_ExitCode{
+					Code: 0,
+					Name: "SUCCESS",
+				},
+			},
+		},
+	}
+
+	sequence := NewBESSequence(t)
+	sequence.InvocationID = testInvocationID
+	require.NoError(t, channel.HandleEvent(sequence.NextRequest(startedEvent)))
+	require.NoError(t, channel.HandleEvent(sequence.NextRequest(finishedEvent)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	invocation, err := build_event_handler.LookupInvocation(te, ctx, testInvocationID)
+	require.NoError(t, err)
+	require.Empty(t, invocation.GetStructuredCommandLine())
+}
+
+func TestHandleExperimentalBuildToolEventStreamSkipsUnexpectedTypeURL(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	req := &pepb.PublishBuildToolEventStreamRequest{
+		OrderedBuildEvent: &pepb.OrderedBuildEvent{
+			SequenceNumber: 1,
+			StreamId:       &bepb.StreamId{InvocationId: testInvocationID},
+			Event: &bepb.BuildEvent{
+				Event: &bepb.BuildEvent_ExperimentalBuildToolEvent{
+					ExperimentalBuildToolEvent: &anypb.Any{
+						TypeUrl: "type.googleapis.com/build_event_stream.BuildEvent",
+						Value:   []byte{},
+					},
+				},
+			},
+		},
+	}
+	err = channel.HandleEvent(req)
+	require.NoError(t, err)
+	err = channel.FinalizeInvocation(testInvocationID)
+	require.NoError(t, err)
 }
 
 func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {

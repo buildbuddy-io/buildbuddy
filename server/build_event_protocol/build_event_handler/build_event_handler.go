@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/buck2"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
@@ -103,6 +104,20 @@ const (
 	// finalized data to Clickhouse, expire it after this TTL so that even if Clickhouse
 	// has replication lag, clients will still be able to read the data from Redis.
 	expireRedisExecutionsTTL = 5 * time.Minute
+
+	buck2BuildToolVersion  = "buck2"
+	buck2GenericTargetKind = "buck2 rule"
+	buck2TestTargetKind    = "buck2_test rule"
+	buck2ConfigurationID   = "buck2"
+
+	structuredCommandLineLabelOriginal  = "original"
+	structuredCommandLineLabelCanonical = "canonical"
+
+	redactedPlaceholder = "<REDACTED>"
+
+	buck2SyntheticProgressActionSuffix   = int64(1)
+	buck2SyntheticProgressTestSuffix     = int64(2)
+	buck2SyntheticProgressFinishedSuffix = int64(3)
 )
 
 var (
@@ -113,6 +128,46 @@ var (
 
 	buildEventFilterStartThreshold = flag.Int("app.build_event_filter_start_threshold", 100_000, "When looking up an invocation, start filtering out unimportant events after this many events have been processed.")
 	cacheStatsFinalizationDelay    = flag.Duration("cache_stats_finalization_delay", 500*time.Millisecond, "The time allowed for all metrics collectors across all apps to flush their local cache stats to the backing storage, before finalizing stats in the DB.")
+
+	buck2CommandNames = map[string]struct{}{
+		"aquery":                {},
+		"audit":                 {},
+		"build":                 {},
+		"bxl":                   {},
+		"clean":                 {},
+		"complete":              {},
+		"ctargets":              {},
+		"cquery":                {},
+		"docs":                  {},
+		"expand-external-cell":  {},
+		"explain":               {},
+		"file-status":           {},
+		"install":               {},
+		"lsp":                   {},
+		"materialize":           {},
+		"profile":               {},
+		"query":                 {},
+		"starlark":              {},
+		"starlark-debug-attach": {},
+		"subscribe":             {},
+		"targets":               {},
+		"test":                  {},
+		"trace":                 {},
+	}
+
+	buck2FlagsWithSeparateValue = map[string]struct{}{
+		"bes_backend":                 {},
+		"bes_results_url":             {},
+		"c":                           {},
+		"client_env":                  {},
+		"client-env":                  {},
+		"config":                      {},
+		"remote_cache":                {},
+		"remote_download_outputs":     {},
+		"remote_executor":             {},
+		"remote_upload_local_results": {},
+		"terminal_columns":            {},
+	}
 )
 
 var cacheArtifactsBlobstorePath = path.Join("artifacts", "cache")
@@ -810,14 +865,22 @@ func isChildInvocationsConfiguredEvent(bazelBuildEvent *build_event_stream.Build
 	return false
 }
 
-func readBazelEvent(obe *pepb.OrderedBuildEvent, out *build_event_stream.BuildEvent) error {
+func readBuildToolEvent(obe *pepb.OrderedBuildEvent, synthesizeStarted bool, out *build_event_stream.BuildEvent) (bool, error) {
 	switch buildEvent := obe.GetEvent().GetEvent().(type) {
 	case *bepb.BuildEvent_BazelEvent:
-		return buildEvent.BazelEvent.UnmarshalTo(out)
+		return false, buildEvent.BazelEvent.UnmarshalTo(out)
 	case *bepb.BuildEvent_ExperimentalBuildToolEvent:
-		// TODO(sluongng): implement support for generic build tool events (i.e. BuckEvent)
+		if !buck2.IsBuck2BuildToolEvent(buildEvent.ExperimentalBuildToolEvent) {
+			return true, nil
+		}
+		return false, buck2.ReadBuildEvent(
+			obe.GetSequenceNumber(),
+			buildEvent.ExperimentalBuildToolEvent,
+			synthesizeStarted,
+			out,
+		)
 	}
-	return fmt.Errorf("Not a bazel event %s", obe)
+	return false, fmt.Errorf("Not a bazel event %s", obe)
 }
 
 type EventChannel struct {
@@ -832,19 +895,20 @@ type EventChannel struct {
 	collector      interfaces.MetricsCollector
 	apiTargetMap   *api_common.TargetMap
 
-	startedEvent                     *build_event_stream.BuildEvent_Started
-	bufferedEvents                   []*inpb.InvocationEvent
-	wroteBuildMetadata               bool
-	numDroppedEventsBeforeProcessing uint64
-	initialSequenceNumber            int64
-	hasReceivedEventWithOptions      bool
-	hasReceivedStartedEvent          bool
-	requestedTerminalColumns         int
-	requestedTerminalLines           int
-	logWriter                        *eventlog.EventLogWriter
-	onClose                          func()
-	attempt                          uint64
-	groupIDForMetrics                string
+	startedEvent                        *build_event_stream.BuildEvent_Started
+	bufferedEvents                      []*inpb.InvocationEvent
+	wroteBuildMetadata                  bool
+	numDroppedEventsBeforeProcessing    uint64
+	initialSequenceNumber               int64
+	hasReceivedEventWithOptions         bool
+	hasReceivedStartedEvent             bool
+	requestedTerminalColumns            int
+	requestedTerminalLines              int
+	logWriter                           *eventlog.EventLogWriter
+	hasBuck2ConfiguredOrCompletedEvents bool
+	onClose                             func()
+	attempt                             uint64
+	groupIDForMetrics                   string
 
 	// isVoid determines whether all EventChannel operations are NOPs. This is set
 	// when we're retrying an invocation that is already complete, or is
@@ -1013,9 +1077,17 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	}
 
 	var bazelBuildEvent build_event_stream.BuildEvent
-	if err := readBazelEvent(event.GetOrderedBuildEvent(), &bazelBuildEvent); err != nil {
-		log.CtxWarningf(e.ctx, "error reading bazel event: %s", err)
+	skipped, err := readBuildToolEvent(
+		event.GetOrderedBuildEvent(),
+		!e.hasReceivedStartedEvent,
+		&bazelBuildEvent,
+	)
+	if err != nil {
+		log.CtxWarningf(e.ctx, "error reading build tool event: %s", err)
 		return err
+	}
+	if skipped {
+		return nil
 	}
 
 	invocationEvent := &inpb.InvocationEvent{
@@ -1039,6 +1111,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 	if e.isFirstStartedEvent(&bazelBuildEvent) {
 		started, _ := bazelBuildEvent.GetPayload().(*build_event_stream.BuildEvent_Started)
+		e.startedEvent = started
 
 		parsedVersion, err := semver.NewVersion(started.Started.GetBuildToolVersion())
 		version := "unknown"
@@ -1138,14 +1211,29 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 	// Process buffered events.
 	for _, event := range e.bufferedEvents {
-		if err := e.processSingleEvent(event, iid); err != nil {
+		if err := e.processEventWithBuck2StructuredCommandLine(event, iid); err != nil {
 			return err
 		}
 	}
 	e.bufferedEvents = nil
 
 	// Process regular events.
-	return e.processSingleEvent(invocationEvent, iid)
+	return e.processEventWithBuck2StructuredCommandLine(invocationEvent, iid)
+}
+
+func (e *EventChannel) processEventWithBuck2StructuredCommandLine(event *inpb.InvocationEvent, iid string) error {
+	syntheticEvents := synthesizeBuck2StructuredCommandLineEvents(event)
+	if err := e.processSingleEvent(event, iid); err != nil {
+		return err
+	}
+	syntheticEvents = append(syntheticEvents, e.synthesizeBuck2FallbackTargetEvents(event)...)
+	syntheticEvents = append(syntheticEvents, e.synthesizeBuck2ProgressEvents(event)...)
+	for _, synthetic := range syntheticEvents {
+		if err := e.processSingleEvent(synthetic, iid); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.BuildEvent) (bool, error) {
@@ -1203,6 +1291,11 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	}
 
 	switch p := event.GetBuildEvent().GetPayload().(type) {
+	case *build_event_stream.BuildEvent_Configured,
+		*build_event_stream.BuildEvent_Completed:
+		if e.isBuck2Invocation() {
+			e.hasBuck2ConfiguredOrCompletedEvents = true
+		}
 	case *build_event_stream.BuildEvent_StructuredCommandLine:
 		if e.logWriter == nil {
 			// best effort to reduce memory usage when possible by using the value of
@@ -1458,6 +1551,463 @@ func getOptionValues(options []string, optionName string) []string {
 	return values
 }
 
+func parseBuck2CLIArgs(cliArgs []string) (executable string, command string, startupArgs []string, commandArgs []string) {
+	trimmed := make([]string, 0, len(cliArgs))
+	for _, arg := range cliArgs {
+		if arg = strings.TrimSpace(arg); arg != "" {
+			trimmed = append(trimmed, arg)
+		}
+	}
+	if len(trimmed) == 0 {
+		return "", "", nil, nil
+	}
+	executable = trimmed[0]
+	if len(trimmed) == 1 {
+		return executable, "", nil, nil
+	}
+
+	commandIndex := -1
+	for i := 1; i < len(trimmed); i++ {
+		if _, ok := buck2CommandNames[trimmed[i]]; ok {
+			commandIndex = i
+			break
+		}
+	}
+	if commandIndex == -1 {
+		for i := 1; i < len(trimmed); i++ {
+			if !strings.HasPrefix(trimmed[i], "-") {
+				commandIndex = i
+				break
+			}
+		}
+	}
+	if commandIndex == -1 {
+		return executable, "", trimmed[1:], nil
+	}
+	command = trimmed[commandIndex]
+	startupArgs = append([]string{}, trimmed[1:commandIndex]...)
+	commandArgs = append([]string{}, trimmed[commandIndex+1:]...)
+	return executable, command, startupArgs, commandArgs
+}
+
+func buck2TargetLabelsFromCLIArgs(cliArgs []string) []string {
+	_, command, _, commandArgs := parseBuck2CLIArgs(cliArgs)
+	if command != "build" && command != "test" {
+		return nil
+	}
+
+	labels := make([]string, 0)
+	seen := make(map[string]struct{}, len(commandArgs))
+	for i := 0; i < len(commandArgs); i++ {
+		arg := strings.TrimSpace(commandArgs[i])
+		if arg == "" {
+			continue
+		}
+		if arg == "--" {
+			for _, rest := range commandArgs[i+1:] {
+				if label := canonicalBuck2TargetLabel(rest); label != "" {
+					if _, ok := seen[label]; !ok {
+						seen[label] = struct{}{}
+						labels = append(labels, label)
+					}
+				}
+			}
+			break
+		}
+		if strings.HasPrefix(arg, "-") {
+			if shouldReadOptionValueFromNextArg(commandLineOptionFromArg(arg), commandArgs, i) {
+				i++
+			}
+			continue
+		}
+		if label := canonicalBuck2TargetLabel(arg); label != "" {
+			if _, ok := seen[label]; !ok {
+				seen[label] = struct{}{}
+				labels = append(labels, label)
+			}
+		}
+	}
+	return labels
+}
+
+func canonicalBuck2TargetLabel(pattern string) string {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" || strings.HasPrefix(pattern, "-") {
+		return ""
+	}
+	idx := strings.Index(pattern, "//")
+	if idx < 0 {
+		return ""
+	}
+	label := pattern[idx:]
+	if strings.Contains(label, "...") || !strings.Contains(label, ":") {
+		return ""
+	}
+	if suffixStart := strings.IndexAny(label, "[("); suffixStart > 0 {
+		label = label[:suffixStart]
+	}
+	return label
+}
+
+func synthesizeBuck2StructuredCommandLines(cliArgs []string) []*command_line.CommandLine {
+	executable, command, startupArgs, commandArgs := parseBuck2CLIArgs(cliArgs)
+	if executable == "" {
+		return nil
+	}
+
+	original := makeBuck2StructuredCommandLine(structuredCommandLineLabelOriginal, executable, command, startupArgs, commandArgs)
+	canonical := makeBuck2StructuredCommandLine(structuredCommandLineLabelCanonical, executable, command, startupArgs, commandArgs)
+	return []*command_line.CommandLine{original, canonical}
+}
+
+func makeBuck2StructuredCommandLine(
+	label, executable, command string,
+	startupArgs, commandArgs []string,
+) *command_line.CommandLine {
+	sections := make([]*command_line.CommandLineSection, 0, 4)
+	sections = append(sections, &command_line.CommandLineSection{
+		SectionLabel: "executable",
+		SectionType: &command_line.CommandLineSection_ChunkList{
+			ChunkList: &command_line.ChunkList{
+				Chunk: []string{executable},
+			},
+		},
+	})
+	if len(startupArgs) > 0 {
+		sections = append(sections, &command_line.CommandLineSection{
+			SectionLabel: "startup options",
+			SectionType: &command_line.CommandLineSection_OptionList{
+				OptionList: &command_line.OptionList{
+					Option: commandLineOptionsFromArgs(startupArgs),
+				},
+			},
+		})
+	}
+	if command != "" {
+		sections = append(sections, &command_line.CommandLineSection{
+			SectionLabel: "command",
+			SectionType: &command_line.CommandLineSection_ChunkList{
+				ChunkList: &command_line.ChunkList{
+					Chunk: []string{command},
+				},
+			},
+		})
+	}
+	if len(commandArgs) > 0 {
+		sections = append(sections, &command_line.CommandLineSection{
+			SectionLabel: "command options",
+			SectionType: &command_line.CommandLineSection_OptionList{
+				OptionList: &command_line.OptionList{
+					Option: commandLineOptionsFromArgs(commandArgs),
+				},
+			},
+		})
+	}
+	return &command_line.CommandLine{
+		CommandLineLabel: label,
+		Sections:         sections,
+	}
+}
+
+func commandLineOptionsFromArgs(args []string) []*command_line.Option {
+	options := make([]*command_line.Option, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg = strings.TrimSpace(arg); arg != "" {
+			option := commandLineOptionFromArg(arg)
+			if shouldReadOptionValueFromNextArg(option, args, i) {
+				i++
+				value := strings.TrimSpace(args[i])
+				option.OptionValue = value
+				if option.GetCombinedForm() != "" {
+					option.CombinedForm = option.GetCombinedForm() + "=" + value
+				}
+			}
+			options = append(options, option)
+		}
+	}
+	return options
+}
+
+func shouldReadOptionValueFromNextArg(option *command_line.Option, args []string, i int) bool {
+	if option == nil {
+		return false
+	}
+	if option.GetOptionName() == "" || option.GetOptionValue() != "" {
+		return false
+	}
+	if i+1 >= len(args) {
+		return false
+	}
+	next := strings.TrimSpace(args[i+1])
+	if next == "" || next == "--" || strings.HasPrefix(next, "-") {
+		return false
+	}
+	_, ok := buck2FlagsWithSeparateValue[option.GetOptionName()]
+	return ok
+}
+
+func commandLineOptionFromArg(arg string) *command_line.Option {
+	option := &command_line.Option{
+		CombinedForm: arg,
+	}
+	trimmed := strings.TrimSpace(arg)
+	if strings.HasPrefix(trimmed, "--") {
+		if name, value, ok := strings.Cut(strings.TrimPrefix(trimmed, "--"), "="); ok {
+			option.OptionName = name
+			option.OptionValue = value
+		} else {
+			option.OptionName = strings.TrimPrefix(trimmed, "--")
+		}
+	} else if strings.HasPrefix(trimmed, "-") {
+		if name, value, ok := strings.Cut(strings.TrimPrefix(trimmed, "-"), "="); ok {
+			option.OptionName = name
+			option.OptionValue = value
+		} else {
+			option.OptionName = strings.TrimPrefix(trimmed, "-")
+		}
+	}
+	return option
+}
+
+func isRedactedCLIArgs(cliArgs []string) bool {
+	return len(cliArgs) == 1 && cliArgs[0] == redactedPlaceholder
+}
+
+func synthesizeBuck2StructuredCommandLineEvents(event *inpb.InvocationEvent) []*inpb.InvocationEvent {
+	started := event.GetBuildEvent().GetStarted()
+	if started == nil || started.GetBuildToolVersion() != buck2BuildToolVersion {
+		return nil
+	}
+	cliArgs, err := shlex.Split(started.GetOptionsDescription())
+	if err != nil || len(cliArgs) == 0 || isRedactedCLIArgs(cliArgs) {
+		return nil
+	}
+
+	commandLines := synthesizeBuck2StructuredCommandLines(cliArgs)
+	events := make([]*inpb.InvocationEvent, 0, len(commandLines))
+	for _, commandLine := range commandLines {
+		events = append(events, &inpb.InvocationEvent{
+			EventTime:      event.GetEventTime(),
+			SequenceNumber: event.GetSequenceNumber(),
+			BuildEvent: &build_event_stream.BuildEvent{
+				Id: &build_event_stream.BuildEventId{
+					Id: &build_event_stream.BuildEventId_StructuredCommandLine{
+						StructuredCommandLine: &build_event_stream.BuildEventId_StructuredCommandLineId{
+							CommandLineLabel: commandLine.GetCommandLineLabel(),
+						},
+					},
+				},
+				Payload: &build_event_stream.BuildEvent_StructuredCommandLine{
+					StructuredCommandLine: commandLine,
+				},
+			},
+		})
+	}
+	return events
+}
+
+func (e *EventChannel) isBuck2Invocation() bool {
+	return e.startedEvent != nil &&
+		e.startedEvent.Started != nil &&
+		e.startedEvent.Started.GetBuildToolVersion() == buck2BuildToolVersion
+}
+
+func (e *EventChannel) synthesizeBuck2FallbackTargetEvents(event *inpb.InvocationEvent) []*inpb.InvocationEvent {
+	if !e.isBuck2Invocation() || e.hasBuck2ConfiguredOrCompletedEvents {
+		return nil
+	}
+	finished := event.GetBuildEvent().GetFinished()
+	if finished == nil {
+		return nil
+	}
+	started := e.startedEvent.Started
+	if started == nil {
+		return nil
+	}
+	cliArgs, err := shlex.Split(started.GetOptionsDescription())
+	if err != nil || len(cliArgs) == 0 || isRedactedCLIArgs(cliArgs) {
+		return nil
+	}
+	_, command, _, _ := parseBuck2CLIArgs(cliArgs)
+	if command != "build" && command != "test" {
+		return nil
+	}
+	targetLabels := buck2TargetLabelsFromCLIArgs(cliArgs)
+	if len(targetLabels) == 0 {
+		return nil
+	}
+	targetKind := buck2GenericTargetKind
+	if command == "test" {
+		targetKind = buck2TestTargetKind
+	}
+	success := finished.GetExitCode().GetCode() == 0
+
+	events := make([]*inpb.InvocationEvent, 0, len(targetLabels)*2)
+	for _, label := range targetLabels {
+		events = append(events, &inpb.InvocationEvent{
+			EventTime:      event.GetEventTime(),
+			SequenceNumber: event.GetSequenceNumber(),
+			BuildEvent: &build_event_stream.BuildEvent{
+				Id: &build_event_stream.BuildEventId{
+					Id: &build_event_stream.BuildEventId_TargetConfigured{
+						TargetConfigured: &build_event_stream.BuildEventId_TargetConfiguredId{
+							Label: label,
+						},
+					},
+				},
+				Payload: &build_event_stream.BuildEvent_Configured{
+					Configured: &build_event_stream.TargetConfigured{
+						TargetKind: targetKind,
+					},
+				},
+			},
+		})
+		events = append(events, &inpb.InvocationEvent{
+			EventTime:      event.GetEventTime(),
+			SequenceNumber: event.GetSequenceNumber(),
+			BuildEvent: &build_event_stream.BuildEvent{
+				Id: &build_event_stream.BuildEventId{
+					Id: &build_event_stream.BuildEventId_TargetCompleted{
+						TargetCompleted: &build_event_stream.BuildEventId_TargetCompletedId{
+							Label: label,
+							Configuration: &build_event_stream.BuildEventId_ConfigurationId{
+								Id: buck2ConfigurationID,
+							},
+						},
+					},
+				},
+				Payload: &build_event_stream.BuildEvent_Completed{
+					Completed: &build_event_stream.TargetComplete{
+						Success: success,
+					},
+				},
+			},
+		})
+	}
+	return events
+}
+
+func (e *EventChannel) synthesizeBuck2ProgressEvents(event *inpb.InvocationEvent) []*inpb.InvocationEvent {
+	if !e.isBuck2Invocation() || event.GetBuildEvent() == nil {
+		return nil
+	}
+	buildEvent := event.GetBuildEvent()
+	sequenceNumber := event.GetSequenceNumber()
+	switch p := buildEvent.GetPayload().(type) {
+	case *build_event_stream.BuildEvent_Action:
+		action := p.Action
+		if action == nil {
+			return nil
+		}
+		actionType := strings.TrimSpace(action.GetType())
+		if actionType == "" {
+			actionType = "action"
+		}
+		label := strings.TrimSpace(action.GetLabel())
+		if label == "" {
+			label = "<unknown>"
+		}
+		if action.GetSuccess() {
+			summary := fmt.Sprintf("[buck2] ACTION SUCCESS: %s %s\n", actionType, label)
+			return []*inpb.InvocationEvent{
+				newBuck2SyntheticProgressEvent(event, buck2SyntheticOpaqueCount(sequenceNumber, buck2SyntheticProgressActionSuffix), summary, ""),
+			}
+		}
+		stderr := strings.TrimSpace(string(action.GetStderr().GetContents()))
+		if stderr != "" && !strings.HasSuffix(stderr, "\n") {
+			stderr += "\n"
+		}
+		summary := fmt.Sprintf("[buck2] ACTION FAILED: %s %s\n", actionType, label)
+		return []*inpb.InvocationEvent{
+			newBuck2SyntheticProgressEvent(event, buck2SyntheticOpaqueCount(sequenceNumber, buck2SyntheticProgressActionSuffix), "", summary+stderr),
+		}
+	case *build_event_stream.BuildEvent_TestResult:
+		testResult := p.TestResult
+		if testResult == nil {
+			return nil
+		}
+		label := strings.TrimSpace(buildEvent.GetId().GetTestResult().GetLabel())
+		if label == "" {
+			label = "<unknown>"
+		}
+		status := testResult.GetStatus().String()
+		summary := fmt.Sprintf("[buck2] TEST %s: %s\n", status, label)
+		statusDetails := strings.TrimSpace(testResult.GetStatusDetails())
+		if statusDetails == "" {
+			return []*inpb.InvocationEvent{
+				newBuck2SyntheticProgressEvent(event, buck2SyntheticOpaqueCount(sequenceNumber, buck2SyntheticProgressTestSuffix), summary, ""),
+			}
+		}
+		if !strings.HasSuffix(statusDetails, "\n") {
+			statusDetails += "\n"
+		}
+		if testResult.GetStatus() == build_event_stream.TestStatus_PASSED {
+			return []*inpb.InvocationEvent{
+				newBuck2SyntheticProgressEvent(event, buck2SyntheticOpaqueCount(sequenceNumber, buck2SyntheticProgressTestSuffix), summary+statusDetails, ""),
+			}
+		}
+		return []*inpb.InvocationEvent{
+			newBuck2SyntheticProgressEvent(event, buck2SyntheticOpaqueCount(sequenceNumber, buck2SyntheticProgressTestSuffix), "", summary+statusDetails),
+		}
+	case *build_event_stream.BuildEvent_Finished:
+		finished := p.Finished
+		if finished == nil {
+			return nil
+		}
+		exitName := strings.TrimSpace(finished.GetExitCode().GetName())
+		if exitName == "" {
+			if finished.GetExitCode().GetCode() == 0 {
+				exitName = "SUCCESS"
+			} else {
+				exitName = "FAILED"
+			}
+		}
+		summary := fmt.Sprintf("[buck2] BUILD %s\n", exitName)
+		if finished.GetExitCode().GetCode() == 0 {
+			return []*inpb.InvocationEvent{
+				newBuck2SyntheticProgressEvent(event, buck2SyntheticOpaqueCount(sequenceNumber, buck2SyntheticProgressFinishedSuffix), summary, ""),
+			}
+		}
+		return []*inpb.InvocationEvent{
+			newBuck2SyntheticProgressEvent(event, buck2SyntheticOpaqueCount(sequenceNumber, buck2SyntheticProgressFinishedSuffix), "", summary),
+		}
+	}
+	return nil
+}
+
+func buck2SyntheticOpaqueCount(sequenceNumber int64, suffix int64) int32 {
+	if sequenceNumber <= 0 {
+		return int32(suffix)
+	}
+	if sequenceNumber > math.MaxInt32/10 {
+		return math.MaxInt32
+	}
+	return int32(sequenceNumber*10 + suffix)
+}
+
+func newBuck2SyntheticProgressEvent(event *inpb.InvocationEvent, opaqueCount int32, stdout, stderr string) *inpb.InvocationEvent {
+	return &inpb.InvocationEvent{
+		EventTime:      event.GetEventTime(),
+		SequenceNumber: event.GetSequenceNumber(),
+		BuildEvent: &build_event_stream.BuildEvent{
+			Id: &build_event_stream.BuildEventId{
+				Id: &build_event_stream.BuildEventId_Progress{
+					Progress: &build_event_stream.BuildEventId_ProgressId{
+						OpaqueCount: opaqueCount,
+					},
+				},
+			},
+			Payload: &build_event_stream.BuildEvent_Progress{
+				Progress: &build_event_stream.Progress{
+					Stdout: stdout,
+					Stderr: stderr,
+				},
+			},
+		},
+	}
+}
+
 type invocationEventCB func(*inpb.InvocationEvent) error
 
 func streamRawInvocationEvents(env environment.Env, ctx context.Context, streamID string, callback invocationEventCB) error {
@@ -1576,6 +2126,7 @@ func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.E
 	}
 	beValues := accumulator.NewBEValues(inv)
 	structuredCommandLines := []*command_line.CommandLine{}
+	var buck2CLIArgs []string
 	streamID := GetStreamIdFromInvocationIdAndAttempt(inv.GetInvocationId(), inv.GetAttempt())
 	err := streamRawInvocationEvents(env, ctx, streamID, func(event *inpb.InvocationEvent) error {
 		if redactor != nil {
@@ -1595,6 +2146,14 @@ func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.E
 			// Drop child pattern expanded events since this list can be
 			// very long and we don't render these currently.
 			event.BuildEvent.Children = nil
+
+			started := p.Started
+			if started.GetBuildToolVersion() == buck2BuildToolVersion {
+				cliArgs, err := shlex.Split(started.GetOptionsDescription())
+				if err == nil && len(cliArgs) > 0 && !isRedactedCLIArgs(cliArgs) {
+					buck2CLIArgs = append([]string{}, cliArgs...)
+				}
+			}
 		case *build_event_stream.BuildEvent_Expanded:
 			if len(event.GetBuildEvent().GetId().GetPattern().GetPattern()) > 0 {
 				pattern, truncated := TruncateStringSlice(event.GetBuildEvent().GetId().GetPattern().GetPattern(), maxPatternLengthBytes)
@@ -1628,6 +2187,30 @@ func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.E
 	})
 	if err != nil {
 		return err
+	}
+
+	if len(buck2CLIArgs) > 0 {
+		var hasOriginal, hasCanonical bool
+		for _, commandLine := range structuredCommandLines {
+			switch commandLine.GetCommandLineLabel() {
+			case structuredCommandLineLabelOriginal:
+				hasOriginal = true
+			case structuredCommandLineLabelCanonical:
+				hasCanonical = true
+			}
+		}
+		for _, commandLine := range synthesizeBuck2StructuredCommandLines(buck2CLIArgs) {
+			switch commandLine.GetCommandLineLabel() {
+			case structuredCommandLineLabelOriginal:
+				if !hasOriginal {
+					structuredCommandLines = append(structuredCommandLines, commandLine)
+				}
+			case structuredCommandLineLabelCanonical:
+				if !hasCanonical {
+					structuredCommandLines = append(structuredCommandLines, commandLine)
+				}
+			}
+		}
 	}
 
 	// TODO: Can we remove this StructuredCommandLine field? These are

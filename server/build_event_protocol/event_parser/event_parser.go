@@ -75,17 +75,22 @@ func parseCommandLine(commandLine *command_line.CommandLine) cmdOptions {
 			continue
 		}
 		for _, option := range p.OptionList.Option {
-			if option.OptionName == envVarOptionName {
+			optionName := normalizeOptionName(option.OptionName)
+			if optionName == envVarOptionName {
 				parts := strings.Split(option.OptionValue, envVarSeparator)
 				if len(parts) == 2 {
 					res.envVarMap[parts[0]] = parts[1]
 				}
-			} else if _, ok := optionsToParse[option.OptionName]; ok {
-				res.optionsMap[option.OptionName] = option.OptionValue
+			} else if _, ok := optionsToParse[optionName]; ok {
+				res.optionsMap[optionName] = option.OptionValue
 			}
 		}
 	}
 	return res
+}
+
+func normalizeOptionName(name string) string {
+	return strings.ReplaceAll(name, "-", "_")
 }
 
 // StreamingEventParser consumes a stream of build events and populates an

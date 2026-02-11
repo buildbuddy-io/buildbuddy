@@ -560,3 +560,62 @@ func TestRemoteCacheOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoteCacheOptionsWithHyphenatedNames(t *testing.T) {
+	structuredCommandLine := &command_line.CommandLine{
+		CommandLineLabel: "canonical",
+		Sections: []*command_line.CommandLineSection{
+			{
+				SectionLabel: "command options",
+				SectionType: &command_line.CommandLineSection_OptionList{
+					OptionList: &command_line.OptionList{
+						Option: []*command_line.Option{
+							{
+								CombinedForm: "--client-env=GITHUB_SHA=abc123",
+								OptionName:   "client-env",
+								OptionValue:  "GITHUB_SHA=abc123",
+							},
+							{
+								CombinedForm: "--remote-cache=grpcs://remote.buildbuddy.dev",
+								OptionName:   "remote-cache",
+								OptionValue:  "grpcs://remote.buildbuddy.dev",
+							},
+							{
+								CombinedForm: "--remote-executor=grpcs://remote.buildbuddy.dev",
+								OptionName:   "remote-executor",
+								OptionValue:  "grpcs://remote.buildbuddy.dev",
+							},
+							{
+								CombinedForm: "--remote-upload-local-results=1",
+								OptionName:   "remote-upload-local-results",
+								OptionValue:  "1",
+							},
+							{
+								CombinedForm: "--remote-download-outputs=minimal",
+								OptionName:   "remote-download-outputs",
+								OptionValue:  "minimal",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	event := &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_StructuredCommandLine{
+			StructuredCommandLine: structuredCommandLine,
+		},
+	}
+
+	invocation := &inpb.Invocation{
+		InvocationId:     "test-invocation",
+		InvocationStatus: inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
+	}
+	parser := event_parser.NewStreamingEventParser(invocation)
+	parser.ParseEvent(event)
+
+	assert.Equal(t, "abc123", invocation.GetCommitSha())
+	assert.Equal(t, true, invocation.GetRemoteExecutionEnabled())
+	assert.Equal(t, true, invocation.GetUploadLocalResultsEnabled())
+	assert.Equal(t, inpb.DownloadOutputsOption_MINIMAL, invocation.GetDownloadOutputsOption())
+}

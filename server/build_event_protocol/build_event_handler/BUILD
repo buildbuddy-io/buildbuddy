@@ -21,6 +21,7 @@ go_library(
         "//server/api/common",
         "//server/backends/invocationdb",
         "//server/build_event_protocol/accumulator",
+        "//server/build_event_protocol/buck2",
         "//server/build_event_protocol/build_status_reporter",
         "//server/build_event_protocol/invocation_format",
         "//server/build_event_protocol/target_tracker",
@@ -64,9 +65,13 @@ go_library(
 go_test(
     name = "build_event_handler_test",
     size = "small",
-    srcs = ["build_event_handler_test.go"],
+    srcs = [
+        "build_event_handler_test.go",
+        "command_line_test.go",
+    ],
+    embed = [":build_event_handler"],
     deps = [
-        ":build_event_handler",
+        "//proto:buck_data_go_proto",
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
         "//proto:command_line_go_proto",
@@ -91,5 +96,6 @@ go_test(
         "@org_golang_google_protobuf//encoding/prototext",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

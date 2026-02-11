@@ -121,6 +121,7 @@ func testPublishBuildToolEventStreamProxy(t *testing.T, test proxyTestCase) {
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), rsp.GetSequenceNumber())
 	} else {
+		require.Error(t, err)
 		require.Equal(t, test.ExpectedError.Error(), err.Error())
 	}
 }
