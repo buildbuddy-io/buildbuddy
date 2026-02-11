@@ -3,6 +3,7 @@ module(
     repo_name = "com_github_buildbuddy_io_buildbuddy",
 )
 
+include("//deps:apt.MODULE.bazel")
 include("//deps:bazel_dep.MODULE.bazel")
 include("//deps:docker.MODULE.bazel")
 include("//deps:go_deps.MODULE.bazel")

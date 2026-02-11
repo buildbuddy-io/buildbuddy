@@ -1,16 +1,23 @@
+From 87c9faeabe72e6a4ee625a9badcd6bdaa94704a3 Mon Sep 17 00:00:00 2001
+From: Zoey Greer <zoey@buildbuddy.io>
+Date: Fri, 6 Feb 2026 18:01:53 -0500
+Subject: [PATCH] patch
+
+---
+ mem/buffer_pool.go | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
 diff --git a/mem/buffer_pool.go b/mem/buffer_pool.go
-index f211e727..3880f83f 100644
+index e37afdd..7ebae14 100644
 --- a/mem/buffer_pool.go
 +++ b/mem/buffer_pool.go
-@@ -40,10 +40,14 @@ type BufferPool interface {
- 
+@@ -43,9 +43,13 @@ const goPageSize = 4 << 10 // 4KiB. N.B. this must be a power of 2.
  var defaultBufferPoolSizes = []int{
  	256,
--	4 << 10,  // 4KB (go page size)
+ 	goPageSize,
 -	16 << 10, // 16KB (max HTTP/2 frame size used by gRPC)
 -	32 << 10, // 32KB (default buffer size for io.Copy)
 -	1 << 20,  // 1MB
-+	4 << 10,   // 4KB (go page size)
 +	16 << 10,  // 16KB (max HTTP/2 frame size used by gRPC)
 +	32 << 10,  // 32KB (default buffer size for io.Copy)
 +	64 << 10,  // 64KB
@@ -21,3 +28,6 @@ index f211e727..3880f83f 100644
  }
  
  var defaultBufferPool BufferPool
+-- 
+2.47.3
+

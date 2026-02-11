@@ -1,0 +1,29 @@
+version: 1
+
+sources:
+  - channel: trixie main
+    url: https://snapshot.debian.org/archive/debian/20260206T143559Z
+  - channel: trixie-updates main
+    url: https://snapshot.debian.org/archive/debian/20260206T143559Z
+  - channel: trixie-security main
+    url: https://snapshot.debian.org/archive/debian-security/20260206T143559Z
+
+archs:
+  - "amd64"
+  - "arm64"
+
+packages:
+  # Base system packages
+  - base-files
+  - netbase
+  - tzdata
+  - media-types
+
+  # CA certificates package
+  - ca-certificates
+
+  # CC packages
+  - libgomp1
+  - libstdc++6
+  - libgcc-s1
+  - gcc-14-base

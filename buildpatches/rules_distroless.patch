@@ -1,0 +1,11 @@
+diff -Naur a/apt/private/deb_translate_lock.bzl b/apt/private/deb_translate_lock.bzl
+--- a/apt/private/deb_translate_lock.bzl	2025-10-09 13:25:37.354124020 +0200
++++ b/apt/private/deb_translate_lock.bzl	2025-10-09 13:26:34.816428768 +0200
+@@ -229,6 +229,7 @@
+         packages = starlark_codegen_utils.to_dict_list_attr(architectures),
+         architectures = starlark_codegen_utils.to_list_attr(architectures.keys()),
+     ))
++    rctx.file("REPO.bazel", """repo(default_visibility = ["//visibility:public"])""")
+
+ deb_translate_lock = repository_rule(
+     implementation = _deb_translate_lock_impl,
