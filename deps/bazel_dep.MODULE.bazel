@@ -45,11 +45,11 @@ archive_override(
 bazel_dep(name = "rules_docker", repo_name = "io_bazel_rules_docker")
 archive_override(
     module_name = "rules_docker",
-    integrity = "sha256-ZJKKxQn+3Hq3PkUa11PE5dOUEcxD/OE1688Kn+IaEJY=",
-    strip_prefix = "rules_docker-8dfcf8c84a822ae22c720ec245ea16db7165a5bf",
+    integrity = "sha256-FxaQsDpYJdra159x9pKBHzsf58hrS2VWFYqyn6aiKlM=",
+    strip_prefix = "rules_docker-0f218e517183d5f5de9126c9a894fe7ca510054b",
     # This is BuildBuddy fork of rules_docker with bzlmod support.
     # Diff: https://github.com/bazelbuild/rules_docker/compare/master...buildbuddy-io:rules_docker:master
-    urls = ["https://github.com/buildbuddy-io/rules_docker/archive/8dfcf8c84a822ae22c720ec245ea16db7165a5bf.tar.gz"],
+    urls = ["https://github.com/buildbuddy-io/rules_docker/archive/0f218e517183d5f5de9126c9a894fe7ca510054b.tar.gz"],
 )
 
 bazel_dep(name = "rules_k8s", repo_name = "io_bazel_rules_k8s")
