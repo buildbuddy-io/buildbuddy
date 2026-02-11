@@ -978,6 +978,10 @@ export default class InvocationModel {
     if (canonicalOptions.length) {
       return canonicalOptions;
     }
+    const originalOptions = this.getStructuredOptionCombinedForms("original", "command options");
+    if (originalOptions.length) {
+      return originalOptions;
+    }
     return (this.optionsParsed?.cmdLine || []).filter((option) => Boolean(option));
   }
 
@@ -994,6 +998,10 @@ export default class InvocationModel {
     if (canonicalStartup.length) {
       return canonicalStartup;
     }
+    const originalStartup = this.getStructuredOptionCombinedForms("original", "startup options");
+    if (originalStartup.length) {
+      return originalStartup;
+    }
     return (this.optionsParsed?.startupOptions || []).filter((option) => Boolean(option));
   }
 
@@ -1001,11 +1009,11 @@ export default class InvocationModel {
    * Returns the build tool executable name from the structured command line.
    */
   private getExecutableName(): string | null {
-    return (
-      this.structuredCommandLine
-        ?.find((cmdLine) => cmdLine.commandLineLabel === "original")
-        ?.sections?.find((section) => section.sectionLabel === "executable")?.chunkList?.chunk?.[0] ?? null
-    );
+    const originalExecutable = this.getStructuredChunk("original", "executable")[0];
+    if (originalExecutable) {
+      return originalExecutable;
+    }
+    return this.getStructuredChunk("canonical", "executable")[0] ?? null;
   }
 
   /**
@@ -1017,13 +1025,25 @@ export default class InvocationModel {
    * empty list.
    */
   private getResidualArgsWithSeparator(): string[] {
-    const residual = this.structuredCommandLine
-      ?.find((cmdLine) => cmdLine.commandLineLabel === "original")
-      ?.sections?.find((section) => section.sectionLabel === "residual")?.chunkList?.chunk;
+    const residual = this.getStructuredChunk("original", "residual").length
+      ? this.getStructuredChunk("original", "residual")
+      : this.getStructuredChunk("canonical", "residual");
     if (!residual?.length) {
       return [];
     }
     return ["--", ...residual];
+  }
+
+  private getCommandNameForDisplay(): string | undefined {
+    const originalCommand = this.getStructuredChunk("original", "command")[0];
+    if (originalCommand) {
+      return originalCommand;
+    }
+    const canonicalCommand = this.getStructuredChunk("canonical", "command")[0];
+    if (canonicalCommand) {
+      return canonicalCommand;
+    }
+    return this.started?.command;
   }
 
   private getStructuredCommandLineByLabel(label: string): command_line.CommandLine | undefined {
@@ -1043,10 +1063,22 @@ export default class InvocationModel {
       .map((option) => option.combinedForm);
   }
 
+  private getStructuredChunk(label: string, sectionLabel: string): string[] {
+    const commandLine = this.getStructuredCommandLineByLabel(label);
+    if (!commandLine?.sections?.length) {
+      return [];
+    }
+    return (
+      commandLine.sections
+        .find((section) => section.sectionLabel === sectionLabel)
+        ?.chunkList?.chunk?.filter(Boolean) || []
+    );
+  }
+
   private commandLineOptionsToShellCommand(options: string[]) {
     return [
       this.getExecutableName() ?? "bazel",
-      this.started?.command,
+      this.getCommandNameForDisplay(),
       ...(options || []),
       ...this.getResidualArgsWithSeparator(),
     ]

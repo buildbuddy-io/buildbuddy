@@ -53,6 +53,7 @@ interface State {
   error: BuildBuddyError | null;
 
   model?: InvocationModel;
+  hasExecutions: boolean;
 
   /**
    * The CI runner execution responsible for creating this invocation, if
@@ -86,6 +87,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
   state: State = {
     loading: true,
     error: null,
+    hasExecutions: false,
     keyboardShortcutHandle: "",
     childInvocations: [],
   };
@@ -97,6 +99,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
   private runLogsSubscription?: Subscription;
   private modelChangedSubscription?: Subscription;
   private runnerExecutionRPC?: CancelablePromise;
+  private executionPresenceRPC?: CancelablePromise;
   private cancelGroupIdOverride?: () => void;
 
   private seenChildInvocationConfiguredIds = new Set<string>();
@@ -222,6 +225,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     this.runLogsModel?.stopFetching();
     this.runLogsSubscription?.unsubscribe();
     this.runnerExecutionRPC?.cancel();
+    this.executionPresenceRPC?.cancel();
     shortcuts.deregister(this.state.keyboardShortcutHandle);
 
     this.cancelGroupIdOverride?.();
@@ -294,6 +298,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           error: null,
           childInvocations: childInvocations,
         });
+        this.fetchExecutionPresence(model);
 
         if (fetchChildren) {
           for (let child of childInvocations) {
@@ -306,6 +311,33 @@ export default class InvocationComponent extends React.Component<Props, State> {
         this.setState({ error: BuildBuddyError.parse(error) });
       })
       .finally(() => this.setState({ loading: false }));
+  }
+
+  fetchExecutionPresence(model: InvocationModel) {
+    // For Bazel and remote runner invocations, existing tab gating already
+    // shows the Executions tab.
+    const isRemoteRunnerInvocation = model.isWorkflowInvocation() || model.isHostedBazelInvocation();
+    if (model.getIsRBEEnabled() || isRemoteRunnerInvocation || this.state.hasExecutions || this.executionPresenceRPC) {
+      return;
+    }
+
+    let request = new execution_stats.GetExecutionRequest();
+    request.executionLookup = new execution_stats.ExecutionLookup();
+    request.executionLookup.invocationId = model.getInvocationId();
+    this.executionPresenceRPC = rpcService.service
+      .getExecution(request)
+      .then((response) => {
+        const hasExecutions = (response.execution?.length ?? 0) > 0;
+        if (this.state.hasExecutions !== hasExecutions) {
+          this.setState({ hasExecutions });
+        }
+      })
+      .catch((e) => {
+        console.error("Failed to fetch execution presence", e);
+      })
+      .finally(() => {
+        this.executionPresenceRPC = undefined;
+      });
   }
 
   shouldFetchChildren(model: InvocationModel | undefined): boolean {
@@ -628,7 +660,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
             tab={this.props.tab}
             denseMode={this.props.preferences.denseModeEnabled}
             role={this.state.model.getRole()}
-            executionsEnabled={this.state.model.getIsRBEEnabled() || isRemoteRunnerInvocation}
+            executionsEnabled={
+              this.state.model.getIsRBEEnabled() || isRemoteRunnerInvocation || this.state.hasExecutions
+            }
             hasCoverage={this.state.model.hasCoverage()}
             hasSuggestions={suggestions.length > 0}
             hasExecutionLogs={this.state.model.getIsExecutionLogEnabled()}
