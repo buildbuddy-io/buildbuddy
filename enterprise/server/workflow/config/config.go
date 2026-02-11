@@ -235,6 +235,11 @@ fi
 # These arguments make the extractors run on java generated code
 KYTHE_ARGS="$KYTHE_ARGS --experimental_extra_action_top_level_only=false --experimental_extra_action_filter=^//"
 
+# Bazel 9 defaults config_setting visibility to private, which breaks selects
+if [ $BZL_MAJOR_VERSION -ge 9 ]; then
+    KYTHE_ARGS="$KYTHE_ARGS --incompatible_config_setting_private_default_visibility=false"
+fi
+
 echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"
 bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...`, dirName, bazelConfigFlags)
 
