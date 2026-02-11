@@ -94,8 +94,8 @@ var (
 const (
 	ociVersion = "1.1.0-rc.3" // matches podman
 
-	// Execution root directory path relative to the container rootfs directory.
-	execrootPath = "/buildbuddy-execroot"
+	// Default execution root directory path relative to the container rootfs directory.
+	defaultExecrootPath = "/buildbuddy-execroot"
 
 	// Image cache layout version.
 	//
@@ -373,6 +373,14 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		networkMode = *defaultNetworkMode
 	}
 
+	execroot := args.Props.ExecrootPath
+	if execroot == "" {
+		execroot = defaultExecrootPath
+	}
+	if !filepath.IsAbs(execroot) {
+		return nil, status.InvalidArgumentErrorf("execroot-path platform property must be an absolute path, got %q", execroot)
+	}
+
 	container := &ociContainer{
 		env:            p.env,
 		runtime:        p.runtime,
@@ -393,6 +401,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		tiniEnabled:        args.Props.DockerInit || *enableTini,
 		user:               args.Props.DockerUser,
 		forceRoot:          args.Props.DockerForceRoot,
+		execrootPath:       execroot,
 		persistentVolumes:  args.Props.PersistentVolumes,
 
 		milliCPU:      args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
@@ -438,6 +447,7 @@ type ociContainer struct {
 	networkEnabled bool
 	user           string
 	forceRoot      bool
+	execrootPath   string
 
 	milliCPU      int64 // milliCPU allocation from task size
 	memoryBytes   int64 // memory allocation from task size in bytes
@@ -694,7 +704,7 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 }
 
 func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	args := []string{"exec", "--cwd=" + filepath.Join(execrootPath, cmd.GetWorkingDirectory())}
+	args := []string{"exec", "--cwd=" + filepath.Join(c.execrootPath, cmd.GetWorkingDirectory())}
 	// Respect command env. Note, when setting any --env vars at all, it
 	// completely overrides the env from the bundle, rather than just adding
 	// to it. So we specify the complete env here, including the base env,
@@ -1086,7 +1096,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			Terminal: false,
 			User:     *user,
 			Args:     cmd.GetArguments(),
-			Cwd:      filepath.Join(execrootPath, cmd.GetWorkingDirectory()),
+			Cwd:      filepath.Join(c.execrootPath, cmd.GetWorkingDirectory()),
 			Env:      env,
 			Rlimits: []specs.POSIXRlimit{
 				{Type: "RLIMIT_NPROC", Hard: 4194304, Soft: 4194304},
@@ -1179,7 +1189,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 				Options:     []string{"bind", "rprivate", "ro"},
 			},
 			{
-				Destination: execrootPath,
+				Destination: c.execrootPath,
 				Type:        "bind",
 				Source:      c.workDir,
 				Options:     []string{"bind", "rprivate"},

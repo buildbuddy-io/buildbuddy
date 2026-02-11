@@ -103,6 +103,7 @@ const (
 	SnapshotKeyOverridePropertyName         = "snapshot-key-override"
 	RetryPropertyName                       = "retry"
 	PersistentVolumesPropertyName           = "persistent-volumes"
+	execrootPathPropertyName                = "execroot-path"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -227,6 +228,7 @@ type Properties struct {
 	DockerInit                bool
 	DockerUser                string
 	DockerNetwork             string
+	ExecrootPath              string
 	Network                   string
 	RecycleRunner             bool
 	RunnerRecyclingMaxWait    time.Duration
@@ -496,6 +498,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DockerInit:                boolProp(m, DockerInitPropertyName, false),
 		DockerUser:                stringProp(m, DockerUserPropertyName, ""),
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
+		ExecrootPath:              stringProp(m, execrootPathPropertyName, ""),
 		Network:                   stringProp(m, networkPropertyName, ""),
 		RecycleRunner:             recycleRunner,
 		DefaultTimeout:            timeout,
