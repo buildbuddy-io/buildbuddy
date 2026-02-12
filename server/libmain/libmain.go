@@ -62,6 +62,7 @@ import (
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -305,6 +306,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 		cspb.RegisterCacheServer(grpcServer, cacheServer)
 	}
 	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
+	if ociFetcherServer := env.GetOCIFetcherServer(); ociFetcherServer != nil {
+		ofpb.RegisterOCIFetcherServer(grpcServer, ociFetcherServer)
+	}
 
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
 
