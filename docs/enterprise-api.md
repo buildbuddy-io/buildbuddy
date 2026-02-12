@@ -341,6 +341,7 @@ rpc GetAuditLog(GetAuditLogRequest) returns (GetAuditLogResponse);
 ### Access Requirements
 
 - Use an **Org API key** of type **Audit log reader key** (recommended) or **Org admin key**.
+- Set `request_context.group_id` to retrieve logs for a different organization that the caller is authorized to access.
 - If the key does not meet the access requirements, the request returns `PermissionDenied`.
 
 ### Example cURL request
@@ -391,6 +392,11 @@ message GetAuditLogRequest {
   // If unset or less than 1, a server default is used.
   // Values greater than 1000 are capped at 1000.
   int32 page_size = 3;
+
+  // Optional request context.
+  // Set group_id to query a different organization when the caller is
+  // authorized to access it.
+  context.RequestContext request_context = 4;
 }
 ```
 

@@ -460,6 +460,9 @@ func (s *APIServer) GetAuditLog(ctx context.Context, req *apipb.GetAuditLogReque
 		return nil, status.PermissionDeniedError("missing required capabilities")
 	}
 	isServerAdmin := claims.AuthorizeServerAdmin(ctx) == nil
+	if pageToken != nil && pageToken.GroupID != user.GetGroupID() {
+		return nil, status.InvalidArgumentError("page_token does not match selected group")
+	}
 
 	pageSize := req.GetPageSize()
 	if pageSize < minAuditLogPageSize {
@@ -504,6 +507,7 @@ func (s *APIServer) GetAuditLog(ctx context.Context, req *apipb.GetAuditLogReque
 
 		rsp.Entry = append(rsp.Entry, entry)
 		lastReturnedToken = auditLogPageToken{
+			GroupID:       user.GetGroupID(),
 			EndTimeUsec:   endUsec,
 			EventTimeUsec: row.EventTimeUsec,
 			AuditLogID:    row.AuditLogID,
@@ -518,6 +522,7 @@ func (s *APIServer) GetAuditLog(ctx context.Context, req *apipb.GetAuditLogReque
 }
 
 type auditLogPageToken struct {
+	GroupID       string `json:"group_id"`
 	EndTimeUsec   int64  `json:"end_time_usec"`
 	EventTimeUsec int64  `json:"event_time_usec"`
 	AuditLogID    string `json:"audit_log_id"`
@@ -543,7 +548,7 @@ func parseAuditLogPageToken(pageToken string) (*auditLogPageToken, error) {
 	if err := json.Unmarshal(data, token); err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid page_token")
 	}
-	if token.AuditLogID == "" {
+	if token.GroupID == "" || token.AuditLogID == "" {
 		return nil, status.InvalidArgumentErrorf("invalid page_token")
 	}
 	return token, nil
