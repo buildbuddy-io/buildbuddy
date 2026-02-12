@@ -319,11 +319,12 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 	}
 	var raftResponse dbsm.Result
 
-	err = RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
+	err = RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) (returnedErr error) {
 		ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 		spn.SetName("nodehost.SyncPropose")
 		fnStart := s.clock.Now()
 		defer func() {
+			tracing.RecordErrorToSpan(spn, returnedErr)
 			spn.End()
 			metrics.RaftNodeHostMethodDurationUsec.With(prometheus.Labels{
 				metrics.RaftNodeHostMethodLabel: SyncProposeMethodName,
