@@ -8,11 +8,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"strings"
 	"testing"
 	"time"
 
+	auditlogsvc "github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -37,9 +39,11 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	commonpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
+	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -51,6 +55,16 @@ import (
 )
 
 var userMap = testauth.TestUsers("user1", "group1")
+
+func skipIfDockerUnavailable(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skipf("Skipping ClickHouse-backed test: docker executable is unavailable (%s)", err)
+	}
+	if err := exec.Command("docker", "info").Run(); err != nil {
+		t.Skipf("Skipping ClickHouse-backed test: docker daemon is unavailable (%s)", err)
+	}
+}
 
 func TestGetInvocation(t *testing.T) {
 	testUUID, err := uuid.NewRandom()
@@ -266,6 +280,174 @@ func TestLog(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.Equal(t, "hello world", resp.GetLog().GetContents())
+}
+
+func TestGetAuditLog(t *testing.T) {
+	skipIfDockerUnavailable(t)
+	flags.Set(t, "app.audit_logs_enabled", true)
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "testenv.use_clickhouse", true)
+
+	ctx := context.Background()
+	env := enterprise_testenv.New(t)
+	auth := enterprise_testauth.Configure(t, env)
+	require.NoError(t, auditlogsvc.Register(env))
+
+	user := enterprise_testauth.CreateRandomUser(t, env, "example.io")
+	userCtx, err := auth.WithAuthenticatedUser(ctx, user.UserID)
+	require.NoError(t, err)
+	authUser, err := env.GetUserDB().GetUser(userCtx)
+	require.NoError(t, err)
+	require.NotEmpty(t, authUser.Groups)
+	groupID := authUser.Groups[0].Group.GroupID
+
+	key, err := env.GetAuthDB().CreateAPIKey(
+		userCtx,
+		groupID,
+		"audit-reader",
+		[]cappb.Capability{cappb.Capability_AUDIT_LOG_READ},
+		0,     /*=expiresIn*/
+		false, /*=visibleToDevelopers*/
+	)
+	require.NoError(t, err)
+	keyCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
+
+	env.GetAuditLogger().LogForGroup(userCtx, groupID, alpb.Action_UPDATE, &grpb.UpdateGroupRequest{Name: "update-1"})
+	env.GetAuditLogger().LogForGroup(userCtx, groupID, alpb.Action_UPDATE, &grpb.UpdateGroupRequest{Name: "update-2"})
+
+	s := NewAPIServer(env)
+	selector := &apipb.AuditLogSelector{
+		StartTime: timestamppb.New(time.Unix(0, 0)),
+		EndTime:   timestamppb.New(time.Now().Add(time.Minute)),
+	}
+
+	directRsp, err := env.GetAuditLogger().GetLogs(keyCtx, &alpb.GetAuditLogsRequest{
+		TimestampAfter:  selector.GetStartTime(),
+		TimestampBefore: selector.GetEndTime(),
+	})
+	require.NoError(t, err)
+	require.Len(t, directRsp.GetEntries(), 2)
+
+	page1, err := s.GetAuditLog(keyCtx, &apipb.GetAuditLogRequest{
+		Selector: selector,
+		PageSize: 1,
+	})
+	require.NoError(t, err)
+	require.Len(t, page1.GetEntry(), 1)
+	require.NotEmpty(t, page1.GetNextPageToken())
+
+	page2, err := s.GetAuditLog(keyCtx, &apipb.GetAuditLogRequest{
+		Selector:  selector,
+		PageSize:  1,
+		PageToken: page1.GetNextPageToken(),
+	})
+	require.NoError(t, err)
+	require.Len(t, page2.GetEntry(), 1)
+	require.Empty(t, page2.GetNextPageToken())
+
+	name1 := page1.GetEntry()[0].GetRequest().GetApiRequest().GetUpdateGroup().GetName()
+	name2 := page2.GetEntry()[0].GetRequest().GetApiRequest().GetUpdateGroup().GetName()
+	require.NotEqual(t, name1, name2)
+	require.ElementsMatch(t, []string{"update-1", "update-2"}, []string{name1, name2})
+}
+
+func TestGetAuditLog_ParentKeyCanReadChildGroup(t *testing.T) {
+	skipIfDockerUnavailable(t)
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "app.audit_logs_enabled", true)
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "testenv.use_clickhouse", true)
+
+	ctx := context.Background()
+	env := enterprise_testenv.New(t)
+	auth := enterprise_testauth.Configure(t, env)
+	require.NoError(t, auditlogsvc.Register(env))
+
+	parentUser := enterprise_testauth.CreateRandomUser(t, env, "parent.io")
+	parentCtx, err := auth.WithAuthenticatedUser(ctx, parentUser.UserID)
+	require.NoError(t, err)
+	parentInfo, err := env.GetUserDB().GetUser(parentCtx)
+	require.NoError(t, err)
+	require.NotEmpty(t, parentInfo.Groups)
+	parentGroup := parentInfo.Groups[0].Group
+
+	childUser := enterprise_testauth.CreateRandomUser(t, env, "child.io")
+	childCtx, err := auth.WithAuthenticatedUser(ctx, childUser.UserID)
+	require.NoError(t, err)
+	childInfo, err := env.GetUserDB().GetUser(childCtx)
+	require.NoError(t, err)
+	require.NotEmpty(t, childInfo.Groups)
+	childGroup := childInfo.Groups[0].Group
+
+	parentGroup.IsParent = true
+	parentGroup.SamlIdpMetadataUrl = "https://idp.example.test/metadata"
+	parentGroup.URLIdentifier = "parent-org"
+	_, err = env.GetUserDB().UpdateGroup(parentCtx, &parentGroup)
+	require.NoError(t, err)
+
+	childGroup.SamlIdpMetadataUrl = parentGroup.SamlIdpMetadataUrl
+	childGroup.URLIdentifier = "child-org"
+	_, err = env.GetUserDB().UpdateGroup(childCtx, &childGroup)
+	require.NoError(t, err)
+
+	key, err := env.GetAuthDB().CreateAPIKey(
+		parentCtx,
+		parentGroup.GroupID,
+		"audit-reader",
+		[]cappb.Capability{cappb.Capability_AUDIT_LOG_READ},
+		0,     /*=expiresIn*/
+		false, /*=visibleToDevelopers*/
+	)
+	require.NoError(t, err)
+	parentKeyCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
+
+	const parentMarker = "parent-group-audit-entry"
+	const childMarker = "child-group-audit-entry"
+	env.GetAuditLogger().LogForGroup(parentCtx, parentGroup.GroupID, alpb.Action_UPDATE, &grpb.UpdateGroupRequest{Name: parentMarker})
+	env.GetAuditLogger().LogForGroup(childCtx, childGroup.GroupID, alpb.Action_UPDATE, &grpb.UpdateGroupRequest{Name: childMarker})
+
+	s := NewAPIServer(env)
+	req := &apipb.GetAuditLogRequest{
+		Selector: &apipb.AuditLogSelector{
+			GroupId:   childGroup.GroupID,
+			StartTime: timestamppb.New(time.Time{}),
+			EndTime:   timestamppb.New(time.Now().Add(time.Minute)),
+		},
+	}
+	containsMarker := func(rsp *apipb.GetAuditLogResponse, marker string) bool {
+		for _, e := range rsp.GetEntry() {
+			if e.GetRequest().GetApiRequest().GetUpdateGroup().GetName() == marker {
+				return true
+			}
+		}
+		return false
+	}
+
+	t.Run("direct API key auth context", func(t *testing.T) {
+		rsp, err := s.GetAuditLog(parentKeyCtx, req)
+		require.NoError(t, err)
+		require.NotEmpty(t, rsp.GetEntry())
+		require.True(t, containsMarker(rsp, childMarker), "expected audit log query to include child group entry")
+		require.False(t, containsMarker(rsp, parentMarker), "expected child-group query to exclude parent group entries")
+	})
+
+	t.Run("http auth context without raw API key", func(t *testing.T) {
+		// Simulate protolet HTTP auth context: authenticated claims exist, but
+		// the raw API key is not attached to the request context.
+		parentClaims, err := claims.ClaimsFromContext(parentKeyCtx)
+		require.NoError(t, err)
+		httpAuthCtx := claims.AuthContextWithJWT(ctx, parentClaims, nil)
+		_, hasAPIKey := httpAuthCtx.Value(authutil.APIKeyHeader).(string)
+		require.False(t, hasAPIKey)
+
+		rsp, err := s.GetAuditLog(httpAuthCtx, req)
+		require.NoError(t, err)
+		require.NotEmpty(t, rsp.GetEntry())
+		require.True(t, containsMarker(rsp, childMarker), "expected audit log query to include child group entry")
+		require.False(t, containsMarker(rsp, parentMarker), "expected child-group query to exclude parent group entries")
+	})
 }
 
 func TestGetLogAuth(t *testing.T) {

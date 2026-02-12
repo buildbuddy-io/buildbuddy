@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package api.v1;
+
+import "proto/auditlog.proto";
+import "google/protobuf/timestamp.proto";
+
+// The selector used to specify which audit logs to return.
+message AuditLogSelector {
+  // Optional: BuildBuddy group ID to query. If unset, audit logs are scoped to
+  // the currently selected organization.
+  //
+  // Parent-organization API keys that have AUDIT_LOG_READ or ORG_ADMIN
+  // capability may set this to a child organization ID.
+  string group_id = 1;
+
+  // Optional inclusive lower bound for event time.
+  // If unset, defaults to the Unix epoch.
+  google.protobuf.Timestamp start_time = 2;
+
+  // Optional exclusive upper bound for event time.
+  // If unset, defaults to the current time.
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// Request passed into GetAuditLog.
+message GetAuditLogRequest {
+  // Optional selector used to constrain results.
+  AuditLogSelector selector = 1;
+
+  // Opaque cursor returned by a previous request, if any.
+  string page_token = 2;
+
+  // Maximum number of entries to return in this page.
+  // If unset, a server default is used.
+  int32 page_size = 3;
+}
+
+// Response from calling GetAuditLog.
+message GetAuditLogResponse {
+  // Audit log entries matching the request.
+  repeated auditlog.Entry entry = 1;
+
+  // Cursor to retrieve the next page, or empty if there are no more results.
+  string next_page_token = 2;
+}
