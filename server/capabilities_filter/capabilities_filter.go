@@ -49,6 +49,7 @@ var (
 		// TODO(bduffany): prefix all of these with the service name,
 		// since API methods and BuildBuddyService methods may be the same.
 		"GetInvocation",
+		"GetAuditLog",
 		"GetLog",
 		"DeleteFile",
 		"GetTarget",

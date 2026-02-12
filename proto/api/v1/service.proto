@@ -4,6 +4,7 @@ package api.v1;
 
 import "proto/api/v1/action.proto";
 import "proto/api/v1/api_key.proto";
+import "proto/api/v1/audit_log.proto";
 import "proto/api/v1/file.proto";
 import "proto/api/v1/invocation.proto";
 import "proto/api/v1/log.proto";
@@ -37,6 +38,9 @@ service ApiService {
 
   // Retrieves the logs for a specific invocation.
   rpc GetLog(GetLogRequest) returns (GetLogResponse);
+
+  // Retrieves a page of audit log entries.
+  rpc GetAuditLog(GetAuditLogRequest) returns (GetAuditLogResponse);
 
   // Retrieves a list of targets or a specific target matching the given
   // request selector.
