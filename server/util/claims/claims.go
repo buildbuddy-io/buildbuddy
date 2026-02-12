@@ -474,7 +474,10 @@ func AuthContext(ctx context.Context, c *Claims) context.Context {
 	return authutil.AuthContextWithError(ctx, nil)
 }
 
-func authErrorToUnauthenticatedError(err error) error {
+func clientFacingAuthError(err error) error {
+	if err == nil {
+		return nil
+	}
 	if status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) {
 		return err
 	}
@@ -494,7 +497,7 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 			// Return an auth error if there is one.
 			err, ok := authutil.AuthErrorFromContext(ctx)
 			if ok && err != nil {
-				return nil, authErrorToUnauthenticatedError(err)
+				return nil, clientFacingAuthError(err)
 			}
 			return nil, status.InternalError("Invalid JWT reparse")
 		}
@@ -521,7 +524,7 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	// (the FE can handle them), and convert all others to Unauthenticated.
 	// WARNING: app/auth/auth_service.ts depends on this status being
 	// UNAUTHENTICATED.
-	return nil, authErrorToUnauthenticatedError(err)
+	return nil, clientFacingAuthError(err)
 }
 
 // AuthorizeServerAdmin checks whether the authenticated user is a server admin
